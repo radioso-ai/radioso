@@ -200,6 +200,11 @@ export interface OpenApiSchemaCatalog {
   MessageUsageResponseSchema: z.ZodTypeAny;
   InternalUsageResponseSchema: z.ZodTypeAny;
   IngestionSettingsSchema: z.ZodTypeAny;
+  DocumentTypeFieldSchema: z.ZodTypeAny;
+  DocumentTypeDefinitionSchema: z.ZodTypeAny;
+  RetiredDocumentTypeFieldSchema: z.ZodTypeAny;
+  DocumentTypeCatalogSchema: z.ZodTypeAny;
+  UpdateDocumentTypeCatalogRequestSchema: z.ZodTypeAny;
   ReprocessIngestionRequestSchema: z.ZodTypeAny;
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;

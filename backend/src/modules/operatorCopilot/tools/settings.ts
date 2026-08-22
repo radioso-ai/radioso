@@ -39,6 +39,7 @@ export interface CopilotWorkspaceSettingsPort {
     embeddingModel: string;
     pendingEmbeddingModel: string | null;
     documentEnrichmentEnabled?: boolean;
+    manualDocumentEnrichmentOverride?: "inherit" | "on" | "off";
   }>;
   listLlmModels(workspaceId: string): Promise<ReadonlyArray<{
     capability: "chat" | "rewrite" | "rerank";
@@ -115,6 +116,7 @@ const workspaceSettingsOutputSchema = z.object({
     embeddingModel: z.string(),
     pendingEmbeddingModel: z.string().nullable(),
     documentEnrichmentEnabled: z.boolean(),
+    manualDocumentEnrichmentOverride: z.enum(["inherit", "on", "off"]),
   }).strict(),
   llmModels: z.object({
     chat: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
@@ -218,6 +220,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
             embeddingModel: ingestion.embeddingModel,
             pendingEmbeddingModel: ingestion.pendingEmbeddingModel,
             documentEnrichmentEnabled: ingestion.documentEnrichmentEnabled ?? false,
+            manualDocumentEnrichmentOverride: ingestion.manualDocumentEnrichmentOverride ?? "inherit",
           },
           llmModels: {
             chat: preferencesByCapability.get("chat") ?? null,

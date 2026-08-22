@@ -16,6 +16,8 @@ Document processing is the path that turns raw document input into searchable ch
 
 Documents enter through either inline text ingestion or file import. Inline ingestion accepts title, content, optional metadata, and an optional external document id. File import accepts a multipart upload and preserves source file details.
 
+A document's metadata is a flat map of key/value tags. Values are strings, numbers, booleans, or `null`, and the whole map is capped at 16 KB. Operators author it in the dashboard for inline and imported documents alike, and import accepts it up front. Replacing a document's metadata queues a fresh processing run, because tags reach the chunks at vectorize time.
+
 ### Queue background work
 
 The API stores the document record and queues a processing job. The initial response is `202 Accepted`, not a completed indexing result.
@@ -32,7 +34,13 @@ Fixed-window chunking always uses fixed-size overlapping text windows. Semantic 
 
 ### Embed and publish chunks
 
-Each chunk gets search text from its base document metadata and an embedding. Chunks are then published for the specific document revision so stale work does not overwrite newer content.
+Each chunk carries an embedding and a metadata map of its own. That map is the document's metadata layered over the tags configured on its source — `{ ...sourceDocumentMetadata, ...documentOwnMetadata }` — so a key the document sets wins over the same key on the source. The document record keeps its own metadata only; source tags reach retrieval through the chunks.
+
+Search text is rendered from a fixed slice of the merged map: the `dateFrom`–`dateTo` range, `sourceUrl` (falling back to `url`), and `author`. Every other key rides along on the chunk, available for metadata filtering, outside the embedded text.
+
+The merge is computed on each vectorize pass, so a source whose tags change stamps them onto its already-indexed documents the next time those documents process. Reprocessing the source queues exactly that for every eligible document under it.
+
+Chunks are then published for the specific document revision so stale work does not overwrite newer content.
 
 ### Mark the document ready for retrieval
 
@@ -42,10 +50,27 @@ Once the worker publishes the chunks, the document becomes usable in document se
 
 Metadata extraction is optional and disabled by default. When enabled by the workspace setting, a source override, or a reprocess override, the worker queues a separate, lower-priority job after the document is already searchable.
 
-That enrich job makes one model call for the document. The call understands the document type and extracts supported structured tags such as event dates. Event dates are written to the document metadata and patched onto the overlapping chunks as `dateFrom` and `dateTo`. Article publication dates can be attached at document level.
+That enrich job makes one model call for the document. What the call looks for comes from the workspace document type catalog, which the job resolves through a read port at execution time rather than carrying on the job payload. Every job that runs after a catalog edit therefore sees the current catalog, and the run records the catalog revision it used. The queue message identifies the job by id, so the catalog reaches the worker through the database rather than the payload.
 
-Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. No re-embedding is needed, because those columns are structured and not part of the vector. If validation or the provider call fails, the document stays searchable without extracted tags; a failed enrich job never changes the document's ready status.
+The catalog holds the built-in entries — `event`, `article`, `profile`, `reference`, and the reserved `generic` fallback — merged with the types an operator defines. Built-in definitions live in code and only their disabled flags are persisted. The rendered catalog section of the prompt is bounded at 12,000 characters on top of the 48,000-character document representation, enforced when the catalog is saved. A persisted catalog that renders past the budget is treated as an enrichment failure with a content-free reason. [Extract document metadata](/guides/document-metadata) covers authoring types and fields from the operator's side.
+
+The model returns a classification envelope plus one payload: temporal facts for the built-in dated types, or an ordered array of `{ key, value }` pairs for an operator-defined type. Validation runs in two stages. The envelope resolves against the enabled catalog, and an unknown type key falls back to `generic` with no fields. Each field entry is then judged on its own: undeclared keys, values that fail their declared value type, duplicate keys after the first, and entries past the per-value and total size caps are each dropped and counted. No single drop fails the document.
+
+Event dates are written to the document metadata and patched onto the overlapping chunks as `dateFrom` and `dateTo`; article publication dates attach at document level. Operator-defined fields are document-level scalars copied to every chunk in the same patch, so a metadata rule on one of them matches the whole document. Per-chunk source-range attribution stays specific to `event`.
+
+Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. The patch merges over the metadata a chunk already carries, so source and document tags stay in place beside the extracted values. No re-embedding is needed, because those columns are structured and not part of the vector.
+
 </Steps>
+
+## Who owns an extracted tag
+
+Extraction owns exactly the keys it generated for a document. Provenance in `documents.enrichment` records that set alongside the matched type key, the catalog revision, and content-free counts of applied, dropped, and collision-skipped fields. That recorded set — not a hard-coded key list — drives stale-tag cleanup, so a field removed from a type stops leaving orphaned tags behind.
+
+A key already on the document that is not in the generated set is manually authored or connector-supplied. Extraction skips it and counts the collision. A manual metadata write that changes or removes a generated key drops that key from the set in the same statement, handing ownership to the operator for good.
+
+Tag replacement is atomic with success: only after validation succeeds does a run remove the previous generated keys, write the new ones, and replace provenance in a single persisted update. A run that fails records its failure fields and leaves existing tags, the prior generated-key set, and the last successful run's catalog revision intact. The document stays searchable throughout; a failed enrich job never changes its ready status.
+
+The built-in `dateFrom` and `dateTo` keys sit outside the generated-key set and keep their own rule: every run with extraction enabled replaces or clears whatever those two keys hold, including values an operator authored.
 
 ## Why revisions matter
 
@@ -56,6 +81,8 @@ Document processing is revision-aware. If a document is updated while an older j
 - Inline text documents store their source content directly in the document record.
 - Uploaded files store source file details and are materialized during processing before chunking begins.
 - Website and connector sources can carry a source-level metadata extraction override. That override can inherit the workspace default, force extraction on, or force it off.
+- A source record also holds `documentMetadata`: the document tags stamped onto the chunks of every document under that source. It takes the same shape as a document's own metadata — flat key/value pairs, scalar values, 16 KB for the map — and the same key on a document overrides it.
+- Manually added documents have no source record, so their override is a workspace ingestion setting that offers the same three choices and fills the same slot when processing resolves whether to extract. With no source record there are no source tags either, so each of those documents carries the metadata it is given.
 
 ## Queue payloads
 
@@ -82,4 +109,5 @@ If a newly uploaded document does not influence answers yet, verify these in ord
 
 - [Document processing](/operators/document-processing)
 - [Document upload guide](/guides/document-upload)
+- [Extract document metadata](/guides/document-metadata)
 - [Retrieval pipeline](/architecture/retrieval-pipeline)

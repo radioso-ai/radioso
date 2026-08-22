@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
+import type { MetadataRecord } from '@/components/dashboard/shared/metadata-key-value-rows'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -45,10 +47,13 @@ const formatDateTime = (value: string | null | undefined) => {
   }).format(date)
 }
 
+/** Fields the plain-text inputs write. Metadata and source have typed channels. */
+export type DocumentEditorTextField = 'title' | 'content'
+
 export type DocumentEditorValues = {
   title: string
   content: string
-  metadata: string
+  metadata: MetadataRecord
   sourceId: string
 }
 
@@ -69,6 +74,10 @@ export function DocumentEditorPage({
   onBack,
   onChange,
   onMetadataChange,
+  onMetadataValidityChange,
+  onSaveMetadata,
+  isSavingMetadata,
+  metadataSaveError,
   onSourceChange,
   onEditingChange,
   onMetadataOpenChange,
@@ -99,8 +108,14 @@ export function DocumentEditorPage({
   onBack: () => void
   onRunMetadataExtraction?: () => void
   isRunningMetadataExtraction?: boolean
-  onChange: (field: keyof DocumentEditorValues, value: string) => void
-  onMetadataChange: (value: string) => void
+  onChange: (field: DocumentEditorTextField, value: string) => void
+  onMetadataChange: (value: MetadataRecord) => void
+  onMetadataValidityChange?: (isValid: boolean) => void
+  // Supplied only for documents whose tags are saved on their own request rather
+  // than through the document form, which today means imported files.
+  onSaveMetadata?: () => void
+  isSavingMetadata?: boolean
+  metadataSaveError?: string | null
   onSourceChange: (sourceId: string) => void
   onEditingChange: (editing: boolean) => void
   onMetadataOpenChange: (open: boolean) => void
@@ -143,6 +158,11 @@ export function DocumentEditorPage({
   const sourceIsManual = (document.sourceId ?? null) === MANUALLY_ADDED_SOURCE_ID
   const isEditable = isInlineText && sourceIsManual
   const canEditSource = isEditing && isEditable
+  // An imported file's contents stay read-only, but its tags are hand-authored
+  // and save on their own request, so they stay editable outside the form's edit
+  // mode. Every other document authors tags inside the form save.
+  const savesMetadataSeparately = Boolean(onSaveMetadata)
+  const canEditMetadata = isEditing || savesMetadataSeparately
   const currentSourceName =
     availableSources.find((source) => source.id === values.sourceId)?.name ??
     document.source?.name ??
@@ -184,7 +204,10 @@ export function DocumentEditorPage({
           <Button type="button" variant="outline" onClick={() => onEditingChange(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSaving || !values.title.trim() || !values.content.trim()}>
+          <Button
+            type="submit"
+            disabled={isSaving || !values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+          >
             {isSaving ? <Spinner className="mr-2" /> : <Save className="mr-2 h-4 w-4" />}
             Save document
           </Button>
@@ -473,20 +496,36 @@ export function DocumentEditorPage({
                     ) : null}
                   </div>
                 ) : null}
-                <div className="space-y-1">
-                  <label htmlFor="document-metadata" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    Metadata
-                  </label>
-                  <Textarea
-                    id="document-metadata"
+                <div className="space-y-2">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Metadata</p>
+                  <MetadataKeyValueEditor
+                    fieldId="document-metadata"
+                    label={null}
                     value={values.metadata}
-                    onChange={(event) => onMetadataChange(event.target.value)}
-                    placeholder='{"key": "value"}'
-                    readOnly={!isEditing}
-                    disabled={isSaving}
-                    className="min-h-[60vh] resize-none font-mono text-sm"
+                    onChange={onMetadataChange}
+                    onValidityChange={onMetadataValidityChange}
+                    readOnly={!canEditMetadata}
+                    disabled={isSaving || Boolean(isSavingMetadata)}
                   />
-                  {metadataError ? <p className="mt-2 text-sm text-destructive">{metadataError}</p> : null}
+                  {savesMetadataSeparately ? (
+                    <div className="space-y-1 pt-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={onSaveMetadata}
+                        disabled={Boolean(isSavingMetadata) || Boolean(metadataError)}
+                      >
+                        {isSavingMetadata ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
+                        Save metadata
+                      </Button>
+                      <p className="text-xs text-muted-foreground">
+                        Tags save on their own. The imported file&apos;s contents stay read-only.
+                      </p>
+                    </div>
+                  ) : null}
+                  {metadataError ? <p className="text-sm text-destructive">{metadataError}</p> : null}
+                  {metadataSaveError ? <p className="text-sm text-destructive">{metadataSaveError}</p> : null}
                 </div>
               </div>
             </aside>

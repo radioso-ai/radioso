@@ -27,6 +27,11 @@ import {
   type ChunkInspectorRequest,
 } from '@/components/dashboard/documents/chunk-inspector-sheet'
 import { DocumentList } from '@/components/dashboard/documents/document-list'
+import {
+  toRecord as metadataToRecord,
+  toRows as metadataToRows,
+  type MetadataRecord,
+} from '@/components/dashboard/shared/metadata-key-value-rows'
 import { DocumentSearchBar } from '@/components/dashboard/document-search-bar'
 import { DocumentSearchResults } from '@/components/dashboard/document-search-results'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -57,9 +62,19 @@ const CRAWL_JOBS_SINCE_MINUTES = 30
 const EMPTY_FORM: DocumentEditorValues = {
   title: '',
   content: '',
-  metadata: '',
+  metadata: {},
   sourceId: MANUALLY_ADDED_SOURCE_ID,
 }
+
+const INVALID_METADATA_MESSAGE = 'Fix the highlighted tags before saving.'
+
+/**
+ * Narrows a stored metadata record to the flat scalars the editor authors, so a
+ * value the pipeline wrote in some richer shape is never round-tripped back as a
+ * mangled string.
+ */
+const toEditableMetadata = (metadata: unknown): MetadataRecord =>
+  metadataToRecord(metadataToRows((metadata ?? {}) as Record<string, unknown>))
 
 interface DocumentsViewProps {
   routeState: DashboardRouteState
@@ -72,18 +87,6 @@ interface DocumentsViewProps {
   // "Add" menu, which routes here so the canonical add flows are reused).
   autoOpenAdd?: AddDocumentAction | null
   onAutoOpenAddHandled?: () => void
-}
-
-const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
-  const trimmed = raw.trim()
-  if (!trimmed) return {}
-  try {
-    const parsed = JSON.parse(trimmed)
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
-    return parsed
-  } catch {
-    return null
-  }
 }
 
 export function DocumentsView({
@@ -128,7 +131,11 @@ export function DocumentsView({
   const [formValues, setFormValues] = useState<DocumentEditorValues>(EMPTY_FORM)
   const [importTitle, setImportTitle] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [importMetadata, setImportMetadata] = useState<MetadataRecord>({})
+  const [isImportMetadataValid, setIsImportMetadataValid] = useState(true)
   const [importEnrichmentChoice, setImportEnrichmentChoice] = useState<'inherit' | 'on' | 'off'>('inherit')
+  const [isSavingMetadata, setIsSavingMetadata] = useState(false)
+  const [metadataSaveError, setMetadataSaveError] = useState<string | null>(null)
   const [extractingDocumentId, setExtractingDocumentId] = useState<string | null>(null)
   const [isUpdatingRetrieval, setIsUpdatingRetrieval] = useState(false)
   const [retrievalError, setRetrievalError] = useState<string | null>(null)
@@ -453,8 +460,16 @@ export function DocumentsView({
   const resetImportDialog = useCallback(() => {
     setImportTitle('')
     setImportFile(null)
+    setImportMetadata({})
+    setIsImportMetadataValid(true)
     setImportEnrichmentChoice('inherit')
     setImportError(null)
+  }, [])
+
+  // The editor reports its own row-level problems; this only mirrors them into a
+  // save gate so an invalid tag cannot be silently dropped by a submit.
+  const handleMetadataValidityChange = useCallback((isValid: boolean) => {
+    setMetadataError(isValid ? null : INVALID_METADATA_MESSAGE)
   }, [])
 
   const resetCrawlDialog = useCallback(() => {
@@ -530,9 +545,7 @@ export function DocumentsView({
       setFormValues({
         title: document.title,
         content: document.content,
-        metadata: Object.keys(document.metadata ?? {}).length > 0
-          ? JSON.stringify(document.metadata, null, 2)
-          : '',
+        metadata: toEditableMetadata(document.metadata),
         sourceId: document.sourceId ?? MANUALLY_ADDED_SOURCE_ID,
       })
       if (sourcesResponse) {
@@ -540,6 +553,7 @@ export function DocumentsView({
       }
       setIsEditingDetail(false)
       setMetadataError(null)
+      setMetadataSaveError(null)
       setRetrievalError(null)
     } catch (error) {
       console.error('Failed to load document:', error)
@@ -616,7 +630,7 @@ export function DocumentsView({
     setFormValues({
       title: seed.title,
       content: formatDraftQuestionsAsMarkdown(seed.questions),
-      metadata: '',
+      metadata: {},
       sourceId: MANUALLY_ADDED_SOURCE_ID,
     })
     setCreateEnrichmentChoice('inherit')
@@ -659,13 +673,10 @@ export function DocumentsView({
     event.preventDefault()
     if (!formValues.title.trim() || !formValues.content.trim()) return
 
-    const metadata = parseMetadata(formValues.metadata)
-    if (metadata === null) {
-      setMetadataError('Invalid JSON. Must be an object with string, number, boolean, or null values.')
-      return
-    }
+    if (metadataError) return
 
-    setMetadataError(null)
+    const metadata = formValues.metadata
+
     setSaveError(null)
     setIsSaving(true)
 
@@ -714,16 +725,16 @@ export function DocumentsView({
       setImportError('Choose a supported file to import.')
       return
     }
+    if (!isImportMetadataValid) return
 
     setImportError(null)
     setIsImporting(true)
 
     try {
-      await documentsApi.importDocument(
-        importFile,
-        importTitle,
-        importEnrichmentChoice !== 'inherit' ? { documentEnrichmentOverride: importEnrichmentChoice } : undefined,
-      )
+      await documentsApi.importDocument(importFile, importTitle, {
+        ...(importEnrichmentChoice !== 'inherit' ? { documentEnrichmentOverride: importEnrichmentChoice } : {}),
+        metadata: importMetadata,
+      })
       setDocumentsPage(1)
       await loadDocuments(1, { reset: true })
       setIsImportDialogOpen(false)
@@ -944,6 +955,30 @@ export function DocumentsView({
     }
   }
 
+  // Imported files keep read-only contents, so their tags cannot ride along on a
+  // document save. They go out on their own full-replace PATCH instead.
+  const handleSaveDocumentMetadata = async (documentId: string) => {
+    if (metadataError) return
+    setIsSavingMetadata(true)
+    setMetadataSaveError(null)
+    try {
+      const updated = await documentsApi.updateDocumentMetadata(documentId, formValues.metadata)
+      setActiveDocument((current) => (current && current.id === documentId ? updated : current))
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === documentId
+            ? { ...document, metadata: updated.metadata, updatedAt: updated.updatedAt }
+            : document,
+        ),
+      )
+      setFormValues((current) => ({ ...current, metadata: toEditableMetadata(updated.metadata) }))
+    } catch (error) {
+      setMetadataSaveError(getApiErrorMessage(error, 'Failed to save metadata. Please try again.'))
+    } finally {
+      setIsSavingMetadata(false)
+    }
+  }
+
   const handleRetrievalUpdate = async (
     documentId: string,
     patch: { retrievalEnabled?: boolean; retrievalExpiresAt?: string | null },
@@ -1028,9 +1063,9 @@ export function DocumentsView({
         }}
         onMetadataChange={(value) => {
           setFormValues((current) => ({ ...current, metadata: value }))
-          setMetadataError(null)
           setSaveError(null)
         }}
+        onMetadataValidityChange={handleMetadataValidityChange}
         onSubmit={handleSubmit}
       />
 
@@ -1043,6 +1078,13 @@ export function DocumentsView({
         isImporting={isImporting}
         supportedExtensions={SUPPORTED_IMPORT_EXTENSIONS}
         hasFile={Boolean(importFile)}
+        metadata={importMetadata}
+        isMetadataValid={isImportMetadataValid}
+        onMetadataChange={(value) => {
+          setImportMetadata(value)
+          setImportError(null)
+        }}
+        onMetadataValidityChange={setIsImportMetadataValid}
         onOpenChange={handleImportDialogChange}
         onSubmit={handleImportSubmit}
         onTitleChange={(value) => {
@@ -1163,9 +1205,17 @@ export function DocumentsView({
           }}
           onMetadataChange={(value) => {
             setFormValues((current) => ({ ...current, metadata: value }))
-            setMetadataError(null)
+            setMetadataSaveError(null)
             setSaveError(null)
           }}
+          onMetadataValidityChange={handleMetadataValidityChange}
+          onSaveMetadata={
+            activeDetailDocument && activeDetailDocument.sourceKind === 'uploaded_file'
+              ? () => void handleSaveDocumentMetadata(activeDetailDocument.id)
+              : undefined
+          }
+          isSavingMetadata={isSavingMetadata}
+          metadataSaveError={metadataSaveError}
           onSourceChange={(sourceId) => {
             setFormValues((current) => ({ ...current, sourceId }))
             setSaveError(null)

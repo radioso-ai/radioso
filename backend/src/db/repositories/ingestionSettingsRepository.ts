@@ -1,6 +1,8 @@
-import type {
-  IngestionSettingsRecord,
-  ValidatedIngestionSettingsInput,
+import {
+  MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT,
+  isManualDocumentEnrichmentOverride,
+  type IngestionSettingsRecord,
+  type ValidatedIngestionSettingsInput,
 } from "../../modules/settings/contracts/ingestion.js";
 import type { IngestionSettingsRepositoryPort } from "../../modules/settings/contracts/services.js";
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -16,6 +18,7 @@ interface IngestionSettingsRow {
   embedding_model: IngestionSettingsRecord["embeddingModel"];
   pending_embedding_model: IngestionSettingsRecord["pendingEmbeddingModel"];
   document_enrichment_enabled: boolean;
+  manual_document_enrichment_override: string;
   revision: string;
   created_at: Date;
   updated_at: Date;
@@ -31,6 +34,11 @@ const mapSettings = (row: IngestionSettingsRow): IngestionSettingsRecord => ({
   embeddingModel: row.embedding_model,
   pendingEmbeddingModel: row.pending_embedding_model,
   documentEnrichmentEnabled: row.document_enrichment_enabled,
+  // The column is plain text, so an unexpected persisted value degrades to the
+  // inherit default instead of failing every settings read.
+  manualDocumentEnrichmentOverride: isManualDocumentEnrichmentOverride(row.manual_document_enrichment_override)
+    ? row.manual_document_enrichment_override
+    : MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -45,6 +53,7 @@ const ingestionSettingsColumns = [
   "embedding_model",
   "pending_embedding_model",
   "document_enrichment_enabled",
+  "manual_document_enrichment_override",
   "revision",
   "created_at",
   "updated_at",
@@ -95,6 +104,8 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
         embedding_model: input.embeddingModel,
         pending_embedding_model: input.pendingEmbeddingModel,
         document_enrichment_enabled: input.documentEnrichmentEnabled,
+        manual_document_enrichment_override:
+          input.manualDocumentEnrichmentOverride ?? MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT,
       })
       .onConflict((oc) =>
         oc.column("workspace_id").doUpdateSet((eb) => ({
@@ -106,6 +117,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
           embedding_model: eb.ref("excluded.embedding_model"),
           pending_embedding_model: eb.ref("excluded.pending_embedding_model"),
           document_enrichment_enabled: eb.ref("excluded.document_enrichment_enabled"),
+          manual_document_enrichment_override: eb.ref("excluded.manual_document_enrichment_override"),
           revision: eb("ingestion_settings.revision", "+", "1"),
           updated_at: currentTimestamp(),
         })),

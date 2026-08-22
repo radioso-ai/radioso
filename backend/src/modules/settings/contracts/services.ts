@@ -9,7 +9,7 @@ import type {
   WorkspaceLlmCapabilityPreference,
   WorkspaceLlmCapabilityPreferenceInput,
 } from "./llmCapability.js";
-import type { MetadataFieldSuggestion } from "./retrieval.js";
+import type { DeclaredMetadataField, MetadataFieldSuggestion } from "./retrieval.js";
 
 export interface IngestionSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null>;
@@ -95,6 +95,15 @@ export interface WorkspaceLlmCapabilityPreferencesRepositoryPort {
 
 export interface RetrievalMetadataFieldSourcePort {
   listMetadataFieldSuggestions(workspaceId: string): Promise<MetadataFieldSuggestion[]>;
+}
+
+/**
+ * Field keys some document type declares, with the value type extraction will
+ * write them under. Read from the document type catalog without scanning
+ * document metadata.
+ */
+export interface DeclaredMetadataFieldSourcePort {
+  listDeclaredMetadataFields(workspaceId: string): Promise<readonly DeclaredMetadataField[]>;
 }
 
 export interface IngestionSettingsPort {

@@ -156,6 +156,13 @@ import type {
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
+import {
+  DEFAULT_DOCUMENT_TYPE_CATALOG_REVISION,
+  type DocumentTypeCatalogRecord,
+  type DocumentTypeCatalogRepositoryPort,
+  type OperatorDocumentTypeDefinition,
+  type RetiredDocumentTypeFieldIdentity,
+} from "../../src/modules/documentTypes/contracts/documentTypeCatalog.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
@@ -1719,6 +1726,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       embeddingModel: input.embeddingModel,
       pendingEmbeddingModel: input.pendingEmbeddingModel,
       documentEnrichmentEnabled: input.documentEnrichmentEnabled ?? false,
+      manualDocumentEnrichmentOverride: input.manualDocumentEnrichmentOverride ?? "inherit",
       fixedWindowChunkSize: input.fixedWindowChunkSize,
       fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
       structuredMinChunkSize: input.structuredMinChunkSize,
@@ -2635,6 +2643,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceContent: input.sourceContent,
       markdownContent: input.markdownContent,
       metadata: input.metadata ?? existing.metadata ?? {},
+      ...(input.enrichment ? { enrichment: input.enrichment as unknown as DocumentRecord["enrichment"] } : {}),
       sourceId: input.sourceId ?? existing.sourceId ?? null,
       source: input.source ?? existing.source ?? null,
       externalDocumentId: input.externalDocumentId ?? existing.externalDocumentId ?? null,
@@ -2647,6 +2656,36 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceSizeBytes: input.sourceSizeBytes ?? existing.sourceSizeBytes ?? null,
       contentSizeBytes: input.contentSizeBytes ?? existing.contentSizeBytes ?? null,
       contentHash: input.contentHash ?? existing.contentHash ?? null,
+      status: "queued",
+      revision: existing.revision + 1,
+      failureReason: null,
+      updatedAt: new Date(),
+    };
+
+    await this.jobRepository?.enqueue({
+      documentId: record.id,
+      workspaceId: record.workspaceId,
+      documentRevision: record.revision,
+    });
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async updateMetadataAndQueue(input: {
+    documentId: string;
+    workspaceId: string;
+    metadata: Record<string, unknown>;
+    enrichment?: Record<string, unknown>;
+  }): Promise<DocumentRecord> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.workspaceId !== input.workspaceId) {
+      throw notFound("Document not found");
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      metadata: input.metadata,
+      ...(input.enrichment ? { enrichment: input.enrichment as unknown as DocumentRecord["enrichment"] } : {}),
       status: "queued",
       revision: existing.revision + 1,
       failureReason: null,
@@ -2741,7 +2780,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       ...existing,
       metadata: input.metadata,
       ...(input.enrichment !== undefined
-        ? { enrichment: input.enrichment as DocumentRecord["enrichment"] }
+        ? { enrichment: input.enrichment as unknown as DocumentRecord["enrichment"] }
         : {}),
       updatedAt: new Date(),
     };
@@ -2818,7 +2857,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
 
   async requeueSourceEligibleAndQueue(input: {
     workspaceId: string;
-    sourceId: string;
+    sourceId: string | null;
     options?: DocumentProcessingJobOptions | null;
   }): Promise<{
     queuedDocumentCount: number;
@@ -4244,3 +4283,39 @@ export class InMemoryAuditService extends AuditService {
 export const createAuditService = (
   repository: AuditEventRepositoryPort = new InMemoryAuditEventRepository(),
 ): InMemoryAuditService => new InMemoryAuditService(createLogger("silent"), repository);
+
+/**
+ * In-memory document type catalog store. Mirrors the conditional-write contract
+ * of the Postgres repository: a save built on a stale revision resolves null.
+ */
+export class InMemoryDocumentTypeCatalogRepository implements DocumentTypeCatalogRepositoryPort {
+  readonly items = new Map<string, DocumentTypeCatalogRecord>();
+
+  async findByWorkspaceId(workspaceId: string): Promise<DocumentTypeCatalogRecord | null> {
+    return this.items.get(workspaceId) ?? null;
+  }
+
+  async save(input: {
+    workspaceId: string;
+    expectedRevision: string;
+    types: readonly OperatorDocumentTypeDefinition[];
+    retiredFields: readonly RetiredDocumentTypeFieldIdentity[];
+    disabledBuiltInTypeKeys: readonly string[];
+  }): Promise<DocumentTypeCatalogRecord | null> {
+    const existing = this.items.get(input.workspaceId);
+    const currentRevision = existing?.revision ?? DEFAULT_DOCUMENT_TYPE_CATALOG_REVISION;
+    if (currentRevision !== input.expectedRevision) {
+      return null;
+    }
+
+    const record: DocumentTypeCatalogRecord = {
+      workspaceId: input.workspaceId,
+      revision: String(BigInt(currentRevision) + 1n),
+      types: input.types.map((type) => ({ ...type, fields: type.fields.map((field) => ({ ...field })) })),
+      retiredFields: input.retiredFields.map((identity) => ({ ...identity })),
+      disabledBuiltInTypeKeys: [...input.disabledBuiltInTypeKeys],
+    };
+    this.items.set(input.workspaceId, record);
+    return record;
+  }
+}

@@ -31,6 +31,22 @@ export const activeEmbeddingModelFromPersisted = (
 ): ActiveEmbeddingModel =>
   isEmbeddingModelId(value) ? value : value as LegacyEmbeddingModel;
 
+/**
+ * Documents added by hand have no document_sources row, so the source-level
+ * enrichment override has nowhere to live. This workspace setting is their
+ * source-override slot. The documents module owns the enablement rule and
+ * parses this value; settings must not depend on the documents module, so the
+ * three-value enum is declared here rather than imported across that boundary.
+ */
+export const manualDocumentEnrichmentOverrides = ["inherit", "on", "off"] as const;
+export type ManualDocumentEnrichmentOverride = (typeof manualDocumentEnrichmentOverrides)[number];
+export const MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT: ManualDocumentEnrichmentOverride = "inherit";
+
+export const isManualDocumentEnrichmentOverride = (
+  value: unknown,
+): value is ManualDocumentEnrichmentOverride =>
+  manualDocumentEnrichmentOverrides.includes(value as ManualDocumentEnrichmentOverride);
+
 export interface IngestionSettingsRecord {
   workspaceId: string;
   chunkingStrategy: ChunkingStrategyId;
@@ -41,6 +57,7 @@ export interface IngestionSettingsRecord {
   embeddingModel: ActiveEmbeddingModel;
   pendingEmbeddingModel: EmbeddingModelId | null;
   documentEnrichmentEnabled?: boolean;
+  manualDocumentEnrichmentOverride?: ManualDocumentEnrichmentOverride;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +71,7 @@ export interface IngestionSettingsInput {
   embeddingModel?: EmbeddingModelId;
   pendingEmbeddingModel?: EmbeddingModelId | null;
   documentEnrichmentEnabled?: boolean;
+  manualDocumentEnrichmentOverride?: ManualDocumentEnrichmentOverride;
 }
 
 /**
@@ -86,6 +104,7 @@ export const defaultIngestionSettings = (workspaceId: string): IngestionSettings
   embeddingModel: EMBEDDING_MODEL_DEFAULT,
   pendingEmbeddingModel: null,
   documentEnrichmentEnabled: false,
+  manualDocumentEnrichmentOverride: MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -144,11 +163,19 @@ export const validateIngestionSettings = (input: IngestionSettingsInput): Valida
   if (input.structuredMinChunkSize > input.structuredMaxChunkSize) {
     throw badRequest("structuredMinChunkSize must be less than or equal to structuredMaxChunkSize");
   }
+  const manualDocumentEnrichmentOverride =
+    input.manualDocumentEnrichmentOverride ?? MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT;
+  if (!isManualDocumentEnrichmentOverride(manualDocumentEnrichmentOverride)) {
+    throw badRequest(
+      `manualDocumentEnrichmentOverride must be one of ${manualDocumentEnrichmentOverrides.join(", ")}`,
+    );
+  }
 
   return {
     ...input,
     embeddingModel,
     pendingEmbeddingModel,
     documentEnrichmentEnabled: input.documentEnrichmentEnabled ?? false,
+    manualDocumentEnrichmentOverride,
   };
 };

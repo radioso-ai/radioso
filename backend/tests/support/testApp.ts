@@ -81,6 +81,9 @@ import {
 } from "../../src/modules/embeddingProfiles/public.js";
 import { streamResult, textResult } from "./llmStubs.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
+import { DocumentTypeCatalogService } from "../../src/modules/documentTypes/composition.js";
+import { MetadataFieldSuggestionService } from "../../src/modules/settings/services/metadataFieldSuggestionService.js";
+import { MetadataRuleFieldReferenceService } from "../../src/modules/retrieval/services/metadataRuleFieldReferenceService.js";
 import type {
   EmbeddingModelTransitionPort,
   EmbeddingModelTransitionState,
@@ -220,6 +223,7 @@ import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuse
 import {
   createAuditService,
   InMemoryAuditEventRepository,
+  InMemoryDocumentTypeCatalogRepository,
   InMemoryBootstrapGreetingCacheRepository,
   InMemoryAccountRepository,
   InMemoryAccountInvitationRepository,
@@ -916,6 +920,10 @@ export const createTestDependencies = (overrides: {
     auditService,
     undefined,
     embeddingTransitions,
+  );
+  const documentTypeCatalogService = new DocumentTypeCatalogService(
+    new InMemoryDocumentTypeCatalogRepository(),
+    auditService,
   );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
@@ -1824,6 +1832,12 @@ export const createTestDependencies = (overrides: {
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
+    documentTypeCatalogService,
+    metadataFieldSuggestionProvider: new MetadataFieldSuggestionService(
+      documentTypeCatalogService,
+      documentRepository,
+    ),
+    metadataRuleFieldReferenceProvider: new MetadataRuleFieldReferenceService(agentSkillRepository),
     chunkRepository,
     documentRepository,
     documentIngestionService,

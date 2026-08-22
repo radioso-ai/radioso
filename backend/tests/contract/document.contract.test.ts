@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/domain/sourceConstants.js";
 
 describe("document contract", () => {
   it("lists chunk summaries for a document and returns chunk detail", async () => {
@@ -196,6 +198,52 @@ describe("document contract", () => {
       skippedDocumentCount: 0,
       status: "queued",
     });
+  });
+
+  it("reprocesses the manually added documents source and leaves documents that belong to a source alone", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "manual-source-reprocess@example.com");
+
+    const manualCreateResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Manually added handbook",
+        content: "Handbook body content.",
+      })
+      .expect(202);
+    const manualDocumentId = manualCreateResponse.body.documentId as string;
+
+    const sourcedCreateResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Crawled page",
+        content: "Crawled body content.",
+        source: {
+          kind: "website",
+          url: "https://example.com/manual-scope",
+        },
+      })
+      .expect(202);
+    const sourcedDocumentId = sourcedCreateResponse.body.documentId as string;
+    const sourcedRevisionBefore = repositories.documentRepository.items.get(sourcedDocumentId)?.revision;
+
+    const reprocessResponse = await request(app)
+      .post(`/api/v1/document/sources/${MANUALLY_ADDED_DOCUMENTS_SOURCE_ID}/reprocess`)
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "on" })
+      .expect(202);
+
+    expect(reprocessResponse.body).toMatchObject({
+      sourceId: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
+      workspaceId: expect.any(String),
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+      status: "queued",
+    });
+    expect(repositories.documentRepository.items.get(manualDocumentId)?.status).toBe("queued");
+    expect(repositories.documentRepository.items.get(sourcedDocumentId)?.revision).toBe(sourcedRevisionBefore);
   });
 
   it("imports uploaded files under a workspace upload source", async () => {
@@ -1394,5 +1442,245 @@ describe("document contract", () => {
       .set(adminSessionHeaders(session))
       .send({ retrievalEnabled: false })
       .expect(404);
+  });
+  it("round-trips operator-authored metadata through an import", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "import-metadata@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document/import")
+      .set(adminSessionHeaders(session))
+      .field("title", "Imported handbook")
+      .field("metadata", JSON.stringify({ audience: "operators", revision: 3, published: true }))
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "handbook.txt",
+        contentType: "text/plain",
+      })
+      .expect(202);
+
+    const documentId = response.body.documentId as string;
+    expect(repositories.documentRepository.items.get(documentId)?.metadata).toEqual({
+      audience: "operators",
+      revision: 3,
+      published: true,
+    });
+
+    const details = await request(app)
+      .get(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    expect(details.body.metadata).toEqual({ audience: "operators", revision: 3, published: true });
+  });
+
+  it("rejects import metadata that is not a flat scalar record", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "import-metadata-invalid@example.com");
+
+    await request(app)
+      .post("/api/v1/document/import")
+      .set(adminSessionHeaders(session))
+      .field("metadata", JSON.stringify({ owner: { team: "support" } }))
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "handbook.txt",
+        contentType: "text/plain",
+      })
+      .expect(400);
+
+    await request(app)
+      .post("/api/v1/document/import")
+      .set(adminSessionHeaders(session))
+      .field("metadata", "not json")
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "handbook.txt",
+        contentType: "text/plain",
+      })
+      .expect(400);
+  });
+
+  it("replaces document metadata via PATCH and requeues the document", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "patch-document-metadata@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Taggable", content: "Body", metadata: { audience: "operators", stale: "drop" } })
+      .expect(202);
+    const documentId = createResponse.body.documentId as string;
+    const revisionBefore = repositories.documentRepository.items.get(documentId)?.revision ?? 0;
+
+    const patched = await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ metadata: { audience: "admins", revision: 2 } })
+      .expect(200);
+
+    expect(patched.body.metadata).toEqual({ audience: "admins", revision: 2 });
+    const stored = repositories.documentRepository.items.get(documentId);
+    expect(stored?.metadata).toEqual({ audience: "admins", revision: 2 });
+    expect(stored?.status).toBe("queued");
+    expect(stored?.revision).toBe(revisionBefore + 1);
+  });
+
+  it("clears every document tag when PATCH sends an empty metadata record", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "patch-document-metadata-clear@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Taggable", content: "Body", metadata: { audience: "operators" } })
+      .expect(202);
+    const documentId = createResponse.body.documentId as string;
+
+    const patched = await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ metadata: {} })
+      .expect(200);
+
+    expect(patched.body.metadata).toEqual({});
+    expect(repositories.documentRepository.items.get(documentId)?.metadata).toEqual({});
+  });
+
+  // The inline PUT path rejects imported documents outright, so PATCH is the
+  // only metadata affordance an uploaded file has.
+  it("allows PATCH metadata on an imported document", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "patch-imported-metadata@example.com");
+
+    const importResponse = await request(app)
+      .post("/api/v1/document/import")
+      .set(adminSessionHeaders(session))
+      .attach("file", Buffer.from("Imported content"), {
+        filename: "handbook.txt",
+        contentType: "text/plain",
+      })
+      .expect(202);
+    const documentId = importResponse.body.documentId as string;
+
+    const patched = await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ metadata: { audience: "operators" } })
+      .expect(200);
+
+    expect(patched.body.metadata).toEqual({ audience: "operators" });
+    expect(repositories.documentRepository.items.get(documentId)?.status).toBe("queued");
+  });
+
+  it("rejects PATCH document metadata that is not a flat scalar record", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "patch-metadata-invalid@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Taggable", content: "Body" })
+      .expect(202);
+
+    await request(app)
+      .patch(`/api/v1/document/${createResponse.body.documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ metadata: { owner: { team: "support" } } })
+      .expect(400);
+  });
+
+  it("round-trips source-level document tags through the sources list", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-document-tags@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Page",
+        content: "Body",
+        source: { kind: "website", url: "https://tagged-source.example.com" },
+      })
+      .expect(202);
+
+    const sourcesResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const source = sourcesResponse.body.sources.find((entry: { kind: string }) => entry.kind === "website");
+    expect(source.documentMetadata).toEqual({});
+
+    const patchResponse = await request(app)
+      .patch(`/api/v1/document/sources/${source.id}`)
+      .set(adminSessionHeaders(session))
+      .send({ documentMetadata: { region: "eu", tier: 2, active: true } })
+      .expect(200);
+    expect(patchResponse.body.documentMetadata).toEqual({ region: "eu", tier: 2, active: true });
+
+    const afterResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const refreshed = afterResponse.body.sources.find((entry: { id: string }) => entry.id === source.id);
+    expect(refreshed.documentMetadata).toEqual({ region: "eu", tier: 2, active: true });
+
+    // The tag map is a full replace, and crawl settings are left alone.
+    const cleared = await request(app)
+      .patch(`/api/v1/document/sources/${source.id}`)
+      .set(adminSessionHeaders(session))
+      .send({ documentMetadata: {} })
+      .expect(200);
+    expect(cleared.body.documentMetadata).toEqual({});
+    expect(cleared.body.crawlSettings).toEqual(
+      expect.objectContaining({ url: "https://tagged-source.example.com" }),
+    );
+  });
+
+  it("rejects source document tags that are not a flat scalar record", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "source-document-tags-invalid@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Page",
+        content: "Body",
+        source: { kind: "website", url: "https://invalid-tag-source.example.com" },
+      })
+      .expect(202);
+
+    const sourcesResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const source = sourcesResponse.body.sources.find((entry: { kind: string }) => entry.kind === "website");
+
+    await request(app)
+      .patch(`/api/v1/document/sources/${source.id}`)
+      .set(adminSessionHeaders(session))
+      .send({ documentMetadata: { owner: { team: "support" } } })
+      .expect(400);
+  });
+
+  it("keeps rejecting PATCH document tags for the manually-added bucket", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "manual-source-tags@example.com");
+
+    await request(app)
+      .patch(`/api/v1/document/sources/${MANUALLY_ADDED_DOCUMENTS_SOURCE_ID}`)
+      .set(adminSessionHeaders(session))
+      .send({ documentMetadata: { region: "eu" } })
+      .expect(400);
+  });
+
+  it("documents the metadata fields in the generated schema", () => {
+    const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
+    const sourceListItemSchema = spec.match(/DocumentSourceListItem:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
+    const sourceUpdateSchema = spec.match(/DocumentSourceUpdateRequest:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
+    const retrievalUpdateSchema = spec.match(/DocumentRetrievalUpdateRequest:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
+    const importRequestSchema = spec.match(/DocumentImportRequest:\n([\s\S]*?)\n    [A-Z]/)?.[1] ?? "";
+
+    expect(sourceListItemSchema).toContain("documentMetadata:");
+    expect(sourceUpdateSchema).toContain("documentMetadata:");
+    expect(retrievalUpdateSchema).toContain("metadata:");
+    expect(importRequestSchema).toContain("metadata:");
   });
 });

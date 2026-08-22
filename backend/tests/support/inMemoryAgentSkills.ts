@@ -87,6 +87,13 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
       .map((record) => ({ ...record, config: cloneConfig(record.config) }));
   }
 
+  async listByWorkspace(workspaceId: string): Promise<AgentSkillSpine[]> {
+    return [...this.records.values()]
+      .filter((record) => record.workspaceId === workspaceId)
+      .sort((a, b) => a.skillName.localeCompare(b.skillName))
+      .map((record) => ({ ...record, config: cloneConfig(record.config) }));
+  }
+
   async update(
     workspaceId: string,
     agentId: string,

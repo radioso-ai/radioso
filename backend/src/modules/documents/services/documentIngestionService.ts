@@ -29,6 +29,8 @@ import {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+import { relinquishGeneratedKeys } from "../domain/enrichment/generatedTagOwnership.js";
+import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentDetails,
   DocumentListPage,
@@ -67,6 +69,26 @@ export type {
   EmbeddingCoverageReconciliationPort,
   PublishedChunkRecord,
 } from "../contracts/documentContracts.js";
+
+/**
+ * Builds the optional `enrichment` field of a document write: present only when
+ * the manual metadata changed or removed a key extraction generated, so the
+ * write relinquishes ownership of that key in the same statement.
+ */
+const relinquishedEnrichment = (
+  existing: { enrichment?: DocumentEnrichmentProvenance | null; metadata?: Record<string, unknown> | null },
+  nextMetadata: Record<string, unknown> | undefined,
+): { enrichment?: Record<string, unknown> } => {
+  if (nextMetadata === undefined) {
+    return {};
+  }
+  const relinquished = relinquishGeneratedKeys({
+    previousProvenance: existing.enrichment,
+    previousMetadata: existing.metadata ?? {},
+    nextMetadata,
+  });
+  return relinquished ? { enrichment: relinquished as unknown as Record<string, unknown> } : {};
+};
 
 export class DocumentIngestionService {
   constructor(
@@ -329,6 +351,7 @@ export class DocumentIngestionService {
         markdownContent: indexedContent.markdownContent,
         ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
         metadata: input.metadata,
+        ...relinquishedEnrichment(existing, input.metadata),
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
         sourceFilename: null,
@@ -382,6 +405,63 @@ export class DocumentIngestionService {
       documentId: document.id,
       status: document.status,
     };
+  }
+
+  // Replace a document's operator-authored metadata map. Document tags are
+  // projected onto the chunks at vectorize time, so the replace requeues the
+  // document rather than writing the map in place; the published chunks would
+  // otherwise keep carrying the previous tags. Unlike the inline update path,
+  // this is allowed for imported documents — it never touches their content.
+  async updateMetadata(input: {
+    workspaceId: string;
+    documentId: string;
+    metadata: Record<string, unknown>;
+  }): Promise<DocumentDetails> {
+    const existing = await this.documentRepository.findByIdAndWorkspaceId(input.documentId, input.workspaceId);
+    if (!existing) {
+      throw notFound("Document not found");
+    }
+
+    let updated: DocumentRecord;
+    try {
+      updated = await this.documentRepository.updateMetadataAndQueue({
+        documentId: input.documentId,
+        workspaceId: input.workspaceId,
+        metadata: input.metadata,
+        ...relinquishedEnrichment(existing, input.metadata),
+      });
+    } catch (error) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.metadata.update",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          reason: error instanceof Error ? error.message : "Failed to update document metadata",
+        },
+      });
+      throw error;
+    }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.metadata.update",
+      eventStatus: "success",
+      metadata: {
+        documentId: updated.id,
+        revision: updated.revision,
+        status: updated.status,
+        metadataKeyCount: Object.keys(input.metadata).length,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+    await this.dispatchQueuedDocumentJob({
+      documentId: updated.id,
+      workspaceId: input.workspaceId,
+      revision: updated.revision,
+    });
+
+    return this.toDetails(updated);
   }
 
   // Toggle a document's retrieval eligibility without re-processing it. Partial:

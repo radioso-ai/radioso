@@ -9,8 +9,10 @@ import type {
   AgentSettings,
   AgentSettingsUpdate,
   AssistantBehaviorSettings,
+  DocumentTypeCatalog,
   GeneralSettings,
   IngestionSettings,
+  UpdateDocumentTypeCatalogRequest,
   PlatformSettings,
   RetrievalDefaults,
   WebsiteEmbedCopyPacks,
@@ -66,6 +68,7 @@ export const settingsApi = {
         structuredMinChunkSize: data.structuredMinChunkSize,
         structuredMaxChunkSize: data.structuredMaxChunkSize,
         documentEnrichmentEnabled: data.documentEnrichmentEnabled,
+        manualDocumentEnrichmentOverride: data.manualDocumentEnrichmentOverride,
       }),
     }, { withApiToken: true })
   },
@@ -76,6 +79,19 @@ export const settingsApi = {
       ...(input?.documentEnrichmentOverride
         ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
         : {}),
+    }, { withApiToken: true })
+  },
+
+  async getDocumentTypeCatalog(): Promise<DocumentTypeCatalog> {
+    return request<DocumentTypeCatalog>("/settings/document-types", {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async updateDocumentTypeCatalog(input: UpdateDocumentTypeCatalogRequest): Promise<DocumentTypeCatalog> {
+    return request<DocumentTypeCatalog>("/settings/document-types", {
+      method: "PUT",
+      body: JSON.stringify(input),
     }, { withApiToken: true })
   },
 

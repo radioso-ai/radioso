@@ -2,6 +2,7 @@ import { ZodError } from "zod";
 
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
+import type { EnabledDocumentTypesSnapshot } from "../../documentTypes/public.js";
 import {
   parseDocumentEnrichmentOutput,
   normalizeDocumentShape,
@@ -14,6 +15,19 @@ import {
   createDefaultDocumentEnrichmentStrategyRegistry,
   type DocumentEnrichmentStrategyRegistry,
 } from "../domain/enrichment/enrichmentStrategies.js";
+import {
+  defaultEnabledDocumentTypes,
+  resolveMatchedDocumentType,
+} from "../domain/enrichment/documentTypeMatch.js";
+import {
+  ENRICHMENT_CATALOG_OVER_BUDGET,
+  buildDocumentEnrichmentPrompt,
+} from "../domain/enrichment/enrichmentPromptBuilder.js";
+import {
+  applyExtractedFields,
+  validateExtractedFields,
+} from "../domain/enrichment/extractedFields.js";
+import { stripBuiltInTemporalTags } from "../domain/enrichment/generatedTagOwnership.js";
 import type { EnrichableChunk } from "../domain/enrichment/chunkMetadataPatches.js";
 
 export interface DocumentEnrichmentGateway {
@@ -41,6 +55,17 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
     source: EnrichmentAnchorSource;
     date: string;
   };
+  /**
+   * The enabled catalog, resolved at execution time. Omitted means the default
+   * catalog: the built-in entries at their shipped defaults.
+   */
+  catalog?: EnabledDocumentTypesSnapshot;
+  /**
+   * Provenance of the run that produced the document's current tags. It carries
+   * the generated-key set this run owns and replaces, and the state a failed
+   * run preserves.
+   */
+  previousProvenance?: DocumentEnrichmentProvenance | null;
 }
 
 export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = EnrichableChunk> {
@@ -111,13 +136,17 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
   async enrich<TChunk extends EnrichableChunk>(
     input: DocumentEnrichmentStageInput<TChunk>,
   ): Promise<DocumentEnrichmentStageResult<TChunk>> {
+    const catalog = input.catalog ?? defaultEnabledDocumentTypes();
+    const previousGeneratedKeys = input.previousProvenance?.generatedKeys ?? [];
+
     try {
+      const prompt = buildDocumentEnrichmentPrompt({ template: this.prompt, types: catalog.types });
       const representation = buildBoundedDocumentRepresentation(input.document);
       const gatewayResult = await this.deps.gateway.generate({
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
         documentRevision: input.document.revision,
-        prompt: this.prompt,
+        prompt,
         documentRepresentation: representation.text,
       });
       const parsed = validateOutputForDocument(
@@ -128,11 +157,42 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         representation.bodyLength,
       );
       const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
-      const strategyResult = this.strategyRegistry.get(shape).apply({
-        documentMetadata: input.document.metadata,
+      const matched = resolveMatchedDocumentType({
+        types: catalog.types,
+        typeKey: parsed.typeKey,
+        confidence: parsed.confidence,
+      });
+
+      // Stage 2 runs against the matched type's declarations only; a
+      // classification-only or built-in type declares no `fields` payload, so
+      // every entry the model volunteered is dropped as undeclared.
+      const declaredFields = matched.type?.payload === "fields" ? matched.type.fields : [];
+      const validated = validateExtractedFields({ entries: parsed.fields, declaredFields });
+
+      // Cleanup is atomic with success: the previous run's keys come off here,
+      // and what remains under a generated key's name is manually owned.
+      const applied = applyExtractedFields({
+        documentMetadata: stripBuiltInTemporalTags(input.document.metadata, Boolean(input.previousProvenance)),
         chunks: input.chunks,
+        fields: validated.fields,
+        previousGeneratedKeys,
+      });
+
+      const strategyResult = this.strategyRegistry.get(shape).apply({
+        documentMetadata: applied.documentMetadata,
+        chunks: applied.chunks,
         facts: parsed.facts,
       });
+
+      const fieldCounts = {
+        applied: applied.generatedKeys.length,
+        ...validated.counts,
+        skippedCollision: applied.skippedCollision,
+      };
+      const reportsFields =
+        declaredFields.length > 0 || Object.values(fieldCounts).some((count) => count > 0);
+      const appliedChunkCount = Math.max(strategyResult.appliedChunkCount, applied.appliedChunkCount);
+
       const provenance = buildProvenance({
         status: "applied",
         shape,
@@ -141,7 +201,12 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         anchorDate: input.anchor.date,
         anchorSource: input.anchor.source,
         factCount: parsed.facts.length,
-        appliedChunkCount: strategyResult.appliedChunkCount,
+        appliedChunkCount,
+        matchedTypeKey: matched.key,
+        catalogRevision: catalog.revision,
+        generatedKeys: applied.generatedKeys,
+        fieldCounts: reportsFields ? fieldCounts : null,
+        classificationNote: matched.note,
       });
 
       return {
@@ -150,13 +215,17 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         provenance,
         chunks: strategyResult.chunks,
         factCount: parsed.facts.length,
-        appliedChunkCount: strategyResult.appliedChunkCount,
+        appliedChunkCount,
       };
     } catch (error) {
+      // A failed run touches nothing but its own failure fields: tags, the
+      // generated-key set, and the last successful run's catalog revision all
+      // survive for the next attempt to clean up.
       return {
         status: "failed",
         documentMetadata: input.document.metadata,
         provenance: buildProvenance({
+          ...preservedProvenanceFields(input.previousProvenance),
           status: "failed",
           enrichedAt: this.now().toISOString(),
           anchorDate: input.anchor.date,
@@ -173,6 +242,21 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
   }
 }
 
+const preservedProvenanceFields = (
+  previous: DocumentEnrichmentProvenance | null | undefined,
+): Partial<DocumentEnrichmentProvenance> =>
+  previous
+    ? {
+        shape: previous.shape,
+        model: previous.model,
+        matchedTypeKey: previous.matchedTypeKey,
+        catalogRevision: previous.catalogRevision,
+        generatedKeys: previous.generatedKeys,
+        fieldCounts: previous.fieldCounts,
+        classificationNote: previous.classificationNote,
+      }
+    : {};
+
 // Failure reasons stay content-free: zod issue paths and error names only,
 // never model output or document text.
 const describeEnrichmentFailure = (error: unknown): string => {
@@ -185,6 +269,9 @@ const describeEnrichmentFailure = (error: unknown): string => {
   }
   if (error instanceof Error && error.message === "enrichment_fact_range_out_of_bounds") {
     return "invalid_output: fact_range_out_of_bounds";
+  }
+  if (error instanceof Error && error.message === ENRICHMENT_CATALOG_OVER_BUDGET) {
+    return "catalog_over_budget";
   }
   return "provider_error";
 };
@@ -258,4 +345,9 @@ const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmen
   factCount: input.factCount ?? 0,
   appliedChunkCount: input.appliedChunkCount ?? 0,
   failureReason: input.failureReason ?? null,
+  matchedTypeKey: input.matchedTypeKey ?? null,
+  catalogRevision: input.catalogRevision ?? null,
+  generatedKeys: input.generatedKeys ?? [],
+  fieldCounts: input.fieldCounts ?? null,
+  classificationNote: input.classificationNote ?? null,
 });

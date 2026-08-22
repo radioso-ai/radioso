@@ -8,6 +8,16 @@ export type EnrichmentAnchorSource = (typeof enrichmentAnchorSources)[number];
 
 export type EnrichmentStatus = "applied" | "skipped" | "failed";
 
+/** Content-free tallies of what a run did with the model's `fields` payload. */
+export interface DocumentEnrichmentFieldCounts {
+  applied: number;
+  droppedInvalid: number;
+  droppedUndeclared: number;
+  droppedDuplicate: number;
+  droppedOverCap: number;
+  skippedCollision: number;
+}
+
 export interface DocumentEnrichmentProvenance {
   status: EnrichmentStatus;
   shape?: DocumentShape;
@@ -18,6 +28,24 @@ export interface DocumentEnrichmentProvenance {
   factCount?: number;
   appliedChunkCount?: number;
   failureReason?: string | null;
+  /** The catalog type that matched. Equals `shape` for built-in entries. */
+  matchedTypeKey?: string | null;
+  /** The catalog revision the run resolved at execution time. */
+  catalogRevision?: string | null;
+  /**
+   * The exact metadata keys this run generated. Extraction owns these and
+   * nothing else; the next run removes them before writing its own.
+   * Built-in `dateFrom`/`dateTo` are deliberately excluded — they keep their
+   * shipped replace-on-every-run semantics.
+   */
+  generatedKeys?: string[];
+  fieldCounts?: DocumentEnrichmentFieldCounts | null;
+  /**
+   * Content-free note about a classification fallback on an otherwise
+   * successful run — kept separate from `failureReason`, which stays reserved
+   * for runs that failed.
+   */
+  classificationNote?: string | null;
 }
 
 // Shape alone is not enough: a model can emit a well-formed but calendar-invalid
@@ -85,7 +113,22 @@ export interface TemporalFact {
   anchorDate?: string;
 }
 
-export const documentEnrichmentOutputSchema = z.object({
+/**
+ * The envelope names the matched catalog entry `type`. `shape` is accepted as
+ * an alias so output produced against the previous contract still parses.
+ * `typeKey` carries the raw key — an operator type is not a built-in shape, so
+ * `shape` degrades to `generic` for it while `typeKey` keeps the match.
+ */
+const withEnvelopeAliases = (value: unknown): unknown => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const raw = value as Record<string, unknown>;
+  const declared = typeof raw.type === "string" ? raw.type : raw.shape;
+  return { ...raw, shape: raw.shape ?? raw.type, typeKey: declared };
+};
+
+export const documentEnrichmentOutputSchema = z.preprocess(withEnvelopeAliases, z.object({
   // Unknown shape labels degrade to generic (no extraction) instead of failing
   // the whole run; confidence clamps into range with a low default.
   shape: z.preprocess(
@@ -111,7 +154,11 @@ export const documentEnrichmentOutputSchema = z.object({
         : value ?? [],
     z.array(temporalFactSchema).default([]),
   ),
-});
+  typeKey: z.preprocess((value) => (typeof value === "string" ? value : ""), z.string()),
+  // Kept as raw entries: every drop is counted in stage 2, so rejecting a
+  // malformed entry here would fail a document that should merely lose a tag.
+  fields: z.preprocess((value) => (Array.isArray(value) ? value : []), z.array(z.unknown()).default([])),
+}));
 
 // Explicit boundary type for the same reason as TemporalFact; the schema
 // guarantees this shape at parse time.
@@ -119,12 +166,17 @@ export interface DocumentEnrichmentOutput {
   shape: DocumentShape;
   confidence: number;
   facts: TemporalFact[];
+  /** The raw type key from the envelope; "" when the model named none. */
+  typeKey: string;
+  fields: unknown[];
 }
 
 export const parseDocumentEnrichmentOutput = (value: unknown): DocumentEnrichmentOutput =>
   documentEnrichmentOutputSchema.parse(value) as unknown as DocumentEnrichmentOutput;
 
-const MIN_SHAPE_CONFIDENCE = 0.5;
+export const MIN_DOCUMENT_TYPE_CONFIDENCE = 0.5;
+
+const MIN_SHAPE_CONFIDENCE = MIN_DOCUMENT_TYPE_CONFIDENCE;
 
 export const normalizeDocumentShape = (shape: unknown, confidence: number): DocumentShape => {
   if (confidence < MIN_SHAPE_CONFIDENCE) {

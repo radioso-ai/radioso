@@ -21,6 +21,7 @@ import { VectorIndexWorkRepository } from "../../../db/repositories/vectorIndexW
 import { EmailVerificationTokenRepository } from "../../../db/repositories/emailVerificationTokenRepository.js";
 import { HistoryItemsRepository } from "../../../db/repositories/historyItemsRepository.js";
 import { IngestionSettingsRepository } from "../../../db/repositories/ingestionSettingsRepository.js";
+import { DocumentTypeCatalogRepository } from "../../../db/repositories/documentTypeCatalogRepository.js";
 import { MessageFacetRepository } from "../../../db/repositories/messageFacetRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
 import { PasswordResetTokenRepository } from "../../../db/repositories/passwordResetTokenRepository.js";
@@ -172,6 +173,7 @@ export const buildRepositories = (
   emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database.kysely),
   ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
+  documentTypeCatalogRepository: new DocumentTypeCatalogRepository(database.kysely),
   messageFacetRepository: new MessageFacetRepository(database.kysely),
   messageRepository: new MessageRepository(database.kysely),
   passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),

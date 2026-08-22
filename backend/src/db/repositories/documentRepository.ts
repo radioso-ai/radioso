@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { sql, type ExpressionBuilder } from "kysely";
 
 import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
+  DocumentMetadataReplaceInput,
   DocumentProcessingJobOptions,
   DocumentQueueUpdateInput,
   DocumentRecord,
@@ -19,6 +20,7 @@ import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/s
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { DB } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import {
   collectMetadataPaths,
@@ -297,6 +299,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
             input.metadata !== undefined
               ? toJsonb(input.metadata)
               : eb.ref("metadata"),
+          enrichment:
+            input.enrichment !== undefined
+              ? toJsonb(input.enrichment)
+              : eb.ref("enrichment"),
           external_document_id: eb.fn.coalesce(
             eb.val(input.externalDocumentId ?? null),
             "external_document_id",
@@ -576,6 +582,34 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return row ? mapDocument(row) : null;
   }
 
+  async updateMetadataAndQueue(input: DocumentMetadataReplaceInput): Promise<DocumentRecord> {
+    return this.db.transaction().execute(async (trx) => {
+      const documentRow = (await trx
+        .updateTable("documents")
+        .set({
+          metadata: toJsonb(input.metadata),
+          ...(input.enrichment ? { enrichment: toJsonb(input.enrichment) } : {}),
+          status: "queued",
+          revision: sql<number>`revision + 1`,
+          failed_at: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", input.documentId)
+        .where("workspace_id", "=", input.workspaceId)
+        .returning(documentSelectColumns)
+        .executeTakeFirst()) as DocumentRow | undefined;
+
+      if (!documentRow) {
+        throw notFound("Document not found");
+      }
+
+      await this.insertProcessingJob(trx, input.documentId, input.workspaceId, documentRow.revision);
+
+      return mapDocument(documentRow);
+    });
+  }
+
   async setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null> {
     return this.db.transaction().execute(async (trx) => {
       const row = (await trx
@@ -697,13 +731,20 @@ export class DocumentRepository implements DocumentRepositoryPort {
 
   async requeueSourceEligibleAndQueue(input: {
     workspaceId: string;
-    sourceId: string;
+    /** null selects the manually added documents, which have no source row. */
+    sourceId: string | null;
     options?: DocumentProcessingJobOptions | null;
   }): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
   }> {
+    const { sourceId } = input;
+    // `source_id = NULL` never matches, so selecting the manually added
+    // documents needs an explicit IS NULL comparison.
+    const matchesSource = (eb: ExpressionBuilder<DB, "documents">) =>
+      sourceId === null ? eb("source_id", "is", null) : eb("source_id", "=", sourceId);
+
     return this.db.transaction().execute(async (trx) => {
       const counts = await trx
         .selectFrom("documents")
@@ -712,7 +753,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
           sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("skipped_count"),
         ])
         .where("workspace_id", "=", input.workspaceId)
-        .where("source_id", "=", input.sourceId)
+        .where(matchesSource)
         .executeTakeFirst();
 
       const queuedRows = (await trx
@@ -725,7 +766,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
           updated_at: currentTimestamp(),
         })
         .where("workspace_id", "=", input.workspaceId)
-        .where("source_id", "=", input.sourceId)
+        .where(matchesSource)
         .where("status", "in", ["ready", "failed"])
         .returning(["id", "revision"])
         .execute()) as QueuedDocumentRow[];

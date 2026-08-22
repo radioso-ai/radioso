@@ -4,6 +4,7 @@ import type {
 } from "../../../db/repositories/documentSourceRepository.js";
 import { parseDocumentSourceEnrichmentOverride } from "../../../modules/documents/domain/enrichment/enrichmentEnablement.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
+import { parseSourceDocumentMetadata } from "../../../modules/documents/domain/sourceDocumentMetadata.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 
 export interface WebsiteSourceCrawlSettings {
@@ -69,6 +70,7 @@ export const presentDocumentSource = (
   updatedAt: source.updatedAt.toISOString(),
   documentCount,
   documentEnrichmentOverride: parseDocumentSourceEnrichmentOverride(source.config.documentEnrichmentOverride),
+  documentMetadata: parseSourceDocumentMetadata(source.config),
   ...(source.kind === "website" ? { crawlSettings: toCrawlSettings(source.config) } : {}),
 });
 
@@ -85,6 +87,14 @@ export const presentDocumentSourceList = (
     sources: allSources.map((source) => presentDocumentSource(source, source.documentCount)),
   };
 };
+
+export const applySourceDocumentMetadataPatch = (
+  currentConfig: Record<string, unknown>,
+  documentMetadata: unknown,
+): Record<string, unknown> => ({
+  ...currentConfig,
+  documentMetadata: parseSourceDocumentMetadata({ documentMetadata }),
+});
 
 export const applyDocumentEnrichmentOverridePatch = (
   currentConfig: Record<string, unknown>,

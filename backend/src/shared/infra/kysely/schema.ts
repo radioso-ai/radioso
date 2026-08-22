@@ -497,6 +497,16 @@ export interface Documents {
   workspace_id: string;
 }
 
+export interface DocumentTypeCatalogs {
+  created_at: Generated<Timestamp>;
+  disabled_built_in_types: Generated<Json>;
+  retired_fields: Generated<Json>;
+  revision: Generated<Int8>;
+  types: Generated<Json>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface DocumentSources {
   config: Generated<Json>;
   created_at: Generated<Timestamp>;
@@ -645,6 +655,7 @@ export interface IngestionSettings {
   embedding_model: Generated<string>;
   fixed_window_chunk_overlap: Generated<number>;
   fixed_window_chunk_size: Generated<number>;
+  manual_document_enrichment_override: Generated<string>;
   pending_embedding_model: string | null;
   revision: Generated<Int8>;
   structured_max_chunk_size: Generated<number>;
@@ -1229,6 +1240,7 @@ export interface DB {
   directive_states: DirectiveStates;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;
+  document_type_catalogs: DocumentTypeCatalogs;
   documents: Documents;
   email_skill_activity: EmailSkillActivity;
   email_verification_tokens: EmailVerificationTokens;

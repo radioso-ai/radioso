@@ -7,6 +7,7 @@ import type {
   RetrievalSettingsRecord,
 } from "../../../modules/settings/contracts/retrieval.js";
 import type { PlatformSettingsResource } from "../../../modules/settings/contracts/platform.js";
+import type { DocumentTypeCatalog } from "../../../modules/documentTypes/contracts/documentTypeCatalog.js";
 
 export const presentIngestionSettings = (
   settings: IngestionSettingsRecord,
@@ -60,4 +61,34 @@ export const presentRetrievalDefaults = (
   customInstruction: settings.customInstruction,
   metadataRules: [],
   metadataFieldSuggestions,
+});
+
+export const presentDocumentTypeCatalog = (
+  catalog: DocumentTypeCatalog,
+  referencedFieldKeys: readonly string[] = [],
+) => ({
+  workspaceId: catalog.workspaceId,
+  revision: catalog.revision,
+  types: catalog.types.map((type) => ({
+    key: type.key,
+    label: type.label,
+    description: type.description,
+    enabled: type.enabled,
+    origin: type.origin,
+    payload: type.payload,
+    disableable: type.disableable,
+    fields: type.fields.map((field) => ({
+      key: field.key,
+      label: field.label,
+      valueType: field.valueType,
+      instruction: field.instruction,
+    })),
+  })),
+  retiredFields: catalog.retiredFields.map((identity) => ({
+    key: identity.key,
+    valueType: identity.valueType,
+  })),
+  // Advisory only: the editor warns before deleting a field some agent's
+  // metadata rules still point at, and never blocks the save on it.
+  referencedFieldKeys: [...referencedFieldKeys],
 });

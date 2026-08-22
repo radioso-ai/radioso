@@ -199,12 +199,23 @@ export type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule[
 export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
 
 export type IngestionSettings = ApiSchemas['IngestionSettings']
+export type DocumentTypeCatalog = ApiSchemas['DocumentTypeCatalog']
+export type DocumentTypeDefinition = ApiSchemas['DocumentTypeDefinition']
+export type DocumentTypeField = ApiSchemas['DocumentTypeField']
+export type DocumentTypeFieldValueType = DocumentTypeField['valueType']
+export type RetiredDocumentTypeField = ApiSchemas['RetiredDocumentTypeField']
+export type UpdateDocumentTypeCatalogRequest = ApiSchemas['UpdateDocumentTypeCatalogRequest']
 export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestionReprocessResponse']
 export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
 export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']
 export type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
 export type DocumentSourceKind = DocumentSourceSummary['kind']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
+/** Hand-authored tag values. The write contract accepts flat JSON scalars only. */
+export type DocumentMetadataRecord = Record<string, string | number | boolean>
+/** What the read contract returns: the same scalars, plus null. */
+export type DocumentMetadataReadRecord = ApiSchemas['DocumentSourceListItem']['documentMetadata']
+
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
 export type DocumentSourceCrawlSettings = ApiSchemas['DocumentSourceCrawlSettings']

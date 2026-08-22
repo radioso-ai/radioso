@@ -36,7 +36,7 @@ In local mode, the worker can poll the durable queue directly. In cloud mode, th
 
 The worker materializes the source content, applies workspace ingestion settings, generates embeddings, and publishes chunks for the latest revision only.
 
-If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags such as `dateFrom` and `dateTo` onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
+If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags — the built-in `dateFrom` and `dateTo`, plus whatever fields the matched document type declares — onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
 </Steps>
 
 ## What users will notice
@@ -53,6 +53,8 @@ If metadata extraction is enabled for the run, the worker queues a separate, low
 - `DOCUMENT_UPLOAD_MAX_BYTES` limits accepted upload size.
 - workspace ingestion settings control chunking strategy and chunk sizes.
 - `documentEnrichmentEnabled` controls the workspace default for metadata extraction. Source overrides and reprocess overrides can force extraction on or off for narrower runs.
+- The document type catalog in **Knowledge → Ingestion** decides what extraction classifies against and which fields it pulls. Edits apply to processing that happens after the save; **Reprocess source** applies them to documents a source already ingested. [Extract document metadata](/guides/document-metadata) walks through authoring a type and using its fields.
+- `documentMetadata` on a document source holds the tags stamped onto every chunk that source produces. A document's own metadata wins on any key the two share, and the tags land on existing chunks the next time those documents process — which is what a source reprocess is for.
 - `WORKER_DISPATCH_DRIVER` decides whether jobs stay local or are dispatched to Cloud Tasks.
 - `WORKER_TASK_AUTH_TOKEN` authenticates every Cloud Tasks and recovery request at the worker application boundary; use the same value on dispatchers and workers and preserve `X-Radioso-Worker-Token` through any proxy.
 - `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before later recovery logic can reclaim it.
@@ -96,3 +98,9 @@ Cloud deployment changes two important things:
 
 - uploaded files move to GCS
 - request-driven processing dispatch moves to Cloud Tasks and the dedicated worker service
+
+## Read next
+
+- [Extract document metadata](/guides/document-metadata) — author document types, choose where extraction runs, and read its provenance.
+- [Document upload](/guides/document-upload) — what an upload does and what to verify afterwards.
+- [Document processing lifecycle](/architecture/document-processing-lifecycle) — the job model, chunk metadata merge, and tag ownership underneath these controls.

@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
-import { embeddingModelIds } from "../../../modules/settings/contracts/ingestion.js";
+import { documentTypeFieldValueTypes } from "../../../modules/documentTypes/contracts/documentTypeCatalog.js";
+import {
+  embeddingModelIds,
+  manualDocumentEnrichmentOverrides,
+} from "../../../modules/settings/contracts/ingestion.js";
 import {
   metadataRuleCombinators,
   metadataRuleEffects,
@@ -111,6 +115,7 @@ export const updateIngestionSettingsSchema = z.object({
   // persisted active value.
   embeddingModel: z.string().optional(),
   documentEnrichmentEnabled: z.boolean().optional(),
+  manualDocumentEnrichmentOverride: z.enum(manualDocumentEnrichmentOverrides).optional(),
 });
 
 // The documented public contract remains the existing four-model enum. Only
@@ -122,4 +127,27 @@ export const documentedUpdateIngestionSettingsSchema =
 
 export const reprocessIngestionBodySchema = z.object({
   documentEnrichmentOverride: z.enum(["on", "off"]).optional(),
+}).strict();
+
+// Transport stays permissive on lengths and key syntax: the catalog domain owns
+// those rules and answers with limit-naming validation errors.
+const documentTypeFieldSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  valueType: z.enum(documentTypeFieldValueTypes),
+  instruction: z.string().optional().default(""),
+}).strict();
+
+const operatorDocumentTypeSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  description: z.string().optional().default(""),
+  enabled: z.boolean().optional().default(true),
+  fields: z.array(documentTypeFieldSchema).optional().default([]),
+}).strict();
+
+export const updateDocumentTypeCatalogSchema = z.object({
+  expectedRevision: z.string().min(1),
+  types: z.array(operatorDocumentTypeSchema).optional().default([]),
+  disabledBuiltInTypeKeys: z.array(z.string()).optional().default([]),
 }).strict();

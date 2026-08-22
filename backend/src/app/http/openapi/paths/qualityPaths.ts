@@ -29,7 +29,7 @@ export const registerQualityPaths = (
         signal: csvOrArrayString
           .describe(
             "Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, " +
-            "`slow_responses`, `skill_failures`), resolved server-side from the skill catalog. " +
+            "`skill_failures`), resolved server-side from the skill catalog. " +
             "A turn matches if it carries any listed signal, and the result is layered on top " +
             "of the other filters rather than replacing them.",
           )

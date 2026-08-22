@@ -47,7 +47,6 @@ export {
 export {
   QUALITY_SIGNAL_ACTIVE_TRIAGE_STATES,
   SKILL_FAILURE_STATUSES,
-  SLOW_RESPONSE_MIN_LATENCY_MS,
   resolveGroundedOutcomeTuples,
   resolveQualitySignalPredicate,
   type GroundedOutcomeTuples,

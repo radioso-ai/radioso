@@ -61,7 +61,6 @@ export interface GroundingDiagnostic {
 export const QUALITY_SIGNAL_IDS = [
   'negative_feedback',
   'grounding_gaps',
-  'slow_responses',
   'skill_failures',
 ] as const
 

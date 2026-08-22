@@ -764,7 +764,6 @@ export const baseQualityStats = () => ({
   backlog: {
     negative_feedback: 7,
     grounding_gaps: 3,
-    slow_responses: 5,
     skill_failures: 2,
   },
   resolutionBreakdown: [],

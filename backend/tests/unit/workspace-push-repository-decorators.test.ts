@@ -116,6 +116,68 @@ describe("workspace push repository decorators", () => {
     await events.return?.();
   });
 
+  it("publishes conversation.created when getOrCreateByAnonymousSession inserts a new row", async () => {
+    const bus = new InMemoryWorkspaceEventBus();
+    const events = bus.subscribe("workspace-1")[Symbol.asyncIterator]();
+    const repository = withConversationPushEvents({
+      create: vi.fn(),
+      touch: vi.fn(),
+      getOrCreateByAnonymousSession: vi.fn(async (_input: unknown, onCreated?: () => void) => {
+        onCreated?.();
+        return { id: "conversation-9", workspaceId: "workspace-1" };
+      }),
+    } as unknown as ConversationRepositoryPort, bus);
+
+    const created = await repository.getOrCreateByAnonymousSession!({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      sourceChannel: "mcp",
+      anonymousSessionId: "session-1",
+    });
+
+    expect(created).toMatchObject({ id: "conversation-9" });
+    await expect(events.next()).resolves.toMatchObject({
+      value: {
+        resourceType: "conversation",
+        resourceId: "conversation-9",
+        workspaceId: "workspace-1",
+        changeKind: "conversation.created",
+      },
+    });
+    await events.return?.();
+  });
+
+  it("does not publish when getOrCreateByAnonymousSession resumes an existing conversation", async () => {
+    const bus = new InMemoryWorkspaceEventBus();
+    const publishSpy = vi.spyOn(bus, "publish");
+    const repository = withConversationPushEvents({
+      create: vi.fn(),
+      touch: vi.fn(),
+      // Resume path returns without invoking onCreated.
+      getOrCreateByAnonymousSession: vi.fn(async () => ({ id: "conversation-existing", workspaceId: "workspace-1" })),
+    } as unknown as ConversationRepositoryPort, bus);
+
+    await repository.getOrCreateByAnonymousSession!({
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      sourceChannel: "mcp",
+      anonymousSessionId: "session-1",
+    });
+
+    expect(publishSpy).not.toHaveBeenCalled();
+  });
+
+  it("preserves getOrCreateByAnonymousSession optionality when the repository omits it", () => {
+    const bus = new InMemoryWorkspaceEventBus();
+    const repository = withConversationPushEvents({
+      create: vi.fn(),
+      touch: vi.fn(),
+    } as unknown as ConversationRepositoryPort, bus);
+
+    // AgentConverseService fails closed on absence, so the decorator must not fabricate it.
+    expect(repository.getOrCreateByAnonymousSession).toBeUndefined();
+  });
+
   it("publishes ownership transitions", async () => {
     const bus = new InMemoryWorkspaceEventBus();
     const events = bus.subscribe("workspace-1")[Symbol.asyncIterator]();

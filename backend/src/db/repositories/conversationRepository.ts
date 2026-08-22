@@ -35,13 +35,18 @@ export interface ConversationRecord {
 export interface ConversationRepositoryPort {
   // MCP converse requires this capability, while replay/eval repository doubles do not.
   // AgentConverseService fails closed when an application adapter omits it.
-  getOrCreateByAnonymousSession?(input: {
-    workspaceId: string;
-    agentId: string;
-    sourceChannel: string;
-    anonymousSessionId: string;
-    sourceOrigin?: string | null;
-  }): Promise<ConversationRecord>;
+  getOrCreateByAnonymousSession?(
+    input: {
+      workspaceId: string;
+      agentId: string;
+      sourceChannel: string;
+      anonymousSessionId: string;
+      sourceOrigin?: string | null;
+    },
+    // Invoked only when a new conversation row is inserted (not on resume), so a
+    // push decorator can emit conversation.created for this alternate create path.
+    onCreated?: () => void,
+  ): Promise<ConversationRecord>;
   create(
     workspaceId: string,
     agentId?: string | null,
@@ -179,13 +184,16 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
 export class ConversationRepository implements ConversationRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async getOrCreateByAnonymousSession(input: {
-    workspaceId: string;
-    agentId: string;
-    sourceChannel: string;
-    anonymousSessionId: string;
-    sourceOrigin?: string | null;
-  }): Promise<ConversationRecord> {
+  async getOrCreateByAnonymousSession(
+    input: {
+      workspaceId: string;
+      agentId: string;
+      sourceChannel: string;
+      anonymousSessionId: string;
+      sourceOrigin?: string | null;
+    },
+    onCreated?: () => void,
+  ): Promise<ConversationRecord> {
     return this.db.transaction().execute(async (trx) => {
       const lockKey = [
         "anonymous_conversation",
@@ -223,6 +231,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         })
         .returning(conversationColumns)
         .executeTakeFirstOrThrow();
+      onCreated?.();
       return mapConversation(created as ConversationRow);
     });
   }

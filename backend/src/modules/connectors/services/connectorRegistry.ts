@@ -21,6 +21,7 @@ import type { AuditPort } from "../../audit/contracts/index.js";
 import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 import {
   decryptField,
   encryptField,
@@ -126,6 +127,7 @@ export class ConnectorRegistry {
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     assertPublicUrl?: (url: string) => Promise<void>;
     conversationOwnershipRepository?: Pick<ConversationOwnershipRepository, "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack">;
+    workspaceEventBus?: Pick<WorkspaceEventBus, "publish">;
   }): Promise<void> {
     for (const plugin of this.plugins.values()) {
       try {
@@ -140,6 +142,7 @@ export class ConnectorRegistry {
           metricsRegistry: context.metricsRegistry,
           assertPublicUrl: context.assertPublicUrl,
           conversationOwnershipRepository: context.conversationOwnershipRepository,
+          workspaceEventBus: context.workspaceEventBus,
           state: this.createPluginState(context.db, plugin.id),
           http: this.createHttpHost(plugin.id),
         } as Parameters<ConnectorPlugin["initialize"]>[0]);

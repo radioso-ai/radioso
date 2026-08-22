@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { ConversationRepository } from "../../../../db/repositories/conversationRepository.js";
+import type { WorkspaceEventBus } from "../../../../shared/events/workspaceEventBus.js";
 import {
   currentTimestamp,
   transactionAdvisoryLock,
@@ -58,7 +59,25 @@ const mapLink = (row: SlackConversationLinkRow): SlackConversationLinkRecord => 
 });
 
 export class PostgresSlackPersistence implements SlackPersistencePort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    // A new inbound Slack conversation is created inside the link transaction via
+    // a raw repository, so it bypasses the composition-decorated repository; this
+    // narrow port lets it emit conversation.created after the transaction commits.
+    private readonly workspaceEventBus?: Pick<WorkspaceEventBus, "publish">,
+  ) {}
+
+  private async publishConversationCreated(record: { id: string; workspaceId: string }): Promise<void> {
+    if (!this.workspaceEventBus) {
+      return;
+    }
+    await this.workspaceEventBus.publish({
+      resourceType: "conversation",
+      resourceId: record.id,
+      workspaceId: record.workspaceId,
+      changeKind: "conversation.created",
+    });
+  }
 
   async createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean> {
     const row = await this.db
@@ -127,8 +146,9 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     channelContext: ConversationChannelContext;
   }): Promise<SlackConversationLinkRecord> {
     const conflict = new Error("slack_conversation_link_conflict");
+    let createdConversation: { id: string; workspaceId: string } | null = null;
     try {
-      return await this.db.transaction().execute(async (trx) => {
+      const link = await this.db.transaction().execute(async (trx) => {
         await transactionAdvisoryLock(`slack_conversation:${input.slackKey}`).execute(trx);
         const existing = await trx
           .selectFrom("slack_conversation_links")
@@ -165,8 +185,14 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
           // transaction releases its snapshot and advisory lock.
           throw conflict;
         }
+        createdConversation = { id: conversation.id, workspaceId: input.workspaceId };
         return mapLink(inserted);
       });
+      // Publish after commit so a rolled-back candidate never emits an event.
+      if (createdConversation) {
+        await this.publishConversationCreated(createdConversation);
+      }
+      return link;
     } catch (error) {
       if (error !== conflict) {
         throw error;

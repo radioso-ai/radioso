@@ -32,8 +32,15 @@ COPY packages/skill-contract/package.json ./packages/skill-contract/package.json
 COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
 COPY packages/usage-contract/package.json ./packages/usage-contract/package.json
 COPY packages/usage-contract/*.d.ts ./packages/usage-contract/
+COPY infra/backend.dev.install-state.sh /usr/local/bin/backend-dev-install-state.sh
+RUN chmod +x /usr/local/bin/backend-dev-install-state.sh
+
+# Stamp in the same layer as the install so the node_modules trees Compose seeds
+# from this image are marked as installed from this lockfile, and any that drift
+# later fail the entrypoint's check.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
+  pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools... \
+  && backend-dev-install-state.sh write
 
 COPY infra/backend.dev.entrypoint.sh /usr/local/bin/backend-dev-entrypoint.sh
 RUN chmod +x /usr/local/bin/backend-dev-entrypoint.sh

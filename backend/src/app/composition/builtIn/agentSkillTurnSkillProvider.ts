@@ -34,14 +34,18 @@ import {
   type RegisteredChunk,
 } from "../../../modules/retrieval/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 export interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;
   executorRegistry: SkillExecutorRegistry;
   capabilityPolicy: CapabilityPolicy;
+  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
 }
 
 const AGENT_SKILL_OUTCOME_KIND = "agent_skill";
+const SAFE_TEST_SUPPRESSION_REASON = "suppressed_for_safe_test";
 
 /**
  * Skill kinds a directive binding may claim a chat turn with. Only `external_mcp`
@@ -214,6 +218,36 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
   }
 };
 
+const safeTestMayInvoke = (
+  agentSkill: AgentSkillSpine,
+  execution: SkillExecution,
+): boolean =>
+  agentSkill.kind === "retrieve" &&
+  execution.kind === "internal" &&
+  execution.adapter === RETRIEVAL_ANSWER_ADAPTER;
+
+const shouldSuppressForSafeTest = (
+  executionMode: TurnExecutionMode | undefined,
+  agentSkill: AgentSkillSpine,
+  execution: SkillExecution,
+): boolean => executionMode === "safe_test" && !safeTestMayInvoke(agentSkill, execution);
+
+const recordSafeTestSuppression = (
+  metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
+  kind: AgentSkillKind,
+  surface: "turn" | "staged_tool",
+): void => {
+  metricsRegistry?.incrementCounter("agent_skill_safe_test_dispatch_total", {
+    help: "Agent-skill executions suppressed by the safe-test execution policy.",
+    labels: {
+      outcome: "suppressed",
+      reason: SAFE_TEST_SUPPRESSION_REASON,
+      skill_kind: kind,
+      surface,
+    },
+  });
+};
+
 const runtimeSkillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): RuntimeSkillDefinition => ({
   name: agentSkill.skillName,
   displayName: agentSkill.skillName,
@@ -241,6 +275,8 @@ const turnSkillForAgentSkill = (
   agentSkill: AgentSkillSpine,
   executorRegistry: SkillExecutorRegistry,
   throwIfCancelled: () => void,
+  executionMode: TurnExecutionMode | undefined,
+  metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const renderer = new GenericTurnOutcomeRenderer();
@@ -250,6 +286,10 @@ const turnSkillForAgentSkill = (
     async dispatch(session) {
       if (!skill.execution) {
         return settledFailure(session, agentSkill.skillName, "no_execution");
+      }
+      if (shouldSuppressForSafeTest(executionMode, agentSkill, skill.execution)) {
+        recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "turn");
+        return settledFailure(session, agentSkill.skillName, SAFE_TEST_SUPPRESSION_REASON);
       }
       const executor = executorRegistry.resolve(skill.execution);
       if (!executor) {
@@ -302,6 +342,8 @@ const stagedToolFactoryForAgentSkill = (
   session: PreparedSession,
   directiveNames: readonly string[],
   throwIfCancelled: () => void,
+  executionMode: TurnExecutionMode | undefined,
+  metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const toolName = stagedToolNameForSkill(agentSkill.skillName);
@@ -317,6 +359,15 @@ const stagedToolFactoryForAgentSkill = (
     async invoke(input: StagedToolInput): Promise<StagedToolOutput> {
       if (!skill.execution) {
         return { ok: false, skillName: agentSkill.skillName, directiveNames: [...directiveNames], error: "no_execution" };
+      }
+      if (shouldSuppressForSafeTest(executionMode, agentSkill, skill.execution)) {
+        recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "staged_tool");
+        return {
+          ok: false,
+          skillName: agentSkill.skillName,
+          directiveNames: [...directiveNames],
+          error: SAFE_TEST_SUPPRESSION_REASON,
+        };
       }
       const executor = executorRegistry.resolve(skill.execution);
       if (!executor) {
@@ -421,7 +472,13 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
         ...(capabilityDenied ? { capabilityDenied } : {}),
       });
       if (!capabilityDenied && turnCapable) {
-        turnSkills.push(turnSkillForAgentSkill(record, this.options.executorRegistry, throwIfCancelled));
+        turnSkills.push(turnSkillForAgentSkill(
+          record,
+          this.options.executorRegistry,
+          throwIfCancelled,
+          session.executionMode,
+          this.options.metricsRegistry,
+        ));
       }
       if (!capabilityDenied && stagingCapable) {
         stagedRecords.push(record);
@@ -439,6 +496,8 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
               currentSession,
               directiveNames,
               throwIfCancelled,
+              session.executionMode,
+              this.options.metricsRegistry,
             )]
           : [];
       }),

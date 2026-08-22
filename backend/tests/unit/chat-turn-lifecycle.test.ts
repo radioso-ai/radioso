@@ -843,6 +843,115 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0]).toBe(persisted.auditEvent);
   });
 
+  it("persists probe-local continuation state while suppressing an action-emitting routine's product effects", async () => {
+    const auditService = {
+      record: vi.fn(async () => {}),
+      logRecorded: vi.fn(() => {}),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const conversationRepository = {
+      touch: vi.fn(async () => {}),
+    } as unknown as ConversationRepositoryPort;
+    const messageRepository = {
+      create: vi.fn(async () => ({ id: "assistant_msg_separate_write" })),
+    } as unknown as MessageRepositoryPort;
+    const productAnalyticsService = { track: vi.fn(async () => null) };
+    const assistantTurnPersistence: AssistantTurnPersistencePort = {
+      completeAssistantTurn: vi.fn(async (persisted) => ({
+        id: persisted.assistantMessage.id!,
+        conversationId: persisted.assistantMessage.conversationId,
+        workspaceId: persisted.assistantMessage.workspaceId,
+        role: "assistant" as const,
+        content: persisted.assistantMessage.content,
+        createdAt: new Date(),
+      })),
+    };
+    const directiveCommit = vi.fn(async () => {});
+    const prepared = session();
+    (prepared as unknown as { directiveStateStore: {
+      commit: () => Promise<void>;
+      capturedFiringNames: () => string[];
+    } }).directiveStateStore = {
+      commit: directiveCommit,
+      capturedFiringNames: () => [],
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      productAnalyticsService,
+      undefined,
+      assistantTurnPersistence,
+    );
+    const commitRoutineState = vi.fn(async () => {});
+    const commitClarificationState = vi.fn(async () => {});
+
+    const completed = await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      executionMode: "safe_test",
+      actions: [{ type: "contact.send", payload: { email: "visitor@example.com" } }],
+      routineStateTransition: { kind: "clear", sessionId: "conv_1" },
+      pendingDecisionTransition: {
+        handle: "decision_1",
+        conversationId: "conv_1",
+        sessionId: "conv_1",
+        workspaceId: "workspace_1",
+        agentId: "agent_1",
+        routineId: "routine_1",
+        stepId: "approval",
+        reason: "approval_required",
+        options: [{ id: "approve", label: "Approve" }],
+        deciderScope: { kind: "workspace_member" },
+        contentHash: "hash_1",
+        deadline: null,
+      },
+      ownershipHandoff: { reason: "routine_handoff", routineId: "routine_1", stepId: "handoff" },
+      clarificationTransition: {
+        kind: "clear",
+        sessionId: "conv_1",
+      },
+      commitRoutineState,
+      commitClarificationState,
+    });
+
+    expect(completed.assistantMessageId).toEqual(expect.any(String));
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.actions).toBeUndefined();
+    expect(persisted.assistantMessage.metadata).not.toHaveProperty("probeUserMessageId");
+    // A safe-test conversation keeps state transitions for representative follow-up
+    // turns without creating a customer-visible action or handoff.
+    expect(persisted.routineStateTransition).toEqual({ kind: "clear", sessionId: "conv_1" });
+    expect(persisted.pendingDecisionTransition).toEqual({
+      handle: "decision_1",
+      conversationId: "conv_1",
+      sessionId: "conv_1",
+      workspaceId: "workspace_1",
+      agentId: "agent_1",
+      routineId: "routine_1",
+      stepId: "approval",
+      reason: "approval_required",
+      options: [{ id: "approve", label: "Approve" }],
+      deciderScope: { kind: "workspace_member" },
+      contentHash: "hash_1",
+      deadline: null,
+    });
+    expect(persisted.ownershipHandoff).toBeUndefined();
+    expect(persisted.clarificationTransition).toEqual({
+      kind: "clear",
+      sessionId: "conv_1",
+    });
+    expect(commitRoutineState).not.toHaveBeenCalled();
+    expect(commitClarificationState).not.toHaveBeenCalled();
+    expect(directiveCommit).toHaveBeenCalledOnce();
+    expect(productAnalyticsService.track).not.toHaveBeenCalled();
+  });
+
   it("records suspended routine turns separately and carries the pending decision into the transaction port", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {

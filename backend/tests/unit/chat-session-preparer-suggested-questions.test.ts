@@ -412,6 +412,54 @@ describe("ChatSessionPreparer suggested-question settings", () => {
     expect(session.resolvedContext.snapshot).toMatchObject({ cart: { items: 2 } });
   });
 
+  it("does not enter potentially skill-backed context resolution for a probe turn", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("ws-1", { name: "Probe Bot" });
+    const retrievalTurn: RetrievalTurnPort = {
+      async interpret(request: RetrievalPipelineRequest) {
+        return {
+          request,
+          traceStartedAtMs: Date.now(),
+          context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+          interpretation: { result: {}, startedAt: Date.now(), durationMs: 0 },
+        };
+      },
+      async dispatch(input) {
+        return fixedRetrievalResult(input.interpreted.request);
+      },
+    };
+    const resolveForAgent = vi.fn(async () => [{
+      name: "unsafe",
+      description: "resolver result",
+      value: "must not resolve",
+      surfacing: "always" as const,
+      sensitive: false,
+      trust: "unverified" as const,
+    }]);
+    const preparer = new ChatSessionPreparer(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      createAuditService(),
+      undefined,
+      { async resolve() { return agent; } },
+      undefined,
+      { resolveForAgent },
+    );
+
+    const session = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "Test safely",
+      executionMode: "safe_test",
+    });
+
+    expect(resolveForAgent).not.toHaveBeenCalled();
+    expect(session.resolvedContext.snapshot).toEqual({});
+  });
+
   it("adds the verified customer scope before agent scope and stages verified identity", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

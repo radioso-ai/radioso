@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-07-31
+last_updated: 2026-08-21
 ---
 
 # Human Takeover
@@ -248,8 +248,8 @@ match unknown diagnostics.
 Both zones measure AI turns only. A reply you write during a takeover is stored
 as an assistant message, but it carries your authorship, so it is left out of the
 quality counts and rates. The same applies to conversations from the dashboard
-test chat and the workbench replay. In practice this means your own work as an
-operator never moves the agent's quality numbers.
+test chat, the workbench replay, and Ray's agent-turn probes. In practice this
+means your own work as an operator never moves the agent's quality numbers.
 
 The conversation view shows message attribution (a badge for human-agent and
 system messages) and an operator action bar: take over, reply, hand back, and

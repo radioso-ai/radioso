@@ -2,7 +2,159 @@ import { describe, expect, it } from "vitest";
 
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 
+const rewriteComparison = async (
+  subqueries: Array<{ label: string; semanticQuery: string; lexicalQuery: string }>,
+  query = "compare alpha and beta",
+) => {
+  const service = new QueryRewriteService({
+    async rewrite() {
+      return {
+        rewrittenQuery: query,
+        semanticQuery: query,
+        lexicalQuery: query,
+        responseLanguagePolicy: "match_user_question" as const,
+        retrievalSubqueries: subqueries.map((subquery) => ({
+          id: "",
+          ...subquery,
+          responseLanguagePolicy: "match_user_question" as const,
+        })),
+        turnKind: "comparative" as const,
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      };
+    },
+  });
+
+  return service.rewrite({
+    query,
+    contextWindow: {
+      selectedMessages: [],
+      truncated: false,
+      selectionReason: "no-history",
+    },
+    enabled: true,
+  });
+};
+
 describe("query rewrite subqueries", () => {
+  it("normalizes a typographic apostrophe without dropping its comparison branch", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery:
+            "Confronto tra 108 palpiti d’Amore, La meditazione di Yogananda e L'arte come guida al risveglio",
+          semanticQuery:
+            "Confronto tra 108 palpiti d’Amore, La meditazione di Yogananda e L'arte come guida al risveglio per identificare il più romantico",
+          lexicalQuery:
+            "108 palpiti d’Amore La meditazione di Yogananda L'arte come guida al risveglio romantico",
+          responseLanguagePolicy: "match_user_question",
+          retrievalSubqueries: [
+            {
+              id: "",
+              label: "108 palpiti d’Amore",
+              semanticQuery: "108 palpiti d’Amore come libro romantico",
+              lexicalQuery: "108 palpiti d’Amore",
+              responseLanguagePolicy: "match_user_question",
+            },
+            {
+              id: "",
+              label: "La meditazione di Yogananda",
+              semanticQuery: "La meditazione di Yogananda come libro romantico",
+              lexicalQuery: "La meditazione di Yogananda",
+              responseLanguagePolicy: "match_user_question",
+            },
+            {
+              id: "",
+              label: "L'arte come guida al risveglio",
+              semanticQuery: "L'arte come guida al risveglio come libro romantico",
+              lexicalQuery: "L'arte come guida al risveglio",
+              responseLanguagePolicy: "match_user_question",
+            },
+          ],
+          turnKind: "comparative",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.89,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "Qual è il più romantico?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+    });
+
+    expect(result.retrievalSubqueries?.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: "subquery_1", label: "108 palpiti d'Amore" },
+      { id: "subquery_2", label: "La meditazione di Yogananda" },
+      { id: "subquery_3", label: "L'arte come guida al risveglio" },
+    ]);
+    expect(result.retrievalSubqueries?.[0]?.semanticQuery).toBe("108 palpiti d’Amore come libro romantico");
+    expect(result.retrievalSubqueries?.[0]?.lexicalQuery).toBe("108 palpiti d’Amore");
+  });
+
+  it.each([
+    ["an em dash", "Alpha—Edition"],
+    ["smart double quotes", "“Alpha”"],
+    ["an injection-keyword collision", "System Design Interview"],
+    ["a long legitimate title", "A Practical Guide to Designing Data-Intensive Applications at Scale"],
+  ])("keeps executable comparison branches when the label contains %s", async (_case, label) => {
+    const result = await rewriteComparison([
+      { label, semanticQuery: "alpha details", lexicalQuery: "alpha" },
+      { label: "Beta", semanticQuery: "beta details", lexicalQuery: "beta" },
+    ]);
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalSubqueries).toHaveLength(2);
+    expect(result.retrievalSubqueries?.[0]).toMatchObject({
+      id: "subquery_1",
+      label: "Subquery 1",
+      semanticQuery: "alpha details",
+      lexicalQuery: "alpha",
+    });
+  });
+
+  it.each([
+    ["semantic", "", "alpha", "alpha", "alpha"],
+    ["lexical", "alpha details", "", "alpha details", "alpha details"],
+    ["semantic exact-phrase", "", '"alpha beta"', "alpha beta", '"alpha beta"'],
+  ])("uses the non-empty execution query when the %s query is empty", async (
+    _field,
+    semanticQuery,
+    lexicalQuery,
+    expectedSemanticQuery,
+    expectedLexicalQuery,
+  ) => {
+    const result = await rewriteComparison([
+      { label: "Alpha", semanticQuery, lexicalQuery },
+      { label: "Beta", semanticQuery: "beta details", lexicalQuery: "beta" },
+    ]);
+
+    expect(result.status).toBe("applied");
+    expect(result.retrievalSubqueries).toHaveLength(2);
+    expect(result.retrievalSubqueries?.[0]).toMatchObject({
+      semanticQuery: expectedSemanticQuery,
+      lexicalQuery: expectedLexicalQuery,
+    });
+  });
+
+  it("still discards a branch when both execution queries are empty", async () => {
+    const result = await rewriteComparison([
+      { label: "Alpha", semanticQuery: "alpha details", lexicalQuery: "alpha" },
+      { label: "Beta", semanticQuery: "   ", lexicalQuery: "\t" },
+      { label: "Gamma", semanticQuery: "gamma details", lexicalQuery: "gamma" },
+    ], "compare alpha, beta, and gamma");
+
+    expect(result.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual(["Alpha", "Gamma"]);
+    expect(result.retrievalSubqueries?.every((subquery) => subquery.semanticQuery && subquery.lexicalQuery)).toBe(true);
+  });
+
   it("accepts decomposed retrieval subqueries even when top-level queries stay the same", async () => {
     const service = new QueryRewriteService({
       async rewrite() {

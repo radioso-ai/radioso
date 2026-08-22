@@ -2,10 +2,11 @@ import type { DirectiveMatch } from "./domain.js";
 import { directiveMatchConfidence, directiveMatchPriority } from "./directiveMatchRanking.js";
 
 /**
- * Caps on how much matched directive steering renders into the answer prompt.
- * A top-k cap keeps the highest-signal directives, and a token budget bounds the
- * rendered block's size. Both are ranked by matcher confidence × priority so the
- * survivors are the ones most likely to hold this turn and matter most.
+ * Caps on how much contextual directive steering renders into the answer prompt.
+ * Unconditional directives and their matched dependencies are mandatory and do
+ * not consume either cap. The contextual remainder is ranked by matcher
+ * confidence × priority so the survivors are the ones most likely to hold this
+ * turn and matter most.
  */
 export interface SteeringBoundConfig {
   maxRenderedDirectives: number;
@@ -21,7 +22,7 @@ export interface SteeringBoundDrop {
 }
 
 export interface SteeringBoundResult {
-  /** Directives that render, in rank order. */
+  /** Directives that render, in caller order. */
   kept: DirectiveMatch[];
   /** Directives held back by a cap or the budget, for the trace and a debug log. */
   dropped: SteeringBoundDrop[];
@@ -45,19 +46,40 @@ const estimateTokens = (match: DirectiveMatch): number => {
 
 /**
  * Narrows a matched, relationship-resolved directive set to what should render as
- * steering. Ranks by confidence × priority to decide *membership* — keep the
- * top-k, then fill the token budget in rank order (a directive that would overflow
- * the budget, and every lower-ranked one after it, is dropped whole rather than
- * truncated). Ranking never reorders the survivors: they are returned in the
- * caller's original order so equal-priority ties keep their registration order
- * downstream. Every drop is returned so the caller can record it; nothing is
- * capped silently.
+ * steering. Unconditional directives are mandatory; their matched dependency
+ * closure is mandatory as well so bounding cannot violate `dependsOn`. Only the
+ * remaining contextual directives compete for the top-k and token budget. They
+ * are ranked by confidence × priority to decide *membership* (a directive that
+ * would overflow the budget, and every lower-ranked one after it, is dropped whole
+ * rather than truncated). Ranking never reorders the survivors: they are returned
+ * in the caller's original order so equal-priority ties keep their registration
+ * order downstream. Every drop is returned so the caller can record it; nothing
+ * is capped silently.
  */
 export const boundSteeringMatches = (
   matches: DirectiveMatch[],
   config: SteeringBoundConfig,
 ): SteeringBoundResult => {
+  const matchesByName = new Map(matches.map((match) => [match.directive.name, match]));
+  const mandatoryNames = new Set(
+    matches
+      .filter((match) => match.directive.condition.kind === "always")
+      .map((match) => match.directive.name),
+  );
+  const pendingDependencies = [...mandatoryNames];
+  while (pendingDependencies.length > 0) {
+    const name = pendingDependencies.pop()!;
+    const match = matchesByName.get(name);
+    for (const dependency of match?.directive.dependsOn ?? []) {
+      if (matchesByName.has(dependency) && !mandatoryNames.has(dependency)) {
+        mandatoryNames.add(dependency);
+        pendingDependencies.push(dependency);
+      }
+    }
+  }
+
   const ranked = matches
+    .filter((match) => !mandatoryNames.has(match.directive.name))
     .map((match, index) => ({ match, index }))
     .sort((left, right) => {
       const scoreDelta = boundScore(right.match) - boundScore(left.match);
@@ -71,7 +93,7 @@ export const boundSteeringMatches = (
     })
     .map((entry) => entry.match);
 
-  const keptNames = new Set<string>();
+  const keptNames = new Set(mandatoryNames);
   const dropped: SteeringBoundDrop[] = [];
   let usedTokens = 0;
   let budgetExhausted = false;
@@ -85,7 +107,7 @@ export const boundSteeringMatches = (
     // Always render the top-ranked directive even if it alone exceeds the budget:
     // dropping it would leave the turn with no steering at all. Once one match
     // overflows, every lower-ranked match is held back to keep rank order intact.
-    if (budgetExhausted || (keptNames.size > 0 && usedTokens + cost > config.renderedTokenBudget)) {
+    if (budgetExhausted || (usedTokens > 0 && usedTokens + cost > config.renderedTokenBudget)) {
       budgetExhausted = true;
       dropped.push({ directiveName: match.directive.name, reason: "token_budget" });
       continue;

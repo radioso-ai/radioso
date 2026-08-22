@@ -293,8 +293,9 @@ describeIfDatabase("quality stats integration", () => {
     const nullSource = await seedConversation(workspaceId, agentId, null);
     const testChat = await seedConversation(workspaceId, agentId, "authenticated_chat");
     const replay = await seedConversation(workspaceId, agentId, "workbench_replay");
+    const rayProbe = await seedConversation(workspaceId, agentId, "operator_copilot_probe");
 
-    for (const conversationId of [embed, nullSource, testChat, replay]) {
+    for (const conversationId of [embed, nullSource, testChat, replay, rayProbe]) {
       await seedTurn({ conversationId, workspaceId, createdAt: daysAgo(1) });
     }
 

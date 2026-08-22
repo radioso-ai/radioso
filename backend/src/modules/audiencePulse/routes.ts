@@ -1,6 +1,5 @@
 import { Router } from "express";
 
-import type { AppDependencies } from "../../app/server/types.js";
 import { badRequest, notFound } from "../../shared/domain/errors.js";
 import {
   requireDashboardWorkspaceSession,
@@ -9,8 +8,7 @@ import {
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { audiencePulseEvidenceAnchorRequestSchema, type AudiencePulsePort } from "./contracts.js";
 
-export type AudiencePulseRouteDependencies = DashboardWorkspaceSessionDependencies
-  & Pick<AppDependencies, "accountAccessService" | "env">;
+export type AudiencePulseRouteDependencies = DashboardWorkspaceSessionDependencies;
 
 export const createAudiencePulseRoutes = (
   dependencies: AudiencePulseRouteDependencies,

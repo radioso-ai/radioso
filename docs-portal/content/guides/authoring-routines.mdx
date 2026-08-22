@@ -12,21 +12,18 @@ Use a routine for an order-issue intake, lead capture, or refund check.
 In an agent's **Routines** settings, choose **New routine** to start a draft, or
 select an existing routine to open the editor.
 
-## Two views of the same draft
+## The routine document
 
-The editor has two views of one draft. Switching views keeps you on that draft.
+The editor presents the draft as a document: the flow as readable instructions,
+with typed controls at each decision. The engine compiles it into the graph it
+runs, so you work with the routine instead of drawing the graph.
 
-- **Document** is the primary authoring view. It presents the flow as readable
-  instructions with typed controls at each decision.
-- **Form** is the strict structural view. It exposes slot, step, transition, and
-  terminal fields directly, including multiple handoffs and activation gates.
+A published or archived version opens as a read-only document — the form a
+colleague reads to learn what the agent does.
 
-The engine compiles the draft into the graph it runs. You work with the routine
-instead of drawing the graph.
+![The Damaged delivery intake routine open in the routine editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
 
-![The Damaged delivery intake routine open in the Form editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
-
-### Work in the Document view
+### Work in the document
 
 Document starts with a **Starts when** line, followed by **Information**,
 numbered steps, branch rows, and endings. A skill step shows its **uses → sets**

@@ -53,6 +53,7 @@ import type { ConversationOwnershipRepository } from "../../db/repositories/conv
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -97,7 +98,10 @@ import type {
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { OperatorReplyService } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
-import type { EmbeddingBindingResolverPort } from "../../modules/embeddingProfiles/public.js";
+import type {
+  EmbeddingBindingResolverPort,
+  EmbeddingCoverageReadPort,
+} from "../../modules/embeddingProfiles/public.js";
 import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
@@ -149,6 +153,7 @@ export interface AppDependencies {
   workspaceService: WorkspaceService;
   workspaceSummaryService: WorkspaceSummaryService;
   ingestionSettingsService: IngestionSettingsService;
+  embeddingCoverageReport: EmbeddingCoverageReadPort;
   chunkRepository: ChunkRepositoryPort;
   documentRepository: DocumentRepositoryPort & RetrievalMetadataFieldSourcePort;
   documentIngestionService: DocumentIngestionService;
@@ -215,6 +220,7 @@ export interface AppDependencies {
   >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
+  connectorManagementService: ConnectorManagementPort;
   connectorIngestionPort: ConnectorIngestionPort;
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;

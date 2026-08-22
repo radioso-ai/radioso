@@ -216,7 +216,7 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   covers a rolling 7- or 30-day window: answer volume, grounded-answer rate,
   negative-feedback rate, and skill-failure rate, each shown against the equal
   preceding window. **Queue** is the full, paginated backlog and per-turn triage
-  for negative feedback, grounding gaps, slow responses, and skill failures.
+  for negative feedback, grounding gaps, and skill failures.
   Needs attention links to this union as one deduplicated count rather than
   listing its automatic signals individually. The queue is not windowed, so a
   turn that is still untriaged stays visible however old it is. Its resolution

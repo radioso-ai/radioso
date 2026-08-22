@@ -675,7 +675,7 @@ describe('dashboard route state', () => {
 
     expect(areDashboardRouteStatesEqual(base, { ...base, qualityRange: '30d' })).toBe(true)
     expect(areDashboardRouteStatesEqual(base, { ...base, qualityRange: '7d' })).toBe(false)
-    expect(areDashboardRouteStatesEqual(base, { ...base, qualitySignal: 'slow_responses' })).toBe(false)
+    expect(areDashboardRouteStatesEqual(base, { ...base, qualitySignal: 'skill_failures' })).toBe(false)
   })
 
   it('parses the eval list route', () => {

@@ -37,7 +37,7 @@ export const createDirectiveProposalCopilotTools = (
   const directiveAdapter = proposalAdapter(deps.proposalAdapters);
   return [
     {
-      name: "propose_directive", shape: "propose", uiLabel: "Drafting a directive", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermission: "workspace.agents.manage",
+      name: "propose_directive", shape: "propose", uiLabel: "Drafting a directive", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
       outputSchema: proposalOutputSchema,

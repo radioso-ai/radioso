@@ -5,6 +5,7 @@ import type { MessageRecord } from "./messageRepository.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
+  WORKBENCH_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
@@ -159,6 +160,7 @@ const initialAssistantMessageColumns = [
 // (`source_channel`); the list query aliases the table as `c` (`c.source_channel`).
 // `end_user` is NULL-safe (real conversations often have a NULL source_channel).
 const operatorTestChannels = [...OPERATOR_TEST_SOURCE_CHANNELS];
+const workbenchTestChannels = [...WORKBENCH_TEST_SOURCE_CHANNELS];
 
 const mapConversation = (row: ConversationRow): ConversationRecord => ({
   id: row.id,
@@ -337,7 +339,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
               ]),
             ),
           )
-          .$if(scope === "operator_test", (qb) => qb.where("c.source_channel", "in", operatorTestChannels))
+          .$if(scope === "operator_test", (qb) => qb.where("c.source_channel", "in", workbenchTestChannels))
           .$if(input.ownership === "human_owned", (qb) =>
             qb
               .innerJoin("conversation_ownership as co", (join) =>
@@ -368,7 +370,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           ]),
         ),
       )
-      .$if(scope === "operator_test", (qb) => qb.where("c.source_channel", "in", operatorTestChannels))
+      .$if(scope === "operator_test", (qb) => qb.where("c.source_channel", "in", workbenchTestChannels))
       .$if(Boolean(cursor), (qb) =>
         qb.where((eb) =>
           eb.or([

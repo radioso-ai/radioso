@@ -40,7 +40,7 @@ import { ConnectorManagementService } from "../../modules/connectors/services/co
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import { AgentTurnProbeService, OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
@@ -346,6 +346,41 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
   ] as const;
+  const agentTurnProbeService = new AgentTurnProbeService({
+    conversationReader: repositories.conversationRepository,
+    agentReader: {
+      findByIdAndWorkspaceId: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
+    },
+    routineReader: repositories.routineDefinitionRepository,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+    turnRunner: {
+      run: async (turnInput) => {
+        const receipt = await chat.chatService.answerWithReceipt({
+          ...turnInput,
+          stream: false,
+          executionMode: "safe_test",
+        });
+        return {
+          conversationId: receipt.response.conversationId,
+          userMessageId: receipt.userMessageId,
+          assistantMessageId: receipt.response.assistantMessageId,
+          agentId: receipt.response.agentId ?? turnInput.agentId,
+          answer: receipt.response.answer,
+          citations: receipt.response.citations ?? [],
+          skillOutcome: receipt.response.skillOutcome,
+          answerOutcome: receipt.response.answerOutcome,
+          activitySummary: receipt.response.activitySummary,
+          activityTrace: receipt.response.activityTrace,
+          turnTrace: receipt.response.turnTrace,
+        };
+      },
+    },
+  });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
@@ -364,6 +399,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         list: routineDefinitionService.list.bind(routineDefinitionService),
       },
       chatHistoryService: chat.chatHistoryService,
+      agentTurnProbe: agentTurnProbeService,
       documentSearchService: retrieval.documentSearchService,
       evalResultsService: evalCaseService,
       qualitySignalsService,

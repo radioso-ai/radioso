@@ -88,6 +88,7 @@ import {
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import { pageReadRoutineCandidates } from "./pageRead/pageReadRoutineCandidates.js";
 import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
@@ -142,6 +143,7 @@ export interface ChatRoutineProvider {
      * for every live end-user turn.
      */
     previewRoutineIds?: string[];
+    executionMode?: TurnExecutionMode;
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
@@ -352,6 +354,7 @@ export class ChatTurnAssembly {
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
       previewRoutineIds: session.previewRoutineIds,
+      executionMode: session.executionMode,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,

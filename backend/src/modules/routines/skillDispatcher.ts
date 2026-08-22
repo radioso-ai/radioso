@@ -12,6 +12,7 @@ import {
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
 import { resolveSkillArguments } from "./skillArgumentResolver.js";
+import type { TurnExecutionMode } from "../../shared/domain/turnExecutionMode.js";
 
 export type RoutineCapabilityGate = (capability: string) => Promise<{ allowed: boolean; reason?: string }>;
 
@@ -21,6 +22,7 @@ export interface RoutineSkillExecutorDispatcherOptions {
   workspaceId?: string;
   accountId?: string;
   throwIfCancelled?: () => void;
+  executionMode?: TurnExecutionMode;
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
@@ -31,6 +33,7 @@ const routineDispatchFailureReasons = new Set([
   "capability_denied",
   "executor_error",
   "deferred",
+  "suppressed_for_safe_test",
 ]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -113,6 +116,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private readonly workspaceId?: string;
   private readonly accountId?: string;
   private readonly throwIfCancelled?: () => void;
+  private readonly executionMode: TurnExecutionMode;
 
   constructor(
     private readonly resolver: RoutineSkillResolver,
@@ -124,6 +128,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     this.workspaceId = options.workspaceId;
     this.accountId = options.accountId;
     this.throwIfCancelled = options.throwIfCancelled;
+    this.executionMode = options.executionMode ?? "live";
   }
 
   async dispatch(
@@ -160,6 +165,9 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     }
     if (!skill.execution) {
       return unavailable(skillName, "no_execution");
+    }
+    if (this.executionMode === "safe_test") {
+      return unavailable(skillName, "suppressed_for_safe_test");
     }
     const executor = this.executorRegistry.resolve(skill.execution);
     if (!executor) {

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-18
+last_updated: 2026-08-21
 ---
 
 # Code Map
@@ -251,6 +251,51 @@ Focused checks:
 Related docs and specs:
 
 - `specs/065-agent-runtime-and-agentic-retrieval/`
+
+## Operator Copilot (Ray)
+
+Owns Ray's dashboard conversations, proposals, model-safe tool catalog, tool
+permission declarations, bounded tool projections, and dashboard handoff links.
+The module defines narrow consumer ports for the workspace capabilities Ray can
+use. Application composition supplies their implementations.
+
+Operator Copilot owns agent-turn probe orchestration: operator provenance,
+abuse controls, agent and draft-routine validation, input contract, all-of
+permission gate, safe result projection, byte budget, and the link back to the
+synthetic conversation. Chat exposes only a generic safe-test execution mode
+and an internal persisted-turn receipt; it does not know about Ray or operator
+identity.
+Ray tools stay within the dashboard session surface; the standalone MCP server
+does not expose this catalog.
+
+Public and tool surfaces:
+
+- `backend/src/modules/operatorCopilot/public.ts`
+- `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
+- `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
+- `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
+- `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
+- `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
+- `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)
+- `frontend/lib/api-copilot.ts`
+- `frontend/components/dashboard/copilot-panel.tsx` and `copilot-view.tsx`
+
+Useful searches:
+
+- `rg "CopilotToolDescriptor|createCopilotToolDescriptors|test_agent_turn" backend/src backend/tests`
+- `rg "OperatorCopilot|copilot" frontend/components/dashboard frontend/lib`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/operatorCopilot tests/unit/agent-turn-test-service.test.ts`
+- `cd backend && pnpm run lint:boundaries`
+- `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
+
+Related docs, specs, and issues:
+
+- [Ray](../../docs-portal/content/operators/copilot.mdx)
+- `specs/104-in-product-operator-copilot/`
+- Issues `#1036` and `#1041`
 
 ## Conversation Engine Contracts
 

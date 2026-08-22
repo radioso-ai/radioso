@@ -6,6 +6,7 @@ import type { Db } from "../../shared/infra/kysely/types.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 import {
   OPERATOR_TEST_SOURCE_CHANNELS,
+  WORKBENCH_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
@@ -19,15 +20,16 @@ const buildSourceScopeFilter = (
   scope: ConversationSourceScope,
   column: RawBuilder<unknown>,
 ): RawBuilder<unknown> => {
-  const channels = sql.join(OPERATOR_TEST_SOURCE_CHANNELS.map((channel) => sql.val(channel)));
+  const operatorTestChannels = sql.join(OPERATOR_TEST_SOURCE_CHANNELS.map((channel) => sql.val(channel)));
+  const workbenchTestChannels = sql.join(WORKBENCH_TEST_SOURCE_CHANNELS.map((channel) => sql.val(channel)));
   switch (scope) {
     case "operator_test":
-      return sql`AND ${column} IN (${channels})`;
+      return sql`AND ${column} IN (${workbenchTestChannels})`;
     case "all":
       return sql``;
     case "end_user":
     default:
-      return sql`AND (${column} IS NULL OR ${column} NOT IN (${channels}))`;
+      return sql`AND (${column} IS NULL OR ${column} NOT IN (${operatorTestChannels}))`;
   }
 };
 

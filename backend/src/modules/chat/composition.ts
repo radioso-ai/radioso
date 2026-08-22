@@ -11,7 +11,9 @@ export { AssistantHistoryService } from "./services/assistantHistoryService.js";
 export { ChatBootstrapService } from "./services/chatBootstrapService.js";
 export {
   ChatService,
+  type ChatAnswerInput,
   type ChatRoutineProvider,
+  type ChatTurnReceipt,
 } from "./services/chatService.js";
 export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";

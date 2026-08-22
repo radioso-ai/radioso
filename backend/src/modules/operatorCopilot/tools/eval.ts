@@ -19,7 +19,7 @@ export interface EvalCopilotToolDependencies {
 
 export const createEvalCopilotTools = (deps: EvalCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "eval_results", shape: "read", uiLabel: "Reading eval results", contributingModule: "eval", dashboardSubject: { type: "eval" }, requiredPermission: "workspace.retrieval.query",
+    name: "eval_results", shape: "read", uiLabel: "Reading eval results", contributingModule: "eval", dashboardSubject: { type: "eval" }, requiredPermissions: ["workspace.retrieval.query"],
     description: "Read recent evaluation cases and their latest outcomes for an agent.",
     inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "eval_results", description: "Read recent evaluation cases and their latest outcomes for an agent.", inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }), invoke: async ({ agentId, limit }) => {

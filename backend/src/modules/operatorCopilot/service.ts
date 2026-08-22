@@ -15,6 +15,7 @@ import type {
   CopilotTurnOutcome,
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
+import { hasAllCopilotToolPermissions } from "./catalog.js";
 
 const COPILOT_BUDGETS = AGENT_BUDGET_DEFAULTS;
 const TITLE_MAX_LENGTH = 120;
@@ -256,7 +257,7 @@ export class OperatorCopilotService {
 
   private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, labels: ReadonlyMap<string, string>): ReadonlyArray<AgentTool> {
     return this.deps.tools
-      .filter((descriptor) => input.permissions.has(descriptor.requiredPermission))
+      .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
       .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, pageContext: input.pageContext }) as AgentTool);
   }
 

@@ -130,12 +130,17 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;
   readonly outputSchema: ZodType<TOutput>;
-  readonly requiredPermission: AccountPermission;
+  /** Every permission is required; descriptors use all-of semantics. */
+  readonly requiredPermissions: readonly [AccountPermission, ...AccountPermission[]];
   readonly contributingModule: string;
   /** Default dashboard handoff for this tool's collection or owning subject. */
   readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
   describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityDescription<TInput> | null | Promise<CopilotEntityDescription<TInput> | null>;
+  /** Lets a result refine the declared dashboard handoff without coupling catalog enrichment to its shape. */
+  describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
+  /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
+  finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
 }
 
 /**

@@ -103,11 +103,13 @@ describeIntegration("ConversationRepository (Postgres)", () => {
   });
 
   it("excludes operator-test conversations by default and returns only them under operator_test scope", async () => {
-    // Four conversations: two real (embed + NULL source) and two operator-test.
+    // Five conversations: two real, two interactive workbench tests, and one
+    // synthetic Ray probe that must stay out of the workbench session list.
     const embed = await repository.create(workspaceId, null, "website_embed");
     const nullSource = await repository.create(workspaceId);
     const testChat = await repository.create(workspaceId, null, "authenticated_chat");
     const replay = await repository.create(workspaceId, null, "workbench_replay");
+    const rayProbe = await repository.create(workspaceId, null, "operator_copilot_probe");
 
     const idsOf = (result: Awaited<ReturnType<typeof repository.listPageByWorkspaceId>>) =>
       new Set(result.conversations.map((c) => c.id));
@@ -117,7 +119,7 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect(idsOf(defaultPage)).toEqual(new Set([embed.id, nullSource.id]));
     expect(defaultPage.total).toBe(2);
 
-    // operator_test: only the dashboard test chat + workbench replay.
+    // operator_test: only interactive dashboard/workbench sessions, never Ray probes.
     const operatorPage = await repository.listPageByWorkspaceId(workspaceId, {
       limit: 50,
       sourceScope: "operator_test",
@@ -127,8 +129,8 @@ describeIntegration("ConversationRepository (Postgres)", () => {
 
     // all: every conversation.
     const allPage = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all" });
-    expect(idsOf(allPage)).toEqual(new Set([embed.id, nullSource.id, testChat.id, replay.id]));
-    expect(allPage.total).toBe(4);
+    expect(idsOf(allPage)).toEqual(new Set([embed.id, nullSource.id, testChat.id, replay.id, rayProbe.id]));
+    expect(allPage.total).toBe(5);
   });
 
   it("touch bumps updated_at to the front of the page", async () => {

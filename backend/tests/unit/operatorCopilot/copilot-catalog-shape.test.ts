@@ -54,13 +54,26 @@ const realCatalog = () => {
 };
 
 describe("copilot catalog wiring", () => {
+  it("contributes the agent-turn probe through the real composition barrel", () => {
+    expect(realCatalog().find((descriptor) => descriptor.name === "test_agent_turn")).toMatchObject({
+      shape: "probe",
+      requiredPermissions: [
+        "workspace.agents.read",
+        "workspace.chat.use",
+        "workspace.history.read",
+        "workspace.agents.manage",
+      ],
+    });
+  });
+
   it("requires only permissions the turn route actually resolves", () => {
     // A descriptor whose permission is missing from the route's list is filtered out of every
     // live turn and is unreachable in production, while unit tests that inject permissions
     // directly still pass. workspace_settings shipped dead this way.
     const missing = realCatalog()
-      .filter((descriptor) => !(copilotToolPermissions as ReadonlyArray<string>).includes(descriptor.requiredPermission))
-      .map((descriptor) => `${descriptor.name} needs ${descriptor.requiredPermission}`);
+      .flatMap((descriptor) => descriptor.requiredPermissions
+        .filter((permission) => !(copilotToolPermissions as ReadonlyArray<string>).includes(permission))
+        .map((permission) => `${descriptor.name} needs ${permission}`));
 
     expect(missing).toEqual([]);
   });
@@ -114,17 +127,17 @@ describe("copilot catalog shape", () => {
   it("declares the document status and agent skills readers with their required permissions", () => {
     const descriptors = buildDescriptors();
 
-    expect(descriptors.map(({ name, requiredPermission, contributingModule, uiLabel, shape }) => ({ name, requiredPermission, contributingModule, uiLabel, shape }))).toEqual([
+    expect(descriptors.map(({ name, requiredPermissions, contributingModule, uiLabel, shape }) => ({ name, requiredPermissions, contributingModule, uiLabel, shape }))).toEqual([
       {
         name: "document_status",
-        requiredPermission: "workspace.documents.read",
+        requiredPermissions: ["workspace.documents.read"],
         contributingModule: "documents",
         uiLabel: "Checking document status",
         shape: "read",
       },
       {
         name: "agent_skills",
-        requiredPermission: "workspace.agents.read",
+        requiredPermissions: ["workspace.agents.read"],
         contributingModule: "agentSkills",
         uiLabel: "Reading agent skills",
         shape: "read",

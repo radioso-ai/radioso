@@ -53,6 +53,7 @@ import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retr
 import type { TurnRouting } from "./turnRouter.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -150,6 +151,7 @@ export interface PreparedSession {
   turnTrace: ConversationTrace;
   /** Optional caller-owned usage attribution shared by every model call in this turn. */
   usageAttribution?: ModelCallUsageAttribution;
+  executionMode?: TurnExecutionMode;
 }
 
 export interface PrepareChatSessionInput {
@@ -177,6 +179,7 @@ export interface PrepareChatSessionInput {
   retrievalSettingsOverride?: RetrievalPipelineRequest["retrievalSettingsOverride"];
   /** Ephemeral caller attribution for model and retrieval usage emitted by this turn. */
   usageAttribution?: ModelCallUsageAttribution;
+  executionMode?: TurnExecutionMode;
   /**
    * Operator-only workbench test override: routine definition ids (drafts included)
    * to make eligible for this turn's routine activation/resume. Ephemeral — never
@@ -322,6 +325,7 @@ export class ChatSessionPreparer {
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,
       usageAttribution: input.usageAttribution,
+      executionMode: input.executionMode,
       previewRoutineIds: input.previewRoutineIds,
       ...this.stagedSpineFor(retrieval, null, hostVariables),
     };
@@ -479,7 +483,10 @@ export class ChatSessionPreparer {
     effectiveVerifiedCustomerId: string | null = input.verifiedCustomerId ?? null,
     chatSessionId: string | null = input.chatSessionId ?? input.anonymousSessionId ?? null,
   ): Promise<ResolvedVariableInput[]> {
-    if (!this.contextVariableRepository) {
+    // A resolver can be backed by a live agent-skill executor. Safe-test turns fail
+    // closed at this boundary because the repository port does not expose a
+    // per-variable effect classification.
+    if (!this.contextVariableRepository || input.executionMode === "safe_test") {
       return [];
     }
     const scopes: ContextVariableScope[] = [];

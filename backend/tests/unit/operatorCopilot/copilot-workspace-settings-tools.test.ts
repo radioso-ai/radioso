@@ -104,10 +104,10 @@ describe("workspace settings copilot reader", () => {
   it("declares one read-shaped settings reader", () => {
     const descriptors = createWorkspaceSettingsCopilotTools({ workspaceSettings: workspaceSettingsPort() });
 
-    expect(descriptors.map(({ name, requiredPermission, contributingModule, uiLabel, shape }) => ({ name, requiredPermission, contributingModule, uiLabel, shape }))).toEqual([
+    expect(descriptors.map(({ name, requiredPermissions, contributingModule, uiLabel, shape }) => ({ name, requiredPermissions, contributingModule, uiLabel, shape }))).toEqual([
       {
         name: "workspace_settings",
-        requiredPermission: "workspace.settings.read",
+        requiredPermissions: ["workspace.settings.read"],
         contributingModule: "settings",
         uiLabel: "Reading workspace settings",
         shape: "read",

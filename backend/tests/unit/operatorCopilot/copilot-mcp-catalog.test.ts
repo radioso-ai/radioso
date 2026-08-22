@@ -21,7 +21,7 @@ const descriptor = (describeEntity: NonNullable<CopilotToolDescriptor<{ name: st
   description: "Read an agent.",
   inputSchema: z.object({ name: z.string() }),
   outputSchema: z.object({ value: z.string() }),
-  requiredPermission: "workspace.agents.read",
+  requiredPermissions: ["workspace.agents.read"],
   contributingModule: "agents",
   dashboardSubject: { type: "agent" },
   describeEntity,

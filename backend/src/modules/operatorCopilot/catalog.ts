@@ -5,10 +5,16 @@ import type { CopilotToolDescriptor } from "./contracts.js";
 import type { CopilotEntityDescription, CopilotEntityReference, CopilotToolInvocationContext } from "./contracts.js";
 import { buildCopilotDashboardLink } from "./dashboardLinks.js";
 
+export const hasAllCopilotToolPermissions = (
+  requiredPermissions: CopilotToolDescriptor["requiredPermissions"],
+  permissions: ReadonlySet<string> | undefined,
+): boolean => requiredPermissions.every((permission) => permissions?.has(permission) === true);
+
 export const filterCopilotToolCatalog = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
   permissions: ReadonlySet<AccountPermission>,
-): ReadonlyArray<CopilotToolDescriptor> => descriptors.filter((descriptor) => permissions.has(descriptor.requiredPermission));
+): ReadonlyArray<CopilotToolDescriptor> => descriptors.filter((descriptor) =>
+  hasAllCopilotToolPermissions(descriptor.requiredPermissions, permissions));
 
 const linkedOutputSchema = z.object({ dashboardUrl: z.string().startsWith("/") }).passthrough();
 
@@ -83,7 +89,7 @@ export const enrichCopilotToolCatalog = (
         // Fails closed: an absent permission set is treated as holding nothing, not as a reason to
         // skip the check. Every current caller supplies one, but this guard exists for transports
         // that do not pre-filter the catalog, and those are the ones most likely to omit it.
-        if (!context.permissions?.has(descriptor.requiredPermission)) {
+        if (!hasAllCopilotToolPermissions(descriptor.requiredPermissions, context.permissions)) {
           return unresolved(workspaceKey, descriptor.dashboardSubject);
         }
 
@@ -113,13 +119,15 @@ export const enrichCopilotToolCatalog = (
         if (!isRecord(output)) {
           throw new Error(`Copilot tool "${descriptor.name}" returned a non-object result`);
         }
-        return {
+        const outputEntity = descriptor.describeOutputEntity?.(output) ?? null;
+        const enrichedOutput = {
           ...output,
           dashboardUrl: buildCopilotDashboardLink(
             workspaceKey,
-            handoffSubject(descriptor.dashboardSubject, resolution.entity),
+            handoffSubject(descriptor.dashboardSubject, outputEntity ?? resolution.entity),
           ),
         };
+        return descriptor.finalizeEnrichedOutput?.(enrichedOutput) ?? enrichedOutput;
       },
     };
   },

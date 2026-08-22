@@ -149,6 +149,7 @@ import { ErrorReportingService } from "../../src/shared/errors/errorReportingSer
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import {
+  AgentTurnProbeService,
   OperatorCopilotService,
   type CopilotConversation,
   type CopilotMessage,
@@ -1586,6 +1587,41 @@ export const createTestDependencies = (overrides: {
     agentService,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
+  const agentTurnProbeService = new AgentTurnProbeService({
+    conversationReader: conversationRepository,
+    agentReader: {
+      findByIdAndWorkspaceId: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
+    },
+    routineReader: routineDefinitionRepository,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+    turnRunner: {
+      run: async (input) => {
+        const receipt = await chatService.answerWithReceipt({
+          ...input,
+          stream: false,
+          executionMode: "safe_test",
+        });
+        return {
+          conversationId: receipt.response.conversationId,
+          userMessageId: receipt.userMessageId,
+          assistantMessageId: receipt.response.assistantMessageId,
+          agentId: receipt.response.agentId ?? input.agentId,
+          answer: receipt.response.answer,
+          citations: receipt.response.citations ?? [],
+          skillOutcome: receipt.response.skillOutcome,
+          answerOutcome: receipt.response.answerOutcome,
+          activitySummary: receipt.response.activitySummary,
+          activityTrace: receipt.response.activityTrace,
+          turnTrace: receipt.response.turnTrace,
+        };
+      },
+    },
+  });
   // The action outbox drain never runs in tests; a no-op dispatcher satisfies the shape.
   const actionDispatchWorker = new ActionDispatchWorker(
     { dispatchPending: async () => ({ dispatched: 0, retried: 0, failed: 0 }) },
@@ -1696,6 +1732,7 @@ export const createTestDependencies = (overrides: {
         list: routineDefinitionService.list.bind(routineDefinitionService),
       },
       chatHistoryService,
+      agentTurnProbe: agentTurnProbeService,
       documentSearchService,
       evalResultsService: evalCaseService,
       qualitySignalsService,

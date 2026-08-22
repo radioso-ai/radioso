@@ -7,6 +7,8 @@ import { createAudiencePulseCopilotTools } from "./audiencePulse.js";
 import type { AudiencePulseCopilotToolDependencies, CopilotAudiencePulsePort } from "./audiencePulse.js";
 import { createChatCopilotTools } from "./chat.js";
 import type { ChatCopilotToolDependencies, CopilotConversationHistoryPort } from "./chat.js";
+import { createAgentTurnProbeCopilotTools } from "./agentTurnProbe.js";
+import type { AgentTurnProbeCopilotToolDependencies, CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 import { createDirectiveProposalCopilotTools } from "./directives.js";
 import type { DirectiveProposalCopilotToolDependencies } from "./directives.js";
 import { createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
@@ -24,6 +26,7 @@ export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkill
 
 export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & ChatCopilotToolDependencies
+  & Omit<AgentTurnProbeCopilotToolDependencies, "agentLookup">
   & DocumentSearchCopilotToolDependencies
   & DocumentStatusCopilotToolDependencies
   & EvalCopilotToolDependencies
@@ -43,6 +46,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentConfigurationCopilotTools(deps),
   ...createRoutineDefinitionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createChatCopilotTools(deps),
+  ...createAgentTurnProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentSearchCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -58,6 +62,7 @@ export const createCopilotToolDescriptors = (
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";
+export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort } from "./quality.js";

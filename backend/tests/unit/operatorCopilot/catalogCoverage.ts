@@ -72,6 +72,7 @@ const tokenIntegrationSurface = permanent("Permanent exclusion: this serves work
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
+const transportOnly = permanent("Permanent exclusion: this is a long-lived dashboard event transport, not a bounded operator-copilot tool or data reader.");
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
@@ -299,6 +300,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "tailPublicChatHistoryConversation",
     "streamPublicChatConversationEvents",
   ], endUserSurface),
+  ...coverage(["streamWorkspaceEvents"], transportOnly),
 
   createAgentDirective: "propose_directive",
   updateAgentDirective: "propose_directive",

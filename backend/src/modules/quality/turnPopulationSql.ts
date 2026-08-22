@@ -230,8 +230,6 @@ export const buildSignalPredicate = (
       return buildFeedbackExistsPredicate(predicate.values, params);
     case "actions":
       return buildActionTuplePredicate(predicate.actions, params);
-    case "minLatencyMs":
-      return `${RESOLVED_LATENCY_EXPRESSION} >= ${bindParam(params, predicate.minTotalLatencyMs)}`;
     case "skillStatuses":
       return buildSkillStatusPredicate(predicate.statuses, params);
   }
@@ -242,12 +240,8 @@ export const buildSignalPredicate = (
  *
  * Every per-signal predicate is a scalar test or a correlated EXISTS over the row already
  * in scope, so OR-ing them narrows the same single scan of the turn population rather than
- * fanning it out: a turn that is both slow and down-voted is still exactly one row. A join
- * or `UNION ALL` per signal would duplicate it, which is why neither is used.
- *
- * `slow_responses` inlines the resolved-latency expression, and it stays correct inside an
- * OR because the expression is a correlated scalar over `m` rather than anything the query
- * has to join in. Combining signals therefore never changes whether latency is available.
+ * fanning it out: a turn that is both down-voted and missing grounding is still exactly one
+ * row. A join or `UNION ALL` per signal would duplicate it, which is why neither is used.
  */
 export const buildAnySignalPredicate = (
   predicates: readonly QualitySignalPredicate[],

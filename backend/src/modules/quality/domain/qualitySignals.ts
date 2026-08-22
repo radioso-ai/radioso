@@ -7,12 +7,6 @@ import type {
 } from "../contracts/index.js";
 
 /**
- * Latency floor for the `slow_responses` signal. Reads against
- * `messages.total_latency_ms` (true turn wall time), not retrieval-pipeline time.
- */
-export const SLOW_RESPONSE_MIN_LATENCY_MS = 10_000;
-
-/**
  * Skill statuses that count as a failure. Capability-agnostic on purpose, so the
  * signal surfaces failures from the whole engine surface rather than just retrieval.
  */
@@ -97,7 +91,6 @@ export const resolveGroundedOutcomeTuples = (
 export type QualitySignalPredicate =
   | { kind: "feedback"; values: readonly QualityFeedbackValue[] }
   | { kind: "actions"; actions: readonly QualityActionFilter[] }
-  | { kind: "minLatencyMs"; minTotalLatencyMs: number }
   | { kind: "skillStatuses"; statuses: readonly QualitySkillStatus[] };
 
 /**
@@ -114,8 +107,6 @@ export const resolveQualitySignalPredicate = (
       return { kind: "feedback", values: NEGATIVE_FEEDBACK_VALUES };
     case "grounding_gaps":
       return { kind: "actions", actions: tuples.gaps };
-    case "slow_responses":
-      return { kind: "minLatencyMs", minTotalLatencyMs: SLOW_RESPONSE_MIN_LATENCY_MS };
     case "skill_failures":
       return { kind: "skillStatuses", statuses: SKILL_FAILURE_STATUSES };
   }

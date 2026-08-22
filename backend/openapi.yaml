@@ -8663,7 +8663,6 @@ components:
       enum:
         - negative_feedback
         - grounding_gaps
-        - slow_responses
         - skill_failures
     QualityStatsRange:
       type: string
@@ -8779,16 +8778,12 @@ components:
             grounding_gaps:
               type: integer
               minimum: 0
-            slow_responses:
-              type: integer
-              minimum: 0
             skill_failures:
               type: integer
               minimum: 0
           required:
             - negative_feedback
             - grounding_gaps
-            - slow_responses
             - skill_failures
           description: Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.
         resolutionBreakdown:
@@ -21118,9 +21113,9 @@ paths:
       parameters:
         - schema:
             type: string
-            description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
+            description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
           required: false
-          description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
+          description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
           name: signal
           in: query
         - schema:

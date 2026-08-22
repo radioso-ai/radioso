@@ -14,7 +14,6 @@ vi.mock('@/lib/api', () => ({
   QUALITY_SIGNAL_IDS: [
     'negative_feedback',
     'grounding_gaps',
-    'slow_responses',
     'skill_failures',
   ],
   qualityApi: { listTurns: vi.fn() },
@@ -85,7 +84,6 @@ describe('loadQualityInboxSourceAttempts', () => {
       signal: [
         'negative_feedback',
         'grounding_gaps',
-        'slow_responses',
         'skill_failures',
       ],
       triageStates: ['open', 'acknowledged'],

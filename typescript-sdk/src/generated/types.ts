@@ -6095,7 +6095,7 @@ export interface components {
             verification: components["schemas"]["QualityVerification"] | null;
         };
         /** @enum {string} */
-        QualitySignalId: "negative_feedback" | "grounding_gaps" | "slow_responses" | "skill_failures";
+        QualitySignalId: "negative_feedback" | "grounding_gaps" | "skill_failures";
         /** @enum {string} */
         QualityStatsRange: "7d" | "30d";
         QualityStatsMetric: {
@@ -6145,7 +6145,6 @@ export interface components {
             backlog: {
                 negative_feedback: number;
                 grounding_gaps: number;
-                slow_responses: number;
                 skill_failures: number;
             };
             /** @description Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`. */
@@ -17422,7 +17421,7 @@ export interface operations {
     listLowQualityTurns: {
         parameters: {
             query?: {
-                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
+                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
                 signal?: string;
                 /** @description Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict. */
                 groundingVerdict?: string;

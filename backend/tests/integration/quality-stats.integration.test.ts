@@ -198,7 +198,6 @@ describeIfDatabase("quality stats integration", () => {
     expect(stats.backlog).toEqual({
       negative_feedback: 0,
       grounding_gaps: 0,
-      slow_responses: 0,
       skill_failures: 0,
     });
   });
@@ -354,12 +353,6 @@ describeIfDatabase("quality stats integration", () => {
       createdAt: daysAgo(200),
       skillOutcome: "no_context",
     });
-    const oldSlow = await seedTurn({
-      conversationId,
-      workspaceId,
-      createdAt: daysAgo(180),
-      totalLatencyMs: 12_000,
-    });
     const oldFailure = await seedTurn({
       conversationId,
       workspaceId,
@@ -399,10 +392,9 @@ describeIfDatabase("quality stats integration", () => {
     expect(stats.backlog).toEqual({
       negative_feedback: 1,
       grounding_gaps: 1,
-      slow_responses: 1,
       skill_failures: 1,
     });
-    expect([oldGap, oldSlow, oldFailure, oldDownVoted]).toHaveLength(4);
+    expect([oldGap, oldFailure, oldDownVoted]).toHaveLength(3);
 
     // Acknowledged turns are still active backlog; dismissing one drains it.
     await service.setTriageState(workspaceId, {
@@ -421,7 +413,7 @@ describeIfDatabase("quality stats integration", () => {
     expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.grounding_gaps).toBe(0);
   });
 
-  it("resolves backlog latency from the audit event when the column is empty", async () => {
+  it("resolves latency from the audit event when the column is empty", async () => {
     const { accountId, workspaceId, agentId } = await seedWorkspace("LegacySlow");
     const conversationId = await seedConversation(workspaceId, agentId, "embed");
     const legacyMessageId = await seedTurn({
@@ -445,9 +437,12 @@ describeIfDatabase("quality stats integration", () => {
       ],
     );
 
-    const stats = await createService().getQualityStats(workspaceId, { range: "7d" });
+    const page = await createService().listLowQualityTurns(workspaceId, {
+      limit: 25,
+      minTotalLatencyMs: 10_000,
+    });
 
-    expect(stats.backlog.slow_responses).toBe(1);
+    expect(page.items.map((item) => item.assistantMessageId)).toEqual([legacyMessageId]);
   });
 
   it("filters the turns table by the same signal predicate the backlog counts", async () => {
@@ -479,26 +474,5 @@ describeIfDatabase("quality stats integration", () => {
     expect(page.items.map((item) => item.assistantMessageId)).toEqual([gap]);
     expect(page.total).toBe(1);
     expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.grounding_gaps).toBe(1);
-  });
-
-  it("filters the turns table by the slow-response signal without a latency filter", async () => {
-    const { workspaceId, agentId } = await seedWorkspace("SlowSignal");
-    const conversationId = await seedConversation(workspaceId, agentId, "embed");
-
-    const slow = await seedTurn({
-      conversationId,
-      workspaceId,
-      createdAt: daysAgo(1),
-      totalLatencyMs: 11_000,
-    });
-    await seedTurn({ conversationId, workspaceId, createdAt: daysAgo(1), totalLatencyMs: 900 });
-
-    const page = await createService().listLowQualityTurns(workspaceId, {
-      limit: 25,
-      signals: ["slow_responses"],
-    });
-
-    expect(page.items.map((item) => item.assistantMessageId)).toEqual([slow]);
-    expect(page.total).toBe(1);
   });
 });

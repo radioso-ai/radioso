@@ -5,7 +5,6 @@ import { retrievalAnswerSkillDefinition, type SkillCatalogService } from "../../
 import {
   QUALITY_SIGNAL_ACTIVE_TRIAGE_STATES,
   SKILL_FAILURE_STATUSES,
-  SLOW_RESPONSE_MIN_LATENCY_MS,
   resolveGroundedOutcomeTuples,
   resolveQualitySignalPredicate,
   type QualityOutcomeCatalogEntry,
@@ -137,14 +136,6 @@ describe("resolveQualitySignalPredicate", () => {
       kind: "actions",
       actions: [{ skillName: "retrieval.answer", outcome: "no_context" }],
     });
-  });
-
-  it("resolves slow responses to the latency floor", () => {
-    expect(resolveQualitySignalPredicate("slow_responses", tuples)).toEqual({
-      kind: "minLatencyMs",
-      minTotalLatencyMs: SLOW_RESPONSE_MIN_LATENCY_MS,
-    });
-    expect(SLOW_RESPONSE_MIN_LATENCY_MS).toBe(10_000);
   });
 
   it("resolves skill failures to the failed skill status", () => {

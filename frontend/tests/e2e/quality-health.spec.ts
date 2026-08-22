@@ -86,7 +86,7 @@ const NEGATIVE_FEEDBACK_QUESTION = "Why was my order cancelled?";
 const HEALTHY_QUESTION = "What are your opening hours?";
 
 /** The four signals the queue asks for by default, in contract order. */
-const ALL_SIGNALS = "negative_feedback,grounding_gaps,slow_responses,skill_failures";
+const ALL_SIGNALS = "negative_feedback,grounding_gaps,skill_failures";
 
 /**
  * The queue table, answering by scope rather than by row count: one signal returns that

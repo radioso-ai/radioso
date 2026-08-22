@@ -13,6 +13,7 @@ import {
   toQualityStatsWindow,
 } from "../../src/modules/quality/statsQuery.js";
 import {
+  RESOLVED_LATENCY_EXPRESSION,
   buildEffectiveOpenPredicate,
   buildEffectiveTriageStateExpression,
 } from "../../src/modules/quality/turnPopulationSql.js";
@@ -427,6 +428,21 @@ describe("buildQualityStatsDailyQuery", () => {
   });
 });
 
+describe("RESOLVED_LATENCY_EXPRESSION", () => {
+  it("resolves latency from the persisted column with the audit event as a fallback", () => {
+    expect(RESOLVED_LATENCY_EXPRESSION).toContain("COALESCE(m.total_latency_ms, (");
+  });
+
+  // The fallback must be a COALESCE arm, not a join: a join probes audit_events for every
+  // row in the population, including the overwhelming majority whose latency is already
+  // persisted. COALESCE only evaluates the arguments it needs.
+  it("reaches audit_events from inside COALESCE rather than joining it per row", () => {
+    expect(RESOLVED_LATENCY_EXPRESSION).not.toMatch(/JOIN\s+LATERAL/);
+    expect(RESOLVED_LATENCY_EXPRESSION).toContain("FROM audit_events ae");
+    expect(RESOLVED_LATENCY_EXPRESSION).toContain("ORDER BY ae.created_at DESC, ae.id DESC");
+  });
+});
+
 describe("buildQualityStatsBacklogQuery", () => {
   it("counts active-triage turns with no date bound", () => {
     const query = buildQualityStatsBacklogQuery({
@@ -439,24 +455,6 @@ describe("buildQualityStatsBacklogQuery", () => {
     expect(query.text).toContain("feedback_freshness.updated_at > tr.updated_at");
     expect(query.text).toContain("THEN 'open'");
     expect(query.params).toContainEqual(["open", "acknowledged"]);
-  });
-
-  it("resolves latency from the persisted column with the audit event as a fallback", () => {
-    const query = buildQualityStatsBacklogQuery({ workspaceId: WORKSPACE_ID, tuples: TUPLES });
-
-    expect(query.text).toContain("COALESCE(m.total_latency_ms, (");
-    expect(query.params).toContain(10_000);
-  });
-
-  // The fallback must be a COALESCE arm, not a join: a join probes audit_events for every
-  // row in the population, including the overwhelming majority whose latency is already
-  // persisted. COALESCE only evaluates the arguments it needs.
-  it("reaches audit_events from inside COALESCE rather than joining it per row", () => {
-    const query = buildQualityStatsBacklogQuery({ workspaceId: WORKSPACE_ID, tuples: TUPLES });
-
-    expect(query.text).not.toMatch(/JOIN\s+LATERAL/);
-    expect(query.text).toContain("FROM audit_events ae");
-    expect(query.text).toContain("ORDER BY ae.created_at DESC, ae.id DESC");
   });
 
   it("still applies the shared turn population and echoes agent/channel filters", () => {

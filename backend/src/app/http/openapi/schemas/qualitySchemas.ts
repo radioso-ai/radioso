@@ -151,7 +151,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
 
   const QualitySignalIdSchema = registry.register(
     "QualitySignalId",
-    z.enum(["negative_feedback", "grounding_gaps", "slow_responses", "skill_failures"]),
+    z.enum(["negative_feedback", "grounding_gaps", "skill_failures"]),
   );
 
   const QualityStatsRangeSchema = registry.register("QualityStatsRange", z.enum(["7d", "30d"]));
@@ -219,13 +219,12 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
         .array(QualityStatsBucketSchema)
         .describe("Current window only, one entry per UTC day, zero-filled."),
       // Spelled out rather than z.record(QualitySignalIdSchema, ...): a record generates every
-      // key as optional, but the service always emits all four, and the UI reads them
+      // key as optional, but the service always emits every signal, and the UI reads them
       // unconditionally. A fixed object keeps the generated SDK types honest about that.
       backlog: z
         .object({
           negative_feedback: z.number().int().min(0),
           grounding_gaps: z.number().int().min(0),
-          slow_responses: z.number().int().min(0),
           skill_failures: z.number().int().min(0),
         })
         .describe(

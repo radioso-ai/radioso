@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
   CircleX,
-  Clock,
   FileSearch,
   ListFilter,
   MessageSquareWarning,
@@ -403,12 +402,6 @@ const QUALITY_SIGNAL_PRESENTATION: Record<
     description: 'No context or degraded evidence',
     icon: FileSearch,
     iconClass: 'text-amber-600 dark:text-amber-400',
-  },
-  slow_responses: {
-    label: 'Slow responses',
-    description: '10 seconds or more to answer',
-    icon: Clock,
-    iconClass: 'text-muted-foreground',
   },
   skill_failures: {
     label: 'Skill failures',
@@ -1499,7 +1492,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     <>
     <DashboardPage
       title="Quality review"
-      description="Triage the answers that need attention — negative feedback, grounding gaps, and slow responses — then open the conversation to act."
+      description="Triage the answers that need attention — negative feedback, grounding gaps, and skill failures — then open the conversation to act."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
     >
       {error ? (

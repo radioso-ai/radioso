@@ -157,8 +157,8 @@ export class ActionRequestRepository {
       .where("id", "=", id)
       .where("attempts", "=", attempt)
       .where("status", "=", "in_progress")
-      .execute();
-    return result.length > 0;
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 
   /**

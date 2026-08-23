@@ -42,7 +42,7 @@ export class WordpressConnector implements ConnectorPlugin {
   readonly id = "wordpress";
   readonly name = "WordPress";
   readonly description =
-    "Auto-ingest WordPress pages and posts when they are published, updated, or deleted.";
+    "Auto-ingest WordPress content when it is published, updated, or deleted, for any post type including WooCommerce products.";
 
   private syncDeps: WordpressSyncDeps | null = null;
 
@@ -81,7 +81,8 @@ export class WordpressConnector implements ConnectorPlugin {
       {
         key: WP_CONFIG_KEYS.postTypes,
         label: "Post types to sync",
-        helpText: "Comma-separated WordPress post types. Defaults to page and post.",
+        helpText:
+          "Comma-separated WordPress post types. Defaults to page and post. Add product to sync a WooCommerce catalogue.",
         type: "text",
         required: false,
         defaultValue: "page,post",

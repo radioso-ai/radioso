@@ -24,7 +24,9 @@ export interface WebhookPostPayload {
   link: string;
   modified_gmt: string;
   date_gmt?: string;
-  author?: { id: number; name: string };
+  // `id` is absent when the author came from a taxonomy rather than a WordPress
+  // account; only the name is ever read.
+  author?: { id?: number; name: string };
 }
 
 export interface IngestInput {

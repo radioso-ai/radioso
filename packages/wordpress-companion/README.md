@@ -1,7 +1,8 @@
 # Radioso Sync (WordPress companion plugin)
 
-A small WordPress plugin that pushes published, updated, and deleted pages and
-posts to a Radioso workspace via a signed HTTP webhook (HMAC-SHA256).
+A small WordPress plugin that pushes published, updated, and deleted content to
+a Radioso workspace via a signed HTTP webhook (HMAC-SHA256). It handles any post
+type, including WooCommerce products.
 
 Pairs with the `wordpress` connector in the Radioso backend
 (`backend/src/modules/connectors/plugins/wordpress/`).
@@ -23,6 +24,74 @@ Pairs with the `wordpress` connector in the Radioso backend
 
 That's it. Every time a configured post type is published, updated, or deleted,
 the plugin will fire a signed webhook to Radioso.
+
+## Catalogues and custom post types
+
+Set **Post types** to the comma-separated list you want synced — add `product`
+for a WooCommerce catalogue, plus any custom types the site registers.
+
+WordPress hands Radioso the post body, while a catalogue keeps most of what a
+shopper asks about outside it. The plugin closes that gap by appending a facts
+block to the content it pushes:
+
+- Every public taxonomy term on the post, labelled with the taxonomy's own
+  singular name — categories, tags, and site-specific taxonomies alike.
+- On WooCommerce products: the SKU, the price, the availability WooCommerce is
+  currently showing, and every visible product attribute, labelled the way the
+  shop labels it (ISBN, format, page count, publisher, and so on).
+
+Labels come from the site's own registrations, so the block arrives in the
+language the site is authored in. Internal taxonomies such as WooCommerce's
+visibility flags stay out of it, as do hidden product attributes.
+
+Prices carry the shop's own tax and currency settings, and a variable product
+carries the range across its variations — quoting one figure for a product that
+spans several would misstate it in both directions.
+
+### Keeping price and availability current
+
+Both move without anyone editing the post: scheduled sales, CSV imports, bulk
+edits and orders all change them through the WooCommerce data store. The plugin
+hooks four actions to catch every path:
+
+- `woocommerce_update_product` — a whole-product save, from the editor, an
+  import, a bulk edit or code.
+- `woocommerce_product_set_stock_status` — a direct stock-status write that
+  skips a full save.
+- `woocommerce_updated_product_price` — a variable product's price range, which
+  WooCommerce rewrites by touching `_price` directly rather than saving the
+  product, so the save hook never fires for it.
+- `woocommerce_update_product_variation` — a variation saved on a path that
+  skips the deferred parent sync. The parent product is queued, since that is
+  what Radioso holds a document for.
+
+WooCommerce recalculates a variable price range on `shutdown` at priority 10, so
+the flush runs at priority 100 — after the range settles, and late enough to pick
+up anything that sync queues.
+
+Publishes and updates are sent at the end of the request rather than the moment
+a hook fires. WordPress runs `transition_post_status` from inside
+`wp_insert_post()`, before the `save_post` pass where WooCommerce writes price,
+stock and attributes — sending from the transition would publish the values as
+they stood before the edit. Waiting also collapses the several hooks one save
+trips into a single push, so the document is re-embedded once, carrying the state
+the request finished with.
+
+Deletes are sent immediately, since by the end of the request the post and its
+permalink are gone. A delete cancels any update queued for the same post.
+
+### Author taxonomy
+
+`post_author` is the account that created the record. On a page or a post that
+account is the byline, and the plugin sends it. On a catalogue it is whoever
+uploaded the item, so the plugin leaves the author out rather than attributing
+the catalogue to a staff login — Radioso surfaces author metadata in search and
+answers.
+
+Sites that record the real author of the work in a taxonomy — a book catalogue,
+a magazine archive — set **Author taxonomy** to that taxonomy's slug (for
+example `autore`). The plugin then sends those term names as the author for
+every post type that has them.
 
 ## Resync existing content
 
@@ -63,7 +132,9 @@ interval using Application Password credentials.
 
 Trigger a save on any synced post type and check Radioso's documents list.
 You should see a new document with `metadata.source = "wordpress"` and
-`externalDocumentId = "wp_post_<id>"`.
+`externalDocumentId = "wp_post_<id>"`. On a catalogue item, the document text
+ends with the facts block, and `metadata.author` holds the author taxonomy terms
+when that setting is filled in.
 
 If nothing arrives:
 - Confirm Radioso reports the connector as **enabled** for your workspace.

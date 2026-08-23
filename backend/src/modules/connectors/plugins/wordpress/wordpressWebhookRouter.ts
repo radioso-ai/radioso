@@ -20,11 +20,7 @@ import type {
   ConnectorStatePort,
 } from "@radioso/connector-api";
 
-import {
-  externalIdFor,
-  mapWebhookPostToIngestInput,
-  type WebhookPostPayload,
-} from "./wordpressIngest.js";
+import { externalIdFor, mapWebhookPostToIngestInput } from "./wordpressIngest.js";
 import {
   normalizeWordpressSiteUrl,
   wordpressSourceFor,
@@ -46,8 +42,11 @@ const WordpressEventSchema = z.object({
     link: z.string().url(),
     modified_gmt: z.string(),
     date_gmt: z.string().optional(),
+    // `id` is the WordPress user behind the byline. Catalogue post types keep the
+    // real author in a taxonomy instead, so the companion plugin sends a name with
+    // no account behind it; the ingest mapper only ever reads the name.
     author: z
-      .object({ id: z.number().int().positive(), name: z.string() })
+      .object({ id: z.number().int().positive().optional(), name: z.string() })
       .optional(),
   }),
 });
@@ -151,7 +150,7 @@ export const createWordpressWebhookRouter = (deps: WebhookDeps): Router => {
         );
       } else {
         await deps.ingestion.ingest({
-          ...mapWebhookPostToIngestInput(workspaceId, post as WebhookPostPayload),
+          ...mapWebhookPostToIngestInput(workspaceId, post),
           source,
         });
         deps.logger.info(

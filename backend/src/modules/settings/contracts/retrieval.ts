@@ -39,3 +39,8 @@ export {
   freezeRetrievalSettings,
   type RetrievalSettingsSnapshot,
 } from "../domain/retrievalSettingsSnapshot.js";
+
+export {
+  mergeMetadataFieldSuggestions,
+  type DeclaredMetadataField,
+} from "../domain/metadataFieldSuggestions.js";

@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { documentTypeFieldValueTypes } from "../../../../modules/documentTypes/contracts/documentTypeCatalog.js";
 import {
   reprocessIngestionBodySchema,
   documentedUpdateIngestionSettingsSchema,
+  documentedUpdateDocumentTypeCatalogSchema,
   updateGeneralSettingsSchema,
   updatePlatformSettingsSchema,
   updateSettingsSchema,
@@ -20,7 +22,10 @@ import {
 } from "../../routes/webhookDestinationRouteSchemas.js";
 import { webhookDeliveryOutcomeStatuses } from "../../../../modules/webhooks/public.js";
 import { websiteEmbedLauncherPositions } from "../../../../modules/settings/contracts/websiteEmbed.js";
-import { embeddingModelIds } from "../../../../modules/settings/contracts/ingestion.js";
+import {
+  embeddingModelIds,
+  manualDocumentEnrichmentOverrides,
+} from "../../../../modules/settings/contracts/ingestion.js";
 import { chunkingStrategyIds } from "../../../../modules/retrieval/public.js";
 import {
   metadataRuleEffects,
@@ -104,6 +109,10 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
       structuredMinChunkSize: z.number().int(),
       structuredMaxChunkSize: z.number().int(),
       documentEnrichmentEnabled: z.boolean(),
+      manualDocumentEnrichmentOverride: z.enum(manualDocumentEnrichmentOverrides).openapi({
+        description:
+          "Metadata extraction override for documents added by hand, which have no source of their own. 'inherit' follows documentEnrichmentEnabled.",
+      }),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -398,9 +407,84 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     updateWorkspaceLlmModelsSchema,
   );
 
+  const DocumentTypeFieldSchema = registry.register(
+    "DocumentTypeField",
+    z.object({
+      key: z.string().openapi({
+        description:
+          "Metadata key this field writes. Matches ^[A-Za-z][A-Za-z0-9_]{0,63}$; dots are prohibited because metadata rules read them as path separators.",
+      }),
+      label: z.string(),
+      valueType: z.enum(documentTypeFieldValueTypes),
+      instruction: z.string().openapi({
+        description: "Natural-language guidance the classification prompt carries for this field.",
+      }),
+    }),
+  );
+
+  const DocumentTypeDefinitionSchema = registry.register(
+    "DocumentTypeDefinition",
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      description: z.string(),
+      enabled: z.boolean(),
+      origin: z.enum(["built_in", "operator"]).openapi({
+        description: "Built-in entries are system-owned and read-only.",
+      }),
+      payload: z.enum(["facts", "fields", "none"]).openapi({
+        description:
+          "Which payload extraction returns for this type: temporal facts for the built-in dated types, an ordered fields array for operator types, nothing for classification-only types.",
+      }),
+      disableable: z.boolean().openapi({
+        description: "False for the reserved 'generic' fallback, which is always present and always enabled.",
+      }),
+      fields: z.array(DocumentTypeFieldSchema),
+    }),
+  );
+
+  const RetiredDocumentTypeFieldSchema = registry.register(
+    "RetiredDocumentTypeField",
+    z.object({
+      key: z.string(),
+      valueType: z.enum(documentTypeFieldValueTypes),
+    }).openapi({
+      description:
+        "A deleted field identity. A retired key can only be recreated with its original value type, so a saved retrieval rule is never re-pointed at a differently typed field.",
+    }),
+  );
+
+  const DocumentTypeCatalogSchema = registry.register(
+    "DocumentTypeCatalog",
+    z.object({
+      workspaceId: z.string().uuid(),
+      revision: z.string().openapi({
+        description: "Monotonically increasing concurrency token. Echo it as expectedRevision on the next write.",
+      }),
+      types: z.array(DocumentTypeDefinitionSchema).openapi({
+        description: "Built-in entries first, then operator-defined types.",
+      }),
+      retiredFields: z.array(RetiredDocumentTypeFieldSchema),
+      referencedFieldKeys: z.array(z.string()).openapi({
+        description:
+          "Field keys any agent's retrieval metadata rules currently reference. Advisory: deleting one of these fields, or disabling the type that declares it, warns rather than blocks.",
+      }),
+    }),
+  );
+
+  const UpdateDocumentTypeCatalogRequestSchema = registry.register(
+    "UpdateDocumentTypeCatalogRequest",
+    documentedUpdateDocumentTypeCatalogSchema,
+  );
+
   Object.assign(schemas, {
     RetrievalDefaultsResponseSchema,
     IngestionSettingsSchema,
+    DocumentTypeFieldSchema,
+    DocumentTypeDefinitionSchema,
+    RetiredDocumentTypeFieldSchema,
+    DocumentTypeCatalogSchema,
+    UpdateDocumentTypeCatalogRequestSchema,
     EmbeddingCoverageSchema,
     UpdateIngestionSettingsRequestSchema,
     ReprocessIngestionRequestSchema,

@@ -14,6 +14,7 @@ import {
 } from "../shared/assistantIdentity.js";
 import {
   reprocessIngestionBodySchema,
+  updateDocumentTypeCatalogSchema,
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
@@ -24,6 +25,7 @@ import {
   websiteEmbedTokenRotationPatch,
 } from "./settingsRouteMappers.js";
 import {
+  presentDocumentTypeCatalog,
   presentEmbeddingCoverage,
   presentGeneralSettings,
   presentIngestionSettings,
@@ -33,12 +35,14 @@ import {
 type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
   | "ingestionSettingsService"
+  | "documentTypeCatalogService"
+  | "metadataFieldSuggestionProvider"
+  | "metadataRuleFieldReferenceProvider"
   | "embeddingCoverageReport"
   | "platformSettingsService"
   | "workspaceIngestionReprocessService"
   | "agentService"
   | "agentSurfaceExtensions"
-  | "documentRepository"
   | "documentStorage"
   | "retrievalDefaultsProvider"
   | "logger"
@@ -76,7 +80,8 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const defaults = dependencies.retrievalDefaultsProvider.getDefaults(workspaceId);
-      const metadataFieldSuggestions = await dependencies.documentRepository.listMetadataFieldSuggestions(workspaceId);
+      const metadataFieldSuggestions =
+        await dependencies.metadataFieldSuggestionProvider.listMetadataFieldSuggestions(workspaceId);
       res.status(200).json(presentRetrievalDefaults(defaults, metadataFieldSuggestions));
     } catch (error) {
       next(error);
@@ -112,6 +117,31 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.updateForWorkspace(workspaceId, req.body);
       res.status(200).json(presentIngestionSettings(settings, supportedEmbeddingModels()));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/document-types", workspaceSession, settingsRead, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const [catalog, referencedFieldKeys] = await Promise.all([
+        dependencies.documentTypeCatalogService.getCatalog(workspaceId),
+        dependencies.metadataRuleFieldReferenceProvider.listReferencedFieldKeys(workspaceId),
+      ]);
+      res.status(200).json(presentDocumentTypeCatalog(catalog, referencedFieldKeys));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.put("/document-types", workspaceSession, requireWorkspacePermission(dependencies, "workspace.settings.manage"), validateBody(updateDocumentTypeCatalogSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const catalog = await dependencies.documentTypeCatalogService.replaceCatalog(workspaceId, req.body);
+      const referencedFieldKeys =
+        await dependencies.metadataRuleFieldReferenceProvider.listReferencedFieldKeys(workspaceId);
+      res.status(200).json(presentDocumentTypeCatalog(catalog, referencedFieldKeys));
     } catch (error) {
       next(error);
     }

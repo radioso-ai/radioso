@@ -12,6 +12,7 @@ import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/d
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
   applyDocumentEnrichmentOverridePatch,
+  applySourceDocumentMetadataPatch,
   applyWebsiteCrawlSettingsPatch,
   buildWebsiteRecrawlRequest,
   presentDocumentSource,
@@ -20,6 +21,7 @@ import {
 import {
   chunkParamsSchema,
   documentListQuerySchema,
+  documentMetadataRecordSchema,
   documentParamsSchema,
   documentRetrievalUpdateSchema,
   documentSchema,
@@ -48,6 +50,31 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "websiteCrawlerProvider"
   | "usageLimitPolicy"
 >;
+
+// Multipart fields arrive as strings, so the import route carries its metadata
+// as a JSON document. It is held to exactly the same scalar-record and size
+// rules as the JSON body routes.
+const parseImportMetadataField = (raw: unknown): Record<string, unknown> | undefined => {
+  if (raw === undefined || raw === null || raw === "") {
+    return undefined;
+  }
+  if (typeof raw !== "string") {
+    throw badRequest("metadata must be a JSON object encoded as a string");
+  }
+
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
+    throw badRequest("metadata must be valid JSON");
+  }
+
+  const parsed = documentMetadataRecordSchema.safeParse(decoded);
+  if (!parsed.success) {
+    throw badRequest(parsed.error.issues[0]?.message ?? "metadata is invalid");
+  }
+  return parsed.data;
+};
 
 export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): Router => {
   const router = Router();
@@ -218,6 +245,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       const body = req.body as {
         crawlSettings?: Record<string, unknown>;
         documentEnrichmentOverride?: "inherit" | "on" | "off";
+        documentMetadata?: Record<string, unknown>;
       };
       if (body.crawlSettings && source.kind !== "website") {
         throw badRequest("Only website sources have editable crawl settings");
@@ -229,6 +257,9 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       }
       if (body.documentEnrichmentOverride !== undefined) {
         nextConfig = applyDocumentEnrichmentOverridePatch(nextConfig, body.documentEnrichmentOverride);
+      }
+      if (body.documentMetadata !== undefined) {
+        nextConfig = applySourceDocumentMetadataPatch(nextConfig, body.documentMetadata);
       }
 
       const updated = await dependencies.documentSourceRepository.updateConfigByIdAndWorkspaceId({
@@ -247,16 +278,16 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { sourceId } = sourceParamsSchema.parse(req.params);
-      if (sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID) {
-        throw badRequest("The manually added documents source cannot be reprocessed as a source");
-      }
       const body = reprocessDocumentBodySchema.parse(req.body ?? {});
+      // The manually added documents are presented as a synthetic source. They
+      // have no document_sources row, so they reprocess as the null-source scope
+      // while the response keeps echoing the synthetic id the client asked for.
       const result = await dependencies.documentSourceReprocessService.reprocessSource({
         workspaceId,
-        sourceId,
+        sourceId: sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID ? null : sourceId,
         documentEnrichmentOverride: body.documentEnrichmentOverride,
       });
-      res.status(202).json(result);
+      res.status(202).json({ ...result, sourceId });
     } catch (error) {
       next(error);
     }
@@ -367,6 +398,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       }
 
       const title = typeof req.body?.title === "string" ? req.body.title : undefined;
+      const metadata = parseImportMetadataField(req.body?.metadata);
       const enrichmentOverrideField =
         typeof req.body?.documentEnrichmentOverride === "string" ? req.body.documentEnrichmentOverride : undefined;
       const documentEnrichmentOverride =
@@ -380,6 +412,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         mimeType: req.file.mimetype,
         buffer: req.file.buffer,
         title,
+        metadata,
         usageReservation: importReservation,
         documentEnrichmentOverride,
       });
@@ -472,15 +505,33 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
-      const body = req.body as { retrievalEnabled?: boolean; retrievalExpiresAt?: string | null };
-      const document = await dependencies.documentIngestionService.updateRetrievalEligibility({
-        workspaceId,
-        documentId,
-        ...(body.retrievalEnabled !== undefined ? { retrievalEnabled: body.retrievalEnabled } : {}),
-        ...(body.retrievalExpiresAt !== undefined
-          ? { retrievalExpiresAt: body.retrievalExpiresAt === null ? null : new Date(body.retrievalExpiresAt) }
-          : {}),
-      });
+      const body = req.body as {
+        retrievalEnabled?: boolean;
+        retrievalExpiresAt?: string | null;
+        metadata?: Record<string, unknown>;
+      };
+      // Metadata is replaced first so the requeue it triggers carries the new
+      // tags, and the retrieval update below returns the settled document.
+      let document = body.metadata !== undefined
+        ? await dependencies.documentIngestionService.updateMetadata({
+            workspaceId,
+            documentId,
+            metadata: body.metadata,
+          })
+        : null;
+      if (body.retrievalEnabled !== undefined || body.retrievalExpiresAt !== undefined) {
+        document = await dependencies.documentIngestionService.updateRetrievalEligibility({
+          workspaceId,
+          documentId,
+          ...(body.retrievalEnabled !== undefined ? { retrievalEnabled: body.retrievalEnabled } : {}),
+          ...(body.retrievalExpiresAt !== undefined
+            ? { retrievalExpiresAt: body.retrievalExpiresAt === null ? null : new Date(body.retrievalExpiresAt) }
+            : {}),
+        });
+      }
+      if (!document) {
+        throw badRequest("Provide retrievalEnabled, retrievalExpiresAt and/or metadata");
+      }
       res.status(200).json(document);
     } catch (error) {
       next(error);

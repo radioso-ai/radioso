@@ -301,6 +301,88 @@ export const registerSettingsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/settings/document-types",
+    tags: ["Settings"],
+    summary: "Read the workspace document type catalog used by metadata extraction",
+    operationId: "getDocumentTypeCatalog",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "The document type catalog, with built-in entries merged ahead of operator-defined types",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentTypeCatalogSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/settings/document-types",
+    tags: ["Settings"],
+    summary: "Replace the operator-defined document types for the authenticated workspace",
+    operationId: "updateDocumentTypeCatalog",
+    description:
+      "Conditional write. Send the revision the edit was based on as expectedRevision; a stale revision is rejected with 409 so concurrent editors never overwrite each other. Deleting a field retires its key, and a retired key can only be recreated with its original value type.",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.UpdateDocumentTypeCatalogRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "The saved catalog at its new revision",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentTypeCatalogSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "The catalog changed since it was loaded; the message carries the current revision",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "put",
     path: "/api/v1/settings/ingestion",
     tags: ["Settings"],

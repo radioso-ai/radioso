@@ -39,6 +39,7 @@ export interface CopilotWorkspaceSettingsPort {
     embeddingModel: string;
     pendingEmbeddingModel: string | null;
     documentEnrichmentEnabled?: boolean;
+    manualDocumentEnrichmentOverride?: "inherit" | "on" | "off";
   }>;
   // How much of the workspace is actually reachable by semantic search. Answers the
   // question behind most "why can't the agent find this?" reports without leaving the
@@ -126,6 +127,7 @@ const workspaceSettingsOutputSchema = z.object({
     embeddingModel: z.string(),
     pendingEmbeddingModel: z.string().nullable(),
     documentEnrichmentEnabled: z.boolean(),
+    manualDocumentEnrichmentOverride: z.enum(["inherit", "on", "off"]),
   }).strict(),
   embeddingCoverage: z.object({
     eligibleChunks: z.number().int().nonnegative(),
@@ -245,6 +247,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
             embeddingModel: ingestion.embeddingModel,
             pendingEmbeddingModel: ingestion.pendingEmbeddingModel,
             documentEnrichmentEnabled: ingestion.documentEnrichmentEnabled ?? false,
+            manualDocumentEnrichmentOverride: ingestion.manualDocumentEnrichmentOverride ?? "inherit",
           },
           embeddingCoverage: {
             eligibleChunks: embeddingCoverage.eligibleChunks,

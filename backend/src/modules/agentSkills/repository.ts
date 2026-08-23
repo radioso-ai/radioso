@@ -32,6 +32,8 @@ export interface AgentSkillRepositoryPort {
   findByAgentAndName(agentId: string, skillName: string): Promise<AgentSkillSpine | null>;
   findDefaultAnswer(workspaceId: string, agentId: string): Promise<AgentSkillSpine | null>;
   listByAgent(workspaceId: string, agentId: string): Promise<AgentSkillSpine[]>;
+  /** Every skill in the workspace, across agents — for workspace-wide projections. */
+  listByWorkspace(workspaceId: string): Promise<AgentSkillSpine[]>;
   update(workspaceId: string, agentId: string, id: string, input: AgentSkillUpdateRecord): Promise<AgentSkillSpine | null>;
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
 }
@@ -141,6 +143,16 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .selectAll()
       .where("workspace_id", "=", workspaceId)
       .where("agent_id", "=", agentId)
+      .orderBy("skill_name", "asc")
+      .execute();
+    return rows.map((row) => mapRow(row as AgentSkillRow));
+  }
+
+  async listByWorkspace(workspaceId: string): Promise<AgentSkillSpine[]> {
+    const rows = await this.db
+      .selectFrom("agent_skills")
+      .selectAll()
+      .where("workspace_id", "=", workspaceId)
       .orderBy("skill_name", "asc")
       .execute();
     return rows.map((row) => mapRow(row as AgentSkillRow));

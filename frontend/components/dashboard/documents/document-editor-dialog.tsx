@@ -3,6 +3,8 @@
 import type { FormEvent } from 'react'
 
 import { MarkdownContent } from '@/components/markdown/markdown-content'
+import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
+import type { MetadataRecord } from '@/components/dashboard/shared/metadata-key-value-rows'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,10 +16,13 @@ import type { DocumentDialogEnrichmentChoice } from './document-import-dialog'
 
 type EditorMode = 'create' | 'edit' | 'view'
 
+/** Fields the plain-text inputs write. Metadata has its own typed channel. */
+export type DocumentEditorTextField = 'title' | 'content'
+
 export type DocumentEditorValues = {
   title: string
   content: string
-  metadata: string
+  metadata: MetadataRecord
 }
 
 export function DocumentEditorDialog({
@@ -33,6 +38,7 @@ export function DocumentEditorDialog({
   onOpenChange,
   onChange,
   onMetadataChange,
+  onMetadataValidityChange,
   onSubmit,
 }: {
   open: boolean
@@ -47,8 +53,9 @@ export function DocumentEditorDialog({
   enrichmentChoice?: DocumentDialogEnrichmentChoice
   onEnrichmentChoiceChange?: (value: DocumentDialogEnrichmentChoice) => void
   onOpenChange: (open: boolean) => void
-  onChange: (field: keyof DocumentEditorValues, value: string) => void
-  onMetadataChange: (value: string) => void
+  onChange: (field: DocumentEditorTextField, value: string) => void
+  onMetadataChange: (value: MetadataRecord) => void
+  onMetadataValidityChange?: (isValid: boolean) => void
   onSubmit: (event: FormEvent) => void
 }) {
   const isReadOnly = mode === 'view'
@@ -114,15 +121,15 @@ export function DocumentEditorDialog({
                 )}
               </div>
               <div className="space-y-2 flex-shrink-0">
-                <Label htmlFor="metadata">Metadata (JSON)</Label>
-                <Textarea
-                  id="metadata"
+                <MetadataKeyValueEditor
+                  fieldId="metadata"
+                  label="Metadata"
+                  description="Tags stored with the document. Retrieval filters can match on them."
                   value={values.metadata}
-                  onChange={(event) => onMetadataChange(event.target.value)}
-                  placeholder='{"key": "value"}'
-                  className="min-h-[80px] resize-none font-mono text-sm"
-                  disabled={isSaving || isReadOnly}
+                  onChange={onMetadataChange}
+                  onValidityChange={onMetadataValidityChange}
                   readOnly={isReadOnly}
+                  disabled={isSaving}
                 />
                 {metadataError ? <p className="text-sm text-destructive">{metadataError}</p> : null}
               </div>
@@ -157,7 +164,10 @@ export function DocumentEditorDialog({
                 {isReadOnly ? 'Close' : 'Cancel'}
               </Button>
               {isReadOnly ? null : (
-                <Button type="submit" disabled={isSaving || !values.title.trim() || !values.content.trim()}>
+                <Button
+                  type="submit"
+                  disabled={isSaving || !values.title.trim() || !values.content.trim() || Boolean(metadataError)}
+                >
                   {isSaving ? <Spinner className="mr-2" /> : null}
                   {mode === 'edit' ? 'Save Document' : 'Add Document'}
                 </Button>

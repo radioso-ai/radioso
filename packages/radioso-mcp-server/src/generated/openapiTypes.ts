@@ -624,6 +624,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/document-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the workspace document type catalog used by metadata extraction */
+        get: operations["getDocumentTypeCatalog"];
+        /**
+         * Replace the operator-defined document types for the authenticated workspace
+         * @description Conditional write. Send the revision the edit was based on as expectedRevision; a stale revision is rejected with 409 so concurrent editors never overwrite each other. Deleting a field retires its key, and a retired key can only be recreated with its original value type.
+         */
+        put: operations["updateDocumentTypeCatalog"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ingestion/embedding-model/cancel": {
         parameters: {
             query?: never;
@@ -1972,7 +1993,7 @@ export interface paths {
         delete: operations["deleteDocumentSource"];
         options?: never;
         head?: never;
-        /** Update a website source's crawl settings */
+        /** Update a document source's processing settings */
         patch: operations["updateDocumentSource"];
         trace?: never;
     };
@@ -3388,6 +3409,11 @@ export interface components {
             structuredMinChunkSize: number;
             structuredMaxChunkSize: number;
             documentEnrichmentEnabled: boolean;
+            /**
+             * @description Metadata extraction override for documents added by hand, which have no source of their own. 'inherit' follows documentEnrichmentEnabled.
+             * @enum {string}
+             */
+            manualDocumentEnrichmentOverride: "inherit" | "on" | "off";
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3416,6 +3442,8 @@ export interface components {
             /** @enum {string} */
             embeddingModel?: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
             documentEnrichmentEnabled?: boolean;
+            /** @enum {string} */
+            manualDocumentEnrichmentOverride?: "inherit" | "on" | "off";
         };
         ReprocessIngestionRequest: {
             /** @enum {string} */
@@ -3700,6 +3728,68 @@ export interface components {
                 provider: "openai" | "openai-compatible" | "gemini" | "claude";
                 model: string;
             } | null;
+        };
+        DocumentTypeField: {
+            /** @description Metadata key this field writes. Matches ^[A-Za-z][A-Za-z0-9_]{0,63}$; dots are prohibited because metadata rules read them as path separators. */
+            key: string;
+            label: string;
+            /** @enum {string} */
+            valueType: "string" | "number" | "date" | "boolean";
+            /** @description Natural-language guidance the classification prompt carries for this field. */
+            instruction: string;
+        };
+        DocumentTypeDefinition: {
+            key: string;
+            label: string;
+            description: string;
+            enabled: boolean;
+            /**
+             * @description Built-in entries are system-owned and read-only.
+             * @enum {string}
+             */
+            origin: "built_in" | "operator";
+            /**
+             * @description Which payload extraction returns for this type: temporal facts for the built-in dated types, an ordered fields array for operator types, nothing for classification-only types.
+             * @enum {string}
+             */
+            payload: "facts" | "fields" | "none";
+            /** @description False for the reserved 'generic' fallback, which is always present and always enabled. */
+            disableable: boolean;
+            fields: components["schemas"]["DocumentTypeField"][];
+        };
+        /** @description A deleted field identity. A retired key can only be recreated with its original value type, so a saved retrieval rule is never re-pointed at a differently typed field. */
+        RetiredDocumentTypeField: {
+            key: string;
+            /** @enum {string} */
+            valueType: "string" | "number" | "date" | "boolean";
+        };
+        DocumentTypeCatalog: {
+            /** Format: uuid */
+            workspaceId: string;
+            /** @description Monotonically increasing concurrency token. Echo it as expectedRevision on the next write. */
+            revision: string;
+            /** @description Built-in entries first, then operator-defined types. */
+            types: components["schemas"]["DocumentTypeDefinition"][];
+            retiredFields: components["schemas"]["RetiredDocumentTypeField"][];
+            /** @description Field keys any agent's retrieval metadata rules currently reference. Advisory: deleting one of these fields, or disabling the type that declares it, warns rather than blocks. */
+            referencedFieldKeys: string[];
+        };
+        UpdateDocumentTypeCatalogRequest: {
+            expectedRevision: string;
+            types?: {
+                key: string;
+                label: string;
+                description?: string;
+                enabled?: boolean;
+                fields?: {
+                    key: string;
+                    label: string;
+                    /** @enum {string} */
+                    valueType: "string" | "number" | "date" | "boolean";
+                    instruction?: string;
+                }[];
+            }[];
+            disabledBuiltInTypeKeys?: string[];
         };
         Agent: {
             /** Format: uuid */
@@ -4639,6 +4729,13 @@ export interface components {
             documentCount: number;
             /** @enum {string} */
             documentEnrichmentOverride: "inherit" | "on" | "off";
+            /**
+             * @description Tags stamped onto every chunk produced from this source's documents. A document's own metadata wins on key collisions.
+             * @default {}
+             */
+            documentMetadata: {
+                [key: string]: string | number | boolean | null;
+            };
             crawlSettings?: components["schemas"]["DocumentSourceCrawlSettings"];
             /** Format: date-time */
             createdAt: string;
@@ -4648,6 +4745,9 @@ export interface components {
         DocumentSourceUpdateRequest: {
             /** @enum {string} */
             documentEnrichmentOverride?: "inherit" | "on" | "off";
+            documentMetadata?: {
+                [key: string]: string | number | boolean | null;
+            };
             crawlSettings?: {
                 limit?: number;
                 includeUrlPatterns?: string[];
@@ -4685,6 +4785,8 @@ export interface components {
              * @enum {string}
              */
             documentEnrichmentOverride?: "on" | "off";
+            /** @description Operator-authored metadata for the imported document, as a JSON object of string, number, boolean, or null values. 16 KB maximum. */
+            metadata?: string;
         };
         DocumentStatus: string;
         DocumentOperationResponse: {
@@ -4706,6 +4808,23 @@ export interface components {
             factCount?: number;
             appliedChunkCount?: number;
             failureReason?: string | null;
+            /** @description The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise. */
+            matchedTypeKey?: string | null;
+            /** @description The catalog revision this run resolved at execution time. */
+            catalogRevision?: string | null;
+            /** @description The metadata keys this run generated. Extraction owns exactly these keys and replaces them on the next successful run; every other key is manually or connector owned. */
+            generatedKeys?: string[];
+            /** @description Content-free tallies of what the run did with the model's field payload. */
+            fieldCounts?: {
+                applied: number;
+                droppedInvalid: number;
+                droppedUndeclared: number;
+                droppedDuplicate: number;
+                droppedOverCap: number;
+                skippedCollision: number;
+            } | null;
+            /** @description Content-free note about a classification fallback on an otherwise successful run. */
+            classificationNote?: string | null;
         };
         RagStatus: string;
         DocumentSummary: {
@@ -4745,6 +4864,9 @@ export interface components {
             retrievalEnabled?: boolean;
             /** Format: date-time */
             retrievalExpiresAt?: string | null;
+            metadata?: {
+                [key: string]: string | number | boolean | null;
+            };
         };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
@@ -8557,6 +8679,86 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDocumentTypeCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The document type catalog, with built-in entries merged ahead of operator-defined types */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeCatalog"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentTypeCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentTypeCatalogRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved catalog at its new revision */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentTypeCatalog"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The catalog changed since it was loaded; the message carries the current revision */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15357,7 +15559,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentSourceListItem"];
                 };
             };
-            /** @description Source is not a website or the manually-added bucket */
+            /** @description Request validation failed or crawl settings were sent for a non-website source */
             400: {
                 headers: {
                     [name: string]: unknown;

@@ -268,6 +268,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "deleteDocument",
     "reprocessDocumentSource",
     "reprocessDocument",
+    "getDocumentTypeCatalog",
+    "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
   ...coverage([
     "createRetrievalAnswer",

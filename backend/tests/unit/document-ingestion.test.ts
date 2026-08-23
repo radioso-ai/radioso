@@ -1551,6 +1551,135 @@ describe("document retrieval eligibility", () => {
   });
 });
 
+// Operator-authored document tags only reach the chunks at vectorize time, so a
+// metadata replace has to requeue the document rather than write it in place.
+describe("document metadata update", () => {
+  const createService = () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      undefined,
+      jobRepository,
+      dispatcher,
+    );
+    return { documentRepository, jobRepository, auditService, dispatcher, service };
+  };
+
+  it("replaces the whole metadata record and requeues the document", async () => {
+    const { service, documentRepository, jobRepository } = createService();
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      sourceContent: "body",
+      markdownContent: "body",
+      status: "ready",
+      metadata: { audience: "operators", stale: "drop me" },
+    });
+
+    const updated = await service.updateMetadata({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: { audience: "admins", revision: 2 },
+    });
+
+    expect(updated.metadata).toEqual({ audience: "admins", revision: 2 });
+    const stored = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+    expect(stored?.metadata).toEqual({ audience: "admins", revision: 2 });
+    expect(stored?.status).toBe("queued");
+    expect(stored?.revision).toBe(document.revision + 1);
+    expect([...jobRepository.items.values()].filter((job) => job.documentId === document.id)).toHaveLength(1);
+  });
+
+  it("clears every tag when given an empty record", async () => {
+    const { service, documentRepository } = createService();
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      sourceContent: "body",
+      markdownContent: "body",
+      status: "ready",
+      metadata: { audience: "operators" },
+    });
+
+    const updated = await service.updateMetadata({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: {},
+    });
+
+    expect(updated.metadata).toEqual({});
+  });
+
+  it("is allowed for imported documents, which the inline update path rejects", async () => {
+    const { service, documentRepository } = createService();
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Handbook",
+      sourceContent: "",
+      markdownContent: "",
+      status: "ready",
+      sourceKind: "uploaded_file",
+      sourceFilename: "handbook.pdf",
+      sourceMimeType: "application/pdf",
+    });
+
+    const updated = await service.updateMetadata({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: { audience: "operators" },
+    });
+
+    expect(updated.metadata).toEqual({ audience: "operators" });
+    expect((await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1"))?.status).toBe("queued");
+  });
+
+  it("dispatches the queued processing job and records an audit event", async () => {
+    const { service, documentRepository, dispatcher, auditService } = createService();
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      sourceContent: "body",
+      markdownContent: "body",
+      status: "ready",
+    });
+
+    await service.updateMetadata({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: { audience: "operators" },
+    });
+
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "document.metadata.update",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ documentId: document.id }),
+      }),
+    );
+  });
+
+  it("rejects an unknown document", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.updateMetadata({
+        workspaceId: "workspace-1",
+        documentId: "00000000-0000-0000-0000-000000000000",
+        metadata: {},
+      }),
+    ).rejects.toThrow("Document not found");
+  });
+});
+
 const fixedWindowStrategy: ChunkingStrategy = {
   id: "fixed_window",
   async chunk(input) {

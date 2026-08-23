@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { documentsApi } from '@/lib/api'
+import { documentsApi, settingsApi, type IngestionSettings } from '@/lib/api'
 
 const createLocalStorage = () => {
   const store = new Map<string, string>([
@@ -85,5 +85,34 @@ describe('document enrichment API adapters', () => {
         body: JSON.stringify({ documentEnrichmentOverride: 'on' }),
       }),
     )
+  })
+
+  it('sends the manually added document override in the ingestion settings update body', async () => {
+    vi.stubGlobal('window', { localStorage: createLocalStorage() })
+    const settings: IngestionSettings = {
+      workspaceId: 'workspace-1',
+      chunkingStrategy: 'fixed_window',
+      fixedWindowChunkSize: 1000,
+      fixedWindowChunkOverlap: 200,
+      structuredMinChunkSize: 200,
+      structuredMaxChunkSize: 1200,
+      embeddingModel: 'text-embedding-3-small',
+      pendingEmbeddingModel: null,
+      documentEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: 'on',
+      supportedEmbeddingModels: ['text-embedding-3-small'],
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse(settings))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await settingsApi.updateIngestionSettings(settings)
+
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, { body: string }]
+    expect(JSON.parse(requestInit.body)).toMatchObject({
+      manualDocumentEnrichmentOverride: 'on',
+      documentEnrichmentEnabled: false,
+    })
   })
 })

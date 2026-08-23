@@ -217,7 +217,7 @@ test("connector sources reopen setup with sync status and manual sync", async ({
 
   await page.getByText("wordpress:https://example.com").click();
   await expect(page.getByText("Sync failed: WordPress REST returned 401 Unauthorized.")).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Connector setup", exact: true }).click();
 
   const dialog = page.getByRole("dialog", { name: /WordPress/ });
   await expect(dialog).toBeVisible();
@@ -246,6 +246,7 @@ test("operator toggles metadata extraction and reprocesses one source", async ({
       embeddingModel: "text-embedding-3-small",
       pendingEmbeddingModel: null,
       documentEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: "inherit",
       supportedEmbeddingModels: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002", "gemini-embedding-001"],
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -326,7 +327,11 @@ test("operator toggles metadata extraction and reprocesses one source", async ({
 
   await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
   await page.getByRole("button", { name: new RegExp(websiteSourceName) }).first().click();
-  await page.getByRole("combobox").click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Metadata extraction")).toBeVisible();
+  // Scoped by accessible name: the Settings tab also carries the per-row value
+  // type selects of the document tags editor.
+  await page.getByRole("combobox", { name: "Metadata extraction" }).click();
   await page.getByRole("option", { name: "Always on for this source" }).click();
 
   await expect.poll(() => sourceRequests.some((entry) =>
@@ -345,5 +350,172 @@ test("operator toggles metadata extraction and reprocesses one source", async ({
       method: "POST",
       body: null,
     }),
+  ]));
+});
+
+test("operator edits the document tags a source stamps onto its documents", async ({ page }) => {
+  const sourceRequests: Array<{ method: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  await page.route("**/backend/api/v1/document/sources", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sources: [
+          {
+            id: websiteSourceId,
+            kind: "website",
+            name: websiteSourceName,
+            externalId: "https://anandaeurope.org",
+            documentCount: 2,
+            documentEnrichmentOverride: "inherit",
+            documentMetadata: { department: "outreach" },
+            lastSyncedAt: nowIso,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(`**/backend/api/v1/document/sources/${websiteSourceId}`, async (route) => {
+    sourceRequests.push({
+      method: route.request().method(),
+      body: route.request().postDataJSON(),
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: websiteSourceId,
+        kind: "website",
+        name: websiteSourceName,
+        externalId: "https://anandaeurope.org",
+        documentCount: 2,
+        documentEnrichmentOverride: "inherit",
+        documentMetadata: { department: "outreach", priority: 2 },
+        lastSyncedAt: nowIso,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
+  await page.getByRole("button", { name: new RegExp(websiteSourceName) }).first().click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+
+  // The stored template seeds the editor.
+  await expect(page.getByLabel("Document tag key 1")).toHaveValue("department");
+  await expect(page.getByLabel("Document tag value 1")).toHaveValue("outreach");
+
+  // Saving is offered only once the template actually changes.
+  const saveTags = page.getByRole("button", { name: "Save document tags" });
+  await expect(saveTags).toBeDisabled();
+
+  await page.getByRole("button", { name: "Add document tag" }).click();
+  await page.getByRole("combobox", { name: "Document tag value type 2" }).click();
+  await page.getByRole("option", { name: "Number" }).click();
+  await page.getByLabel("Document tag key 2").fill("priority");
+  await page.getByLabel("Document tag value 2").fill("2");
+
+  await saveTags.click();
+
+  await expect.poll(() => sourceRequests.length).toBeGreaterThanOrEqual(1);
+  expect(sourceRequests.at(-1)).toMatchObject({
+    method: "PATCH",
+    body: { documentMetadata: { department: "outreach", priority: 2 } },
+  });
+});
+
+const manuallyAddedSourceId = "00000000-0000-0000-0000-000000000001";
+
+test("operator sets metadata extraction for manually added documents and reprocesses them", async ({ page }) => {
+  const ingestionSettingsUpdates: unknown[] = [];
+  const reprocessRequests: Array<{ method: string; url: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    ingestionSettingsUpdates,
+    ingestionSettings: {
+      workspaceId: "workspace-1",
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 1000,
+      fixedWindowChunkOverlap: 200,
+      structuredMinChunkSize: 200,
+      structuredMaxChunkSize: 1200,
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: null,
+      documentEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: "inherit",
+      supportedEmbeddingModels: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002", "gemini-embedding-001"],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+  });
+
+  await page.route("**/backend/api/v1/document/sources", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sources: [
+          {
+            id: manuallyAddedSourceId,
+            kind: "manual",
+            name: "Manually added documents",
+            externalId: null,
+            documentCount: 3,
+            lastSyncedAt: null,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(`**/backend/api/v1/document/sources/${manuallyAddedSourceId}/reprocess`, async (route) => {
+    reprocessRequests.push({
+      method: route.request().method(),
+      url: route.request().url(),
+      body: route.request().postDataJSON(),
+    });
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sourceId: manuallyAddedSourceId,
+        workspaceId: "workspace-1",
+        queuedDocumentCount: 3,
+        skippedDocumentCount: 0,
+        status: "queued",
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
+  await page.getByRole("button", { name: /Manually added documents/ }).first().click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByText("Metadata extraction")).toBeVisible();
+
+  await page.getByRole("combobox").click();
+  await page.getByRole("option", { name: "Always on for this source" }).click();
+
+  await expect.poll(() => ingestionSettingsUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(ingestionSettingsUpdates.at(-1)).toMatchObject({
+    manualDocumentEnrichmentOverride: "on",
+  });
+
+  await page.getByRole("button", { name: "Reprocess source" }).click();
+  await expect(page.getByText("Queued 3 documents for reprocessing. Skipped 0.")).toBeVisible();
+  expect(reprocessRequests).toEqual(expect.arrayContaining([
+    expect.objectContaining({ method: "POST" }),
   ]));
 });

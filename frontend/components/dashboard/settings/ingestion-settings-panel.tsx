@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Search, Settings2, SlidersHorizontal } from 'lucide-react'
 
+import { DocumentTypeCatalogEditor } from '@/components/dashboard/settings/document-type-catalog-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingFieldHeader, SettingTooltip } from '@/components/dashboard/settings/settings-flow'
 import { chunkingStrategyOptions } from '@/components/dashboard/settings/settings-options'
@@ -390,6 +391,9 @@ export function IngestionSettingsPanel({
                     onCheckedChange={(checked) => updateSetting('documentEnrichmentEnabled', checked)}
                   />
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  What extraction looks for comes from the document type catalog below.
+                </p>
               </div>
               <div id="existing-documents" className="space-y-4 border-t border-border/70 pt-4">
                 <div className="space-y-1">
@@ -414,6 +418,7 @@ export function IngestionSettingsPanel({
               </div>
             </div>
         </SettingsCard>
+        <DocumentTypeCatalogEditor />
       </div>
     </SettingsTabShell>
   )

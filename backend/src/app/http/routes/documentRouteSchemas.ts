@@ -4,6 +4,17 @@ const MAX_DOCUMENT_LIST_LIMIT = 100;
 const MAX_DOCUMENT_METADATA_BYTES = 16384;
 
 const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
+
+// Document metadata is a flat map of scalars, bounded at 16 KB. The same shape
+// backs inline documents, imported documents, the document metadata PATCH, and
+// source-level document tags, so it is declared once here.
+export const documentMetadataRecordSchema = z
+  .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+  .refine(
+    (value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_DOCUMENT_METADATA_BYTES,
+    { message: "Metadata must be 16 KB or less" },
+  );
+
 export const documentEnrichmentOverrideSchema = z.enum(["on", "off"]);
 export const documentSourceEnrichmentOverrideSchema = z.enum(["inherit", "on", "off"]);
 export const reprocessDocumentBodySchema = z.object({
@@ -33,6 +44,8 @@ export const sourceParamsSchema = z.object({
 
 export const sourceUpdateSchema = z.object({
   documentEnrichmentOverride: documentSourceEnrichmentOverrideSchema.optional(),
+  // Tags stamped onto every chunk produced from this source's documents.
+  documentMetadata: documentMetadataRecordSchema.optional(),
   crawlSettings: z
     .object({
       limit: z.number().int().min(1).optional(),
@@ -50,17 +63,17 @@ export const sourceUpdateSchema = z.object({
     )
     .optional(),
 }).refine(
-  (value) => value.crawlSettings !== undefined || value.documentEnrichmentOverride !== undefined,
+  (value) =>
+    value.crawlSettings !== undefined ||
+    value.documentEnrichmentOverride !== undefined ||
+    value.documentMetadata !== undefined,
   { message: "source update must include at least one field" },
 );
 
 export const documentSchema = z.object({
   title: z.string().min(1),
   content: z.string().min(1),
-  metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().refine(
-    (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= MAX_DOCUMENT_METADATA_BYTES,
-    { message: "Metadata must be 16 KB or less" },
-  ),
+  metadata: documentMetadataRecordSchema.optional(),
   externalDocumentId: z.string().trim().min(1).optional(),
   source: documentSourceSchema.optional(),
   documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
@@ -72,11 +85,17 @@ export const documentRetrievalUpdateSchema = z
     // `null` clears the expiry; an ISO 8601 timestamp sets it. Absent leaves the
     // stored value unchanged.
     retrievalExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
+    // A full replace of the operator-authored tag map. Present-but-empty clears
+    // every tag; absent leaves the stored map unchanged.
+    metadata: documentMetadataRecordSchema.optional(),
   })
   .strict()
   .refine(
-    (value) => value.retrievalEnabled !== undefined || value.retrievalExpiresAt !== undefined,
-    { message: "Provide retrievalEnabled and/or retrievalExpiresAt" },
+    (value) =>
+      value.retrievalEnabled !== undefined ||
+      value.retrievalExpiresAt !== undefined ||
+      value.metadata !== undefined,
+    { message: "Provide retrievalEnabled, retrievalExpiresAt and/or metadata" },
   );
 
 export const documentParamsSchema = z.object({

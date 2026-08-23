@@ -93,6 +93,7 @@ export const buildDocumentRetrievalGraph = (input: {
   const settings = buildSettingsServices({
     auditService: infrastructure.auditService,
     ingestionSettingsRepository: repositories.ingestionSettingsRepository,
+    documentTypeCatalogRepository: repositories.documentTypeCatalogRepository,
     supportedEmbeddingModels: listSupportedEmbeddingModels(llmRegistry),
     embeddingTransitions,
   });

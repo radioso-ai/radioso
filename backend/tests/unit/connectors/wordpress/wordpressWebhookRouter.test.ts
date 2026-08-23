@@ -107,6 +107,27 @@ describe("wordpressWebhookRouter", () => {
     });
   });
 
+  it("accepts a taxonomy-sourced author that carries no WordPress user id", async () => {
+    // Catalogue post types (e.g. WooCommerce products) keep the real author in a
+    // taxonomy, so the companion plugin sends a name with no `post_author` behind it.
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      post: { ...validPost, author: { name: "Swami Kriyananda" } },
+    });
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(204);
+    const firstCallArgs = ingest.mock.calls[0] as unknown as [
+      { metadata: Record<string, unknown> },
+    ];
+    expect(firstCallArgs[0].metadata).toMatchObject({ author: "Swami Kriyananda" });
+  });
+
   it("rejects a validly signed event from a different WordPress site", async () => {
     const { app, ingest } = setupApp();
     const body = JSON.stringify({

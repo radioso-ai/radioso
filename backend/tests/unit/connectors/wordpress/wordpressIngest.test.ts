@@ -84,6 +84,16 @@ describe("mapWebhookPostToIngestInput", () => {
     expect(metadata).not.toHaveProperty("dateFrom");
   });
 
+  it("keeps a taxonomy-sourced author that carries no WordPress user id", () => {
+    // Catalogue post types keep the author of the work in a taxonomy, so the
+    // companion plugin sends a name with no account behind it.
+    const { metadata } = mapWebhookPostToIngestInput("ws-1", {
+      ...baseWebhookPost,
+      author: { name: "Swami Kriyananda" },
+    });
+    expect(metadata).toMatchObject({ author: "Swami Kriyananda" });
+  });
+
   it("omits author metadata when not provided", () => {
     const { metadata } = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, author: undefined });
     expect(metadata).not.toHaveProperty("author");

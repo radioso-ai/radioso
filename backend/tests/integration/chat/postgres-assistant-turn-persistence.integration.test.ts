@@ -7,6 +7,7 @@ import { ConversationRepository, type ConversationRecord } from "../../../src/db
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { InMemoryWorkspaceEventBus } from "../../../src/shared/events/workspaceEventBus.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../../support/databaseMigrations.js";
 
@@ -490,5 +491,49 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       [conversation.id],
     );
     expect(enqueued.status).toBe("pending");
+  });
+  it("publishes conversation.updated after the assistant turn transaction commits", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const bus = new InMemoryWorkspaceEventBus();
+    const events = bus.subscribe(workspace.id)[Symbol.asyncIterator]();
+    // The turn commit touches `conversations.updated_at` with raw SQL inside the
+    // transaction, so the repository decorator never sees it. Without an explicit
+    // publish here the activity list only refreshes at the reconcile floor.
+    const persistenceWithBus = new PostgresAssistantTurnPersistence(
+      database.kysely,
+      60_000,
+      undefined,
+      undefined,
+      undefined,
+      bus,
+    );
+
+    await persistenceWithBus.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: randomUUID(),
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Answered.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    await expect(events.next()).resolves.toMatchObject({
+      value: {
+        resourceType: "conversation",
+        resourceId: conversation.id,
+        workspaceId: workspace.id,
+        changeKind: "conversation.updated",
+      },
+    });
+    await events.return?.();
   });
 });

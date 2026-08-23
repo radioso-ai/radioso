@@ -7,6 +7,7 @@ import type {
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentMetadataRecord,
   DocumentRetrievalUpdateRequest,
   DocumentSourceCrawlSettings,
   DocumentSourceListItem,
@@ -83,6 +84,21 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
+  /**
+   * Replaces a document's tags wholesale. An empty record is sent as-is because
+   * the route reads a present `metadata` as the full new set, so `{}` is how the
+   * caller clears every tag.
+   */
+  async updateDocumentMetadata(
+    documentId: string,
+    metadata: DocumentMetadataRecord,
+  ): Promise<DocumentDetails> {
+    return request<DocumentDetails>(`/document/${documentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ metadata }),
+    }, { withApiToken: true })
+  },
+
   async reprocessDocument(documentId: string, input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<DocumentCreateResponse> {
     return request<DocumentCreateResponse>(`/document/${documentId}/reprocess`, {
       method: "POST",
@@ -101,7 +117,7 @@ export const documentsApi = {
   async importDocument(
     file: File,
     title?: string,
-    options?: { documentEnrichmentOverride?: 'on' | 'off' },
+    options?: { documentEnrichmentOverride?: 'on' | 'off'; metadata?: DocumentMetadataRecord },
   ): Promise<DocumentCreateResponse> {
     const formData = new FormData()
     formData.set("file", file)
@@ -110,6 +126,11 @@ export const documentsApi = {
     }
     if (options?.documentEnrichmentOverride) {
       formData.set("documentEnrichmentOverride", options.documentEnrichmentOverride)
+    }
+    // Multipart carries no JSON types, so tags ride as one serialized field. An
+    // empty record is left out entirely: on create there is nothing to clear.
+    if (options?.metadata && Object.keys(options.metadata).length > 0) {
+      formData.set("metadata", JSON.stringify(options.metadata))
     }
 
     return request<DocumentCreateResponse>("/document/import", {
@@ -214,6 +235,21 @@ export const documentsApi = {
     return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ documentEnrichmentOverride }),
+    }, { withApiToken: true })
+  },
+
+  /**
+   * Replaces the tag template a source stamps onto the documents it produces.
+   * Already-ingested documents keep their current tags until the source is
+   * reprocessed.
+   */
+  async updateSourceDocumentMetadata(
+    sourceId: string,
+    documentMetadata: DocumentMetadataRecord,
+  ): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ documentMetadata }),
     }, { withApiToken: true })
   },
 

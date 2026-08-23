@@ -49,6 +49,7 @@ mcp_server=false
 crawler=false
 census=false
 ee=false
+bootstrap=false
 
 mark_all() {
   backend=true
@@ -59,6 +60,7 @@ mark_all() {
   crawler=true
   census=true
   ee=true
+  bootstrap=true
 }
 
 if [ "$RUN_ALL" = true ]; then
@@ -126,7 +128,7 @@ else
   done < <(git diff --name-only "$BASE_REF...HEAD")
 fi
 
-if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee" = "falsefalsefalsefalsefalsefalsefalsefalse" ]; then
+if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee$bootstrap" = "falsefalsefalsefalsefalsefalsefalsefalsefalse" ]; then
   echo "No CI-relevant changes detected against $BASE_REF."
   exit 0
 fi
@@ -227,6 +229,11 @@ echo "  mcp_server=$mcp_server"
 echo "  crawler=$crawler"
 echo "  census=$census"
 echo "  ee=$ee"
+echo "  bootstrap=$bootstrap"
+
+if [ "$bootstrap" = true ]; then
+  run_sh "node --test tests/bootstrap/*.test.mjs"
+fi
 
 if [ "$backend" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...

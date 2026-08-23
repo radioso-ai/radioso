@@ -232,7 +232,7 @@ export const registerDocumentsPaths = (
     method: "patch",
     path: "/api/v1/document/sources/{sourceId}",
     tags: ["Documents"],
-    summary: "Update a website source's crawl settings",
+    summary: "Update a document source's processing settings",
     operationId: "updateDocumentSource",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
@@ -255,7 +255,7 @@ export const registerDocumentsPaths = (
         },
       },
       400: {
-        description: "Source is not a website or the manually-added bucket",
+        description: "Request validation failed or crawl settings were sent for a non-website source",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

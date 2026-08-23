@@ -114,4 +114,94 @@ describe("DocumentSourceReprocessService", () => {
       }),
     }));
   });
+
+  it("queues only documents with no source for the manual scope and skips the source lookup", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const sourceRepository = new InMemoryDocumentSourceRepository();
+    const findSource = vi.spyOn(sourceRepository, "findByIdAndWorkspaceId");
+    const auditService = createAuditService();
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const source = await sourceRepository.upsertByExternalId({
+      workspaceId: "workspace-1",
+      kind: "website",
+      name: "Events",
+      externalId: "https://events.example",
+      config: { url: "https://events.example" },
+    });
+    const manualStatuses = ["ready", "failed", "processing"] as const;
+    const manualDocuments = await Promise.all(manualStatuses.map((status) =>
+      documentRepository.create({
+        workspaceId: "workspace-1",
+        title: `manual ${status} document`,
+        sourceContent: status,
+        markdownContent: status,
+        status,
+      }),
+    ));
+    const sourcedDocument = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Sourced ready",
+      sourceContent: "sourced",
+      markdownContent: "sourced",
+      status: "ready",
+      sourceId: source.id,
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const service = new DocumentSourceReprocessService(
+      documentRepository,
+      sourceRepository,
+      auditService,
+      jobRepository,
+      dispatcher,
+    );
+
+    const result = await service.reprocessSource({
+      workspaceId: "workspace-1",
+      sourceId: null,
+      documentEnrichmentOverride: "on",
+    });
+
+    expect(findSource).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      workspaceId: "workspace-1",
+      sourceId: null,
+      queuedDocumentCount: 2,
+      skippedDocumentCount: 1,
+      status: "queued",
+    });
+    for (const document of manualDocuments.slice(0, 2)) {
+      const updated = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+      expect(updated?.status).toBe("queued");
+      expect(updated?.revision).toBe(2);
+      const job = await jobRepository.findByDocumentRevision({
+        documentId: document.id,
+        workspaceId: "workspace-1",
+        documentRevision: 2,
+      });
+      expect(job?.options).toEqual({ documentEnrichmentOverride: "on" });
+    }
+    const untouchedSourced = await documentRepository.findByIdAndWorkspaceId(sourcedDocument.id, "workspace-1");
+    expect(untouchedSourced?.status).toBe("ready");
+    expect(untouchedSourced?.revision).toBe(1);
+    expect(auditService.events).toContainEqual(expect.objectContaining({
+      eventType: "document.reprocess_source",
+      eventStatus: "success",
+      metadata: expect.objectContaining({
+        sourceId: null,
+        queuedDocumentCount: 2,
+        skippedDocumentCount: 1,
+      }),
+    }));
+  });
 });

@@ -12,6 +12,7 @@ import {
   InMemoryChunkRepository,
   InMemoryDocumentProcessingJobRepository,
   InMemoryDocumentRepository,
+  InMemoryDocumentSourceRepository,
 } from "../support/fakes.js";
 import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
@@ -113,14 +114,99 @@ const alwaysAppliesFirstChunkDate: DocumentEnrichmentStagePort = {
   },
 };
 
-const settingsReader = (documentEnrichmentEnabled: boolean) => ({
+const settingsReader = (
+  documentEnrichmentEnabled: boolean,
+  manualDocumentEnrichmentOverride: "inherit" | "on" | "off" = "inherit",
+) => ({
   async getForWorkspace(workspaceId: string) {
     return {
       ...defaultIngestionSettings(workspaceId),
       chunkingStrategy: "structured_semantic" as const,
       documentEnrichmentEnabled,
+      manualDocumentEnrichmentOverride,
     };
   },
+});
+
+// Documents created without a sourceId are the "manually added" documents that
+// have no document_sources row to carry a source-level override.
+const countEnrichJobsForManualDocument = async (input: {
+  workspaceEnrichmentEnabled: boolean;
+  manualDocumentEnrichmentOverride: "inherit" | "on" | "off";
+  jobOverride?: "on" | "off";
+}): Promise<number> => {
+  const documentRepository = new InMemoryDocumentRepository();
+  const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+  documentRepository.setJobRepository(jobRepository);
+  const chunkRepository = new InMemoryChunkRepository(documentRepository);
+
+  const document = await documentRepository.create({
+    workspaceId: "workspace-1",
+    title: "Summer Workshop",
+    sourceContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+    markdownContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+    status: "queued",
+  });
+
+  const service = new DocumentProcessingService(
+    documentRepository,
+    chunkRepository,
+    buildEmbeddingService([]),
+    createAuditService(),
+    settingsReader(input.workspaceEnrichmentEnabled, input.manualDocumentEnrichmentOverride),
+    new ChunkingStrategyRegistry([singleChunkStrategy()]),
+    undefined,
+    undefined,
+    alwaysAppliesFirstChunkDate,
+    undefined,
+    jobRepository,
+  );
+
+  await service.process(buildVectorizeJob(document.id, document.revision, {
+    options: input.jobOverride ? { documentEnrichmentOverride: input.jobOverride } : null,
+  }));
+
+  return [...jobRepository.items.values()].filter((job) => job.kind === "enrich").length;
+};
+
+describe("manually added document enrichment override", () => {
+  it("enriches when the manual override is on and the workspace default is off", async () => {
+    expect(await countEnrichJobsForManualDocument({
+      workspaceEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: "on",
+    })).toBe(1);
+  });
+
+  it("skips enrichment when the manual override is off and the workspace default is on", async () => {
+    expect(await countEnrichJobsForManualDocument({
+      workspaceEnrichmentEnabled: true,
+      manualDocumentEnrichmentOverride: "off",
+    })).toBe(0);
+  });
+
+  it("follows the workspace default when the manual override inherits", async () => {
+    expect(await countEnrichJobsForManualDocument({
+      workspaceEnrichmentEnabled: true,
+      manualDocumentEnrichmentOverride: "inherit",
+    })).toBe(1);
+    expect(await countEnrichJobsForManualDocument({
+      workspaceEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: "inherit",
+    })).toBe(0);
+  });
+
+  it("lets a per-run job override win over the manual override", async () => {
+    expect(await countEnrichJobsForManualDocument({
+      workspaceEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: "off",
+      jobOverride: "on",
+    })).toBe(1);
+    expect(await countEnrichJobsForManualDocument({
+      workspaceEnrichmentEnabled: true,
+      manualDocumentEnrichmentOverride: "on",
+      jobOverride: "off",
+    })).toBe(0);
+  });
 });
 
 describe("document processing enrichment split", () => {
@@ -453,5 +539,137 @@ describe("document processing enrichment split", () => {
     expect(jobRepository.items.get(enrichJob.id)?.status).toBe("queued");
     expect(jobRepository.items.get(enrichJob.id)?.completedAt).toBeNull();
     expect(documentRepository.items.get(document.id)?.status).toBe("ready");
+  });
+});
+
+// Source-level document tags are stamped onto the CHUNK metadata projection at
+// vectorize time and never written back to documents.metadata. Document-own
+// keys win over source keys.
+describe("source-level document tags", () => {
+  const buildSourceScopedService = async (input: {
+    sourceDocumentMetadata?: Record<string, unknown>;
+    documentMetadata?: Record<string, unknown>;
+    persistedSearchTexts?: string[];
+  }) => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const sourceRepository = new InMemoryDocumentSourceRepository();
+    sourceRepository.setDocumentRepository(documentRepository);
+
+    const source = await sourceRepository.upsertByExternalId({
+      workspaceId: "workspace-1",
+      kind: "website",
+      name: "Handbook site",
+      externalId: "handbook-site",
+      config: input.sourceDocumentMetadata ? { documentMetadata: input.sourceDocumentMetadata } : {},
+    });
+
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      markdownContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      status: "queued",
+      sourceId: source.id,
+      metadata: input.documentMetadata,
+    });
+
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      buildEmbeddingService(input.persistedSearchTexts ?? []),
+      createAuditService(),
+      settingsReader(false),
+      new ChunkingStrategyRegistry([singleChunkStrategy()]),
+      undefined,
+      undefined,
+      alwaysAppliesFirstChunkDate,
+      sourceRepository,
+      jobRepository,
+    );
+
+    return { service, document, documentRepository, chunkRepository, sourceRepository };
+  };
+
+  it("stamps source tags onto every chunk", async () => {
+    const { service, document, chunkRepository } = await buildSourceScopedService({
+      sourceDocumentMetadata: { region: "eu", tier: 2, active: true },
+    });
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    const chunks = chunkRepository.items.get(document.id) ?? [];
+    expect(chunks).toHaveLength(2);
+    for (const chunk of chunks) {
+      expect(chunk.metadata).toMatchObject({ region: "eu", tier: 2, active: true });
+    }
+  });
+
+  it("lets document-own keys win over source keys", async () => {
+    const { service, document, chunkRepository } = await buildSourceScopedService({
+      sourceDocumentMetadata: { region: "eu", audience: "everyone" },
+      documentMetadata: { audience: "operators" },
+    });
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    const chunks = chunkRepository.items.get(document.id) ?? [];
+    expect(chunks[0]?.metadata).toEqual({ region: "eu", audience: "operators" });
+  });
+
+  it("never writes source tags back to documents.metadata", async () => {
+    const { service, document, documentRepository } = await buildSourceScopedService({
+      sourceDocumentMetadata: { region: "eu" },
+      documentMetadata: { audience: "operators" },
+    });
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    expect(documentRepository.items.get(document.id)?.metadata).toEqual({ audience: "operators" });
+  });
+
+  // The merged map is what feeds renderMetadataSearchText. That renderer
+  // projects a fixed key set (dates, url, author), so a source tag reaches the
+  // embedded text only for those keys; arbitrary tags stay filter-only.
+  it("folds source tags into the embedded search text for keys the renderer projects", async () => {
+    const persistedSearchTexts: string[] = [];
+    const { service, document } = await buildSourceScopedService({
+      sourceDocumentMetadata: { author: "Radioso Docs Team", region: "eu" },
+      persistedSearchTexts,
+    });
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    expect(persistedSearchTexts.some((text) => text.includes("Author: Radioso Docs Team"))).toBe(true);
+    expect(persistedSearchTexts.some((text) => text.includes("eu"))).toBe(false);
+  });
+
+  it("leaves chunk metadata untouched when the source carries no tags", async () => {
+    const { service, document, chunkRepository } = await buildSourceScopedService({
+      documentMetadata: { audience: "operators" },
+    });
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({ audience: "operators" });
+  });
+
+  it("keeps source tags on chunks after the enrich pass merges extracted facts", async () => {
+    const { service, document, chunkRepository } = await buildSourceScopedService({
+      sourceDocumentMetadata: { region: "eu" },
+    });
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+    await service.processEnrichment(buildEnrichJob(document.id, document.revision));
+
+    const chunks = chunkRepository.items.get(document.id) ?? [];
+    const secondChunk = chunks.find((chunk) => chunk.chunkIndex === 1);
+    expect(secondChunk?.metadata).toMatchObject({
+      region: "eu",
+      dateFrom: "2026-07-17",
+      dateTo: "2026-07-19",
+    });
   });
 });

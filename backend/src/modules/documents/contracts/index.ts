@@ -10,6 +10,7 @@ export type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
+  DocumentMetadataReplaceInput,
   DocumentDetails,
   DocumentListPage,
   DocumentQueueUpdateInput,

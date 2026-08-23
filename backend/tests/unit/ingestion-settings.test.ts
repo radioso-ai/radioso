@@ -42,6 +42,49 @@ describe("ingestion settings", () => {
     ).toBe(true);
   });
 
+  it("defaults the manual document enrichment override to inherit", () => {
+    expect(defaultIngestionSettings("workspace-1").manualDocumentEnrichmentOverride).toBe("inherit");
+
+    expect(
+      validateIngestionSettings({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+      }).manualDocumentEnrichmentOverride,
+    ).toBe("inherit");
+  });
+
+  it.each(["inherit", "on", "off"] as const)(
+    "accepts manual document enrichment override %s",
+    (manualDocumentEnrichmentOverride) => {
+      expect(
+        validateIngestionSettings({
+          chunkingStrategy: "fixed_window",
+          fixedWindowChunkSize: 800,
+          fixedWindowChunkOverlap: 120,
+          structuredMinChunkSize: 24,
+          structuredMaxChunkSize: 220,
+          manualDocumentEnrichmentOverride,
+        }).manualDocumentEnrichmentOverride,
+      ).toBe(manualDocumentEnrichmentOverride);
+    },
+  );
+
+  it("rejects an unsupported manual document enrichment override", () => {
+    expect(() =>
+      validateIngestionSettings({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+        manualDocumentEnrichmentOverride: "sometimes" as never,
+      }),
+    ).toThrow(/manualDocumentEnrichmentOverride/);
+  });
+
   it.each([
     "text-embedding-3-large",
     "gemini-embedding-001",

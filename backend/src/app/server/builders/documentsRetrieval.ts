@@ -2,6 +2,8 @@ import { AuditEventRepository } from "../../../db/repositories/auditEventReposit
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../../db/repositories/documentSourceRepository.js";
 import { IngestionSettingsRepository } from "../../../db/repositories/ingestionSettingsRepository.js";
+import type { DocumentTypeCatalogRepository } from "../../../db/repositories/documentTypeCatalogRepository.js";
+import { DocumentTypeCatalogService } from "../../../modules/documentTypes/composition.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import {
   createDefaultChunkingStrategyRegistry,
@@ -77,6 +79,7 @@ import { buildInfrastructure, buildRepositories } from "./infra.js";
 export const buildSettingsServices = (input: {
   auditService: AuditService;
   ingestionSettingsRepository: IngestionSettingsRepository;
+  documentTypeCatalogRepository: DocumentTypeCatalogRepository;
   supportedEmbeddingModels?: readonly EmbeddingModelId[];
   embeddingTransitions?: EmbeddingModelTransitionPort;
 }) => {
@@ -86,9 +89,14 @@ export const buildSettingsServices = (input: {
     input.supportedEmbeddingModels,
     input.embeddingTransitions,
   );
+  const documentTypeCatalogService = new DocumentTypeCatalogService(
+    input.documentTypeCatalogRepository,
+    input.auditService,
+  );
 
   return {
     ingestionSettingsService,
+    documentTypeCatalogService,
   };
 };
 
@@ -179,6 +187,7 @@ export const buildDocumentServices = (input: {
     documentSourceRepository,
     repositories.documentProcessingJobRepository,
     documentJobDispatcher,
+    settings.documentTypeCatalogService,
   );
   const embeddingProfileJobService = input.pinnedDocumentEmbeddings
     ? new EmbeddingProfileJobService(

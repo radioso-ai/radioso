@@ -54,6 +54,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
       documentEnrichmentOverride: z.enum(["inherit", "on", "off"]),
+      documentMetadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}).openapi({
+        description:
+          "Tags stamped onto every chunk produced from this source's documents. A document's own metadata wins on key collisions.",
+      }),
       crawlSettings: DocumentSourceCrawlSettingsSchema.optional(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
@@ -102,6 +106,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       documentEnrichmentOverride: z.enum(["on", "off"]).optional().openapi({
         description: "Force metadata extraction on or off for this import's processing run only.",
       }),
+      metadata: z.string().optional().openapi({
+        description:
+          "Operator-authored metadata for the imported document, as a JSON object of string, number, boolean, or null values. 16 KB maximum.",
+      }),
     }),
   );
 
@@ -124,6 +132,32 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       factCount: z.number().int().min(0).optional(),
       appliedChunkCount: z.number().int().min(0).optional(),
       failureReason: z.string().nullable().optional(),
+      matchedTypeKey: z.string().nullable().optional().openapi({
+        description:
+          "The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise.",
+      }),
+      catalogRevision: z.string().nullable().optional().openapi({
+        description: "The catalog revision this run resolved at execution time.",
+      }),
+      generatedKeys: z.array(z.string()).optional().openapi({
+        description:
+          "The metadata keys this run generated. Extraction owns exactly these keys and replaces them on the next successful run; every other key is manually or connector owned.",
+      }),
+      fieldCounts: z
+        .object({
+          applied: z.number().int().min(0),
+          droppedInvalid: z.number().int().min(0),
+          droppedUndeclared: z.number().int().min(0),
+          droppedDuplicate: z.number().int().min(0),
+          droppedOverCap: z.number().int().min(0),
+          skippedCollision: z.number().int().min(0),
+        })
+        .nullable()
+        .optional()
+        .openapi({ description: "Content-free tallies of what the run did with the model's field payload." }),
+      classificationNote: z.string().nullable().optional().openapi({
+        description: "Content-free note about a classification fallback on an otherwise successful run.",
+      }),
     }),
   );
 

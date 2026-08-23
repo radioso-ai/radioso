@@ -152,6 +152,12 @@ export type {
   VectorSearchInput,
   VectorSearchPort,
 } from "./domain/vectorSearch.js";
+export { collectMetadataRuleFieldKeys } from "./domain/metadataRuleFieldReferences.js";
+export {
+  MetadataRuleFieldReferenceService,
+  type MetadataRuleFieldReferencePort,
+  type WorkspaceSkillConfigSource,
+} from "./services/metadataRuleFieldReferenceService.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export { SharedAnswerInstructionBuilder } from "./services/sharedAnswerInstructionBuilder.js";
 export type { PromptBuildResult } from "./services/promptBuilder.js";

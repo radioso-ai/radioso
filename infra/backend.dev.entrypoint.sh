@@ -5,27 +5,10 @@ cd /app
 
 TARGET_SCRIPT="${1:-dev:http}"
 
-INSTALL_STATE_FILE="node_modules/.backend-install-state"
 INSTALL_LOCK_DIR="node_modules/.backend-install.lock"
 INSTALL_LOCK_TIMEOUT_SECONDS=300
 INSTALL_LOCK_HELD=0
-CURRENT_HASH="$(sha256sum pnpm-lock.yaml | awk '{print $1}')"
-NODE_VERSION="$(node -p 'process.version')"
 ESBUILD_PLATFORM_PACKAGE="@esbuild/linux-$(node -p 'process.arch')"
-CURRENT_INSTALL_STATE="${CURRENT_HASH}:${NODE_VERSION}:${ESBUILD_PLATFORM_PACKAGE}"
-SAVED_INSTALL_STATE=""
-
-if [ -f "$INSTALL_STATE_FILE" ]; then
-  SAVED_INSTALL_STATE="$(cat "$INSTALL_STATE_FILE")"
-fi
-
-refresh_saved_install_state() {
-  if [ -f "$INSTALL_STATE_FILE" ]; then
-    SAVED_INSTALL_STATE="$(cat "$INSTALL_STATE_FILE")"
-  else
-    SAVED_INSTALL_STATE=""
-  fi
-}
 
 cleanup_install_lock() {
   if [ "$INSTALL_LOCK_HELD" = "1" ]; then
@@ -104,11 +87,7 @@ backend_modules_ready() {
 }
 
 backend_dependencies_ready() {
-  if [ "$CURRENT_INSTALL_STATE" != "$SAVED_INSTALL_STATE" ]; then
-    return 1
-  fi
-
-  backend_modules_ready
+  backend-dev-install-state.sh check && backend_modules_ready
 }
 
 install_backend_dependencies() {
@@ -117,18 +96,11 @@ install_backend_dependencies() {
   mkdir -p node_modules
   mkdir -p backend/node_modules
   backend_modules_ready || return 1
-  printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
-  SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
+  backend-dev-install-state.sh write
 }
-
-if [ ! -f "$INSTALL_STATE_FILE" ] && backend_modules_ready; then
-  printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
-  SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
-fi
 
 if ! backend_dependencies_ready; then
   acquire_install_lock
-  refresh_saved_install_state
 
   if ! backend_dependencies_ready && { ! install_backend_dependencies || ! backend_dependencies_ready; }; then
     echo "Backend dependency install incomplete; pruning pnpm store and retrying..."

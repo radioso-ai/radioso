@@ -1425,6 +1425,15 @@
           "documentEnrichmentEnabled": {
             "type": "boolean"
           },
+          "manualDocumentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "on",
+              "off"
+            ],
+            "description": "Metadata extraction override for documents added by hand, which have no source of their own. 'inherit' follows documentEnrichmentEnabled."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -1445,6 +1454,7 @@
           "structuredMinChunkSize",
           "structuredMaxChunkSize",
           "documentEnrichmentEnabled",
+          "manualDocumentEnrichmentOverride",
           "createdAt",
           "updatedAt"
         ]
@@ -1527,6 +1537,14 @@
           },
           "documentEnrichmentEnabled": {
             "type": "boolean"
+          },
+          "manualDocumentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "on",
+              "off"
+            ]
           }
         },
         "required": [
@@ -2691,6 +2709,229 @@
             ]
           }
         }
+      },
+      "DocumentTypeField": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Metadata key this field writes. Matches ^[A-Za-z][A-Za-z0-9_]{0,63}$; dots are prohibited because metadata rules read them as path separators."
+          },
+          "label": {
+            "type": "string"
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "date",
+              "boolean"
+            ]
+          },
+          "instruction": {
+            "type": "string",
+            "description": "Natural-language guidance the classification prompt carries for this field."
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "valueType",
+          "instruction"
+        ]
+      },
+      "DocumentTypeDefinition": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "built_in",
+              "operator"
+            ],
+            "description": "Built-in entries are system-owned and read-only."
+          },
+          "payload": {
+            "type": "string",
+            "enum": [
+              "facts",
+              "fields",
+              "none"
+            ],
+            "description": "Which payload extraction returns for this type: temporal facts for the built-in dated types, an ordered fields array for operator types, nothing for classification-only types."
+          },
+          "disableable": {
+            "type": "boolean",
+            "description": "False for the reserved 'generic' fallback, which is always present and always enabled."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentTypeField"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "description",
+          "enabled",
+          "origin",
+          "payload",
+          "disableable",
+          "fields"
+        ]
+      },
+      "RetiredDocumentTypeField": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "valueType": {
+            "type": "string",
+            "enum": [
+              "string",
+              "number",
+              "date",
+              "boolean"
+            ]
+          }
+        },
+        "required": [
+          "key",
+          "valueType"
+        ],
+        "description": "A deleted field identity. A retired key can only be recreated with its original value type, so a saved retrieval rule is never re-pointed at a differently typed field."
+      },
+      "DocumentTypeCatalog": {
+        "type": "object",
+        "properties": {
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revision": {
+            "type": "string",
+            "description": "Monotonically increasing concurrency token. Echo it as expectedRevision on the next write."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DocumentTypeDefinition"
+            },
+            "description": "Built-in entries first, then operator-defined types."
+          },
+          "retiredFields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RetiredDocumentTypeField"
+            }
+          },
+          "referencedFieldKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Field keys any agent's retrieval metadata rules currently reference. Advisory: deleting one of these fields, or disabling the type that declares it, warns rather than blocks."
+          }
+        },
+        "required": [
+          "workspaceId",
+          "revision",
+          "types",
+          "retiredFields",
+          "referencedFieldKeys"
+        ]
+      },
+      "UpdateDocumentTypeCatalogRequest": {
+        "type": "object",
+        "properties": {
+          "expectedRevision": {
+            "type": "string",
+            "minLength": 1
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "valueType": {
+                        "type": "string",
+                        "enum": [
+                          "string",
+                          "number",
+                          "date",
+                          "boolean"
+                        ]
+                      },
+                      "instruction": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "key",
+                      "label",
+                      "valueType"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "key",
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "disabledBuiltInTypeKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "expectedRevision"
+        ],
+        "additionalProperties": false
       },
       "Agent": {
         "type": "object",
@@ -7158,6 +7399,30 @@
               "off"
             ]
           },
+          "documentMetadata": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "default": {},
+            "description": "Tags stamped onto every chunk produced from this source's documents. A document's own metadata wins on key collisions."
+          },
           "crawlSettings": {
             "$ref": "#/components/schemas/DocumentSourceCrawlSettings"
           },
@@ -7193,6 +7458,28 @@
               "on",
               "off"
             ]
+          },
+          "documentMetadata": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
           },
           "crawlSettings": {
             "type": "object",
@@ -7307,6 +7594,10 @@
               "off"
             ],
             "description": "Force metadata extraction on or off for this import's processing run only."
+          },
+          "metadata": {
+            "type": "string",
+            "description": "Operator-authored metadata for the imported document, as a JSON object of string, number, boolean, or null values. 16 KB maximum."
           }
         },
         "required": [
@@ -7395,6 +7686,75 @@
               "string",
               "null"
             ]
+          },
+          "matchedTypeKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise."
+          },
+          "catalogRevision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The catalog revision this run resolved at execution time."
+          },
+          "generatedKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The metadata keys this run generated. Extraction owns exactly these keys and replaces them on the next successful run; every other key is manually or connector owned."
+          },
+          "fieldCounts": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "applied": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "droppedInvalid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "droppedUndeclared": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "droppedDuplicate": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "droppedOverCap": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skippedCollision": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "applied",
+              "droppedInvalid",
+              "droppedUndeclared",
+              "droppedDuplicate",
+              "droppedOverCap",
+              "skippedCollision"
+            ],
+            "description": "Content-free tallies of what the run did with the model's field payload."
+          },
+          "classificationNote": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Content-free note about a classification fallback on an otherwise successful run."
           }
         },
         "required": [
@@ -7559,6 +7919,28 @@
               "null"
             ],
             "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
           }
         },
         "additionalProperties": false
@@ -17665,6 +18047,107 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/document-types": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Read the workspace document type catalog used by metadata extraction",
+        "operationId": "getDocumentTypeCatalog",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The document type catalog, with built-in entries merged ahead of operator-defined types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTypeCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Replace the operator-defined document types for the authenticated workspace",
+        "operationId": "updateDocumentTypeCatalog",
+        "description": "Conditional write. Send the revision the edit was based on as expectedRevision; a stale revision is rejected with 409 so concurrent editors never overwrite each other. Deleting a field retires its key, and a retired key can only be recreated with its original value type.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentTypeCatalogRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved catalog at its new revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTypeCatalog"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The catalog changed since it was loaded; the message carries the current revision",
             "content": {
               "application/json": {
                 "schema": {
@@ -29599,7 +30082,7 @@
         "tags": [
           "Documents"
         ],
-        "summary": "Update a website source's crawl settings",
+        "summary": "Update a document source's processing settings",
         "operationId": "updateDocumentSource",
         "security": [
           {
@@ -29638,7 +30121,7 @@
             }
           },
           "400": {
-            "description": "Source is not a website or the manually-added bucket",
+            "description": "Request validation failed or crawl settings were sent for a non-website source",
             "content": {
               "application/json": {
                 "schema": {

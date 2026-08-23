@@ -41,7 +41,7 @@ The response includes inherited retrieval values such as:
 - `temporalBoostUpcomingEnabled`
 - `temporalDeterministicSortEnabled`
 
-`metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware and comes from indexed document metadata. The agent Skills tab uses this endpoint and the retrieve capability descriptor to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`. When a retrieve skill field is unset, the dashboard shows the inherited default inline. Saving the form still stores only fields that were explicitly overridden.
+`metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware: it merges the fields the document type catalog declares with the keys observed on indexed document metadata, and a declared field wins the value type on a collision. The agent Skills tab uses this endpoint and the retrieve capability descriptor to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`. When a retrieve skill field is unset, the dashboard shows the inherited default inline. Saving the form still stores only fields that were explicitly overridden.
 
 To configure retrieval answer behavior, update the agent rather than the settings resource. Retrieval-only API calls, such as `POST /api/v1/retrieval/answer`, use system defaults and still accept per-call request controls such as `metadataFilter`.
 
@@ -92,7 +92,7 @@ If you change these values and want them applied to existing documents, call:
 POST /api/v1/settings/ingestion/reprocess
 ```
 
-`documentEnrichmentEnabled` is disabled by default. When enabled, the worker makes one enrichment model call per processed document to classify document shape and extract supported temporal facts. Reprocess requests may include a one-run override:
+`documentEnrichmentEnabled` is disabled by default. When enabled, the worker makes one enrichment model call per processed document: it classifies the document against the workspace document type catalog and extracts the fields that type declares. Reprocess requests may include a one-run override:
 
 ```json
 {
@@ -101,6 +101,79 @@ POST /api/v1/settings/ingestion/reprocess
 ```
 
 The override can be `on` or `off`. It applies only to the processing jobs created by that reprocess request.
+
+## Document types
+
+The document type catalog is what extraction classifies against. `GET /api/v1/settings/document-types` returns the built-in entries merged ahead of the types the workspace defines:
+
+```json
+{
+  "workspaceId": "3f9c...",
+  "revision": "7",
+  "types": [
+    {
+      "key": "event",
+      "label": "Event",
+      "description": "Event announcements — anything scheduled on a date or a date range.",
+      "enabled": true,
+      "origin": "built_in",
+      "payload": "facts",
+      "disableable": true,
+      "fields": [
+        { "key": "dateFrom", "label": "Start date", "valueType": "date", "instruction": "..." },
+        { "key": "dateTo", "label": "End date", "valueType": "date", "instruction": "..." }
+      ]
+    },
+    {
+      "key": "product",
+      "label": "Product",
+      "description": "A product detail page: one purchasable item, with a price and availability.",
+      "enabled": true,
+      "origin": "operator",
+      "payload": "fields",
+      "disableable": true,
+      "fields": [
+        { "key": "price", "label": "Price", "valueType": "number", "instruction": "The listed price as a number, without a currency symbol." }
+      ]
+    }
+  ],
+  "retiredFields": [{ "key": "sku", "valueType": "string" }],
+  "referencedFieldKeys": ["price"]
+}
+```
+
+`origin` separates the five built-in entries — `event`, `article`, `profile`, `reference`, and the `generic` fallback — from operator-defined types. Built-in entries are read-only, and `generic` reports `"disableable": false`. `payload` says what a match produces: `facts` for the built-in dated types, `fields` for an operator type, `none` for a type that classifies without extracting anything. `retiredFields` lists deleted field keys with the value type they keep for good. `referencedFieldKeys` names the fields some agent's metadata rules point at; it is advisory, and the dashboard uses it to warn before a delete.
+
+`PUT /api/v1/settings/document-types` replaces the operator-owned slice of the catalog. It is a conditional write: send the revision your edit was based on, and a stale revision is rejected with `409` so concurrent editors never overwrite each other.
+
+```json
+{
+  "expectedRevision": "7",
+  "types": [
+    {
+      "key": "product",
+      "label": "Product",
+      "description": "A product detail page: one purchasable item, with a price and availability.",
+      "enabled": true,
+      "fields": [
+        {
+          "key": "price",
+          "label": "Price",
+          "valueType": "number",
+          "instruction": "The listed price as a number, without a currency symbol."
+        }
+      ]
+    }
+  ],
+  "disabledBuiltInTypeKeys": ["profile"]
+}
+```
+
+The response is the saved catalog at its new revision. Because the write replaces the whole slice, a type or field you omit is deleted, and its field keys are retired.
+
+Validation answers `400` with a message naming the limit it hit. A workspace holds at most 20 operator types with at most 10 fields each; descriptions run to 500 characters, instructions to 240, labels to 80, and keys to 64. Keys match `^[A-Za-z][A-Za-z0-9_]{0,63}$`. `dateFrom` and `dateTo` are reserved by the built-in types, `disabledBuiltInTypeKeys` accepts built-in keys other than `generic`, and a field key keeps its value type across every type that declares it — including keys already retired. The rendered catalog is also capped at 12,000 prompt characters, checked at save time.
+
+`valueType` is `string`, `number`, `date`, or `boolean`, matching the value types a metadata rule compares against.
 
 ## General settings
 
@@ -264,6 +337,8 @@ GET /api/v1/settings/retrieval-defaults
 GET /api/v1/settings/ingestion
 PUT /api/v1/settings/ingestion
 POST /api/v1/settings/ingestion/reprocess
+GET /api/v1/settings/document-types
+PUT /api/v1/settings/document-types
 GET /api/v1/settings/general
 PUT /api/v1/settings/general
 GET /api/v1/settings
@@ -286,9 +361,11 @@ PUT /api/v1/settings/llm-models
 - `400` usually means the payload is invalid for that settings group.
 - `401` means the workspace token is missing or invalid.
 - `404` on general settings usually means the workspace context is not available.
+- `409` on the document type catalog means someone saved while you were editing. The error names the current revision; re-read the catalog, reapply your change on top of it, and send it again.
 
 ## Read next
 
+- [Extract document metadata](/guides/document-metadata)
 - [Documents and search](/api/documents-and-search)
 - [Public chat and embed](/api/public-chat-and-embed)
 - [API Reference](/api-reference)

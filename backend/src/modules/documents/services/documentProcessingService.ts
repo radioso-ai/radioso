@@ -26,6 +26,16 @@ import {
   parseDocumentSourceEnrichmentOverride,
   resolveDocumentEnrichmentEnablement,
 } from "../domain/enrichment/enrichmentEnablement.js";
+import { stripGeneratedEnrichmentTags } from "../domain/enrichment/generatedTagOwnership.js";
+import {
+  isDocumentEnrichmentProvenance,
+  type DocumentEnrichmentProvenance,
+} from "../domain/enrichment/documentEnrichmentContract.js";
+import type { DocumentTypeCatalogReaderPort } from "../../documentTypes/contracts/documentTypeCatalog.js";
+import {
+  mergeDocumentMetadataForChunks,
+  parseSourceDocumentMetadata,
+} from "../domain/sourceDocumentMetadata.js";
 import type {
   ChunkMetadataRevisionPatch,
   ChunkRecord,
@@ -104,22 +114,19 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
     Object.entries(attributes).filter(([, value]) => value !== undefined && value !== null),
   ) as TraceAttributes;
 
+/** `documents.enrichment` is untyped JSONB; read it back through the domain guard. */
+const toEnrichmentProvenance = (value: unknown): DocumentEnrichmentProvenance | null =>
+  isDocumentEnrichmentProvenance(value) ? value : null;
+
+/**
+ * Clears the tags a previous extraction run produced. Stale-tag removal is
+ * driven by the generated-key set recorded in provenance, so a deleted catalog
+ * field stops leaving orphaned tags behind.
+ */
 export const stripStaleEnrichmentMetadata = (
   metadata: Record<string, unknown>,
-  hadEnrichment: boolean,
-): Record<string, unknown> => {
-  if (!hadEnrichment) {
-    return metadata;
-  }
-
-  const {
-    enrichment: _enrichment,
-    dateFrom: _dateFrom,
-    dateTo: _dateTo,
-    ...rest
-  } = metadata;
-  return rest;
-};
+  previousEnrichment: unknown,
+): Record<string, unknown> => stripGeneratedEnrichmentTags(metadata, toEnrichmentProvenance(previousEnrichment));
 
 export const buildDocumentProcessingTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
@@ -164,6 +171,9 @@ export class DocumentProcessingService {
     private readonly documentSourceRepository?: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">,
     private readonly jobRepository?: EnrichJobEnqueuePort,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
+    // Absent means the default catalog; extraction never depends on the
+    // catalog module being wired.
+    private readonly documentTypeCatalogReader?: DocumentTypeCatalogReaderPort,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -245,7 +255,18 @@ export class DocumentProcessingService {
       // fresh vectorization starts from clean base metadata (any prior extracted
       // dates/provenance are stripped and re-derived by the follow-up enrich job).
       const hadPriorEnrichment = Boolean(documentWithContent.enrichment);
-      const baseDocumentMetadata = stripStaleEnrichmentMetadata(documentWithContent.metadata ?? {}, hadPriorEnrichment);
+      const baseDocumentMetadata = stripStaleEnrichmentMetadata(
+        documentWithContent.metadata ?? {},
+        documentWithContent.enrichment,
+      );
+      // Source-level tags are a chunk-projection concern only: they are merged
+      // into the chunk metadata below and never written back to
+      // documents.metadata, so a source retag never rewrites its documents.
+      const source = await this.findDocumentSource(documentWithContent.sourceId ?? null, job.workspaceId);
+      const chunkMetadata = mergeDocumentMetadataForChunks(
+        parseSourceDocumentMetadata(source?.config),
+        baseDocumentMetadata,
+      );
       if (hadPriorEnrichment) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
           documentId: documentWithContent.id,
@@ -259,10 +280,10 @@ export class DocumentProcessingService {
         }
       }
       const enrichedChunks = chunks.map((chunk) => {
-        const metadataSearchText = renderMetadataSearchText(baseDocumentMetadata);
+        const metadataSearchText = renderMetadataSearchText(chunkMetadata);
         return {
           ...chunk,
-          metadata: baseDocumentMetadata,
+          metadata: chunkMetadata,
           searchText: renderSearchText({
             title: documentWithContent.title,
             subjectLabel: documentSubject,
@@ -330,7 +351,7 @@ export class DocumentProcessingService {
         embeddingModel,
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,
-        metadata: chunk.metadata ?? baseDocumentMetadata,
+        metadata: chunk.metadata ?? chunkMetadata,
         createdAt: new Date(),
       }));
 
@@ -357,9 +378,9 @@ export class DocumentProcessingService {
 
       // The document is now queryable. Decide whether metadata extraction should
       // follow; the enrich job itself is enqueued last (see below).
-      const enrichmentEnabled = await this.resolveEnrichmentEnabled(job, {
+      const enrichmentEnabled = this.resolveEnrichmentEnabled(job, {
         sourceId: documentWithContent.sourceId ?? null,
-        workspaceId: job.workspaceId,
+        source,
         settings,
       });
 
@@ -449,12 +470,12 @@ export class DocumentProcessingService {
           workspaceId: job.workspaceId,
         });
 
-        const baseDocumentMetadata = stripStaleEnrichmentMetadata(
-          document.metadata ?? {},
-          Boolean(document.enrichment),
-        );
         const startedAt = Date.now();
         const anchorDate = toIsoDate(document.createdAt);
+        // Resolved at execution time, never carried on the job payload, so every
+        // job that runs after a catalog edit sees the new catalog.
+        const catalog = await this.documentTypeCatalogReader?.listEnabledTypes(job.workspaceId);
+        const previousProvenance = toEnrichmentProvenance(document.enrichment);
         const result = await traceActiveSpan(
           "document.processing.enrichment",
           buildDocumentProcessingTraceAttributes(job, { stage: "enrichment" }),
@@ -465,7 +486,9 @@ export class DocumentProcessingService {
               revision: job.documentRevision,
               title: document.title,
               markdownContent: document.markdownContent,
-              metadata: baseDocumentMetadata,
+              // Raw metadata: the enrichment domain owns which tags it may
+              // clear, and a failed run must leave every tag standing.
+              metadata: document.metadata ?? {},
               createdAt: document.createdAt,
             },
             chunks: publishedChunks,
@@ -473,6 +496,8 @@ export class DocumentProcessingService {
               source: "document_created_at",
               date: anchorDate,
             },
+            catalog,
+            previousProvenance,
           }),
           (enrichment) => buildDocumentProcessingTraceAttributes(job, {
             stage: "enrichment",
@@ -544,19 +569,37 @@ export class DocumentProcessingService {
     );
   }
 
-  private async resolveEnrichmentEnabled(
+  // Fetches the document's source row once per job. Both source-level concerns
+  // — document tags and the enrichment override — read from it.
+  private async findDocumentSource(
+    sourceId: string | null,
+    workspaceId: string,
+  ): Promise<{ config: Record<string, unknown> } | null> {
+    if (!sourceId || !this.documentSourceRepository) {
+      return null;
+    }
+    return this.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+  }
+
+  private resolveEnrichmentEnabled(
     job: DocumentProcessingJobRecord,
-    input: { sourceId: string | null; workspaceId: string; settings: IngestionSettingsRecord },
-  ): Promise<boolean> {
+    input: {
+      sourceId: string | null;
+      source: { config: Record<string, unknown> } | null;
+      settings: IngestionSettingsRecord;
+    },
+  ): boolean {
     if (!this.documentEnrichmentStage) {
       return false;
     }
-    const source = input.sourceId && this.documentSourceRepository
-      ? await this.documentSourceRepository.findByIdAndWorkspaceId(input.sourceId, input.workspaceId)
-      : null;
+    // Manually added documents have no document_sources row, so the workspace
+    // setting for them fills the same source-override slot in the enablement rule.
+    const sourceOverride = input.sourceId
+      ? input.source?.config.documentEnrichmentOverride
+      : input.settings.manualDocumentEnrichmentOverride;
     const enablement = resolveDocumentEnrichmentEnablement({
       workspaceDefaultEnabled: input.settings.documentEnrichmentEnabled ?? false,
-      sourceOverride: parseDocumentSourceEnrichmentOverride(source?.config.documentEnrichmentOverride),
+      sourceOverride: parseDocumentSourceEnrichmentOverride(sourceOverride),
       jobOverride: parseDocumentEnrichmentOverride(job.options?.documentEnrichmentOverride),
     });
     return enablement.enabled;

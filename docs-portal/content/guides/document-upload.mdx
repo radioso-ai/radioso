@@ -62,6 +62,8 @@ You can follow all of this in the Documents list: a document reads Ready once it
 
 If you plan to filter or bias retrieval later, add metadata at ingestion time. Metadata becomes part of document and chunk search behavior, and metadata rules and direct metadata filters can act on it.
 
+Tags can also be filled in for you. Declare a document type with the fields you want, and extraction writes them onto each matching document during processing — see [Extract document metadata](/guides/document-metadata) for the catalog, the controls, and how the fields reach retrieval rules.
+
 `externalDocumentId` earns its keep when Radioso mirrors documents that already live in another system and you need a stable reference for sync or reconciliation. When a document has a source, the external id is scoped to that workspace source.
 
 ## Common failure pattern
@@ -75,5 +77,6 @@ The most common mistake is testing chat the moment upload returns and reading a 
 ## Related docs
 
 - [Run locally in 5 minutes](/quickstarts/run-locally)
+- [Extract document metadata](/guides/document-metadata)
 - [Document processing lifecycle](/architecture/document-processing-lifecycle)
 - [Document processing](/operators/document-processing)

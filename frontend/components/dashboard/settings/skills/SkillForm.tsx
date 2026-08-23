@@ -27,7 +27,13 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
 import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
-import type { AgentSourceScope, DocumentSourceListItem, RetrievalMetadataRule } from '@/lib/api'
+import { settingsApi } from '@/lib/api'
+import type {
+  AgentSourceScope,
+  DocumentSourceListItem,
+  MetadataFieldSuggestion,
+  RetrievalMetadataRule,
+} from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { externalSkillsApi } from '@/lib/api-external-skills'
 import type { AgentSkill, AgentSkillCapabilityId, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
@@ -62,6 +68,7 @@ const sourceTargetsToList = (capability: SkillCapabilityDescriptor | null): Docu
       lastSyncedAt: null,
       documentCount: 0,
       documentEnrichmentOverride: 'inherit',
+      documentMetadata: {},
       createdAt: '',
       updatedAt: '',
     }))
@@ -148,11 +155,13 @@ function SkillSettingControl({
   field,
   value,
   sourceList,
+  metadataFieldSuggestions,
   onChange,
 }: {
   field: SkillCapabilitySettingsField
   value: SkillSettingDraftValue
   sourceList: DocumentSourceListItem[]
+  metadataFieldSuggestions: MetadataFieldSuggestion[]
   onChange: (value: SkillSettingDraftValue) => void
 }) {
   const fieldId = `skill-setting-${field.key.replace(/[^a-z0-9_-]/giu, '-')}`
@@ -332,7 +341,7 @@ function SkillSettingControl({
         {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
         <MetadataRulesEditor
           metadataRules={rules}
-          metadataFieldSuggestions={[]}
+          metadataFieldSuggestions={metadataFieldSuggestions}
           onChange={(next) => onChange(next)}
           showHeader={false}
         />
@@ -406,6 +415,7 @@ export function SkillForm({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [routineOpen, setRoutineOpen] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [metadataFieldSuggestions, setMetadataFieldSuggestions] = useState<MetadataFieldSuggestion[]>([])
   const [discoveredTools, setDiscoveredTools] = useState<DiscoveredMcpTool[]>([])
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
@@ -456,6 +466,29 @@ export function SkillForm({
       setLocalError(null)
     })
   }, [buildDraft, open])
+
+  // Metadata-rule field suggestions: the document type catalog's declarations
+  // unioned with the keys already observed on document metadata. Loaded with the
+  // form because it is the only place in this dialog that needs them, and a
+  // failure here costs autocomplete rather than the edit.
+  useEffect(() => {
+    if (!open) return
+
+    let active = true
+    const loadSuggestions = async () => {
+      try {
+        const defaults = await settingsApi.getRetrievalDefaults()
+        if (!active) return
+        setMetadataFieldSuggestions(defaults.metadataFieldSuggestions ?? [])
+      } catch (error) {
+        console.error('Failed to load metadata field suggestions:', error)
+      }
+    }
+    void loadSuggestions()
+    return () => {
+      active = false
+    }
+  }, [open])
 
   const discoverTools = useCallback(async (connectionId: string, preferredToolName: string) => {
     if (!capability || capability.inputSchema.source !== 'discovered') return
@@ -653,6 +686,7 @@ export function SkillForm({
                     field={field}
                     value={draft.settingDrafts[field.key]}
                     sourceList={sourceTargetsToList(capability)}
+                    metadataFieldSuggestions={metadataFieldSuggestions}
                     onChange={(value) => updateSetting(field.key, value)}
                   />
                 </div>

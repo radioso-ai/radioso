@@ -1,5 +1,6 @@
 import chunkingStrategySource from '../../../docs/settings-docs/ingestion/chunking-strategy.md'
 import documentEnrichmentSource from '../../../docs/settings-docs/ingestion/document-enrichment.md'
+import documentTypesSource from '../../../docs/settings-docs/ingestion/document-types.md'
 import embeddingModelSource from '../../../docs/settings-docs/ingestion/embedding-model.md'
 import fixedWindowChunkOverlapSource from '../../../docs/settings-docs/ingestion/fixed-window-chunk-overlap.md'
 import fixedWindowChunkSizeSource from '../../../docs/settings-docs/ingestion/fixed-window-chunk-size.md'
@@ -80,6 +81,7 @@ export const ingestionSettingDocs = {
   structuredMinChunkSize: parseSettingDoc(structuredMinChunkSizeSource),
   structuredMaxChunkSize: parseSettingDoc(structuredMaxChunkSizeSource),
   documentEnrichment: parseSettingDoc(documentEnrichmentSource),
+  documentTypes: parseSettingDoc(documentTypesSource),
   reprocess: parseSettingDoc(reprocessSource),
 } satisfies Record<string, SettingDoc>
 

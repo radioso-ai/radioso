@@ -13,7 +13,11 @@ describe("operator copilot catalog coverage", () => {
   //               siblings listMcpConnections/getMcpConnection are already agent_skills reads
   // (133 fell to 128 in between, when workspace_settings covered six settings reads; 129 fell to
   // 126 when the routine portable-document routes were removed upstream.)
-  const maxDeferredCatalogExclusions = 126;
+  //   126 -> 128  getDocumentTypeCatalog/updateDocumentTypeCatalog, the workspace document type
+  //               catalog behind metadata extraction. It lands in the same Wave 3 knowledge-base
+  //               bucket as the document and source surfaces it configures, so it becomes
+  //               proposable with them rather than ahead of them.
+  const maxDeferredCatalogExclusions = 128;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

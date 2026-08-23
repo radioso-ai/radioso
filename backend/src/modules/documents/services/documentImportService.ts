@@ -30,6 +30,7 @@ export interface DocumentImportInput {
   mimeType: string;
   buffer: Buffer;
   title?: string;
+  metadata?: Record<string, unknown>;
   usageReservation?: UsageLimitReservation;
   documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
 }
@@ -135,7 +136,7 @@ export class DocumentImportService {
         title,
         sourceContent: "",
         markdownContent: "",
-        metadata: {},
+        metadata: input.metadata ?? {},
         sourceId: source?.id ?? null,
         source: source ? toDocumentSourceSummary(source) : null,
         sourceKind: "uploaded_file",

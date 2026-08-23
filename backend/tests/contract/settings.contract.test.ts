@@ -144,6 +144,62 @@ describe("settings contract", () => {
     );
   });
 
+  it("suggests declared catalog fields alongside observed document metadata keys", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "settings-suggestion-union@example.com");
+    const headers = adminSessionHeaders(session);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(headers)
+      .send({
+        title: "Hand-tagged doc",
+        content: "Content with a manually authored tag.",
+        // A hand-set key the catalog never declares, and a key the catalog also
+        // declares under a different type — the catalog wins that one.
+        metadata: { language: "en", price: "49" },
+      });
+
+    await request(app)
+      .put("/api/v1/settings/document-types")
+      .set(headers)
+      .send({
+        expectedRevision: "1",
+        types: [
+          {
+            key: "product",
+            label: "Product",
+            description: "A product detail page.",
+            enabled: true,
+            fields: [
+              { key: "price", label: "Price", valueType: "number", instruction: "The listed price." },
+              { key: "category", label: "Category", valueType: "string", instruction: "The product category." },
+            ],
+          },
+        ],
+        disabledBuiltInTypeKeys: [],
+      });
+
+    const response = await request(app)
+      .get("/api/v1/settings/retrieval-defaults")
+      .set(headers);
+
+    expect(response.status).toBe(200);
+    const suggestions = response.body.metadataFieldSuggestions as Array<{ field: string; inferredType: string }>;
+    expect(suggestions).toEqual(
+      expect.arrayContaining([
+        { field: "language", inferredType: "string" },
+        { field: "category", inferredType: "string" },
+        { field: "dateFrom", inferredType: "date" },
+        { field: "dateTo", inferredType: "date" },
+      ]),
+    );
+    // The declared value type wins over the type inferred from a hand-set value.
+    expect(suggestions.filter((suggestion) => suggestion.field === "price")).toEqual([
+      { field: "price", inferredType: "number" },
+    ]);
+  });
+
   it("returns default ingestion settings for a valid session workspace context", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "ingestion-default@example.com");
@@ -162,7 +218,48 @@ describe("settings contract", () => {
       structuredMinChunkSize: 24,
       structuredMaxChunkSize: 220,
       documentEnrichmentEnabled: false,
+      manualDocumentEnrichmentOverride: "inherit",
     });
+  });
+
+  it("round-trips the manually added document enrichment override", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "ingestion-manual-override@example.com");
+
+    const updateResponse = await request(app)
+      .put("/api/v1/settings/ingestion")
+      .set(adminSessionHeaders(session))
+      .send({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+        manualDocumentEnrichmentOverride: "on",
+      })
+      .expect(200);
+
+    expect(updateResponse.body).toMatchObject({ manualDocumentEnrichmentOverride: "on" });
+
+    const readResponse = await request(app)
+      .get("/api/v1/settings/ingestion")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    expect(readResponse.body).toMatchObject({ manualDocumentEnrichmentOverride: "on" });
+
+    await request(app)
+      .put("/api/v1/settings/ingestion")
+      .set(adminSessionHeaders(session))
+      .send({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+        manualDocumentEnrichmentOverride: "sometimes",
+      })
+      .expect(400);
   });
 
   it("updates ingestion settings for a valid session workspace context", async () => {
@@ -361,6 +458,8 @@ describe("settings contract", () => {
     expect(ingestionUpdateModelSchema).toContain("enum:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");
     expect(ingestionSettingsSchema).toContain("documentEnrichmentEnabled:");
+    expect(ingestionSettingsSchema).toContain("manualDocumentEnrichmentOverride:");
+    expect(ingestionUpdateSchema).toContain("manualDocumentEnrichmentOverride:");
     expect(ingestionUpdateSchema).toContain("embeddingModel:");
     expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
     expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");

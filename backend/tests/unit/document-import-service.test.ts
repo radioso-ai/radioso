@@ -248,4 +248,37 @@ describe("document import service", () => {
       }),
     );
   });
+
+  it("persists operator-authored metadata on the imported document", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const storage = new InMemoryDocumentStorage();
+    const service = new DocumentImportService(documentRepository, createAuditService(), storage);
+
+    const response = await service.importDocument({
+      workspaceId: "workspace-1",
+      filename: "customer-handbook.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("fake-pdf"),
+      metadata: { audience: "operators", revision: 3, published: true },
+    });
+
+    const document = await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1");
+    expect(document?.metadata).toEqual({ audience: "operators", revision: 3, published: true });
+  });
+
+  it("defaults to empty metadata when the operator supplies none", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const storage = new InMemoryDocumentStorage();
+    const service = new DocumentImportService(documentRepository, createAuditService(), storage);
+
+    const response = await service.importDocument({
+      workspaceId: "workspace-1",
+      filename: "customer-handbook.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("fake-pdf"),
+    });
+
+    const document = await documentRepository.findByIdAndWorkspaceId(response.documentId, "workspace-1");
+    expect(document?.metadata).toEqual({});
+  });
 });

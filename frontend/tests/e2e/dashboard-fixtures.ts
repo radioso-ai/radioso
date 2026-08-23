@@ -164,7 +164,7 @@ export type SkillCapabilityFixture = {
   settingsFields: Array<{
     key: string;
     label: string;
-    type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+    type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope" | "metadata_rules";
     help?: string;
     defaultValue?: boolean | number | string;
     dependsOnKey?: string;
@@ -258,6 +258,7 @@ export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
   embeddingModel: "text-embedding-3-small",
   pendingEmbeddingModel: null,
   documentEnrichmentEnabled: false,
+  manualDocumentEnrichmentOverride: "inherit",
   supportedEmbeddingModels: [
     "text-embedding-3-small",
     "text-embedding-3-large",
@@ -269,6 +270,73 @@ export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
 });
 
 export type IngestionSettingsFixture = ReturnType<typeof baseIngestionSettings>;
+
+export const baseDocumentTypeCatalog = (): ApiSchemas["DocumentTypeCatalog"] => ({
+  workspaceId,
+  revision: "1",
+  types: [
+    {
+      key: "event",
+      label: "Event",
+      description: "Event announcements — anything scheduled on a date or a date range.",
+      enabled: true,
+      origin: "built_in",
+      payload: "facts",
+      disableable: true,
+      fields: [
+        { key: "dateFrom", label: "Start date", valueType: "date", instruction: "The first day the document's dated subject covers." },
+        { key: "dateTo", label: "End date", valueType: "date", instruction: "The last day the document's dated subject covers." },
+      ],
+    },
+    {
+      key: "article",
+      label: "Article",
+      description: "Dated articles — news, posts, and releases carrying a publication date.",
+      enabled: true,
+      origin: "built_in",
+      payload: "facts",
+      disableable: true,
+      fields: [
+        { key: "dateFrom", label: "Start date", valueType: "date", instruction: "The first day the document's dated subject covers." },
+        { key: "dateTo", label: "End date", valueType: "date", instruction: "The last day the document's dated subject covers." },
+      ],
+    },
+    {
+      key: "profile",
+      label: "Profile",
+      description: "People or organizations.",
+      enabled: true,
+      origin: "built_in",
+      payload: "none",
+      disableable: true,
+      fields: [],
+    },
+    {
+      key: "reference",
+      label: "Reference",
+      description: "Stable reference material.",
+      enabled: true,
+      origin: "built_in",
+      payload: "none",
+      disableable: true,
+      fields: [],
+    },
+    {
+      key: "generic",
+      label: "Generic",
+      description: "The reserved fallback for documents that match no other type.",
+      enabled: true,
+      origin: "built_in",
+      payload: "none",
+      disableable: false,
+      fields: [],
+    },
+  ],
+  retiredFields: [],
+  referencedFieldKeys: [],
+});
+
+export type DocumentTypeCatalogFixture = ReturnType<typeof baseDocumentTypeCatalog>;
 
 export const baseEmbeddingCoverage = (): ApiSchemas["EmbeddingCoverage"] => ({
   eligibleChunks: 0,
@@ -527,6 +595,7 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
       lastSyncedAt: null,
       documentCount: 1,
       documentEnrichmentOverride: "inherit",
+      documentMetadata: {},
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -539,6 +608,7 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
       lastSyncedAt: nowIso,
       documentCount: 3,
       documentEnrichmentOverride: "inherit",
+      documentMetadata: { department: "engineering" },
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -572,6 +642,7 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
       { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks are fetched from the vector index before filtering and reranking.", defaultValue: 15, min: 1, max: 300, group: "Retrieval tuning", advanced: true },
       { key: "rerankEnabled", label: "Rerank results", type: "boolean", help: "Re-score the fetched chunks with a reranker model to improve ordering.", defaultValue: false, group: "Retrieval tuning", advanced: true },
       { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many chunks survive reranking and are passed to the answer.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "metadataRules", label: "Metadata rules", type: "metadata_rules", group: "Retrieval tuning", advanced: true },
       { key: "temporalStructuredLookupEnabled", label: "Temporal structured lookup", type: "boolean", help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.", defaultValue: true, group: "Temporal retrieval", advanced: true },
       { key: "temporalBoostUpcomingEnabled", label: "Upcoming event boost", type: "boolean", help: "Rank documents about ongoing or upcoming events above past ones when the question is about event dates.", defaultValue: true, group: "Temporal retrieval", advanced: true },
       { key: "temporalDeterministicSortEnabled", label: "Deterministic temporal sort", type: "boolean", help: "Present event evidence in date order (soonest first) for event-date questions, instead of relying on the model to order them.", defaultValue: true, group: "Temporal retrieval", advanced: true },
@@ -809,6 +880,10 @@ export const installDashboardApiMocks = async (
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
     ingestionSettingsUpdateError?: string;
+    documentTypeCatalog?: DocumentTypeCatalogFixture;
+    documentTypeCatalogUpdates?: unknown[];
+    /** Rejects the first PUT with 409 and the current revision, as a concurrent save does. */
+    documentTypeCatalogStaleRevision?: boolean;
     embeddingCoverage?: EmbeddingCoverageFixture;
     usageTrends?: unknown;
     messageUsage?: unknown;
@@ -839,6 +914,9 @@ export const installDashboardApiMocks = async (
   let platformSettings = options.platformSettings ?? basePlatformSettings();
   const retrievalDefaults = options.retrievalDefaults ?? baseRetrievalDefaults();
   let ingestionSettings = options.ingestionSettings ?? baseIngestionSettings();
+  let documentTypeCatalog = options.documentTypeCatalog ?? baseDocumentTypeCatalog();
+  const documentTypeCatalogUpdates = options.documentTypeCatalogUpdates;
+  let documentTypeCatalogStaleRevisionPending = options.documentTypeCatalogStaleRevision ?? false;
   let agentSettings = buildDefaultAgentSettings(platformSettings);
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
@@ -2245,6 +2323,57 @@ export const installDashboardApiMocks = async (
         updatedAt: nowIso,
       };
       await json(route, ingestionSettings);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/settings/document-types") {
+      await json(route, documentTypeCatalog);
+      return;
+    }
+
+    if (request.method() === "PUT" && path === "/settings/document-types") {
+      const body = request.postDataJSON() as ApiSchemas["UpdateDocumentTypeCatalogRequest"];
+      documentTypeCatalogUpdates?.push(body);
+
+      if (documentTypeCatalogStaleRevisionPending) {
+        // A concurrent editor already moved the revision on; the next GET serves it.
+        documentTypeCatalogStaleRevisionPending = false;
+        documentTypeCatalog = {
+          ...documentTypeCatalog,
+          revision: String(Number(documentTypeCatalog.revision) + 1),
+        };
+        await json(route, {
+          error: {
+            code: "conflict",
+            message: `The document type catalog changed since it was loaded (current revision ${documentTypeCatalog.revision}). Reload before saving again.`,
+          },
+        }, 409);
+        return;
+      }
+
+      const builtIns = documentTypeCatalog.types.filter((type) => type.origin === "built_in");
+      const disabled = new Set(body.disabledBuiltInTypeKeys ?? []);
+      documentTypeCatalog = {
+        ...documentTypeCatalog,
+        revision: String(Number(documentTypeCatalog.revision) + 1),
+        types: [
+          ...builtIns.map((type) => ({
+            ...type,
+            enabled: type.disableable ? !disabled.has(type.key) : true,
+          })),
+          ...(body.types ?? []).map((type) => ({
+            key: type.key,
+            label: type.label,
+            description: type.description ?? "",
+            enabled: type.enabled ?? true,
+            origin: "operator" as const,
+            payload: "fields" as const,
+            disableable: true,
+            fields: (type.fields ?? []).map((field) => ({ ...field, instruction: field.instruction ?? "" })),
+          })),
+        ],
+      };
+      await json(route, documentTypeCatalog);
       return;
     }
 

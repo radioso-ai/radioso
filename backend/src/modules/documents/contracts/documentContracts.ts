@@ -111,6 +111,8 @@ export interface DocumentQueueUpdateInput extends DocumentSourceInput {
   sourceId?: string | null;
   source?: DocumentSourceSummary | null;
   metadata?: Record<string, unknown>;
+  /** See `DocumentMetadataReplaceInput.enrichment`: ownership relinquishment rides with the write. */
+  enrichment?: Record<string, unknown>;
   externalDocumentId?: string | null;
 }
 
@@ -152,6 +154,19 @@ export interface DocumentEnrichmentMetadataUpdateInput {
   enrichment?: Record<string, unknown> | null;
 }
 
+export interface DocumentMetadataReplaceInput {
+  documentId: string;
+  workspaceId: string;
+  metadata: Record<string, unknown>;
+  /**
+   * Replacement enrichment provenance, written in the same statement as the
+   * metadata. A manual write that changes or removes a key extraction
+   * generated relinquishes ownership of it here, so the next processing pass
+   * treats it as operator-owned. Omitted leaves stored provenance untouched.
+   */
+  enrichment?: Record<string, unknown>;
+}
+
 export interface DocumentRepositoryPort {
   createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
@@ -191,6 +206,12 @@ export interface DocumentRepositoryPort {
   updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
+  /**
+   * Replaces the operator-authored metadata map and requeues the document.
+   * Metadata reaches the chunks only at vectorize time, so a replace without a
+   * requeue would leave the published chunks carrying the previous tags.
+   */
+  updateMetadataAndQueue(input: DocumentMetadataReplaceInput): Promise<DocumentRecord>;
   setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
@@ -201,7 +222,8 @@ export interface DocumentRepositoryPort {
   }>;
   requeueSourceEligibleAndQueue(input: {
     workspaceId: string;
-    sourceId: string;
+    /** null selects the manually added documents, which have no source row. */
+    sourceId: string | null;
     options?: DocumentProcessingJobOptions | null;
   }): Promise<{
     queuedDocumentCount: number;

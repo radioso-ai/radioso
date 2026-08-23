@@ -178,6 +178,42 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(second.source?.externalId).toBe("site-ext-1");
   });
 
+  it("createAndQueue clears stale enrichment provenance when upserting a sourced document", async () => {
+    const first = await repository.createAndQueue(
+      baseCreateInput({
+        sourceId,
+        externalDocumentId: "ext-sourced-enrichment",
+        metadata: { price: 10 },
+      }),
+    );
+    await repository.updateMetadataForRevision({
+      documentId: first.id,
+      workspaceId,
+      revision: first.revision,
+      metadata: { price: 10 },
+      enrichment: {
+        status: "applied",
+        matchedTypeKey: "product",
+        catalogRevision: "3",
+        generatedKeys: ["price"],
+      },
+    });
+
+    const second = await repository.createAndQueue(
+      baseCreateInput({
+        sourceId,
+        externalDocumentId: "ext-sourced-enrichment",
+        title: "Page v2",
+        metadata: { price: 12 },
+      }),
+    );
+
+    expect(second.id).toBe(first.id);
+    expect(second.revision).toBe(2);
+    expect(second.metadata).toEqual({ price: 12 });
+    expect(second.enrichment).toBeNull();
+  });
+
   it("createAndQueue throws conflict when the upsert WHERE guard (matching source_kind) excludes the row", async () => {
     await repository.createAndQueue(
       baseCreateInput({ externalDocumentId: "ext-kind-1", sourceKind: "inline_text" }),
@@ -469,6 +505,64 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     ).rejects.toMatchObject({ message: "Document not found" });
   });
 
+  it("updateMetadataAndQueue replaces the jsonb map, requeues, enqueues a job, and clears failure", async () => {
+    const created = await repository.create({
+      ...baseCreateInput({ metadata: { tag: "alpha", stale: "drop" } }),
+      status: "failed",
+    });
+
+    const updated = await repository.updateMetadataAndQueue({
+      documentId: created.id,
+      workspaceId,
+      metadata: { audience: "operators", revision: 2, published: true, retiredAt: null },
+    });
+
+    // Full replace, not a merge: the previous keys are gone.
+    expect(updated.metadata).toEqual({
+      audience: "operators",
+      revision: 2,
+      published: true,
+      retiredAt: null,
+    });
+    expect(updated.status).toBe("queued");
+    expect(updated.revision).toBe(created.revision + 1);
+    expect(updated.failureReason).toBeNull();
+    expect(await countProcessingJobs(created.id)).toBe(1);
+
+    const cleared = await repository.updateMetadataAndQueue({
+      documentId: created.id,
+      workspaceId,
+      metadata: {},
+    });
+    expect(cleared.metadata).toEqual({});
+    expect(cleared.revision).toBe(created.revision + 2);
+  });
+
+  it("updateMetadataAndQueue returns notFound for a missing document and scopes by workspace", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+
+    await expect(
+      repository.updateMetadataAndQueue({
+        documentId: randomUUID(),
+        workspaceId,
+        metadata: {},
+      }),
+    ).rejects.toMatchObject({ message: "Document not found" });
+
+    await expect(
+      repository.updateMetadataAndQueue({
+        documentId: created.id,
+        workspaceId: randomUUID(),
+        metadata: {},
+      }),
+    ).rejects.toMatchObject({ message: "Document not found" });
+
+    // The failed cross-workspace write leaves the document untouched.
+    const untouched = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+    expect(untouched?.metadata).toEqual({ tag: "alpha" });
+    expect(untouched?.revision).toBe(created.revision);
+  });
+
   it("updateDerivedContentForRevision only updates when the revision matches", async () => {
     const created = await repository.create({ ...baseCreateInput(), status: "ready" });
 
@@ -710,6 +804,40 @@ describeIntegration("DocumentRepository (Postgres)", () => {
       { documentEnrichmentOverride: "on" },
       { documentEnrichmentOverride: "on" },
     ]);
+  });
+
+  it("requeueSourceEligibleAndQueue with a null source queues only the manually added documents", async () => {
+    const manualReady = await repository.create({
+      ...baseCreateInput({ sourceId: null, externalDocumentId: "manual-requeue-ready" }),
+      status: "ready",
+    });
+    const manualFailed = await repository.create({
+      ...baseCreateInput({ sourceId: null, externalDocumentId: "manual-requeue-failed" }),
+      status: "failed",
+    });
+    await repository.create({
+      ...baseCreateInput({ sourceId: null, externalDocumentId: "manual-requeue-processing" }),
+      status: "processing",
+    });
+    const sourced = await repository.create({
+      ...baseCreateInput({ sourceId, externalDocumentId: "manual-requeue-sourced" }),
+      status: "ready",
+    });
+
+    const result = await repository.requeueSourceEligibleAndQueue({
+      workspaceId,
+      sourceId: null,
+      options: { documentEnrichmentOverride: "on" },
+    });
+
+    expect(result.queuedDocumentCount).toBe(2);
+    expect(result.skippedDocumentCount).toBe(1);
+    expect(result.queuedDocuments.map((entry) => entry.documentId).sort()).toEqual(
+      [manualFailed.id, manualReady.id].sort(),
+    );
+
+    const sourcedRow = await repository.findByIdAndWorkspaceId(sourced.id, workspaceId);
+    expect(sourcedRow?.status).toBe("ready");
   });
 
   it("findActivePageState returns the active page state and ignores failed documents", async () => {

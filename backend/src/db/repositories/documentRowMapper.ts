@@ -1,4 +1,5 @@
 import type {
+  DocumentEnrichmentFieldCounts,
   DocumentEnrichmentProvenance,
   DocumentShape,
   EnrichmentAnchorSource,
@@ -217,6 +218,48 @@ const mapDocumentEnrichment = (
     factCount: typeof record.factCount === "number" ? record.factCount : 0,
     appliedChunkCount: typeof record.appliedChunkCount === "number" ? record.appliedChunkCount : 0,
     failureReason: typeof record.failureReason === "string" ? record.failureReason : null,
+    // The catalog-driven fields are surfaced only when the stored row actually
+    // carries them. A document enriched against the built-in types alone reads
+    // back exactly the provenance it was written with, and an absent
+    // generatedKeys behaves as the empty set everywhere it is consumed.
+    ...(record.matchedTypeKey === undefined
+      ? {}
+      : { matchedTypeKey: typeof record.matchedTypeKey === "string" ? record.matchedTypeKey : null }),
+    ...(record.catalogRevision === undefined
+      ? {}
+      : { catalogRevision: typeof record.catalogRevision === "string" ? record.catalogRevision : null }),
+    ...(record.generatedKeys === undefined
+      ? {}
+      : {
+          generatedKeys: Array.isArray(record.generatedKeys)
+            ? record.generatedKeys.filter((key): key is string => typeof key === "string")
+            : [],
+        }),
+    ...(record.fieldCounts === undefined
+      ? {}
+      : { fieldCounts: mapDocumentEnrichmentFieldCounts(record.fieldCounts) }),
+    ...(record.classificationNote === undefined
+      ? {}
+      : {
+          classificationNote:
+            typeof record.classificationNote === "string" ? record.classificationNote : null,
+        }),
+  };
+};
+
+const mapDocumentEnrichmentFieldCounts = (value: unknown): DocumentEnrichmentFieldCounts | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const count = (key: string): number => (typeof record[key] === "number" ? (record[key] as number) : 0);
+  return {
+    applied: count("applied"),
+    droppedInvalid: count("droppedInvalid"),
+    droppedUndeclared: count("droppedUndeclared"),
+    droppedDuplicate: count("droppedDuplicate"),
+    droppedOverCap: count("droppedOverCap"),
+    skippedCollision: count("skippedCollision"),
   };
 };
 

@@ -8,6 +8,8 @@ import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agent
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
 import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
 import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
+import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
+import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { AppDependencies } from "./types.js";
@@ -127,6 +129,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceIngestionReprocessService,
     workspaceLlmCapabilitySettingsService,
   } = documentRetrievalGraph;
+  // Field suggestions for metadata rules are the catalog's declarations unioned
+  // with the keys already observed on document metadata; the advisory reference
+  // list is the same rules read the other way round.
+  const metadataFieldSuggestionProvider = new MetadataFieldSuggestionService(
+    settings.documentTypeCatalogService,
+    repositories.documentRepository,
+  );
+  const metadataRuleFieldReferenceProvider = new MetadataRuleFieldReferenceService(agentSkillRepository);
   const agentService = new AgentService(
     repositories.agentRepository,
     repositories.workspaceRepository,
@@ -511,6 +521,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
+    documentTypeCatalogService: settings.documentTypeCatalogService,
+    metadataFieldSuggestionProvider,
+    metadataRuleFieldReferenceProvider,
     // Coverage counts share the job repository's definition of a projected chunk,
     // because the number is read against the backlog that repository enqueues.
     embeddingCoverageReport: repositories.documentProcessingJobRepository,

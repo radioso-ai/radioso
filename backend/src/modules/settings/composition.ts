@@ -1,4 +1,5 @@
 export { IngestionSettingsService } from "./services/ingestionSettingsService.js";
+export { MetadataFieldSuggestionService } from "./services/metadataFieldSuggestionService.js";
 // App-wiring entrypoint for the MCP converse surface (composed in app/composition).
 export { AgentConverseSessionService } from "./services/agentConverseSessionService.js";
 export { embeddingModelIds } from "./domain/ingestionSettings.js";
@@ -15,6 +16,7 @@ export {
   type WorkspaceLlmCapabilityPreferenceInput,
 } from "./contracts/llmCapability.js";
 export type {
+  DeclaredMetadataFieldSourcePort,
   EmbeddingModelTransitionFailureReason,
   EmbeddingModelTransitionPort,
   EmbeddingModelTransitionReadiness,

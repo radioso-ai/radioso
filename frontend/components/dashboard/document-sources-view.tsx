@@ -25,6 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -39,6 +40,13 @@ import {
   DashboardTableHead,
   DashboardTableHeader,
 } from '@/components/dashboard/shared/dashboard-table'
+import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
+import {
+  areRecordsEqual as areMetadataRecordsEqual,
+  toRecord as metadataToRecord,
+  toRows as metadataToRows,
+  type MetadataRecord,
+} from '@/components/dashboard/shared/metadata-key-value-rows'
 import { SourceCrawlLogSheet } from '@/components/dashboard/source-crawl-log-sheet'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -50,6 +58,7 @@ import {
   settingsApi,
   type DocumentSourceCrawlSettings,
   type DocumentSourceListItem,
+  type IngestionSettings,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
 import type { ConnectorDetail } from '@/lib/api-connectors'
@@ -177,7 +186,7 @@ function SourceCrawlSettingsForm({
   }
 
   return (
-    <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
+    <div className="space-y-3">
       <CrawlPolicyFields
         idPrefix={`source-${source.id}`}
         limit={limitInput}
@@ -215,6 +224,237 @@ function SourceCrawlSettingsForm({
   )
 }
 
+function MetadataExtractionSelect({
+  fieldId,
+  value,
+  workspaceEnrichmentEnabled,
+  isSaving,
+  error,
+  onChange,
+}: {
+  fieldId: string
+  value: DocumentEnrichmentOverride
+  workspaceEnrichmentEnabled?: boolean
+  isSaving: boolean
+  error: string | null
+  onChange: (next: DocumentEnrichmentOverride) => void
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={fieldId}>Metadata extraction</Label>
+      <Select
+        value={value}
+        onValueChange={(next) => onChange(next as DocumentEnrichmentOverride)}
+        disabled={isSaving}
+      >
+        <SelectTrigger id={fieldId} className="w-full sm:w-72">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="inherit">
+            {workspaceEnrichmentEnabled === undefined
+              ? 'Use workspace setting'
+              : `Use workspace setting (${workspaceEnrichmentEnabled ? 'on' : 'off'})`}
+          </SelectItem>
+          <SelectItem value="on">Always on for this source</SelectItem>
+          <SelectItem value="off">Always off for this source</SelectItem>
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">
+        Understands each document&apos;s type and extracts structured tags like event dates during
+        processing, at one extra AI call per document.
+      </p>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  )
+}
+
+function SourceMetadataExtractionField({
+  source,
+  workspaceEnrichmentEnabled,
+  onSourceUpdated,
+}: {
+  source: DocumentSourceListItem
+  workspaceEnrichmentEnabled?: boolean
+  onSourceUpdated: (source: DocumentSourceListItem) => void
+}) {
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleChange = async (next: DocumentEnrichmentOverride) => {
+    setIsSaving(true)
+    setError(null)
+    try {
+      const updated = await documentsApi.updateSourceEnrichmentOverride(source.id, next)
+      onSourceUpdated(updated)
+    } catch (saveError) {
+      setError(getApiErrorMessage(saveError, 'Failed to save enrichment override.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <MetadataExtractionSelect
+      fieldId={`source-${source.id}-enrichment`}
+      value={(source as EnrichmentSourceListItem).documentEnrichmentOverride ?? 'inherit'}
+      workspaceEnrichmentEnabled={workspaceEnrichmentEnabled}
+      isSaving={isSaving}
+      error={error}
+      onChange={(next) => void handleChange(next)}
+    />
+  )
+}
+
+/**
+ * Tag template stamped onto every document this source produces. Saved through
+ * the source PATCH, which replaces the whole template rather than merging it.
+ */
+function SourceDocumentTagsField({
+  source,
+  onSourceUpdated,
+}: {
+  source: DocumentSourceListItem
+  onSourceUpdated: (source: DocumentSourceListItem) => void
+}) {
+  const savedTags = metadataToRecord(metadataToRows(source.documentMetadata))
+  const [tags, setTags] = useState<MetadataRecord>(savedTags)
+  const [isValid, setIsValid] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const isDirty = !areMetadataRecordsEqual(tags, savedTags)
+
+  const handleSave = async () => {
+    if (!isDirty || !isValid) return
+    setIsSaving(true)
+    setError(null)
+    try {
+      const updated = await documentsApi.updateSourceDocumentMetadata(source.id, tags)
+      onSourceUpdated(updated)
+    } catch (saveError) {
+      setError(getApiErrorMessage(saveError, 'Failed to save document tags.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <MetadataKeyValueEditor
+        fieldId={`source-${source.id}-document-metadata`}
+        label="Document tags"
+        labelPrefix="Document tag"
+        addLabel="Add document tag"
+        emptyLabel="No document tags yet."
+        value={tags}
+        onChange={setTags}
+        onValidityChange={setIsValid}
+        disabled={isSaving}
+      />
+      <p className="text-xs text-muted-foreground">
+        Applied to every document from this source during processing. Use Reprocess source to apply to
+        already-ingested documents.
+      </p>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      <div>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!isDirty || !isValid || isSaving}
+          onClick={() => void handleSave()}
+        >
+          {isSaving ? (
+            <>
+              <Spinner className="mr-2 h-3 w-3" />
+              Saving…
+            </>
+          ) : (
+            'Save document tags'
+          )}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Manually added documents have no source record, so their override lives on the
+ * workspace ingestion settings rather than behind the source PATCH route.
+ */
+function ManualDocumentsSettingsForm({
+  ingestionSettings,
+  onIngestionSettingsUpdated,
+}: {
+  ingestionSettings: IngestionSettings | null
+  onIngestionSettingsUpdated: (settings: IngestionSettings) => void
+}) {
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleChange = async (next: DocumentEnrichmentOverride) => {
+    if (!ingestionSettings) return
+    setIsSaving(true)
+    setError(null)
+    try {
+      const updated = await settingsApi.updateIngestionSettings({
+        ...ingestionSettings,
+        manualDocumentEnrichmentOverride: next,
+      })
+      onIngestionSettingsUpdated(updated)
+    } catch (saveError) {
+      setError(getApiErrorMessage(saveError, 'Failed to save enrichment override.'))
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4 rounded-md border border-border bg-background/40 p-3">
+      <MetadataExtractionSelect
+        fieldId={`source-${MANUALLY_ADDED_SOURCE_ID}-enrichment`}
+        value={ingestionSettings?.manualDocumentEnrichmentOverride ?? 'inherit'}
+        workspaceEnrichmentEnabled={ingestionSettings?.documentEnrichmentEnabled}
+        isSaving={isSaving || !ingestionSettings}
+        error={error}
+        onChange={(next) => void handleChange(next)}
+      />
+    </div>
+  )
+}
+
+function SourceSettingsForm({
+  source,
+  workspaceEnrichmentEnabled,
+  onSourceUpdated,
+  onCrawlSettingsSaved,
+}: {
+  source: DocumentSourceListItem
+  workspaceEnrichmentEnabled?: boolean
+  onSourceUpdated: (source: DocumentSourceListItem) => void
+  onCrawlSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
+}) {
+  const hasCrawlPolicy = source.kind === 'website' && Boolean(source.crawlSettings)
+
+  return (
+    <div className="space-y-4 rounded-md border border-border bg-background/40 p-3">
+      <SourceMetadataExtractionField
+        source={source}
+        workspaceEnrichmentEnabled={workspaceEnrichmentEnabled}
+        onSourceUpdated={onSourceUpdated}
+      />
+      <div className="border-t border-border pt-4">
+        <SourceDocumentTagsField source={source} onSourceUpdated={onSourceUpdated} />
+      </div>
+      {hasCrawlPolicy ? (
+        <div className="border-t border-border pt-4">
+          <SourceCrawlSettingsForm source={source} onSaved={onCrawlSettingsSaved} />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function SourceExpandedPanel({
   source,
   crawlStatusVersion,
@@ -224,7 +464,8 @@ function SourceExpandedPanel({
   onOpenConnectorSettings,
   onSettingsSaved,
   onSourceUpdated,
-  workspaceEnrichmentEnabled,
+  ingestionSettings,
+  onIngestionSettingsUpdated,
 }: {
   source: DocumentSourceListItem
   crawlStatusVersion: number
@@ -234,7 +475,8 @@ function SourceExpandedPanel({
   onOpenConnectorSettings: () => void
   onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
   onSourceUpdated: (source: DocumentSourceListItem) => void
-  workspaceEnrichmentEnabled?: boolean
+  ingestionSettings: IngestionSettings | null
+  onIngestionSettingsUpdated: (settings: IngestionSettings) => void
 }) {
   const connectorId = source.kind === 'connector'
     ? connectorIdFromExternalId(source.externalId)
@@ -242,7 +484,6 @@ function SourceExpandedPanel({
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
   const [connectorDetail, setConnectorDetail] = useState<ConnectorDetail | null>(null)
   const [isLoading, setIsLoading] = useState(source.kind === 'website' || connectorId !== null)
-  const [isSavingEnrichmentOverride, setIsSavingEnrichmentOverride] = useState(false)
   const [isReprocessingSource, setIsReprocessingSource] = useState(false)
   const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null)
   const [sourceActionError, setSourceActionError] = useState<string | null>(null)
@@ -293,21 +534,10 @@ function SourceExpandedPanel({
   const crawlFailed = crawlJob?.status === 'failed'
   const pageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
   const hasCrawlLog = source.kind === 'website' && Boolean(crawlJob)
-  const enrichmentOverride = ((source as EnrichmentSourceListItem).documentEnrichmentOverride ?? 'inherit')
-
-  const handleEnrichmentOverrideChange = async (value: DocumentEnrichmentOverride) => {
-    setIsSavingEnrichmentOverride(true)
-    setSourceActionError(null)
-    setSourceActionMessage(null)
-    try {
-      const updated = await documentsApi.updateSourceEnrichmentOverride(source.id, value)
-      onSourceUpdated(updated)
-    } catch (error) {
-      setSourceActionError(getApiErrorMessage(error, 'Failed to save enrichment override.'))
-    } finally {
-      setIsSavingEnrichmentOverride(false)
-    }
-  }
+  // The synthetic "Manually added" source has no stored record, so its metadata
+  // extraction override is saved on the workspace ingestion settings instead.
+  const isManualDocumentsSource = source.id === MANUALLY_ADDED_SOURCE_ID
+  const workspaceEnrichmentEnabled = ingestionSettings?.documentEnrichmentEnabled
 
   const handleReprocessSource = async () => {
     setIsReprocessingSource(true)
@@ -376,77 +606,52 @@ function SourceExpandedPanel({
               View crawl log
             </Button>
           ) : null}
-          {source.kind === 'website' && source.crawlSettings ? (
-            <CollapsibleTrigger asChild>
-              <Button type="button" variant="outline" size="sm">
-                <Settings2 className="mr-2 h-3.5 w-3.5" />
-                Settings
-              </Button>
-            </CollapsibleTrigger>
-          ) : null}
-          {source.kind === 'connector' && connectorIdFromExternalId(source.externalId) ? (
-            <Button type="button" variant="outline" size="sm" onClick={onOpenConnectorSettings}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isReprocessingSource}
+            title="Applies setting changes to documents already in this source by processing them again."
+            onClick={() => void handleReprocessSource()}
+          >
+            {isReprocessingSource ? (
+              <Spinner className="mr-2 h-3.5 w-3.5" />
+            ) : (
+              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+            )}
+            Reprocess source
+          </Button>
+          <CollapsibleTrigger asChild>
+            <Button type="button" variant="outline" size="sm">
               <Settings2 className="mr-2 h-3.5 w-3.5" />
               Settings
             </Button>
+          </CollapsibleTrigger>
+          {source.kind === 'connector' && connectorIdFromExternalId(source.externalId) ? (
+            <Button type="button" variant="outline" size="sm" onClick={onOpenConnectorSettings}>
+              <Settings2 className="mr-2 h-3.5 w-3.5" />
+              Connector setup
+            </Button>
           ) : null}
         </div>
-        {source.kind === 'website' && source.crawlSettings ? (
-          <CollapsibleContent className="pt-3">
-            <SourceCrawlSettingsForm source={source} onSaved={onSettingsSaved} />
-          </CollapsibleContent>
-        ) : null}
+        <CollapsibleContent className="pt-3">
+          {isManualDocumentsSource ? (
+            <ManualDocumentsSettingsForm
+              ingestionSettings={ingestionSettings}
+              onIngestionSettingsUpdated={onIngestionSettingsUpdated}
+            />
+          ) : (
+            <SourceSettingsForm
+              source={source}
+              workspaceEnrichmentEnabled={workspaceEnrichmentEnabled}
+              onSourceUpdated={onSourceUpdated}
+              onCrawlSettingsSaved={onSettingsSaved}
+            />
+          )}
+        </CollapsibleContent>
       </Collapsible>
-      {source.id === MANUALLY_ADDED_SOURCE_ID ? (
-        <div className="rounded-md border border-border bg-background/40 p-3">
-          <p className="text-sm font-medium text-foreground">Metadata extraction</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Manually added documents follow the workspace setting (Knowledge → Ingestion → Metadata extraction)
-            {workspaceEnrichmentEnabled === undefined ? '' : ` — currently ${workspaceEnrichmentEnabled ? 'on' : 'off'}`}.
-          </p>
-        </div>
-      ) : (
-      <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0 max-w-xl">
-            <p className="text-sm font-medium text-foreground">Metadata extraction</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Understands each document&apos;s type and extracts structured tags like event dates during processing
-              (one extra AI call per document), so the agent can answer date and event questions from this source.
-            </p>
-          </div>
-          <Select
-            value={enrichmentOverride}
-            onValueChange={(value) => void handleEnrichmentOverrideChange(value as DocumentEnrichmentOverride)}
-            disabled={isSavingEnrichmentOverride}
-          >
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="inherit">
-                {workspaceEnrichmentEnabled === undefined
-                  ? 'Use workspace setting'
-                  : `Use workspace setting (${workspaceEnrichmentEnabled ? 'on' : 'off'})`}
-              </SelectItem>
-              <SelectItem value="on">Always on for this source</SelectItem>
-              <SelectItem value="off">Always off for this source</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button type="button" variant="outline" size="sm" disabled={isReprocessingSource} onClick={() => void handleReprocessSource()}>
-            {isReprocessingSource ? <Spinner className="mr-2 h-3.5 w-3.5" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
-            Reprocess source
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Applies setting changes to documents already in this source by processing them again.
-          </p>
-          {sourceActionMessage ? <p className="text-xs text-muted-foreground">{sourceActionMessage}</p> : null}
-          {sourceActionError ? <p className="text-xs text-destructive">{sourceActionError}</p> : null}
-        </div>
-      </div>
-      )}
+      {sourceActionMessage ? <p className="text-xs text-muted-foreground">{sourceActionMessage}</p> : null}
+      {sourceActionError ? <p className="text-xs text-destructive">{sourceActionError}</p> : null}
     </div>
   )
 }
@@ -470,7 +675,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
   const [pausedSourceIds, setPausedSourceIds] = useState<Set<string>>(new Set())
   const [pendingResumeSourceIds, setPendingResumeSourceIds] = useState<Set<string>>(new Set())
   const [crawlStatusVersion, setCrawlStatusVersion] = useState(0)
-  const [workspaceEnrichmentEnabled, setWorkspaceEnrichmentEnabled] = useState<boolean | undefined>(undefined)
+  const [ingestionSettings, setIngestionSettings] = useState<IngestionSettings | null>(null)
   const sectionShellClassName = 'w-full'
 
   useEffect(() => {
@@ -479,11 +684,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
       .getIngestionSettings()
       .then((settings) => {
         if (!cancelled) {
-          setWorkspaceEnrichmentEnabled(settings.documentEnrichmentEnabled)
+          setIngestionSettings(settings)
         }
       })
       .catch(() => {
-        // Best-effort label context only; the override select works without it.
+        // Best-effort: source overrides still save without the workspace context.
       })
     return () => {
       cancelled = true
@@ -904,7 +1109,8 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
                             ),
                           )
                         }}
-                        workspaceEnrichmentEnabled={workspaceEnrichmentEnabled}
+                        ingestionSettings={ingestionSettings}
+                        onIngestionSettingsUpdated={setIngestionSettings}
                       />
                     </div>
                   ) : null}

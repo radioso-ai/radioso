@@ -2,6 +2,8 @@
 
 import type { FormEvent } from 'react'
 
+import { MetadataKeyValueEditor } from '@/components/dashboard/shared/metadata-key-value-editor'
+import type { MetadataRecord } from '@/components/dashboard/shared/metadata-key-value-rows'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,7 +20,11 @@ export function DocumentImportDialog({
   isImporting,
   supportedExtensions,
   enrichmentChoice,
+  metadata,
+  isMetadataValid = true,
   onEnrichmentChoiceChange,
+  onMetadataChange,
+  onMetadataValidityChange,
   onOpenChange,
   onSubmit,
   onTitleChange,
@@ -31,7 +37,11 @@ export function DocumentImportDialog({
   isImporting: boolean
   supportedExtensions: string
   enrichmentChoice: DocumentDialogEnrichmentChoice
+  metadata: MetadataRecord
+  isMetadataValid?: boolean
   onEnrichmentChoiceChange: (value: DocumentDialogEnrichmentChoice) => void
+  onMetadataChange: (value: MetadataRecord) => void
+  onMetadataValidityChange?: (isValid: boolean) => void
   onOpenChange: (open: boolean) => void
   onSubmit: (event: FormEvent) => void
   onTitleChange: (value: string) => void
@@ -88,6 +98,15 @@ export function DocumentImportDialog({
               Understands the document type and extracts structured tags like event dates (one extra AI call).
             </p>
           </div>
+          <MetadataKeyValueEditor
+            fieldId="importMetadata"
+            label="Metadata"
+            description="Tags stored with the imported document. Retrieval filters can match on them."
+            value={metadata}
+            onChange={onMetadataChange}
+            onValidityChange={onMetadataValidityChange}
+            disabled={isImporting}
+          />
           {importError ? (
             <p className="text-sm text-destructive" role="alert">
               {importError}
@@ -97,7 +116,7 @@ export function DocumentImportDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isImporting}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isImporting || !hasFile}>
+            <Button type="submit" disabled={isImporting || !hasFile || !isMetadataValid}>
               {isImporting ? <Spinner className="mr-2" /> : null}
               Import Document
             </Button>

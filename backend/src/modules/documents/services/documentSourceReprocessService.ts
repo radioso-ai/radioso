@@ -11,7 +11,8 @@ import { buildDocumentProcessingOptions } from "./documentIngestionService.js";
 
 export interface DocumentSourceReprocessResult {
   workspaceId: string;
-  sourceId: string;
+  /** null identifies the manually added documents, which have no source row. */
+  sourceId: string | null;
   queuedDocumentCount: number;
   skippedDocumentCount: number;
   status: "queued" | "noop";
@@ -28,12 +29,18 @@ export class DocumentSourceReprocessService {
 
   async reprocessSource(input: {
     workspaceId: string;
-    sourceId: string;
+    /**
+     * null reprocesses the manually added documents. They have no
+     * document_sources row, so there is no source existence to check.
+     */
+    sourceId: string | null;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
   }): Promise<DocumentSourceReprocessResult> {
-    const source = await this.sourceRepository.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
-    if (!source) {
-      throw notFound("Source not found");
+    if (input.sourceId !== null) {
+      const source = await this.sourceRepository.findByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+      if (!source) {
+        throw notFound("Source not found");
+      }
     }
 
     const options = buildDocumentProcessingOptions(input);

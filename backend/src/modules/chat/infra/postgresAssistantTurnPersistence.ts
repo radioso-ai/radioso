@@ -345,6 +345,18 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       ? await run(input.transaction)
       : await this.db.transaction().execute(async (trx) => run(trx));
 
+    // The turn's own `conversations.updated_at` touch runs as raw SQL on the turn
+    // transaction, so the `withConversationPushEvents` repository decorator never
+    // observes it. Publishing here is what keeps the activity list live for the
+    // second and later turns of a conversation; without it only the first turn
+    // (`conversation.created`) pushes and the rest wait for the reconcile floor.
+    await this.workspaceEventBus?.publish({
+      resourceType: "conversation",
+      resourceId: input.conversationId,
+      workspaceId: input.workspaceId,
+      changeKind: "conversation.updated",
+    });
+
     if (pendingDecisionId) {
       await this.workspaceEventBus?.publish({
         resourceType: "hitl_decision",

@@ -2,8 +2,8 @@ import type { ChatCitation } from "../../../modules/chat/contracts/index.js";
 import type {
   AgentConverseResourceDetail,
   AgentConverseResourceSummary,
-} from "../../../modules/documents/services/agentConverseResourceService.js";
-import type { AgentConverseGroundedAnswerResult } from "../../../modules/retrieval/services/agentConverseGroundedAnswerService.js";
+} from "../../../modules/documents/contracts/index.js";
+import type { AgentConverseGroundedAnswerResult } from "../../../modules/retrieval/public.js";
 
 const toPublicCitation = (citation: ChatCitation): ChatCitation => ({
   documentId: "",

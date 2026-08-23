@@ -1,5 +1,5 @@
 import type { SkillExecutorRegistry } from "../../modules/skills/public.js";
-import type { SkillCapabilityRegistry } from "../../modules/skills/capabilityRegistry.js";
+import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 
 export interface SkillCapabilityExecutorBinding {
   capabilityId: string;

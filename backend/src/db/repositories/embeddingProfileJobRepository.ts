@@ -4,7 +4,7 @@ import type {
   EmbeddingProfileJobLoadInput,
   EmbeddingProfileJobLoadResult,
   EmbeddingProfileJobPersistencePort,
-} from "../../modules/documents/services/embeddingProfileJobService.js";
+} from "../../modules/documents/contracts/index.js";
 import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import { upsertCanonicalChunkEmbeddingWithProjection } from "./chunkEmbeddingRepository.js";
 import { vectorProjectionMutationFenceKey } from "./vectorIndexWorkRepository.js";

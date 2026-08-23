@@ -8,7 +8,7 @@ import type {
   ChatSuggestion,
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
-import type { TurnTraceEnvelope } from "../../../modules/chat/services/turnTraceEnvelope.js";
+import type { TurnTraceEnvelope } from "../../../modules/chat/contracts/index.js";
 
 interface ChatDiagnosticPayload {
   route: ChatRoute;

@@ -8,7 +8,7 @@ import type {
   ToolCallInput,
   ToolCallResult,
   ToolService,
-} from "@radioso/conversation-tools";
+} from "@radioso/conversation-contract";
 
 /**
  * Resolves the auth a connection presents to its MCP server. Pluggable so the

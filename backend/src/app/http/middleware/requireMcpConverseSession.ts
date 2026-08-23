@@ -1,9 +1,9 @@
 import type { RequestHandler } from "express";
 
 import { AppError } from "../../../shared/domain/errors.js";
-import type { AgentConverseSessionService } from "../../../modules/settings/services/agentConverseSessionService.js";
+import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
 import type { AgentConversePrincipal } from "../../../modules/settings/contracts/agentConverseSession.js";
-import type { AgentConverseAudit } from "../../../modules/chat/services/agentConverseAudit.js";
+import type { AgentConverseAudit } from "../../../modules/chat/contracts/index.js";
 
 export interface McpConverseLocals {
   mcpConversePrincipal: AgentConversePrincipal;
@@ -39,7 +39,7 @@ export const rejectWorkspaceBearerToken = (audit?: AgentConverseAudit): RequestH
 };
 
 export const requireMcpConverseSession = (
-  sessionService: Pick<AgentConverseSessionService, "validate">,
+  sessionService: Pick<AgentConverseSessionPort, "validate">,
   audit?: AgentConverseAudit,
 ): RequestHandler => async (req, res, next) => {
   try {

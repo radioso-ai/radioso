@@ -33,6 +33,20 @@ export type { DocumentSearchHistoryEntry, DocumentSearchHistoryPage } from "./hi
 export type { DocumentJobConsumerPort } from "../services/documentJobConsumer.js";
 export type { DocumentJobDispatchRequest, DocumentJobDispatcherPort } from "../services/documentJobDispatcher.js";
 export type {
+  EmbeddingProfileJobCommitInput,
+  EmbeddingProfileJobLoadInput,
+  EmbeddingProfileJobLoadResult,
+  EmbeddingProfileJobPersistencePort,
+  EmbeddingProfileTerminalFailureKind,
+  EmbeddingProfileTerminalFailurePort,
+} from "../services/embeddingProfileJobService.js";
+// The MCP converse HTTP surface holds this instance and renders its results; composition builds it.
+export type {
+  AgentConverseResourceDetail,
+  AgentConverseResourceService,
+  AgentConverseResourceSummary,
+} from "../services/agentConverseResourceService.js";
+export type {
   DocumentStorageDeleteInput,
   DocumentStoragePort,
   DocumentStorageReadInput,

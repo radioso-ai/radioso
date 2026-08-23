@@ -4,10 +4,8 @@ import type {
 import type {
   VectorCandidateSearchInput,
   VectorCandidateSearchPort,
-} from "../../modules/retrieval/domain/vectorAdapter.js";
-import type {
   VectorIndexPort,
-} from "../../modules/retrieval/domain/vectorIndex.js";
+} from "../../modules/retrieval/public.js";
 
 export interface LegacyVectorCandidateSearchAdapterOptions {
   readonly legacy: VectorIndexPort;

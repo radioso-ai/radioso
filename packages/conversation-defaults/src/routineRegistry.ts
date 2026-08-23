@@ -4,7 +4,15 @@ import type {
   ConversationMessage,
   ConversationModelGateway,
   ConversationRoutineActivator,
+  PreparedRoutineCandidates,
+  RankableRoutineCandidates,
+  RankedRoutineMatch,
   Routine,
+  RoutineActivationPrefilter,
+  RoutineActivationResult,
+  RoutineActivationTrigger,
+  RoutineCandidateSummary,
+  RoutineRegistration,
   TurnContext,
 } from "@radioso/conversation-contract";
 import { decideClarification } from "@radioso/conversation-engine";
@@ -18,41 +26,20 @@ import { renderPromptTemplate } from "./promptTemplate.js";
  */
 export type { RoutineReentryMode } from "@radioso/conversation-contract";
 
-export interface RoutineActivationTrigger {
-  routineId: string;
-  description: string;
-}
-
-export interface RoutineActivationPrefilterScore {
-  routineId: string;
-  score: number;
-}
-
-export interface RoutineActivationPrefilter {
-  minScore?: number;
-  topK?: number;
-  rank(input: {
-    query: string;
-    triggers: readonly RoutineActivationTrigger[];
-    turn: TurnContext;
-  }): Promise<readonly RoutineActivationPrefilterScore[]>;
-}
-
-/**
- * A registered Routine plus declarative trigger metadata for ranked activation.
- * Reentry policy is deliberately absent here: it is read off `routine.activation`, so
- * a registration cannot contradict the routine it registers.
- */
-export interface RoutineRegistration {
-  routine: Routine;
-  trigger: {
-    description: string;
-    priority: number;
-    gateRef?: string;
-    eligible?: (input: { turn: TurnContext }) => boolean;
-    explicitClaim?: (input: { turn: TurnContext }) => { variables?: Record<string, unknown> } | null;
-  };
-}
+// Ranked-activation contracts now live in @radioso/conversation-contract so a host planner
+// can conform to them without depending on this default registry; re-exported here because
+// this module is their primary implementation.
+export type {
+  PreparedRoutineCandidates,
+  RankableRoutineCandidates,
+  RankedRoutineMatch,
+  RoutineActivationPrefilter,
+  RoutineActivationPrefilterScore,
+  RoutineActivationResult,
+  RoutineActivationTrigger,
+  RoutineCandidateSummary,
+  RoutineRegistration,
+} from "@radioso/conversation-contract";
 
 export const DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT = `Rank whether the latest user message wants to start any registered routine.
 
@@ -68,57 +55,8 @@ export interface RoutineRegistryOptions {
   activationPrefilter?: RoutineActivationPrefilter;
 }
 
-/**
- * One ranked routine verdict — exactly the shape the ranked-activation model step
- * produces today. {@link RoutineRegistry.applyRankedDecision} consumes an array of
- * these, so a future planner that ranks the same candidates can conform to it
- * without a new score model.
- */
-export interface RankedRoutineMatch {
-  routineId: string;
-  confidence: number;
-  variables?: Record<string, unknown>;
-}
-
-/**
- * Planner-consumable summary of one prepared candidate: enough to build a ranking
- * prompt (title, trigger, priority) without exposing any activation policy.
- */
-export interface RoutineCandidateSummary {
-  routineId: string;
-  title: string;
-  triggerSummary: string;
-  priority: number;
-}
-
-/** The activator's non-null outcome (activate or clarify). */
-export type RoutineActivationResult = NonNullable<
-  Awaited<ReturnType<ConversationRoutineActivator["activate"]>>
->;
-
 /** The activate arm of {@link RoutineActivationResult}. */
 type RoutineActivateOutcome = Extract<RoutineActivationResult, { kind: "activate" }>;
-
-/**
- * The rankable subset of a candidate preparation: the eligible, prefilter-bounded
- * registrations plus their planner summaries. Held so
- * {@link RoutineRegistry.applyRankedDecision} can rebuild clarification candidates
- * from either the legacy ranked-activation call or a planner's precomputed scores.
- */
-export interface RankableRoutineCandidates {
-  kind: "rank";
-  registrations: readonly RoutineRegistration[];
-  candidates: readonly RoutineCandidateSummary[];
-}
-
-/**
- * Outcome of the pre-rank eligibility pipeline. `claim` and `none` are resolved
- * without any ranking call; only `rank` proceeds to the ranked-activation step.
- */
-export type PreparedRoutineCandidates =
-  | RankableRoutineCandidates
-  | { kind: "claim"; activation: RoutineActivationResult }
-  | { kind: "none" };
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,

@@ -1,9 +1,10 @@
 <?php
 /**
  * Plugin Name: Radioso Sync
- * Description: Pushes published, updated, and deleted posts/pages to a Radioso
- *              workspace via signed webhook (HMAC-SHA256).
- * Version:     0.3.1
+ * Description: Pushes published, updated, and deleted content of any post type
+ *              — including WooCommerce products — to a Radioso workspace via
+ *              signed webhook (HMAC-SHA256).
+ * Version:     0.4.0
  * Requires at least: 5.7
  * Author:      Radioso
  * License:     MIT
@@ -19,19 +20,32 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-const RADIOSO_OPT_WEBHOOK_URL   = 'radioso_sync_webhook_url';
-const RADIOSO_OPT_SHARED_SECRET = 'radioso_sync_shared_secret';
-const RADIOSO_OPT_POST_TYPES    = 'radioso_sync_post_types';
-const RADIOSO_OPT_RESYNC_STATE  = 'radioso_sync_resync_state';
-const RADIOSO_OPT_RESYNC_LOCK   = 'radioso_sync_resync_lock';
-const RADIOSO_RESYNC_BATCH_SIZE = 20;
-const RADIOSO_RESYNC_LOG_LIMIT  = 20;
-const RADIOSO_RESYNC_STALL_AFTER = 300;
+const RADIOSO_OPT_WEBHOOK_URL     = 'radioso_sync_webhook_url';
+const RADIOSO_OPT_SHARED_SECRET   = 'radioso_sync_shared_secret';
+const RADIOSO_OPT_POST_TYPES      = 'radioso_sync_post_types';
+const RADIOSO_OPT_AUTHOR_TAXONOMY = 'radioso_sync_author_taxonomy';
+const RADIOSO_OPT_RESYNC_STATE    = 'radioso_sync_resync_state';
+const RADIOSO_OPT_RESYNC_LOCK     = 'radioso_sync_resync_lock';
+const RADIOSO_RESYNC_BATCH_SIZE   = 20;
+const RADIOSO_RESYNC_LOG_LIMIT    = 20;
+const RADIOSO_RESYNC_STALL_AFTER  = 300;
+/**
+ * WooCommerce syncs a variable product's price range from its variations on
+ * `shutdown` at priority 10 (`WC_Post_Data::do_deferred_product_sync`), writing
+ * `_price` directly. Flushing before that would publish the previous range and
+ * strand anything the sync queues, so this has to run after it.
+ */
+const RADIOSO_FLUSH_PRIORITY      = 100;
 
 // ── Event hooks ─────────────────────────────────────────────────────────────
 
 add_action('transition_post_status', 'radioso_on_transition', 10, 3);
 add_action('before_delete_post',     'radioso_on_delete',     10, 1);
+add_action('woocommerce_product_set_stock_status', 'radioso_on_stock_status_change', 10, 3);
+add_action('woocommerce_update_product',            'radioso_on_product_updated',      10, 1);
+add_action('woocommerce_updated_product_price',     'radioso_on_product_price_updated', 10, 1);
+add_action('woocommerce_update_product_variation',  'radioso_on_variation_updated',    10, 2);
+add_action('shutdown', 'radioso_flush_queued_dispatches', RADIOSO_FLUSH_PRIORITY);
 add_action('admin_post_radioso_resync_start', 'radioso_resync_start');
 add_action('admin_post_radioso_resync_cancel', 'radioso_resync_cancel');
 add_action('admin_post_radioso_resync_run_now', 'radioso_resync_run_now');
@@ -43,11 +57,12 @@ function radioso_on_transition($new_status, $old_status, $post) {
     }
 
     if ($new_status === 'publish' && $old_status !== 'publish') {
-        radioso_dispatch('published', $post);
+        radioso_queue_dispatch('published', $post);
     } elseif ($new_status === 'publish' && $old_status === 'publish') {
-        radioso_dispatch('updated', $post);
+        radioso_queue_dispatch('updated', $post);
     } elseif ($old_status === 'publish' && $new_status !== 'publish') {
         // Unpublish (draft, trash) is treated as a delete on the Radioso side.
+        radioso_cancel_queued_dispatch($post->ID);
         radioso_dispatch('deleted', $post);
     }
 }
@@ -55,7 +70,137 @@ function radioso_on_transition($new_status, $old_status, $post) {
 function radioso_on_delete($post_id) {
     $post = get_post($post_id);
     if ($post && radioso_should_sync($post)) {
+        // Deletes cannot wait for the flush: by then the post and its permalink
+        // are gone.
+        radioso_cancel_queued_dispatch($post_id);
         radioso_dispatch('deleted', $post);
+    }
+}
+
+/**
+ * Availability is the one published fact that changes without anyone editing the
+ * post, so a status flip has to re-push on its own. WooCommerce fires this after
+ * its data store has written the new status, so re-reading the product below
+ * reflects it. Quantity changes that leave the status alone are deliberately not
+ * hooked: they would re-embed the catalogue without changing anything we publish.
+ */
+function radioso_on_stock_status_change($product_id, $stock_status = '', $product = null) {
+    radioso_queue_product(radioso_product_document_id($product_id, $product));
+}
+
+/**
+ * Price and stock move without anyone touching the post: scheduled sales, CSV
+ * imports, bulk edits and orders all persist through the product data store
+ * without a post-status transition. This is the hook that sees a whole-product
+ * save from any of those paths.
+ */
+function radioso_on_product_updated($product_id) {
+    radioso_queue_product($product_id);
+}
+
+/**
+ * A variable product's displayed price is a range derived from its variations,
+ * and WooCommerce rewrites it by touching `_price` directly rather than saving
+ * the product — so `woocommerce_update_product` never fires for it. This is the
+ * action WooCommerce raises for exactly that case.
+ */
+function radioso_on_product_price_updated($product_id) {
+    radioso_queue_product($product_id);
+}
+
+/**
+ * Backstop for a variation saved on a path that skips the deferred parent sync.
+ * Variations are their own posts and are never synced in their own right; the
+ * parent product is what Radioso holds a document for.
+ */
+function radioso_on_variation_updated($variation_id, $variation = null) {
+    radioso_queue_product(radioso_product_document_id($variation_id, $variation));
+}
+
+/**
+ * Every core product hook this plugin listens to passes an ID. WooCommerce's own
+ * webhook code still normalises a WC_Product at this point, because the quick and
+ * bulk edit actions hand out objects and a site can map those onto a topic. The
+ * guard is worth keeping: casting an object to int yields 1 in PHP, so an
+ * unnormalised argument would quietly push whatever post 1 happens to be under
+ * the product's identity rather than failing.
+ */
+function radioso_product_id_from($value) {
+    if (is_object($value) && method_exists($value, 'get_id')) {
+        return (int) $value->get_id();
+    }
+
+    return is_numeric($value) ? (int) $value : 0;
+}
+
+function radioso_product_document_id($product_id, $product = null) {
+    if (is_object($product) && method_exists($product, 'get_parent_id') && $product->get_parent_id()) {
+        return (int) $product->get_parent_id();
+    }
+
+    $post_id = radioso_product_id_from($product_id);
+    if ($post_id <= 0) {
+        return 0;
+    }
+
+    $parent_id = (int) wp_get_post_parent_id($post_id);
+    return $parent_id > 0 ? $parent_id : $post_id;
+}
+
+function radioso_queue_product($product_or_id) {
+    $post_id = radioso_product_id_from($product_or_id);
+    if ($post_id <= 0) {
+        return;
+    }
+
+    $post = get_post($post_id);
+    if (!$post || $post->post_status !== 'publish' || !radioso_should_sync($post)) {
+        return;
+    }
+
+    radioso_queue_dispatch('updated', $post);
+}
+
+/**
+ * Publishes and updates are collected and sent once, at the end of the request.
+ *
+ * WordPress fires `transition_post_status` from inside `wp_insert_post()`, before
+ * the `save_post` pass that plugins use to write their own meta — WooCommerce
+ * writes price, stock and attributes there. Sending from the transition would
+ * therefore publish the values as they stood before the edit. Deferring also
+ * collapses the several hooks one save trips into a single push, so the document
+ * is re-embedded once, carrying the state the request finished with.
+ */
+function radioso_queue_dispatch($event, $post) {
+    if (!isset($GLOBALS['radioso_queued_dispatches'])) {
+        $GLOBALS['radioso_queued_dispatches'] = [];
+    }
+
+    // Keyed by post: a publish followed by an update in one request is one push,
+    // and the receiver ingests either event the same way.
+    $GLOBALS['radioso_queued_dispatches'][(int) $post->ID] = $event;
+}
+
+function radioso_cancel_queued_dispatch($post_id) {
+    unset($GLOBALS['radioso_queued_dispatches'][(int) $post_id]);
+}
+
+function radioso_flush_queued_dispatches() {
+    if (empty($GLOBALS['radioso_queued_dispatches'])) {
+        return;
+    }
+
+    $queued = $GLOBALS['radioso_queued_dispatches'];
+    $GLOBALS['radioso_queued_dispatches'] = [];
+
+    foreach ($queued as $post_id => $event) {
+        // Re-read rather than trusting the object the hook handed us: it was
+        // captured before the rest of the request wrote to it.
+        $post = get_post($post_id);
+        if (!$post || $post->post_status !== 'publish' || !radioso_should_sync($post)) {
+            continue;
+        }
+        radioso_dispatch($event, $post);
     }
 }
 
@@ -535,6 +680,217 @@ function radioso_should_sync($post) {
     return in_array($post->post_type, $allowed, true);
 }
 
+/**
+ * Post types whose `post_author` really is the byline. Everywhere else that
+ * column names the account that created the record — on a WooCommerce catalogue
+ * that is a staff login, not the author of the work. Radioso surfaces author
+ * metadata in search and answers, so publishing the staff login there would
+ * attribute the whole catalogue to whoever uploaded it.
+ */
+function radioso_byline_post_types() {
+    return apply_filters('radioso_sync_byline_post_types', ['post', 'page']);
+}
+
+function radioso_term_names($post, $taxonomy) {
+    if (!taxonomy_exists($taxonomy)) {
+        return [];
+    }
+
+    $terms = get_the_terms($post, $taxonomy);
+    if (!$terms || is_wp_error($terms)) {
+        return [];
+    }
+
+    $names = [];
+    foreach ($terms as $term) {
+        if (isset($term->name) && $term->name !== '') {
+            $names[] = $term->name;
+        }
+    }
+    return $names;
+}
+
+/**
+ * Sites that keep the real author in a taxonomy (a book catalogue, a magazine
+ * archive) point the Author taxonomy setting at it. Otherwise we fall back to
+ * the WordPress account, but only for the types where it is the byline.
+ */
+function radioso_author_payload($post) {
+    $taxonomy = trim((string) get_option(RADIOSO_OPT_AUTHOR_TAXONOMY, ''));
+    if ($taxonomy !== '') {
+        $names = radioso_term_names($post, $taxonomy);
+        if ($names) {
+            return ['name' => implode(', ', $names)];
+        }
+    }
+
+    if (!in_array($post->post_type, radioso_byline_post_types(), true)) {
+        return null;
+    }
+
+    return [
+        'id'   => (int) $post->post_author,
+        'name' => get_the_author_meta('display_name', $post->post_author),
+    ];
+}
+
+function radioso_taxonomy_label($taxonomy) {
+    if (isset($taxonomy->labels->singular_name) && $taxonomy->labels->singular_name !== '') {
+        return $taxonomy->labels->singular_name;
+    }
+    return isset($taxonomy->label) && $taxonomy->label !== '' ? $taxonomy->label : $taxonomy->name;
+}
+
+function radioso_taxonomy_facts($post) {
+    $facts = [];
+    $taxonomies = get_object_taxonomies($post->post_type, 'objects');
+    if (!is_array($taxonomies)) {
+        return $facts;
+    }
+
+    foreach ($taxonomies as $taxonomy) {
+        // Internal taxonomies (WooCommerce visibility flags, upsell bookkeeping)
+        // are machine state, not something a reader would ever be told.
+        if (empty($taxonomy->public)) {
+            continue;
+        }
+        $names = radioso_term_names($post, $taxonomy->name);
+        if (!$names) {
+            continue;
+        }
+        $facts[] = [
+            'label' => radioso_taxonomy_label($taxonomy),
+            'value' => implode(', ', $names),
+        ];
+    }
+
+    return $facts;
+}
+
+/**
+ * `wc_price()` returns markup and renders the currency symbol as an HTML entity.
+ * The facts block is escaped on the way out, so the entity has to be resolved
+ * here or Radioso would receive it double-encoded.
+ */
+function radioso_plain_price($amount) {
+    return trim(html_entity_decode(wp_strip_all_tags(wc_price($amount)), ENT_QUOTES, 'UTF-8'));
+}
+
+/**
+ * The price as the shop itself displays it, tax handling included. Variable
+ * products get the range across their variations: quoting one number for a
+ * product that spans several would misstate the price in both directions.
+ */
+function radioso_product_price_text($product) {
+    if ($product->is_type('variable')) {
+        $min = $product->get_variation_price('min', true);
+        $max = $product->get_variation_price('max', true);
+        if ($min === '' || $min === null) {
+            return '';
+        }
+        return $min === $max
+            ? radioso_plain_price($min)
+            : radioso_plain_price($min) . ' – ' . radioso_plain_price($max);
+    }
+
+    $price = wc_get_price_to_display($product);
+    if ($price === '' || $price === null) {
+        return '';
+    }
+
+    return radioso_plain_price($price);
+}
+
+function radioso_product_facts($post) {
+    if (!function_exists('wc_get_product')) {
+        return [];
+    }
+
+    $product = wc_get_product($post->ID);
+    if (!$product) {
+        return [];
+    }
+
+    $facts = [];
+
+    $sku = (string) $product->get_sku();
+    if ($sku !== '') {
+        $facts[] = ['label' => 'SKU', 'value' => $sku];
+    }
+
+    $price_text = radioso_product_price_text($product);
+    if ($price_text !== '') {
+        // WooCommerce's own translation of the label, so the price is labelled in
+        // the shop's language alongside the site-supplied taxonomy and attribute
+        // labels. Falls back to English if the text domain is not loaded.
+        $facts[] = ['label' => __('Price', 'woocommerce'), 'value' => $price_text];
+    }
+
+    // WooCommerce localises this and leaves it empty for an ordinary in-stock
+    // item, so we only ever push a stock claim the shop is actively making.
+    $availability = $product->get_availability();
+    $availability_text = isset($availability['availability']) ? trim((string) $availability['availability']) : '';
+    if ($availability_text !== '') {
+        $facts[] = ['label' => '', 'value' => $availability_text];
+    }
+
+    $attributes = $product->get_attributes();
+    if (!is_array($attributes)) {
+        return $facts;
+    }
+
+    foreach ($attributes as $attribute) {
+        if (!is_object($attribute) || !method_exists($attribute, 'get_visible') || !$attribute->get_visible()) {
+            continue;
+        }
+        $values = $attribute->is_taxonomy()
+            ? wc_get_product_terms($product->get_id(), $attribute->get_name(), ['fields' => 'names'])
+            : $attribute->get_options();
+        if (!is_array($values) || !$values) {
+            continue;
+        }
+        $facts[] = [
+            'label' => wc_attribute_label($attribute->get_name(), $product),
+            'value' => implode(', ', $values),
+        ];
+    }
+
+    return $facts;
+}
+
+/**
+ * Facts a theme renders around the post body rather than inside it: taxonomy
+ * terms and, on WooCommerce, SKU, availability and product attributes. Radioso
+ * only ever receives the post body, so without this block a catalogue's
+ * structured facts (author, ISBN, format, page count) never reach retrieval.
+ *
+ * Labels come from the site's own taxonomy and attribute registrations, so the
+ * block is emitted in whatever language the site is authored in.
+ *
+ * Price and availability both move without a post edit, so they are only safe to
+ * publish because `woocommerce_update_product` and
+ * `woocommerce_product_set_stock_status` re-push the product when they change.
+ */
+function radioso_facts_html($post) {
+    $facts = array_merge(radioso_taxonomy_facts($post), radioso_product_facts($post));
+    if (!$facts) {
+        return '';
+    }
+
+    $items = '';
+    foreach ($facts as $fact) {
+        $items .= $fact['label'] === ''
+            ? sprintf('<li>%s</li>', esc_html($fact['value']))
+            : sprintf('<li>%s: %s</li>', esc_html($fact['label']), esc_html($fact['value']));
+    }
+
+    return '<ul class="radioso-facts">' . $items . '</ul>';
+}
+
+function radioso_rendered_content($post) {
+    return apply_filters('the_content', $post->post_content) . radioso_facts_html($post);
+}
+
 function radioso_dispatch($event, $post) {
     $url    = get_option(RADIOSO_OPT_WEBHOOK_URL);
     $secret = get_option(RADIOSO_OPT_SHARED_SECRET);
@@ -542,26 +898,29 @@ function radioso_dispatch($event, $post) {
         return new WP_Error('radioso_not_configured', 'Webhook URL or shared secret is missing.');
     }
 
+    $post_payload = [
+        'id'               => (int) $post->ID,
+        'type'             => $post->post_type,
+        'status'           => $post->post_status,
+        'slug'             => $post->post_name,
+        'title'            => get_the_title($post),
+        'content_raw'      => $post->post_content,
+        'content_rendered' => radioso_rendered_content($post),
+        'excerpt_rendered' => apply_filters('the_excerpt', $post->post_excerpt),
+        'link'             => get_permalink($post),
+        'modified_gmt'     => $post->post_modified_gmt,
+        'date_gmt'         => $post->post_date_gmt,
+    ];
+
+    $author = radioso_author_payload($post);
+    if ($author !== null) {
+        $post_payload['author'] = $author;
+    }
+
     $payload = wp_json_encode([
         'event'    => $event,
         'site_url' => home_url('/'),
-        'post'     => [
-            'id'               => (int) $post->ID,
-            'type'             => $post->post_type,
-            'status'           => $post->post_status,
-            'slug'             => $post->post_name,
-            'title'            => get_the_title($post),
-            'content_raw'      => $post->post_content,
-            'content_rendered' => apply_filters('the_content', $post->post_content),
-            'excerpt_rendered' => apply_filters('the_excerpt', $post->post_excerpt),
-            'link'             => get_permalink($post),
-            'modified_gmt'     => $post->post_modified_gmt,
-            'date_gmt'         => $post->post_date_gmt,
-            'author'           => [
-                'id'   => (int) $post->post_author,
-                'name' => get_the_author_meta('display_name', $post->post_author),
-            ],
-        ],
+        'post'     => $post_payload,
     ]);
 
     if ($payload === false) {
@@ -604,6 +963,11 @@ function radioso_register_settings() {
         'sanitize_callback' => 'sanitize_text_field',
         'default'           => 'page,post',
     ]);
+    register_setting('radioso_sync', RADIOSO_OPT_AUTHOR_TAXONOMY, [
+        'type'              => 'string',
+        'sanitize_callback' => 'sanitize_key',
+        'default'           => '',
+    ]);
 }
 
 function radioso_register_menu() {
@@ -624,9 +988,9 @@ function radioso_render_settings_page() {
     <div class="wrap">
         <h1>Radioso Sync</h1>
         <?php radioso_render_resync_notice(); ?>
-        <p>Push WordPress page and post changes to a Radioso workspace.
-           Copy the webhook URL and shared secret from the WordPress connector
-           settings inside Radioso.</p>
+        <p>Push WordPress content changes to a Radioso workspace, for any post
+           type including WooCommerce products. Copy the webhook URL and shared
+           secret from the WordPress connector settings inside Radioso.</p>
         <form method="post" action="options.php">
             <?php settings_fields('radioso_sync'); ?>
             <table class="form-table" role="presentation">
@@ -666,7 +1030,19 @@ function radioso_render_settings_page() {
                             type="text"
                             class="regular-text code"
                             value="<?php echo esc_attr(get_option(RADIOSO_OPT_POST_TYPES, 'page,post')); ?>" />
-                        <p class="description">Comma-separated list of post types to sync. Defaults to <code>page,post</code>.</p>
+                        <p class="description">Comma-separated list of post types to sync. Defaults to <code>page,post</code>. Add <code>product</code> to sync a WooCommerce catalogue.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="<?php echo esc_attr(RADIOSO_OPT_AUTHOR_TAXONOMY); ?>">Author taxonomy</label></th>
+                    <td>
+                        <input
+                            name="<?php echo esc_attr(RADIOSO_OPT_AUTHOR_TAXONOMY); ?>"
+                            id="<?php echo esc_attr(RADIOSO_OPT_AUTHOR_TAXONOMY); ?>"
+                            type="text"
+                            class="regular-text code"
+                            value="<?php echo esc_attr(get_option(RADIOSO_OPT_AUTHOR_TAXONOMY, '')); ?>" />
+                        <p class="description">Optional. Taxonomy holding the real author of the work, for catalogues that do not use the WordPress account as the byline. Leave blank to use the WordPress author on posts and pages only.</p>
                     </td>
                 </tr>
             </table>
@@ -811,7 +1187,7 @@ function radioso_render_resync_section() {
     ?>
     <hr />
     <h2>Resync all content</h2>
-    <p>Push all existing published posts and pages of the configured types to Radioso in the background, in batches. It is safe to run again.</p>
+    <p>Push all existing published content of the configured post types to Radioso in the background, in batches. It is safe to run again.</p>
     <?php if ($status === 'running') : ?>
         <p><strong><?php echo esc_html(sprintf('Resync in progress: %d / %d posts', $processed, $total)); ?></strong> <a href="<?php echo esc_url(admin_url('options-general.php?page=radioso-sync')); ?>">Refresh</a></p>
         <?php if ($cron_health) : ?>

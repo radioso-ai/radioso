@@ -60,8 +60,22 @@ import {
   runSourceCrawlAction,
 } from '@/lib/crawl-jobs'
 import { useWorkspace } from '@/lib/workspace-context'
+import { useBackgroundRefresh } from '@/hooks/use-background-refresh'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
+
+/**
+ * Every visible crawl transition — queued, processing, paused, completed, failed —
+ * publishes this kind, so a crawl started from a schedule, a connector, or another
+ * operator wakes the view instead of waiting for a remount.
+ */
+const SOURCES_LIVE_CHANGE_KINDS = ['crawl.status_changed'] as const
+
+/**
+ * Document counts and last-synced timestamps also drift from uploads and deletions,
+ * which are far too frequent to refetch the source list per document.
+ */
+const SOURCES_RECONCILE_INTERVAL_MS = 60_000
 
 const formatSourceKind = (kind: DocumentSourceListItem['kind']) => {
   switch (kind) {
@@ -538,7 +552,12 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
       .catch(() => {})
   }, [pendingResumeSourceIds])
 
-  const loadSources = async () => {
+  /**
+   * A background load is driven by the push channel or the reconcile floor, not
+   * by the operator: it must not replace the table with a spinner, and a failure
+   * leaves the rows already on screen rather than blanking the page.
+   */
+  const loadSources = async ({ background = false }: { background?: boolean } = {}) => {
     if (isWorkspaceLoading) {
       setIsLoading(true)
       return
@@ -549,16 +568,24 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
       setIsLoading(false)
       return
     }
-    setIsLoading(true)
+    if (!background) {
+      setIsLoading(true)
+    }
     try {
       const response = await documentsApi.listSources()
       setSources(response.sources)
       setError(null)
     } catch (loadError) {
+      if (background) {
+        console.debug('Background source refresh failed; keeping the current list.', loadError)
+        return
+      }
       setSources([])
       setError(getApiErrorMessage(loadError, 'Failed to load sources.'))
     } finally {
-      setIsLoading(false)
+      if (!background) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -569,6 +596,9 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId, isWorkspaceLoading])
 
+  // Fine-grained page progress while a crawl is already known to be running.
+  // The push channel wakes this view when a crawl starts, stops, or is paused;
+  // `crawl.progress` fires per checkpoint and stays on this cheaper poll.
   useEffect(() => {
     if (crawlingSourceIds.size === 0) return
     const interval = setInterval(() => {
@@ -576,6 +606,18 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
     }, 5000)
     return () => clearInterval(interval)
   }, [crawlingSourceIds.size, refreshCrawlingStatus])
+
+  useBackgroundRefresh({
+    changeKinds: SOURCES_LIVE_CHANGE_KINDS,
+    onRefresh: () => {
+      refreshCrawlingStatus()
+      // Each row reads its own latest job, so the crawl badge needs the version
+      // bump as well as the workspace-wide status sweep behind the row actions.
+      setCrawlStatusVersion((version) => version + 1)
+      void loadSources({ background: true })
+    },
+    intervalMs: SOURCES_RECONCILE_INTERVAL_MS,
+  })
 
   const handleRecrawl = async (source: DocumentSourceListItem) => {
     setRecrawlingSourceId(source.id)

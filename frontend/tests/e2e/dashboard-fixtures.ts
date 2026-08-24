@@ -2386,3 +2386,57 @@ export const installDashboardApiMocks = async (
     await json(route, { error: { code: "not_found", message: `Unhandled mock route: ${request.method()} ${path}` } }, 404);
   });
 };
+
+export interface WorkspacePushStream {
+  /**
+   * Delivers one push frame over the dashboard's next reconnect. Frames emitted
+   * while no connection is open are queued for the one that follows.
+   */
+  emit: (event: {
+    resourceType: string;
+    resourceId: string;
+    changeKind: string;
+    version?: number;
+  }) => void;
+}
+
+/**
+ * Serves the workspace push channel that every dashboard surface subscribes to.
+ *
+ * The first connection gets the `ready` frame the real endpoint opens with, which
+ * is the channel's own "refetch now" signal. Later connections carry only what the
+ * test emits, so an assertion about a push cannot be satisfied by a reconnect.
+ */
+export const installWorkspacePushStream = async (page: Page): Promise<WorkspacePushStream> => {
+  const queue: string[] = [];
+  let connections = 0;
+
+  await page.route("**/backend/api/v1/events", async (route) => {
+    connections += 1;
+    if (connections === 1) {
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: "event: ready\n\n" });
+      return;
+    }
+
+    const deadline = Date.now() + 20_000;
+    while (queue.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    if (queue.length === 0) {
+      await route.abort();
+      return;
+    }
+    // Frames stay queued rather than being consumed. The dashboard drops the
+    // stream whenever the active workspace resolves, so a frame delivered into a
+    // connection the client is abandoning would otherwise vanish; replaying on
+    // every reconnect makes the test depend on the subscription, not on timing.
+    await route.fulfill({ status: 200, contentType: "text/event-stream", body: queue.join("") });
+  });
+
+  return {
+    emit: ({ version = 1, ...event }) => {
+      queue.push(`event: push\ndata: ${JSON.stringify({ ...event, workspaceId, version })}\n\n`);
+    },
+  };
+};

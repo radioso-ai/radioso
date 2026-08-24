@@ -40,7 +40,8 @@ export interface ResolvedTurnContext {
   snapshot: ContextVariableSnapshot;
 }
 
-const PAGE_CONTEXT_VARIABLE_NAME = "page_context";
+/** Snapshot/staged key for the built-in page-context variable. */
+export const PAGE_CONTEXT_VARIABLE_NAME = "page_context";
 
 const EMPTY_TURN_CONTEXT: ResolvedTurnContext = {
   fragments: [],

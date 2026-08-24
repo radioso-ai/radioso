@@ -17,6 +17,7 @@ import {
   type InternalAgentConfig,
 } from "../../agents/public.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import { visitorMatchContext } from "./visitorMatchContext.js";
 import {
   contextualDirectiveCandidates,
   lazyPromise,
@@ -360,6 +361,7 @@ export class WorkbenchReplayRunner {
               turnContext: { query, route },
             }),
         }),
+        visitorContext: visitorMatchContext(session).context,
         workspaceContext: { workspaceId: session.agent.workspaceId },
         usageContext: {
           accountId: input.accountId ?? undefined,

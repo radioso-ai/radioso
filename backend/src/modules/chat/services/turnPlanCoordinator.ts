@@ -130,6 +130,8 @@ export interface TurnPlanInputs {
   routinePreparation: PreparedRoutineCandidates | null;
   /** Union-of-routes contextual directive candidates (name + condition). */
   directiveCandidates: readonly TurnPlanDirectiveCandidate[];
+  /** Bounded, redacted visitor context the directive conditions may reference. */
+  visitorContext?: Record<string, unknown>;
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
   signal?: AbortSignal;
@@ -190,6 +192,7 @@ export class TurnPlanCoordinator {
       pageReadCapability: input.pageReadCapability,
       routineCandidates: prepared ? prepared.candidates : [],
       directiveCandidates: input.directiveCandidates,
+      visitorContext: input.visitorContext,
       workspaceContext: input.workspaceContext,
       usageContext: input.usageContext,
       signal: input.signal,

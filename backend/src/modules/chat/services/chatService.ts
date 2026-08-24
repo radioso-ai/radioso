@@ -44,6 +44,7 @@ import type {
 } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import { visitorMatchContext } from "./visitorMatchContext.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -654,6 +655,24 @@ export class ChatService {
   }
 
   /**
+   * The bounded visitor context handed to the planner's directive classification.
+   * Counts only — never values — reach the trace: the context can carry visitor
+   * data, and the redaction boundary is upstream in the snapshot.
+   */
+  private planVisitorContext(session: PreparedSession): Record<string, unknown> {
+    const { context, dropped, clamped } = visitorMatchContext(session);
+    const variableCount = Object.keys(context).length;
+    if (variableCount > 0 || dropped.length > 0) {
+      setTraceAttributes({
+        "chat.directive_match.visitor_context_variables": variableCount,
+        "chat.directive_match.visitor_context_dropped": dropped.length,
+        "chat.directive_match.visitor_context_clamped": clamped.length,
+      });
+    }
+    return context;
+  }
+
+  /**
    * Creates the lazy fused turn-plan handle for this turn when no pre-engine
    * bypass signal holds (active routine, pending clarification or
    * decision, or a parked routine). The handle is memoized on the session; the
@@ -681,6 +700,7 @@ export class ChatService {
         }, this.turnPlanInterpretationContextSettings),
         pageReadCapability: session.pageReadCapability,
         directiveCandidates: this.buildTurnPlanDirectiveCandidates(session, input.accountId),
+        visitorContext: this.planVisitorContext(session),
         workspaceContext: { workspaceId: session.agent.workspaceId },
         usageContext: {
           accountId: input.accountId,

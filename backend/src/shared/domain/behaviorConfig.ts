@@ -36,6 +36,16 @@ export const CONTEXT_VARIABLES_BEHAVIOR = {
     // Approximate prompt ceiling using the repo-standard ~4 chars/token estimate.
     sectionTokenBudget: 1_200,
   },
+  // Bounds on the visitor-context projection handed to directive matching (the
+  // staged matcher call and the fused planner's directive section). Tighter than
+  // the answer prompt: a condition is judged from variable names and values, so
+  // long values are clamped rather than given matcher prompt space. Field names
+  // come from the shared bound type; "rendered" reads as "kept" here.
+  matchBound: {
+    maxRenderedVariables: 12,
+    perValueMaxChars: 300,
+    sectionTokenBudget: 600,
+  },
 } as const;
 
 export const CHAT_BEHAVIOR = {

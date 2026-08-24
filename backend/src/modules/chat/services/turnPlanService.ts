@@ -65,6 +65,13 @@ export interface TurnPlanRequest {
   pageReadCapability?: PageReadCapability | null;
   routineCandidates: readonly TurnPlanRoutineCandidate[];
   directiveCandidates: readonly TurnPlanDirectiveCandidate[];
+  /**
+   * The turn's bounded visitor context (resolved context variables, redacted).
+   * Rendered only alongside directive candidates: directive conditions are the
+   * one planner decision that consumes visitor state, and routing, rewrite, and
+   * language stay firewalled from it.
+   */
+  visitorContext?: Record<string, unknown>;
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
   signal?: AbortSignal;
@@ -99,6 +106,11 @@ const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[])
     )
     .join("\n\n");
 
+const visitorContextBlock = (visitorContext: Record<string, unknown>): string =>
+  renderPromptTemplate("chat/turn-planning-visitor-context.md", {
+    visitor_context_section_values: JSON.stringify(visitorContext, null, 2),
+  });
+
 const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidate[]): string =>
   JSON.stringify(
     candidates.map((candidate) => ({ name: candidate.name, condition: candidate.condition })),
@@ -116,6 +128,7 @@ export type TurnPlanningPromptInput = Pick<
   | "pageReadCapability"
   | "routineCandidates"
   | "directiveCandidates"
+  | "visitorContext"
 >;
 
 // Optional sub-sections render only when their candidate list has entries. Each
@@ -152,6 +165,7 @@ const turnPlanOutputShapeBlock = (input: {
 export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
   const hasDirectiveCandidates = input.directiveCandidates.length > 0;
+  const hasVisitorContext = Object.keys(input.visitorContext ?? {}).length > 0;
   const pageReadCapability = input.pageReadCapability ?? null;
   return renderPromptTemplate("chat/turn-planning.md", {
     context_section: formatConversationContext(input.history) || "No prior context",
@@ -177,6 +191,9 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string 
       ? optionalSection(
           renderPromptTemplate("chat/turn-planning-directives.md", {
             directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
+            visitor_context_section: hasVisitorContext
+              ? optionalSection(visitorContextBlock(input.visitorContext ?? {}))
+              : "",
           }),
         )
       : "",

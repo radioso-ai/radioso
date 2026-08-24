@@ -38,6 +38,7 @@ import {
   toConversationMessages,
 } from "./conversationContractMappers.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import { visitorMatchContext } from "./visitorMatchContext.js";
 import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
 import { planAwareDirectiveClassifications } from "./turnPlanCoordinator.js";
 
@@ -110,6 +111,18 @@ const effectiveInputEventForSession = (session: PreparedSession) => ({
   content: session.effectiveQuery ?? session.userMessage.content,
 });
 
+/**
+ * The turn's resolved visitor context, bounded for matching. Omitted entirely
+ * when nothing resolved, so turns without context variables send the matcher the
+ * same signals they always did.
+ */
+const visitorContextForMatching = (
+  session: PreparedSession,
+): { visitorContext?: Record<string, unknown> } => {
+  const { context } = visitorMatchContext(session);
+  return Object.keys(context).length > 0 ? { visitorContext: context } : {};
+};
+
 const directiveSteerInputForSession = (
   session: PreparedSession,
   accountId?: string,
@@ -121,6 +134,7 @@ const directiveSteerInputForSession = (
   turnContext: {
     query: turn?.inputEvent.content ?? session.effectiveQuery ?? session.userMessage.content,
     route: session.turnRoute,
+    ...visitorContextForMatching(session),
   },
   usageContext: {
     accountId: accountId ?? null,

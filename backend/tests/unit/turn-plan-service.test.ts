@@ -463,6 +463,39 @@ describe("buildTurnPlanningPrompt", () => {
     expect(bare).not.toMatch(/\n\n\n/);
   });
 
+  it("renders resolved visitor context inside the directive section so conditions can reference it", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput({
+      directiveCandidates: [{ name: "concierge", condition: "the visitor's cart is worth more than 100" }],
+      visitorContext: { cart_value: 120, page_context: { pageUrl: "https://shop.example/cart" } },
+    }));
+
+    expect(prompt).toContain("Directive Rules");
+    expect(prompt).toContain('"cart_value": 120');
+    expect(prompt).toContain("https://shop.example/cart");
+    // Directive conditions are the only planner decision that consumes visitor
+    // context; routing and rewrite stay firewalled from it.
+    expect(prompt.indexOf('"cart_value": 120')).toBeGreaterThan(prompt.indexOf("Directive Rules"));
+  });
+
+  it("omits visitor context when the turn has no directive candidates", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput({
+      visitorContext: { cart_value: 120 },
+    }));
+
+    expect(prompt).not.toContain("cart_value");
+  });
+
+  it("omits the visitor-context block when nothing resolved", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput({
+      directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
+      visitorContext: {},
+    }));
+
+    expect(prompt).toContain("Directive Rules");
+    expect(prompt).not.toContain("Visitor context");
+    expect(prompt).not.toMatch(/\n\n\n/);
+  });
+
   it("renders a compact output shape so schema-less compatible providers still have a JSON contract", () => {
     const prompt = buildTurnPlanningPrompt(promptInput({
       routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],

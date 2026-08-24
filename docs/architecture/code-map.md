@@ -584,7 +584,9 @@ Primary internals:
 - `backend/src/modules/directives/probabilisticDirectiveMatcher.ts` (LLM contextual match)
 - `backend/src/modules/directives/directiveSteeringService.ts`
 - `backend/src/modules/chat/services/directiveTracePresenter.ts`
-- `backend/prompts/chat/steering.md`, `backend/prompts/chat/directive-match.md`
+- `backend/src/modules/context-variables/matchContextProjection.ts` (bounded, redacted visitor context for conditions)
+- `backend/src/modules/chat/services/visitorMatchContext.ts` (per-turn projection shared by the matcher call and the fused planner)
+- `backend/prompts/chat/steering.md`, `backend/prompts/chat/directive-match.md`, `backend/prompts/chat/turn-planning-visitor-context.md`
 
 Focused checks:
 

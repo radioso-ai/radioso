@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-08-07
+last_updated: 2026-08-24
 ---
 
 # Context variables
@@ -166,6 +166,28 @@ the prompt context.
 Sensitive variables should use the narrowest surfacing that works. Redacted
 values may still appear in Activity so operators can debug what happened without
 exposing raw sensitive data.
+
+## Conditions that read context
+
+Directive conditions are judged against the turn's visitor context, so a
+condition can describe visitor state rather than only what the visitor said.
+"The visitor's cart is worth more than 100" or "the visitor is on a product
+page" are conditions the matcher can decide, because `cart` and `page_context`
+are part of the signals it sees.
+
+Every resolved variable takes part, whatever its surfacing: `operator_only` and
+`on_reference` values steer behavior without being written into the answer
+prompt. Two limits are worth knowing when you write a condition:
+
+- Sensitive values arrive as `[redacted]`, so a condition that depends on
+  reading one cannot hold. Condition on a non-sensitive companion value instead
+  — an `account_tier` string rather than the account number.
+- Long values are shortened and a turn's context is capped, so conditions that
+  hinge on something deep inside a large JSON blob are unreliable. Push the fact
+  the condition needs as its own variable.
+
+Page context reaches conditions as the URL, title, and locale. The visible page
+excerpt is not part of it.
 
 ## Pushing values
 

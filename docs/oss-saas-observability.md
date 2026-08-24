@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-06-24
+last_updated: 2026-08-24
 ---
 
 # OSS And SaaS Observability
@@ -95,6 +95,15 @@ The Prometheus-style surface is intentionally small and low-cardinality:
 - `radioso_document_worker_events_total`
 - `radioso_document_worker_queue_jobs`
 - `radioso_document_worker_job_duration_ms`
+- `radioso_workspace_push_events_published_total` (`change_kind`)
+- `radioso_workspace_push_publish_failures_total` (`change_kind`)
+- `radioso_workspace_push_listener_notifications_total`
+- `radioso_workspace_push_listener_payload_parse_failures_total`
+- `radioso_workspace_push_listener_connects_total`
+- `radioso_workspace_push_listener_disconnects_total`
+- `radioso_workspace_push_listener_reconnects_total`
+- `radioso_workspace_push_sse_connections`
+- `radioso_workspace_push_subscriber_queue_overflows_total`
 - `radioso_product_events_total`
 - `radioso_errors_total`
 

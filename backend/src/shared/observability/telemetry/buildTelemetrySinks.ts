@@ -74,6 +74,72 @@ class MetricsTelemetrySink implements TelemetrySink {
       return;
     }
 
+    if (event.eventType === "workspace_push.event_published") {
+      this.metricsRegistry.incrementCounter("workspace_push_events_published_total", {
+        help: "Total workspace push events published by change kind.",
+        labels: { change_kind: event.tags?.change_kind ?? "unknown" },
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.publish_failed") {
+      this.metricsRegistry.incrementCounter("workspace_push_publish_failures_total", {
+        help: "Total failed workspace push event publishes by change kind.",
+        labels: { change_kind: event.tags?.change_kind ?? "unknown" },
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.listener_notification_received") {
+      this.metricsRegistry.incrementCounter("workspace_push_listener_notifications_total", {
+        help: "Total notifications received by the workspace push listener.",
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.listener_payload_parse_failed") {
+      this.metricsRegistry.incrementCounter("workspace_push_listener_payload_parse_failures_total", {
+        help: "Total workspace push listener notification payloads that failed validation.",
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.listener_connected") {
+      this.metricsRegistry.incrementCounter("workspace_push_listener_connects_total", {
+        help: "Total initial workspace push listener connections.",
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.listener_disconnected") {
+      this.metricsRegistry.incrementCounter("workspace_push_listener_disconnects_total", {
+        help: "Total workspace push listener disconnections.",
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.listener_reconnected") {
+      this.metricsRegistry.incrementCounter("workspace_push_listener_reconnects_total", {
+        help: "Total successful workspace push listener reconnections.",
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.subscriber_queue_overflow") {
+      this.metricsRegistry.incrementCounter("workspace_push_subscriber_queue_overflows_total", {
+        help: "Total workspace push subscriber queue overflows.",
+      });
+      return;
+    }
+
+    if (event.eventType === "workspace_push.sse_connection_opened" || event.eventType === "workspace_push.sse_connection_closed") {
+      this.metricsRegistry.setGauge("workspace_push_sse_connections", {
+        help: "Current open workspace push SSE connections.",
+        value: event.metrics?.connectionCount ?? 0,
+      });
+      return;
+    }
+
     if (event.eventType.startsWith("document.worker.")) {
       const labels = {
         event_type: event.eventType,

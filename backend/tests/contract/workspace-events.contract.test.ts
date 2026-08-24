@@ -124,4 +124,70 @@ describe("workspace events contract", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     expect(released).toBe(true);
   });
+
+  it("writes another ready frame before the retained push when the subscription requires a resync", async () => {
+    const { app, dependencies } = createTestApp();
+    const token = await issueTestToken(app, "workspace-events-resync@example.com");
+    const bus = dependencies.workspaceEventBus;
+    const realSubscribe = bus.subscribe.bind(bus);
+    let resyncRequired = false;
+    bus.subscribe = (workspaceId: string) => {
+      const inner = realSubscribe(workspaceId);
+      return {
+        consumeResync: () => {
+          const required = resyncRequired;
+          resyncRequired = false;
+          return required;
+        },
+        [Symbol.asyncIterator]() {
+          return inner[Symbol.asyncIterator]();
+        },
+      };
+    };
+    const server = app.listen(0);
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Test server did not bind a TCP port");
+    }
+
+    const frames = await new Promise<string>((resolve, reject) => {
+      const stream = request({
+        host: "127.0.0.1",
+        port: address.port,
+        path: "/api/v1/events",
+        headers: { authorization: `Bearer ${token.token}` },
+      });
+      let body = "";
+      let published = false;
+      stream.on("response", (response) => {
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          body += chunk;
+          if (!published && body.includes("event: ready")) {
+            published = true;
+            resyncRequired = true;
+            void bus.publish({
+              resourceType: "document",
+              resourceId: "document-retained",
+              workspaceId: token.workspaceId,
+              changeKind: "document.status_changed",
+            });
+          }
+          if ((body.match(/event: ready/g) ?? []).length === 2 && body.includes("document-retained")) {
+            stream.destroy();
+            resolve(body);
+          }
+        });
+      });
+      stream.on("error", reject);
+      stream.end();
+    });
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    const firstReady = frames.indexOf("event: ready");
+    const resyncReady = frames.indexOf("event: ready", firstReady + 1);
+    expect(resyncReady).toBeGreaterThan(firstReady);
+    expect(resyncReady).toBeLessThan(frames.indexOf("event: push"));
+  });
 });

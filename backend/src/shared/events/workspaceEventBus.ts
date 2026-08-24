@@ -26,9 +26,17 @@ export const pushEventSchema = z.object({
 export type PushEvent = z.infer<typeof pushEventSchema>;
 export type WorkspaceEventPublish = Omit<PushEvent, "version">;
 
+export interface WorkspaceEventSubscription extends AsyncIterable<PushEvent> {
+  /**
+   * Reports and clears a request to send the existing full-refetch signal
+   * before the next retained event. Implementations without buffering may omit it.
+   */
+  consumeResync?(): boolean;
+}
+
 export interface WorkspaceEventBus {
   publish(event: WorkspaceEventPublish): Promise<void>;
-  subscribe(workspaceId: string): AsyncIterable<PushEvent>;
+  subscribe(workspaceId: string): WorkspaceEventSubscription;
   /**
    * Resolves once the transport can deliver events to subscribers. A caller
    * that signals "refetch now" (the SSE ready frame) awaits this first — with

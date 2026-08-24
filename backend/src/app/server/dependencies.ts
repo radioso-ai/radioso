@@ -69,7 +69,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   }
   const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
   const workspaceEventBus = env.WORKSPACE_PUSH_ENABLED
-    ? new PostgresWorkspaceEventBus(infrastructure.database, logger)
+    ? new PostgresWorkspaceEventBus(infrastructure.database, logger, infrastructure.telemetryService)
     : new NoopWorkspaceEventBus();
   if (!env.WORKSPACE_PUSH_ENABLED) {
     logger.info({ enabled: false }, "Workspace push is disabled");

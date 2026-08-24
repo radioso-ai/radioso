@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { Fraunces } from 'next/font/google'
 import { ThemeProvider } from '@/components/theme-provider'
-import { DevBuildBadge } from '@/components/dev-build-badge'
 import { FrontendErrorBoundary } from '@/components/frontend-error-boundary'
 import { ProductAnalyticsProvider } from '@/components/product-analytics-provider'
 import { AuthProvider } from '@/lib/auth-context'
@@ -53,7 +52,6 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <ProductAnalyticsProvider />
           </Suspense>
-          <DevBuildBadge />
         </ThemeProvider>
       </body>
     </html>

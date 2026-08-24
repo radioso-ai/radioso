@@ -704,6 +704,63 @@ describe("document ingestion", () => {
     expect(current?.revision).toBe(1);
   });
 
+  it("re-ingests when an indexed field changes type without changing its text", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    // A shop that starts sending real numbers instead of strings changes what a
+    // numeric rule matches, so it has to reach the chunks.
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      indexedFields: { price: "17", on_sale: "false" },
+    } as any);
+
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      indexedFields: { price: 17, on_sale: false },
+    } as any);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+    expect(current?.metadata).toMatchObject({ price: 17, on_sale: false });
+  });
+
+  it("re-ingests when a field value only looks like two fields", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      indexedFields: { sku: "A\u0001zone=north" },
+    } as any);
+
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      indexedFields: { sku: "A", zone: "north" },
+    } as any);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+  });
+
   it("keeps the connector's own metadata when an indexed field collides with it", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

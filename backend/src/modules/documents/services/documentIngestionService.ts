@@ -895,13 +895,22 @@ const mergeIndexedFields = (
 // hashing or a reordered payload would look like an edit. Code-unit order
 // rather than locale order: the same payload has to hash the same everywhere
 // the worker runs.
+//
+// JSON rather than joined text, because the hash decides whether a re-sync is
+// skipped and a value's type is part of what changed: a shop that starts
+// sending the number 17 where it sent the string "17" changes what a numeric
+// rule matches. JSON also escapes the value, so no field can spell out its
+// neighbours and hash as them.
 const renderIndexedFieldsFingerprint = (
   indexedFields: Record<string, IndexedFieldValue> | undefined,
-): string =>
-  Object.entries(indexedFields ?? {})
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(([key, value]) => `${key}=${String(value)}`)
-    .join("\u0001");
+): string => {
+  const entries = Object.entries(indexedFields ?? {}).sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  // An empty map has to render empty, so a document that carries no indexed
+  // fields keeps the hash it already had.
+  return entries.length > 0 ? JSON.stringify(entries) : "";
+};
 
 const describeIndexedContent = (
   markdownContent: string,

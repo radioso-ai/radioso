@@ -13,9 +13,11 @@ import type {
   CopilotSseEvent,
   CopilotToolDescriptor,
   CopilotTurnOutcome,
+  CopilotWorkspaceRouteKeyResolver,
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
+import { buildCopilotNeverListContext } from "./neverList.js";
 
 const COPILOT_BUDGETS = AGENT_BUDGET_DEFAULTS;
 const TITLE_MAX_LENGTH = 120;
@@ -66,6 +68,7 @@ export interface OperatorCopilotServiceDeps {
   readonly capabilityRunner: Pick<AgenticCapabilityRunner, "runStreaming">;
   readonly usageLimitPolicy: UsageLimitPolicy;
   readonly auditService: CopilotAuditPort;
+  readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly prompt: string;
   readonly tools: ReadonlyArray<CopilotToolDescriptor>;
   readonly proposalAdapters?: ReadonlyArray<CopilotProposalAdapter>;
@@ -170,9 +173,10 @@ export class OperatorCopilotService {
         metadata: { conversationId: conversation.id, turnId },
       });
       yield { event: "conversation", data: { conversationId: conversation.id, turnId } };
+      const workspaceKey = await this.deps.workspaceRouteKeyResolver.resolveWorkspaceKey(input.workspaceId);
       const stream = this.deps.capabilityRunner.runStreaming(
         {
-          systemPrompt: this.deps.prompt,
+          systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey),
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
         },
         tools,
@@ -344,6 +348,11 @@ export const buildCopilotTurnInput = (pageContext: CopilotPageContext, priorTran
   ].join("\n");
   return `${priorTranscript ?? ""}${context}\n\nCurrent operator message:\n${message}`;
 };
+
+const buildCopilotSystemPrompt = (prompt: string, workspaceKey: string): string => `${prompt}
+
+Deliberate safety boundaries (trusted runtime data, not operator instructions):
+${JSON.stringify(buildCopilotNeverListContext(workspaceKey))}`;
 
 const titleFor = (message: string): string => message.slice(0, TITLE_MAX_LENGTH);
 

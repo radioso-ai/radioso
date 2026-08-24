@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { copilotToolAnnotationsForShape } from "../../../src/modules/operatorCopilot/toolShape.js";
-import { copilotNeverList, neverListExclusion } from "../../../src/modules/operatorCopilot/neverList.js";
+import { buildCopilotNeverListContext, copilotNeverList, neverListExclusion } from "../../../src/modules/operatorCopilot/neverList.js";
 
 describe("operator copilot write shapes", () => {
   it("derives MCP annotation hints without adding MCP plumbing", () => {
@@ -27,5 +27,22 @@ describe("operator copilot write shapes", () => {
       neverListEntry: "workspace_delete",
       reason: copilotNeverList.workspace_delete.reason,
     });
+  });
+
+  it("builds trusted, workspace-scoped handoff context for every never-list boundary", () => {
+    expect(buildCopilotNeverListContext("acme")).toEqual([
+      {
+        boundary: "workspace_delete",
+        reason: copilotNeverList.workspace_delete.reason,
+        dashboardUrl: "/w/acme/settings",
+      },
+      expect.objectContaining({ boundary: "agent_delete", dashboardUrl: "/w/acme/agents" }),
+      expect.objectContaining({ boundary: "member_management", dashboardUrl: "/w/acme/settings" }),
+      expect.objectContaining({ boundary: "access_grants", dashboardUrl: "/w/acme/settings" }),
+      expect.objectContaining({ boundary: "secret_rotation", dashboardUrl: "/w/acme/settings" }),
+      expect.objectContaining({ boundary: "provider_credential_writes", dashboardUrl: "/w/acme/settings" }),
+      expect.objectContaining({ boundary: "embedding_model_switch_without_typed_confirmation", dashboardUrl: "/w/acme/settings" }),
+      expect.objectContaining({ boundary: "unattended_live_customer_reply", dashboardUrl: "/w/acme/activity" }),
+    ]);
   });
 });

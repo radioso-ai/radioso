@@ -24,6 +24,7 @@ const accountId = randomUUID();
 const operatorUserId = randomUUID();
 const agentId = randomUUID();
 const directiveId = randomUUID();
+const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
 
 type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilotTools>[0]
   & Parameters<typeof createRoutineProposalCopilotTools>[0]
@@ -71,6 +72,7 @@ describe("US3 copilot proposals", () => {
       usageLimitPolicy: noLimitPolicy(),
       auditService: auditService(),
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [tool("propose_directive", "workspace.agents.manage")],
     });
 
@@ -172,6 +174,7 @@ describe("US3 copilot proposals", () => {
       usageLimitPolicy: noLimitPolicy(),
       auditService: audit,
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "new"), preview: vi.fn(), applyIfVersionMatches }],
     });
@@ -192,6 +195,7 @@ describe("US3 copilot proposals", () => {
       usageLimitPolicy: noLimitPolicy(),
       auditService: audit,
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => { throw new Error("target unavailable"); }) }],
     });
@@ -212,6 +216,7 @@ describe("US3 copilot proposals", () => {
       usageLimitPolicy: noLimitPolicy(),
       auditService: auditService(),
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
     });
@@ -235,7 +240,7 @@ describe("US3 copilot proposals", () => {
           result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "I drafted it.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
         }),
       },
-      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", tools: [tool("propose_routine", "workspace.agents.manage")],
+      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [tool("propose_routine", "workspace.agents.manage")],
     });
 
     const events = [];

@@ -40,6 +40,11 @@ export interface CopilotToolInvocationContext {
   readonly pageContext: CopilotPageContext;
 }
 
+/** Resolves the public workspace key required for dashboard-safe copilot handoffs. */
+export interface CopilotWorkspaceRouteKeyResolver {
+  resolveWorkspaceKey(workspaceId: string): Promise<string>;
+}
+
 export interface CopilotEntityReference {
   readonly type: string;
   readonly id?: string;

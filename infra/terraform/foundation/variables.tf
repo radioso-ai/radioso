@@ -56,3 +56,9 @@ variable "runtime_deployer_project_roles" {
   description = "Project-scoped roles retained by routine Terraform after foundation administration is removed."
   type        = set(string)
 }
+
+variable "manage_project_services" {
+  description = "Whether this stack owns the project-wide Google API enablement resources. Disable for additional regional stacks in a project whose primary Terraform state already manages APIs."
+  type        = bool
+  default     = true
+}

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { ConversationRepository, type ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
@@ -535,5 +535,44 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       },
     });
     await events.return?.();
+  });
+
+  it("does not publish conversation.updated from inside a caller-owned transaction", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const bus = new InMemoryWorkspaceEventBus();
+    const publishSpy = vi.spyOn(bus, "publish");
+    const persistenceWithBus = new PostgresAssistantTurnPersistence(
+      database.kysely,
+      60_000,
+      undefined,
+      undefined,
+      undefined,
+      bus,
+    );
+
+    await database.kysely.transaction().execute(async (transaction) => {
+      await persistenceWithBus.completeAssistantTurn({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        transaction,
+        assistantMessage: {
+          id: randomUUID(),
+          conversationId: conversation.id,
+          workspaceId: workspace.id,
+          role: "assistant",
+          content: "Answered from a caller-owned transaction.",
+        },
+        auditEvent: {
+          eventType: "chat.answer",
+          eventStatus: "success",
+          workspaceId: workspace.id,
+          metadata: {},
+        },
+      });
+
+      expect(publishSpy).not.toHaveBeenCalled();
+    });
+
+    expect(publishSpy).not.toHaveBeenCalled();
   });
 });

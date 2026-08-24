@@ -54,10 +54,11 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
     // before the transport can deliver events — otherwise a change landing in
     // that gap is invisible until the reconcile floor. Capped so an unreachable
     // database still degrades to poll-only instead of a hung connection.
-    await Promise.race([
-      dependencies.workspaceEventBus.ready(),
-      new Promise<void>((resolve) => setTimeout(resolve, 2_000).unref?.()),
-    ]);
+    const readyController = new AbortController();
+    const readyTimeout = setTimeout(() => readyController.abort(), 2_000);
+    readyTimeout.unref?.();
+    await dependencies.workspaceEventBus.ready({ signal: readyController.signal });
+    clearTimeout(readyTimeout);
     if (closed || res.writableEnded) {
       return;
     }

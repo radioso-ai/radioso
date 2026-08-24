@@ -92,11 +92,13 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       })),
     };
     const publishMessageCreated = vi.fn();
+    const workspaceEventBus = { publish: vi.fn().mockResolvedValue(undefined) };
     const service = new ApprovalDecisionService(
       repository,
       resumeRunner,
       { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
       { publishMessageCreated },
+      workspaceEventBus,
     );
 
     await service.resolve({
@@ -110,11 +112,20 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     expect(vi.mocked(repository.resolveInTransaction).mock.invocationCallOrder[0]).toBeLessThan(
       publishMessageCreated.mock.invocationCallOrder[0]!,
     );
+    expect(vi.mocked(repository.resolveInTransaction).mock.invocationCallOrder[0]).toBeLessThan(
+      workspaceEventBus.publish.mock.invocationCallOrder[0]!,
+    );
     expect(publishMessageCreated).toHaveBeenCalledWith({
       workspaceId: pending.workspaceId,
       conversationId: pending.conversationId,
       messageId: "assistant_message_1",
       createdAt: expect.any(String),
+    });
+    expect(workspaceEventBus.publish).toHaveBeenCalledWith({
+      resourceType: "conversation",
+      resourceId: pending.conversationId,
+      workspaceId: pending.workspaceId,
+      changeKind: "conversation.updated",
     });
   });
 

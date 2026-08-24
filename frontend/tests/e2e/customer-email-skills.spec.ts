@@ -74,9 +74,22 @@ test("routine authoring exposes typed customer email skill outcomes", async ({ p
   await documentEditor.getByLabel("Branch target").selectOption("ending:complete");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
-  const createUpdate = routineUpdates.filter((update) => update.body).at(-1);
-  expect(createUpdate).toMatchObject({
+  const hasCompleteEmailRoutine = (update: RoutineMutationFixture) =>
+    update.body?.steps?.some((step) =>
+      step.stableStepId === "send_email"
+      && step.kind === "tool"
+      && step.toolRef === "support_email_customer",
+    )
+    && update.body.transitions?.some((transition) =>
+      transition.fromStep === "send_email"
+      && transition.guardKind === "outcome"
+      && transition.outcomeStatus === "provider_rejected",
+    )
+
+  // Autosave can create the draft before the author finishes configuring this step. Wait
+  // for the subsequent update that contains the completed routine, not merely its first POST.
+  await expect.poll(() => routineUpdates.some(hasCompleteEmailRoutine), { timeout: 15_000 }).toBe(true);
+  expect(routineUpdates.find(hasCompleteEmailRoutine)).toMatchObject({
     body: {
       steps: [{
         stableStepId: "send_email",

@@ -114,6 +114,25 @@ describe('loadQualityInboxSourceAttempts', () => {
     expect(attempts.commentedFeedback.status).toBe('fulfilled')
     expect(attempts.reviewQueue.status).toBe('failed')
   })
+
+  it('rethrows AbortError from composed quality reads', async () => {
+    const abortError = new DOMException('aborted', 'AbortError')
+    const signal = new AbortController().signal
+    qualityApiMock.listTurns.mockRejectedValue(abortError)
+    await expect(loadQualityInboxSourceAttempts({}, signal)).rejects.toBe(abortError)
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(1, {
+      feedback: ['down'],
+      sort: 'negative_feedback_updated_at',
+      activeNegativeFeedbackOnly: true,
+      hasComment: true,
+      limit: 25,
+    }, signal)
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(2, {
+      signal: ['negative_feedback', 'grounding_gaps', 'skill_failures'],
+      triageStates: ['open', 'acknowledged'],
+      limit: 1,
+    }, signal)
+  })
 })
 
 describe('reduceQualityInboxSnapshot', () => {

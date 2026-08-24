@@ -52,12 +52,16 @@ const getErrorStatus = (error: unknown): number | undefined => {
   return typeof error.status === 'number' ? error.status : undefined
 }
 
+const isAbortError = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'AbortError'
+
 const attempt = async (
   request: Promise<LowQualityTurnsPage>,
 ): Promise<QualityInboxSourceAttempt> => {
   try {
     return { status: 'fulfilled', page: await request }
   } catch (error) {
+    if (isAbortError(error)) throw error
     return getErrorStatus(error) === 403
       ? { status: 'forbidden' }
       : { status: 'failed', error }
@@ -66,9 +70,12 @@ const attempt = async (
 
 export const loadQualityInboxSourceAttempts = async (
   options: { includeReviewSummary?: boolean } = {},
+  signal?: AbortSignal,
 ): Promise<QualityInboxSourceAttempts> => {
   const activeTriageStates = [...ACTIVE_TRIAGE_STATES]
-  const commentedFeedback = attempt(qualityApi.listTurns({
+  const listTurns = (input: Parameters<typeof qualityApi.listTurns>[0]) =>
+    signal === undefined ? qualityApi.listTurns(input) : qualityApi.listTurns(input, signal)
+  const commentedFeedback = attempt(listTurns({
     feedback: ['down'],
     sort: 'negative_feedback_updated_at',
     activeNegativeFeedbackOnly: true,
@@ -78,7 +85,7 @@ export const loadQualityInboxSourceAttempts = async (
   const reviewQueue: Promise<QualityInboxSourceAttempt> =
     options.includeReviewSummary === false
       ? Promise.resolve({ status: 'skipped' })
-      : attempt(qualityApi.listTurns({
+      : attempt(listTurns({
           signal: [...QUALITY_SIGNAL_IDS],
           triageStates: activeTriageStates,
           limit: 1,

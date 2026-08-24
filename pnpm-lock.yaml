@@ -115,6 +115,9 @@ importers:
       '@radioso/usage-contract':
         specifier: workspace:*
         version: link:../packages/usage-contract
+      '@radioso/workspace-invalidation-contract':
+        specifier: workspace:*
+        version: link:../packages/workspace-invalidation-contract
       '@types/swagger-ui-express':
         specifier: ^4.1.8
         version: 4.1.8
@@ -782,9 +785,6 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
-      '@types/node':
-        specifier: ^24.3.0
-        version: 24.13.3
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -838,6 +838,22 @@ importers:
         version: 3.6.0
 
   packages/usage-contract: {}
+
+  packages/workspace-invalidation-contract:
+    dependencies:
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.8
+        version: 4.1.11(@opentelemetry/api@1.9.1)(@types/node@24.13.3)(jsdom@26.1.0)(vite@7.3.5(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.12)(yaml@2.9.0))
 
   typescript-sdk:
     devDependencies:

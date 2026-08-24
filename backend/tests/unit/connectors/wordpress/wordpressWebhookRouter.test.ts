@@ -128,6 +128,67 @@ describe("wordpressWebhookRouter", () => {
     expect(firstCallArgs[0].metadata).toMatchObject({ author: "Swami Kriyananda" });
   });
 
+  it("forwards scalar fields as indexed fields", async () => {
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      post: {
+        ...validPost,
+        fields: { price: 17, sale_price: 12.5, on_sale: true, sku: "AEY0112" },
+      },
+    });
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(204);
+    const firstCallArgs = ingest.mock.calls[0] as unknown as [
+      { indexedFields?: Record<string, unknown> },
+    ];
+    expect(firstCallArgs[0].indexedFields).toEqual({
+      price: 17,
+      sale_price: 12.5,
+      on_sale: true,
+      sku: "AEY0112",
+    });
+  });
+
+  it("rejects a field key that a metadata rule could not address", async () => {
+    // Rule fields are resolved by splitting the path on ".", so a dotted key
+    // would silently never match. Reject it at the edge instead.
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      post: { ...validPost, fields: { "product.price": 17 } },
+    });
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-scalar field value", async () => {
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      post: { ...validPost, fields: { formats: ["paperback", "ebook"] } },
+    });
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
   it("rejects a validly signed event from a different WordPress site", async () => {
     const { app, ingest } = setupApp();
     const body = JSON.stringify({

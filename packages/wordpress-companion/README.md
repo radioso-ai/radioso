@@ -48,6 +48,40 @@ Prices carry the shop's own tax and currency settings, and a variable product
 carries the range across its variations — quoting one figure for a product that
 spans several would misstate it in both directions.
 
+### Filtering on shop values
+
+The facts block gets the numbers into the answer; a second, machine-readable
+copy gets them into retrieval. Every product also pushes a `fields` map that
+Radioso stores as document metadata:
+
+| Key | Value |
+|---|---|
+| `sku` | The product SKU. |
+| `price` | The display price — for a variable product, the cheapest variation. |
+| `price_max` | The dearest variation, when a variable product spans a range. |
+| `regular_price` | The list price, before any discount. |
+| `sale_price` | The discounted price, when a sale is configured. |
+| `on_sale` | Whether the discount is live. Always stated, true or false. |
+| `currency` | The shop currency, so a bare number can be read. |
+| `stock_status` | `instock`, `outofstock` or `onbackorder`. |
+
+In Radioso these become metadata rules on the retrieval skill: `price` less than
+`20`, `on_sale` equals `true` as a boost, `stock_status` equals `instock` as a
+hard filter. `stock_status` carries WooCommerce's own value rather than the
+label a shopper sees, so a rule written against it survives a translation
+change — the facts block still carries the wording for the agent to read out.
+
+Keys are fixed WooCommerce vocabulary. Site-specific attributes stay in the
+facts block, where their names can be anything: a rule addresses a key
+literally, so a key that shifted with the shop's language would break the rule
+that referenced it.
+
+Filter `radioso_sync_product_fields` to add your own. Radioso takes up to 32
+fields per product, keys of the form `^[A-Za-z][A-Za-z0-9_]{0,63}$`, and scalar
+values with strings up to 256 characters. The plugin drops anything outside
+that shape before it sends, so a field you add that does not fit costs you that
+field rather than the whole push.
+
 ### Keeping price and availability current
 
 Both move without anyone editing the post: scheduled sales, CSV imports, bulk

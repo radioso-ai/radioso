@@ -1,5 +1,6 @@
 terraform {
-  required_version = ">= 1.5"
+  # >= 1.7 for the `removed` blocks below.
+  required_version = ">= 1.7"
 
   required_providers {
     google = {
@@ -26,6 +27,170 @@ provider "google" {
 provider "google-beta" {
   project = var.project_id
   region  = var.region
+}
+
+# live-eu is a second regional stack inside the live project, so it shares one
+# identity plane with it: the same `radioso-live-*` service accounts, the same
+# `radioso-live-gha` deployer and the same `github-actions` workload identity
+# pool, all in radioso-494120. Both states have been recording those same objects
+# since before #1001 split them into the foundation module, which is why this root
+# does not instantiate `module "foundation"` — the live root owns it, exactly as
+# `manage_project_services = false` below already hands API enablement to live.
+#
+# These entries are released from this state rather than deleted: `destroy = false`
+# drops the record while leaving the object in place for the live state to manage.
+# Without this, the resources are in state with no configuration behind them and
+# Terraform plans to destroy the identities this stack runs on.
+removed {
+  from = module.radioso.google_iam_workload_identity_pool.github_actions
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_iam_workload_identity_pool_provider.github_actions
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_project_iam_member.backend_cloud_tasks_enqueuer
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_project_iam_member.github_actions_artifact_registry_writer
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_project_iam_member.github_actions_cloud_scheduler_admin
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_project_iam_member.github_actions_run_admin
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_project_iam_member.worker_cloud_tasks_enqueuer
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account.backend
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account.frontend
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account.github_actions_deployer
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account.worker
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account.worker_task_invoker
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.backend_worker_task_act_as
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.github_actions_backend_act_as
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.github_actions_frontend_act_as
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.github_actions_worker_act_as
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.github_actions_worker_task_invoker_act_as
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.github_actions_workload_identity_user
+
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = module.radioso.google_service_account_iam_member.worker_worker_task_act_as
+
+  lifecycle {
+    destroy = false
+  }
 }
 
 module "radioso" {

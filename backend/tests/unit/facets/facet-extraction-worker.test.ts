@@ -198,6 +198,16 @@ describe("FacetExtractionWorker", () => {
     expect(store.claimBatch).toHaveBeenCalledWith(10, NOW);
   });
 
+  it("honors a smaller recovery claim limit than its configured poll-loop batch size", async () => {
+    const store = buildStore([[]]);
+    const port = buildPort(async () => ({ status: "extracted" }));
+    const worker = buildWorker(store, port, { batchSize: 500 });
+
+    await worker.runOnce(NOW, 10);
+
+    expect(store.claimBatch).toHaveBeenCalledWith(10, NOW);
+  });
+
   it("keeps processing the rest of the batch when one job throws", async () => {
     const store = buildStore([[buildJob({ id: "job-1" }), buildJob({ id: "job-2", messageId: "message-2" })]]);
     const port = buildPort(async (job) => {

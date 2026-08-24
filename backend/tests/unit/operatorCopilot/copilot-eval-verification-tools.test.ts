@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createEvalVerificationCopilotTools } from "../../../src/modules/operatorCopilot/tools/eval.js";
+import { copilotToolAnnotationsForShape } from "../../../src/modules/operatorCopilot/toolShape.js";
 import {
   MAX_COPILOT_EVAL_SUITE_CASES,
   type CopilotEvalCaseCapturePort,
@@ -54,7 +55,22 @@ const descriptorNamed = (descriptors: ReturnType<typeof ports>["descriptors"], n
 };
 
 describe("copilot eval verification tools", () => {
-  it("declares capture as an act and the suite run as a probe, matching the eval route permission", () => {
+  it("advertises neither tool as read-only, because both persist", () => {
+    // The hint a transport reads to decide whether a call is safe to run unattended. Capturing
+    // writes a case; a suite run writes a run per case and moves each case's status, which is the
+    // pass rate the Eval list shows. Neither is work an operator can be assumed to have accepted.
+    const { descriptors } = ports();
+
+    expect(descriptors.map((descriptor) => ({
+      name: descriptor.name,
+      readOnly: copilotToolAnnotationsForShape(descriptor.shape).readOnlyHint,
+    }))).toEqual([
+      { name: "create_eval_case_from_turn", readOnly: false },
+      { name: "run_eval_suite", readOnly: false },
+    ]);
+  });
+
+  it("declares both tools as acts, matching the eval route permission", () => {
     const { descriptors } = ports();
 
     expect(descriptors.map(({ name, shape, requiredPermissions, contributingModule, uiLabel }) => ({
@@ -69,7 +85,7 @@ describe("copilot eval verification tools", () => {
       },
       {
         name: "run_eval_suite",
-        shape: "probe",
+        shape: "act",
         requiredPermissions: ["workspace.retrieval.query"],
         contributingModule: "eval",
         uiLabel: "Running eval cases",

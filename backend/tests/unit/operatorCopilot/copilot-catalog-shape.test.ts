@@ -72,7 +72,7 @@ describe("copilot catalog wiring", () => {
       .map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "eval_results", shape: "read" },
       { name: "create_eval_case_from_turn", shape: "act" },
-      { name: "run_eval_suite", shape: "probe" },
+      { name: "run_eval_suite", shape: "act" },
     ]);
   });
 

@@ -116,7 +116,7 @@ export interface EvalVerificationCopilotToolDependencies {
 }
 
 const CAPTURE_DESCRIPTION = "Capture a bad assistant turn as a permanent eval case. Idempotent: a turn that is already captured returns its existing case unchanged.";
-const SUITE_RUN_DESCRIPTION = `Re-run up to ${MAX_COPILOT_EVAL_SUITE_CASES} named eval cases and report their outcomes plus the whole suite's standing. Cases run sequentially, so select the cases a change should affect rather than the whole library; list case ids with eval_results first.`;
+const SUITE_RUN_DESCRIPTION = `Re-run up to ${MAX_COPILOT_EVAL_SUITE_CASES} named eval cases and report their outcomes plus the whole suite's standing. Each case replays for real: the run is recorded and the case's stored status moves to the new verdict. Cases run sequentially, so select the cases a change should affect rather than the whole library; list case ids with eval_results first.`;
 
 /**
  * Ray's verification loop over the eval library: capture the turn that went wrong, then re-run
@@ -168,7 +168,10 @@ export const createEvalVerificationCopilotTools = (
   } satisfies CopilotToolDescriptor<CaptureInput, CaptureOutput> as CopilotToolDescriptor,
   {
     name: "run_eval_suite",
-    shape: "probe",
+    // An act, not a probe: a run persists a row per case and moves each case's status, which is the
+    // pass rate the Eval list reports. The compute cost alone would make it a probe; the persisted
+    // verdict is what takes it out of work a transport may run unattended.
+    shape: "act",
     uiLabel: "Running eval cases",
     contributingModule: "eval",
     dashboardSubject: { type: "eval" },

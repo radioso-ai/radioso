@@ -387,12 +387,43 @@ $GLOBALS['filters']['radioso_sync_product_fields'] = function ($fields) {
     $fields['lending_days'] = 14;
     $fields['bad key'] = 'dropped';
     $fields['formats'] = ['paperback', 'ebook'];
+    $fields['blurb'] = str_repeat('a', 257);
+    $fields['ratio'] = INF;
     return $fields;
 };
 $extended = radioso_product_fields($catalogue_post);
 assert_true($extended['lending_days'] === 14, 'a site can publish its own field');
 assert_true(!array_key_exists('bad key', $extended), 'a key no rule could address is dropped');
 assert_true(!array_key_exists('formats', $extended), 'a value no rule could compare is dropped');
+assert_true(!array_key_exists('blurb', $extended), 'a string past the length Radioso takes is dropped');
+assert_true(!array_key_exists('ratio', $extended), 'a number JSON cannot carry is dropped');
+assert_true(json_encode($extended) !== false, 'the surviving map still encodes as JSON');
+unset($GLOBALS['filters']['radioso_sync_product_fields']);
+
+// A field count past what Radioso takes trims the extras rather than failing
+// the push, and the product's own values are the ones that survive.
+$GLOBALS['filters']['radioso_sync_product_fields'] = function ($fields) {
+    for ($i = 0; $i < 40; $i++) {
+        $fields['extra_' . $i] = $i;
+    }
+    return $fields;
+};
+$capped = radioso_product_fields($catalogue_post);
+assert_true(count($capped) === 32, 'the field map is capped at what the webhook accepts');
+assert_true($capped['sku'] === 'AEY0112', 'the product own values survive the cap');
+unset($GLOBALS['filters']['radioso_sync_product_fields']);
+
+// A long value in a non-Latin script counts the way Radioso counts it, not in
+// bytes: 200 accented characters are well inside the limit.
+$GLOBALS['filters']['radioso_sync_product_fields'] = function ($fields) {
+    $fields['collana'] = str_repeat('à', 200);
+    return $fields;
+};
+$accented = radioso_product_fields($catalogue_post);
+assert_true(
+    array_key_exists('collana', $accented),
+    'a value inside the limit survives whatever script it is written in'
+);
 unset($GLOBALS['filters']['radioso_sync_product_fields']);
 
 $plain_post = (object) ['ID' => 900, 'post_type' => 'page'];

@@ -76,8 +76,11 @@ facts block, where their names can be anything: a rule addresses a key
 literally, so a key that shifted with the shop's language would break the rule
 that referenced it.
 
-Filter `radioso_sync_product_fields` to add your own, keeping to scalar values
-and keys of the form `^[A-Za-z][A-Za-z0-9_]{0,63}$`.
+Filter `radioso_sync_product_fields` to add your own. Radioso takes up to 32
+fields per product, keys of the form `^[A-Za-z][A-Za-z0-9_]{0,63}$`, and scalar
+values with strings up to 256 characters. The plugin drops anything outside
+that shape before it sends, so a field you add that does not fit costs you that
+field rather than the whole push.
 
 ### Keeping price and availability current
 

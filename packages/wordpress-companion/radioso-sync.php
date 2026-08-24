@@ -37,6 +37,12 @@ const RADIOSO_RESYNC_STALL_AFTER  = 300;
  */
 const RADIOSO_FLUSH_PRIORITY      = 100;
 
+// What the Radioso webhook accepts in a post's field map. Mirrored here so a
+// site that adds its own fields learns the shape by losing one field, not by
+// losing the whole push to a 400.
+const RADIOSO_MAX_FIELDS          = 32;
+const RADIOSO_MAX_FIELD_LENGTH    = 256;
+
 // ── Event hooks ─────────────────────────────────────────────────────────────
 
 add_action('transition_post_status', 'radioso_on_transition', 10, 3);
@@ -946,6 +952,29 @@ function radioso_product_fields($post) {
     return radioso_valid_fields(apply_filters('radioso_sync_product_fields', $fields, $product, $post));
 }
 
+/**
+ * Radioso counts a string in UTF-16 code units, the way a JSON consumer does,
+ * so a value is measured the same way here rather than in bytes.
+ */
+function radioso_field_value_length($value) {
+    if (function_exists('mb_convert_encoding')) {
+        $utf16 = mb_convert_encoding($value, 'UTF-16LE', 'UTF-8');
+        if (is_string($utf16)) {
+            return (int) (strlen($utf16) / 2);
+        }
+    }
+
+    // Bytes are never fewer than code units, so a site without mbstring drops a
+    // borderline value rather than sending one Radioso would turn away.
+    return strlen($value);
+}
+
+/**
+ * The shape Radioso accepts: a key a metadata rule can address, a value a rule
+ * can compare, and a map small enough to travel. Everything outside it is
+ * dropped here — a single overlong custom field must not cost the site the
+ * whole product push.
+ */
 function radioso_valid_fields($fields) {
     if (!is_array($fields)) {
         return [];
@@ -956,12 +985,24 @@ function radioso_valid_fields($fields) {
         if (!is_string($key) || !preg_match('/^[A-Za-z][A-Za-z0-9_]{0,63}$/', $key)) {
             continue;
         }
+        if (is_string($value) && radioso_field_value_length($value) > RADIOSO_MAX_FIELD_LENGTH) {
+            continue;
+        }
+        // INF and NAN have no JSON representation, so one of them would fail the
+        // encode for the whole payload.
+        if (is_float($value) && !is_finite($value)) {
+            continue;
+        }
         if (is_string($value) || is_int($value) || is_float($value) || is_bool($value)) {
             $valid[$key] = $value;
         }
     }
 
-    return $valid;
+    // The product's own values are added before the filter runs, so trimming
+    // from the end keeps them and drops the surplus a site added.
+    return count($valid) > RADIOSO_MAX_FIELDS
+        ? array_slice($valid, 0, RADIOSO_MAX_FIELDS, true)
+        : $valid;
 }
 
 /**

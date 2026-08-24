@@ -524,6 +524,9 @@ module.exports = {
     },
   ],
   options: {
+    // Type-only imports are erased at compile time, so with this off every rule above is
+    // blind to `import type` — the most likely way a boundary gets crossed (#1058).
+    tsPreCompilationDeps: true,
     doNotFollow: {
       path: "node_modules",
       dependencyTypes: [

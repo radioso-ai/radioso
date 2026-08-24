@@ -4,7 +4,7 @@ import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTyp
 import type { ActivityTrace } from "../../retrieval/public.js";
 import type { RetrievalSettingsRecord, RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import type { EvalRunModelOverride, EvalRunRetrievedChunk, EvalSnapshot, EvalSnapshotMessage } from "../domain/types.js";
-import type { GroundingSummary } from "../../chat/retrievalSupport.js";
+import type { GroundingSummary } from "../../chat/contracts/index.js";
 
 /**
  * Narrow port the eval module uses to drive the assistant pipeline.

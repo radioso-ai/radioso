@@ -286,3 +286,15 @@ export {
 // Snippet building for chunk previews in skill-provider wiring; exposed here so
 // composition never reaches into retrieval service internals.
 export { buildSnippet, type RegisteredChunk } from "./services/agenticTools/index.js";
+
+export type { VectorIndexReconciler } from "./services/vectorIndexReconciler.js";
+export type {
+  CanonicalVectorRebuildRecord,
+  CanonicalVectorRebuildSourcePort,
+  VectorIndexRebuildScope,
+} from "./services/vectorIndexRebuildService.js";
+// The MCP converse HTTP surface holds this instance and renders its result; composition builds it.
+export type {
+  AgentConverseGroundedAnswerResult,
+  AgentConverseGroundedAnswerService,
+} from "./services/agentConverseGroundedAnswerService.js";

@@ -1,5 +1,9 @@
-import type { ConversationTurnRoute, DirectiveClassification } from "@radioso/conversation-contract";
-import type { RankedRoutineMatch, RoutineCandidateSummary } from "@radioso/conversation-defaults";
+import type {
+  ConversationTurnRoute,
+  DirectiveClassification,
+  RankedRoutineMatch,
+  RoutineCandidateSummary,
+} from "@radioso/conversation-contract";
 import { z } from "zod";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -10,8 +14,8 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
 import type {
   JsonSchemaResponseFormat,
   TextGenerationRequest,
-  TextGenerationResult,
 } from "../../../shared/infra/llm/providerTypes.js";
+import type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
 import {
@@ -72,16 +76,7 @@ export interface TurnPlanRequest {
  * for the workspace and binds the usage operation; the service owns prompt,
  * parsing, and validation.
  */
-export interface TurnPlanInferenceClient {
-  complete(request: TextGenerationRequest): Promise<TextGenerationResult>;
-}
-
-export interface TurnPlanGatewayFactory {
-  create(input: {
-    workspaceContext: LlmCapabilityResolveInput;
-    usageContext: ModelCallUsageContext;
-  }): Promise<TurnPlanInferenceClient>;
-}
+export type { TurnPlanGatewayFactory, TurnPlanInferenceClient } from "../../../shared/infra/llm/turnPlanGateway.js";
 
 const formatConversationContext = (messages: MessageRecord[]): string =>
   messages

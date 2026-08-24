@@ -28,6 +28,12 @@ export { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
 export { appendConversationSummaryStage } from "../services/conversationSummaryTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
+export type { GroundingSummary, GroundingVerdict } from "../services/groundingAssertions.js";
+export type { ChatConversationDetail, ChatConversationTail } from "../services/chatHistoryService.js";
+export type { ChatActionSuggestionProvider } from "../services/actionSuggestions/chatActionSuggestionProvider.js";
+// The MCP converse HTTP surface holds these instances; composition builds them.
+export type { AgentConverseAudit } from "../services/agentConverseAudit.js";
+export type { AgentConverseService } from "../services/agentConverseService.js";
 export type { ChatStatusStage, ChatStreamEvent } from "./streamEvents.js";
 export type { ConversationTurnStage } from "./interruption.js";
 export type {

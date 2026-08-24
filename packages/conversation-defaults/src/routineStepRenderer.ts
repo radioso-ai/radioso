@@ -4,6 +4,7 @@ import type {
   ConversationMessage,
   ConversationModelGateway,
   ConversationRoutineStepRenderer,
+  RoutineGroundedAnswerRenderer,
   RenderableTurn,
   RoutineStep,
   SteeringRule,
@@ -23,13 +24,8 @@ export {
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
 
-export interface RoutineGroundedAnswerRenderer {
-  render(input: {
-    step: RoutineStep;
-    steering: SteeringRule[];
-    turn: TurnContext;
-  }): Promise<RenderableTurn | null>;
-}
+// Implemented here; declared in the contract so a host can supply its own renderer.
+export type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-contract";
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,

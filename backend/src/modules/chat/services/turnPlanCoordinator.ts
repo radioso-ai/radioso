@@ -6,14 +6,12 @@ import type {
   ConversationTurnInterpreter,
   Directive,
   DirectiveClassification,
-  TurnContext,
-} from "@radioso/conversation-contract";
-import type {
   PreparedRoutineCandidates,
   RankableRoutineCandidates,
   RankedRoutineMatch,
   RoutineActivationResult,
-} from "@radioso/conversation-defaults";
+  TurnContext,
+} from "@radioso/conversation-contract";
 
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";

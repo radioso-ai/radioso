@@ -1,9 +1,9 @@
 import type {
   DirectiveAdherenceEntry,
   RenderableTurn,
+  RoutineGroundedAnswerRenderer,
   StagedContext,
 } from "@radioso/conversation-contract";
-import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-defaults";
 
 import { CHAT_TURN_ROUTE } from "../../../../shared/domain/chatTurnRoute.js";
 import { readRetrievalResult, type RetrievalPipelineResult } from "../../../retrieval/public.js";

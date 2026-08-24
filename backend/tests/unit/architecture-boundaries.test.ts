@@ -15,6 +15,7 @@ const dependencyCruiserConfig = require("../../dependency-cruiser.config.cjs") a
     name: string;
     to: { pathNot?: string[] };
   }>;
+  options: Record<string, unknown>;
 };
 
 let tempRoot: string | null = null;
@@ -235,4 +236,67 @@ describe("architecture boundary validation", () => {
       expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
     ]);
   });
+
+  // Type-only imports are erased at compile time, so dependency-cruiser cannot see them unless
+  // `tsPreCompilationDeps` is on. Ray is the case that matters most — a type is the tempting thing
+  // to borrow from it — so this cruises a fixture with the committed rule set rather than asserting
+  // the flag's value, which would pass just as happily with the rule deleted.
+  it("catches a type-only import from a domain module into the operator copilot", async () => {
+    const { cruise } = await import("dependency-cruiser");
+    tempRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "radioso-depcruise-")));
+    await fs.mkdir(path.join(tempRoot, "src/modules/agents"), { recursive: true });
+    await fs.mkdir(path.join(tempRoot, "src/modules/operatorCopilot"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempRoot, "src/modules/operatorCopilot/public.ts"),
+      "export interface CopilotToolShape { name: string }\n",
+    );
+    await fs.writeFile(
+      path.join(tempRoot, "src/modules/agents/borrow.ts"),
+      [
+        'import type { CopilotToolShape } from "../operatorCopilot/public.js";',
+        "",
+        "export const label = (shape: CopilotToolShape): string => shape.name;",
+        "",
+      ].join("\n"),
+    );
+
+    const result = await cruise(["src"], {
+      ...dependencyCruiserConfig.options,
+      baseDir: tempRoot,
+      tsConfig: undefined,
+      validate: true,
+      ruleSet: { forbidden: dependencyCruiserConfig.forbidden },
+    } as never);
+
+    const violations = (result.output as { summary: { violations: Array<{ rule: { name: string } }> } })
+      .summary.violations;
+    expect(violations.map((violation) => violation.rule.name)).toContain(
+      "no-domain-module-imports-operator-copilot",
+    );
+  }, 30_000);
+
+  // Ray-specific vocabulary in chat is a boundary break that no import rule can see: the knowledge
+  // leaks without an import. Previously enforced by scripts/checkCopilotBoundary.mjs, whose import
+  // half the rule above now covers.
+  it("keeps operator-copilot knowledge out of the chat module", async () => {
+    const chatDir = new URL("../../src/modules/chat/", import.meta.url).pathname;
+    const rayKnowledge = /\b(?:AgentTurnTest|OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL|copilotConversationId|operatorUserId|probeUserMessageId)\b/;
+
+    const walk = async (dir: string): Promise<string[]> => {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      const nested = await Promise.all(entries.map(async (entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts") ? [full] : [];
+      }));
+      return nested.flat();
+    };
+
+    const offenders: string[] = [];
+    for (const file of await walk(chatDir)) {
+      if (rayKnowledge.test(await fs.readFile(file, "utf8"))) offenders.push(path.relative(chatDir, file));
+    }
+
+    expect(offenders).toEqual([]);
+  }, 30_000);
 });

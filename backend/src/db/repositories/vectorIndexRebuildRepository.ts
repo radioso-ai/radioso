@@ -2,7 +2,7 @@ import type {
   CanonicalVectorRebuildRecord,
   CanonicalVectorRebuildSourcePort,
   VectorIndexRebuildScope,
-} from "../../modules/retrieval/services/vectorIndexRebuildService.js";
+} from "../../modules/retrieval/public.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import { vectorProjectionMutationFenceKey } from "./vectorIndexWorkRepository.js";

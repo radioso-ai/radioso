@@ -50,7 +50,7 @@ import type { Directive } from "../../modules/directives/public.js";
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { AgentService, AgentSurfaceExtension } from "../../modules/agents/public.js";
 import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js";
-import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
+import type { ChatActionSuggestionProvider } from "../../modules/chat/contracts/index.js";
 import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/public.js";
 import type { Env } from "../config/env.js";
 import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";

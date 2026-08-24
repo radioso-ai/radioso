@@ -21,7 +21,7 @@ import type {
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
-import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-defaults";
+import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-contract";
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";

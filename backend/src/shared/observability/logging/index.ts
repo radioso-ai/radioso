@@ -17,7 +17,7 @@ import {
 
 import type { AppLogger } from "../logger.js";
 import { safeTraceAttributes } from "../tracing/attributePolicy.js";
-import type { RuntimeRole } from "../tracing/index.js";
+import type { RuntimeRole } from "../runtimeRole.js";
 
 export type LogLevelName = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 

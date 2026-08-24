@@ -30,10 +30,7 @@ import { createOpenAIClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
-import type {
-  TurnPlanGatewayFactory,
-  TurnPlanInferenceClient,
-} from "../../../modules/chat/services/turnPlanService.js";
+import type { TurnPlanGatewayFactory, TurnPlanInferenceClient } from "./turnPlanGateway.js";
 import { loadPromptTemplate } from "../prompts/promptLoader.js";
 
 interface ContextualGatewayDependencies {

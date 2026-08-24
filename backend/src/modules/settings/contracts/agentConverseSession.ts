@@ -19,3 +19,10 @@ export interface AgentConverseSessionExchangeResult extends AgentConversePrincip
     name: string;
   };
 }
+
+/** What the MCP converse HTTP surface needs from the session service. */
+export interface AgentConverseSessionPort {
+  exchange(input: { launchToken: string; client?: { name?: string; version?: string } }): Promise<AgentConverseSessionExchangeResult>;
+  validate(sessionToken: string | undefined): Promise<AgentConversePrincipal>;
+  permissions(): string[];
+}

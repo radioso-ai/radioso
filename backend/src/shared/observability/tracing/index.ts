@@ -20,6 +20,7 @@ import {
 } from "@opentelemetry/semantic-conventions";
 
 import type { AppLogger } from "../logger.js";
+import type { RuntimeRole } from "../runtimeRole.js";
 import { safeTraceAttributes } from "./attributePolicy.js";
 import { type ActiveTraceCorrelation, correlationAttributes } from "./correlation.js";
 
@@ -28,12 +29,7 @@ export type { ActiveTraceCorrelation, TraceCorrelationFields } from "./correlati
 
 export const safeSpanAttributes = safeTraceAttributes;
 
-export type RuntimeRole =
-  | "api"
-  | "document-worker"
-  | "document-worker-task-server"
-  | "crawler-worker"
-  | "crawler-worker-task-server";
+export type { RuntimeRole } from "../runtimeRole.js";
 
 export type TraceSamplerName =
   | "always_on"

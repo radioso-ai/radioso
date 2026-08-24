@@ -4,11 +4,10 @@ import type { AppDependencies } from "../../server/types.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 // Type-only imports keep these module-owned services out of the route's runtime dependency graph;
 // the instances are built in app composition (mcpConverseModule) and injected.
-import type { AgentConverseAudit } from "../../../modules/chat/services/agentConverseAudit.js";
-import type { AgentConverseService } from "../../../modules/chat/services/agentConverseService.js";
-import type { AgentConverseResourceService } from "../../../modules/documents/services/agentConverseResourceService.js";
-import type { AgentConverseGroundedAnswerService } from "../../../modules/retrieval/services/agentConverseGroundedAnswerService.js";
-import type { AgentConverseSessionService } from "../../../modules/settings/services/agentConverseSessionService.js";
+import type { AgentConverseAudit, AgentConverseService } from "../../../modules/chat/contracts/index.js";
+import type { AgentConverseResourceService } from "../../../modules/documents/contracts/index.js";
+import type { AgentConverseGroundedAnswerService } from "../../../modules/retrieval/public.js";
+import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
 import {
   presentMcpConverseGroundedAnswer,
   presentMcpConverseResource,
@@ -41,7 +40,7 @@ export type McpConverseRouteDependencies = Pick<
 
 export interface McpConverseRouteServices {
   audit: AgentConverseAudit;
-  sessionService: AgentConverseSessionService;
+  sessionService: AgentConverseSessionPort;
   converseService: AgentConverseService;
   groundedAnswerService: AgentConverseGroundedAnswerService;
   resourceService: AgentConverseResourceService;

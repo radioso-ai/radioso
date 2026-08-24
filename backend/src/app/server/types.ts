@@ -78,7 +78,7 @@ import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from 
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
-import type { SkillCapabilityRegistry } from "../../modules/skills/capabilityRegistry.js";
+import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";

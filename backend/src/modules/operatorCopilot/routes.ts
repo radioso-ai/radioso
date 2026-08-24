@@ -7,7 +7,7 @@ import type { WorkspaceSessionDependencies } from "../../app/http/middleware/req
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
-import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
+import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotConflictError, CopilotNotFoundError } from "./public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
@@ -32,8 +32,13 @@ export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
       permission: typeof copilotToolPermissions[number];
     }): Promise<boolean>;
   };
-  llmCapabilityResolver: LlmCapabilityResolver;
+  llmCapabilityResolver: ChatCapabilityProbePort;
   operatorCopilotService: OperatorCopilotService;
+}
+
+/** Ray only asks whether the workspace has a usable chat model; it never resolves a call config. */
+interface ChatCapabilityProbePort {
+  resolve(capability: "chat", input: LlmCapabilityResolveInput): Promise<unknown>;
 }
 
 export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Router => {

@@ -27,6 +27,7 @@ import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-ro
 import { editionController } from '@/lib/edition-controller'
 import { mergeTailMessages } from '@/lib/conversation-tail'
 import { useWorkspaceEventsOptional } from '@/lib/workspace-events-context'
+import { useCoalescedAsync } from '@/lib/use-coalesced-async'
 import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
 import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './history-list'
 
@@ -40,6 +41,9 @@ const HISTORY_CHANGE_KINDS = [
   'conversation.contact_delivery_changed',
   'search.created',
 ] as const
+const CHAT_HISTORY_CHANGE_KINDS = ['conversation.created', 'conversation.updated'] as const
+const CONTACT_HISTORY_CHANGE_KINDS = ['conversation.contact_delivery_changed'] as const
+const SEARCH_HISTORY_CHANGE_KINDS = ['search.created'] as const
 
 const buildHistoryLoadKey = (workspaceId: string | undefined, filter: HistoryFilter, page: number) =>
   `${workspaceId ?? ''}:${filter}:${page}`
@@ -93,6 +97,7 @@ export function useHistoryListState({
   const [isListLoading, setIsListLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
   const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null)
+  const activeHistoryLoadKeyRef = useRef('')
 
   useEffect(() => {
     const nextFilter = editionController.normalizeHistoryFilter(routeState.historyFilter ?? 'all')
@@ -158,7 +163,19 @@ export function useHistoryListState({
     selectedItem,
   ])
 
-  const loadHistory = useCallback(async () => {
+  const activePage = filter === 'all'
+    ? allPage
+    : filter === 'chat'
+      ? conversationPage
+      : filter === 'search'
+        ? searchPage
+        : contactPage
+  const activeHistoryLoadKey = buildHistoryLoadKey(routeState.workspaceId, filter, activePage)
+  useEffect(() => {
+    activeHistoryLoadKeyRef.current = activeHistoryLoadKey
+  }, [activeHistoryLoadKey])
+
+  const performLoadHistory = useCallback(async () => {
     setIsListLoading(true)
     setListError(null)
     const page = filter === 'all' ? allPage : filter === 'chat' ? conversationPage : filter === 'search' ? searchPage : contactPage
@@ -170,6 +187,7 @@ export function useHistoryListState({
           limit: HISTORY_PAGE_SIZE,
           offset: (allPage - 1) * HISTORY_PAGE_SIZE,
         })
+        if (activeHistoryLoadKeyRef.current !== loadKey) return
         setHistoryItems(response.items)
         setHistoryItemsTotal(response.total)
         setHasHistoryItemsNextPage(response.hasMore)
@@ -182,6 +200,7 @@ export function useHistoryListState({
           limit: HISTORY_PAGE_SIZE,
           offset: (conversationPage - 1) * HISTORY_PAGE_SIZE,
         })
+        if (activeHistoryLoadKeyRef.current !== loadKey) return
         setConversations(response.conversations)
         setConversationTotal(response.total)
         setHasConversationNextPage(response.hasMore)
@@ -194,6 +213,7 @@ export function useHistoryListState({
           limit: HISTORY_PAGE_SIZE,
           offset: (contactPage - 1) * HISTORY_PAGE_SIZE,
         })
+        if (activeHistoryLoadKeyRef.current !== loadKey) return
         setContacts(response.contacts)
         setContactTotal(response.total)
         setHasContactNextPage(response.hasMore)
@@ -205,11 +225,13 @@ export function useHistoryListState({
         limit: HISTORY_PAGE_SIZE,
         offset: (searchPage - 1) * HISTORY_PAGE_SIZE,
       })
+      if (activeHistoryLoadKeyRef.current !== loadKey) return
       setSearches(response.searches)
       setSearchTotal(response.total)
       setHasSearchNextPage(response.hasMore)
       setLoadedHistoryKey(loadKey)
     } catch (error) {
+      if (activeHistoryLoadKeyRef.current !== loadKey) return
       if (filter === 'all') {
         setHistoryItems([])
         setHistoryItemsTotal(0)
@@ -241,16 +263,25 @@ export function useHistoryListState({
         ),
       )
     } finally {
-      setIsListLoading(false)
+      if (activeHistoryLoadKeyRef.current === loadKey) {
+        setIsListLoading(false)
+      }
     }
   }, [allPage, contactPage, conversationPage, filter, routeState.workspaceId, searchPage])
+  const loadHistory = useCoalescedAsync(performLoadHistory)
 
-  useWorkspaceEventsOptional(HISTORY_CHANGE_KINDS, loadHistory)
+  const historyChangeKinds = filter === 'all'
+    ? HISTORY_CHANGE_KINDS
+    : filter === 'chat'
+      ? CHAT_HISTORY_CHANGE_KINDS
+      : filter === 'contact'
+        ? CONTACT_HISTORY_CHANGE_KINDS
+        : SEARCH_HISTORY_CHANGE_KINDS
+  useWorkspaceEventsOptional(historyChangeKinds, loadHistory)
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- History view fetches the current page after route/filter changes.
     void loadHistory()
-  }, [loadHistory, accountId, routeState.workspaceId])
+  }, [loadHistory, accountId, activeHistoryLoadKey])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {

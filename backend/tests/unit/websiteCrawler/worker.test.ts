@@ -136,7 +136,7 @@ describe("website crawl worker", () => {
     expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
       maxDurationMs: 240_000,
     }));
-    expect(releaseForContinuation).toHaveBeenCalledWith(job.id, job.claimedAt);
+    expect(releaseForContinuation).toHaveBeenCalledWith(job.id, job.claimedAt, job.workspaceId);
     expect(dispatch).toHaveBeenCalledWith({
       jobId: job.id,
       workspaceId: job.workspaceId,
@@ -176,7 +176,7 @@ describe("website crawl worker", () => {
 
     await expect(worker.runOnce()).rejects.toThrow("queue unavailable");
 
-    expect(releaseForContinuation).toHaveBeenCalledWith(job.id, job.claimedAt);
+    expect(releaseForContinuation).toHaveBeenCalledWith(job.id, job.claimedAt, job.workspaceId);
     expect(markFailed).not.toHaveBeenCalled();
   });
 

@@ -3,7 +3,7 @@
 **Feature Branch**: `live-push-updates`
 **Spec**: `106-live-push-updates`
 **Created**: 2026-08-20
-**Status**: Draft
+**Status**: Approved
 **Input**: User description: "In many places — activity, document crawl, requires attention, others — there is a need to refresh the page to see the updates. Can there be a mechanism to push the updates to the frontend? Find all places where it would make sense. And the pushes probably need to be durable."
 
 ## Clarifications
@@ -220,6 +220,23 @@ subscriber only ever receives events for its own workspace.
 - **FR-012** Observability MUST be added for the new runtime path (connection open/close,
   reconnects, publish counts, dropped/lossy signals) without high-cardinality metrics or content
   in logs.
+- **FR-013** A push hint MUST become externally visible only after the state transition it
+  represents commits. A rolled-back transition MUST NOT emit a hint, and a subscriber MUST NOT
+  be prompted to refetch state that is still hidden inside an open transaction.
+- **FR-014** Slow publishers, slow browsers, and event bursts MUST NOT create unbounded memory,
+  database-pool usage, or socket buffering. The transport MUST apply a bounded, lossy policy that
+  coalesces redundant invalidations while preserving eventual convergence.
+- **FR-015** A continuously busy event stream MUST still trigger refetches at a bounded cadence;
+  burst coalescing MUST NOT postpone a refetch indefinitely or retain an ever-growing set of
+  observed versions.
+- **FR-016** Shutdown and listener failure MUST terminate active streams promptly. Clients MUST
+  reconnect and perform a reconciliation read after listener recovery, while terminal endpoint
+  responses (disabled or unauthorized) MUST degrade to poll-only without a tight retry loop.
+- **FR-017** Publishing is optional acceleration and MUST NOT add one synchronous database
+  round-trip per state transition. Bulk transitions MUST use lightweight returned data and bounded
+  or coalesced publication work rather than materializing unbounded promises or full rows.
+- **FR-018** In-process delivery MUST dispatch by workspace rather than scanning every subscriber,
+  and routine per-frame delivery MUST use aggregated telemetry rather than info-level logging.
 
 ### Surface coverage map
 
@@ -291,6 +308,12 @@ the only follow-up is the optional poll (not push) on the webhook-destinations s
 - **SC-004** A subscriber never receives an event outside its workspace, verified by test.
 - **SC-005** Steady-state background polling volume on the covered surfaces drops materially versus
   today (the 2s document/crawl loops and 15–30s inbox polls give way to a slow reconcile floor).
+- **SC-006** A stress test that emits a sustained burst demonstrates bounded publisher and SSE
+  memory, workspace-proportional dispatch, and at least one refetch per configured maximum window.
+- **SC-007** Transaction tests prove that commit emits after visibility and rollback emits nothing;
+  shutdown tests prove an open SSE connection cannot indefinitely block process termination.
+- **SC-008** Listener interruption causes connected browsers to reconcile after recovery, while a
+  disabled endpoint stops reconnect attempts and all covered surfaces continue polling.
 
 ## Boundaries & Non-Goals
 

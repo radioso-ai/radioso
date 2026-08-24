@@ -80,7 +80,12 @@ export class ApprovalResumeTurn {
 
   async resume(
     input: ApprovalResumeTurnInput,
-  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+  ): Promise<{
+    conversationId: string;
+    resumed: boolean;
+    assistantMessageId?: string;
+    ownershipChanged?: boolean;
+  }> {
     const coordination: ResumeCoordination = {
       lease: this.options.conversationTurnRegistry.start(input.record.conversationId),
     };
@@ -114,7 +119,12 @@ export class ApprovalResumeTurn {
     input: ApprovalResumeTurnInput,
     coordination: ResumeCoordination,
     modelCallTrace: ModelCallTraceCollector,
-  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+  ): Promise<{
+    conversationId: string;
+    resumed: boolean;
+    assistantMessageId?: string;
+    ownershipChanged?: boolean;
+  }> {
     if (!this.options.routineProvider || !this.options.suspendedRoutineReader) {
       throw new Error("approval_resume_routine_provider_missing");
     }
@@ -217,6 +227,7 @@ export class ApprovalResumeTurn {
       conversationId: input.record.conversationId,
       resumed: result.resumed,
       assistantMessageId: completed.assistantMessageId,
+      ...(completed.ownershipChanged ? { ownershipChanged: true } : {}),
     };
   }
 

@@ -47,22 +47,26 @@ export interface WorkspaceEventBus {
 }
 
 interface Subscriber {
-  workspaceId: string;
   queue: PushEvent[];
   resolve?: (result: IteratorResult<PushEvent>) => void;
   closed: boolean;
+  resyncRequired: boolean;
 }
 
 export class InMemoryWorkspaceEventBus implements WorkspaceEventBus {
   #nextVersion = 1;
-  readonly #subscribers = new Set<Subscriber>();
+  readonly #subscribersByWorkspace = new Map<string, Set<Subscriber>>();
 
   async ready(_options: { signal?: AbortSignal } = {}): Promise<void> {}
 
   async publish(event: WorkspaceEventPublish): Promise<void> {
     const frame = pushEventSchema.parse({ ...event, version: this.#nextVersion++ });
-    for (const subscriber of this.#subscribers) {
-      if (subscriber.workspaceId !== frame.workspaceId || subscriber.closed) {
+    const workspaceSubscribers = this.#subscribersByWorkspace.get(frame.workspaceId);
+    if (!workspaceSubscribers) {
+      return;
+    }
+    for (const subscriber of workspaceSubscribers) {
+      if (subscriber.closed) {
         continue;
       }
 
@@ -70,27 +74,41 @@ export class InMemoryWorkspaceEventBus implements WorkspaceEventBus {
         const resolve = subscriber.resolve;
         subscriber.resolve = undefined;
         resolve({ done: false, value: frame });
+      } else if (subscriber.queue.length >= 256) {
+        subscriber.queue.length = 0;
+        subscriber.queue.push(frame);
+        subscriber.resyncRequired = true;
       } else {
         subscriber.queue.push(frame);
       }
     }
   }
 
-  subscribe(workspaceId: string): AsyncIterable<PushEvent> {
-    const subscriber: Subscriber = { workspaceId, queue: [], closed: false };
-    this.#subscribers.add(subscriber);
+  subscribe(workspaceId: string): WorkspaceEventSubscription {
+    const subscriber: Subscriber = { queue: [], closed: false, resyncRequired: false };
+    const workspaceSubscribers = this.#subscribersByWorkspace.get(workspaceId) ?? new Set<Subscriber>();
+    workspaceSubscribers.add(subscriber);
+    this.#subscribersByWorkspace.set(workspaceId, workspaceSubscribers);
 
     const close = () => {
       if (subscriber.closed) {
         return;
       }
       subscriber.closed = true;
-      this.#subscribers.delete(subscriber);
+      workspaceSubscribers.delete(subscriber);
+      if (workspaceSubscribers.size === 0) {
+        this.#subscribersByWorkspace.delete(workspaceId);
+      }
       subscriber.resolve?.({ done: true, value: undefined });
       subscriber.resolve = undefined;
     };
 
     return {
+      consumeResync: () => {
+        const resyncRequired = subscriber.resyncRequired;
+        subscriber.resyncRequired = false;
+        return resyncRequired;
+      },
       [Symbol.asyncIterator](): AsyncIterator<PushEvent> {
         return {
           next: async () => {
@@ -115,12 +133,14 @@ export class InMemoryWorkspaceEventBus implements WorkspaceEventBus {
   }
 
   async close(): Promise<void> {
-    for (const subscriber of [...this.#subscribers]) {
-      subscriber.closed = true;
-      subscriber.resolve?.({ done: true, value: undefined });
-      subscriber.resolve = undefined;
-      this.#subscribers.delete(subscriber);
+    for (const workspaceSubscribers of this.#subscribersByWorkspace.values()) {
+      for (const subscriber of workspaceSubscribers) {
+        subscriber.closed = true;
+        subscriber.resolve?.({ done: true, value: undefined });
+        subscriber.resolve = undefined;
+      }
     }
+    this.#subscribersByWorkspace.clear();
   }
 }
 

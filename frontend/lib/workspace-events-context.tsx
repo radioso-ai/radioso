@@ -18,7 +18,6 @@ const INVALIDATION_DEBOUNCE_MS = 300
 interface WorkspaceEventSubscription {
   changeKinds: ReadonlySet<string>
   onInvalidate: () => void
-  seenVersions: Set<string>
   timeoutId: number | null
 }
 
@@ -28,9 +27,6 @@ interface WorkspaceEventsContextValue {
 
 const WorkspaceEventsContext = createContext<WorkspaceEventsContextValue | null>(null)
 
-const eventVersionKey = (event: WorkspacePushEvent): string =>
-  `${event.resourceType}:${event.resourceId}:${event.version}`
-
 export function WorkspaceEventsProvider({ children }: { children: ReactNode }) {
   const { activeWorkspaceId } = useWorkspace()
   const subscriptionsRef = useRef(new Map<number, WorkspaceEventSubscription>())
@@ -38,12 +34,11 @@ export function WorkspaceEventsProvider({ children }: { children: ReactNode }) {
 
   const scheduleInvalidation = useCallback((subscription: WorkspaceEventSubscription) => {
     if (subscription.timeoutId !== null) {
-      window.clearTimeout(subscription.timeoutId)
+      return
     }
 
     subscription.timeoutId = window.setTimeout(() => {
       subscription.timeoutId = null
-      subscription.seenVersions.clear()
       subscription.onInvalidate()
     }, INVALIDATION_DEBOUNCE_MS)
   }, [])
@@ -54,12 +49,6 @@ export function WorkspaceEventsProvider({ children }: { children: ReactNode }) {
         continue
       }
 
-      const versionKey = eventVersionKey(event)
-      if (subscription.seenVersions.has(versionKey)) {
-        continue
-      }
-
-      subscription.seenVersions.add(versionKey)
       scheduleInvalidation(subscription)
     }
   }, [scheduleInvalidation])
@@ -76,7 +65,6 @@ export function WorkspaceEventsProvider({ children }: { children: ReactNode }) {
     const subscription: WorkspaceEventSubscription = {
       changeKinds: new Set(changeKinds),
       onInvalidate,
-      seenVersions: new Set(),
       timeoutId: null,
     }
     subscriptionsRef.current.set(subscriptionId, subscription)

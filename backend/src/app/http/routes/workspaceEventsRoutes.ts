@@ -2,7 +2,10 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
-import { initializeSse, sendSseIterable, writeSseEvent } from "../presenters/ssePresenter.js";
+import { initializeSse, sendSseIterable, writeSseComment, writeSseEvent } from "../presenters/ssePresenter.js";
+
+const MAX_CONNECTIONS_PER_PROCESS = 5_000;
+const MAX_STREAM_AGE_MS = 15 * 60_000;
 
 export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -16,8 +19,14 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
     requireWorkspaceSession(dependencies)(req, res, next);
   }, async (req, res) => {
     const workspaceId = res.locals.workspaceId as string;
+    if (connectionCount >= MAX_CONNECTIONS_PER_PROCESS) {
+      res.setHeader("Retry-After", "30");
+      res.status(503).end();
+      return;
+    }
     let closed = false;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let streamLifetime: ReturnType<typeof setTimeout> | undefined;
     connectionCount += 1;
     void dependencies.telemetryService.emit({
       eventType: "workspace_push.sse_connection_opened",
@@ -39,6 +48,9 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
       if (heartbeat) {
         clearInterval(heartbeat);
       }
+      if (streamLifetime) {
+        clearTimeout(streamLifetime);
+      }
       connectionCount -= 1;
       void dependencies.telemetryService.emit({
         eventType: "workspace_push.sse_connection_closed",
@@ -49,6 +61,11 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
     };
     req.on("close", cleanup);
     res.on("close", cleanup);
+    streamLifetime = setTimeout(() => {
+      // Force periodic re-authentication and cap the lifetime of every socket.
+      void iterator.return?.();
+    }, MAX_STREAM_AGE_MS);
+    streamLifetime.unref?.();
     initializeSse(res, "no-cache, no-transform");
     // The ready frame triggers the client's refetch, so it must not be sent
     // before the transport can deliver events — otherwise a change landing in
@@ -62,17 +79,17 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
     if (closed || res.writableEnded) {
       return;
     }
-    writeSseEvent(res, "ready", { workspaceId });
+    await writeSseEvent(res, "ready", { workspaceId });
     heartbeat = setInterval(() => {
       if (!closed && !res.writableEnded) {
-        res.write(": heartbeat\n\n");
+        void writeSseComment(res, "heartbeat");
       }
     }, 25_000);
-    void sendSseIterable(res, { [Symbol.asyncIterator]: () => iterator }, (event) => {
+    void sendSseIterable(res, { [Symbol.asyncIterator]: () => iterator }, async (event) => {
       if (subscription.consumeResync?.()) {
-        writeSseEvent(res, "ready", { workspaceId });
+        await writeSseEvent(res, "ready", { workspaceId });
       }
-      writeSseEvent(res, "push", event);
+      await writeSseEvent(res, "push", event);
     }, { cancelOnClose: true }).catch((error) => {
       dependencies.logger.warn({ err: error }, "Workspace push SSE stream failed");
       cleanup();

@@ -70,7 +70,7 @@ export const sendChatSse = (
   events: AsyncIterable<ChatStreamEvent>,
   options: { includeDebug?: boolean } = {},
 ): Promise<void> => {
-  const writeEvent = (event: ChatStreamEvent) => {
+  const writeEvent = async (event: ChatStreamEvent) => {
     if (res.writableEnded) {
       return;
     }
@@ -78,22 +78,22 @@ export const sendChatSse = (
     initializeSse(res);
 
     if (event.type === "conversation") {
-      writeSseEvent(res, "conversation", { conversationId: event.conversationId });
+      await writeSseEvent(res, "conversation", { conversationId: event.conversationId });
       return;
     }
 
     if (event.type === "status") {
-      writeSseEvent(res, "status", { stage: event.stage });
+      await writeSseEvent(res, "status", { stage: event.stage });
       return;
     }
 
     if (event.type === "chunk") {
-      writeSseEvent(res, "chunk", { text: event.text });
+      await writeSseEvent(res, "chunk", { text: event.text });
       return;
     }
 
     if (event.type === "cancelled") {
-      writeSseEvent(res, "cancelled", {
+      await writeSseEvent(res, "cancelled", {
         conversationId: event.conversationId,
         reason: event.reason,
         stage: event.stage,
@@ -102,7 +102,7 @@ export const sendChatSse = (
     }
 
     if (event.type === "suggestions") {
-      writeSseEvent(res, "suggestions", {
+      await writeSseEvent(res, "suggestions", {
         conversationId: event.conversationId,
         suggestions: event.suggestions,
       });
@@ -110,7 +110,7 @@ export const sendChatSse = (
     }
 
     if (event.type === "skill") {
-      writeSseEvent(res, "skill", {
+      await writeSseEvent(res, "skill", {
         conversationId: event.conversationId,
         skillName: event.skillName,
         phase: event.phase,
@@ -136,7 +136,7 @@ export const sendChatSse = (
       activityTrace: event.activityTrace,
       turnTrace: event.turnTrace,
     }, options);
-    writeSseEvent(res, "done", {
+    await writeSseEvent(res, "done", {
       ...donePayload,
       // Forward the ownership ack so a streamed human-owned (suppressed) turn lets the
       // client drop the empty placeholder / render the waiting line, matching the

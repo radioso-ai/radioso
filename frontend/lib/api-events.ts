@@ -21,6 +21,8 @@ export interface WorkspaceEventsHandlers {
 
 const INITIAL_RECONNECT_DELAY_MS = 1_000
 const MAX_RECONNECT_DELAY_MS = 30_000
+const STABLE_CONNECTION_MS = 10_000
+const TERMINAL_STREAM_STATUSES = new Set([401, 403, 404])
 
 const isWorkspacePushEvent = (value: unknown): value is WorkspacePushEvent => {
   if (!value || typeof value !== 'object') {
@@ -38,11 +40,18 @@ const isWorkspacePushEvent = (value: unknown): value is WorkspacePushEvent => {
 }
 
 const waitForReconnect = (delayMs: number, signal: AbortSignal): Promise<void> => new Promise((resolve) => {
-  const timeoutId = window.setTimeout(resolve, delayMs)
-  signal.addEventListener('abort', () => {
+  let settled = false
+  const finish = () => {
+    if (settled) {
+      return
+    }
+    settled = true
     window.clearTimeout(timeoutId)
+    signal.removeEventListener('abort', finish)
     resolve()
-  }, { once: true })
+  }
+  const timeoutId = window.setTimeout(finish, delayMs)
+  signal.addEventListener('abort', finish, { once: true })
 })
 
 const reconnectDelay = (attempt: number): number => {
@@ -132,6 +141,7 @@ export const streamWorkspaceEvents = async (
   let reconnectAttempt = 0
 
   while (!signal.aborted) {
+    let connectedAt: number | null = null
     try {
       const token = await requireWorkspaceApiToken()
       if (signal.aborted) {
@@ -165,16 +175,25 @@ export const streamWorkspaceEvents = async (
         }
       }
       if (!response.ok) {
+        if (TERMINAL_STREAM_STATUSES.has(response.status)) {
+          console.debug('Workspace push channel disabled or unauthorized; continuing with reconcile polling.', {
+            status: response.status,
+          })
+          return
+        }
         throw new Error(`Workspace event stream request failed with status ${response.status}.`)
       }
 
       await readWorkspaceEventStream(response, {
         ...handlers,
         onReady: () => {
-          reconnectAttempt = 0
+          connectedAt ??= Date.now()
           handlers.onReady()
         },
       }, signal)
+      if (connectedAt !== null && Date.now() - connectedAt >= STABLE_CONNECTION_MS) {
+        reconnectAttempt = 0
+      }
     } catch (error) {
       if (signal.aborted) {
         return

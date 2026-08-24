@@ -11,8 +11,6 @@ const INBOX_CHANGE_KINDS = [
   'hitl.decision_created',
   'hitl.decision_resolved',
   'conversation.ownership_changed',
-  'quality.feedback_changed',
-  'quality.triage_changed',
 ] as const
 
 /**

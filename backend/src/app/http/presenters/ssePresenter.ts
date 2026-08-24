@@ -12,18 +12,42 @@ export const initializeSse = (res: Response, cacheControl = "no-cache"): void =>
   res.flushHeaders();
 };
 
-export const writeSseEvent = (res: Response, eventName: string, payload: unknown): void => {
+const writeSseChunk = async (res: Response, chunk: string): Promise<void> => {
   if (res.writableEnded) {
     return;
   }
-  res.write(`event: ${eventName}\n`);
-  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  if (res.write(chunk) !== false) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const finish = () => {
+      res.removeListener("drain", finish);
+      res.removeListener("close", finish);
+      res.removeListener("error", finish);
+      resolve();
+    };
+    res.once("drain", finish);
+    res.once("close", finish);
+    res.once("error", finish);
+  });
 };
+
+export const writeSseEvent = (
+  res: Response,
+  eventName: string,
+  payload: unknown,
+): Promise<void> => (async () => {
+  await writeSseChunk(res, `event: ${eventName}\n`);
+  await writeSseChunk(res, `data: ${JSON.stringify(payload)}\n\n`);
+})();
+
+export const writeSseComment = (res: Response, comment: string): Promise<void> =>
+  writeSseChunk(res, `: ${comment}\n\n`);
 
 export const sendSseIterable = async <T>(
   res: Response,
   events: AsyncIterable<T>,
-  writeEvent: (event: T) => void,
+  writeEvent: (event: T) => void | Promise<void>,
   options: {
     /**
      * When true, stop consuming and return the iterator as soon as the client
@@ -55,7 +79,7 @@ export const sendSseIterable = async <T>(
         break;
       }
       if (!closed && !res.writableEnded) {
-        writeEvent(next.value);
+        await writeEvent(next.value);
       }
     }
   } finally {

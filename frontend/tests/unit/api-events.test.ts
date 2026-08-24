@@ -89,4 +89,53 @@ describe('streamWorkspaceEvents', () => {
     expect(onReady).toHaveBeenCalledTimes(1)
     expect(onPush).toHaveBeenCalledTimes(1)
   })
+
+  it.each([403, 404])('degrades to poll-only on terminal status %s', async (status) => {
+    vi.useFakeTimers()
+    requireWorkspaceApiTokenMock.mockResolvedValue('workspace-token')
+    canRetryMock.mockReturnValue(false)
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status }))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    const streaming = streamWorkspaceEvents({ onReady: vi.fn(), onPush: vi.fn() }, controller.signal)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await streaming
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
+
+  it('does not reset reconnect backoff for streams that flap immediately after ready', async () => {
+    vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    requireWorkspaceApiTokenMock.mockResolvedValue('workspace-token')
+    canRetryMock.mockReturnValue(false)
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: ready\ndata: {}\n\n'))
+        controller.close()
+      },
+    }))))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    const streaming = streamWorkspaceEvents({ onReady: vi.fn(), onPush: vi.fn() }, controller.signal)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+
+    controller.abort()
+    await streaming
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    randomSpy.mockRestore()
+    vi.useRealTimers()
+  })
 })

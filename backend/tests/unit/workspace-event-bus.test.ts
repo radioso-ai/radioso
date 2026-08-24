@@ -124,9 +124,6 @@ describe("Workspace event buses", () => {
       eventType: "workspace_push.listener_connected",
     }));
     expect(telemetryService.emit).toHaveBeenCalledWith(expect.objectContaining({
-      eventType: "workspace_push.listener_notification_received",
-    }));
-    expect(telemetryService.emit).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "workspace_push.subscriber_queue_overflow",
       severity: "warn",
     }));
@@ -153,6 +150,64 @@ describe("Workspace event buses", () => {
     controller.abort();
 
     await expect(ready).resolves.toBeUndefined();
+    await bus.close();
+  });
+
+  it("terminates current subscriptions when the LISTEN connection is lost", async () => {
+    const listener = new FakeListenerClient();
+    const bus = new PostgresWorkspaceEventBus({
+      createListenerClient: () => listener,
+    } as never, {
+      info: vi.fn(),
+      warn: vi.fn(),
+    } as never);
+    const iterator = bus.subscribe("workspace-a")[Symbol.asyncIterator]();
+    await bus.ready();
+
+    const pending = iterator.next();
+    listener.emit("error", new Error("connection lost"));
+
+    await expect(Promise.race([
+      pending,
+      new Promise((resolve) => setTimeout(resolve, 50, "still-open")),
+    ])).resolves.toEqual({ done: true, value: undefined });
+    await bus.close();
+  });
+
+  it("keeps mutation latency independent of a slow publisher and coalesces a hot key", async () => {
+    let releaseFirst!: () => void;
+    const firstPublishBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const notificationPublisher = vi.fn()
+      .mockImplementationOnce(() => firstPublishBlocked)
+      .mockResolvedValue(undefined);
+    const bus = new PostgresWorkspaceEventBus({} as never, {
+      info: vi.fn(),
+      warn: vi.fn(),
+    } as never, undefined, notificationPublisher);
+
+    await bus.publish({
+      resourceType: "document",
+      resourceId: "document-0",
+      workspaceId: "workspace-a",
+      changeKind: "document.status_changed",
+    });
+    for (let index = 1; index <= 500; index += 1) {
+      await bus.publish({
+        resourceType: "document",
+        resourceId: `document-${index}`,
+        workspaceId: "workspace-a",
+        changeKind: "document.status_changed",
+      });
+    }
+
+    expect(notificationPublisher).toHaveBeenCalledTimes(1);
+    releaseFirst();
+    await vi.waitFor(() => expect(notificationPublisher).toHaveBeenCalledTimes(2));
+    expect(notificationPublisher).toHaveBeenLastCalledWith([
+      expect.objectContaining({ resourceId: "document-500" }),
+    ]);
     await bus.close();
   });
 });

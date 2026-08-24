@@ -121,8 +121,15 @@ export const withConversationOwnershipPushEvents = <T extends Pick<
       if (property === "requestHandoff") {
         return async (...args: Parameters<ConversationOwnershipRepository["requestHandoff"]>) => {
           const requestHandoff = target.requestHandoff as ConversationOwnershipRepository["requestHandoff"];
-          const result = await requestHandoff(...args);
-          await publishOwnership(result);
+          // .call(target) is required: the real repository reads this.db, and an
+          // extracted method invoked bare loses `this`.
+          const result = await requestHandoff.call(target, ...args);
+          // A supplied Db can be a caller-owned transaction. Its coordinator is
+          // responsible for publishing after commit; emitting here could race the
+          // commit or survive a rollback.
+          if (args[1] === undefined) {
+            await publishOwnership(result);
+          }
           return result;
         };
       }
@@ -132,8 +139,8 @@ export const withConversationOwnershipPushEvents = <T extends Pick<
             ok: boolean;
             record?: { conversationId: string; workspaceId: string } | null;
           }>;
-          const result = await method(...args);
-          if (result.ok) {
+          const result = await method.call(target, ...args);
+          if (result.ok && args[1] === undefined) {
             await publishOwnership(result.record);
           }
           return result;
@@ -171,7 +178,9 @@ export const withActionRequestPushEvents = <T extends Pick<
           for (const row of rows) {
             claimedRows.set(row.id, row);
           }
-          await Promise.all(rows.map(publishDelivery));
+          for (const row of rows) {
+            await publishDelivery(row);
+          }
           return rows;
         };
       }
@@ -327,26 +336,42 @@ export const withWebsiteCrawlPushEvents = <T extends WebsiteCrawlJobRepositoryPo
       if (property === "pauseBySourceId") {
         return async (...args: Parameters<WebsiteCrawlJobRepositoryPort["pauseBySourceId"]>) => {
           const jobs = await target.pauseBySourceId(...args);
-          await Promise.all(jobs.map(publishStatus));
+          for (const job of jobs) {
+            await publishStatus(job);
+          }
           return jobs;
         };
       }
       if (property === "resumePausedBySourceId") {
         return async (...args: Parameters<WebsiteCrawlJobRepositoryPort["resumePausedBySourceId"]>) => {
           const result = await target.resumePausedBySourceId(...args);
-          await Promise.all(result.resumedJobs.map(publishStatus));
+          for (const job of result.resumedJobs) {
+            await publishStatus(job);
+          }
           return result;
         };
       }
       if (property === "updateCheckpoint") {
         return async (...args: Parameters<WebsiteCrawlJobRepositoryPort["updateCheckpoint"]>) => {
-          await target.updateCheckpoint(...args);
-          await publish(bus, {
-            resourceType: "crawl",
-            resourceId: args[0],
-            workspaceId: args[1],
-            changeKind: "crawl.progress",
-          });
+          const updated = await target.updateCheckpoint(...args);
+          if (updated) {
+            await publish(bus, {
+              resourceType: "crawl",
+              resourceId: args[0],
+              workspaceId: args[1],
+              changeKind: "crawl.progress",
+            });
+          }
+          return updated;
+        };
+      }
+      if (property === "releaseForContinuation") {
+        return async (...args: Parameters<WebsiteCrawlJobRepositoryPort["releaseForContinuation"]>) => {
+          const released = await target.releaseForContinuation(...args);
+          if (released && args[2]) {
+            await publishStatus({ id: args[0], workspaceId: args[2] });
+          }
+          return released;
         };
       }
       if (property === "releaseTimedOutClaim") {
@@ -361,7 +386,9 @@ export const withWebsiteCrawlPushEvents = <T extends WebsiteCrawlJobRepositoryPo
       if (property === "releaseAllTimedOutClaims") {
         return async (...args: Parameters<WebsiteCrawlJobRepositoryPort["releaseAllTimedOutClaims"]>) => {
           const jobs = await target.releaseAllTimedOutClaims(...args);
-          await Promise.all(jobs.map(publishStatus));
+          for (const job of jobs) {
+            await publishStatus(job);
+          }
           return jobs;
         };
       }

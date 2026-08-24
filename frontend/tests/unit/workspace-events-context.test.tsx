@@ -120,6 +120,18 @@ describe('WorkspaceEventsProvider', () => {
     expect(onInvalidate).toHaveBeenCalledTimes(1)
   })
 
+  it('does not let sustained traffic postpone refetches past the fixed window', async () => {
+    const onInvalidate = vi.fn()
+    await renderProbe(['document.status_changed'], onInvalidate)
+
+    act(() => connections[0].handlers.onPush(event('document.status_changed', 1)))
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+    act(() => connections[0].handlers.onPush(event('document.status_changed', 2)))
+    await act(async () => { await vi.advanceTimersByTimeAsync(50) })
+
+    expect(onInvalidate).toHaveBeenCalledTimes(1)
+  })
+
   it('refetches all subscriptions when the channel opens or reconnects', async () => {
     const onInvalidate = vi.fn()
     await renderProbe(['document.status_changed'], onInvalidate)

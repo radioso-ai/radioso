@@ -42,7 +42,7 @@ export interface WorkspaceEventBus {
    * that signals "refetch now" (the SSE ready frame) awaits this first — with
    * a cap — so the refetch lands after the point where events stop being lost.
    */
-  ready(): Promise<void>;
+  ready(options?: { signal?: AbortSignal }): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -57,7 +57,7 @@ export class InMemoryWorkspaceEventBus implements WorkspaceEventBus {
   #nextVersion = 1;
   readonly #subscribers = new Set<Subscriber>();
 
-  async ready(): Promise<void> {}
+  async ready(_options: { signal?: AbortSignal } = {}): Promise<void> {}
 
   async publish(event: WorkspaceEventPublish): Promise<void> {
     const frame = pushEventSchema.parse({ ...event, version: this.#nextVersion++ });
@@ -125,7 +125,7 @@ export class InMemoryWorkspaceEventBus implements WorkspaceEventBus {
 }
 
 export class NoopWorkspaceEventBus implements WorkspaceEventBus {
-  async ready(): Promise<void> {}
+  async ready(_options: { signal?: AbortSignal } = {}): Promise<void> {}
 
   async publish(_event: WorkspaceEventPublish): Promise<void> {}
 

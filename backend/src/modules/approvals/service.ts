@@ -3,6 +3,7 @@ import type {
   PendingDecisionRepository,
 } from "../../db/repositories/pendingDecisionRepository.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { WorkspaceEventBus } from "../../shared/events/workspaceEventBus.js";
 import {
   ApprovalDecisionDomainError,
   satisfiesDeciderScope,
@@ -80,6 +81,7 @@ export class ApprovalDecisionService {
     private readonly resumeRunner: ResumeRunner,
     private readonly roleResolver?: ApprovalDecisionRoleResolver,
     private readonly conversationEvents?: ApprovalDecisionConversationEventPublisher,
+    private readonly workspaceEventBus?: Pick<WorkspaceEventBus, "publish">,
   ) {}
 
   async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
@@ -144,6 +146,12 @@ export class ApprovalDecisionService {
         conversationId: resume.conversationId,
         messageId: resume.assistantMessageId,
         createdAt: new Date().toISOString(),
+      });
+      await this.workspaceEventBus?.publish({
+        resourceType: "conversation",
+        resourceId: resume.conversationId,
+        workspaceId: record.workspaceId,
+        changeKind: "conversation.updated",
       });
     }
 

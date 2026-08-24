@@ -876,6 +876,7 @@ export const buildChatServices = (input: {
         ...event,
       }),
     },
+    input.workspaceEventBus,
   );
   return {
     abuseControlService,

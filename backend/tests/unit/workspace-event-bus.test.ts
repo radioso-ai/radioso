@@ -16,6 +16,16 @@ class FakeListenerClient extends EventEmitter {
   async end(): Promise<void> {}
 }
 
+class HangingListenerClient extends EventEmitter {
+  async connect(): Promise<void> {
+    await new Promise(() => undefined);
+  }
+
+  async query(_query: string): Promise<void> {}
+
+  async end(): Promise<void> {}
+}
+
 describe("Workspace event buses", () => {
   it("delivers only events for the subscribed workspace", async () => {
     const bus = new InMemoryWorkspaceEventBus();
@@ -126,6 +136,23 @@ describe("Workspace event buses", () => {
     }));
 
     await iterator.return?.();
+    await bus.close();
+  });
+
+  it("lets callers cancel readiness waits when they fall back to polling", async () => {
+    const listener = new HangingListenerClient();
+    const bus = new PostgresWorkspaceEventBus({
+      createListenerClient: () => listener,
+    } as never, {
+      info: vi.fn(),
+      warn: vi.fn(),
+    } as never);
+    const controller = new AbortController();
+
+    const ready = bus.ready({ signal: controller.signal });
+    controller.abort();
+
+    await expect(ready).resolves.toBeUndefined();
     await bus.close();
   });
 });

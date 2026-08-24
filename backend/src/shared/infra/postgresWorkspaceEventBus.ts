@@ -22,6 +22,12 @@ interface Subscriber {
   resyncRequired: boolean;
 }
 
+interface ReadyWaiter {
+  resolve(): void;
+  signal?: AbortSignal;
+  abortListener?: () => void;
+}
+
 export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   #client?: Client;
   #closed = false;
@@ -30,7 +36,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   #reconnectTimer?: NodeJS.Timeout;
   #hasConnected = false;
   readonly #subscribers = new Set<Subscriber>();
-  #readyWaiters: Array<() => void> = [];
+  readonly #readyWaiters = new Set<ReadyWaiter>();
 
   constructor(
     private readonly database: Database,
@@ -76,13 +82,30 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
    * Callers should cap the wait: while the database is unreachable this keeps
    * pending until the reconnect loop succeeds (or the bus closes).
    */
-  async ready(): Promise<void> {
-    if (this.#client || this.#closed) {
+  async ready(options: { signal?: AbortSignal } = {}): Promise<void> {
+    if (this.#client || this.#closed || options.signal?.aborted) {
       return;
     }
     void this.#connect();
     await new Promise<void>((resolve) => {
-      this.#readyWaiters.push(resolve);
+      const waiter: ReadyWaiter = { resolve };
+      const cleanup = () => {
+        this.#readyWaiters.delete(waiter);
+        if (waiter.signal && waiter.abortListener) {
+          waiter.signal.removeEventListener("abort", waiter.abortListener);
+        }
+      };
+      waiter.resolve = () => {
+        cleanup();
+        resolve();
+      };
+      waiter.signal = options.signal;
+      waiter.abortListener = () => waiter.resolve();
+      this.#readyWaiters.add(waiter);
+      options.signal?.addEventListener("abort", waiter.abortListener, { once: true });
+      if (options.signal?.aborted) {
+        waiter.resolve();
+      }
     });
   }
 
@@ -139,7 +162,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
 
   async close(): Promise<void> {
     this.#closed = true;
-    this.#readyWaiters.splice(0).forEach((resolve) => resolve());
+    this.#resolveReadyWaiters();
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = undefined;
@@ -188,7 +211,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       await client.query(`LISTEN ${CHANNEL}`);
       this.#client = client;
       this.#reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
-      this.#readyWaiters.splice(0).forEach((resolve) => resolve());
+      this.#resolveReadyWaiters();
       this.#emitTelemetry(this.#hasConnected
         ? "workspace_push.listener_reconnected"
         : "workspace_push.listener_connected");
@@ -250,6 +273,12 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
     input: Omit<Parameters<TelemetryService["emit"]>[0], "eventType"> = {},
   ): void {
     void this.telemetryService?.emit({ eventType, ...input });
+  }
+
+  #resolveReadyWaiters(): void {
+    for (const waiter of [...this.#readyWaiters]) {
+      waiter.resolve();
+    }
   }
 }
 

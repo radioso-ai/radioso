@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState, type Key } from 'react'
-import { Line, LineChart, Tooltip } from 'recharts'
+import { Line, LineChart, Tooltip, type TooltipContentProps } from 'recharts'
 
+import { ChartTooltipCard } from '@/components/dashboard/chart-tooltip'
 import type { SparklinePoint } from '@/lib/quality-stats'
 
 interface SparklineDotProps {
@@ -94,8 +95,17 @@ export function Sparkline({
           <Tooltip
             cursor={false}
             isAnimationActive={false}
-            formatter={(value) => [formatValue(Number(value)), '']}
-            labelFormatter={(_label, payload) => payload?.[0]?.payload?.date ?? ''}
+            content={({ active, payload }: TooltipContentProps) => {
+              const entry = active ? payload?.[0] : undefined
+              if (!entry) return null
+              const point = entry.payload as SparklinePoint | undefined
+              return (
+                <ChartTooltipCard
+                  label={point?.date}
+                  rows={[{ key: 'value', value: formatValue(Number(entry.value ?? 0)) }]}
+                />
+              )
+            }}
           />
           <Line
             type="monotone"

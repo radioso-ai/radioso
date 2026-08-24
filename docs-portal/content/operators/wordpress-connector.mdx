@@ -1,0 +1,122 @@
+---
+title: "WordPress and WooCommerce"
+description: "Sync WordPress pages, posts, and WooCommerce products into a workspace, and filter retrieval on shop values such as price and stock status."
+---
+
+# WordPress and WooCommerce
+
+Point Radioso at a WordPress site and its published content becomes workspace documents an agent can answer from — pages, posts, and any custom post type the site registers, including WooCommerce products. Publishes, edits, and deletes flow through as they happen, so a shopper asking what a book costs hears the price the shop is showing today.
+
+## How content reaches Radioso
+
+There are two directions, and the one you use decides what you have to open up.
+
+**The site pushes.** The Radioso Sync companion plugin fires a signed webhook whenever a configured post type is published, updated, or deleted. WordPress makes the outbound call, so nothing has to reach into the site: this works behind Cloudflare, a firewall, or a host that blocks the REST API. Payloads are signed with HMAC-SHA256 over the raw body, sent non-blocking with a 5-second timeout so a slow receiver never holds up a save, and Radioso rejects anything whose signature does not match.
+
+**Radioso pulls.** A manual sync, and the optional polling fallback, read the WordPress REST API with an application password. Use this when you cannot install plugins.
+
+The plugin is the path to prefer. Pull only sees what the REST API returns, while the plugin sends the rendered post plus the catalogue values described below.
+
+## Set it up
+
+1. In Radioso, open **Knowledge → Sources** and set up the **WordPress** connector. Fill in **WordPress site URL** — the public URL, such as `https://example.com`.
+2. Set **Post types to sync** to the comma-separated list you want. It defaults to `page,post`; add `product` for a WooCommerce catalogue, plus any custom types the site registers.
+3. Click **Download plugin** in the same dialog to get `radioso-sync.zip`.
+4. In WordPress, go to **Plugins → Add New → Upload Plugin**, choose the file, then **Install Now** and **Activate**.
+5. Open **Settings → Radioso Sync** in WordPress and paste the **webhook URL** and **webhook shared secret** shown in the Radioso dialog. Save.
+6. Back in Radioso, click **Enable**.
+
+To check it works, save any post of a synced type and look at **Knowledge → Sources**. The new document carries `metadata.source = "wordpress"` and `externalDocumentId = "wp_post_<id>"`.
+
+## What arrives with each post
+
+Radioso ingests the post's rendered content, so the document reads the way the page reads.
+
+Three things travel alongside the body as document metadata:
+
+- **The author's display name**, under `author`, so an agent can find and identify an author even when the theme keeps the byline out of the post body. On pages and posts this is the WordPress account that wrote the post.
+- **The publish date**, as the raw timestamp under `published_at` and its day under `dateFrom`, which makes posts searchable by date and usable in date metadata rules.
+- **A facts block** appended to the content: every public taxonomy term on the post, labelled with the taxonomy's own singular name. Categories, tags, and site-specific taxonomies all come through, in the language the site is authored in.
+
+Existing documents pick up the author, publish date, and facts block on their next sync.
+
+### Catalogues that record authorship in a taxonomy
+
+`post_author` is the account that created the record. On a catalogue that is whoever uploaded the item, so attributing the work to a staff login would be wrong. Sites that keep the real author of the work in a taxonomy — a book catalogue, a magazine archive — set **Author taxonomy** in the plugin settings to that taxonomy's slug, for example `autore`. Radioso then stores those term names as the author.
+
+## WooCommerce catalogues
+
+WordPress hands Radioso the post body, and a catalogue keeps most of what a shopper asks about outside it. The plugin closes that gap twice over: once in prose the agent can read out, once in values retrieval can filter on.
+
+The facts block carries the readable copy — the SKU, the price, the availability the shop is currently showing, and every visible product attribute, each labelled the way the shop labels it (ISBN, format, page count, publisher, and so on). Prices carry the shop's own tax and currency settings, and a variable product carries the range across its variations rather than one figure that would misstate it in both directions. Internal taxonomies such as WooCommerce's visibility flags stay out, as do hidden attributes.
+
+### Filter and boost on shop values
+
+Alongside the facts block, every product publishes a machine-readable copy as document metadata:
+
+| Key | Value |
+|---|---|
+| `sku` | The product SKU. |
+| `price` | The display price — for a variable product, the cheapest variation. |
+| `price_max` | The dearest variation, when a variable product spans a range. |
+| `regular_price` | The list price, before any discount. |
+| `sale_price` | The discounted price, when a sale is configured. |
+| `on_sale` | Whether the discount is live. Always stated, true or false. |
+| `currency` | The shop currency, so a bare number can be read. |
+| `stock_status` | `instock`, `outofstock`, or `onbackorder`. |
+
+Write a metadata rule against any of these keys under the retrieval skill's settings: `price` less than `20`, `on_sale` equals `true` as a boost, `stock_status` equals `instock` as a hard filter. Prices are the same display figures the facts block quotes. `stock_status` carries WooCommerce's own value rather than the label a shopper sees, so a rule written against it survives a change of shop language — the facts block still holds the wording for the agent to read out.
+
+These keys are fixed WooCommerce vocabulary. Site-specific attributes stay in the facts block, where their names can be anything: a rule addresses a key literally, so a key that shifted with the shop's language would break the rule that referenced it.
+
+When one of these values changes, the document re-indexes on its own, even if nobody touched the post body.
+
+### Price and availability stay current
+
+Both move without anyone opening the editor — scheduled sales, CSV imports, bulk edits, and orders all change them through the WooCommerce data store. The plugin follows every one of those paths: a whole-product save, a direct stock-status write that skips a full save, a variable product's recalculated price range, and a variation saved on a path that skips the parent's deferred sync.
+
+Publishes and updates go out at the end of the request. WordPress runs the status transition from inside `wp_insert_post()`, before the pass where WooCommerce writes price, stock, and attributes, so sending at the transition would publish the values as they stood before the edit. Waiting also collapses the several hooks one save trips into a single push, which re-embeds the document once, carrying the state the request finished with. Deletes go out immediately, while the post and its permalink still exist, and a delete cancels any update queued for the same post.
+
+## Publish your own fields
+
+Any site can publish its own values the same way. The webhook payload accepts a `post.fields` object of string, number, and boolean values, and Radioso stores them as document metadata under those keys:
+
+- Up to 32 fields per post.
+- Keys matching `^[A-Za-z][A-Za-z0-9_]{0,63}$`.
+- Strings up to 256 characters.
+
+A key that collides with one Radioso derives, such as `author` or `dateFrom`, keeps Radioso's value. A payload outside these bounds is rejected whole, so a client that builds the map itself should drop a field it cannot fit rather than send it.
+
+In WordPress, the `radioso_sync_product_fields` filter is where you add yours. The plugin drops anything outside the shape above before it sends, so a field that does not fit costs you that field rather than the whole push.
+
+## Backfill existing content
+
+The plugin only knows about a post once something happens to it, so seed the rest in one pass with **Settings → Radioso Sync → Resync all content**. It sends every existing published post of the configured types through the same signed webhook, which means it works on sites whose REST API is unreachable.
+
+The run advances in background batches so a large site does not time out, driven by WP-Cron, which ticks with site traffic. The settings page shows whether the next batch is scheduled, running, overdue, or missing, and keeps the latest 20 WordPress-side activity entries — schedule failures, batch checkpoints, webhook-start errors, and PHP fatal errors. If WP-Cron is disabled or a batch stalls, **Run next batch now** executes one batch from the settings page, and **Cancel resync** stops the run. Running it again is safe: Radioso upserts by WordPress post identity.
+
+That activity log confirms WordPress started the request. For the receiving side, check the Radioso document list.
+
+Radioso can also pull a backfill itself with `POST /api/v1/connectors/wordpress/sync`, or with **Sync now** in the connector dialog. That path reads the WordPress REST API, so it needs the REST API reachable from Radioso. The connector creates its source record before the first REST call, which keeps a failed sync visible under **Knowledge → Sources** rather than leaving nothing behind.
+
+## When you cannot install the plugin
+
+Some hosts — WordPress.com plans below Business, for example — do not allow plugins. Set **WordPress username** and an **Application password** (generate one at **Users → Profile → Application Passwords**), then set **Polling interval (seconds)** to a non-zero value such as `300`. Radioso polls the REST API on that interval. The two credentials travel together, and polling requires both.
+
+## One site per connector
+
+A workspace WordPress connector accepts one configured site. Companion-plugin webhooks include a signed site URL, and Radioso rejects an event when that URL or the post permalink does not belong to the configured site. Changing the WordPress site URL rotates the generated webhook secret, so copy the new secret into the plugin settings for the new site.
+
+## Common failure modes
+
+- **Nothing arrives after a save.** Confirm the connector is enabled in Radioso, that the shared secret in WordPress matches exactly, and that the post's type is in **Post types to sync**.
+- **A backfill stops advancing.** Check the resync status and activity log for cron, scheduling, or dispatch errors, then use **Run next batch now**. WordPress's **Tools → Site Health** reports loopback and scheduled-event failures behind an overdue or missing batch.
+- **A manual sync fails while pushes work.** The site is blocking Radioso's REST calls. Use **Resync all content** in the plugin instead — it goes out from WordPress.
+- **A product's own field never shows up in the rules editor.** It fell outside the 32-field, key-pattern, or 256-character bounds and the plugin dropped it before sending.
+- **Prices in answers lag the shop.** Read the document's metadata: if `price` matches the shop and the answer does not, the agent is reading a stale facts block from a document that has not re-synced.
+
+## Read next
+
+- [Connectors and webhooks](/api/connectors-and-webhooks)
+- [Extract document metadata](/guides/document-metadata)
+- [Document processing](/operators/document-processing)

@@ -642,6 +642,116 @@ describe("document ingestion", () => {
     expect(current?.metadata).toMatchObject({ author: "Sabine Kaphingst" });
   });
 
+  it("re-ingests a synced document when only an indexed field changes (e.g. a product goes on sale)", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+      indexedFields: { price: 17, on_sale: false },
+    } as any);
+
+    const second = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+      indexedFields: { price: 12.5, on_sale: true },
+    } as any);
+
+    expect(second.documentId).toBe(first.documentId);
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(2);
+    expect(current?.metadata).toMatchObject({ price: 12.5, on_sale: true });
+  });
+
+  it("skips reprocessing when the indexed fields are unchanged", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+      indexedFields: { price: 17, sku: "AEY0112" },
+    } as any);
+
+    // Key order must not matter: the plugin builds the map from whatever the
+    // shop returns, so a reordered payload is the same document.
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p" },
+      indexedFields: { sku: "AEY0112", price: 17 },
+    } as any);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+  });
+
+  it("keeps the connector's own metadata when an indexed field collides with it", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const result = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Body",
+      externalDocumentId: "wp_post_42",
+      metadata: { author: "Swami Kriyananda", sourceUrl: "https://example.com/p" },
+      indexedFields: { author: "staff-uploader", price: 17 },
+    } as any);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(result.documentId, "workspace-1");
+    expect(current?.metadata).toMatchObject({ author: "Swami Kriyananda", price: 17 });
+  });
+
+  it("leaves the content hash untouched for documents that carry no indexed fields", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+
+    const first = await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" },
+    } as any);
+
+    await service.ingest({
+      workspaceId: "workspace-1",
+      title: "Synced doc",
+      content: "Same body",
+      externalDocumentId: "wp_post_42",
+      metadata: { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" },
+      indexedFields: {},
+    } as any);
+
+    const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
+    expect(current?.revision).toBe(1);
+  });
+
   it("allows first assignment of externalDocumentId on update and rejects later reassignment", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

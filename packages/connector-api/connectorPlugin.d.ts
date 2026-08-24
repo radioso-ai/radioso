@@ -84,6 +84,13 @@ export interface ConnectorSourceDescriptor {
 export type ConnectorIngestContentFormat = "text" | "html";
 
 /**
+ * A value a connector publishes for retrieval to filter and boost on — a
+ * product's price, a catalogue item's stock status. Scalars only: metadata
+ * rules compare a single value per key, so an array never matches.
+ */
+export type ConnectorIndexedFieldValue = string | number | boolean;
+
+/**
  * Document ingestion port exposed to connectors. Encapsulates the full ingest
  * pipeline (sanitization, externalDocumentId upsert, queueing, audit, analytics,
  * usage limits) so connector plugins never touch the documents schema directly.
@@ -96,6 +103,19 @@ export interface ConnectorIngestionPort {
     contentFormat?: ConnectorIngestContentFormat;
     externalDocumentId: string;
     metadata?: Record<string, unknown>;
+    /**
+     * Facts the upstream system wants retrieval to act on. They are merged into
+     * the document's metadata under their bare key, so an operator's metadata
+     * rule reads `price` rather than a connector-specific path, and the
+     * connector's own metadata wins a name collision.
+     *
+     * The distinction from `metadata` is re-indexing: `metadata` carries
+     * provenance the upstream rewrites on every save (a modification stamp,
+     * a status), so folding it into the change check would re-embed a document
+     * that nobody edited. These values are read at query time, so a change to
+     * one of them must reach the chunks.
+     */
+    indexedFields?: Record<string, ConnectorIndexedFieldValue>;
     source?: ConnectorSourceDescriptor;
   }): Promise<{ documentId: string; status: string }>;
 

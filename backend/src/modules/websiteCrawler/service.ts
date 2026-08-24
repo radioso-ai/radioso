@@ -24,6 +24,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 // embedding auto-generated dumps, log outputs, or other oversized content that
 // would degrade retrieval quality and consume disproportionate resources.
 const MAX_PAGE_CONTENT_LENGTH = 500_000;
+export const WEBSITE_CRAWL_CHECKPOINT_PERSIST_INTERVAL_MS = 1_000;
 
 export interface WebsiteCrawlerDocumentIngestionPort {
   ingest(input: {
@@ -120,13 +121,68 @@ export class WebsiteCrawlerService {
     // capture the error, abort the crawl, and rethrow once the run unwinds — the
     // caller then gets the 429 rather than a frontier full of generic failures.
     let usageLimitError: unknown = null;
-    const persistCheckpoint = async () => {
+    let checkpointDirty = false;
+    let checkpointPersistenceTimer: ReturnType<typeof setTimeout> | null = null;
+    let checkpointPersistenceWrite: Promise<void> | null = null;
+    const writeCheckpoint = async (): Promise<void> => {
       checkpoint.discoveredUrls = [...checkpointSets.discovered];
       checkpoint.queuedUrls = [...checkpointSets.queued];
       checkpoint.processingUrls = [...checkpointSets.processing];
       checkpoint.processedCanonicalUrls = [...checkpointSets.processed];
       checkpoint.processedContentHashes = [...checkpointSets.contentHashes];
       await input.onCheckpoint?.({ ...checkpoint });
+    };
+    const scheduleCheckpointPersistence = (): void => {
+      if (
+        !input.onCheckpoint
+        || !checkpointDirty
+        || checkpointPersistenceTimer
+        || checkpointPersistenceWrite
+      ) {
+        return;
+      }
+      checkpointPersistenceTimer = setTimeout(() => {
+        checkpointPersistenceTimer = null;
+        // A timer has no caller to receive a persistence error. Retain its
+        // rejected promise so the crawl's terminal flush surfaces it instead.
+        void flushCheckpointIfDirty().catch(() => undefined);
+      }, WEBSITE_CRAWL_CHECKPOINT_PERSIST_INTERVAL_MS);
+    };
+    const flushCheckpointIfDirty = async (): Promise<void> => {
+      if (checkpointPersistenceWrite) {
+        await checkpointPersistenceWrite;
+      }
+      if (!checkpointDirty) return;
+      checkpointDirty = false;
+      checkpointPersistenceWrite = writeCheckpoint().then(() => {
+        checkpointPersistenceWrite = null;
+        scheduleCheckpointPersistence();
+      });
+      await checkpointPersistenceWrite;
+    };
+    const persistCheckpoint = async (): Promise<void> => {
+      if (!input.onCheckpoint) {
+        return;
+      }
+      checkpointDirty = true;
+      scheduleCheckpointPersistence();
+    };
+    const flushCheckpointPersistence = async (): Promise<void> => {
+      if (!input.onCheckpoint) {
+        return;
+      }
+      if (checkpointPersistenceTimer) {
+        clearTimeout(checkpointPersistenceTimer);
+        checkpointPersistenceTimer = null;
+      }
+      if (checkpointPersistenceWrite) {
+        await checkpointPersistenceWrite;
+      }
+      if (checkpointPersistenceTimer) {
+        clearTimeout(checkpointPersistenceTimer);
+        checkpointPersistenceTimer = null;
+      }
+      await flushCheckpointIfDirty();
     };
     const recordCheckpointEvent = async (event: WebsiteCrawlCheckpointEvent) => {
       if (usageLimitError && event.type === "processed") {
@@ -417,6 +473,7 @@ export class WebsiteCrawlerService {
       // A captured tier-quota rejection takes precedence over the abort error the
       // provider surfaces once we stop it, so the caller sees the real 429 cause.
       const surfaced = usageLimitError ?? error;
+      await flushCheckpointPersistence();
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, surfaced);
       if (documentSource) {
         await this.safeUpdateSourceSyncState({
@@ -427,6 +484,8 @@ export class WebsiteCrawlerService {
       }
       throw surfaced;
     }
+
+    await flushCheckpointPersistence();
 
     // The provider may stop gracefully after we abort rather than throwing; if a
     // tier-quota rejection was captured mid-crawl, surface it as a crawl failure.

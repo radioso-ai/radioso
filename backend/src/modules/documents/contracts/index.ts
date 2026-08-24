@@ -1,4 +1,4 @@
-import type { DocumentSourceResolverInput } from "./documentContracts.js";
+import type { DocumentSourceResolverInput, IndexedFieldValue } from "./documentContracts.js";
 
 export type {
   ChunkDetail,
@@ -28,6 +28,7 @@ export type {
   DocumentSummaryRecord,
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
+  IndexedFieldValue,
 } from "./documentContracts.js";
 export type { DocumentSearchHistoryEntry, DocumentSearchHistoryPage } from "./historyTypes.js";
 export type { DocumentJobConsumerPort } from "../services/documentJobConsumer.js";
@@ -62,6 +63,13 @@ export interface DocumentIngestionPort {
     title: string;
     content: string;
     metadata?: Record<string, unknown>;
+    /**
+     * Merged into the document's metadata, so operator rules address these by
+     * their bare key. Unlike the rest of `metadata` — provenance the upstream
+     * system rewrites on every save — a change to one of these re-indexes the
+     * document, because retrieval reads them.
+     */
+    indexedFields?: Record<string, IndexedFieldValue>;
     externalDocumentId?: string | null;
     source?: DocumentSourceResolverInput;
   }): Promise<{ documentId: string; status: string }>;

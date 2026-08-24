@@ -4,7 +4,7 @@
  * Description: Pushes published, updated, and deleted content of any post type
  *              — including WooCommerce products — to a Radioso workspace via
  *              signed webhook (HMAC-SHA256).
- * Version:     0.4.0
+ * Version:     0.5.0
  * Requires at least: 5.7
  * Author:      Radioso
  * License:     MIT
@@ -36,6 +36,12 @@ const RADIOSO_RESYNC_STALL_AFTER  = 300;
  * strand anything the sync queues, so this has to run after it.
  */
 const RADIOSO_FLUSH_PRIORITY      = 100;
+
+// What the Radioso webhook accepts in a post's field map. Mirrored here so a
+// site that adds its own fields learns the shape by losing one field, not by
+// losing the whole push to a 400.
+const RADIOSO_MAX_FIELDS          = 32;
+const RADIOSO_MAX_FIELD_LENGTH    = 256;
 
 // ── Event hooks ─────────────────────────────────────────────────────────────
 
@@ -777,28 +783,42 @@ function radioso_plain_price($amount) {
 }
 
 /**
- * The price as the shop itself displays it, tax handling included. Variable
- * products get the range across their variations: quoting one number for a
- * product that spans several would misstate the price in both directions.
+ * The prices as the shop itself displays them, tax handling included. Variable
+ * products span their variations, so they carry both ends: quoting one number
+ * for a product that spans several would misstate the price in both directions.
+ *
+ * Returns `['min' => float, 'max' => float]`, or an empty array when the shop
+ * has no price to state. `max` is only set when it differs from `min`.
  */
-function radioso_product_price_text($product) {
+function radioso_product_prices($product) {
     if ($product->is_type('variable')) {
         $min = $product->get_variation_price('min', true);
         $max = $product->get_variation_price('max', true);
         if ($min === '' || $min === null) {
-            return '';
+            return [];
         }
-        return $min === $max
-            ? radioso_plain_price($min)
-            : radioso_plain_price($min) . ' – ' . radioso_plain_price($max);
+        return (float) $min === (float) $max
+            ? ['min' => (float) $min]
+            : ['min' => (float) $min, 'max' => (float) $max];
     }
 
     $price = wc_get_price_to_display($product);
     if ($price === '' || $price === null) {
+        return [];
+    }
+
+    return ['min' => (float) $price];
+}
+
+function radioso_product_price_text($product) {
+    $prices = radioso_product_prices($product);
+    if (!$prices) {
         return '';
     }
 
-    return radioso_plain_price($price);
+    return isset($prices['max'])
+        ? radioso_plain_price($prices['min']) . ' – ' . radioso_plain_price($prices['max'])
+        : radioso_plain_price($prices['min']);
 }
 
 function radioso_product_facts($post) {
@@ -859,6 +879,133 @@ function radioso_product_facts($post) {
 }
 
 /**
+ * The same shop facts as the facts block, in the form Radioso filters on rather
+ * than the form it reads aloud: raw numbers and machine values under stable
+ * keys, so an operator can write "price under 20" or "in stock only" as a
+ * retrieval rule. The facts block still carries the human rendering — this map
+ * is what makes the values comparable, not what makes them quotable.
+ *
+ * Keys are fixed WooCommerce vocabulary rather than derived from the site's own
+ * attribute names: a rule addresses a key literally, so a key that shifts with
+ * the shop's language would break the rule that referenced it. Site-specific
+ * attributes stay in the facts block, where their names do no harm.
+ *
+ * Prices are the display prices, so they match what the facts block quotes and
+ * what the shopper is charged.
+ */
+function radioso_product_fields($post) {
+    if (!function_exists('wc_get_product')) {
+        return [];
+    }
+
+    $product = wc_get_product($post->ID);
+    if (!$product) {
+        return [];
+    }
+
+    $fields = [];
+
+    $sku = (string) $product->get_sku();
+    if ($sku !== '') {
+        $fields['sku'] = $sku;
+    }
+
+    $prices = radioso_product_prices($product);
+    if ($prices) {
+        $fields['price'] = $prices['min'];
+        if (isset($prices['max'])) {
+            $fields['price_max'] = $prices['max'];
+        }
+        // A bare number cannot be compared across shops, and Radioso surfaces
+        // the value to operators writing rules against it.
+        $fields['currency'] = get_woocommerce_currency();
+    }
+
+    // Variable products hold regular and sale prices on their variations, so
+    // the parent has none to state; the range above already carries the span.
+    if (!$product->is_type('variable')) {
+        $regular = $product->get_regular_price();
+        if ($regular !== '' && $regular !== null) {
+            $fields['regular_price'] = (float) wc_get_price_to_display($product, ['price' => $regular]);
+        }
+        $sale = $product->get_sale_price();
+        if ($sale !== '' && $sale !== null) {
+            $fields['sale_price'] = (float) wc_get_price_to_display($product, ['price' => $sale]);
+        }
+    }
+
+    // Always stated, never omitted: a rule for "not on sale" needs the false as
+    // much as a rule for "on sale" needs the true.
+    $fields['on_sale'] = (bool) $product->is_on_sale();
+
+    $stock_status = (string) $product->get_stock_status();
+    if ($stock_status !== '') {
+        // The machine value, not the localized label the facts block carries:
+        // a rule written against "outofstock" must survive a translation change.
+        $fields['stock_status'] = $stock_status;
+    }
+
+    // A site knows facts WooCommerce does not — a lending period, a supplier
+    // lead time. Radioso only requires that a key stays addressable by a rule
+    // and a value stays comparable by one, so anything else is dropped here
+    // rather than rejected at the webhook.
+    return radioso_valid_fields(apply_filters('radioso_sync_product_fields', $fields, $product, $post));
+}
+
+/**
+ * Radioso counts a string in UTF-16 code units, the way a JSON consumer does,
+ * so a value is measured the same way here rather than in bytes.
+ */
+function radioso_field_value_length($value) {
+    if (function_exists('mb_convert_encoding')) {
+        $utf16 = mb_convert_encoding($value, 'UTF-16LE', 'UTF-8');
+        if (is_string($utf16)) {
+            return (int) (strlen($utf16) / 2);
+        }
+    }
+
+    // Bytes are never fewer than code units, so a site without mbstring drops a
+    // borderline value rather than sending one Radioso would turn away.
+    return strlen($value);
+}
+
+/**
+ * The shape Radioso accepts: a key a metadata rule can address, a value a rule
+ * can compare, and a map small enough to travel. Everything outside it is
+ * dropped here — a single overlong custom field must not cost the site the
+ * whole product push.
+ */
+function radioso_valid_fields($fields) {
+    if (!is_array($fields)) {
+        return [];
+    }
+
+    $valid = [];
+    foreach ($fields as $key => $value) {
+        if (!is_string($key) || !preg_match('/^[A-Za-z][A-Za-z0-9_]{0,63}$/', $key)) {
+            continue;
+        }
+        if (is_string($value) && radioso_field_value_length($value) > RADIOSO_MAX_FIELD_LENGTH) {
+            continue;
+        }
+        // INF and NAN have no JSON representation, so one of them would fail the
+        // encode for the whole payload.
+        if (is_float($value) && !is_finite($value)) {
+            continue;
+        }
+        if (is_string($value) || is_int($value) || is_float($value) || is_bool($value)) {
+            $valid[$key] = $value;
+        }
+    }
+
+    // The product's own values are added before the filter runs, so trimming
+    // from the end keeps them and drops the surplus a site added.
+    return count($valid) > RADIOSO_MAX_FIELDS
+        ? array_slice($valid, 0, RADIOSO_MAX_FIELDS, true)
+        : $valid;
+}
+
+/**
  * Facts a theme renders around the post body rather than inside it: taxonomy
  * terms and, on WooCommerce, SKU, availability and product attributes. Radioso
  * only ever receives the post body, so without this block a catalogue's
@@ -915,6 +1062,11 @@ function radioso_dispatch($event, $post) {
     $author = radioso_author_payload($post);
     if ($author !== null) {
         $post_payload['author'] = $author;
+    }
+
+    $fields = radioso_product_fields($post);
+    if ($fields) {
+        $post_payload['fields'] = $fields;
     }
 
     $payload = wp_json_encode([

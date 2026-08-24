@@ -27,6 +27,16 @@ import {
   wordpressUrlBelongsToSite,
 } from "./wordpressSource.js";
 
+// Metadata rules resolve a field by splitting its path on ".", so a dotted key
+// could never match a rule. Keep the syntax identical to the workspace metadata
+// key namespace so an operator can address a pushed field and an extracted one
+// the same way.
+const IndexedFieldKeySchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,63}$/);
+// Scalars only: a rule compares one value per key, so an array or object would
+// silently never match.
+const IndexedFieldValueSchema = z.union([z.string().max(256), z.number().finite(), z.boolean()]);
+const MAX_INDEXED_FIELDS = 32;
+
 const WordpressEventSchema = z.object({
   event: z.enum(["published", "updated", "deleted"]),
   site_url: z.string().url().optional(),
@@ -47,6 +57,15 @@ const WordpressEventSchema = z.object({
     // no account behind it; the ingest mapper only ever reads the name.
     author: z
       .object({ id: z.number().int().positive().optional(), name: z.string() })
+      .optional(),
+    // Facts the site publishes for retrieval to filter and boost on. The site
+    // owns the vocabulary; this connector only enforces that a key is
+    // addressable by a metadata rule and a value is comparable by one.
+    fields: z
+      .record(IndexedFieldKeySchema, IndexedFieldValueSchema)
+      .refine((fields) => Object.keys(fields).length <= MAX_INDEXED_FIELDS, {
+        message: `At most ${MAX_INDEXED_FIELDS} fields per post`,
+      })
       .optional(),
   }),
 });

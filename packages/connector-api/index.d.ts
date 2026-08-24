@@ -11,6 +11,7 @@ export type {
   ConnectorDatabasePort,
   ConnectorDetail,
   ConnectorHttpHost,
+  ConnectorIndexedFieldValue,
   ConnectorIngestContentFormat,
   ConnectorIngestionPort,
   ConnectorLogger,

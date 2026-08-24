@@ -386,3 +386,10 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   retrievalEnabled: boolean;
   retrievalExpiresAt: Date | null;
 }
+
+/**
+ * A value an upstream system publishes for retrieval to filter and boost on — a
+ * product's price, a catalogue item's stock status. Scalars only: metadata rules
+ * compare a single value per key, so an array or a nested object never matches.
+ */
+export type IndexedFieldValue = string | number | boolean;

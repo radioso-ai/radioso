@@ -61,6 +61,7 @@ export const createConnectorIngestionPort = (deps: {
       content,
       externalDocumentId: input.externalDocumentId,
       metadata: input.metadata,
+      ...(input.indexedFields ? { indexedFields: input.indexedFields } : {}),
       ...(input.source ? { source: toResolverInput(input.source) } : {}),
     });
   },

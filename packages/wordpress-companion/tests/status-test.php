@@ -82,7 +82,11 @@ function get_post($id) { if (isset($GLOBALS['posts'][$id])) { return $GLOBALS['p
 function wp_json_encode($value) { return json_encode($value); }
 function home_url($path = '') { return 'https://example.com' . $path; }
 function get_the_title($post) { return 'Title'; }
-function apply_filters($hook, $value) { return $value; }
+$GLOBALS['filters'] = [];
+function apply_filters($hook, $value, ...$args) {
+    $callback = $GLOBALS['filters'][$hook] ?? null;
+    return $callback === null ? $value : $callback($value, ...$args);
+}
 function get_permalink($post) { return 'https://example.com/' . $post->post_name; }
 function get_the_author_meta($field, $id) { return 'Author'; }
 function wp_remote_post($url, $args) {
@@ -125,7 +129,11 @@ function wc_price($amount) {
     return '<span class="amount"><bdi><span>&euro;</span>'
         . number_format((float) $amount, 2, ',', '.') . '</bdi></span>';
 }
-function wc_get_price_to_display($product, $args = []) { return $product->get_price(); }
+function wc_get_price_to_display($product, $args = []) {
+    $price = array_key_exists('price', $args) ? $args['price'] : $product->get_price();
+    return $price === '' || $price === null ? '' : (float) $price;
+}
+function get_woocommerce_currency() { return 'EUR'; }
 function wp_get_post_parent_id($post_id) { return $GLOBALS['post_parents'][$post_id] ?? 0; }
 // Stands in for a loaded Italian WooCommerce text domain.
 function __($text, $domain = '') { return $text === 'Price' ? 'Prezzo' : $text; }
@@ -145,14 +153,22 @@ class WC_Attribute_Stub {
 class WC_Product_Stub {
     private $id; private $sku; private $availability; private $attributes; private $parent;
     private $price; private $type; private $variation_prices;
+    private $regular_price; private $sale_price; private $stock_status;
     public function __construct(
         $id, $sku, $availability, $attributes, $parent = 0,
-        $price = '', $type = 'simple', $variation_prices = []
+        $price = '', $type = 'simple', $variation_prices = [],
+        $regular_price = '', $sale_price = '', $stock_status = 'instock'
     ) {
         $this->id = $id; $this->sku = $sku; $this->availability = $availability;
         $this->attributes = $attributes; $this->parent = $parent;
         $this->price = $price; $this->type = $type; $this->variation_prices = $variation_prices;
+        $this->regular_price = $regular_price; $this->sale_price = $sale_price;
+        $this->stock_status = $stock_status;
     }
+    public function get_regular_price() { return $this->regular_price; }
+    public function get_sale_price() { return $this->sale_price; }
+    public function is_on_sale() { return $this->sale_price !== '' && $this->sale_price !== null; }
+    public function get_stock_status() { return $this->stock_status; }
     public function get_id() { return $this->id; }
     public function get_sku() { return $this->sku; }
     public function get_availability() { return ['availability' => $this->availability]; }
@@ -305,7 +321,7 @@ $GLOBALS['post_terms']['502:product_visibility'] = [(object) ['name' => 'exclude
 $GLOBALS['wc_products'][502] = new WC_Product_Stub(502, 'AEY0112', 'Esaurito', [
     new WC_Attribute_Stub('pa_isbn', ['978-88-6835-000-0']),
     new WC_Attribute_Stub('pa_interno', ['riservato'], false),
-], 0, '17');
+], 0, '17', 'simple', [], '20', '17', 'outofstock');
 
 $facts = radioso_facts_html($catalogue_post);
 assert_true(strpos($facts, 'Autore: Swami Kriyananda') !== false, 'facts carry taxonomy terms');
@@ -324,12 +340,63 @@ assert_true(strpos($facts, '&amp;euro;') === false, 'the currency symbol is not 
 $variable_post = (object) ['ID' => 505, 'post_type' => 'product'];
 $GLOBALS['wc_products'][505] = new WC_Product_Stub(505, 'STAT-1', '', [], 0, '', 'variable', [
     'min' => '20', 'max' => '950',
-]);
+], '', '', 'instock');
 $variable_facts = radioso_facts_html($variable_post);
 assert_true(
     strpos($variable_facts, 'Prezzo: €20,00 – €950,00') !== false,
     'a variable product publishes its price range rather than one number'
 );
+
+// ── Indexed fields ──────────────────────────────────────────────────────────
+
+$fields = radioso_product_fields($catalogue_post);
+assert_true($fields['price'] === 17.0, 'the field map carries the price the shopper pays');
+assert_true($fields['regular_price'] === 20.0, 'the field map carries the list price');
+assert_true($fields['sale_price'] === 17.0, 'the field map carries the discounted price');
+assert_true($fields['on_sale'] === true, 'the field map states whether the discount is live');
+assert_true($fields['currency'] === 'EUR', 'a bare number is meaningless without its currency');
+assert_true($fields['sku'] === 'AEY0112', 'the field map carries the SKU');
+assert_true(
+    $fields['stock_status'] === 'outofstock',
+    'stock status travels as the shop machine value, not the localized label'
+);
+assert_true(
+    !array_key_exists('price_max', $fields),
+    'a simple product publishes no price ceiling'
+);
+foreach ($fields as $key => $value) {
+    assert_true(
+        preg_match('/^[A-Za-z][A-Za-z0-9_]{0,63}$/', $key) === 1,
+        'field key ' . $key . ' is addressable by a metadata rule'
+    );
+    assert_true(is_scalar($value), 'field ' . $key . ' is a scalar a metadata rule can compare');
+}
+
+$variable_fields = radioso_product_fields($variable_post);
+assert_true(
+    $variable_fields['price'] === 20.0 && $variable_fields['price_max'] === 950.0,
+    'a variable product publishes the span its variations cover'
+);
+assert_true(
+    !array_key_exists('sale_price', $variable_fields),
+    'a product that is not discounted publishes no sale price'
+);
+assert_true($variable_fields['on_sale'] === false, 'on_sale is stated even when false');
+
+$GLOBALS['filters']['radioso_sync_product_fields'] = function ($fields) {
+    $fields['lending_days'] = 14;
+    $fields['bad key'] = 'dropped';
+    $fields['formats'] = ['paperback', 'ebook'];
+    return $fields;
+};
+$extended = radioso_product_fields($catalogue_post);
+assert_true($extended['lending_days'] === 14, 'a site can publish its own field');
+assert_true(!array_key_exists('bad key', $extended), 'a key no rule could address is dropped');
+assert_true(!array_key_exists('formats', $extended), 'a value no rule could compare is dropped');
+unset($GLOBALS['filters']['radioso_sync_product_fields']);
+
+$plain_post = (object) ['ID' => 900, 'post_type' => 'page'];
+assert_true(radioso_product_fields($plain_post) === [], 'a page carries no product fields');
 
 // ── Dispatched payload ──────────────────────────────────────────────────────
 
@@ -347,6 +414,25 @@ assert_true(
 assert_true(
     strpos($body['post']['content_raw'], 'radioso-facts') === false,
     'raw content stays untouched'
+);
+// JSON drops the zero fraction on a whole price, so the wire value is a number
+// worth 17 rather than a float 17.0 — which is all Radioso compares on.
+assert_true(
+    is_numeric($body['post']['fields']['sale_price'])
+        && (float) $body['post']['fields']['sale_price'] === 17.0,
+    'dispatch publishes the field map alongside the facts block'
+);
+
+$page_post = (object) [
+    'ID' => 901, 'post_type' => 'page', 'post_status' => 'publish', 'post_name' => 'chi-siamo',
+    'post_content' => '<p>Ciao</p>', 'post_excerpt' => '', 'post_modified_gmt' => '2026-05-16T12:00:00',
+    'post_date_gmt' => '2026-05-10T08:30:00', 'post_author' => 7,
+];
+radioso_dispatch('updated', $page_post);
+$page_body = json_decode($GLOBALS['last_webhook_body'], true);
+assert_true(
+    !array_key_exists('fields', $page_body['post']),
+    'a post with nothing to index omits the field map entirely'
 );
 
 $GLOBALS['wp_options'][RADIOSO_OPT_AUTHOR_TAXONOMY] = '';

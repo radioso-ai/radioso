@@ -8,7 +8,10 @@
  * Output is the same IngestInput in both cases.
  */
 
-import type { ConnectorIngestContentFormat } from "@radioso/connector-api";
+import type {
+  ConnectorIndexedFieldValue,
+  ConnectorIngestContentFormat,
+} from "@radioso/connector-api";
 
 import type { WordpressRestPost } from "./wordpressClient.js";
 
@@ -27,6 +30,10 @@ export interface WebhookPostPayload {
   // `id` is absent when the author came from a taxonomy rather than a WordPress
   // account; only the name is ever read.
   author?: { id?: number; name: string };
+  // Facts the site publishes for retrieval to filter and boost on — a product's
+  // price, its stock status. The site owns this vocabulary; nothing here knows
+  // what a WooCommerce product is.
+  fields?: Record<string, ConnectorIndexedFieldValue>;
 }
 
 export interface IngestInput {
@@ -36,6 +43,7 @@ export interface IngestInput {
   contentFormat: ConnectorIngestContentFormat;
   externalDocumentId: string;
   metadata: Record<string, unknown>;
+  indexedFields?: Record<string, ConnectorIndexedFieldValue>;
 }
 
 export const externalIdFor = (postId: number): string => `wp_post_${postId}`;
@@ -88,6 +96,10 @@ export const mapWebhookPostToIngestInput = (
   workspaceId: string,
   post: WebhookPostPayload,
 ): IngestInput => {
+  // Kept out of `metadata` on the way down: ingestion re-indexes on a change to
+  // these but not on a change to the bookkeeping around them, which WordPress
+  // rewrites on every save.
+  const hasIndexedFields = post.fields !== undefined && Object.keys(post.fields).length > 0;
   return {
     workspaceId,
     title: post.title || post.slug,
@@ -105,6 +117,7 @@ export const mapWebhookPostToIngestInput = (
       ...buildPublishDateMetadata(post.date_gmt),
       ...(post.author?.name ? { author: post.author.name } : {}),
     },
+    ...(hasIndexedFields ? { indexedFields: post.fields } : {}),
   };
 };
 

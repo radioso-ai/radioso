@@ -100,6 +100,23 @@ describe("mapWebhookPostToIngestInput", () => {
   });
 });
 
+describe("mapWebhookPostToIngestInput indexed fields", () => {
+  it("carries scalar fields separately so a change to one re-indexes the document", () => {
+    const result = mapWebhookPostToIngestInput("ws-1", {
+      ...baseWebhookPost,
+      fields: { price: 17, on_sale: false, sku: "AEY0112" },
+    });
+    expect(result.indexedFields).toEqual({ price: 17, on_sale: false, sku: "AEY0112" });
+  });
+
+  it("omits indexed fields when the site publishes none", () => {
+    expect(mapWebhookPostToIngestInput("ws-1", baseWebhookPost).indexedFields).toBeUndefined();
+    expect(
+      mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, fields: {} }).indexedFields,
+    ).toBeUndefined();
+  });
+});
+
 describe("mapRestPostToIngestInput", () => {
   const restPost: WordpressRestPost = {
     id: 7,

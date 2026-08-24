@@ -153,6 +153,8 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
 import {
   AgentTurnProbeService,
+  EvalCaseCaptureService,
+  EvalSuiteProbeService,
   OperatorCopilotService,
   type CopilotConversation,
   type CopilotMessage,
@@ -1705,6 +1707,7 @@ export const createTestDependencies = (overrides: {
     logger,
   );
   const evalCaseService = new EvalCaseService(evalRepository);
+  const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, logger);
   const qualitySignalsService = {
     getQualityStats: async () => ({ backlog: {} }),
     listLowQualityTurns: async () => ({ items: [] }),
@@ -1743,6 +1746,19 @@ export const createTestDependencies = (overrides: {
       agentTurnProbe: agentTurnProbeService,
       documentSearchService,
       evalResultsService: evalCaseService,
+      evalCaseCapture: new EvalCaseCaptureService({
+        messageCases: evalMessageCaseService,
+        audit: auditService,
+      }),
+      evalSuiteProbe: new EvalSuiteProbeService({
+        suite: evalSuiteService,
+        abuseControl: abuseControlService,
+        audit: auditService,
+        abusePolicy: {
+          limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+        },
+      }),
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documentIngestionService,
@@ -1933,7 +1949,7 @@ export const createTestDependencies = (overrides: {
     evalMessageCaseService,
     evalCaseService,
     evalRunService,
-    evalSuiteService: new EvalSuiteService(evalRepository, evalRunService, logger),
+    evalSuiteService,
     platformSettingsService,
     agentService,
     authoredDirectiveService,

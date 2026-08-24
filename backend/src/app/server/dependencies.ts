@@ -42,7 +42,12 @@ import { ConnectorManagementService } from "../../modules/connectors/services/co
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import { AgentTurnProbeService, OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import {
+  AgentTurnProbeService,
+  EvalCaseCaptureService,
+  EvalSuiteProbeService,
+  OperatorCopilotService,
+} from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
@@ -391,6 +396,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       },
     },
   });
+  const evalCaseCaptureService = new EvalCaseCaptureService({
+    messageCases: evalMessageCaseService,
+    audit: infrastructure.auditService,
+  });
+  const evalSuiteProbeService = new EvalSuiteProbeService({
+    suite: evalSuiteService,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
@@ -412,6 +430,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentTurnProbe: agentTurnProbeService,
       documentSearchService: retrieval.documentSearchService,
       evalResultsService: evalCaseService,
+      evalCaseCapture: evalCaseCaptureService,
+      evalSuiteProbe: evalSuiteProbeService,
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documents.documentIngestionService,

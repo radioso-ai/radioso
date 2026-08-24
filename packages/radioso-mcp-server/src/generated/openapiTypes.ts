@@ -2828,6 +2828,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/cases/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run a batch of eval cases
+         * @description Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished.
+         */
+        post: operations["runEvalCases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/runs": {
         parameters: {
             query?: never;
@@ -18494,6 +18514,80 @@ export interface operations {
             };
             /** @description Eval case not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    runEvalCases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default full_assistant
+                     * @enum {string}
+                     */
+                    mode?: "retrieval_only" | "full_assistant";
+                    /** @description Subset of cases to run. Omit to run every case in the workspace. */
+                    caseIds?: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Suite run completed. Cases without expectations are reported as skipped. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        results: {
+                            /** Format: uuid */
+                            caseId: string;
+                            name: string;
+                            /**
+                             * @description "skipped" means the case carries no expectations, so it was not run.
+                             * @enum {string}
+                             */
+                            status: "pass" | "fail" | "error" | "recorded" | "skipped";
+                            run?: unknown;
+                            /** @description Set only when the case could not be run at all. */
+                            error: string | null;
+                        }[];
+                        /** @description Covers every case in the workspace, not only the cases this call ran. */
+                        summary: {
+                            total: number;
+                            scored: number;
+                            passing: number;
+                            failing: number;
+                            error: number;
+                            pending: number;
+                            unscored: number;
+                        };
+                    };
+                };
+            };
+            /** @description Invalid mode or case selection */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

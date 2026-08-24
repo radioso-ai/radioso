@@ -15,6 +15,10 @@ import {
   type CopilotWorkspaceSettingsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type {
+  CopilotEvalCaseCapturePort,
+  CopilotEvalSuiteProbePort,
+} from "../../modules/operatorCopilot/public.js";
+import type {
   CopilotAgentSettingProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotRoutineProposalAdapter,
@@ -33,6 +37,8 @@ export const createCopilotToolCatalog = (deps: {
   readonly agentTurnProbe: CopilotAgentTurnProbePort;
   readonly documentSearchService: CopilotDocumentSearchPort;
   readonly evalResultsService: CopilotEvalResultsPort;
+  readonly evalCaseCapture: CopilotEvalCaseCapturePort;
+  readonly evalSuiteProbe: CopilotEvalSuiteProbePort;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
   readonly documentStatusService: CopilotDocumentStatusPort;

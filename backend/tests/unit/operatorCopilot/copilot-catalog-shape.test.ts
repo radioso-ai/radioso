@@ -66,6 +66,16 @@ describe("copilot catalog wiring", () => {
     });
   });
 
+  it("contributes the eval reader and its verification tools through the real barrel", () => {
+    expect(realCatalog()
+      .filter((descriptor) => descriptor.contributingModule === "eval")
+      .map(({ name, shape }) => ({ name, shape }))).toEqual([
+      { name: "eval_results", shape: "read" },
+      { name: "create_eval_case_from_turn", shape: "act" },
+      { name: "run_eval_suite", shape: "probe" },
+    ]);
+  });
+
   it("requires only permissions the turn route actually resolves", () => {
     // A descriptor whose permission is missing from the route's list is filtered out of every
     // live turn and is unreachable in production, while unit tests that inject permissions

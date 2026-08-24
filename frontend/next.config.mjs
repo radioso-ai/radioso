@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -67,52 +66,6 @@ const resolvePublicMcpUrl = () => {
   return DEFAULT_STANDALONE_MCP_URL;
 };
 
-const resolveGitValue = (args) => {
-  try {
-    return execFileSync("git", args, {
-      cwd: frontendRoot,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-  } catch {
-    return "";
-  }
-};
-
-const resolveDevBuildContext = () => {
-  if (process.env.NODE_ENV !== "development") {
-    return {
-      branch: "",
-      buildId: "",
-      commit: "",
-      label: "",
-      worktree: "",
-    };
-  }
-
-  const buildId = process.env.NEXT_PUBLIC_RADIOSO_DEV_BUILD_ID ?? Date.now().toString(36);
-  const branch = process.env.NEXT_PUBLIC_RADIOSO_DEV_BRANCH ?? resolveGitValue(["branch", "--show-current"]);
-  const worktree = process.env.NEXT_PUBLIC_RADIOSO_DEV_WORKTREE ?? path.basename(resolveGitValue(["rev-parse", "--show-toplevel"]));
-  const commit = process.env.NEXT_PUBLIC_RADIOSO_DEV_COMMIT ?? resolveGitValue(["rev-parse", "--short", "HEAD"]);
-
-  const label = [
-    "dev",
-    worktree,
-    branch,
-    commit,
-    buildId,
-  ].filter(Boolean).join(" ");
-
-  return {
-    branch,
-    buildId,
-    commit,
-    label,
-    worktree,
-  };
-};
-
-const devBuildContext = resolveDevBuildContext();
 const edition = process.env.NEXT_PUBLIC_RADIOSO_EDITION ?? process.env.RADIOSO_EDITION ?? "oss";
 const agentCreationContributionsModule = path.join(frontendRoot, "lib/agent-creation-contributions-oss.ts");
 
@@ -126,16 +79,6 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_DOCS_URL ??
       process.env.DOCS_SITE_URL ??
       "http://localhost:3001",
-    NEXT_PUBLIC_RADIOSO_DEV_BRANCH:
-      devBuildContext.branch,
-    NEXT_PUBLIC_RADIOSO_DEV_BUILD_ID:
-      devBuildContext.buildId,
-    NEXT_PUBLIC_RADIOSO_DEV_BUILD_LABEL:
-      devBuildContext.label,
-    NEXT_PUBLIC_RADIOSO_DEV_COMMIT:
-      devBuildContext.commit,
-    NEXT_PUBLIC_RADIOSO_DEV_WORKTREE:
-      devBuildContext.worktree,
     NEXT_PUBLIC_MCP_URL: resolvePublicMcpUrl(),
   },
   experimental: {

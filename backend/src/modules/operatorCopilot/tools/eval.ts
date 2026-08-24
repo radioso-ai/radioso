@@ -15,6 +15,7 @@ const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
 const unknownRecord = z.record(z.unknown());
 const MAX_FAILED_ASSERTIONS_PER_CASE = 5;
+const MAX_SUITE_CASE_ID_ARGUMENTS = MAX_COPILOT_EVAL_SUITE_CASES * 4;
 
 export interface CopilotEvalResultsPort {
   listWithLatestRun(workspaceId: string): Promise<ReadonlyArray<object>>;
@@ -62,7 +63,21 @@ const captureOutputSchema = z.object({
 }).strict();
 
 const suiteRunInputSchema = z.object({
-  caseIds: z.array(idSchema).min(1).max(MAX_COPILOT_EVAL_SUITE_CASES),
+  // The cap counts distinct cases, because the cost it bounds is one replay per case and a repeated
+  // id is not a second replay. The raw ceiling above it only keeps a malformed argument list from
+  // reaching the runner; it is not the rule the operator is subject to.
+  caseIds: z.array(idSchema).min(1).max(MAX_SUITE_CASE_ID_ARGUMENTS).superRefine((caseIds, context) => {
+    const distinct = new Set(caseIds).size;
+    if (distinct > MAX_COPILOT_EVAL_SUITE_CASES) {
+      context.addIssue({
+        code: z.ZodIssueCode.too_big,
+        type: "array",
+        maximum: MAX_COPILOT_EVAL_SUITE_CASES,
+        inclusive: true,
+        message: `At most ${MAX_COPILOT_EVAL_SUITE_CASES} distinct eval cases may be run in one call`,
+      });
+    }
+  }),
   mode: evalRunModeSchema.optional(),
 }).strict();
 const suiteRunOutputSchema = z.object({
@@ -168,11 +183,12 @@ export const createEvalVerificationCopilotTools = (
       outputSchema: suiteRunOutputSchema,
       invoke: async ({ caseIds, mode }) => {
         const runMode = mode ?? "full_assistant";
+        const requestedCaseIds = [...new Set(caseIds)];
         const outcome = await deps.evalSuiteProbe.runCases({
           workspaceId: context.workspaceId,
           accountId: context.accountId,
           operatorUserId: context.operatorUserId,
-          caseIds,
+          caseIds: requestedCaseIds,
           mode: runMode,
         });
         const ranCaseIds = new Set(outcome.results.map((result) => result.caseId));
@@ -181,7 +197,7 @@ export const createEvalVerificationCopilotTools = (
           results: outcome.results.map(projectSuiteCase),
           // The batch path silently drops ids it cannot resolve. Reporting a selected case as
           // simply absent from the results would read as "nothing wrong with it".
-          unknownCaseIds: caseIds.filter((caseId) => !ranCaseIds.has(caseId)),
+          unknownCaseIds: requestedCaseIds.filter((caseId) => !ranCaseIds.has(caseId)),
           summary: outcome.summary,
         });
       },

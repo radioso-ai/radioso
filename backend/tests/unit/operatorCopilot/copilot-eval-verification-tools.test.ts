@@ -18,6 +18,8 @@ const caseId = "11111111-1111-4111-8111-111111111111";
 const otherCaseId = "22222222-2222-4222-8222-222222222222";
 const assistantMessageId = "33333333-3333-4333-8333-333333333333";
 const snapshotId = "44444444-4444-4444-8444-444444444444";
+const thirdCaseId = "66666666-6666-4666-8666-666666666666";
+const fourthCaseId = "77777777-7777-4777-8777-777777777777";
 
 const ports = (overrides: {
   capture?: CopilotEvalCaseCapturePort["captureFromTurn"];
@@ -180,6 +182,36 @@ describe("copilot eval verification tools", () => {
       .createTool(context).invoke({ caseIds: [caseId, otherCaseId] }, {} as never) as { unknownCaseIds: string[] };
 
     expect(result.unknownCaseIds).toEqual([otherCaseId]);
+  });
+
+  it("counts distinct cases against the cap, so a repeated id is not extra work", async () => {
+    // The cap exists because each case costs a replay. Rejecting a selection whose repeats push the
+    // raw array over the cap refuses work that is within budget, and the service behind the tool
+    // already dedupes — the two bounds have to measure the same thing.
+    const { descriptors, runCases } = ports();
+    const descriptor = descriptorNamed(descriptors, "run_eval_suite");
+    const repeated = [caseId, caseId, caseId, otherCaseId, thirdCaseId, fourthCaseId];
+
+    expect(() => descriptor.inputSchema.parse({ caseIds: repeated })).not.toThrow();
+
+    await descriptor.createTool(context).invoke({ caseIds: repeated }, {} as never);
+
+    expect(runCases).toHaveBeenCalledWith(expect.objectContaining({
+      caseIds: [caseId, otherCaseId, thirdCaseId, fourthCaseId],
+    }));
+  });
+
+  it("names an unresolvable id once however many times it was asked for", async () => {
+    const runCases = vi.fn(async () => ({
+      results: [],
+      summary: { total: 0, scored: 0, passing: 0, failing: 0, error: 0, pending: 0, unscored: 0 },
+    }));
+    const { descriptors } = ports({ runCases });
+
+    const result = await descriptorNamed(descriptors, "run_eval_suite")
+      .createTool(context).invoke({ caseIds: [caseId, caseId, otherCaseId] }, {} as never) as { unknownCaseIds: string[] };
+
+    expect(result.unknownCaseIds).toEqual([caseId, otherCaseId]);
   });
 
   it("defaults to a full assistant run and refuses more cases than one call may hold", async () => {

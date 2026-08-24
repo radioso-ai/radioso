@@ -259,6 +259,12 @@ permission declarations, bounded tool projections, and dashboard handoff links.
 The module defines narrow consumer ports for the workspace capabilities Ray can
 use. Application composition supplies their implementations.
 
+Operator Copilot owns its eval verification loop: capturing a turn as a case
+runs through a copilot-owned capture service that audits the write, and suite
+runs go through a probe service that bounds the selection and spends the
+operator's expensive-operation budget. Eval owns the get-or-create and batch-run
+paths themselves.
+
 Operator Copilot owns agent-turn probe orchestration: operator provenance,
 abuse controls, agent and draft-routine validation, input contract, all-of
 permission gate, safe result projection, byte budget, and the link back to the
@@ -276,6 +282,9 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
+- `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`)
+- `backend/src/modules/operatorCopilot/contracts/evalCases.ts`, `services/evalCaseCaptureService.ts`, and `services/evalSuiteProbeService.ts` (eval verification boundary)
+- `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
 - `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)
 - `frontend/lib/api-copilot.ts`
 - `frontend/components/dashboard/copilot-panel.tsx` and `copilot-view.tsx`
@@ -295,7 +304,7 @@ Related docs, specs, and issues:
 
 - [Ray](../../docs-portal/content/operators/copilot.mdx)
 - `specs/104-in-product-operator-copilot/`
-- Issues `#1036` and `#1041`
+- Issues `#1036`, `#1041`, and `#1043`
 
 ## Conversation Engine Contracts
 

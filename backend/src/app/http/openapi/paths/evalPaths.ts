@@ -92,6 +92,38 @@ const EvalWorkbenchReplayRunResponseSchema = z
     resolvedConfig: z.unknown(),
   });
 
+const EvalSuiteRunRequestSchema = z
+  .object({
+    mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
+    caseIds: z.array(z.string().uuid()).min(1).max(500).optional()
+      .describe("Subset of cases to run. Omit to run every case in the workspace."),
+  });
+
+const EvalSuiteSummarySchema = z.object({
+  total: z.number().int(),
+  scored: z.number().int(),
+  passing: z.number().int(),
+  failing: z.number().int(),
+  error: z.number().int(),
+  pending: z.number().int(),
+  unscored: z.number().int(),
+});
+
+const EvalSuiteCaseResultSchema = z.object({
+  caseId: z.string().uuid(),
+  name: z.string(),
+  status: z.enum(["pass", "fail", "error", "recorded", "skipped"])
+    .describe("\"skipped\" means the case carries no expectations, so it was not run."),
+  run: z.unknown().nullable(),
+  error: z.string().nullable().describe("Set only when the case could not be run at all."),
+});
+
+const EvalSuiteRunResponseSchema = z.object({
+  results: z.array(EvalSuiteCaseResultSchema),
+  summary: EvalSuiteSummarySchema
+    .describe("Covers every case in the workspace, not only the cases this call ran."),
+});
+
 const EvalCaseParamsSchema = z.object({
   id: z.string().uuid(),
 });
@@ -330,6 +362,54 @@ export const registerEvalPaths = (
       },
       404: {
         description: "Eval case not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/evals/cases/run",
+    tags: ["Evals"],
+    summary: "Run a batch of eval cases",
+    description: "Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished.",
+    operationId: "runEvalCases",
+    security: [
+      { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
+      { [security.bearerAuthScheme.name]: [] },
+    ],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: EvalSuiteRunRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Suite run completed. Cases without expectations are reported as skipped.",
+        content: {
+          "application/json": {
+            schema: EvalSuiteRunResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid mode or case selection",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

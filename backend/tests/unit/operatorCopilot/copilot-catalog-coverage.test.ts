@@ -59,6 +59,16 @@ describe("operator copilot catalog coverage", () => {
     });
   });
 
+  it("maps the eval write and batch-run operations to Ray's verification loop", () => {
+    // The get-or-create write was filed under the eval *reader* while no tool could call it, which
+    // reported the operation as covered by a descriptor that only lists cases.
+    expect(catalogCoverage).toMatchObject({
+      getEvalCaseBySourceMessage: "eval_results",
+      getOrCreateEvalCaseBySourceMessage: "create_eval_case_from_turn",
+      runEvalCases: "run_eval_suite",
+    });
+  });
+
   it("maps the authenticated assistant pipeline to the bounded test-turn probe", () => {
     expect(catalogCoverage.createAssistantChatResponse).toBe("test_agent_turn");
   });

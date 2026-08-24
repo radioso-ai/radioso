@@ -136,4 +136,39 @@ describe("TelemetryService", () => {
     expect(metrics).toMatch(/radioso_action_dispatch_queue_in_progress 1\b/);
     expect(metrics).toMatch(/radioso_action_dispatch_oldest_pending_age_ms 125000\b/);
   });
+
+  it("exposes low-cardinality workspace push channel health metrics", async () => {
+    const { metricsRegistry, sinks } = buildTelemetrySinks({ METRICS_ENABLED: true });
+    const service = new TelemetryService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger() as any,
+      service: "radioso-api",
+      sinks,
+    });
+
+    await service.emit({ eventType: "workspace_push.event_published", tags: { change_kind: "document.status_changed" } });
+    await service.emit({ eventType: "workspace_push.publish_failed", tags: { change_kind: "document.status_changed" } });
+    await service.emit({ eventType: "workspace_push.listener_notification_received" });
+    await service.emit({ eventType: "workspace_push.listener_payload_parse_failed", severity: "warn" });
+    await service.emit({ eventType: "workspace_push.listener_connected" });
+    await service.emit({ eventType: "workspace_push.listener_disconnected", severity: "warn" });
+    await service.emit({ eventType: "workspace_push.listener_reconnected" });
+    await service.emit({ eventType: "workspace_push.subscriber_queue_overflow", severity: "warn" });
+    await service.emit({ eventType: "workspace_push.sse_connection_opened", metrics: { connectionCount: 2 } });
+    await service.emit({ eventType: "workspace_push.sse_connection_closed", metrics: { connectionCount: 1 } });
+
+    const metrics = metricsRegistry?.renderPrometheus() ?? "";
+    expect(metrics).toContain('radioso_workspace_push_events_published_total{change_kind="document.status_changed"} 1');
+    expect(metrics).toContain('radioso_workspace_push_publish_failures_total{change_kind="document.status_changed"} 1');
+    expect(metrics).toContain("radioso_workspace_push_listener_notifications_total 1");
+    expect(metrics).toContain("radioso_workspace_push_listener_payload_parse_failures_total 1");
+    expect(metrics).toContain("radioso_workspace_push_listener_connects_total 1");
+    expect(metrics).toContain("radioso_workspace_push_listener_disconnects_total 1");
+    expect(metrics).toContain("radioso_workspace_push_listener_reconnects_total 1");
+    expect(metrics).toContain("radioso_workspace_push_subscriber_queue_overflows_total 1");
+    expect(metrics).toContain("radioso_workspace_push_sse_connections 1");
+    expect(metrics).not.toContain("workspace-a");
+    expect(metrics).not.toContain("document-257");
+  });
 });

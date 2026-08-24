@@ -1,20 +1,25 @@
 import { sql } from "kysely";
 import type { Client } from "pg";
 
-import type { WorkspaceEventBus, WorkspaceEventPublish, PushEvent } from "../events/workspaceEventBus.js";
+import type { WorkspaceEventBus, WorkspaceEventPublish, WorkspaceEventSubscription, PushEvent } from "../events/workspaceEventBus.js";
 import { pushEventSchema } from "../events/workspaceEventBus.js";
 import type { AppLogger } from "../observability/logger.js";
+import type { TelemetryService } from "../observability/telemetry/telemetryService.js";
 import type { Database } from "./database.js";
 
 const CHANNEL = "workspace_push_events";
 const INITIAL_RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_DELAY_MS = 10_000;
+// At 256 identity-only frames, a stalled browser is bounded to a modest amount
+// of memory while still allowing short bursts to drain without a full refetch.
+const MAX_SUBSCRIBER_QUEUE_SIZE = 256;
 
 interface Subscriber {
   workspaceId: string;
   queue: PushEvent[];
   resolve?: (result: IteratorResult<PushEvent>) => void;
   closed: boolean;
+  resyncRequired: boolean;
 }
 
 export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
@@ -23,12 +28,14 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   #connecting = false;
   #reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
   #reconnectTimer?: NodeJS.Timeout;
+  #hasConnected = false;
   readonly #subscribers = new Set<Subscriber>();
   #readyWaiters: Array<() => void> = [];
 
   constructor(
     private readonly database: Database,
     private readonly logger: AppLogger,
+    private readonly telemetryService?: Pick<TelemetryService, "emit">,
   ) {}
 
   async publish(event: WorkspaceEventPublish): Promise<void> {
@@ -47,7 +54,14 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
           )::text
         )
       `.execute(this.database.kysely);
+      this.#emitTelemetry("workspace_push.event_published", {
+        tags: { change_kind: event.changeKind },
+      });
     } catch (error) {
+      this.#emitTelemetry("workspace_push.publish_failed", {
+        severity: "warn",
+        tags: { change_kind: event.changeKind },
+      });
       this.logger.warn({
         resourceType: event.resourceType,
         changeKind: event.changeKind,
@@ -72,11 +86,16 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
     });
   }
 
-  subscribe(workspaceId: string): AsyncIterable<PushEvent> {
+  subscribe(workspaceId: string): WorkspaceEventSubscription {
     // Publish-only processes (workers) never subscribe; the LISTEN connection is
     // opened lazily so they do not hold an idle client against the shared database.
     void this.#connect();
-    const subscriber: Subscriber = { workspaceId, queue: [], closed: false };
+    const subscriber: Subscriber = {
+      workspaceId,
+      queue: [],
+      closed: false,
+      resyncRequired: false,
+    };
     this.#subscribers.add(subscriber);
 
     const close = () => {
@@ -90,6 +109,11 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
     };
 
     return {
+      consumeResync: () => {
+        const resyncRequired = subscriber.resyncRequired;
+        subscriber.resyncRequired = false;
+        return resyncRequired;
+      },
       [Symbol.asyncIterator](): AsyncIterator<PushEvent> {
         return {
           next: async () => {
@@ -143,9 +167,12 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       if (message.channel !== CHANNEL || !message.payload) {
         return;
       }
+      this.#emitTelemetry("workspace_push.listener_notification_received");
       const parsed = parsePushEvent(message.payload);
       if (parsed) {
         this.#dispatch(parsed);
+      } else {
+        this.#emitTelemetry("workspace_push.listener_payload_parse_failed", { severity: "warn" });
       }
     });
     client.on("error", (error) => this.#handleListenerFailure(client, error));
@@ -162,6 +189,10 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       this.#client = client;
       this.#reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
       this.#readyWaiters.splice(0).forEach((resolve) => resolve());
+      this.#emitTelemetry(this.#hasConnected
+        ? "workspace_push.listener_reconnected"
+        : "workspace_push.listener_connected");
+      this.#hasConnected = true;
       this.logger.info({ channel: CHANNEL }, "Workspace push listener connected");
     } catch (error) {
       await client.end().catch(() => undefined);
@@ -178,8 +209,12 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
     if (this.#client && this.#client !== client) {
       return;
     }
+    const wasConnected = this.#client === client;
     this.#client = undefined;
     void client.end().catch(() => undefined);
+    if (wasConnected) {
+      this.#emitTelemetry("workspace_push.listener_disconnected", { severity: "warn" });
+    }
     this.logger.warn({ channel: CHANNEL, err: error }, "Workspace push listener reconnecting");
     const delay = this.#reconnectDelayMs;
     this.#reconnectDelayMs = Math.min(this.#reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
@@ -199,10 +234,22 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
         const resolve = subscriber.resolve;
         subscriber.resolve = undefined;
         resolve({ done: false, value: event });
+      } else if (subscriber.queue.length >= MAX_SUBSCRIBER_QUEUE_SIZE) {
+        subscriber.queue.length = 0;
+        subscriber.queue.push(event);
+        subscriber.resyncRequired = true;
+        this.#emitTelemetry("workspace_push.subscriber_queue_overflow", { severity: "warn" });
       } else {
         subscriber.queue.push(event);
       }
     }
+  }
+
+  #emitTelemetry(
+    eventType: string,
+    input: Omit<Parameters<TelemetryService["emit"]>[0], "eventType"> = {},
+  ): void {
+    void this.telemetryService?.emit({ eventType, ...input });
   }
 }
 

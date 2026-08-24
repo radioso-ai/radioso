@@ -19,6 +19,10 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
     let closed = false;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     connectionCount += 1;
+    void dependencies.telemetryService.emit({
+      eventType: "workspace_push.sse_connection_opened",
+      metrics: { connectionCount },
+    });
     dependencies.logger.info({ workspaceId, connectionCount }, "Workspace push SSE connection opened");
     const subscription = dependencies.workspaceEventBus.subscribe(workspaceId);
     const iterator = subscription[Symbol.asyncIterator]();
@@ -36,6 +40,10 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
         clearInterval(heartbeat);
       }
       connectionCount -= 1;
+      void dependencies.telemetryService.emit({
+        eventType: "workspace_push.sse_connection_closed",
+        metrics: { connectionCount },
+      });
       void iterator.return?.();
       dependencies.logger.info({ workspaceId, connectionCount }, "Workspace push SSE connection closed");
     };
@@ -60,6 +68,9 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
       }
     }, 25_000);
     void sendSseIterable(res, { [Symbol.asyncIterator]: () => iterator }, (event) => {
+      if (subscription.consumeResync?.()) {
+        writeSseEvent(res, "ready", { workspaceId });
+      }
       writeSseEvent(res, "push", event);
     }, { cancelOnClose: true }).catch((error) => {
       dependencies.logger.warn({ err: error }, "Workspace push SSE stream failed");

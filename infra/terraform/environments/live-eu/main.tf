@@ -1,6 +1,5 @@
 terraform {
-  # >= 1.7 for the `removed` blocks below.
-  required_version = ">= 1.7"
+  required_version = ">= 1.5"
 
   required_providers {
     google = {
@@ -29,168 +28,140 @@ provider "google-beta" {
   region  = var.region
 }
 
-# live-eu is a second regional stack inside the live project, so it shares one
-# identity plane with it: the same `radioso-live-*` service accounts, the same
-# `radioso-live-gha` deployer and the same `github-actions` workload identity
-# pool, all in radioso-494120. Both states have been recording those same objects
-# since before #1001 split them into the foundation module, which is why this root
-# does not instantiate `module "foundation"` — the live root owns it, exactly as
-# `manage_project_services = false` below already hands API enablement to live.
-#
-# These entries are released from this state rather than deleted: `destroy = false`
-# drops the record while leaving the object in place for the live state to manage.
-# Without this, the resources are in state with no configuration behind them and
-# Terraform plans to destroy the identities this stack runs on.
-removed {
-  from = module.radioso.google_iam_workload_identity_pool.github_actions
-
-  lifecycle {
-    destroy = false
-  }
+# live-eu runs on its own identity plane, distinct from the live stack it shares
+# the radioso-494120 project with: `radioso-live-eu-*` service accounts and a
+# `github-actions-live-eu` workload identity pool, all recorded in this state.
+# Foundation was split out of the radioso module in #1001 but never wired into a
+# root config, leaving those resources in state with no configuration behind them
+# — which Terraform reads as "no longer wanted". The `moved` blocks hand them to
+# their new owner so Terraform adopts them in place instead of deleting the
+# identities this stack runs on.
+data "google_project" "this" {
+  project_id = var.project_id
 }
 
-removed {
-  from = module.radioso.google_iam_workload_identity_pool_provider.github_actions
+module "foundation" {
+  source = "../../foundation"
 
-  lifecycle {
-    destroy = false
-  }
+  project_id     = var.project_id
+  project_number = data.google_project.this.number
+  environment    = var.environment
+  region         = var.region
+
+  # Must match the bucket in backend.hcl; the deployer needs object access to it.
+  terraform_state_bucket_name = "radioso-494120-terraform-state-eu"
+
+  # This stack shares a project with live, which owns API enablement, so the same
+  # hand-off that `manage_project_services = false` makes for the radioso module
+  # applies here.
+  manage_project_services = false
+
+  # The EU pool is named apart from live's so the two can coexist in one project.
+  github_actions_workload_identity_pool_id     = "github-actions-live-eu"
+  github_actions_workload_identity_provider_id = "github-actions-live-eu"
+
+  # The project-scoped roles radioso-live-eu-gha already holds, read back from
+  # state so adoption is a no-op rather than a re-grant.
+  runtime_deployer_project_roles = [
+    "roles/artifactregistry.writer",
+    "roles/cloudscheduler.admin",
+    "roles/run.admin",
+  ]
 }
 
-removed {
-  from = module.radioso.google_project_iam_member.backend_cloud_tasks_enqueuer
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = module.radioso.google_project_iam_member.github_actions_artifact_registry_writer
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = module.radioso.google_project_iam_member.github_actions_cloud_scheduler_admin
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = module.radioso.google_project_iam_member.github_actions_run_admin
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = module.radioso.google_project_iam_member.worker_cloud_tasks_enqueuer
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
+moved {
   from = module.radioso.google_service_account.backend
-
-  lifecycle {
-    destroy = false
-  }
+  to   = module.foundation.google_service_account.runtime["backend"]
 }
 
-removed {
+moved {
   from = module.radioso.google_service_account.frontend
-
-  lifecycle {
-    destroy = false
-  }
+  to   = module.foundation.google_service_account.runtime["frontend"]
 }
 
-removed {
-  from = module.radioso.google_service_account.github_actions_deployer
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
+moved {
   from = module.radioso.google_service_account.worker
-
-  lifecycle {
-    destroy = false
-  }
+  to   = module.foundation.google_service_account.runtime["worker"]
 }
 
-removed {
+moved {
   from = module.radioso.google_service_account.worker_task_invoker
-
-  lifecycle {
-    destroy = false
-  }
+  to   = module.foundation.google_service_account.runtime["worker_task"]
 }
 
-removed {
-  from = module.radioso.google_service_account_iam_member.backend_worker_task_act_as
-
-  lifecycle {
-    destroy = false
-  }
+moved {
+  from = module.radioso.google_service_account.github_actions_deployer
+  to   = module.foundation.google_service_account.github_actions_deployer
 }
 
-removed {
-  from = module.radioso.google_service_account_iam_member.github_actions_backend_act_as
-
-  lifecycle {
-    destroy = false
-  }
+moved {
+  from = module.radioso.google_iam_workload_identity_pool.github_actions
+  to   = module.foundation.google_iam_workload_identity_pool.github_actions
 }
 
-removed {
-  from = module.radioso.google_service_account_iam_member.github_actions_frontend_act_as
-
-  lifecycle {
-    destroy = false
-  }
+moved {
+  from = module.radioso.google_iam_workload_identity_pool_provider.github_actions
+  to   = module.foundation.google_iam_workload_identity_pool_provider.github_actions
 }
 
-removed {
-  from = module.radioso.google_service_account_iam_member.github_actions_worker_act_as
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = module.radioso.google_service_account_iam_member.github_actions_worker_task_invoker_act_as
-
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
+moved {
   from = module.radioso.google_service_account_iam_member.github_actions_workload_identity_user
-
-  lifecycle {
-    destroy = false
-  }
+  to   = module.foundation.google_service_account_iam_member.github_actions_workload_identity_user
 }
 
-removed {
-  from = module.radioso.google_service_account_iam_member.worker_worker_task_act_as
+moved {
+  from = module.radioso.google_project_iam_member.github_actions_artifact_registry_writer
+  to   = module.foundation.google_project_iam_member.runtime_deployer_role["roles/artifactregistry.writer"]
+}
 
-  lifecycle {
-    destroy = false
-  }
+moved {
+  from = module.radioso.google_project_iam_member.github_actions_cloud_scheduler_admin
+  to   = module.foundation.google_project_iam_member.runtime_deployer_role["roles/cloudscheduler.admin"]
+}
+
+moved {
+  from = module.radioso.google_project_iam_member.github_actions_run_admin
+  to   = module.foundation.google_project_iam_member.runtime_deployer_role["roles/run.admin"]
+}
+
+moved {
+  from = module.radioso.google_project_iam_member.backend_cloud_tasks_enqueuer
+  to   = module.foundation.google_project_iam_member.runtime_cloud_tasks_enqueuer["backend"]
+}
+
+moved {
+  from = module.radioso.google_project_iam_member.worker_cloud_tasks_enqueuer
+  to   = module.foundation.google_project_iam_member.runtime_cloud_tasks_enqueuer["worker"]
+}
+
+moved {
+  from = module.radioso.google_service_account_iam_member.github_actions_backend_act_as
+  to   = module.foundation.google_service_account_iam_member.runtime_deployer_act_as["backend"]
+}
+
+moved {
+  from = module.radioso.google_service_account_iam_member.github_actions_frontend_act_as
+  to   = module.foundation.google_service_account_iam_member.runtime_deployer_act_as["frontend"]
+}
+
+moved {
+  from = module.radioso.google_service_account_iam_member.github_actions_worker_act_as
+  to   = module.foundation.google_service_account_iam_member.runtime_deployer_act_as["worker"]
+}
+
+moved {
+  from = module.radioso.google_service_account_iam_member.github_actions_worker_task_invoker_act_as
+  to   = module.foundation.google_service_account_iam_member.runtime_deployer_act_as["worker_task"]
+}
+
+moved {
+  from = module.radioso.google_service_account_iam_member.backend_worker_task_act_as
+  to   = module.foundation.google_service_account_iam_member.runtime_worker_task_act_as["backend"]
+}
+
+moved {
+  from = module.radioso.google_service_account_iam_member.worker_worker_task_act_as
+  to   = module.foundation.google_service_account_iam_member.runtime_worker_task_act_as["worker"]
 }
 
 module "radioso" {

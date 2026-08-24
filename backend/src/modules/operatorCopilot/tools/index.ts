@@ -13,8 +13,8 @@ import { createDirectiveProposalCopilotTools } from "./directives.js";
 import type { DirectiveProposalCopilotToolDependencies } from "./directives.js";
 import { createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
 import type { DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
-import { createEvalCopilotTools } from "./eval.js";
-import type { CopilotEvalResultsPort, EvalCopilotToolDependencies } from "./eval.js";
+import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
+import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createQualityCopilotTools } from "./quality.js";
 import type { CopilotQualitySignalsPort, QualityCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
@@ -30,6 +30,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & DocumentSearchCopilotToolDependencies
   & DocumentStatusCopilotToolDependencies
   & EvalCopilotToolDependencies
+  & EvalVerificationCopilotToolDependencies
   & QualityCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
@@ -49,6 +50,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentTurnProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentSearchCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createEvalVerificationCopilotTools(deps),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAudiencePulseCopilotTools(deps),
   ...createDocumentStatusCopilotTools(deps),

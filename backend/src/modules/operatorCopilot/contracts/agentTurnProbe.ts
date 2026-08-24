@@ -1,6 +1,6 @@
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
-import type { AbuseControlPort } from "../../security/contracts/abuseControl.js";
+import type { CopilotExpensiveOperationGuardDependencies } from "./expensiveOperation.js";
 import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
@@ -78,20 +78,9 @@ export interface AgentTurnProbeRoutineReader {
   } | null>;
 }
 
-export interface AgentTurnProbeServiceDependencies {
+export interface AgentTurnProbeServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   conversationReader: AgentTurnProbeConversationReader;
   agentReader: AgentTurnProbeAgentReader;
   routineReader: AgentTurnProbeRoutineReader;
-  abuseControl: AbuseControlPort;
-  audit: {
-    record(input: {
-      accountId?: string | null;
-      workspaceId?: string | null;
-      eventType: string;
-      eventStatus: string;
-      metadata?: Record<string, unknown>;
-    }): Promise<unknown>;
-  };
-  abusePolicy: { limit: number; windowMs: number };
   turnRunner: AgentTurnProbeRunnerPort;
 }

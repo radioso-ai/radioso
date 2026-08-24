@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to investigate agent behavior, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-21
+last_updated: 2026-08-24
 ---
 
 # Ray
@@ -116,6 +116,31 @@ holds the complete set.
 Agent-turn testing is a dashboard Ray capability. The standalone MCP server
 does not expose it.
 
+## Capture and re-run eval cases
+
+When Ray finds a turn that answered badly, ask it to keep the turn: "capture
+that turn as an eval case." Ray freezes the conversation and the settings that
+produced the answer, then links you to the case so you can add the expectations
+that should hold. Capturing the same turn twice opens the case that already
+exists, and Ray says which of the two happened.
+
+Once you have cases, Ray can re-run up to five of them in one request and
+report each outcome next to the whole suite's pass rate: "re-run the refund
+cases and tell me what moved." Ask Ray to list the cases first, then name the
+ones your change should have affected. The limit is deliberate — cases replay
+one after another and each full replay costs an answer call and a grading call,
+so a whole library behind a single request would leave you waiting on it. Ray
+runs the full agent pipeline; ask for a retrieval-only run when you only want
+to see what retrieval found.
+
+A case with no expectations comes back as skipped, because there is nothing to
+score until you add an assertion. Failing cases come back with the assertions
+that failed and the reason each one gave. If a case id does not exist in the
+workspace, Ray names it rather than leaving you to read its absence as a pass.
+
+Both capabilities need `workspace.retrieval.query`, the same permission the
+Eval section uses.
+
 ## Follow a running turn
 
 While Ray works, activity lines show the UI-safe capability label and its
@@ -169,6 +194,9 @@ setup state with a link to **Settings → Providers**.
 - **A routine draft cannot be tested** — confirm that the routine belongs to
   the selected agent and has Draft or Published status. Archived and superseded
   definitions are not eligible for a test turn.
+- **A suite run is refused as too large** — one request runs at most five
+  cases. Ask for the cases the change should have moved, then run the rest in a
+  second request.
 - **A test conversation cannot be continued** — start a fresh test from the
   current Ray thread. Probe conversations are scoped to the Ray thread,
   operator, workspace, and agent that created them.
@@ -180,4 +208,4 @@ setup state with a link to **Settings → Providers**.
 - [Test your agent in the workbench](/guides/workbench) — run an agent turn
   directly and inspect its customer-facing trace.
 - [Evaluate answer quality](/guides/evals) — turn a known behavior into a
-  repeatable quality check.
+  repeatable quality check, and read what a case's assertions can check.

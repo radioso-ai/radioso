@@ -21,6 +21,16 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("documents the eval suite batch run so the SDK and coverage map can see it", () => {
+    const suiteRun = createOpenApiDocument().paths?.["/api/v1/evals/cases/run"]?.post;
+
+    expect(suiteRun).toMatchObject({
+      operationId: "runEvalCases",
+      description: expect.stringContaining("sequentially"),
+      responses: { "200": expect.any(Object) },
+    });
+  });
+
   it("documents structured Quality closure and message-scoped Eval convenience", () => {
     const document = createOpenApiDocument();
     const paths = document.paths ?? {};

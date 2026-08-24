@@ -6,6 +6,7 @@ import type {
   CopilotAgentTurnProbePort,
   CopilotAgentTurnProbeResult,
 } from "../contracts/agentTurnProbe.js";
+import { enforceCopilotExpensiveOperation } from "./expensiveOperationGuard.js";
 
 export { OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 
@@ -31,7 +32,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
       throw badRequest(`previewRoutineIds cannot contain more than ${MAX_PREVIEW_ROUTINES} items`);
     }
 
-    await this.enforceAbuseControl(input);
+    await enforceCopilotExpensiveOperation(this.dependencies, input, "test_agent_turn");
     const sourceOrigin = probeSourceOrigin(input);
     await this.preflight(input, sourceOrigin, previewRoutineIds);
 
@@ -53,39 +54,6 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
         requestId: input.copilotConversationId,
       },
     });
-  }
-
-  private async enforceAbuseControl(input: CopilotAgentTurnProbeInput): Promise<void> {
-    const scope = "api.expensive_authenticated";
-    const subjectKey = `account:${input.accountId}:workspace:${input.workspaceId}:operator:${input.operatorUserId}`;
-    try {
-      await this.dependencies.abuseControl.enforce({
-        scope,
-        subjectKey,
-        ...this.dependencies.abusePolicy,
-      });
-    } catch (error) {
-      const statusCode = error && typeof error === "object" && "statusCode" in error
-        ? (error as { statusCode?: unknown }).statusCode
-        : undefined;
-      if (statusCode === 429 || statusCode === 503) {
-        await this.dependencies.audit.record({
-          accountId: input.accountId,
-          workspaceId: input.workspaceId,
-          eventType: statusCode === 429
-            ? "security.rate_limit_enforced"
-            : "security.rate_limit_unavailable",
-          eventStatus: statusCode === 429 ? "success" : "failure",
-          metadata: {
-            scope,
-            subjectKey,
-            principalType: "operator_copilot",
-            route: "test_agent_turn",
-          },
-        }).catch(() => undefined);
-      }
-      throw error;
-    }
   }
 
   private async preflight(

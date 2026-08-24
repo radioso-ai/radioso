@@ -27,6 +27,9 @@ add what should stay true before running it. After creation, the dashboard
 action changes to **Open Eval** and Quality shows the latest case/run status with
 its run time.
 
+Ray captures turns the same way. Ask it to keep a turn you are investigating and
+it opens or creates the case for you — see [Ray](/operators/copilot).
+
 The lower-level endpoints remain useful when you want to choose the case name or
 assertions yourself:
 
@@ -85,6 +88,14 @@ POST /api/v1/evals/cases/{id}/runs   { mode, overrides? }
 The Eval list header shows how many cases pass — "1 of 1 case passing" — and a **Run all** button. Run all replays every case with assertions and reports each case's outcome plus the workspace pass rate. Cases with no assertions are skipped, because there is nothing to score. The suite runs case by case, so a large suite takes a moment.
 
 Watch the pass rate the way you watch a test suite: a change that drops it tells you something regressed, and the failing cases point at where.
+
+API clients run the same suite:
+
+```text
+POST /api/v1/evals/cases/run        { mode?, caseIds? }
+```
+
+Omit `caseIds` to run every case in the workspace, or name a subset to keep the cost down. Cases run one after another, so the response arrives once the last one finishes. It carries each case's outcome and the same workspace summary the header shows — including the cases this request did not run, so the pass rate always describes the whole suite.
 
 ## Common failure modes
 

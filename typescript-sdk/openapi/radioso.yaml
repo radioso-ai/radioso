@@ -22468,6 +22468,116 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/evals/cases/run:
+    post:
+      tags:
+        - Evals
+      summary: Run a batch of eval cases
+      description: Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished.
+      operationId: runEvalCases
+      security:
+        - sessionCookie: []
+          workspaceSelection: []
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mode:
+                  type: string
+                  enum:
+                    - retrieval_only
+                    - full_assistant
+                  default: full_assistant
+                caseIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  maxItems: 500
+                  description: Subset of cases to run. Omit to run every case in the workspace.
+      responses:
+        "200":
+          description: Suite run completed. Cases without expectations are reported as skipped.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        caseId:
+                          type: string
+                          format: uuid
+                        name:
+                          type: string
+                        status:
+                          type: string
+                          enum:
+                            - pass
+                            - fail
+                            - error
+                            - recorded
+                            - skipped
+                          description: '"skipped" means the case carries no expectations, so it was not run.'
+                        run: {}
+                        error:
+                          type:
+                            - string
+                            - "null"
+                          description: Set only when the case could not be run at all.
+                      required:
+                        - caseId
+                        - name
+                        - status
+                        - error
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      scored:
+                        type: integer
+                      passing:
+                        type: integer
+                      failing:
+                        type: integer
+                      error:
+                        type: integer
+                      pending:
+                        type: integer
+                      unscored:
+                        type: integer
+                    required:
+                      - total
+                      - scored
+                      - passing
+                      - failing
+                      - error
+                      - pending
+                      - unscored
+                    description: Covers every case in the workspace, not only the cases this call ran.
+                required:
+                  - results
+                  - summary
+        "400":
+          description: Invalid mode or case selection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/evals/runs:
     post:
       tags:

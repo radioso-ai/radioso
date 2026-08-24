@@ -164,7 +164,7 @@ import {
   DefaultAgentRuntime,
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
-import { createCopilotToolCatalog } from "../../src/app/composition/copilotToolCatalog.js";
+import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/app/composition/copilotProposalAdapters.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
@@ -1720,6 +1720,7 @@ export const createTestDependencies = (overrides: {
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
   ] as const;
+  const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const operatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({
@@ -1729,6 +1730,7 @@ export const createTestDependencies = (overrides: {
     auditService,
     proposalAdapters: copilotProposalAdapters,
     prompt: loadPromptTemplate("copilot/system.md"),
+    workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     tools: createCopilotToolCatalog({
       agentService: {
         get: agentService.get.bind(agentService),
@@ -1782,7 +1784,7 @@ export const createTestDependencies = (overrides: {
       proposalRepository: copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService,
-      workspaceRepository,
+      workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     }),
   });
   const dependencies: AppDependencies = {

@@ -1,9 +1,10 @@
-import type { ToolService, ToolSkillExecutorPort } from "@radioso/conversation-tools";
 import type {
   SkillDispatchResult,
   SkillExecutorPort,
   SkillInvocation,
-} from "@radioso/conversation-defaults";
+  ToolService,
+  ToolSkillExecutorPort,
+} from "@radioso/conversation-contract";
 
 import { mergeToolInput, type SkillBinding } from "../skillDefinitions/resolver.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";

@@ -24,7 +24,8 @@ import type {
   RetrievalSettingsSnapshot,
 } from "../../settings/contracts/retrieval.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
-import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
+import type { LlmCapabilityConfig } from "../../../shared/infra/llm/providerTypes.js";
+import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
 import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";
 
@@ -67,11 +68,16 @@ const toCitationEvidence = (contexts: FinalPromptContext[]): CitationEvidence[] 
  *     defaults + agent skill settings + override, merged and frozen) so the run
  *     row is auditable on its own — not just the delta override.
  */
+/** Just enough of the LLM capability resolver to record which model a run actually used. */
+interface EvalModelResolutionPort {
+  resolve(capability: "chat", input: LlmCapabilityResolveInput): Promise<Pick<LlmCapabilityConfig, "model" | "provider">>;
+}
+
 export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
   constructor(
     private readonly pipeline: RetrievalPipelineService,
     private readonly chatGateway: ChatGateway,
-    private readonly capabilityResolver: LlmCapabilityResolver,
+    private readonly capabilityResolver: EvalModelResolutionPort,
     private readonly retrievalDefaultsProvider: RetrievalDefaultsProvider,
     private readonly answerPresentation: EvalAnswerPresentationPort,
     private readonly skillSettingsResolver?: SkillSettingsResolver,

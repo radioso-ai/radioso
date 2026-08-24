@@ -1,4 +1,4 @@
-import type { RoutineActivationPrefilter } from "@radioso/conversation-defaults";
+import type { RoutineActivationPrefilter } from "@radioso/conversation-contract";
 
 import type { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import type { ClusteringEmbeddingPort } from "../embeddingProfiles/contracts/embeddingConsumers.js";

@@ -1361,3 +1361,188 @@ export interface ConversationEngine {
   attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null>;
   resumeAwaitingDecision(input: ResumeAwaitingDecisionInput): Promise<ConversationRoutineDecisionResult>;
 }
+
+/**
+ * Ranked routine activation. These describe the surface a host planner shares with a
+ * routine registry — trigger metadata in, ranked verdicts out. They live here rather
+ * than beside the default registry because a host that ranks candidates itself must be
+ * able to conform to them without depending on the default implementation.
+ */
+export interface RoutineActivationTrigger {
+  routineId: string;
+  description: string;
+}
+
+export interface RoutineActivationPrefilterScore {
+  routineId: string;
+  score: number;
+}
+
+export interface RoutineActivationPrefilter {
+  minScore?: number;
+  topK?: number;
+  rank(input: {
+    query: string;
+    triggers: readonly RoutineActivationTrigger[];
+    turn: TurnContext;
+  }): Promise<readonly RoutineActivationPrefilterScore[]>;
+}
+
+/**
+ * A registered Routine plus declarative trigger metadata for ranked activation.
+ * Reentry policy is deliberately absent here: it is read off `routine.activation`, so
+ * a registration cannot contradict the routine it registers.
+ */
+export interface RoutineRegistration {
+  routine: Routine;
+  trigger: {
+    description: string;
+    priority: number;
+    gateRef?: string;
+    eligible?: (input: { turn: TurnContext }) => boolean;
+    explicitClaim?: (input: { turn: TurnContext }) => { variables?: Record<string, unknown> } | null;
+  };
+}
+
+/** One ranked routine verdict, as the ranked-activation model step produces it. */
+export interface RankedRoutineMatch {
+  routineId: string;
+  confidence: number;
+  variables?: Record<string, unknown>;
+}
+
+/**
+ * Planner-consumable summary of one prepared candidate: enough to build a ranking
+ * prompt (title, trigger, priority) without exposing any activation policy.
+ */
+export interface RoutineCandidateSummary {
+  routineId: string;
+  title: string;
+  triggerSummary: string;
+  priority: number;
+}
+
+/** The activator's non-null outcome (activate or clarify). */
+export type RoutineActivationResult = NonNullable<
+  Awaited<ReturnType<ConversationRoutineActivator["activate"]>>
+>;
+
+/**
+ * The rankable subset of a candidate preparation: the eligible, prefilter-bounded
+ * registrations plus their planner summaries, so a ranked decision can be applied from
+ * either a ranked-activation call or a planner's precomputed scores.
+ */
+export interface RankableRoutineCandidates {
+  kind: "rank";
+  registrations: readonly RoutineRegistration[];
+  candidates: readonly RoutineCandidateSummary[];
+}
+
+/**
+ * Outcome of the pre-rank eligibility pipeline. `claim` and `none` are resolved
+ * without any ranking call; only `rank` proceeds to the ranked-activation step.
+ */
+export type PreparedRoutineCandidates =
+  | RankableRoutineCandidates
+  | { kind: "claim"; activation: RoutineActivationResult }
+  | { kind: "none" };
+
+/** Renders a grounded answer for a routine step, or null when the step is not groundable. */
+export interface RoutineGroundedAnswerRenderer {
+  render(input: {
+    step: RoutineStep;
+    steering: SteeringRule[];
+    turn: TurnContext;
+  }): Promise<RenderableTurn | null>;
+}
+
+/**
+ * Tool-backed skills. A host that exposes tools (MCP, OpenAPI, local functions) implements
+ * `ToolService`; the bridge that turns one into a skill executor implements
+ * `ToolSkillExecutorPort`. Both are contracts, so a host can supply either without
+ * depending on the bundled tool adapters.
+ */
+export interface ConversationToolDefinition {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+  outcomeKinds?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface ToolCallContext {
+  turn?: TurnContext;
+  skill?: SkillDefinition;
+  selected?: SelectedSkill;
+  signal?: AbortSignal;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ToolCallInput {
+  toolName: string;
+  input?: unknown;
+  context?: ToolCallContext;
+}
+
+export interface ToolCallResult {
+  status?: SkillOutcomeStatus;
+  answer?: string;
+  output?: unknown;
+  outputs?: Record<string, unknown>;
+  control?: SkillOutcomeControl;
+  guidance?: SkillTransientGuidance[];
+  metadata?: Record<string, unknown>;
+  error?: SkillOutcomeError;
+  stagedContext?: StagedContext[];
+  steering?: SteeringRule[];
+  subTrace?: CapabilitySubTrace;
+}
+
+export interface ToolService {
+  listTools(): Promise<ConversationToolDefinition[]>;
+  callTool(input: ToolCallInput): Promise<ToolCallResult | SkillOutcome | unknown>;
+}
+
+export interface ToolSkillMetadata {
+  toolName: string;
+  source?: string;
+}
+
+export interface ToolSkillDefinition extends SkillDefinition {
+  metadata: Record<string, unknown> & {
+    conversationTool: ToolSkillMetadata;
+  };
+  execution: {
+    kind: "internal";
+    adapter: string;
+  };
+}
+
+export interface ToolSkillDefinitionOptions {
+  skillNamePrefix?: string;
+  source?: string;
+  executionAdapter?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ToolSkillEmitPort {
+  emitStatus(status: string, data?: Record<string, unknown>): Promise<void>;
+  emitCustom(data: Record<string, unknown>): Promise<void>;
+}
+
+export interface ToolSkillInvocation {
+  skill: SkillDefinition;
+  collected: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  emit: ToolSkillEmitPort;
+  signal?: AbortSignal;
+}
+
+export type ToolSkillDispatchResult =
+  | { disposition: "settled"; outcome: SkillOutcome }
+  | { disposition: "deferred"; ticket: { ticketId: string } };
+
+export interface ToolSkillExecutorPort {
+  dispatch(invocation: ToolSkillInvocation): Promise<ToolSkillDispatchResult>;
+}

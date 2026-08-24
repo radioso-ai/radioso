@@ -8,12 +8,7 @@ import type {
 import type {
   EmbeddingTransitionIndexPreparationPort,
 } from "./embeddingModelTransitionAdapter.js";
-import type {
-  VectorAdapter,
-} from "../../modules/retrieval/domain/vectorAdapter.js";
-import type {
-  VectorIndexReconciler,
-} from "../../modules/retrieval/services/vectorIndexReconciler.js";
+import type { VectorAdapter, VectorIndexReconciler } from "../../modules/retrieval/public.js";
 
 export const PGVECTOR_BACKEND_KEY = "pgvector";
 

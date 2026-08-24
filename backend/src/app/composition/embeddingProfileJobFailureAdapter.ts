@@ -1,7 +1,7 @@
 import type {
   EmbeddingProfileTerminalFailureKind,
   EmbeddingProfileTerminalFailurePort,
-} from "../../modules/documents/composition.js";
+} from "../../modules/documents/contracts/index.js";
 import {
   EmbeddingProfileLifecycleError,
   type EmbeddingProfileRepositoryPort,

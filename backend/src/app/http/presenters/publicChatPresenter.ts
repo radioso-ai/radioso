@@ -1,5 +1,5 @@
 import { presentChatPayload } from "./chatPresenter.js";
-import type { ChatConversationDetail, ChatConversationTail } from "../../../modules/chat/services/chatHistoryService.js";
+import type { ChatConversationDetail, ChatConversationTail } from "../../../modules/chat/contracts/index.js";
 import {
   CitationAnchorSanitizer,
   type AnswerSegment,

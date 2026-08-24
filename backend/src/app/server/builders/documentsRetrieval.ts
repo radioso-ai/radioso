@@ -53,7 +53,7 @@ import {
   EmbeddingProfileCleanupService,
   type EmbeddingProfileProjectionCleanupPort,
 } from "../../../modules/embeddingProfiles/public.js";
-import type { VectorCandidateSearchPort } from "../../../modules/retrieval/domain/vectorAdapter.js";
+import type { VectorCandidateSearchPort } from "../../../modules/retrieval/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import {

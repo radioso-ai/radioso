@@ -10,10 +10,12 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  type TooltipContentProps,
 } from 'recharts'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ChartTooltipCard, type ChartTooltipRow } from '@/components/dashboard/chart-tooltip'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -72,6 +74,19 @@ const chartSeriesLabels: Record<string, string> = {
   outputTokens: 'Output tokens',
 }
 
+// Identity colours, assigned per series and never per rank, so a series keeps its
+// hue when the metric switches. The pair is validated for colour-vision
+// deficiency separation and for contrast against both theme surfaces.
+const chartSeriesColors: Record<string, string> = {
+  conversations: 'var(--chart-1)',
+  userMessages: 'var(--chart-1)',
+  assistantMessages: 'var(--chart-2)',
+  inputTokens: 'var(--chart-1)',
+  outputTokens: 'var(--chart-2)',
+}
+
+const axisTickStyle = { fill: 'var(--muted-foreground)', fontSize: 12 }
+
 const buildUsageChartData = (trends: UsageTrendsResponse): UsageChartDatum[] => trends.buckets.map((bucket) => ({
   label: formatUsageTrendBucketLabel(bucket, trends.granularity),
   fullLabel: `${bucket.periodStart.slice(0, 10)} through ${bucket.periodEnd.slice(0, 10)}`,
@@ -82,6 +97,31 @@ const buildUsageChartData = (trends: UsageTrendsResponse): UsageChartDatum[] => 
   outputTokens: bucket.tokens.output,
 }))
 
+function UsagePeriodTooltip({ active, payload }: TooltipContentProps) {
+  if (!active || !payload?.length) return null
+
+  const rows: ChartTooltipRow[] = payload.map((entry) => {
+    const seriesKey = String(entry.dataKey ?? '')
+    return {
+      key: seriesKey,
+      value: formatCount(Number(entry.value ?? 0)),
+      label: chartSeriesLabels[seriesKey] ?? String(entry.name ?? ''),
+      color: chartSeriesColors[seriesKey],
+    }
+  })
+  const datum = payload[0]?.payload as UsageChartDatum | undefined
+  // Stacked metrics split one quantity in two, so the stack total is the number
+  // the bar height actually shows.
+  const total = payload.length > 1
+    ? {
+      value: formatCount(payload.reduce((sum, entry) => sum + Number(entry.value ?? 0), 0)),
+      label: 'total',
+    }
+    : undefined
+
+  return <ChartTooltipCard label={datum?.fullLabel} rows={rows} total={total} />
+}
+
 function UsagePeriodChart({
   trends,
 }: {
@@ -91,6 +131,7 @@ function UsagePeriodChart({
   const [chartWidth, setChartWidth] = useState(0)
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartData = useMemo(() => buildUsageChartData(trends), [trends])
+  const isStacked = chartMode !== 'conversations'
 
   useEffect(() => {
     const element = chartContainerRef.current
@@ -108,18 +149,19 @@ function UsagePeriodChart({
 
   return (
     <Card>
-      <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="space-y-1">
-          <CardTitle>Usage by period</CardTitle>
-          <CardDescription>{trends.granularity === 'day' ? 'Daily' : trends.granularity === 'week' ? 'Weekly' : 'Monthly'} bars from {trends.from} through {trends.to}.</CardDescription>
-        </div>
-        <div className="flex flex-wrap gap-2" aria-label="Usage metric">
+      <CardHeader>
+        <CardTitle>Usage by period</CardTitle>
+        <CardDescription>{trends.granularity === 'day' ? 'Daily' : trends.granularity === 'week' ? 'Weekly' : 'Monthly'} bars from {trends.from} through {trends.to}{chartMode === 'conversations' ? ', by conversations started' : ''}.</CardDescription>
+        <CardAction className="flex flex-wrap gap-2" aria-label="Usage metric">
           {chartModes.map((mode) => (
             <Button
               key={mode.value}
               type="button"
               size="sm"
               variant="outline"
+              // The `outline` variant sets `dark:bg-input/30` and `dark:border-input`,
+              // which otherwise beat these unprefixed classes in dark mode and leave the
+              // selected metric indistinguishable from the unselected ones.
               className={chartMode === mode.value ? 'border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background dark:border-foreground dark:bg-foreground dark:hover:bg-foreground/90' : undefined}
               onClick={() => setChartMode(mode.value)}
               aria-pressed={chartMode === mode.value}
@@ -127,15 +169,16 @@ function UsagePeriodChart({
               {mode.label}
             </Button>
           ))}
-        </div>
+        </CardAction>
       </CardHeader>
       <CardContent>
         <div ref={chartContainerRef} className="h-80 w-full" data-testid="usage-period-chart">
           {chartWidth > 0 ? (
             <BarChart width={chartWidth} height={320} data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <CartesianGrid stroke="var(--border)" vertical={false} />
               <XAxis
                 dataKey="label"
+                tick={axisTickStyle}
                 tickLine={false}
                 axisLine={false}
                 minTickGap={16}
@@ -143,29 +186,41 @@ function UsagePeriodChart({
               />
               <YAxis
                 tickFormatter={formatCompactCount}
+                tick={axisTickStyle}
                 tickLine={false}
                 axisLine={false}
+                allowDecimals={false}
                 width={52}
               />
               <Tooltip
+                isAnimationActive={false}
                 cursor={{ fill: 'var(--muted)', opacity: 0.45 }}
-                formatter={(value, name) => [formatCount(Number(value)), chartSeriesLabels[String(name)] ?? String(name)]}
-                labelFormatter={(_label, payload) => payload[0]?.payload.fullLabel ?? ''}
+                content={UsagePeriodTooltip}
               />
-              <Legend />
+              {/* One series is named by the card description, so a legend there would
+                  only restate the title. Stacked metrics need it to tell the two apart. */}
+              {isStacked ? (
+                <Legend
+                  verticalAlign="bottom"
+                  iconType="rect"
+                  iconSize={10}
+                  wrapperStyle={{ paddingTop: 12 }}
+                  formatter={(value) => <span className="text-xs text-muted-foreground">{value}</span>}
+                />
+              ) : null}
               {chartMode === 'conversations' ? (
-                <Bar dataKey="conversations" name={chartSeriesLabels.conversations} fill="var(--foreground)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="conversations" name={chartSeriesLabels.conversations} fill={chartSeriesColors.conversations} radius={[4, 4, 0, 0]} maxBarSize={24} />
               ) : null}
               {chartMode === 'messages' ? (
                 <>
-                  <Bar dataKey="userMessages" name={chartSeriesLabels.userMessages} stackId="messages" fill="var(--foreground)" radius={[0, 0, 4, 4]} />
-                  <Bar dataKey="assistantMessages" name={chartSeriesLabels.assistantMessages} stackId="messages" fill="var(--muted-foreground)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="userMessages" name={chartSeriesLabels.userMessages} stackId="messages" fill={chartSeriesColors.userMessages} maxBarSize={24} />
+                  <Bar dataKey="assistantMessages" name={chartSeriesLabels.assistantMessages} stackId="messages" fill={chartSeriesColors.assistantMessages} radius={[4, 4, 0, 0]} maxBarSize={24} />
                 </>
               ) : null}
               {chartMode === 'tokens' ? (
                 <>
-                  <Bar dataKey="inputTokens" name={chartSeriesLabels.inputTokens} stackId="tokens" fill="var(--foreground)" radius={[0, 0, 4, 4]} />
-                  <Bar dataKey="outputTokens" name={chartSeriesLabels.outputTokens} stackId="tokens" fill="var(--muted-foreground)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="inputTokens" name={chartSeriesLabels.inputTokens} stackId="tokens" fill={chartSeriesColors.inputTokens} maxBarSize={24} />
+                  <Bar dataKey="outputTokens" name={chartSeriesLabels.outputTokens} stackId="tokens" fill={chartSeriesColors.outputTokens} radius={[4, 4, 0, 0]} maxBarSize={24} />
                 </>
               ) : null}
             </BarChart>

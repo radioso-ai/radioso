@@ -71,7 +71,9 @@
   --input: #d4d8d4;
   --ring: #5096e7;
   --chart-1: #5096e7;
-  --chart-2: #ffc720;
+  /* A darker step of the school-bus yellow: the brand accent itself sits at
+     OKLCH L 0.86, too light to hold a chart mark against a light surface. */
+  --chart-2: #bf8a00;
   --chart-3: #1e3df1;
   --chart-4: #142317;
   --chart-5: #f9f9f7;
@@ -107,7 +109,7 @@
   --input: #252a33;
   --ring: #5096e7;
   --chart-1: #5096e7;
-  --chart-2: #ffc720;
+  --chart-2: #bf8a00;
   --chart-3: #1e3df1;
   --chart-4: #f9f9f7;
   --chart-5: #a8a8a8;

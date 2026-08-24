@@ -2,8 +2,11 @@ import { getEnv, type Env } from "../config/env.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
+  createRealtimePublisherComposition,
   type ApplicationModule,
 } from "../composition/index.js";
+import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
+import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
 import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
@@ -56,10 +59,12 @@ import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/qu
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
+  realtimePublisherComposition?: RealtimePublisherComposition;
 }
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
+  const realtimePublisherComposition = options.realtimePublisherComposition ?? createRealtimePublisherComposition({ config: parseRealtimeConfig(env as Record<string, unknown>) });
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const composition = createDefaultApplicationComposition({
     logger,
@@ -515,6 +520,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
+    workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    realtimePublisherLifecycle: realtimePublisherComposition,
     vectorIndexReconciler,
     authService,
     accessGrantService: access.accessGrantService,

@@ -1805,6 +1805,8 @@ export const createTestDependencies = (overrides: {
   });
   const dependencies: AppDependencies = {
     env,
+    workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
+    realtimePublisherLifecycle: { shutdown: async () => undefined },
     logger,
     operatorCopilotService,
     qualitySignalsService: qualitySignalsService as any,

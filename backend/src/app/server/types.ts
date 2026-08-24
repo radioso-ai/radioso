@@ -110,6 +110,8 @@ import type { OperatorCopilotService } from "../../modules/operatorCopilot/publi
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
+import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 export interface AppDependencies {
   env: Env;
@@ -127,6 +129,8 @@ export interface AppDependencies {
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
+  realtimePublisherLifecycle: Pick<RealtimePublisherComposition, "shutdown">;
   vectorIndexReconciler?: Pick<VectorIndexReconciler, "start" | "stop" | "runUntilIdle">;
   authService: AuthService;
   accessGrantService: AccessGrantService;

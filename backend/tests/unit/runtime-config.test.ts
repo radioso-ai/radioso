@@ -749,4 +749,17 @@ describe("runtime configuration", () => {
     expect(workerEntry).toContain('OBSERVABILITY_SERVICE_NAME: "radioso-worker"');
     expect(workerServerEntry).toContain('OBSERVABILITY_SERVICE_NAME: "radioso-worker"');
   });
+
+  it("uses the shared realtime schema and rejects unsafe realtime relationships at runtime startup", () => {
+    const env = getEnv({ ...baseEnv, REALTIME_MODE: "disabled" });
+    expect(env.REALTIME_MAX_CONNECTIONS).toBe(900);
+    expect(env.REALTIME_DB_APPLICATION_NAME).toBe("radioso-realtime");
+    expect(() => getEnv({
+      ...baseEnv,
+      REALTIME_MODE: "standalone",
+      REALTIME_REDIS_URL: "redis://localhost:6379",
+      REALTIME_ROLLOUT_MODE: "default-on",
+      REALTIME_MAX_CONNECTIONS: "1000",
+    })).toThrow(/below platform concurrency/i);
+  });
 });

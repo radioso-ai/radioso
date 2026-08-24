@@ -198,7 +198,7 @@ Canonical prefix:
 Families and discriminators:
 
 - `documents.list(workspaceId, { sourceId, page, pageSize })`.
-- `documents.crawlActivity(workspaceId)`.
+- `documents.crawlActivity(workspaceId, { recentSinceMinutes })`.
 - `sources.list(workspaceId)`.
 - `sources.crawlState(workspaceId)`.
 - `history.slice(workspaceId, { filter, page, pageSize })`.

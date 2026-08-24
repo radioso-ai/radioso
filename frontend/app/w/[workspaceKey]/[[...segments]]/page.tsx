@@ -5,6 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 
 import { AuthPage } from '@/components/auth/auth-page'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
+import { DashboardQueryProvider } from '@/components/providers/dashboard-query-provider'
 import { LogoSpinner } from '@/components/ui/spinner'
 import {
   accountApi,
@@ -172,6 +173,7 @@ export default function WorkspaceDashboardPage() {
   if (
     !workspaceKey ||
     !parsedRoute ||
+    !resolvedWorkspace ||
     !resolvedRouteState ||
     resolvedRouteState.workspacePublicRouteKey !== workspaceKey ||
     isCanonicalizing
@@ -184,9 +186,11 @@ export default function WorkspaceDashboardPage() {
   }
 
   return (
-    <DashboardShell
-      accountId={user.accountId}
-      routeState={resolvedRouteState}
-    />
+    <DashboardQueryProvider workspaceId={resolvedWorkspace.workspaceId}>
+      <DashboardShell
+        accountId={user.accountId}
+        routeState={resolvedRouteState}
+      />
+    </DashboardQueryProvider>
   )
 }

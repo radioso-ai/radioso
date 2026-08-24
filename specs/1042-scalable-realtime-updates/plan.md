@@ -222,7 +222,7 @@ docs/ and docs-portal/content/            # operator and developer guidance
 Semantic key families are centralized in `frontend/lib/dashboard-query-keys.ts`:
 
 - `documents.list(workspaceId, { sourceId, page, pageSize })`
-- `documents.crawlActivity(workspaceId)`
+- `documents.crawlActivity(workspaceId, { recentSinceMinutes })`
 - `sources.list(workspaceId)`
 - `sources.crawlState(workspaceId)`
 - `history.slice(workspaceId, { filter, page, pageSize })`

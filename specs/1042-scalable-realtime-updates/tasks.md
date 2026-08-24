@@ -57,15 +57,15 @@
 
 **Goal**: Replace covered custom fetch schedulers with one workspace-scoped Query authority while realtime is still disabled.
 
-- [ ] T025 Add `@tanstack/react-query` to `frontend/package.json` and the root lockfile, with no provider mounted globally
-- [ ] T026 [P] Add failing key tests for workspace identity, all result discriminators, normalized/sorted set-like filters, and exact-family matching in `frontend/tests/unit/dashboard-query-keys.test.ts`
-- [ ] T027 Implement semantic key factories in `frontend/lib/dashboard-query-keys.ts`
-- [ ] T028 [P] Add failing invalidation-coordinator tests for the approved mapping, active-only exact variants, one dirty bit per active query hash, one trailing reconciliation after an in-flight fetch, ready/resync all-active behavior, and burst-bounded work in `frontend/tests/unit/dashboard-query-invalidation.test.ts`
-- [ ] T029 Implement the central registry/coordinator in `frontend/lib/dashboard-query-invalidation.ts` using QueryCache state transitions and no parallel scheduler
-- [ ] T030 [P] Add failing provider/visibility tests for one QueryClient per canonical workspace, workspace reset, hidden cancellation, deterministic 45–60 second jitter, terminal poll-only outcomes, subscribe-before-enable ordering, and bounded retry exclusions in `frontend/tests/unit/dashboard-query-provider.test.tsx`
-- [ ] T031 Implement `frontend/components/providers/dashboard-query-provider.tsx` and mount it around `DashboardShell` after canonical workspace resolution in `frontend/app/w/[workspaceKey]/[[...segments]]/page.tsx`
-- [ ] T032 [P] Add failing request cancellation tests, including abort-before-refresh, abort-during-refresh, no retry after abort, and AbortError propagation through composed Quality reads, in `frontend/tests/unit/api-abort-signal.test.ts`
-- [ ] T033 Thread optional `AbortSignal` through covered GET functions in `frontend/lib/api-documents.ts`, `frontend/lib/api-chat.ts`, `frontend/lib/api-quality.ts`, and `frontend/lib/api-hitl.ts`; preserve AbortError in aggregate loaders
+- [x] T025 Add `@tanstack/react-query` to `frontend/package.json` and the root lockfile, with no provider mounted globally
+- [x] T026 [P] Add failing key tests for workspace identity, all result discriminators, normalized/sorted set-like filters, and exact-family matching in `frontend/tests/unit/dashboard-query-keys.test.ts`
+- [x] T027 Implement semantic key factories in `frontend/lib/dashboard-query-keys.ts`
+- [x] T028 [P] Add failing invalidation-coordinator tests for the approved mapping, active-only exact variants, one dirty bit per active query hash, one trailing reconciliation after an in-flight fetch, ready/resync all-active behavior, and burst-bounded work in `frontend/tests/unit/dashboard-query-invalidation.test.ts`
+- [x] T029 Implement the central registry/coordinator in `frontend/lib/dashboard-query-invalidation.ts` using QueryCache state transitions and no parallel scheduler
+- [x] T030 [P] Add failing provider/visibility tests for one QueryClient per canonical workspace, workspace reset, hidden cancellation, deterministic 45–60 second jitter, terminal poll-only outcomes, subscribe-before-enable ordering, and bounded retry exclusions in `frontend/tests/unit/dashboard-query-provider.test.tsx`
+- [x] T031 Implement `frontend/components/providers/dashboard-query-provider.tsx` and mount it around `DashboardShell` after canonical workspace resolution in `frontend/app/w/[workspaceKey]/[[...segments]]/page.tsx`
+- [x] T032 [P] Add failing request cancellation tests, including abort-before-refresh, abort-during-refresh, no retry after abort, and AbortError propagation through composed Quality reads, in `frontend/tests/unit/api-abort-signal.test.ts`
+- [x] T033 Thread optional `AbortSignal` through covered GET functions in `frontend/lib/api-documents.ts`, `frontend/lib/api-chat.ts`, `frontend/lib/api-quality.ts`, and `frontend/lib/api-hitl.ts`; preserve AbortError in aggregate loaders
 - [ ] T034 [US1] Add failing Documents state tests for exact list keys, 2-second known-active crawl cadence, 45–60 second idle floor, cancellation, and cached-data preservation in `frontend/tests/unit/documents-query-state.test.tsx`
 - [ ] T035 [US1] Migrate document list and crawl-activity reads in `frontend/components/dashboard/documents-view.tsx` and focused document children to shared queries; keep mutations authoritative and invalidate through the registry
 - [ ] T036 [US1] Add failing Sources state tests for separate list/crawl keys, 5-second known-active cadence, idle discovery, and background-failure data preservation in `frontend/tests/unit/document-sources-query-state.test.tsx`

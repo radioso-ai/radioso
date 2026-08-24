@@ -501,9 +501,7 @@ describe("runtime startup", () => {
           "puller, not something an HTTP push targets; mutually exclusive with the task-runtime push model",
       },
       facetExtractionWorker: {
-        noPushCounterpart:
-          "batch analytics drain for the topic census; the poll loop is its only transport by design " +
-          "(pre-existing, documented at its startWorkerRuntime.ts call site)",
+        route: "POST /internal/tasks/document-processing/recover",
       },
     };
 

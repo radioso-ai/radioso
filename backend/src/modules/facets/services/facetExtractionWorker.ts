@@ -104,10 +104,10 @@ export class FacetExtractionWorker {
    * Claim and process one batch. Returns the number of jobs processed so the poll loop
    * can keep draining without waiting a full interval while the queue has work.
    */
-  async runOnce(now: Date = new Date()): Promise<number> {
+  async runOnce(now: Date = new Date(), maxJobs: number = this.batchSize): Promise<number> {
     await this.releaseExpiredClaims(now);
 
-    const batch = await this.jobs.claimBatch(this.batchSize, now);
+    const batch = await this.jobs.claimBatch(Math.min(maxJobs, this.batchSize), now);
     let processed = 0;
     for (const job of batch) {
       // A stop mid-batch leaves the remaining claimed rows for the lease reclaim rather

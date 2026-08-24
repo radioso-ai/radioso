@@ -257,9 +257,15 @@ describe("runtime entrypoints", () => {
     expect(response.status).toBe(404);
   });
 
-  it("worker task runtime exposes bounded document recovery without starting the polling loop", async () => {
+  it("worker task runtime exposes bounded document and facet recovery without starting either polling loop", async () => {
     const { dependencies } = createWorkerTaskTestDependencies();
     const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
+    const facetWorker = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      runOnce: vi.fn().mockResolvedValue(0),
+    };
+    dependencies.facetExtractionWorker = facetWorker as never;
     const runOnceSpy = vi
       .spyOn(dependencies.documentProcessingWorker, "runOnce")
       .mockResolvedValueOnce(true)
@@ -286,9 +292,11 @@ describe("runtime entrypoints", () => {
       .send({ maxJobs: 5 });
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ processedJobCount: 1 });
+    expect(response.body).toEqual({ processedJobCount: 1, processedFacetJobCount: 0 });
     expect(workerStartSpy).not.toHaveBeenCalled();
+    expect(facetWorker.start).not.toHaveBeenCalled();
     expect(runOnceSpy).toHaveBeenCalledTimes(2);
+    expect(facetWorker.runOnce).toHaveBeenCalledOnce();
     expect(maintenanceSpy).toHaveBeenCalledWith(10);
   });
 

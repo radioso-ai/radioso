@@ -822,14 +822,21 @@ worker process, the retry policy around it, and the `message_facets` store the
 census reads from.
 
 Facet extraction is batch analytics — no turn, request, or user-visible surface
-waits on it — so the poll loop is the whole transport and there is no queue
-dispatcher. The spine knows nothing about what a facet is: extraction arrives as
-an injected port, registered through application composition. With no extractor
-registered the worker is not built, so queued jobs stay durable rather than
-being drained into a no-op. Eligibility for a job is decided once, at enqueue
-time, by `isEligibleForFacetExtraction` in the Chat module
-(`chatSessionPreparer.ts`) — the same predicate Audience Pulse reads history
-with, restated as a write-time check rather than duplicated.
+waits on it — so local development drains it with a poll loop rather than a
+per-message queue dispatcher. The spine knows nothing about what a facet is:
+extraction arrives as an injected port, registered through application
+composition. With no extractor registered the worker is not built, so queued
+jobs stay durable rather than being drained into a no-op. Eligibility for a
+job is decided once, at enqueue time, by `isEligibleForFacetExtraction` in the
+Chat module (`chatSessionPreparer.ts`) — the same predicate Audience Pulse
+reads history with, restated as a write-time check rather than duplicated.
+
+The local document-worker runtime starts that poll loop. Cloud Run instead
+serves authenticated task requests, so its scheduled
+`/internal/tasks/document-processing/recover` invocation drains the same
+bounded claim of at most ten facet jobs alongside document recovery. Both
+paths use the job repository's claim and lease rules, so a recovery request can
+race safely with a local poller or another recovery request.
 
 Public surfaces and contracts:
 

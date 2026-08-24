@@ -95,8 +95,25 @@ import {
 } from '@/components/dashboard/quality/close-review-popover'
 import { EvalVerificationAction } from '@/components/dashboard/quality/eval-verification-action'
 import { ResolutionBreakdown } from '@/components/dashboard/quality/resolution-breakdown'
+import { useBackgroundRefresh } from '@/hooks/use-background-refresh'
 
 const PAGE_SIZE = 25
+
+/**
+ * Feedback and triage writes are the only workspace changes that move this queue
+ * on their own. The rail badge subscribes to the same pair (`use-inbox-count.ts`).
+ */
+const QUALITY_LIVE_CHANGE_KINDS = [
+  'quality.feedback_changed',
+  'quality.triage_changed',
+] as const
+
+/**
+ * A newly answered turn can enter the queue on its signal alone, with no feedback
+ * or triage write behind it. Subscribing to every assistant turn would refetch two
+ * aggregate queries per turn on a busy workspace, so that staleness rides a floor.
+ */
+const QUALITY_RECONCILE_INTERVAL_MS = 60_000
 
 const CLEARED_QUALITY_QUEUE_ROUTE_STATE = {
   qualitySignal: undefined,
@@ -654,6 +671,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [countsRefreshKey, setCountsRefreshKey] = useState(0)
   // Bumped after a triage change so server-filtered rows/totals stay current.
   const [turnsRefreshKey, setTurnsRefreshKey] = useState(0)
+  // Set when a push or the reconcile floor drives the refetch instead of the
+  // operator. Each loader consumes its own flag, so a filter change that lands
+  // afterwards still shows progress.
+  const backgroundStatsRef = useRef(false)
+  const backgroundTurnsRef = useRef(false)
   const drawerSelectedItem: SelectedHistoryItem = openedConversation
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
@@ -687,6 +709,23 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     triageStates,
   }), [activeSignal, showAll, triageStates])
 
+  const refreshQueueInBackground = useCallback(() => {
+    backgroundStatsRef.current = true
+    backgroundTurnsRef.current = true
+    setCountsRefreshKey((key) => key + 1)
+    setTurnsRefreshKey((key) => key + 1)
+  }, [])
+
+  useBackgroundRefresh({
+    changeKinds: QUALITY_LIVE_CHANGE_KINDS,
+    onRefresh: refreshQueueInBackground,
+    intervalMs: QUALITY_RECONCILE_INTERVAL_MS,
+    // Swapping rows out from under an open review popover would strand it on a
+    // row that no longer exists, and a triage write in flight is about to bump
+    // both keys itself.
+    suspended: closeReview !== null || pendingTriageId !== null,
+  })
+
   useEffect(() => {
     let cancelled = false
     const loadCatalog = async () => {
@@ -713,8 +752,13 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   useEffect(() => {
     let cancelled = false
 
+    const isBackground = backgroundStatsRef.current
+    backgroundStatsRef.current = false
+
     const loadStats = async () => {
-      setIsStatsFetching(true)
+      if (!isBackground) {
+        setIsStatsFetching(true)
+      }
       try {
         const response = await qualityApi.getStats({ range })
         if (!cancelled) {
@@ -722,7 +766,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           setStatsError(null)
         }
       } catch (caught) {
-        if (!cancelled) {
+        if (!cancelled && !isBackground) {
           // Drop the previous rollup rather than leaving it on screen. A refetch
           // fires after every triage change, so keeping the old object would show
           // backlog counts that the operator's own action just invalidated —
@@ -733,8 +777,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           // the table fully usable rather than failing the page.
           setStatsError(getApiErrorMessage(caught, 'Failed to load quality stats'))
         }
+        // A background refetch nobody asked for keeps the last rollup instead:
+        // it was honest when it loaded, and blanking the panel would read as a
+        // change in the data rather than a hiccup in the channel.
       } finally {
-        if (!cancelled) {
+        if (!cancelled && !isBackground) {
           setIsStatsFetching(false)
         }
       }
@@ -1126,13 +1173,17 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
     const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
     const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
+    const isBackground = backgroundTurnsRef.current
+    backgroundTurnsRef.current = false
     const loadTurns = async () => {
       try {
         if (cancelled) {
           return
         }
-        setIsFetching(true)
-        setError(null)
+        if (!isBackground) {
+          setIsFetching(true)
+          setError(null)
+        }
         const page = await qualityApi.listTurns({
           signal: queueScope.signals,
           actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
@@ -1162,13 +1213,22 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         setItems(page.items)
         setTotal(page.total)
         setTotalPages(page.totalPages)
+        // A background refetch left any earlier banner in place; a good page
+        // clears it rather than pairing fresh rows with a stale failure.
+        setError(null)
       } catch (caught) {
         if (cancelled) {
           return
         }
+        if (isBackground) {
+          // Nobody asked for this refetch, so keep the rows already on screen
+          // rather than replacing a working table with an error banner.
+          console.debug('Background quality refresh failed; keeping the current queue.', caught)
+          return
+        }
         setError(getApiErrorMessage(caught, 'Failed to load assistant answers'))
       } finally {
-        if (!cancelled) {
+        if (!cancelled && !isBackground) {
           setIsFetching(false)
           setHasLoadedOnce(true)
         }

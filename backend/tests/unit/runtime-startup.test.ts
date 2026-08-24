@@ -208,6 +208,39 @@ describe("runtime startup", () => {
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();
   });
 
+  it("closes the workspace event bus before waiting for long-lived HTTP responses to drain", async () => {
+    const env = createEnv();
+    let finishServerClose: (() => void) | undefined;
+    const workspaceEventBus = {
+      close: vi.fn(async () => finishServerClose?.()),
+    };
+    const dependencies = {
+      ...createDependencies(),
+      workspaceEventBus,
+    } as unknown as AppDependencies;
+    const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+      onListening();
+      return {
+        close(callback?: () => void) {
+          finishServerClose = callback;
+        },
+      };
+    });
+
+    const runtime = await startApiRuntime({
+      env,
+      logger: createLogger().logger as any,
+      runMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: () => ({}) as any,
+      listen,
+    });
+
+    await runtime.shutdown("test");
+
+    expect(workspaceEventBus.close).toHaveBeenCalledOnce();
+  });
+
   it("starts the worker runtime without connector bootstrapping and fails fast on pending migrations", async () => {
     const env = createEnv();
     const dependencies = createDependencies();

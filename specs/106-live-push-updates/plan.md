@@ -32,9 +32,11 @@
    "a shared event sequence added"). `updated_at` is never used. The client guard only coalesces
    and always does a trailing refetch (FR-004), so assignment-order vs commit-order races degrade
    to a redundant fetch.
-2. **Transport = Postgres `LISTEN/NOTIFY`**, channel `workspace_push_events`. Publish uses the
-   shared pool (single `select pg_notify(...)` via a kysely `sql` template — does not trip
-   `checkNoRawSql`). Subscribe uses a **dedicated `pg.Client`** (never the pool — pooled clients
+2. **Transport = Postgres `LISTEN/NOTIFY`**, channel `workspace_push_events`. Mutation paths
+   enqueue into a bounded, best-effort publisher that coalesces by `(workspaceId, changeKind)`
+   and flushes each burst with one set-based SQL statement; they do not await a separate
+   shared-pool query per transition. Subscribe uses a **dedicated
+   `pg.Client`** (never the pool — pooled clients
    are recycled), created via a new seam on `Database`
    (`backend/src/shared/infra/database.ts` is already on the `checkNoRawSql` allowlist;
    `backend/scripts/checkNoRawSql.mjs:18-34`), with auto-reconnect + backoff and teardown wired
@@ -61,10 +63,9 @@
    generic "async iterable → SSE frames" writer is extracted from
    `chatPresenter.ts` `sendChatSse` (:66) into a shared presenter helper; chat keeps its typed
    wrapper (FR-001).
-6. **Not in the OpenAPI contract.** Dashboard-only route, precedent `observabilityRoutes.ts`
-   (absent from `backend/openapi.json`). No SDK regeneration. If it is ever promoted to the public
-   API, it must be registered under `backend/src/app/http/openapi/paths/` and the SDK snapshot
-   regenerated.
+6. **OpenAPI contract is already registered.** The dashboard route is present in the code-first
+   OpenAPI output and generated SDK snapshots. This robustness amendment does not change its wire
+   shape, so no regeneration is required unless the endpoint contract itself changes.
 7. **Kill switch**: env `WORKSPACE_PUSH_ENABLED` (booleanish, default `true`,
    `backend/src/app/config/env.ts`). Off → endpoint returns 404 and the bus is a no-op publisher;
    surfaces converge on their poll floors alone (SC-002).
@@ -74,10 +75,9 @@
    workspace ⇒ reconnect. Client transport in `frontend/lib/api-events.ts` reuses
    `parseSseEvent` + fetch-with-bearer (`frontend/lib/api-client.ts` `requireWorkspaceApiToken`),
    auto-reconnect with exponential backoff + jitter.
-9. **Coalescing** (FR-004): per-subscription trailing debounce (~300 ms). Hints only mark "dirty";
-   one refetch always runs after the last hint in a burst. The version guard drops only
-   already-seen `(resourceType, resourceId, version)` duplicates *within* a burst; it never
-   cancels the trailing refetch.
+9. **Coalescing** (FR-004): each subscription uses a fixed maximum refresh window (~300 ms), not a
+   resettable trailing debounce. The pending timer is the bounded dirty marker, so duplicate hints
+   require no retained version set; sustained traffic still produces one refetch per window.
 10. **Reconcile floors** (FR-006): documents + crawl polls go 2 s → 45 s and become
     **unconditional while the view is mounted** (removes the known un-arm gating trap,
     `documents-view.tsx:353-389`); inbox badge 30 s → 60 s (`use-inbox-count.ts:17`);
@@ -92,9 +92,42 @@ count), listener client connect/reconnect/error, publish failure (warn, resource
 only), bus no-op when disabled (once at startup). Client-side: reconnect attempts logged to
 console.debug only. No new high-cardinality metrics.
 
+## Robustness hardening amendment
+
+- **Transaction visibility:** composition publishes only from post-commit seams. Rollbacks and
+  no-op conditional updates do not emit.
+- **Bounded publication:** mutation paths enqueue without an additional awaited SQL query. The
+  publisher has a hard queue bound, coalesces redundant workspace/change-kind hints, and flushes
+  a coalesced burst in one SQL statement; dropped hints are safe because reconnect and reconcile
+  polling remain authoritative.
+- **Workspace-proportional fan-out:** local subscribers are indexed by workspace rather than
+  scanned globally. Bulk recovery returns only publication identity and never creates an
+  unbounded `Promise.all` fan-out.
+- **Bounded SSE:** writers respect Node response backpressure. Listener loss closes current
+  iterators so browsers reconnect and reconcile; shutdown closes the bus/streams before awaiting
+  the HTTP server.
+- **Bounded frontend work:** fixed-window invalidation cannot starve under sustained traffic;
+  reconnect listeners are always removed; history/document refetches are single-flight with a
+  queued trailing rerun and stale-response guards.
+- **Quiet telemetry:** lifecycle, failure, drop, and reconnect signals remain observable, but
+  routine per-frame delivery is not emitted as an info log.
+- **Contract and queue review:** there is no payload or OpenAPI shape change and no AMQP payload,
+  retry, or worker-dispatch contract change. The hardening stays inside the existing push port.
+
+### Capacity boundary
+
+The bounded/coalesced adapter prevents overload from becoming unbounded application memory or
+request latency, but PostgreSQL still broadcasts every notification to every listening API
+process. This design therefore degrades safely rather than claiming unlimited transport
+throughput. Before fleet-wide notification traffic approaches PostgreSQL's measured capacity,
+replace only the `WorkspaceEventBus` adapter with a partitioned broker; publishers, SSE framing,
+and frontend convergence semantics remain unchanged.
+
 ## Slices & delivery
 
-Sequenced; each slice commits before the next starts (single worktree — no parallel Codex edits).
+The original slices were sequenced. This hardening pass may run backend and frontend work in
+parallel because their production/test file sets are disjoint; shared feature artifacts remain
+owned by the coordinating agent.
 
 ### Slice A — Contract, bus, transport, channel (backend) — **codex terra**
 

@@ -6,6 +6,7 @@ import { AccountRepository } from "../../../src/db/repositories/accountRepositor
 import { ConversationRepository, type ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import { ConversationOwnershipRepository } from "../../../src/db/repositories/conversationOwnershipRepository.js";
 import { WorkspaceRepository, type WorkspaceRecord } from "../../../src/db/repositories/workspaceRepository.js";
+import { withConversationOwnershipPushEvents } from "../../../src/app/composition/workspacePushRepositoryDecorators.js";
 import { PostgresAssistantTurnPersistence } from "../../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { InMemoryWorkspaceEventBus } from "../../../src/shared/events/workspaceEventBus.js";
 import { Database } from "../../../src/shared/infra/database.js";
@@ -537,6 +538,51 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     await events.return?.();
   });
 
+  it("publishes an ownership handoff only after its row is committed", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const ownership = new ConversationOwnershipRepository(database.kysely);
+    const publish = vi.fn(async (event: { changeKind: string }) => {
+      if (event.changeKind === "conversation.ownership_changed") {
+        await expect(ownership.load(conversation.id)).resolves.toMatchObject({
+          conversationId: conversation.id,
+          workspaceId: workspace.id,
+          state: "human_owned",
+        });
+      }
+    });
+    const persistenceWithBus = new PostgresAssistantTurnPersistence(
+      database.kysely,
+      60_000,
+      ownership,
+      undefined,
+      undefined,
+      { publish } as never,
+    );
+
+    await persistenceWithBus.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      ownershipHandoff: { reason: "operator_requested" },
+      assistantMessage: {
+        id: randomUUID(),
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Handing off.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      changeKind: "conversation.ownership_changed",
+    }));
+  });
+
   it("does not publish conversation.updated from inside a caller-owned transaction", async () => {
     const { workspace, conversation } = await seedConversation();
     const bus = new InMemoryWorkspaceEventBus();
@@ -574,5 +620,49 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     });
 
     expect(publishSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not publish or persist ownership when a caller-owned transaction rolls back", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const bus = new InMemoryWorkspaceEventBus();
+    const publishSpy = vi.spyOn(bus, "publish");
+    const ownership = withConversationOwnershipPushEvents(
+      new ConversationOwnershipRepository(database.kysely),
+      bus,
+    );
+    const persistenceWithBus = new PostgresAssistantTurnPersistence(
+      database.kysely,
+      60_000,
+      ownership,
+      undefined,
+      undefined,
+      bus,
+    );
+
+    await expect(database.kysely.transaction().execute(async (transaction) => {
+      await persistenceWithBus.completeAssistantTurn({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        transaction,
+        ownershipHandoff: { reason: "operator_requested" },
+        assistantMessage: {
+          id: randomUUID(),
+          conversationId: conversation.id,
+          workspaceId: workspace.id,
+          role: "assistant",
+          content: "This turn rolls back.",
+        },
+        auditEvent: {
+          eventType: "chat.answer",
+          eventStatus: "success",
+          workspaceId: workspace.id,
+          metadata: {},
+        },
+      });
+      throw new Error("force rollback");
+    })).rejects.toThrow("force rollback");
+
+    expect(publishSpy).not.toHaveBeenCalled();
+    await expect(new ConversationOwnershipRepository(database.kysely).load(conversation.id)).resolves.toBeNull();
   });
 });

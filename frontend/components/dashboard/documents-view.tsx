@@ -44,6 +44,7 @@ import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-ro
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspaceEvents } from '@/lib/workspace-events-context'
+import { useCoalescedAsync } from '@/lib/use-coalesced-async'
 import {
   consumeAudiencePulseDraftSeed,
   formatDraftQuestionsAsMarkdown,
@@ -183,7 +184,7 @@ export function DocumentsView({
 
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
 
-  const loadDocuments = useCallback(async (
+  const performLoadDocuments = useCallback(async (
     page: number,
     options?: { background?: boolean; reset?: boolean },
   ) => {
@@ -233,6 +234,7 @@ export function DocumentsView({
       }
     }
   }, [accountId, routeState.workspaceId, sourceFilterId])
+  const loadDocuments = useCoalescedAsync(performLoadDocuments)
 
   useEffect(() => {
     const nextWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
@@ -245,7 +247,7 @@ export function DocumentsView({
     }
 
     void loadDocuments(currentPage)
-  }, [accountId, currentPage, loadDocuments, routeState.workspaceId])
+  }, [accountId, currentPage, loadDocuments, routeState.workspaceId, sourceFilterId])
 
   const loadDocumentsRef = useRef(loadDocuments)
   useEffect(() => {
@@ -261,7 +263,7 @@ export function DocumentsView({
     recentlyDeletedRef.current = recentlyDeletedJobIds
   }, [recentlyDeletedJobIds])
 
-  const loadCrawlJobs = useCallback(async () => {
+  const performLoadCrawlJobs = useCallback(async () => {
     const requestId = crawlLoadRequestIdRef.current + 1
     crawlLoadRequestIdRef.current = requestId
     const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
@@ -320,19 +322,20 @@ export function DocumentsView({
       })
     }
   }, [accountId, routeState.workspaceId])
+  const loadCrawlJobs = useCoalescedAsync(performLoadCrawlJobs)
 
   const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
-  const handleWorkspaceInvalidation = useCallback(() => {
+  const handleDocumentInvalidation = useCallback(() => {
     void loadDocuments(currentPageRef.current, { background: true, reset: true })
+  }, [loadDocuments])
+  const handleCrawlInvalidation = useCallback(() => {
     if (websiteCrawlerEnabled) {
       void loadCrawlJobs()
     }
-  }, [loadCrawlJobs, loadDocuments, websiteCrawlerEnabled])
+  }, [loadCrawlJobs, websiteCrawlerEnabled])
 
-  useWorkspaceEvents(
-    ['document.status_changed', 'crawl.status_changed', 'crawl.progress'],
-    handleWorkspaceInvalidation,
-  )
+  useWorkspaceEvents(['document.status_changed'], handleDocumentInvalidation)
+  useWorkspaceEvents(['crawl.status_changed', 'crawl.progress'], handleCrawlInvalidation)
 
   useEffect(() => {
     let cancelled = false
@@ -360,7 +363,7 @@ export function DocumentsView({
       return
     }
     void loadCrawlJobs()
-  }, [loadCrawlJobs, websiteCrawlerEnabled])
+  }, [accountId, loadCrawlJobs, routeState.workspaceId, websiteCrawlerEnabled])
 
   useEffect(() => {
     setCurrentPage(routeState.documentsPage ?? 1)

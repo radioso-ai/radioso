@@ -366,6 +366,15 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
           changeKind: "hitl.decision_created",
         });
       }
+
+      if (input.ownershipHandoff) {
+        await this.workspaceEventBus?.publish({
+          resourceType: "conversation",
+          resourceId: input.conversationId,
+          workspaceId: input.workspaceId,
+          changeKind: "conversation.ownership_changed",
+        });
+      }
     }
 
     await this.requestActionDrain(input.actions);

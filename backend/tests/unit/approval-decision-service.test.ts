@@ -89,6 +89,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
         conversationId: pending.conversationId,
         resumed: true,
         assistantMessageId: "assistant_message_1",
+        ownershipChanged: true,
       })),
     };
     const publishMessageCreated = vi.fn();
@@ -126,6 +127,12 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       resourceId: pending.conversationId,
       workspaceId: pending.workspaceId,
       changeKind: "conversation.updated",
+    });
+    expect(workspaceEventBus.publish).toHaveBeenCalledWith({
+      resourceType: "conversation",
+      resourceId: pending.conversationId,
+      workspaceId: pending.workspaceId,
+      changeKind: "conversation.ownership_changed",
     });
   });
 

@@ -139,6 +139,7 @@ export const getChatTurnRoute = (session: PreparedSession, engineTrace?: Convers
 export interface CompletedAssistantTurn {
   response: ChatResponse;
   assistantMessageId: string;
+  ownershipChanged?: boolean;
 }
 
 /** The narrow slice of the action outbox the turn lifecycle needs (idempotent enqueue). */
@@ -740,6 +741,7 @@ export class ChatTurnLifecycle {
 
     return {
       assistantMessageId: assistantMessage.id,
+      ...(!safeTestTurn && input.ownershipHandoff ? { ownershipChanged: true } : {}),
       response: {
         conversationId: input.session.conversation.id,
         agentId: input.session.agent.id,

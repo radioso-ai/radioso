@@ -24,10 +24,12 @@ export interface DatabaseOptions {
 export class Database {
   readonly pool: Pool;
   readonly #connectionString: string;
+  readonly #connectionTimeoutMs?: number;
   #kysely?: Kysely<DB>;
 
   constructor(connectionString: string, options: DatabaseOptions = {}) {
     this.#connectionString = connectionString;
+    this.#connectionTimeoutMs = options.connectionTimeoutMs;
     this.pool = new Pool({
       connectionString,
       max: options.poolMax,
@@ -42,7 +44,11 @@ export class Database {
   }
 
   createListenerClient(): Client {
-    return new Client({ connectionString: this.#connectionString });
+    return new Client({
+      connectionString: this.#connectionString,
+      connectionTimeoutMillis: this.#connectionTimeoutMs,
+      keepAlive: true,
+    });
   }
 
   /**

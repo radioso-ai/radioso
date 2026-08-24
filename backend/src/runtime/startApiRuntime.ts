@@ -93,7 +93,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
       shuttingDown = true;
       dependencies.logger.info({ role: "api", signal }, "Radioso API runtime shutting down");
 
-      await new Promise<void>((resolve, reject) => {
+      const serverClosed = new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {
             reject(error);
@@ -102,12 +102,16 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
           resolve();
         });
       });
+      // Close the push bus before awaiting server drain: long-lived SSE responses
+      // stay open via heartbeats and only end when their bus iterators terminate,
+      // so awaiting server.close() first would hang shutdown indefinitely.
+      await dependencies.workspaceEventBus?.close();
+      await serverClosed;
 
       try {
         await dependencies.applicationModules.shutdownAll();
         await dependencies.connectorRegistry.shutdownAll();
       } finally {
-        await dependencies.workspaceEventBus?.close();
         await stopRuntimeTracing();
       }
     },

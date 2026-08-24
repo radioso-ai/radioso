@@ -54,7 +54,7 @@ describe("workspace push repository decorators", () => {
     );
     const crawl = withWebsiteCrawlPushEvents(
       {
-        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        updateCheckpoint: vi.fn().mockResolvedValue(true),
         markCompleted: vi.fn().mockResolvedValue({ id: "crawl-1", workspaceId: "workspace-1" }),
       } as unknown as WebsiteCrawlJobRepositoryPort,
       bus,
@@ -205,6 +205,69 @@ describe("workspace push repository decorators", () => {
       });
     }
     await events.return?.();
+  });
+
+  it("keeps `this` bound for every class-backed ownership mutation", async () => {
+    const bus = new InMemoryWorkspaceEventBus();
+    class FakeOwnershipRepository {
+      private readonly record = { conversationId: "conversation-1", workspaceId: "workspace-1" };
+      async load() { return this.record; }
+      async requestHandoff() { return this.record; }
+      async takeOver() { return { ok: true as const, record: this.record }; }
+      async transfer() { return { ok: true as const, record: this.record }; }
+      async handBack() { return { ok: true as const, record: this.record }; }
+    }
+    const repository = withConversationOwnershipPushEvents(
+      new FakeOwnershipRepository() as unknown as ConversationOwnershipRepository,
+      bus,
+    );
+
+    await expect(repository.requestHandoff({} as never)).resolves.toMatchObject({ conversationId: "conversation-1" });
+    await expect(repository.takeOver({} as never)).resolves.toMatchObject({ ok: true });
+    await expect(repository.transfer({} as never)).resolves.toMatchObject({ ok: true });
+    await expect(repository.handBack({} as never)).resolves.toMatchObject({ ok: true });
+  });
+
+  it("defers ownership publication when the mutation uses a caller-owned transaction", async () => {
+    const bus = new InMemoryWorkspaceEventBus();
+    const publishSpy = vi.spyOn(bus, "publish");
+    const record = { conversationId: "conversation-1", workspaceId: "workspace-1" };
+    const repository = withConversationOwnershipPushEvents({
+      requestHandoff: vi.fn().mockResolvedValue(record),
+      takeOver: vi.fn().mockResolvedValue({ ok: true, record }),
+      transfer: vi.fn().mockResolvedValue({ ok: true, record }),
+      handBack: vi.fn().mockResolvedValue({ ok: true, record }),
+    } as unknown as ConversationOwnershipRepository, bus);
+    const transaction = {} as never;
+
+    await repository.requestHandoff({} as never, transaction);
+    await repository.takeOver({} as never, transaction);
+    await repository.transfer({} as never, transaction);
+    await repository.handBack({} as never, transaction);
+
+    expect(publishSpy).not.toHaveBeenCalled();
+  });
+
+  it("publishes continuation release and skips a no-op checkpoint", async () => {
+    const bus = new InMemoryWorkspaceEventBus();
+    const publishSpy = vi.spyOn(bus, "publish");
+    const crawl = withWebsiteCrawlPushEvents({
+      releaseForContinuation: vi.fn().mockResolvedValue(true),
+      updateCheckpoint: vi.fn().mockResolvedValue(false),
+    } as unknown as WebsiteCrawlJobRepositoryPort, bus);
+
+    await crawl.releaseForContinuation("crawl-1", new Date(), "workspace-1");
+    await crawl.updateCheckpoint("crawl-1", "workspace-1", {
+      discoveredUrls: [], queuedUrls: [], processingUrls: [], processedCanonicalUrls: [],
+      accepted: 0, skipped: 0, failed: 0, lastProcessedAt: null,
+    });
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(publishSpy).toHaveBeenCalledWith(expect.objectContaining({
+      resourceId: "crawl-1",
+      workspaceId: "workspace-1",
+      changeKind: "crawl.status_changed",
+    }));
   });
 
   it("publishes contact delivery only for transitioned action rows", async () => {

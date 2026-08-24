@@ -10,9 +10,11 @@ import type { Database } from "./database.js";
 const CHANNEL = "workspace_push_events";
 const INITIAL_RECONNECT_DELAY_MS = 250;
 const MAX_RECONNECT_DELAY_MS = 10_000;
+const STABLE_LISTENER_MS = 10_000;
 // At 256 identity-only frames, a stalled browser is bounded to a modest amount
 // of memory while still allowing short bursts to drain without a full refetch.
 const MAX_SUBSCRIBER_QUEUE_SIZE = 256;
+const MAX_PENDING_PUBLISHES = 1_024;
 
 interface Subscriber {
   workspaceId: string;
@@ -30,49 +32,104 @@ interface ReadyWaiter {
 
 export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   #client?: Client;
+  #connectingClient?: Client;
   #closed = false;
   #connecting = false;
   #reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
   #reconnectTimer?: NodeJS.Timeout;
   #hasConnected = false;
-  readonly #subscribers = new Set<Subscriber>();
+  #listenerConnectedAt?: number;
+  readonly #subscribersByWorkspace = new Map<string, Set<Subscriber>>();
   readonly #readyWaiters = new Set<ReadyWaiter>();
+  readonly #pendingPublishes = new Map<string, WorkspaceEventPublish>();
+  #publishDrain?: Promise<void>;
+  #publishRetryAt = 0;
+  #publishRetryDelayMs = INITIAL_RECONNECT_DELAY_MS;
+  #lastQueueOverflowTelemetryAt = 0;
 
   constructor(
     private readonly database: Database,
     private readonly logger: AppLogger,
     private readonly telemetryService?: Pick<TelemetryService, "emit">,
+    private readonly notificationPublisher?: (events: readonly WorkspaceEventPublish[]) => Promise<void>,
   ) {}
 
   async publish(event: WorkspaceEventPublish): Promise<void> {
+    if (this.#closed) {
+      return;
+    }
+    if (Date.now() < this.#publishRetryAt) {
+      return;
+    }
+    const key = `${event.workspaceId}\u0000${event.changeKind}`;
+    if (this.#pendingPublishes.has(key)) {
+      // Delete before set so insertion order continues to represent recency.
+      this.#pendingPublishes.delete(key);
+    } else if (this.#pendingPublishes.size >= MAX_PENDING_PUBLISHES) {
+      const oldestKey = this.#pendingPublishes.keys().next().value as string | undefined;
+      if (oldestKey) {
+        this.#pendingPublishes.delete(oldestKey);
+      }
+      if (Date.now() - this.#lastQueueOverflowTelemetryAt >= 60_000) {
+        this.#lastQueueOverflowTelemetryAt = Date.now();
+        this.#emitTelemetry("workspace_push.publisher_queue_overflow", { severity: "warn" });
+      }
+    }
+    this.#pendingPublishes.set(key, event);
+    this.#schedulePublishDrain();
+  }
+
+  async #publishBatch(events: readonly WorkspaceEventPublish[]): Promise<boolean> {
     try {
-      // json_build_object cannot infer bind-parameter types (42P18), so every
-      // parameter carries an explicit ::text cast.
+      if (this.notificationPublisher) {
+        await this.notificationPublisher(events);
+        this.#publishRetryDelayMs = INITIAL_RECONNECT_DELAY_MS;
+        return true;
+      }
+      const batchJson = JSON.stringify(events.map((event) => ({
+        resource_type: event.resourceType,
+        resource_id: event.resourceId,
+        workspace_id: event.workspaceId,
+        change_kind: event.changeKind,
+      })));
+      // A whole coalesced burst is one pool round-trip. PostgreSQL still emits
+      // one identity-only notification per row (with its own sequence version).
       await sql`
         select pg_notify(
           'workspace_push_events',
           json_build_object(
-            'resourceType', ${event.resourceType}::text,
-            'resourceId', ${event.resourceId}::text,
-            'workspaceId', ${event.workspaceId}::text,
-            'changeKind', ${event.changeKind}::text,
+            'resourceType', event_data.resource_type,
+            'resourceId', event_data.resource_id,
+            'workspaceId', event_data.workspace_id,
+            'changeKind', event_data.change_kind,
             'version', nextval('workspace_push_version_seq')
           )::text
         )
+        from jsonb_to_recordset(${batchJson}::jsonb) as event_data(
+          resource_type text,
+          resource_id text,
+          workspace_id text,
+          change_kind text
+        )
       `.execute(this.database.kysely);
-      this.#emitTelemetry("workspace_push.event_published", {
-        tags: { change_kind: event.changeKind },
-      });
+      this.#publishRetryDelayMs = INITIAL_RECONNECT_DELAY_MS;
+      return true;
     } catch (error) {
+      this.#publishRetryAt = Date.now() + this.#publishRetryDelayMs;
+      this.#publishRetryDelayMs = Math.min(this.#publishRetryDelayMs * 2, MAX_RECONNECT_DELAY_MS);
       this.#emitTelemetry("workspace_push.publish_failed", {
         severity: "warn",
-        tags: { change_kind: event.changeKind },
+        tags: {
+          change_kind: events.every((event) => event.changeKind === events[0]?.changeKind)
+            ? events[0]!.changeKind
+            : "mixed",
+        },
       });
       this.logger.warn({
-        resourceType: event.resourceType,
-        changeKind: event.changeKind,
+        batchSize: events.length,
         err: error,
-      }, "Workspace push event publish failed");
+      }, "Workspace push event batch publish failed");
+      return false;
     }
   }
 
@@ -112,6 +169,10 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   subscribe(workspaceId: string): WorkspaceEventSubscription {
     // Publish-only processes (workers) never subscribe; the LISTEN connection is
     // opened lazily so they do not hold an idle client against the shared database.
+    if (this.#reconnectTimer) {
+      clearTimeout(this.#reconnectTimer);
+      this.#reconnectTimer = undefined;
+    }
     void this.#connect();
     const subscriber: Subscriber = {
       workspaceId,
@@ -119,14 +180,19 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       closed: false,
       resyncRequired: false,
     };
-    this.#subscribers.add(subscriber);
+    const workspaceSubscribers = this.#subscribersByWorkspace.get(workspaceId) ?? new Set<Subscriber>();
+    workspaceSubscribers.add(subscriber);
+    this.#subscribersByWorkspace.set(workspaceId, workspaceSubscribers);
 
     const close = () => {
       if (subscriber.closed) {
         return;
       }
       subscriber.closed = true;
-      this.#subscribers.delete(subscriber);
+      workspaceSubscribers.delete(subscriber);
+      if (workspaceSubscribers.size === 0) {
+        this.#subscribersByWorkspace.delete(workspaceId);
+      }
       subscriber.resolve?.({ done: true, value: undefined });
       subscriber.resolve = undefined;
     };
@@ -162,21 +228,22 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#pendingPublishes.clear();
     this.#resolveReadyWaiters();
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = undefined;
     }
-    for (const subscriber of [...this.#subscribers]) {
-      subscriber.closed = true;
-      subscriber.resolve?.({ done: true, value: undefined });
-      subscriber.resolve = undefined;
-      this.#subscribers.delete(subscriber);
-    }
+    this.#terminateSubscribers();
     const client = this.#client;
     this.#client = undefined;
+    const connectingClient = this.#connectingClient;
+    this.#connectingClient = undefined;
     if (client) {
       await client.end().catch(() => undefined);
+    }
+    if (connectingClient && connectingClient !== client) {
+      await connectingClient.end().catch(() => undefined);
     }
   }
 
@@ -186,11 +253,11 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
     }
     this.#connecting = true;
     const client = this.database.createListenerClient();
+    this.#connectingClient = client;
     client.on("notification", (message) => {
       if (message.channel !== CHANNEL || !message.payload) {
         return;
       }
-      this.#emitTelemetry("workspace_push.listener_notification_received");
       const parsed = parsePushEvent(message.payload);
       if (parsed) {
         this.#dispatch(parsed);
@@ -210,7 +277,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       // Raw LISTEN intentionally remains in this shared infra adapter; it is allowlisted.
       await client.query(`LISTEN ${CHANNEL}`);
       this.#client = client;
-      this.#reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+      this.#listenerConnectedAt = Date.now();
       this.#resolveReadyWaiters();
       this.#emitTelemetry(this.#hasConnected
         ? "workspace_push.listener_reconnected"
@@ -221,6 +288,9 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       await client.end().catch(() => undefined);
       this.#handleListenerFailure(client, error);
     } finally {
+      if (this.#connectingClient === client) {
+        this.#connectingClient = undefined;
+      }
       this.#connecting = false;
     }
   }
@@ -235,11 +305,21 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
     const wasConnected = this.#client === client;
     this.#client = undefined;
     void client.end().catch(() => undefined);
+    const wasStable = this.#listenerConnectedAt !== undefined
+      && Date.now() - this.#listenerConnectedAt >= STABLE_LISTENER_MS;
+    this.#listenerConnectedAt = undefined;
     if (wasConnected) {
       this.#emitTelemetry("workspace_push.listener_disconnected", { severity: "warn" });
     }
+    // LISTEN/NOTIFY has no replay. End every current iterator (including one
+    // opened while the initial LISTEN was failing) so each browser reconnects
+    // and receives a fresh `ready` reconciliation signal.
+    this.#terminateSubscribers();
     this.logger.warn({ channel: CHANNEL, err: error }, "Workspace push listener reconnecting");
-    const delay = this.#reconnectDelayMs;
+    if (wasStable) {
+      this.#reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+    }
+    const delay = Math.round(this.#reconnectDelayMs * (0.5 + Math.random()));
     this.#reconnectDelayMs = Math.min(this.#reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
     this.#reconnectTimer = setTimeout(() => {
       this.#reconnectTimer = undefined;
@@ -249,8 +329,12 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   }
 
   #dispatch(event: PushEvent): void {
-    for (const subscriber of this.#subscribers) {
-      if (subscriber.closed || subscriber.workspaceId !== event.workspaceId) {
+    const workspaceSubscribers = this.#subscribersByWorkspace.get(event.workspaceId);
+    if (!workspaceSubscribers) {
+      return;
+    }
+    for (const subscriber of workspaceSubscribers) {
+      if (subscriber.closed) {
         continue;
       }
       if (subscriber.resolve) {
@@ -278,6 +362,46 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   #resolveReadyWaiters(): void {
     for (const waiter of [...this.#readyWaiters]) {
       waiter.resolve();
+    }
+  }
+
+  #terminateSubscribers(): void {
+    for (const workspaceSubscribers of this.#subscribersByWorkspace.values()) {
+      for (const subscriber of workspaceSubscribers) {
+        subscriber.closed = true;
+        subscriber.resolve?.({ done: true, value: undefined });
+        subscriber.resolve = undefined;
+      }
+    }
+    this.#subscribersByWorkspace.clear();
+  }
+
+  #schedulePublishDrain(): void {
+    if (this.#publishDrain || this.#closed) {
+      return;
+    }
+    const drain = this.#drainPublishes().finally(() => {
+      if (this.#publishDrain === drain) {
+        this.#publishDrain = undefined;
+      }
+      if (this.#pendingPublishes.size > 0 && !this.#closed) {
+        this.#schedulePublishDrain();
+      }
+    });
+    this.#publishDrain = drain;
+  }
+
+  async #drainPublishes(): Promise<void> {
+    while (!this.#closed && this.#pendingPublishes.size > 0) {
+      const batch = [...this.#pendingPublishes.values()];
+      this.#pendingPublishes.clear();
+      if (!await this.#publishBatch(batch)) {
+        // The channel is lossy by design. Drop the remaining batch after a
+        // transport failure instead of hammering the pool once per queued key;
+        // reconcile polling restores authoritative state.
+        this.#pendingPublishes.clear();
+        return;
+      }
     }
   }
 }

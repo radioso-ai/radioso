@@ -36,7 +36,12 @@ export interface ResumeRunner {
     payload?: unknown;
     decidedBy: string;
     transaction: Db;
-  }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }>;
+  }): Promise<{
+    conversationId: string;
+    resumed: boolean;
+    assistantMessageId?: string;
+    ownershipChanged?: boolean;
+  }>;
 }
 
 export interface ApprovalDecisionConversationEventPublisher {
@@ -152,6 +157,14 @@ export class ApprovalDecisionService {
         resourceId: resume.conversationId,
         workspaceId: record.workspaceId,
         changeKind: "conversation.updated",
+      });
+    }
+    if (resume.ownershipChanged) {
+      await this.workspaceEventBus?.publish({
+        resourceType: "conversation",
+        resourceId: resume.conversationId,
+        workspaceId: record.workspaceId,
+        changeKind: "conversation.ownership_changed",
       });
     }
 

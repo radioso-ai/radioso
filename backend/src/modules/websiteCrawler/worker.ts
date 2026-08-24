@@ -190,7 +190,11 @@ export class WebsiteCrawlWorker {
         return;
       }
       if (result.outcome === "yielded") {
-        releasedForContinuation = await this.dependencies.repository.releaseForContinuation(job.id, job.claimedAt!);
+        releasedForContinuation = await this.dependencies.repository.releaseForContinuation(
+          job.id,
+          job.claimedAt!,
+          job.workspaceId,
+        );
         if (!releasedForContinuation) {
           return;
         }

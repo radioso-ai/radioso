@@ -31,23 +31,23 @@
 
 **Goal**: Establish provider-neutral, bounded ports and composition seams before any product transition publishes.
 
-- [ ] T008 [P] Add failing protocol/schema tests for all version-1 kinds, strict content-free envelopes, browser frames, unknown-kind compatibility, UUID/channel matching, and byte caps in `packages/workspace-invalidation-contract/tests/contract.test.ts`
-- [ ] T009 Implement the tested Zod schemas, TypeScript types, channel helper, and synchronous `WorkspaceInvalidationPublisher` port in `packages/workspace-invalidation-contract/src/index.ts`
-- [ ] T010 Wire the new workspace package manifests/build/test exports in `packages/workspace-invalidation-contract/package.json`, `packages/workspace-invalidation-contract/tsconfig.json`, `pnpm-workspace.yaml`, and the root lockfile
-- [ ] T011 [P] Add failing typed-config tests for disabled, standalone, Redis Cluster, hosted IAM/TLS, the complete capacity table and relational constraints, stream-age, tiny DB pool, rollout, and invalid combinations in `backend/tests/unit/realtime/config.test.ts`
-- [ ] T012 Implement side-effect-free Zod configuration in `backend/src/modules/realtime/infrastructure/config.ts` and expose environment inputs through `backend/src/app/config/env.ts`
-- [ ] T013 [P] Add failing producer tests for synchronous enqueue, per-process/per-workspace bounds, kind merging, fair hot-workspace scheduling, one global scheduler, cadence, publish concurrency, shutdown, and aggregate drop/coalesce telemetry in `backend/tests/unit/realtime/bounded-producer.test.ts`
-- [ ] T014 Implement the provider-neutral bounded producer in `backend/src/modules/realtime/application/boundedInvalidationProducer.ts`
-- [ ] T015 [P] Add failing port/state-machine tests for publish transport, dynamic subscription interest, indexed fan-out, admission lease handles, and idempotent lifecycle cleanup in `backend/tests/unit/realtime/ports.test.ts`
-- [ ] T016 Define narrow provider-neutral ports and domain state in `backend/src/modules/realtime/domain/contracts.ts`, `backend/src/modules/realtime/application/workspaceInterestRegistry.ts`, and `backend/src/modules/realtime/domain/realtimeSession.ts`
-- [ ] T017 [P] Add failing session-authentication tests for one bounded lookup returning `sessionExpiresAt`, active session, account membership, workspace ownership, account switch, expiry, revocation, header mismatch, rejection of workspace API tokens, and throttled/best-effort `last_seen` touch in `backend/tests/unit/realtime/session-authenticator.test.ts`
-- [ ] T018 Implement the minimum session-only authentication adapter in `backend/src/modules/realtime/http/realtimeSessionAuthenticator.ts` on the tiny realtime DB pool without constructing full `AuthService`, audit, mail, assistant, or API dependencies
-- [ ] T019 [P] Add failing low-cardinality telemetry/redaction tests for producer, transport, admission, gateway, and stream signals in `backend/tests/unit/realtime/telemetry.test.ts`
-- [ ] T020 Implement named metrics/log/span helpers in `backend/src/modules/realtime/infrastructure/realtimeTelemetry.ts` without identifier labels or content fields
-- [ ] T021 Add failing composition tests for no-op publisher selection, startup validation, independent lifecycle ordering, and API/worker mutation availability during broker failure in `backend/tests/unit/realtime/composition.test.ts`
-- [ ] T022 Implement the no-op/default publisher wiring and lifecycle skeleton in `backend/src/app/composition/realtimePublisherComposition.ts` and inject only the narrow port into applicable API/worker composition graphs
-- [ ] T023 Update `backend/src/app/composition/README.md` only if the new public composition entrypoint changes its ownership map
-- [ ] T024 Run package and backend foundation tests plus builds; capture the bounded-memory and mutation-nonblocking invariants in test names rather than comments
+- [x] T008 [P] Add failing protocol/schema tests for all version-1 kinds, strict content-free envelopes, browser frames, unknown-kind compatibility, UUID/channel matching, and byte caps in `packages/workspace-invalidation-contract/tests/contract.test.ts`
+- [x] T009 Implement the tested Zod schemas, TypeScript types, channel helper, and synchronous `WorkspaceInvalidationPublisher` port in `packages/workspace-invalidation-contract/src/index.ts`
+- [x] T010 Wire the new workspace package manifests/build/test exports in `packages/workspace-invalidation-contract/package.json`, `packages/workspace-invalidation-contract/tsconfig.json`, `pnpm-workspace.yaml`, and the root lockfile
+- [x] T011 [P] Add failing typed-config tests for disabled, standalone, Redis Cluster, hosted IAM/TLS, the complete capacity table and relational constraints, stream-age, tiny DB pool, rollout, and invalid combinations in `backend/tests/unit/realtime/config.test.ts`
+- [x] T012 Implement side-effect-free Zod configuration in `backend/src/modules/realtime/infrastructure/config.ts` and expose environment inputs through `backend/src/app/config/env.ts`
+- [x] T013 [P] Add failing producer tests for synchronous enqueue, per-process/per-workspace bounds, kind merging, fair hot-workspace scheduling, one global scheduler, cadence, publish concurrency, shutdown, and aggregate drop/coalesce telemetry in `backend/tests/unit/realtime/bounded-producer.test.ts`
+- [x] T014 Implement the provider-neutral bounded producer in `backend/src/modules/realtime/application/boundedInvalidationProducer.ts`
+- [x] T015 [P] Add failing port/state-machine tests for publish transport, dynamic subscription interest, indexed fan-out, admission lease handles, and idempotent lifecycle cleanup in `backend/tests/unit/realtime/ports.test.ts`
+- [x] T016 Define narrow provider-neutral ports and domain state in `backend/src/modules/realtime/domain/contracts.ts`, `backend/src/modules/realtime/application/workspaceInterestRegistry.ts`, and `backend/src/modules/realtime/domain/realtimeSession.ts`
+- [x] T017 [P] Add failing session-authentication tests for one bounded lookup returning `sessionExpiresAt`, active session, account membership, workspace ownership, account switch, expiry, revocation, header mismatch, rejection of workspace API tokens, and throttled/best-effort `last_seen` touch in `backend/tests/unit/realtime/session-authenticator.test.ts`
+- [x] T018 Implement the minimum session-only authentication adapter in `backend/src/modules/realtime/http/realtimeSessionAuthenticator.ts` on the tiny realtime DB pool without constructing full `AuthService`, audit, mail, assistant, or API dependencies
+- [x] T019 [P] Add failing low-cardinality telemetry/redaction tests for producer, transport, admission, gateway, and stream signals in `backend/tests/unit/realtime/telemetry.test.ts`
+- [x] T020 Implement named metrics/log/span helpers in `backend/src/modules/realtime/infrastructure/realtimeTelemetry.ts` without identifier labels or content fields
+- [x] T021 Add failing composition tests for no-op publisher selection, startup validation, independent lifecycle ordering, and API/worker mutation availability during broker failure in `backend/tests/unit/realtime/composition.test.ts`
+- [x] T022 Implement the no-op/default publisher wiring and lifecycle skeleton in `backend/src/app/composition/realtimePublisherComposition.ts` and inject only the narrow port into applicable API/worker composition graphs
+- [x] T023 Update `backend/src/app/composition/README.md` only if the new public composition entrypoint changes its ownership map
+- [x] T024 Run package and backend foundation tests plus builds; capture the bounded-memory and mutation-nonblocking invariants in test names rather than comments
 
 **Phase 2 gate**: Galileo interface/diff review; no state-transition publisher work starts until root freezes the shared port.
 

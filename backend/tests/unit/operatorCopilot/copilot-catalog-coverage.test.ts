@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { catalogCoverage } from "./catalogCoverage.js";
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
+import { buildCopilotNeverListContext } from "../../../src/modules/operatorCopilot/neverList.js";
 
 describe("operator copilot catalog coverage", () => {
   // Ratchet: this may only ever decrease as tools land. Every increase so far has been a correction
@@ -118,6 +119,16 @@ describe("operator copilot catalog coverage", () => {
       setWorkspaceProviderCredential: { disposition: "permanent", neverListEntry: "provider_credential_writes" },
       replyToConversation: { disposition: "permanent", neverListEntry: "unattended_live_customer_reply" },
     });
+  });
+
+  it("keeps never-list exclusions available to Ray's runtime boundary context", () => {
+    const runtimeBoundaries = new Set(buildCopilotNeverListContext("acme").map((entry) => entry.boundary));
+    const coverageBoundaries = Object.values(catalogCoverage)
+      .filter((entry): entry is Exclude<typeof entry, string> => typeof entry !== "string")
+      .flatMap((entry) => entry.neverListEntry ? [entry.neverListEntry] : []);
+
+    expect(coverageBoundaries).not.toHaveLength(0);
+    expect(coverageBoundaries.every((entry) => runtimeBoundaries.has(entry))).toBe(true);
   });
 
   it("defers ingestion settings rather than excluding them, while keeping the embedding-model guard visible", () => {

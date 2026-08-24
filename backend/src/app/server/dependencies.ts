@@ -50,7 +50,7 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
-import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
+import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
 import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -409,11 +409,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
+  const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository: repositories.workspaceRepository });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
+    workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     proposalAdapters: copilotProposalAdapters,
     prompt: loadPromptTemplate("copilot/system.md"),
     tools: createCopilotToolCatalog({
@@ -438,7 +440,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentSourceStatusService: repositories.documentSourceRepository,
       agentSkillsService,
       skillCapabilityRegistry,
-      workspaceRepository: repositories.workspaceRepository,
+      workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
       workspaceSettings: {
         async getRetrievalDefaults(workspaceId) {
           return retrievalDefaultsProvider.getDefaults(workspaceId);

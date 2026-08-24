@@ -46,7 +46,7 @@ locals {
 }
 
 resource "google_project_service" "required_apis" {
-  for_each = local.required_apis
+  for_each = var.manage_project_services ? local.required_apis : toset([])
 
   project            = var.project_id
   service            = each.value

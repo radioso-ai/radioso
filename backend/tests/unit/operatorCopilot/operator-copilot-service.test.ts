@@ -8,8 +8,10 @@ import {
   type CopilotProposal,
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
+import { copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
 
 const now = new Date("2026-08-11T00:00:00.000Z");
+const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
 
 describe("OperatorCopilotService", () => {
   it("persists a budget exhausted terminal turn, commits one reservation, and filters tools", async () => {
@@ -30,6 +32,7 @@ describe("OperatorCopilotService", () => {
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit, release })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [
         tool("visible", "workspace.agents.read", invoke),
         tool("hidden", "workspace.history.read", vi.fn(async () => ({ value: "hidden" }))),
@@ -70,6 +73,7 @@ describe("OperatorCopilotService", () => {
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [],
       now: () => now,
     });
@@ -91,6 +95,33 @@ describe("OperatorCopilotService", () => {
     expect(secondMessage.userMessage.endsWith("can you summarize it?")).toBe(true);
   });
 
+  it("supplies deliberate safety boundaries and workspace links as trusted system context", async () => {
+    const repository = new MemoryCopilotRepository();
+    const resolveWorkspaceKey = vi.fn(async () => "acme");
+    const runStreaming = vi.fn((_request: { systemPrompt: string; userMessage: string }) => ({
+      events: (async function* () {})(),
+      result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 0, wallTimeMs: 1 }),
+    }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming },
+      usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
+      prompt: "system",
+      workspaceRouteKeyResolver: { resolveWorkspaceKey },
+      tools: [],
+      now: () => now,
+    });
+
+    for await (const _event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Delete the workspace", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set() })) void _event;
+
+    expect(resolveWorkspaceKey).toHaveBeenCalledWith("workspace");
+    expect(runStreaming.mock.calls[0][0].systemPrompt).toContain("workspace_delete");
+    expect(runStreaming.mock.calls[0][0].systemPrompt).toContain(copilotNeverList.workspace_delete.reason);
+    expect(runStreaming.mock.calls[0][0].systemPrompt).toContain("/w/acme/settings");
+    expect(runStreaming.mock.calls[0][0].userMessage).not.toContain("workspace_delete");
+  });
+
   it("frames ambient viewing context as data and attaches a described entity to every activity stage", async () => {
     const repository = new MemoryCopilotRepository();
     const runStreaming = vi.fn((_request: { systemPrompt: string; userMessage: string }) => ({
@@ -107,6 +138,7 @@ describe("OperatorCopilotService", () => {
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [{
         ...tool("reader", "workspace.agents.read", vi.fn(async () => ({}))),
         uiLabel: "Reading conversation",
@@ -165,6 +197,7 @@ describe("OperatorCopilotService", () => {
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
+      workspaceRouteKeyResolver,
       tools: [{
         ...tool("reader", "workspace.agents.read", invoke),
         uiLabel: "Reading agent",

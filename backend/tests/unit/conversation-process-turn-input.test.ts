@@ -343,6 +343,54 @@ describe("createChatProcessTurnInput", () => {
     });
   });
 
+  it("carries the turn's resolved visitor context into directive matching", async () => {
+    const directive: Directive = {
+      name: "high-value-cart",
+      condition: { kind: "contextual", description: "the visitor's cart is worth more than 100" },
+      action: "Offer the concierge checkout.",
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    session.resolvedContext = {
+      fragments: [],
+      renderFragments: [],
+      staged: [],
+      snapshot: {
+        cart_value: 120,
+        page_context: { kind: "page_context", pageUrl: "https://shop.example/cart" },
+      },
+    };
+    const { runtime, matchedTurnContexts } = routeScopedDirectiveRuntime([directive]);
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    await input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    });
+
+    expect(matchedTurnContexts).toEqual([{
+      query: "Where is my order?",
+      route: "direct",
+      visitorContext: {
+        cart_value: 120,
+        page_context: { pageUrl: "https://shop.example/cart" },
+      },
+    }]);
+  });
+
   it("passes directive match usage context with the chat turn identifiers", async () => {
     const directive: Directive = {
       name: "brief",

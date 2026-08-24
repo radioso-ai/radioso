@@ -20,8 +20,11 @@ export type {
 } from "./contextVariablesBound.js";
 export {
   ContextResolutionService,
+  PAGE_CONTEXT_VARIABLE_NAME,
   resolveContextForTurn,
 } from "./contextResolutionService.js";
+export { projectContextForMatching } from "./matchContextProjection.js";
+export type { MatchContextProjection } from "./matchContextProjection.js";
 export {
   deriveVisitorIdentitySigningKey,
   signVisitorIdentity,

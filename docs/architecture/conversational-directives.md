@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-08-21
+last_updated: 2026-08-24
 ---
 
 # Conversational Directives
@@ -67,6 +67,18 @@ judges a condition by meaning, in any language.
 
 The matcher never sees bindings. It receives directive names and conditions, so
 a binding cannot make a directive more or less likely to match.
+
+Alongside the candidates, the matcher sees the turn's signals: the query, the
+route, and the visitor context resolved for that turn. Context arrives as the
+redacted snapshot, so a value the operator declared sensitive reaches the
+matcher as `[redacted]`, and page context is reduced to the fields that locate
+the visitor (URL, title, locale) rather than the page excerpt. The projection is
+bounded by `CONTEXT_VARIABLES_BEHAVIOR.matchBound`: values longer than the
+per-value limit are clamped with a truncation marker, and variables past the
+count cap or section budget are dropped. Both classification surfaces read the
+same projection — the standalone matcher call and the fused turn planner, which
+renders it inside its directive section so routing, rewrite, and language
+decisions stay firewalled from visitor state.
 
 Contextual matching is an enhancement on top of the deterministic set, and a turn
 answers without it. Whether the workspace model configuration fails to resolve or

@@ -278,6 +278,7 @@ const buildService = (input: {
   };
   conversationSummary?: string;
   turnPlanInterpretationContextSettings?: ChatServiceOptions["turnPlanInterpretationContextSettings"];
+  contextVariableRepository?: ChatServiceOptions["contextVariableRepository"];
   clarification?: {
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
@@ -312,6 +313,7 @@ const buildService = (input: {
         }
       : undefined,
     turnPlanInterpretationContextSettings: input.turnPlanInterpretationContextSettings,
+    contextVariableRepository: input.contextVariableRepository,
     ...(input.planner
       ? {
           turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(input.planner)),
@@ -955,6 +957,55 @@ describe("chat service fused turn planning", () => {
     });
     await fallbackService.answer({ workspaceId: "workspace-1", query: "can I get a refund?", stream: false });
     expect(gatewayFactory.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("feeds the turn's resolved visitor context into the planner's directive classification", async () => {
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        {
+          directive: {
+            name: "concierge",
+            condition: { kind: "contextual", description: "the visitor's cart is worth more than 100" },
+            action: "Offer concierge checkout.",
+          },
+        },
+      ],
+    });
+    const planner = plannerFactory({
+      completions: [
+        planJson({
+          route: "retrieval",
+          directiveClassifications: [{ name: "concierge", matched: true, confidence: 0.9 }],
+        }),
+      ],
+    });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged: countingStagedPorts(),
+      directiveSteering: steering,
+      contextVariableRepository: {
+        resolveForAgent: async () => [
+          { name: "cart_value", value: 120, surfacing: "on_reference" },
+          { name: "customer_email", value: "buyer@example.com", surfacing: "on_reference", sensitive: true },
+        ],
+      },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "can you help me check out?",
+      stream: false,
+    });
+
+    const prompt = planner.prompts()[0] ?? "";
+    expect(prompt).toContain("Visitor context resolved for this turn");
+    expect(prompt).toContain('"cart_value": 120');
+    // The snapshot is the redaction boundary: a sensitive value never reaches a prompt.
+    expect(prompt).not.toContain("buyer@example.com");
+    expect(prompt).toContain("[redacted]");
   });
 
   it("activates a routine from precomputed rankings with zero ranked-activation gateway calls", async () => {

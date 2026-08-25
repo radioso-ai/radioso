@@ -5,7 +5,7 @@
 - Node.js 24 and the repository `pnpm` workspace installed.
 - PostgreSQL 16 test database.
 - Redis or Valkey 7+ standalone for local functional checks.
-- A three-primary cluster with replicas for sharded Pub/Sub topology/failover checks.
+- A three-primary cluster with replicas only for opt-in pre-scale sharded Pub/Sub topology/failover checks.
 - Playwright browsers installed for frontend journeys.
 
 Do not use customer data, production broker credentials, or production workspace identifiers in these checks.
@@ -41,7 +41,7 @@ Expected: one transport subscription per active local workspace, one stream per 
 
 Expected: realtime failure never changes mutation outcome and never creates permanent staleness.
 
-## 4. Cluster topology and isolation
+## 4. Pre-scale cluster topology and isolation (opt-in)
 
 1. Start the three-primary Redis/Valkey cluster.
 2. Subscribe gateway instances to workspaces mapped to different slots.
@@ -77,44 +77,44 @@ Expected: live healthy p95 is under two seconds and all visible covered surfaces
 
 Expected: lock duration, returned data, logs, and fan-out remain bounded independent of backlog size.
 
-## 7. Scale and soak profiles
+## 7. Capacity and soak profiles
 
-Use the repository performance harness to run:
+Run the required small hosted profile through the real external load balancer
+with production session auth and admission (never direct-gateway or auth bypass):
 
-- 5,000 post-commit invalidation requests/second for 15 minutes;
-- a 50,000-request one-second burst;
-- uniform traffic over 2,000 active workspaces;
-- 50% traffic to one hot workspace;
-- 100,000 fleet-wide connections including one workspace spread across gateways;
-- the hosted exact load-balancer path reaching realtime Cloud Run directly while
-  frontend Cloud Run receives no stream requests;
-- worst-case replicated workspace interest across gateway instances;
-- synchronized deployment reconnect with client jitter enabled;
-- blocked readers and rapid connection/interest churn;
-- a one-hour heap and subscription soak.
+- five tenants, about 50 active workspaces, 500 concurrent streams, and two
+  forced realtime gateway instances;
+- 10 post-commit invalidation requests/second for 15 minutes and a 500-request
+  one-second burst, including a 50%-hot-workspace case;
+- blocked readers, connection/interest churn, deployment reconnect jitter,
+  broker interruption/recovery, and one cross-gateway workspace;
+- a required one-hour soak at that same five-tenant/~50-workspace/500-stream,
+  two-gateway profile.
 
-Run the hosted profile through the real external load balancer with production
-session auth and admission. Include 10,000 tenants, 2,000 active workspaces, a
-2.5-query-family mix producing the 45–60 second floor, and ready/resync
-reconciliation load. Direct-gateway or auth-bypass runs are diagnostic only and
-cannot satisfy acceptance.
+Expected: small-profile caps hold, live p95/p99 and <=60-second fallback targets
+pass, no frontend Cloud Run request carries a stream, interest returns to baseline
+within five seconds, and memory reaches a stable plateau.
 
-Expected: the numerical SC-001–SC-014 thresholds in `plan.md` pass, configured
-queues never exceed caps, the hot workspace stays at or below its frame cadence,
-non-hot p95 changes by no more than 20%, API p95 remains below one second with
-under 1% errors at required floor/reconnect load, interest returns to baseline
-within five seconds, and post-warmup heap drift is at most 10%.
+Run the following only after approving the pre-scale profile and its quota/cost
+preflight: 5,000/s for 15 minutes, a 50,000-request burst, 10,000 tenants, 2,000
+workspaces, 100,000 **concurrent streams**, a real-browser cohort, reconcile
+floor budget, failover, and a one-hour hosted soak. This profile validates the
+10 → 50 → 150 gateway ramp; it is not an ordinary release gate.
 
 ## 8. Deployment modes
 
 1. Start with realtime disabled and no Redis configuration.
 2. Verify health, no client reconnect loop, and 45–60 second visible-query convergence.
 3. Start realtime enabled with invalid configuration and verify readiness fails clearly while the main API remains independently operable.
-4. Start with valid standalone configuration, then with the hosted cluster configuration.
+4. Start with valid standalone configuration, then with the small hosted
+   cluster-disabled Valkey configuration (IAM/TLS, min 0/max 3).
 5. Verify hosted Cloud Armor rate limiting, restricted ingress/default-URL
    bypass rejection, and exact path routing; verify the self-hosted exact proxy's
    request/response header allowlists and disconnect propagation separately.
-6. Exercise and record disabled → internal canary → tenant allowlist → default-on
-   → disabled rollback, then standalone and cluster upgrade/failover.
+6. Exercise and record disabled → small-hosted internal canary → tenant allowlist
+   → default-on → disabled rollback. For a pre-scale upgrade, remain poll-only,
+   deploy the replacement clustered broker, switch configuration, validate, then
+   re-enable realtime; do not attempt an in-place broker-mode change.
 
-Expected: disabled, self-hosted standalone, and hosted cluster modes have explicit health and rollback behavior.
+Expected: disabled, self-hosted standalone, small hosted, and pre-scale cluster
+modes have explicit health, cost boundary, and rollback behavior.

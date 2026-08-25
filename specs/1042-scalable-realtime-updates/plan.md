@@ -5,7 +5,7 @@
 
 ## Summary
 
-Deliver content-free, workspace-scoped dashboard invalidations as an optional acceleration layer over PostgreSQL-authoritative reads. Backend application services request invalidation only after commit through a bounded, synchronous in-process enqueue port. Hosted deployments publish over Memorystore for Redis Cluster sharded Pub/Sub to an independently scalable Cloud Run realtime gateway; self-hosted deployments use standalone Redis/Valkey or disable realtime and rely on the same 45–60 second visible-query reconciliation floor.
+Deliver content-free, workspace-scoped dashboard invalidations as an optional acceleration layer over PostgreSQL-authoritative reads. Backend application services request invalidation only after commit through a bounded, synchronous in-process enqueue port. The default for 2–5 tenants is disabled/poll-only or a small Cloud Run gateway backed by standalone-mode Memorystore for Valkey; sharded cluster Pub/Sub is an explicit pre-scale profile, not an initial infrastructure requirement. Self-hosted deployments use standalone Redis/Valkey or disabled mode and retain the same 45–60 second visible-query reconciliation floor.
 
 The frontend will adopt TanStack Query only for the covered dashboard reads. One `QueryClient` is created per canonical workspace dashboard session, every key includes the workspace and all result discriminators, and one central invalidation coordinator provides active-query-only mapping, single-flight behavior, and one trailing reconciliation when an event arrives during a fetch. Realtime never becomes a correctness dependency.
 
@@ -15,9 +15,9 @@ The frontend will adopt TanStack Query only for the covered dashboard reads. One
 **Primary Dependencies**: Express, Zod, Pino, `redis` 6.2.1, `@tanstack/react-query` 5.x  
 **Storage**: PostgreSQL 16 remains authoritative; Redis/Valkey holds only transient Pub/Sub traffic and expiring admission leases  
 **Testing**: Vitest, Supertest, React logic/component tests where appropriate, Playwright, Terraform validation, local CI  
-**Target Platform**: Linux containers; hosted GCP Cloud Run plus Memorystore for Redis Cluster; Docker/self-hosted standalone Redis/Valkey or disabled mode  
+**Target Platform**: Linux containers; hosted GCP Cloud Run plus Memorystore for Valkey in cluster-disabled mode by default, with a clustered pre-scale option; Docker/self-hosted standalone Redis/Valkey or disabled mode
 **Project Type**: TypeScript monorepo web application with API, workers, dedicated realtime runtime, frontend, SDK, docs, and Terraform  
-**Performance Goals**: 100,000 fleet-wide open browser streams; 10,000 tenants; 2,000 concurrently active workspaces; no unrelated-connection scan on publish; one pending merged write per blocked connection  
+**Performance Goals**: Required small hosted profile: five tenants, about 50 active workspaces, 500 concurrent streams across two gateways. On-demand upper envelope: 100,000 concurrent streams, 10,000 tenants, and 2,000 active workspaces; no unrelated-connection scan on publish; one pending merged write per blocked connection
 **Constraints**: Cloud Run maximum request concurrency is 1,000 per instance; stream age is jittered strictly below the 15-minute reauthentication bound and platform timeout; visible covered reads always reconcile in 45–60 seconds; mutation latency and success never depend on broker availability  
 **Scale/Scope**: Documents, Sources, History, Quality, and Needs Attention visible dashboard reads; all producing API/worker state transitions; hosted and self-hosted runtime/infra/docs; public OpenAPI and SDK stream contract
 
@@ -262,34 +262,21 @@ Configuration is parsed once with Zod and injected:
 - tiny realtime DB pool size, acquire/statement timeouts, and application name
 - rollout mode and tenant allowlist
 
-Initial hosted values are rollout defaults, not substitutes for the acceptance load
-tests:
+Capacity is selected explicitly, rather than provisioning the upper envelope by default. The disabled profile creates no realtime Cloud Run service and requires no Redis/Valkey resource. The small hosted profile is the ordinary 2–5 tenant deployment; it may scale to zero when idle. The pre-scale profile is enabled only after its dedicated quota, cost, and load review.
 
-| Setting | Initial value | Required relationship / reason |
-|---|---:|---|
-| Cloud Run request concurrency | 1,000 | Platform maximum; application cap remains lower |
-| `REALTIME_MAX_CONNECTIONS` | 900/instance | Leaves at least 10% request/resource headroom |
-| Realtime max instances | 150 | `ceil(100000 / 900 × 1.25) = 139`; rounded up for deploy/reconnect headroom |
-| Gateway and edge backend timeout | 1,200s | Explicit on both; greater than maximum stream age plus drain margin |
-| Stream age | random 720–840s | Effective expiry is the minimum of this, session expiry minus 30s, and every request timeout minus 30s; always below 15 minutes |
-| Heartbeat | 20s | Below all documented proxy/platform idle thresholds |
-| Authentication / subscribe timeout | 2s / 3s | No partially committed SSE on dependency delay |
-| Short transport-loss grace | 20s | Hold one pending resync; jitter-close earlier if admission lease safety demands it |
-| Blocked duration / `writableLength` | 10s / 256KiB | Either limit closes the stream; one pending marker is additional protection |
-| Browser frame / broker envelope | 4KiB / 8KiB | Byte cap is enforced before decode; both are below writer budget |
-| Local unique workspace interests | 900/instance | Never exceeds local stream cap; fleet replicated-interest load is tested independently |
-| Interest release grace | 5s | Absorbs short reconnect churn while guaranteeing cleanup |
-| Account / workspace / principal streams | 10,000 / 5,000 / 5 | Principal means one user across the account; all three counters share the account slot |
-| Admission TTL / renewal / safety | 90s / 30s ±20% / 20s | Renewal is well below TTL; degraded streams close before expiry with 0–5s jitter |
-| Expired aggregates pruned | 128/operation | Constant work; residual backlog rejects new admission and drains through a bounded sweeper |
-| Reconnect buckets | principal 12/min burst 4; workspace 2,000/min burst 200; account 5,000/min burst 500 | Post-auth abuse control; all use Redis server time and jittered retry guidance |
-| Cloud Armor attempt limit | 1,200/min/source IP | Pre-auth hosted protection; tune from NAT/load data before default-on |
-| Producer pending workspaces / batch / concurrency / cadence | 4,096 / 256 / 32 / 100ms | Bounded memory and fairness while staying inside freshness SLO |
-| Redis queued commands | 4,096/client | Publisher offline queue disabled; reconnect cannot create an unbounded stale avalanche |
-| Realtime PostgreSQL pool | max 1 (allowed 1–2), acquire 2s, statement 2s | Separate `radioso-realtime` application name; at 150 instances the default reserves at most 150 direct connections |
-| Shutdown drain | 8s | Completes before Cloud Run's approximate 10-second termination window |
-| Browser reconnect | full jitter 1–30s | `Retry-After` wins; reset only after stable ready duration |
-| Visible reconcile floor | deterministic 45–60s/key | Never weakened by connection health |
+| Setting | Disabled / poll-only | Small hosted (default) | Pre-scale upper envelope |
+|---|---:|---:|---:|
+| Broker | none | Memorystore for Valkey, cluster-disabled; custom-pico primary, 0 replicas non-production or 1 production when HA cost is justified | Valkey cluster-mode-enabled / Redis Cluster sharded Pub/Sub after a broker replacement |
+| Cloud Run minimum / maximum instances | no service | 0 / 3 | approved ramp 10 → 50 → 150 |
+| Cloud Run request concurrency | n/a | 600 | 1,000 |
+| `REALTIME_MAX_CONNECTIONS` / local interests | n/a | 500 / 500 | 900 / 900 |
+| Account / workspace / principal streams | n/a | 500 / 250 / 5 | 10,000 / 5,000 / 5 |
+| Producer pending workspaces / batch / concurrency / cadence | n/a | 512 / 64 / 4 / 250ms | 4,096 / 256 / 32 / 100ms |
+| Redis queued commands | n/a | 512/client | 4,096/client |
+| Reconnect workspace / account buckets | n/a | 200/min / 500/min | 2,000/min / 5,000/min |
+| Realtime PostgreSQL pool | n/a | max 1 | max 1 |
+
+All enabled profiles retain 1,200-second gateway and edge backend timeouts; random 720–840-second stream age; 20-second heartbeat; 2/3-second authentication/subscribe timeouts; 20-second transport-loss grace; 10-second/256KiB blocked writer budget; 4/8KiB browser/broker envelope caps; 5-second interest release grace; 90/30-second lease TTL/renewal; bounded expiry pruning; eight-second shutdown drain; full-jitter 1–30-second browser reconnect; and a deterministic 45–60-second visible reconcile floor.
 
 Zod relational validation rejects an application cap at or above platform
 concurrency, renewal not safely below TTL, stream age at or above 15 minutes or
@@ -300,23 +287,27 @@ by the selected pool maximum fits its explicit share of the deployment's
 PostgreSQL connection budget; reconnect admission sheds load rather than opening
 an unbounded database queue.
 
-The exact 100,000-stream hosted path is browser → Application Load Balancer →
-realtime Cloud Run; it does not consume frontend Cloud Run concurrency. The load
-profile still measures load-balancer, Cloud Armor, gateway, Redis replicated
-workspace-interest, and Postgres authentication capacity. A self-hosted operator
-that chooses the exact Next proxy must size that proxy as a second long-connection
-tier or route the event path directly at its reverse proxy.
+The small hosted path is browser → Application Load Balancer → realtime Cloud
+Run and does not consume frontend Cloud Run concurrency. It is tested with two
+forced instances, normally runs at one or two, and can scale to zero. Cloud Run
+autoscaling targets concurrency rather than reserving every admitted connection,
+so application admission remains below the platform setting and the maximum is a
+cost/safety ceiling, not a promised steady state. A self-hosted operator that
+chooses the exact Next proxy must size that proxy as a second long-connection tier
+or route the event path directly at its reverse proxy.
 
-Memorystore shard count, replicas, and node memory/tier are explicit Terraform
-inputs rather than a guessed universal default. Deployment preflight checks the
-selected cluster's client, throughput, network, CPU/memory, and failover capacity
-against the replicated-interest profile. Redis connect/IAM and private-network
-reachability are granted to every actual producer runtime—API/backend, document/
-worker-task, crawler poller/task, and the Slack-hosting service—plus the gateway,
-with no frontend access. Preflight also verifies required APIs and regional/
-project quotas for 150 Cloud Run instances, the allocated Postgres connection
-share, Redis limits, load balancer/Cloud Armor, and the load-generator/source-IP
-topology before a hosted acceptance run begins.
+Memorystore mode, replicas, node memory/tier, and Cloud Run maximum are explicit
+Terraform profile inputs. The small profile uses cluster-disabled Valkey, IAM,
+TLS, and no persistence/backups because all state is transient. Its one-primary
+shape is economical but is not described as HA; production may add one replica
+when that availability/cost trade-off is justified. Before selecting the
+pre-scale profile, deployment preflight validates clustered client, throughput,
+network, CPU/memory, failover, PostgreSQL share, 150-instance quota, load
+balancer/Cloud Armor, and load-generator/source-IP capacity. Redis connect/IAM
+and private-network reachability are granted to every actual producer runtime and
+the gateway, with no frontend access. Cluster mode is not in-place: the cutover
+is poll-only, deploy the new cluster, switch configuration, validate, then
+re-enable realtime; no authoritative data migration is needed.
 
 ### Health, degraded behavior, and shutdown
 
@@ -384,28 +375,29 @@ Workspace, account, principal, resource, and connection IDs may appear only wher
 - **Contract/unit**: schemas; bounded coalescing; fairness; no per-event timers; channel naming; Redis modes; session-only auth; distributed leases; trusted proxy parsing; fan-out indexing; subscribe-before-ready; atomic serialization; blocked clients; idempotent cleanup; event parser; retry/backoff; semantic keys; mapping; dirty trailing reconciliation; deterministic jitter; abort handling; presentation snapshots.
 - **Integration**: real PostgreSQL transaction commit/rollback seams; real Redis/Valkey standalone Pub/Sub; Redis Cluster sharded Pub/Sub in an opt-in/local CI profile; transport disconnect/reconnect/generation resync; gateway readiness/shutdown; stale crawl `SKIP LOCKED` batches; hosted exact-edge routing and self-hosted exact-proxy streaming; OpenAPI/SDK generation.
 - **Playwright**: each covered dashboard surface updates without refresh; hidden/visible transition; poll-only disabled mode; broker/gateway interruption; workspace switch stale-result isolation; overload and authorization terminal behavior; Needs Attention and Quality interaction deferral.
-- **Load/soak**: execute the 5,000/s producer profile for 15 minutes plus its
-  50,000 one-second burst. Execute the one-hour hosted target through the real
-  load balancer and production auth/admission with 100,000 simultaneous streams,
-  10,000 tenants, 2,000 workspaces, one cross-gateway workspace, hot traffic,
-  slow clients, interest churn, reconnect, Redis failover, and Cloud Run deploy.
-  Include a 2.5-active-query-family mix and its 4,167–5,556 GET/s reconcile floor,
-  ready/resync load below the 12,000 GET/s budget, a real-browser cohort, and a
-  bounded synthetic frontend coordinator profile.
+- **Load/soak**: the required ordinary acceptance is 10/s for 15 minutes plus a
+  500-request burst, five tenants, about 50 workspaces, 500 streams, and two
+  forced small-profile gateway instances through the real load balancer and
+  production auth/admission. It includes one cross-gateway workspace, hot
+  traffic, slow clients, interest churn, reconnect, broker interruption, and a
+  deploy drain, followed by a required one-hour soak at that same small profile.
+  The 5,000/s + 50,000 burst and separate one-hour 100,000-concurrent-stream
+  (not message) fleet run are opt-in pre-scale gates, with their original
+  10,000-tenant/2,000-workspace/reconcile-budget evidence.
 - **Security**: cross-workspace header/session mismatch; revoked membership within 15 minutes; forged forwarding headers; Cloud Run default-URL/ingress bypass attempts; malformed/oversized frames; admission bypass attempts; telemetry redaction.
 - **Regression**: full backend/frontend/package/SDK/infra suites plus `pnpm run ci:local -- --all` before PR.
 
 ### Hosted acceptance evidence
 
-Default-on is blocked until the real hosted run records all SC-001–SC-014
-measurements: live p95 below 2 seconds and p99 below 5 seconds; loss/outage
-convergence at most 60 seconds; visibility restoration at most 5 seconds; API
-p95 below 1 second with under 1% errors at the required poll/reconnect load;
-non-hot p95 degradation no more than 20% while remaining inside freshness SLO;
-post-warmup heap drift at most 10%; at most 900 streams per instance; zero queue/
-map cap overflow; zero frontend Cloud Run stream requests; interest state back to
-baseline within 5 seconds; hot workspace at or below configured 10 frames/second;
-and admission/reconciliation/error/close reasons within the recorded budgets.
+Small hosted default-on is blocked until the small acceptance records SC-001–
+SC-008 and SC-011–SC-014: two forced gateways, five tenants, about 50 active
+workspaces, 500 streams, 10/s for 15 minutes plus a 500-request burst, its
+one-hour small-profile soak, failure convergence, and bounded memory/queues/
+interests. The pre-scale decision is
+separately blocked on SC-009–SC-010 and the upper traffic/soak evidence. Both
+reports include p95/p99 freshness, loss/outage convergence, visibility recovery,
+admission/reconciliation/error/close reasons, and no frontend Cloud Run stream
+requests; neither profile silently upgrades the other.
 
 `specs/1042-scalable-realtime-updates/acceptance/hosted-load-report.md` records the
 revision, Terraform inputs, region, quota preflight, Redis sizing, load-generator
@@ -437,11 +429,13 @@ Every phase receives an independent Galileo design/diff review before the next p
 1. Ship disabled with schema/config/docs and poll-floor behavior.
 2. Enable internal workspaces with dedicated gateway and synthetic freshness monitoring.
 3. Enable a tenant allowlist while comparing invalidation- and poll-driven freshness and watching admission/broker/stream SLOs.
-4. Make hosted realtime default-on only after the recorded 15-minute producer,
-   real 100,000-stream, one-hour soak, failover, and revocation gates pass.
-5. Rehearse default-on → disabled rollback, then standalone and cluster upgrade/
-   failover. Every stage verifies no reconnect loop, no mutation impact, 60-second
-   convergence, correct readiness, and clean interest/lease teardown.
+4. Make the small hosted profile default-on only after its recorded small
+   acceptance, failover, and revocation gates pass. Treat 100,000 concurrent
+   streams and 150 instances as a separately approved pre-scale decision.
+5. Rehearse default-on → disabled rollback, then a poll-only blue/green
+   standalone-to-cluster broker replacement. Every stage verifies no reconnect
+   loop, no mutation impact, 60-second convergence, correct readiness, and clean
+   interest/lease teardown.
 6. Rollback sets realtime disabled and removes gateway traffic. Producers become no-op; visible queries continue the 45–60 second floor without a frontend redeploy or contract change.
 
 ## Documentation
@@ -453,7 +447,7 @@ Before editing documentation, read `docs/document-writer-prompt.md`. Update envi
 | Deliberate complexity | Why needed | Simpler alternative rejected because |
 |---|---|---|
 | Dedicated realtime runtime | Independent connection scaling, lifecycle, readiness, and deploy isolation | Running streams in the main API couples request capacity, migrations, deploy drain, and the full dependency graph |
-| Redis Cluster sharded Pub/Sub | Workspace-routed multi-instance fan-out on the chosen GCP substrate | Google Cloud Pub/Sub distributes one subscription's messages among subscribers and would require per-gateway subscription resources for broadcast |
+| Dynamic Redis/Valkey Pub/Sub with a pre-scale sharded option | Workspace-routed multi-instance fan-out from a one-node economical profile through clustered scale | Google Cloud Pub/Sub distributes one subscription's messages among subscribers and would require per-gateway subscription resources for broadcast |
 | Distributed admission leases | Enforce workspace/principal limits across horizontally scaled gateways | Per-process counters cannot bound a hot tenant spread across instances |
 | TanStack Query migration | One shared cache/concurrency/cancellation authority for many surfaces | Preserving multiple custom hooks would duplicate polling, stale guards, invalidation, and retry behavior |
 | Always-on reconcile floor | At-most-once Pub/Sub can lose an event without a detectable connection failure | Disabling polling on a healthy-looking stream makes silent loss a correctness bug |

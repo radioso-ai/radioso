@@ -143,6 +143,31 @@ Rules:
   and writable length are independent close conditions.
 - Close is idempotent and releases local interest plus operational admission lease.
 
+## Deployment capacity profile
+
+This is injected configuration, not an authoritative product entity and not data
+stored in Redis/Valkey.
+
+Variants:
+
+- `disabled`: no realtime Cloud Run service or broker; frontend remains poll-only.
+- `small-hosted`: cluster-disabled Valkey with IAM/TLS, Cloud Run minimum zero,
+  maximum three, platform concurrency 600, process/admission cap 500, and small
+  bounded producer/reconnect settings.
+- `pre-scale`: cluster-mode-enabled Valkey or Redis Cluster with sharded Pub/Sub,
+  1,000 platform concurrency, process/admission cap 900, and an approved
+  10 → 50 → 150 maximum-instance ramp.
+
+Rules:
+
+- The same workspace channel prefix/hash-tag construction, envelope, admission
+  key scopes, and browser wire contract apply in both enabled profiles.
+- Moving from cluster-disabled to cluster-enabled is a broker replacement, not an
+  in-place migration. Realtime is intentionally disabled during the cutover and
+  polling remains authoritative; no authoritative data is migrated.
+- `100,000` always means an on-demand upper-envelope count of concurrent streams,
+  never a message count or ordinary deployment target.
+
 ## Admission lease
 
 Ephemeral Redis state is grouped into the account/tenant hash slot so one atomic

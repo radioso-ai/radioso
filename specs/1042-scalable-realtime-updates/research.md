@@ -2,9 +2,9 @@
 
 ## Hosted transport and topology
 
-**Decision**: Run an independently scalable realtime Cloud Run service and use Memorystore for Redis Cluster as transient inter-process fan-out. Use Redis 7+ sharded Pub/Sub (`SPUBLISH`, `SSUBSCRIBE`, `SUNSUBSCRIBE`) with one shard channel per workspace. Keep PostgreSQL authoritative and retain no event history.
+**Decision**: Keep the independently scalable realtime Cloud Run service, but select the broker by capacity profile. Disabled/poll-only creates no broker or gateway. The ordinary 2–5 tenant hosted profile uses Memorystore for Valkey in cluster-disabled mode with ordinary `PUBLISH`/`SUBSCRIBE`; the pre-scale profile replaces it with Valkey cluster-mode-enabled or Redis Cluster sharded Pub/Sub (`SPUBLISH`, `SSUBSCRIBE`, `SUNSUBSCRIBE`). PostgreSQL remains authoritative and no event history is retained.
 
-**Rationale**: Cloud Run instances are independent and a connection can land on any instance. Google recommends Redis Pub/Sub for synchronizing realtime connections across Cloud Run instances, and Memorystore Redis Cluster explicitly supports sharded Pub/Sub. Sharded channels limit propagation to the owning shard instead of broadcasting every message across the whole cluster.
+**Rationale**: Cloud Run instances are independent and a connection can land on any instance, so even two gateways require shared transient fan-out and distributed admission. Cluster-disabled Valkey supports IAM and TLS and starts at the economical custom-pico node tier; it avoids paying for a sharded cluster before actual measurements require it. Cluster mode cannot be changed in place, but the transport state is transient and polling is authoritative, so a planned poll-only blue/green replacement is safe. Sharded channels then limit propagation to the owning shard rather than broadcasting every message across the whole cluster.
 
 **Alternatives considered**:
 
@@ -55,9 +55,9 @@ node-redis key-prefix configuration is not relied on for Pub/Sub channels.
 
 ## Memorystore security and networking
 
-**Decision**: Provision a highly available, multi-zone Memorystore Redis Cluster through `google_redis_cluster`, Private Service Connect, and the existing VPC/Direct VPC egress model. Enable TLS and IAM authentication. Grant `roles/redis.dbConnectionUser` only to API, document-worker, crawler-worker, and realtime service accounts. Retrieve IAM access tokens on demand through a node-redis async credentials provider; never store access tokens in configuration.
+**Decision**: The small hosted profile provisions a cluster-disabled Memorystore for Valkey instance through Private Service Connect and the existing VPC/Direct VPC egress model. Enable TLS and IAM authentication. Use a custom-pico primary with zero replicas in non-production, or one replica only when the production availability/cost decision warrants it. Grant `roles/redis.dbConnectionUser` only to API, document-worker, crawler-worker, and realtime service accounts. Retrieve IAM access tokens on demand through a node-redis async credentials provider; never store access tokens in configuration. The pre-scale profile provisions a multi-zone clustered replacement after an explicit capacity review.
 
-The cluster stores only transient invalidations and short-lived operational admission leases. Persistence is disabled. Production has at least one replica per shard; shard and node sizes remain Terraform variables and are validated by the load profile before default-on rollout.
+The broker stores only transient invalidations and short-lived operational admission leases. Persistence is disabled. Cluster-disabled one-primary operation is not labelled HA; replica count, shard count, and node sizes remain Terraform variables and are validated by the selected profile before rollout.
 
 **Rationale**: Memorystore clusters are private behind PSC. IAM auth avoids static broker passwords; TLS protects authentication tokens at the application layer. Memorystore documents that access tokens are short-lived and should be fetched on demand for new connections. Existing authenticated connections remain usable through token expiry, so reconnect paths must always fetch fresh credentials.
 
@@ -69,11 +69,10 @@ The cluster stores only transient invalidations and short-lived operational admi
 
 **Sources**:
 
-- [Memorystore Redis Cluster security](https://docs.cloud.google.com/memorystore/docs/cluster/security-overview)
-- [IAM authentication behavior](https://docs.cloud.google.com/memorystore/docs/cluster/about-iam-auth)
-- [TLS guidance](https://docs.cloud.google.com/memorystore/docs/cluster/about-in-transit-encryption)
-- [Memorystore Redis Cluster networking](https://docs.cloud.google.com/memorystore/docs/cluster/networking)
-- [Terraform `google_redis_cluster`](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/redis_cluster)
+- [Memorystore for Valkey IAM authentication](https://docs.cloud.google.com/memorystore/docs/valkey/about-iam-auth)
+- [Memorystore for Valkey modes](https://docs.cloud.google.com/memorystore/docs/valkey/cluster-mode-enabled-and-disabled)
+- [Memorystore for Valkey node specifications](https://docs.cloud.google.com/memorystore/docs/valkey/instance-node-specification)
+- [Memorystore for Valkey HA and replicas](https://docs.cloud.google.com/memorystore/docs/valkey/ha-and-replicas)
 
 ## Cloud Run capacity and routing
 
@@ -103,18 +102,25 @@ upstream errors. It does not infer client origin from caller-controlled headers;
 the documented self-hosted reverse proxy owns that pre-auth limit. The existing
 catch-all backend proxy is not modified for realtime behavior.
 
-Gateway Cloud Run concurrency is explicitly 1,000 and application admission is
-900 streams per instance, leaving request headroom. A 150-instance ceiling gives
-capacity above the 100,000-stream target during rollout and drain. Gateway and
-load-balancer backend timeouts start at 1,200 seconds. Streams end at a random
-12–14 minutes and are further capped by session expiry minus skew and every
-request-timeout margin.
+The small hosted profile sets Cloud Run concurrency to 600, application admission
+to 500 streams per instance, and a maximum of three instances; it normally uses
+zero minimum instances and request-based billing. Its required acceptance forces
+two gateway instances for five tenants, about 50 active workspaces, and 500
+concurrent streams. The pre-scale profile raises settings only through an
+approved 10 → 50 → 150 instance ramp, with 1,000 platform concurrency and 900
+application admission; its 100,000 figure is concurrent streams, not messages.
+Gateway and load-balancer backend timeouts start at 1,200 seconds. Streams end at
+a random 12–14 minutes and are further capped by session expiry minus skew and
+every request-timeout margin.
 
-**Rationale**: Cloud Run permits at most 1,000 concurrent requests per instance
-and at most a 60-minute request timeout. The 100,000-connection objective is
-therefore a fleet target. Exact load-balancer routing keeps the browser
-same-origin without doubling every stream into simultaneous frontend and gateway
-Cloud Run requests.
+**Rationale**: An active SSE request is a billable active request, so zero minimum
+instances avoids idle gateway cost but not active-stream cost. Cloud Run
+autoscaling targets a fraction of configured concurrency rather than treating it
+as a hard reservation; application admission protects local process resources.
+The 100,000-stream figure is an on-demand fleet target, not a default
+provisioning posture. Exact load-balancer routing keeps the browser same-origin
+without doubling every stream into simultaneous frontend and gateway Cloud Run
+requests.
 
 **Alternatives considered**:
 
@@ -241,12 +247,14 @@ Checkpoint persistence keeps PR #1078's independent one-second coalescing fix, i
 Extend the existing performance harness with committed-transition publisher,
 gateway connection, hot-workspace, reconnect-storm, blocked-client,
 subscription-churn, mandatory reconcile-floor API load, frontend coordinator,
-and one-hour soak profiles. The 5,000/s run lasts 15 minutes and the
-50,000-in-one-second test exercises post-commit publisher inputs rather than
-unrelated database mutations. The hosted fleet run uses the real load-balancer
-path and production auth/admission for 100,000 simultaneous streams; its compact
-acceptance report records topology, quotas, sizing, ramp, numerical SLOs, and
-pass/fail.
+and soak profiles. Ordinary acceptance uses 10/s for 15 minutes plus a
+500-in-one-second burst through the real load-balancer path, production auth,
+and two forced gateways, followed by a required one-hour soak at the same
+five-tenant/~50-workspace/500-stream small profile. The 5,000/s + 50,000 burst
+and separate one-hour 100,000-stream fleet run remain executable pre-scale gates;
+they exercise post-commit publisher inputs rather than unrelated database
+mutations. Acceptance reports record the selected profile, topology, quotas,
+cost inputs, sizing, ramp, numerical SLOs, and pass/fail.
 
 ## Public and queue contract impact
 

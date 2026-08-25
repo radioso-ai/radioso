@@ -70,6 +70,15 @@ export interface AudiencePulseRefreshRateLimitPort {
   enforce(input: { accountId: string; workspaceId: string }): Promise<void>;
 }
 
+/**
+ * The only facet-processing capability Audience Pulse needs. The facets module owns
+ * claiming, retries, model calls, and persistence; Audience Pulse merely asks it to
+ * make this workspace's report population ready before running a census.
+ */
+export interface AudiencePulseFacetDrainPort {
+  drainWorkspace(input: { workspaceId: string; maxJobs: number }): Promise<number>;
+}
+
 export interface AudiencePulseInferenceFactory {
   create(input: {
     workspaceContext: { workspaceId: string; accountId?: string | null };

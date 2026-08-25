@@ -20,6 +20,7 @@ import {
 import type {
   AudiencePulseAuditPort,
   AudiencePulseEvidenceAnchor,
+  AudiencePulseFacetDrainPort,
   AudiencePulseHistorySource,
   AudiencePulseHydratedEvidence,
   AudiencePulseHydratedReport,
@@ -58,6 +59,7 @@ export interface AudiencePulseServiceDependencies {
   snapshotStore: AudiencePulseSnapshotStore;
   runGate: AudiencePulseRunGate;
   refreshRateLimit: AudiencePulseRefreshRateLimitPort;
+  facetDrain?: AudiencePulseFacetDrainPort;
   inferenceFactory: AudiencePulseInferenceFactory;
   usageLimitPolicy: UsageLimitPolicy;
   auditService: AudiencePulseAuditPort;
@@ -70,6 +72,10 @@ export interface AudiencePulseServiceDependencies {
    */
   censusServiceFactory: CensusServiceFactory;
 }
+
+// A refresh is an explicit operator action, so it drains enough work for the usual
+// historical window in one request without making an unbounded request path.
+const AUDIENCE_PULSE_REFRESH_FACET_MAX_JOBS = 500;
 
 const safeAudit = async (
   auditService: AudiencePulseAuditPort,
@@ -441,6 +447,11 @@ export class AudiencePulseService implements AudiencePulsePort {
         throw error;
       }
 
+      const facetProcessedJobCount = await this.deps.facetDrain?.drainWorkspace({
+        workspaceId: input.workspaceId,
+        maxJobs: AUDIENCE_PULSE_REFRESH_FACET_MAX_JOBS,
+      }) ?? 0;
+
       // The census clusters the exact eligible-question population for this same
       // window (spec 956 FR-003): it names and sizes every topic before any model
       // call writes a word of narrative about them.
@@ -500,6 +511,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         await this.recordOutcome(input, "completed", startedAt, {
           populationSize: history.coverage.populationSize,
           sampleSize: history.coverage.sampleSize,
+          facetProcessedJobCount,
           unclassifiedCount: report.unclassifiedQuestionCount,
           topicCount: 0,
           facetReadyQuestionCount: 0,
@@ -616,6 +628,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       await this.recordOutcome(input, "completed", startedAt, {
         populationSize: history.coverage.populationSize,
         sampleSize: history.coverage.sampleSize,
+        facetProcessedJobCount,
         unclassifiedCount: censusResult.unclassifiedCount,
         topicCount: censusTopics.length,
       });

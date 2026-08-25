@@ -345,6 +345,26 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         evalMessageCaseService.lookupVerifications(workspaceId, assistantMessageIds),
     },
   );
+  // Per-message facet extraction (topic census). This same durable worker serves
+  // the local poll loop, task recovery, and an operator-requested Pulse refresh.
+  const facetExtractionWorker = createFacetExtractionWorker({
+    jobs: repositories.facetExtractionJobRepository,
+    extraction: composition.facetExtraction ?? new FacetExtractionService({
+      messages: repositories.messageRepository,
+      facets: repositories.messageFacetRepository,
+      embeddings: embeddingPorts,
+      inferenceFactory: createRewriteTierStructuredInferenceFactory(
+        { resolver: llmCapabilityResolver },
+        infrastructure.usageEventRecorder,
+      ),
+    }),
+    logger,
+    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
+    batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
+    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
+    telemetryService: infrastructure.telemetryService,
+    errorReporter: infrastructure.errorReportingService,
+  });
   const audiencePulseService = buildAudiencePulseService({
     kysely: infrastructure.database.kysely,
     llmCapabilityResolver,
@@ -355,6 +375,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     abuseControlService: chat.abuseControlService,
     embeddingBindingResolver,
+    facetDrain: facetExtractionWorker!,
   });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
@@ -475,29 +496,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       proposalAdapters: copilotProposalAdapters,
       auditService: infrastructure.auditService,
     }),
-  });
-  // Per-message facet extraction (topic census). `composition.facetExtraction` lets a
-  // host override the extractor entirely (mirroring `chunkingProvider` /
-  // `websiteCrawlerProvider`); the OSS default below uses the cheap `"rewrite"` model
-  // tier and the workspace's clustering embedding profile, the same ports the census
-  // read path will consume.
-  const facetExtractionWorker = createFacetExtractionWorker({
-    jobs: repositories.facetExtractionJobRepository,
-    extraction: composition.facetExtraction ?? new FacetExtractionService({
-      messages: repositories.messageRepository,
-      facets: repositories.messageFacetRepository,
-      embeddings: embeddingPorts,
-      inferenceFactory: createRewriteTierStructuredInferenceFactory(
-        { resolver: llmCapabilityResolver },
-        infrastructure.usageEventRecorder,
-      ),
-    }),
-    logger,
-    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
-    batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
-    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
-    telemetryService: infrastructure.telemetryService,
-    errorReporter: infrastructure.errorReportingService,
   });
   return {
     env,

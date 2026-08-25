@@ -80,6 +80,8 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     replace: 0,
     invalidate: 0,
     censusRun: 0,
+    facetDrain: 0,
+    facetDrainInputs: [] as Array<{ workspaceId: string; maxJobs: number }>,
     censusWindows: [] as Array<{ windowStart: Date; windowEnd: Date }>,
     lifecycle: [] as string[],
     auditEvents: [] as Array<{ eventType: string; eventStatus: string; metadata?: Record<string, unknown> }>,
@@ -114,6 +116,14 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     },
     refreshRateLimit: {
       async enforce() { calls.rate += 1; },
+    },
+    facetDrain: {
+      async drainWorkspace(input) {
+        calls.facetDrain += 1;
+        calls.facetDrainInputs.push(input);
+        calls.lifecycle.push("facet-drain");
+        return 2;
+      },
     },
     inferenceFactory: {
       async create() {
@@ -384,8 +394,9 @@ describe("AudiencePulseService", () => {
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("completed");
-    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1, censusRun: 1 });
-    expect(calls.lifecycle).toEqual(["reserve", "census", "commit", "snapshot"]);
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1, censusRun: 1, facetDrain: 1 });
+    expect(calls.facetDrainInputs).toEqual([{ workspaceId: WORKSPACE_ID, maxJobs: 500 }]);
+    expect(calls.lifecycle).toEqual(["reserve", "facet-drain", "census", "commit", "snapshot"]);
   });
 
   it("runs the census over the same fixed window as the history read and builds the report from its real membership", async () => {

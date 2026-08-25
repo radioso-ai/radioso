@@ -208,6 +208,27 @@ describe("FacetExtractionWorker", () => {
     expect(store.claimBatch).toHaveBeenCalledWith(10, NOW);
   });
 
+  it("drains the requested workspace through successive batches without claiming another workspace's jobs", async () => {
+    const store = buildStore([
+      [buildJob({ id: "job-1" }), buildJob({ id: "job-2", messageId: "message-2" })],
+      [buildJob({ id: "job-3", messageId: "message-3" })],
+    ]);
+    const port = buildPort(async () => ({ status: "extracted" }));
+    const worker = buildWorker(store, port, { batchSize: 2 });
+
+    const processed = await worker.drainWorkspace({ workspaceId: "workspace-1", maxJobs: 500, now: NOW });
+
+    expect(processed).toBe(3);
+    expect(store.releaseExpiredClaims).toHaveBeenCalledWith({
+      claimedAtOrBefore: new Date(NOW.getTime() - 300_000),
+      maxAttempts: FACET_EXTRACTION_MAX_ATTEMPTS,
+      workspaceId: "workspace-1",
+    });
+    expect(store.claimBatch).toHaveBeenNthCalledWith(1, 2, NOW, "workspace-1");
+    expect(store.claimBatch).toHaveBeenNthCalledWith(2, 2, NOW, "workspace-1");
+    expect(port.extract).toHaveBeenCalledTimes(3);
+  });
+
   it("keeps processing the rest of the batch when one job throws", async () => {
     const store = buildStore([[buildJob({ id: "job-1" }), buildJob({ id: "job-2", messageId: "message-2" })]]);
     const port = buildPort(async (job) => {

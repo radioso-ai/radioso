@@ -121,7 +121,11 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
    * table statistics, so the subquery form passes on an empty table and breaks later. A
    * `FOR UPDATE` CTE is never inlined, so it is evaluated exactly once and the limit holds.
    */
-  async claimBatch(limit: number, now: Date = new Date()): Promise<FacetExtractionJob[]> {
+  async claimBatch(
+    limit: number,
+    now: Date = new Date(),
+    workspaceId?: string,
+  ): Promise<FacetExtractionJob[]> {
     const rows = await this.db
       .with("due", (qb) =>
         qb
@@ -129,6 +133,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
           .select("id")
           .where("status", "=", "queued")
           .where("scheduled_at", "<=", now)
+          .$if(workspaceId !== undefined, (query) => query.where("workspace_id", "=", workspaceId!))
           .orderBy("scheduled_at", "asc")
           .orderBy("created_at", "asc")
           .limit(limit)
@@ -209,7 +214,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
    * The attempt was already counted at claim time, so a released job resumes with its
    * remaining budget and a worker crash loop cannot retry forever.
    */
-  async releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number }): Promise<number> {
+  async releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number; workspaceId?: string }): Promise<number> {
     const failed = await this.db
       .updateTable("facet_extraction_jobs")
       .set({
@@ -222,6 +227,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .where("claimed_at", "is not", null)
       .where("claimed_at", "<=", input.claimedAtOrBefore)
       .where("attempt_count", ">=", input.maxAttempts)
+      .$if(input.workspaceId !== undefined, (query) => query.where("workspace_id", "=", input.workspaceId!))
       .executeTakeFirst();
 
     const released = await this.db
@@ -237,6 +243,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .where("claimed_at", "is not", null)
       .where("claimed_at", "<=", input.claimedAtOrBefore)
       .where("attempt_count", "<", input.maxAttempts)
+      .$if(input.workspaceId !== undefined, (query) => query.where("workspace_id", "=", input.workspaceId!))
       .executeTakeFirst();
 
     return changedRows(failed) + changedRows(released);

@@ -137,6 +137,32 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
     expect(await repository.claimBatch(10, claimableNow())).toEqual([]);
   });
 
+  it("claimBatch can claim only one workspace's due jobs", async () => {
+    const [expected] = await seed(1);
+    const otherWorkspaceId = randomUUID();
+    const otherConversationId = randomUUID();
+    const otherMessageId = randomUUID();
+    await database.query(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)",
+      [otherWorkspaceId, accountId, "Other Facet Job Workspace", `facet-job-repo-${otherWorkspaceId}`],
+    );
+    await database.query(
+      "INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)",
+      [otherConversationId, otherWorkspaceId],
+    );
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
+       VALUES ($1, $2, $3, 'user', 'other workspace facet job')`,
+      [otherMessageId, otherConversationId, otherWorkspaceId],
+    );
+    await repository.enqueue({ messageId: otherMessageId, workspaceId: otherWorkspaceId });
+
+    const claimed = await repository.claimBatch(10, claimableNow(), workspaceId);
+
+    expect(claimed.map((job) => job.id)).toEqual([expected]);
+    expect(claimed.map((job) => job.workspaceId)).toEqual([workspaceId]);
+  });
+
   it("claimBatch honours the batch limit and skips rows scheduled in the future", async () => {
     const [future] = await seed(1);
     const [futureClaim] = await repository.claimBatch(10, claimableNow());

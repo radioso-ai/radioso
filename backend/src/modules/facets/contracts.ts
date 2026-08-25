@@ -63,7 +63,7 @@ export interface FacetExtractionJobStore {
    * them to `processing` and counting the attempt. Implementations must use
    * `FOR UPDATE SKIP LOCKED` so concurrent workers claim disjoint rows.
    */
-  claimBatch(limit: number, now?: Date): Promise<FacetExtractionJob[]>;
+  claimBatch(limit: number, now?: Date, workspaceId?: string): Promise<FacetExtractionJob[]>;
   /**
    * Terminal/progress updates are fenced to the claim returned by `claimBatch`.
    * Returns false when the row has since been released/reclaimed/completed by another
@@ -80,7 +80,7 @@ export interface FacetExtractionJobStore {
    * Return `processing` rows claimed at or before `claimedAtOrBefore` to the queue, so a
    * worker that died mid-batch cannot strand jobs. Returns the number released.
    */
-  releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number }): Promise<number>;
+  releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number; workspaceId?: string }): Promise<number>;
 }
 
 export type FacetExtractionOutcome =

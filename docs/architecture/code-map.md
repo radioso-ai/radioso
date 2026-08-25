@@ -833,10 +833,13 @@ reads history with, restated as a write-time check rather than duplicated.
 
 The local document-worker runtime starts that poll loop. Cloud Run instead
 serves authenticated task requests, so its scheduled
-`/internal/tasks/document-processing/recover` invocation drains the same
-bounded claim of at most ten facet jobs alongside document recovery. Both
-paths use the job repository's claim and lease rules, so a recovery request can
-race safely with a local poller or another recovery request.
+`/internal/tasks/document-processing/recover` invocation drains a bounded claim
+of at most ten facet jobs alongside document recovery. An operator-triggered
+Audience Pulse refresh uses the same worker through a narrow workspace-scoped
+drain port before it starts the census, allowing the report to include the
+current window in that one request. Both paths use the job repository's claim
+and lease rules, so recovery and foreground analysis can race safely without
+claiming the same row.
 
 Public surfaces and contracts:
 

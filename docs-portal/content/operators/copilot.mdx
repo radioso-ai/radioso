@@ -143,10 +143,13 @@ workspace, Ray names it rather than leaving you to read its absence as a pass.
 Ray replays a single case against a configuration that is not live yet, so a
 proposal arrives with a measured result: "replay the refund case with this
 instruction and tell me whether it passes." The replay accepts a custom
-instruction, a greeting instruction, directives, retrieval settings, and a
-mid-routine starting position, and reports the verdict that configuration
+instruction, a greeting instruction, directives, skill settings, a different
+model, retrieval settings, and a mid-routine starting position — every setting
+that changes how the agent behaves — and reports the verdict that configuration
 produced, the answer, the grounding verdict, the assertions that still fail, and
-the model that answered.
+the model that answered. A replay that never produced an answer comes back as an
+error carrying the reason, so a failed turn reads as a failure rather than as a
+case with nothing to score.
 
 A replay leaves the library where it was. The case keeps the verdict it
 recorded, its last run stays the one you see in the Eval section, and the

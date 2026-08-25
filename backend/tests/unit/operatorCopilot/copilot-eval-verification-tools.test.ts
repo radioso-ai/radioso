@@ -395,3 +395,38 @@ describe("replay_eval_case", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+describe("replay_eval_case override surface", () => {
+  it("accepts every behavior-bearing setting propose_agent_setting can propose", async () => {
+    const { replayCase, descriptors } = ports();
+    // propose_agent_setting takes an arbitrary settingKey, so a model or skill-settings proposal
+    // is draftable. A proposal Ray cannot replay is a proposal it cannot carry evidence for.
+    const overrides = {
+      modelOverride: { provider: "openai" as const, model: "gpt-test-2" },
+      agentConfigOverride: {
+        customInstruction: "Always state the refund window.",
+        skillSettings: { "retrieval.answer": { citationsEnabled: true } },
+      },
+    };
+
+    const descriptor = descriptorNamed(descriptors, "replay_eval_case");
+    // invoke() does not validate — the runtime parses against inputSchema before calling it — so
+    // the schema has to be asserted directly or a rejected field looks forwarded.
+    expect(descriptor.inputSchema.safeParse({ caseId, overrides }).success).toBe(true);
+
+    await descriptor.createTool(context).invoke({ caseId, overrides }, {} as never);
+
+    expect(replayCase).toHaveBeenCalledWith(expect.objectContaining({ overrides }));
+  });
+
+  it("rejects a model override without a provider the eval contract knows", () => {
+    const { descriptors } = ports();
+
+    const parsed = descriptorNamed(descriptors, "replay_eval_case").inputSchema.safeParse({
+      caseId,
+      overrides: { modelOverride: { provider: "unknown-vendor", model: "x" } },
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+});

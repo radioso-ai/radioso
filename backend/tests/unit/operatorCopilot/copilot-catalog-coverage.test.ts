@@ -66,7 +66,9 @@ describe("operator copilot catalog coverage", () => {
       getEvalCaseBySourceMessage: "eval_results",
       getOrCreateEvalCaseBySourceMessage: "create_eval_case_from_turn",
       runEvalCases: "run_eval_suite",
-      // The one-off replay path is what a detached, case-scored probe runs on.
+      // The one-off replay path is what a detached, case-scored probe runs on. Bounded the same
+      // way test_agent_turn bounds the assistant pipeline: Ray replays a case, never a bare
+      // snapshot, and never attaches the run to the case.
       createEvalRun: "replay_eval_case",
     });
   });

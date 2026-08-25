@@ -323,3 +323,54 @@ describe("copilot eval case replay", () => {
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ overrides }));
   });
 });
+
+describe("copilot eval case replay verdict projection", () => {
+  it("reports a failed turn as an error even when the case has nothing to score", async () => {
+    // combineVerdicts([]) is "recorded", which is the eval module's word for "no assertions ran".
+    // A turn that never produced an answer is not unscored, and a freshly captured case has no
+    // assertions yet — so the capture-then-replay path hits this on every model failure.
+    const findCase = vi.fn(async () => evalCase({ status: "pending", assertions: [] }));
+    const execute = vi.fn(async () => ({
+      run: {
+        status: "recorded" as const,
+        assertionVerdicts: [],
+        observedOutput: { error: { message: "Model call timed out" } },
+        resolvedConfig: {},
+      },
+    }));
+    const service = new EvalCaseReplayService({
+      cases: { findCase } as never,
+      runs: { execute } as never,
+      abuseControl: { enforce: vi.fn(async () => undefined) },
+      audit: { record: vi.fn(async () => undefined) },
+      abusePolicy: { limit: 30, windowMs: 3_600_000 },
+    });
+
+    const result = await service.replayCase({ ...subject, caseId: ids.case });
+
+    expect(result).toMatchObject({ verdict: "error", error: "Model call timed out", assertionCount: 0 });
+  });
+
+  it("keeps an unscored but successful replay as recorded", async () => {
+    const findCase = vi.fn(async () => evalCase({ status: "pending", assertions: [] }));
+    const execute = vi.fn(async () => ({
+      run: {
+        status: "recorded" as const,
+        assertionVerdicts: [],
+        observedOutput: { answer: "Refunds take 30 days." },
+        resolvedConfig: {},
+      },
+    }));
+    const service = new EvalCaseReplayService({
+      cases: { findCase } as never,
+      runs: { execute } as never,
+      abuseControl: { enforce: vi.fn(async () => undefined) },
+      audit: { record: vi.fn(async () => undefined) },
+      abusePolicy: { limit: 30, windowMs: 3_600_000 },
+    });
+
+    const result = await service.replayCase({ ...subject, caseId: ids.case });
+
+    expect(result).toMatchObject({ verdict: "recorded", error: null, answer: "Refunds take 30 days." });
+  });
+});

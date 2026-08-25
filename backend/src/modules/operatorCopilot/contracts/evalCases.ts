@@ -118,9 +118,12 @@ export type CopilotEvalRunStatus = "pass" | "fail" | "error" | "recorded";
  * The behavior-bearing subset of the eval module's override set. A replay measures configuration
  * Ray is about to propose, so the cosmetic agent fields the eval route also accepts — logo, theme,
  * branding — are deliberately absent: they cannot change a verdict and would only invite the model
- * to send them.
+ * to send them. Everything `propose_agent_setting` can propose that *does* change behavior belongs
+ * here, or Ray can draft a proposal it has no way to measure.
  */
 export interface CopilotEvalCaseReplayOverrides {
+  /** Answers "would another model get this right"; the grader keeps the workspace default. */
+  modelOverride?: { provider: "openai" | "openai-compatible" | "gemini" | "claude"; model: string };
   assistantInstructionsOverride?: { customInstruction?: string };
   retrievalSettingsOverride?: {
     queryRewriteEnabled?: boolean;
@@ -133,6 +136,8 @@ export interface CopilotEvalCaseReplayOverrides {
   agentConfigOverride?: {
     customInstruction?: string;
     greetingInstruction?: string;
+    /** Merged key by key onto the captured settings, so a single skill's entry stands alone. */
+    skillSettings?: Record<string, unknown>;
     authoredDirectives?: ReadonlyArray<Record<string, unknown>>;
   };
   /** Seeds a mid-routine starting position, which is where routine defects concentrate. */

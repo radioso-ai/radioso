@@ -110,9 +110,16 @@ const suiteRunOutputSchema = z.object({
 /**
  * The behavior-bearing overrides only. The eval route also accepts logo, theme, and branding on
  * an agent config override; none of them can move a verdict, so offering them would only invite
- * the model to spend a replay on a cosmetic difference.
+ * the model to spend a replay on a cosmetic difference. Everything else it accepts stays, because
+ * `propose_agent_setting` takes an arbitrary setting key: a behavior setting Ray can propose but
+ * not replay is a proposal that cannot carry evidence. Partial values are safe — the replay merges
+ * an override onto the captured config key by key rather than replacing whole records.
  */
 const replayOverridesSchema = z.object({
+  modelOverride: z.object({
+    provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
+    model: z.string().min(1).max(200),
+  }).strict().optional(),
   assistantInstructionsOverride: z.object({
     customInstruction: z.string().max(4000).optional(),
   }).strict().optional(),
@@ -127,6 +134,7 @@ const replayOverridesSchema = z.object({
   agentConfigOverride: z.object({
     customInstruction: z.string().max(4000).optional(),
     greetingInstruction: z.string().max(4000).optional(),
+    skillSettings: unknownRecord.optional(),
     authoredDirectives: z.array(unknownRecord).max(50).optional(),
   }).strict().optional(),
   routineStartState: z.object({

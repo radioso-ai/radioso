@@ -45,7 +45,10 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
     return {
       caseId: evalCase.id,
       name: evalCase.name,
-      verdict: run.status,
+      // A case with no assertions aggregates to "recorded", the eval module's word for "nothing
+      // scored". A turn that never produced an answer is not unscored, and a freshly captured
+      // case has no assertions yet, so capture-then-replay hits this on any model failure.
+      verdict: run.observedOutput.error ? "error" : run.status,
       recordedStatus: evalCase.status,
       assertionCount: evalCase.assertions.length,
       answer: run.observedOutput.answer ?? null,

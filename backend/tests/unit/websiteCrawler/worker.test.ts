@@ -901,20 +901,24 @@ describe("website crawl worker", () => {
     const markCompleted = vi.fn().mockResolvedValue(false);
     const markFailed = vi.fn().mockResolvedValue(false);
     const releasePausedClaim = vi.fn().mockResolvedValue(false);
-    const crawl = vi.fn(({ signal }: { signal?: AbortSignal }) => new Promise<{
-      provider: string;
-      pages: [];
-    }>((resolve) => {
-      signal?.addEventListener("abort", () => {
-        resolve({ provider: "test-crawler", pages: [] });
-      }, { once: true });
-      setTimeout(() => resolve({ provider: "test-crawler", pages: [] }), 100).unref?.();
-    }));
+    let crawlStarted = false;
+    const crawl = vi.fn(({ signal }: { signal?: AbortSignal }) => {
+      crawlStarted = true;
+      return new Promise<{
+        provider: string;
+        pages: [];
+      }>((resolve) => {
+        signal?.addEventListener("abort", () => {
+          resolve({ provider: "test-crawler", pages: [] });
+        }, { once: true });
+        setTimeout(() => resolve({ provider: "test-crawler", pages: [] }), 100).unref?.();
+      });
+    });
     const worker = new WebsiteCrawlWorker({
       repository: {
         releaseTimedOutClaimsBatch: vi.fn().mockResolvedValue({ releasedCount: 0, workspaceIds: [], hasMore: false }),
         claimNext: vi.fn().mockResolvedValue(oldJob),
-        findById: vi.fn().mockResolvedValue(reclaimedJob),
+        findById: vi.fn(async () => crawlStarted ? reclaimedJob : oldJob),
         markCompleted,
         markFailed,
         updateCheckpoint: vi.fn().mockResolvedValue(false),

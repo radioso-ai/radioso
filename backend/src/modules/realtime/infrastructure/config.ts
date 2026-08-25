@@ -130,11 +130,11 @@ const rawRealtimeConfigSchema = z.object(realtimeEnvShape).superRefine((value, c
   if (value.REALTIME_ADMISSION_RENEWAL_MS * (1 + value.REALTIME_ADMISSION_RENEWAL_JITTER_PERCENT / 100) + value.REALTIME_ADMISSION_SAFETY_MS >= value.REALTIME_ADMISSION_LEASE_TTL_MS) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_ADMISSION_RENEWAL_MS"], message: "admission renewal plus safety must remain below lease TTL" });
   }
-  if (value.REALTIME_ADMISSION_CLOSE_JITTER_MAX_MS > value.REALTIME_ADMISSION_SAFETY_MS) {
+  if (value.REALTIME_ADMISSION_CLOSE_JITTER_MAX_MS >= value.REALTIME_ADMISSION_SAFETY_MS) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ["REALTIME_ADMISSION_CLOSE_JITTER_MAX_MS"],
-      message: "admission close jitter cannot exceed the lease safety window",
+      message: "admission close jitter must remain below the lease safety window",
     });
   }
   if (value.REALTIME_MAX_WORKSPACE_INTERESTS > value.REALTIME_MAX_CONNECTIONS) {
@@ -217,6 +217,7 @@ export const parseRealtimeConfig = (source: Record<string, unknown>) => {
       accountLimit: value.REALTIME_ACCOUNT_CONNECTION_LIMIT,
       workspaceLimit: value.REALTIME_WORKSPACE_CONNECTION_LIMIT,
       principalLimit: value.REALTIME_PRINCIPAL_CONNECTION_LIMIT,
+      localProcessCap: value.REALTIME_MAX_CONNECTIONS,
       leaseTtlMs: value.REALTIME_ADMISSION_LEASE_TTL_MS,
       renewalMs: value.REALTIME_ADMISSION_RENEWAL_MS,
       safetyMs: value.REALTIME_ADMISSION_SAFETY_MS,

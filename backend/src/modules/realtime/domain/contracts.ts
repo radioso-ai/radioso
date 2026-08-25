@@ -32,12 +32,32 @@ export interface WorkspaceInterestContinuitySource {
 /** Phase 4 transport lifecycle vocabulary; Phase 2 only owns subscribing/active cleanup. */
 export type WorkspaceInterestLifecycleState = "subscribing" | "active" | "reconnecting" | "releasing";
 
+export type AdmissionLeaseRisk = { reason: "renewal_failed" | "expiry_risk" | "fenced"; closeAtMs: number };
+
+export class RealtimeAdmissionError extends Error {
+  constructor(
+    readonly reason: "account_limit" | "workspace_limit" | "principal_limit" | "reconnect_limit" | "cleanup_backlog" | "redis_unavailable" | "local_capacity" | "fenced",
+    readonly statusCode: 429 | 503,
+    readonly retryAfterMs: number,
+  ) {
+    super(`Realtime admission ${reason}`);
+    this.name = "RealtimeAdmissionError";
+  }
+}
+
 export interface RealtimeAdmissionLease {
+  risk: Promise<AdmissionLeaseRisk>;
   release(): Promise<void>;
 }
 
+/** Provider-neutral readiness signal for the future gateway admission seam. */
+export type RealtimeAdmissionHealth = { state: "degraded" | "restored" };
+export type RealtimeAdmissionHealthListener = (health: RealtimeAdmissionHealth) => void;
+
 export interface RealtimeAdmissionController {
   admit(input: { accountId: string; workspaceId: string; principalId: string }): Promise<RealtimeAdmissionLease>;
+  checkReconnect(input: { accountId: string; workspaceId: string; principalId: string }): Promise<void>;
+  onHealth(listener: RealtimeAdmissionHealthListener): () => void;
 }
 
 export interface RealtimeSessionRecord {

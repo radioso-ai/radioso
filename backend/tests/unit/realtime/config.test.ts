@@ -46,6 +46,7 @@ describe("realtime config", () => {
     expect(() => parseRealtimeConfig({ ...base, REALTIME_SHUTDOWN_DRAIN_MS: "10000" })).toThrow(/shutdown/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_ADMISSION_RENEWAL_MS: "60000" })).toThrow(/renewal/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_ADMISSION_CLOSE_JITTER_MAX_MS: "20001" })).toThrow(/close jitter/i);
+    expect(() => parseRealtimeConfig({ ...base, REALTIME_ADMISSION_CLOSE_JITTER_MAX_MS: "20000" })).toThrow(/close jitter/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_TRANSPORT_LOSS_GRACE_MS: "20001" })).toThrow(/transport loss/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_ACCOUNT_CONNECTION_LIMIT: "10", REALTIME_WORKSPACE_CONNECTION_LIMIT: "11" })).toThrow(/ordered/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_PRODUCER_FLUSH_BATCH_SIZE: "5000" })).toThrow(/producer capacity/i);

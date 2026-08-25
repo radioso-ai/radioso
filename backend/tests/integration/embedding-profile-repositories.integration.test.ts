@@ -53,13 +53,8 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     await database.query("DELETE FROM workspace_embedding_transitions WHERE workspace_id = $1", [workspaceId]);
     await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
     await database.query(
-      `DELETE FROM embedding_spaces
-       WHERE id NOT IN (
-         SELECT active_embedding_space_id FROM workspace_embedding_profiles
-         UNION
-         SELECT pending_embedding_space_id FROM workspace_embedding_profiles
-         WHERE pending_embedding_space_id IS NOT NULL
-       )`,
+      "DELETE FROM embedding_spaces WHERE identity_fingerprint LIKE $1",
+      [`space-fingerprint-${workspaceId}-%`],
     );
   });
 

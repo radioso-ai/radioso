@@ -14,6 +14,7 @@ import {
   DashboardQueryInvalidationCoordinator,
   type DashboardQueryInvalidation,
 } from '@/lib/dashboard-query-invalidation'
+import type { WorkspaceInvalidationKind } from '@radioso/workspace-invalidation-contract'
 
 export type DashboardLiveInterestOutcome = 'ready' | 'terminal'
 
@@ -112,6 +113,7 @@ export class DashboardLiveInterestLifecycle {
 }
 
 const DashboardQueryPolicyContext = createContext<DashboardQueryPolicy | null>(null)
+const DashboardQueryInvalidationContext = createContext<((kinds: readonly WorkspaceInvalidationKind[]) => void) | null>(null)
 
 export const isDashboardQueryRetryable = (error: unknown) => {
   if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') {
@@ -154,6 +156,13 @@ export const useDashboardQueryPolicy = () => {
   const policy = useContext(DashboardQueryPolicyContext)
   if (!policy) throw new Error('Dashboard queries must be rendered inside DashboardQueryProvider.')
   return policy
+}
+
+/** Domain views supply only contract kinds; the provider owns exact query mapping. */
+export const useDashboardQueryInvalidation = () => {
+  const invalidate = useContext(DashboardQueryInvalidationContext)
+  if (!invalidate) throw new Error('Dashboard invalidation must be rendered inside DashboardQueryProvider.')
+  return invalidate
 }
 
 const isDocumentVisible = () => typeof document === 'undefined' || document.visibilityState === 'visible'
@@ -221,12 +230,17 @@ export function DashboardQueryProvider({
     queriesEnabled: visible && liveInterestReady,
     intervalFor: dashboardQueryIntervalMs,
   }), [liveInterestReady, visible])
+  const invalidate = useMemo(() => (kinds: readonly WorkspaceInvalidationKind[]) => {
+    coordinator.invalidate(kinds)
+  }, [coordinator])
 
   return (
     <QueryClientProvider client={client}>
-      <DashboardQueryPolicyContext.Provider value={policy}>
-        {children}
-      </DashboardQueryPolicyContext.Provider>
+      <DashboardQueryInvalidationContext.Provider value={invalidate}>
+        <DashboardQueryPolicyContext.Provider value={policy}>
+          {children}
+        </DashboardQueryPolicyContext.Provider>
+      </DashboardQueryInvalidationContext.Provider>
     </QueryClientProvider>
   )
 }

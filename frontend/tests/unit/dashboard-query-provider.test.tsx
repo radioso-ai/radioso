@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryObserver, type QueryFunctionContext, useQuery, useQueryClient } from '@tanstack/react-query'
-import { act, StrictMode } from 'react'
+import { act, StrictMode, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,6 +12,7 @@ import {
   DashboardLiveInterestLifecycle,
   DashboardQueryProvider,
   isDashboardQueryRetryable,
+  useDashboardQueryInvalidation,
   useDashboardQueryPolicy,
   type DashboardLiveInterest,
 } from '@/components/providers/dashboard-query-provider'
@@ -55,6 +56,14 @@ function Probe({ onPolicy, queryFn, activeMs, workspaceId: probeWorkspaceId = wo
     refetchInterval: policy.intervalFor(queryKey, activeMs),
   })
   onPolicy(policy, client)
+  return null
+}
+
+function InvalidationProbe({ kinds }: { kinds?: readonly 'document.status_changed'[] }) {
+  const invalidate = useDashboardQueryInvalidation()
+  useEffect(() => {
+    if (kinds) invalidate(kinds)
+  }, [invalidate, kinds])
   return null
 }
 
@@ -241,6 +250,7 @@ describe('dashboard query provider policy', () => {
       <StrictMode>
         <DashboardQueryProvider workspaceId={workspaceId} interest={interest}>
           <Probe queryFn={queryFn} onPolicy={() => undefined} />
+          <InvalidationProbe />
         </DashboardQueryProvider>
       </StrictMode>,
     )
@@ -250,10 +260,15 @@ describe('dashboard query provider policy', () => {
       await flush()
     })
     expect(queryFn).toHaveBeenCalledTimes(1)
-    const onInvalidation = interest.open.mock.calls[0]?.[0]?.onInvalidation
-    if (!onInvalidation) throw new Error('Expected live invalidation callback.')
     await act(async () => {
-      onInvalidation({ type: 'invalidate', kinds: ['document.status_changed'] })
+      root.render(
+        <StrictMode>
+          <DashboardQueryProvider workspaceId={workspaceId} interest={interest}>
+            <Probe queryFn={queryFn} onPolicy={() => undefined} />
+            <InvalidationProbe kinds={['document.status_changed']} />
+          </DashboardQueryProvider>
+        </StrictMode>,
+      )
       await flush()
     })
     expect(queryFn).toHaveBeenCalledTimes(2)

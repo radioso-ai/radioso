@@ -1,6 +1,7 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { SlidersHorizontal } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -37,6 +38,7 @@ import { DocumentSearchResults } from '@/components/dashboard/document-search-re
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 import { Button } from '@/components/ui/button'
+import { useDashboardQueryInvalidation, useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 import {
   type DocumentSourceListItem,
   type DocumentSummary,
@@ -45,6 +47,16 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
+import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
+import {
+  DOCUMENT_CRAWL_RECENT_SINCE_MINUTES,
+  effectiveCrawlPresentation,
+  isInitialDocumentListLoading,
+  patchDocumentListRow,
+  removeDocumentListRow,
+  useDocumentCrawlActivityQuery,
+  useDocumentListQuery,
+} from '@/lib/documents-query-state'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
@@ -55,9 +67,9 @@ import {
 } from '@/lib/audience-pulse-draft-seed'
 
 const PAGE_SIZE = 100
+const EMPTY_DOCUMENTS: DocumentSummary[] = []
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
 const CRAWL_MAX_LIMIT = 1000
-const CRAWL_JOBS_SINCE_MINUTES = 30
 
 const EMPTY_FORM: DocumentEditorValues = {
   title: '',
@@ -100,10 +112,10 @@ export function DocumentsView({
   onAutoOpenAddHandled,
 }: DocumentsViewProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
+  const invalidateDashboardQueries = useDashboardQueryInvalidation()
+  const { intervalFor, queriesEnabled } = useDashboardQueryPolicy()
   const justClosedDocumentIdRef = useRef<string | null>(null)
-  const documentWorkspaceKeyRef = useRef(`${accountId}:${routeState.workspaceId ?? ''}`)
-  const documentLoadRequestIdRef = useRef(0)
-  const crawlLoadRequestIdRef = useRef(0)
   const previousCrawlJobsRef = useRef<Map<string, WebsiteCrawlJobSummary['status']>>(new Map())
   const recentlyDeletedRef = useRef<Set<string>>(new Set())
   const documentSearch = useDocumentSearch()
@@ -113,12 +125,7 @@ export function DocumentsView({
     dismissed: boolean
   }>({ seed: null, consumed: false, dismissed: false })
 
-  const [documents, setDocuments] = useState<DocumentSummary[]>([])
-  const [totalDocuments, setTotalDocuments] = useState(0)
-  const [hasNextPage, setHasNextPage] = useState(false)
   const [currentPage, setCurrentPage] = useState(routeState.documentsPage ?? 1)
-  const [hasLoadedDocuments, setHasLoadedDocuments] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -154,6 +161,7 @@ export function DocumentsView({
   const [activeConnectorId, setActiveConnectorId] = useState<string | null>(null)
 
   const sourceFilterId = routeState.documentSourceFilter ?? null
+  const workspaceId = routeState.workspaceId ?? ''
   const documentFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
       {
@@ -182,146 +190,67 @@ export function DocumentsView({
   const [dismissedCrawlJobIds, setDismissedCrawlJobIds] = useState<Set<string>>(new Set())
   const [dismissingCrawlJobIds, setDismissingCrawlJobIds] = useState<Set<string>>(new Set())
   const [recentlyDeletedJobIds, setRecentlyDeletedJobIds] = useState<Set<string>>(new Set())
+  const [crawlPresentationWorkspaceId, setCrawlPresentationWorkspaceId] = useState(workspaceId)
+  const effectiveCrawlJobs = effectiveCrawlPresentation(crawlPresentationWorkspaceId, workspaceId, crawlJobs)
+  const documentPolicyKey = dashboardQueryKeys.documents.list(workspaceId, {
+    sourceId: sourceFilterId,
+    page: currentPage,
+    pageSize: PAGE_SIZE,
+  })
+  const crawlPolicyKey = dashboardQueryKeys.documents.crawlActivity(workspaceId, {
+    recentSinceMinutes: DOCUMENT_CRAWL_RECENT_SINCE_MINUTES,
+  })
+
+  const documentQuery = useDocumentListQuery({
+    workspaceId, sourceId: sourceFilterId, page: currentPage, pageSize: PAGE_SIZE,
+    enabled: queriesEnabled,
+    intervalMs: intervalFor(documentPolicyKey),
+  })
+  const documentQueryKey = documentQuery.queryKey
+  const documents = documentQuery.data?.documents ?? EMPTY_DOCUMENTS
+  const totalDocuments = documentQuery.data?.total ?? 0
+  const hasNextPage = documentQuery.data?.hasMore ?? false
+  const hasLoadedDocuments = Boolean(documentQuery.data)
+  const isLoading = isInitialDocumentListLoading(documentQuery)
+  const patchCurrentDocuments = useCallback((patch: (document: DocumentSummary) => DocumentSummary) => {
+    patchDocumentListRow(queryClient, documentQueryKey, patch)
+  }, [documentQueryKey, queryClient])
+  const crawlQuery = useDocumentCrawlActivityQuery({
+    workspaceId,
+    enabled: queriesEnabled && onboarding.websiteCrawlerEnabled,
+    floorMs: intervalFor(crawlPolicyKey),
+    optimisticJobs: effectiveCrawlJobs,
+  })
 
   const totalPages = Math.max(1, Math.ceil(totalDocuments / PAGE_SIZE))
-
-  const loadDocuments = useCallback(async (
-    page: number,
-    options?: { background?: boolean; reset?: boolean },
-  ) => {
-    const requestId = documentLoadRequestIdRef.current + 1
-    documentLoadRequestIdRef.current = requestId
-    const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
-
-    if (!options?.background) {
-      setIsLoading(true)
-    }
-
-    try {
-      const pageSnapshot = sourceFilterId
-        ? await documentsApi.listSourceDocuments(sourceFilterId, {
-            limit: PAGE_SIZE,
-            offset: Math.max(0, page - 1) * PAGE_SIZE,
-          })
-        : await documentsApi.listDocuments({
-            limit: PAGE_SIZE,
-            offset: Math.max(0, page - 1) * PAGE_SIZE,
-          })
-
-      if (documentLoadRequestIdRef.current !== requestId || documentWorkspaceKeyRef.current !== requestWorkspaceKey) {
-        return
-      }
-
-      setDocuments(pageSnapshot.documents)
-      setTotalDocuments(pageSnapshot.total)
-      setHasNextPage(pageSnapshot.hasMore)
-    } catch (error) {
-      if (documentLoadRequestIdRef.current !== requestId || documentWorkspaceKeyRef.current !== requestWorkspaceKey) {
-        return
-      }
-
-      console.error('Failed to load documents:', {
-        message: getApiErrorMessage(error, 'Failed to load documents.'),
-        error,
-        workspaceId: routeState.workspaceId ?? null,
-        page,
-      })
-    } finally {
-      if (documentLoadRequestIdRef.current === requestId && documentWorkspaceKeyRef.current === requestWorkspaceKey) {
-        setHasLoadedDocuments(true)
-        if (!options?.background) {
-          setIsLoading(false)
-        }
-      }
-    }
-  }, [accountId, routeState.workspaceId, sourceFilterId])
-
-  useEffect(() => {
-    const nextWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
-    const workspaceChanged = documentWorkspaceKeyRef.current !== nextWorkspaceKey
-
-    if (workspaceChanged) {
-      documentWorkspaceKeyRef.current = nextWorkspaceKey
-      void loadDocuments(currentPage, { reset: true })
-      return
-    }
-
-    void loadDocuments(currentPage)
-  }, [accountId, currentPage, loadDocuments, routeState.workspaceId])
-
-  const loadDocumentsRef = useRef(loadDocuments)
-  useEffect(() => {
-    loadDocumentsRef.current = loadDocuments
-  }, [loadDocuments])
-
-  const currentPageRef = useRef(currentPage)
-  useEffect(() => {
-    currentPageRef.current = currentPage
-  }, [currentPage])
 
   useEffect(() => {
     recentlyDeletedRef.current = recentlyDeletedJobIds
   }, [recentlyDeletedJobIds])
 
-  const loadCrawlJobs = useCallback(async () => {
-    const requestId = crawlLoadRequestIdRef.current + 1
-    crawlLoadRequestIdRef.current = requestId
-    const requestWorkspaceKey = `${accountId}:${routeState.workspaceId ?? ''}`
-
-    try {
-      const [recentResponse, pausedResponse] = await Promise.all([
-        documentsApi.listCrawlJobs({ sinceMinutes: CRAWL_JOBS_SINCE_MINUTES }),
-        documentsApi.listCrawlJobs({ status: 'paused' }),
-      ])
-      const jobsById = new Map(recentResponse.jobs.map((job) => [job.id, job]))
-      for (const job of pausedResponse.jobs) {
-        jobsById.set(job.id, job)
-      }
-      const jobs = [...jobsById.values()]
-
-      if (
-        crawlLoadRequestIdRef.current !== requestId ||
-        documentWorkspaceKeyRef.current !== requestWorkspaceKey
-      ) {
-        return
-      }
-
-      setCrawlJobs((current) => {
-        const merged = mergeCrawlJobs({
-          current,
-          incoming: jobs,
-          previousStatuses: previousCrawlJobsRef.current,
-          recentlyDeletedJobIds: recentlyDeletedRef.current,
+  useEffect(() => {
+    if (!crawlQuery.data || crawlPresentationWorkspaceId !== workspaceId) return
+    setCrawlJobs((current) => {
+      const merged = mergeCrawlJobs({
+        current,
+        incoming: crawlQuery.data,
+        previousStatuses: previousCrawlJobsRef.current,
+        recentlyDeletedJobIds: recentlyDeletedRef.current,
+      })
+      previousCrawlJobsRef.current = merged.nextStatuses
+      if (merged.deletedJobIdsToForget.length > 0) {
+        setRecentlyDeletedJobIds((previous) => {
+          const next = new Set(previous)
+          for (const id of merged.deletedJobIdsToForget) next.delete(id)
+          return next
         })
-        previousCrawlJobsRef.current = merged.nextStatuses
-        if (merged.deletedJobIdsToForget.length > 0) {
-          setRecentlyDeletedJobIds((prev) => {
-            const next = new Set(prev)
-            for (const id of merged.deletedJobIdsToForget) {
-              next.delete(id)
-            }
-            return next.size === prev.size ? prev : next
-          })
-        }
-        if (merged.completedJobIds.length > 0) {
-          void loadDocumentsRef.current(currentPageRef.current, { background: true, reset: true })
-        }
-        return merged.jobs
-      })
-    } catch (error) {
-      if (
-        crawlLoadRequestIdRef.current !== requestId ||
-        documentWorkspaceKeyRef.current !== requestWorkspaceKey
-      ) {
-        return
       }
-      console.error('Failed to load crawl jobs:', {
-        message: getApiErrorMessage(error, 'Failed to load crawl jobs.'),
-        error,
-        workspaceId: routeState.workspaceId ?? null,
-      })
-    }
-  }, [accountId, routeState.workspaceId])
+      if (merged.completedJobIds.length > 0) {
+        invalidateDashboardQueries(['document.status_changed'])
+      }
+      return merged.jobs
+    })
+  }, [crawlPresentationWorkspaceId, crawlQuery.data, invalidateDashboardQueries, workspaceId])
 
   const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
 
@@ -341,6 +270,7 @@ export function DocumentsView({
   }, [routeState.workspaceId])
 
   useEffect(() => {
+    setCrawlPresentationWorkspaceId(workspaceId)
     setCrawlJobs([])
     setDismissedCrawlJobIds(new Set())
     setDismissingCrawlJobIds(new Set())
@@ -350,53 +280,16 @@ export function DocumentsView({
     if (!websiteCrawlerEnabled) {
       return
     }
-    void loadCrawlJobs()
-  }, [loadCrawlJobs, websiteCrawlerEnabled])
+  }, [websiteCrawlerEnabled, workspaceId])
 
   useEffect(() => {
     setCurrentPage(routeState.documentsPage ?? 1)
   }, [routeState.documentsPage])
 
-  useEffect(() => {
-    const hasActiveProcessing = documents.some((document) => {
-      const normalizedStatus = document.status.toLowerCase()
-      return normalizedStatus === 'queued' || normalizedStatus === 'processing'
-    })
-
-    if (!hasActiveProcessing) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void loadDocuments(currentPage, { background: true, reset: true })
-    }, 2000)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [currentPage, documents, loadDocuments])
-
   const visibleCrawlJobs = useMemo(
-    () => crawlJobs.filter((job) => !dismissedCrawlJobIds.has(job.id)),
-    [crawlJobs, dismissedCrawlJobIds],
+    () => effectiveCrawlJobs.filter((job) => !dismissedCrawlJobIds.has(job.id)),
+    [effectiveCrawlJobs, dismissedCrawlJobIds],
   )
-
-  useEffect(() => {
-    if (!websiteCrawlerEnabled) {
-      return
-    }
-    const hasActiveCrawl = visibleCrawlJobs.some(
-      (job) => job.status === 'queued' || job.status === 'processing',
-    )
-
-    if (!hasActiveCrawl) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void loadCrawlJobs()
-    }, 2000)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [loadCrawlJobs, visibleCrawlJobs, websiteCrawlerEnabled])
 
   useEffect(() => {
     const nextPage = getSafeDocumentsPage({
@@ -697,13 +590,13 @@ export function DocumentsView({
 
       if (editingDocumentId) {
         await documentsApi.updateDocument(editingDocumentId, payload)
-        await loadDocuments(currentPage, { reset: true })
+        invalidateDashboardQueries(['document.status_changed'])
         await openDocumentPage(editingDocumentId)
         setIsEditingDetail(false)
       } else {
         await documentsApi.createDocument(payload)
+        invalidateDashboardQueries(['document.status_changed'])
         setDocumentsPage(1)
-        await loadDocuments(1, { reset: true })
         audiencePulseDraftSeedRef.current = { seed: null, consumed: true, dismissed: true }
         setIsCreateDialogOpen(false)
         resetCreateDialog()
@@ -737,8 +630,8 @@ export function DocumentsView({
         ...(importEnrichmentChoice !== 'inherit' ? { documentEnrichmentOverride: importEnrichmentChoice } : {}),
         metadata: importMetadata,
       })
+      invalidateDashboardQueries(['document.status_changed'])
       setDocumentsPage(1)
-      await loadDocuments(1, { reset: true })
       setIsImportDialogOpen(false)
       resetImportDialog()
     } catch (error) {
@@ -805,7 +698,7 @@ export function DocumentsView({
       })
       setIsCrawlDialogOpen(false)
       resetCrawlDialog()
-      void loadCrawlJobs()
+      invalidateDashboardQueries(['crawl.status_changed'])
     } catch (error) {
       setCrawlError(getApiErrorMessage(error, 'Failed to start crawl. Please try again.'))
     } finally {
@@ -838,6 +731,7 @@ export function DocumentsView({
 
     try {
       await documentsApi.deleteCrawlJob(job.id)
+      invalidateDashboardQueries(['crawl.status_changed'])
       setCrawlJobs((current) => current.filter((entry) => entry.id !== job.id))
       previousCrawlJobsRef.current.delete(job.id)
       // Track the id so a poll already in flight when DELETE landed cannot
@@ -866,7 +760,7 @@ export function DocumentsView({
         return next
       })
     }
-  }, [])
+  }, [invalidateDashboardQueries])
 
   const handleDeleteDialogChange = (open: boolean) => {
     if (!open && deletingDocumentId) {
@@ -893,11 +787,12 @@ export function DocumentsView({
 
     try {
       await documentsApi.deleteDocument(deletingId)
+      invalidateDashboardQueries(['document.status_changed'])
+      removeDocumentListRow(queryClient, documentQueryKey, deletingId)
       const nextTotalDocuments = Math.max(0, totalDocuments - 1)
       const nextTotalPages = Math.max(1, Math.ceil(nextTotalDocuments / PAGE_SIZE))
       const nextPage = Math.min(currentPage, nextTotalPages)
       setDocumentsPage(nextPage)
-      await loadDocuments(nextPage, { reset: true })
       if (selectedDocumentId === deletingId) {
         onSelectedDocumentChange?.(null)
       }
@@ -921,7 +816,7 @@ export function DocumentsView({
     })
     try {
       await documentsApi.reprocessDocument(documentId, { documentEnrichmentOverride: 'on' })
-      await loadDocuments(currentPage, { reset: true })
+      invalidateDashboardQueries(['document.status_changed'])
       await openDocumentPage(documentId)
     } catch (error) {
       setRetryErrorById((current) => ({
@@ -943,7 +838,7 @@ export function DocumentsView({
 
     try {
       await documentsApi.reprocessDocument(documentId)
-      await loadDocuments(currentPage, { reset: true })
+      invalidateDashboardQueries(['document.status_changed'])
       if (editingDocumentId === documentId) {
         await openDocumentPage(documentId)
       }
@@ -966,13 +861,10 @@ export function DocumentsView({
     try {
       const updated = await documentsApi.updateDocumentMetadata(documentId, formValues.metadata)
       setActiveDocument((current) => (current && current.id === documentId ? updated : current))
-      setDocuments((current) =>
-        current.map((document) =>
-          document.id === documentId
-            ? { ...document, metadata: updated.metadata, updatedAt: updated.updatedAt }
-            : document,
-        ),
-      )
+      patchCurrentDocuments((document) => document.id === documentId
+        ? { ...document, metadata: updated.metadata, updatedAt: updated.updatedAt }
+        : document)
+      invalidateDashboardQueries(['document.status_changed'])
       setFormValues((current) => ({ ...current, metadata: toEditableMetadata(updated.metadata) }))
     } catch (error) {
       setMetadataSaveError(getApiErrorMessage(error, 'Failed to save metadata. Please try again.'))
@@ -992,18 +884,15 @@ export function DocumentsView({
       // Keep the open document and the list row in sync so the toggle, expiry,
       // and status badge reflect the new eligibility immediately.
       setActiveDocument((current) => (current && current.id === documentId ? updated : current))
-      setDocuments((current) =>
-        current.map((document) =>
-          document.id === documentId
-            ? {
-                ...document,
-                retrievalEnabled: updated.retrievalEnabled,
-                retrievalExpiresAt: updated.retrievalExpiresAt,
-                updatedAt: updated.updatedAt,
-              }
-            : document,
-        ),
-      )
+      patchCurrentDocuments((document) => document.id === documentId
+        ? {
+            ...document,
+            retrievalEnabled: updated.retrievalEnabled,
+            retrievalExpiresAt: updated.retrievalExpiresAt,
+            updatedAt: updated.updatedAt,
+          }
+        : document)
+      invalidateDashboardQueries(['document.status_changed'])
     } catch (error) {
       setRetrievalError(getApiErrorMessage(error, 'Failed to update retrieval settings. Please try again.'))
     } finally {
@@ -1165,7 +1054,6 @@ export function DocumentsView({
           onOpenChange={(next) => {
             if (!next) {
               setActiveConnectorId(null)
-              void loadDocuments(currentPage, { background: true, reset: true })
             }
           }}
         />

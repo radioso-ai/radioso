@@ -17,12 +17,12 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
   const workspaceId = randomUUID();
   const conversationId = randomUUID();
 
-  const createMessage = async (): Promise<string> => {
+  const createMessage = async (createdAt: Date = new Date()): Promise<string> => {
     const messageId = randomUUID();
     await database.query(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
-       VALUES ($1, $2, $3, 'user', 'facet job test message')`,
-      [messageId, conversationId, workspaceId],
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
+       VALUES ($1, $2, $3, 'user', 'facet job test message', $4)`,
+      [messageId, conversationId, workspaceId, createdAt],
     );
     return messageId;
   };
@@ -161,6 +161,22 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
 
     expect(claimed.map((job) => job.id)).toEqual([expected]);
     expect(claimed.map((job) => job.workspaceId)).toEqual([workspaceId]);
+  });
+
+  it("claimBatch scopes a workspace drain to its analysis window", async () => {
+    const oldMessage = await createMessage(new Date("2026-06-01T12:00:00.000Z"));
+    const currentMessage = await createMessage(new Date("2026-07-15T12:00:00.000Z"));
+    await repository.enqueue({ messageId: oldMessage, workspaceId });
+    const current = await repository.enqueue({ messageId: currentMessage, workspaceId });
+
+    const claimed = await repository.claimBatch(
+      10,
+      claimableNow(),
+      workspaceId,
+      { start: new Date("2026-07-01T00:00:00.000Z"), end: new Date("2026-08-01T00:00:00.000Z") },
+    );
+
+    expect(claimed.map((job) => job.id)).toEqual([current.id]);
   });
 
   it("claimBatch honours the batch limit and skips rows scheduled in the future", async () => {

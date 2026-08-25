@@ -43,6 +43,8 @@ const buildStore = (batches: FacetExtractionJob[][]): StoreStub => {
     markSkipped: vi.fn<FacetExtractionJobStore["markSkipped"]>(async () => true),
     markFailed: vi.fn<FacetExtractionJobStore["markFailed"]>(async () => true),
     releaseExpiredClaims: vi.fn<FacetExtractionJobStore["releaseExpiredClaims"]>(async () => 0),
+    nextWorkspaceScheduledAt: vi.fn<FacetExtractionJobStore["nextWorkspaceScheduledAt"]>(async () => null),
+    hasPendingWorkspaceWork: vi.fn<FacetExtractionJobStore["hasPendingWorkspaceWork"]>(async () => false),
   };
 };
 
@@ -216,7 +218,8 @@ describe("FacetExtractionWorker", () => {
     const port = buildPort(async () => ({ status: "extracted" }));
     const worker = buildWorker(store, port, { batchSize: 2 });
 
-    const processed = await worker.drainWorkspace({ workspaceId: "workspace-1", maxJobs: 500, now: NOW });
+    const window = { start: new Date("2026-07-01T00:00:00.000Z"), end: new Date("2026-08-01T00:00:00.000Z") };
+    const processed = await worker.drainWorkspace({ workspaceId: "workspace-1", analysisStart: window.start, analysisEnd: window.end, maxJobs: 500, now: NOW });
 
     expect(processed).toBe(3);
     expect(store.releaseExpiredClaims).toHaveBeenCalledWith({
@@ -224,8 +227,8 @@ describe("FacetExtractionWorker", () => {
       maxAttempts: FACET_EXTRACTION_MAX_ATTEMPTS,
       workspaceId: "workspace-1",
     });
-    expect(store.claimBatch).toHaveBeenNthCalledWith(1, 2, NOW, "workspace-1");
-    expect(store.claimBatch).toHaveBeenNthCalledWith(2, 2, NOW, "workspace-1");
+    expect(store.claimBatch).toHaveBeenNthCalledWith(1, 2, NOW, "workspace-1", window);
+    expect(store.claimBatch).toHaveBeenNthCalledWith(2, 2, NOW, "workspace-1", window);
     expect(port.extract).toHaveBeenCalledTimes(3);
   });
 

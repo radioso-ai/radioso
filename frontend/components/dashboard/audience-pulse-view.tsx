@@ -46,6 +46,7 @@ type SnapshotState =
 type RefreshState =
   | { kind: 'idle' }
   | { kind: 'running' }
+  | { kind: 'preparing' }
   | { kind: 'cancelled' }
   | { kind: 'busy' }
   | { kind: 'capacity'; message: string }
@@ -106,19 +107,24 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
 
   useEffect(() => {
     mountedRef.current = true
+    const statusController = new AbortController()
     const load = async () => {
       await handleRead()
+      const status = await audiencePulseApi.getRefreshStatus({ signal: statusController.signal }).catch(() => null)
+      if (!statusController.signal.aborted && mountedRef.current && status?.pending) {
+        setRefresh({ kind: 'preparing' })
+      }
     }
     void load()
     return () => {
       mountedRef.current = false
+      statusController.abort()
       readControllerRef.current?.abort()
       refreshControllerRef.current?.abort()
     }
   }, [handleRead])
 
-  const handleRefresh = useCallback(async () => {
-    if (refresh.kind === 'running') return
+  const requestRefresh = useCallback(async () => {
     refreshControllerRef.current?.abort()
     const controller = new AbortController()
     refreshControllerRef.current = controller
@@ -140,6 +146,8 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
             : { kind: 'no-traffic', period: response.period },
         )
         setRefresh({ kind: 'idle' })
+      } else if (response.kind === 'preparing') {
+        setRefresh({ kind: 'preparing' })
       } else {
         setRefresh({ kind: 'unavailable', reason: response.reason })
       }
@@ -170,7 +178,40 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
       }
       setLastRefreshEndedAt(new Date().toISOString())
     }
-  }, [refresh.kind])
+  }, [])
+
+  const handleRefresh = useCallback(async () => {
+    if (refresh.kind === 'running' || refresh.kind === 'preparing') return
+    await requestRefresh()
+  }, [refresh.kind, requestRefresh])
+
+  useEffect(() => {
+    if (refresh.kind !== 'preparing') return
+    const controller = new AbortController()
+    let timer: number | undefined
+    const poll = () => {
+      timer = window.setTimeout(() => {
+      void audiencePulseApi.getRefreshStatus({ signal: controller.signal })
+        .then((status) => {
+          if (!controller.signal.aborted && mountedRef.current && !status.pending) {
+            void requestRefresh()
+          } else if (!controller.signal.aborted && mountedRef.current) {
+            poll()
+          }
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted && mountedRef.current) {
+            setRefresh({ kind: 'error', message: getApiErrorMessage(error, 'Could not check report preparation.') })
+          }
+        })
+      }, 1_500)
+    }
+    poll()
+    return () => {
+      controller.abort()
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [refresh.kind, requestRefresh])
 
   const openConversation = useCallback(
     (evidence: AudiencePulseThemeEvidence) => {
@@ -220,7 +261,7 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
     [accountId, routeState, router, workspaceId],
   )
 
-  const isRefreshing = refresh.kind === 'running'
+  const isRefreshing = refresh.kind === 'running' || refresh.kind === 'preparing'
   const hasSavedReport = snapshot.kind === 'ready'
   const analysisButtonLabel = hasSavedReport ? 'Refresh' : 'Analyze last 30 days'
 
@@ -282,6 +323,18 @@ function RefreshBanner({
   }
   const finishedAt = lastRefreshEndedAt ? formatDateTime(lastRefreshEndedAt) : null
   const commonClass = 'flex items-start gap-3 rounded-md border p-3 text-sm'
+
+  if (state.kind === 'preparing') {
+    return (
+      <div className={`${commonClass} border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100`} role="status">
+        <Spinner className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+        <div>
+          <p className="font-medium">Preparing your report from all pending visitor questions.</p>
+          <p className="text-xs opacity-80">This continues automatically; you do not need to refresh the page or click again.</p>
+        </div>
+      </div>
+    )
+  }
 
   if (state.kind === 'busy') {
     return (

@@ -76,7 +76,8 @@ export interface AudiencePulseRefreshRateLimitPort {
  * make this workspace's report population ready before running a census.
  */
 export interface AudiencePulseFacetDrainPort {
-  drainWorkspace(input: { workspaceId: string; maxJobs: number }): Promise<number>;
+  requestWorkspaceDrain(input: { workspaceId: string; analysisStart: Date; analysisEnd: Date }): Promise<boolean>;
+  hasPendingWorkspaceWork(input: { workspaceId: string; analysisStart: Date; analysisEnd: Date }): Promise<boolean>;
 }
 
 export interface AudiencePulseInferenceFactory {
@@ -166,6 +167,7 @@ export type AudiencePulseReadResult =
 
 export type AudiencePulseRefreshResult =
   | { kind: "no_traffic"; period: { start: string; end: string }; weeklyVolume: AudiencePulseWeeklyVolume[] }
+  | { kind: "preparing" }
   | { kind: "unavailable"; reason: "provider" | "validation" | "cancelled" }
   | { kind: "busy" }
   | { kind: "usage_limited" }
@@ -193,6 +195,7 @@ export const audiencePulseEvidenceAnchorInputSchema = audiencePulseReadInputSche
 export interface AudiencePulsePort {
   read(input: z.infer<typeof audiencePulseReadInputSchema>): Promise<AudiencePulseReadResult>;
   refresh(input: z.infer<typeof audiencePulseRefreshInputSchema>): Promise<AudiencePulseRefreshResult>;
+  refreshStatus(input: z.infer<typeof audiencePulseReadInputSchema>): Promise<{ pending: boolean }>;
   readEvidenceAnchor(
     input: z.infer<typeof audiencePulseEvidenceAnchorInputSchema>,
   ): Promise<AudiencePulseEvidenceAnchor | null>;

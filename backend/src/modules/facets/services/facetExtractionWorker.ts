@@ -127,14 +127,23 @@ export class FacetExtractionWorker {
    * Claims remain scoped and lease-fenced, while concurrent extraction inside each
    * normal-sized batch makes the initial historical report practical to wait for.
    */
-  async drainWorkspace(input: { workspaceId: string; maxJobs: number; now?: Date }): Promise<number> {
+  async drainWorkspace(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+    maxJobs: number;
+    now?: Date;
+  }): Promise<number> {
     const now = input.now ?? new Date();
     await this.releaseExpiredClaims(now, input.workspaceId);
 
     let processed = 0;
     while (!this.stopRequested && processed < input.maxJobs) {
       const limit = Math.min(this.batchSize, input.maxJobs - processed);
-      const batch = await this.jobs.claimBatch(limit, now, input.workspaceId);
+      const batch = await this.jobs.claimBatch(limit, now, input.workspaceId, {
+        start: input.analysisStart,
+        end: input.analysisEnd,
+      });
       if (batch.length === 0) {
         break;
       }

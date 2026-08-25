@@ -32,6 +32,19 @@ export const createAudiencePulseRoutes = (
     }
   });
 
+  router.get("/refresh-status", dashboardSession, qualityRead, async (_req, res, next) => {
+    try {
+      const { accountId, userId, workspaceId } = res.locals as {
+        accountId: string;
+        userId: string;
+        workspaceId: string;
+      };
+      res.status(200).json(await service.refreshStatus({ accountId, userId, workspaceId }));
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/evidence-anchor", dashboardSession, historyRead, async (req, res, next) => {
     try {
       const body = audiencePulseEvidenceAnchorRequestSchema.safeParse(req.body ?? {});

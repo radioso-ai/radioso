@@ -73,10 +73,6 @@ export interface AudiencePulseServiceDependencies {
   censusServiceFactory: CensusServiceFactory;
 }
 
-// A refresh is an explicit operator action, so it drains enough work for the usual
-// historical window in one request without making an unbounded request path.
-const AUDIENCE_PULSE_REFRESH_FACET_MAX_JOBS = 500;
-
 const safeAudit = async (
   auditService: AudiencePulseAuditPort,
   input: Parameters<AudiencePulseAuditPort["record"]>[0],
@@ -377,6 +373,18 @@ export class AudiencePulseService implements AudiencePulsePort {
     });
   }
 
+  async refreshStatus(input: { workspaceId: string }): Promise<{ pending: boolean }> {
+    const analysisEnd = this.now();
+    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    return {
+      pending: await this.deps.facetDrain?.hasPendingWorkspaceWork({
+        workspaceId: input.workspaceId,
+        analysisStart,
+        analysisEnd,
+      }) ?? false,
+    };
+  }
+
   async refresh(input: {
     accountId: string;
     userId: string;
@@ -430,6 +438,13 @@ export class AudiencePulseService implements AudiencePulsePort {
         };
       }
 
+      const facetDrainInput = { workspaceId: input.workspaceId, analysisStart, analysisEnd };
+      const hasFacetWork = await this.deps.facetDrain?.hasPendingWorkspaceWork(facetDrainInput) ?? false;
+      if (hasFacetWork) {
+        await this.deps.facetDrain?.requestWorkspaceDrain(facetDrainInput);
+        return { kind: "preparing" };
+      }
+
       try {
         reservation = await this.deps.usageLimitPolicy.reserveAnswer({
           accountId: input.accountId,
@@ -446,11 +461,6 @@ export class AudiencePulseService implements AudiencePulsePort {
         }
         throw error;
       }
-
-      const facetProcessedJobCount = await this.deps.facetDrain?.drainWorkspace({
-        workspaceId: input.workspaceId,
-        maxJobs: AUDIENCE_PULSE_REFRESH_FACET_MAX_JOBS,
-      }) ?? 0;
 
       // The census clusters the exact eligible-question population for this same
       // window (spec 956 FR-003): it names and sizes every topic before any model
@@ -511,7 +521,6 @@ export class AudiencePulseService implements AudiencePulsePort {
         await this.recordOutcome(input, "completed", startedAt, {
           populationSize: history.coverage.populationSize,
           sampleSize: history.coverage.sampleSize,
-          facetProcessedJobCount,
           unclassifiedCount: report.unclassifiedQuestionCount,
           topicCount: 0,
           facetReadyQuestionCount: 0,
@@ -628,7 +637,6 @@ export class AudiencePulseService implements AudiencePulsePort {
       await this.recordOutcome(input, "completed", startedAt, {
         populationSize: history.coverage.populationSize,
         sampleSize: history.coverage.sampleSize,
-        facetProcessedJobCount,
         unclassifiedCount: censusResult.unclassifiedCount,
         topicCount: censusTopics.length,
       });

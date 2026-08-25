@@ -124,6 +124,7 @@ export type AudiencePulseReadResponse =
 
 export type AudiencePulseRefreshResponse =
   | { kind: 'no_traffic'; period: AudiencePulsePeriod; weeklyVolume: AudiencePulseWeeklyVolume[] }
+  | { kind: 'preparing' }
   | { kind: 'unavailable'; reason: 'provider' | 'validation' | 'cancelled' }
   | { kind: 'completed'; report: AudiencePulseHydratedReport }
 
@@ -142,6 +143,14 @@ export const audiencePulseApi = {
     return request<AudiencePulseRefreshResponse>(
       BASE_PATH,
       { method: 'POST', signal: options.signal },
+      { withSession: true },
+    )
+  },
+
+  async getRefreshStatus(options: { signal?: AbortSignal } = {}): Promise<{ pending: boolean }> {
+    return request<{ pending: boolean }>(
+      `${BASE_PATH}/refresh-status`,
+      { method: 'GET', signal: options.signal },
       { withSession: true },
     )
   },

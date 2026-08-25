@@ -2,11 +2,16 @@ import { getEnv, type Env } from "../config/env.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
+  createDefaultFacetExtractionDrainDispatcher,
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
-import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
+import {
+  createFacetExtractionWorker,
+  FacetExtractionService,
+  FacetExtractionWorkspaceDrainService,
+} from "../../modules/facets/composition.js";
 import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
@@ -365,6 +370,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     errorReporter: infrastructure.errorReportingService,
   });
+  const facetExtractionWorkspaceDrain = new FacetExtractionWorkspaceDrainService(
+    repositories.facetExtractionJobRepository,
+    createDefaultFacetExtractionDrainDispatcher(env, logger),
+  );
   const audiencePulseService = buildAudiencePulseService({
     kysely: infrastructure.database.kysely,
     llmCapabilityResolver,
@@ -375,7 +384,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     abuseControlService: chat.abuseControlService,
     embeddingBindingResolver,
-    facetDrain: facetExtractionWorker!,
+    facetDrain: facetExtractionWorkspaceDrain,
   });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
@@ -560,6 +569,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentProcessingWorker: documents.documentProcessingWorker,
     documentJobConsumer: documents.documentJobConsumer,
     facetExtractionWorker,
+    facetExtractionWorkspaceDrain,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
     websiteCrawlJobService: documents.websiteCrawlJobService,
     websiteCrawlWorker: documents.websiteCrawlWorker,

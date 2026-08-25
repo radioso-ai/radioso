@@ -16,6 +16,12 @@ export type {
   MessageFacetRepositoryPort,
 } from "./contracts.js";
 export { FacetExtractionWorker } from "./services/facetExtractionWorker.js";
+export { FacetExtractionWorkspaceDrainService } from "./services/facetExtractionWorkspaceDrainService.js";
+export {
+  NoopFacetExtractionDrainDispatcher,
+  type FacetExtractionDrainDispatcher,
+} from "./contracts.js";
+export { CloudTasksFacetExtractionDrainDispatcher } from "./infra/cloudTasksFacetExtractionDrainDispatcher.js";
 export {
   FacetExtractionService,
   type FacetExtractionServiceDependencies,

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AbuseControlPort } from "../../../src/modules/security/contracts/abuseControl.js";
 import { MAX_COPILOT_EVAL_SUITE_CASES } from "../../../src/modules/operatorCopilot/contracts/evalCases.js";
 import { EvalCaseCaptureService } from "../../../src/modules/operatorCopilot/services/evalCaseCaptureService.js";
+import { EvalCaseReplayService } from "../../../src/modules/operatorCopilot/services/evalCaseReplayService.js";
 import { EvalSuiteProbeService } from "../../../src/modules/operatorCopilot/services/evalSuiteProbeService.js";
 
 const ids = {
@@ -181,5 +182,144 @@ describe("copilot eval suite probe", () => {
     await service.runCases({ ...subject, caseIds: [ids.case] });
 
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ mode: "full_assistant" }));
+  });
+});
+
+describe("copilot eval case replay", () => {
+  const replayRun = (overrides: Record<string, unknown> = {}) => ({
+    run: {
+      status: "fail" as const,
+      assertionVerdicts: [
+        { assertion: { type: "answer_contains" }, status: "fail" as const, reason: "Answer omitted the refund window" },
+      ],
+      observedOutput: {
+        answer: "I am not able to help with that.",
+        groundingVerdict: "ungrounded",
+        groundingDiagnostics: { unsupportedClaims: 1 },
+      },
+      resolvedConfig: { modelProvider: "openai", modelId: "gpt-test" },
+      ...overrides,
+    },
+  });
+
+  const harness = (options: {
+    enforce?: AbuseControlPort["enforce"];
+    findCase?: () => Promise<unknown>;
+    execute?: () => Promise<unknown>;
+  } = {}) => {
+    const order: string[] = [];
+    const enforce = options.enforce ?? vi.fn(async () => {
+      order.push("enforce");
+      return undefined;
+    });
+    const findCase = (options.findCase ?? vi.fn(async () => evalCase({ status: "failing", assertions: [{ type: "answer_contains" }] }))) as never;
+    const execute = (options.execute ?? vi.fn(async () => {
+      order.push("execute");
+      return replayRun();
+    })) as never;
+    const record = vi.fn(async () => undefined);
+    const service = new EvalCaseReplayService({
+      cases: { findCase },
+      runs: { execute },
+      abuseControl: { enforce },
+      audit: { record },
+      abusePolicy: { limit: 30, windowMs: 3_600_000 },
+    });
+    return { service, findCase, execute, record, order, enforce };
+  };
+
+  it("replays the case's snapshot without recording the outcome against the case", async () => {
+    const { service, execute } = harness();
+
+    const result = await service.replayCase({ ...subject, caseId: ids.case });
+
+    expect(execute).toHaveBeenCalledWith({
+      workspaceId: ids.workspace,
+      accountId: ids.account,
+      snapshotId: ids.snapshot,
+      caseId: ids.case,
+      mode: "full_assistant",
+      overrides: undefined,
+      attachToCase: false,
+    });
+    // The verdict this configuration produced, next to the verdict the library still holds.
+    expect(result).toMatchObject({
+      caseId: ids.case,
+      verdict: "fail",
+      recordedStatus: "failing",
+      assertionCount: 1,
+      answer: "I am not able to help with that.",
+      groundingVerdict: "ungrounded",
+      model: { provider: "openai", id: "gpt-test" },
+      error: null,
+    });
+  });
+
+  it("spends the expensive-operation budget before replaying", async () => {
+    const { service, order, enforce } = harness();
+
+    await service.replayCase({ ...subject, caseId: ids.case });
+
+    expect(order).toEqual(["enforce", "execute"]);
+    expect(enforce).toHaveBeenCalledWith({
+      scope: "api.expensive_authenticated",
+      subjectKey: `account:${ids.account}:workspace:${ids.workspace}:operator:${ids.operator}`,
+      limit: 30,
+      windowMs: 3_600_000,
+    });
+  });
+
+  it("audits a rate-limited replay and never runs the turn", async () => {
+    const enforce = vi.fn(async () => {
+      throw Object.assign(new Error("Too many requests"), { statusCode: 429 });
+    });
+    const { service, execute, record } = harness({ enforce });
+
+    await expect(service.replayCase({ ...subject, caseId: ids.case })).rejects.toThrow("Too many requests");
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "security.rate_limit_enforced",
+      metadata: expect.objectContaining({ principalType: "operator_copilot", route: "replay_eval_case" }),
+    }));
+  });
+
+  it("refuses a case that does not belong to the workspace", async () => {
+    const findCase = vi.fn(async () => null);
+    const { service, execute } = harness({ findCase });
+
+    await expect(service.replayCase({ ...subject, caseId: ids.case })).rejects.toThrow("Eval case not found");
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed turn as an error rather than as a failing verdict", async () => {
+    const execute = vi.fn(async () => ({
+      run: {
+        status: "error" as const,
+        assertionVerdicts: [],
+        observedOutput: { error: { message: "Model call timed out" } },
+        resolvedConfig: {},
+      },
+    }));
+    const { service } = harness({ execute });
+
+    const result = await service.replayCase({ ...subject, caseId: ids.case });
+
+    expect(result).toMatchObject({
+      verdict: "error",
+      error: "Model call timed out",
+      answer: null,
+      groundingVerdict: null,
+      model: { provider: null, id: null },
+    });
+  });
+
+  it("forwards the proposed configuration to the run", async () => {
+    const { service, execute } = harness();
+    const overrides = { agentConfigOverride: { customInstruction: "Always state the refund window." } };
+
+    await service.replayCase({ ...subject, caseId: ids.case, overrides });
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ overrides }));
   });
 });

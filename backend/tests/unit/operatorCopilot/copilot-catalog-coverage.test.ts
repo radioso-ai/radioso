@@ -66,6 +66,8 @@ describe("operator copilot catalog coverage", () => {
       getEvalCaseBySourceMessage: "eval_results",
       getOrCreateEvalCaseBySourceMessage: "create_eval_case_from_turn",
       runEvalCases: "run_eval_suite",
+      // The one-off replay path is what a detached, case-scored probe runs on.
+      createEvalRun: "replay_eval_case",
     });
   });
 

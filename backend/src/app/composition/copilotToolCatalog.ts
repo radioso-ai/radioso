@@ -18,6 +18,7 @@ import type {
   CopilotAgentSettingProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotEvalCaseCapturePort,
+  CopilotEvalCaseReplayPort,
   CopilotEvalSuiteProbePort,
   CopilotRoutineProposalAdapter,
   CopilotWorkspaceRouteKeyResolver,
@@ -48,6 +49,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly evalResultsService: CopilotEvalResultsPort;
   readonly evalCaseCapture: CopilotEvalCaseCapturePort;
   readonly evalSuiteProbe: CopilotEvalSuiteProbePort;
+  readonly evalCaseReplay: CopilotEvalCaseReplayPort;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
   readonly documentStatusService: CopilotDocumentStatusPort;

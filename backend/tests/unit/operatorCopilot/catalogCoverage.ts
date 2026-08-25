@@ -40,6 +40,7 @@ const catalogToolCoverage = {
   getEvalCaseBySourceMessage: "eval_results",
   getOrCreateEvalCaseBySourceMessage: "create_eval_case_from_turn",
   runEvalCases: "run_eval_suite",
+  createEvalRun: "replay_eval_case",
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
   getAudiencePulse: "audience_topics",
@@ -248,7 +249,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateAgentSkill",
     "deleteAgentSkill",
     "deleteEvalCase",
-    "createEvalRun",
   ], wave2BehaviorAuthoring),
   ...coverage([
     "searchRetrievalEvidence",

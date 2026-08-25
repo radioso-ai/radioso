@@ -154,6 +154,7 @@ import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.
 import {
   AgentTurnProbeService,
   EvalCaseCaptureService,
+  EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
   type CopilotConversation,
@@ -191,6 +192,7 @@ import {
   EvalRunService,
   EvalSuiteService,
   EvalSnapshotService,
+  type EvalRunOverrides,
 } from "../../src/modules/eval/composition.js";
 import { createInMemoryEvalRepository } from "./inMemoryEvalRepository.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
@@ -1754,6 +1756,21 @@ export const createTestDependencies = (overrides: {
       }),
       evalSuiteProbe: new EvalSuiteProbeService({
         suite: evalSuiteService,
+        abuseControl: abuseControlService,
+        audit: auditService,
+        abusePolicy: {
+          limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+        },
+      }),
+      evalCaseReplay: new EvalCaseReplayService({
+        cases: evalCaseService,
+        runs: {
+          execute: (input) => evalRunService.execute({
+            ...input,
+            overrides: input.overrides as EvalRunOverrides | undefined,
+          }),
+        },
         abuseControl: abuseControlService,
         audit: auditService,
         abusePolicy: {

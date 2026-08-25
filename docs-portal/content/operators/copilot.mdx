@@ -138,7 +138,27 @@ score until you add an assertion. Failing cases come back with the assertions
 that failed and the reason each one gave. If a case id does not exist in the
 workspace, Ray names it rather than leaving you to read its absence as a pass.
 
-Both capabilities need `workspace.retrieval.query`, the same permission the
+## Try a change before you propose it
+
+Ray replays a single case against a configuration that is not live yet, so a
+proposal arrives with a measured result: "replay the refund case with this
+instruction and tell me whether it passes." The replay accepts a custom
+instruction, a greeting instruction, directives, retrieval settings, and a
+mid-routine starting position, and reports the verdict that configuration
+produced, the answer, the grounding verdict, the assertions that still fail, and
+the model that answered.
+
+A replay leaves the library where it was. The case keeps the verdict it
+recorded, its last run stays the one you see in the Eval section, and the
+suite's pass rate holds, so trying five variations of an instruction costs five
+answers and moves nothing. Ray reports the case's recorded verdict next to the
+replay's own verdict, which is the comparison a proposal rests on.
+
+Each replay runs a full agent turn and costs one, so name the case a change
+should move rather than the library. When you decide to keep a result, re-run
+the case with the suite so the library records it.
+
+These capabilities need `workspace.retrieval.query`, the same permission the
 Eval section uses.
 
 ## Follow a running turn

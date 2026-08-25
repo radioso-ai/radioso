@@ -133,8 +133,13 @@ export class EvalCaseService {
     }
   }
 
+  /** Workspace-scoped lookup without the run history, for callers that only need the case. */
+  async findCase(workspaceId: string, caseId: string): Promise<EvalCase | null> {
+    return this.repository.findCase(workspaceId, caseId);
+  }
+
   async getWithRuns(workspaceId: string, caseId: string): Promise<EvalCaseWithRuns> {
-    const evalCase = await this.repository.findCase(workspaceId, caseId);
+    const evalCase = await this.findCase(workspaceId, caseId);
     if (!evalCase) {
       throw notFound("Eval case not found");
     }

@@ -111,3 +111,99 @@ export interface CopilotEvalSuiteRunnerPort {
     caseIds?: string[];
   }): Promise<CopilotEvalSuiteProbeResult>;
 }
+
+export type CopilotEvalRunStatus = "pass" | "fail" | "error" | "recorded";
+
+/**
+ * The behavior-bearing subset of the eval module's override set. A replay measures configuration
+ * Ray is about to propose, so the cosmetic agent fields the eval route also accepts — logo, theme,
+ * branding — are deliberately absent: they cannot change a verdict and would only invite the model
+ * to send them.
+ */
+export interface CopilotEvalCaseReplayOverrides {
+  assistantInstructionsOverride?: { customInstruction?: string };
+  retrievalSettingsOverride?: {
+    queryRewriteEnabled?: boolean;
+    rerankEnabled?: boolean;
+    vectorTopK?: number;
+    similarityThreshold?: number;
+    rerankTopK?: number;
+    customInstruction?: string;
+  };
+  agentConfigOverride?: {
+    customInstruction?: string;
+    greetingInstruction?: string;
+    authoredDirectives?: ReadonlyArray<Record<string, unknown>>;
+  };
+  /** Seeds a mid-routine starting position, which is where routine defects concentrate. */
+  routineStartState?: {
+    routineId: string;
+    path: ReadonlyArray<string>;
+    variables: Record<string, unknown>;
+    attempts?: Record<string, number>;
+    status: "active" | "suspended" | "completed" | "expired";
+    metadata?: Record<string, unknown>;
+  };
+}
+
+export interface CopilotEvalCaseReplayInput extends CopilotEvalOperatorSubject {
+  caseId: string;
+  overrides?: CopilotEvalCaseReplayOverrides;
+}
+
+export interface CopilotEvalCaseReplayResult {
+  caseId: string;
+  name: string;
+  /** What this replay's configuration produced. */
+  verdict: CopilotEvalRunStatus;
+  /** The case's stored verdict, which a replay leaves untouched. */
+  recordedStatus: CopilotEvalCaseStatus;
+  assertionCount: number;
+  answer: string | null;
+  groundingVerdict: string | null;
+  groundingDiagnostics: unknown;
+  assertionVerdicts: ReadonlyArray<CopilotEvalSuiteAssertionVerdict>;
+  model: { provider: string | null; id: string | null };
+  /** Set when the replayed turn itself failed, so no verdict reflects the configuration. */
+  error: string | null;
+}
+
+export interface CopilotEvalCaseReplayPort {
+  replayCase(input: CopilotEvalCaseReplayInput): Promise<CopilotEvalCaseReplayResult>;
+}
+
+/** Narrow port over the eval module's case reader. */
+export interface CopilotEvalCaseReaderPort {
+  findCase(workspaceId: string, caseId: string): Promise<{
+    id: string;
+    name: string;
+    snapshotId: string;
+    status: CopilotEvalCaseStatus;
+    assertions: ReadonlyArray<unknown>;
+  } | null>;
+}
+
+/** Narrow port over the eval module's run path, in its detached form. */
+export interface CopilotEvalCaseReplayRunnerPort {
+  execute(input: {
+    workspaceId: string;
+    accountId?: string | null;
+    snapshotId: string;
+    caseId: string;
+    mode: CopilotEvalRunMode;
+    overrides?: CopilotEvalCaseReplayOverrides;
+    attachToCase: boolean;
+  }): Promise<{
+    run: {
+      status: CopilotEvalRunStatus;
+      assertionVerdicts: ReadonlyArray<CopilotEvalSuiteAssertionVerdict>;
+      observedOutput: {
+        answer?: string;
+        groundingVerdict?: string;
+        groundingDiagnostics?: unknown;
+        error?: { message: string };
+      };
+      resolvedConfig: { modelProvider?: string; modelId?: string };
+    };
+  }>;
+}

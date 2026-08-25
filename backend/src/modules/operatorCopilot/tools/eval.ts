@@ -4,6 +4,7 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import {
   MAX_COPILOT_EVAL_SUITE_CASES,
   type CopilotEvalCaseCapturePort,
+  type CopilotEvalCaseReplayPort,
   type CopilotEvalSuiteAssertionVerdict,
   type CopilotEvalSuiteCaseResult,
   type CopilotEvalSuiteProbePort,
@@ -15,6 +16,7 @@ const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
 const unknownRecord = z.record(z.unknown());
 const MAX_FAILED_ASSERTIONS_PER_CASE = 5;
+const MAX_REPLAY_ANSWER_CHARS = 2_000;
 const MAX_SUITE_CASE_ID_ARGUMENTS = MAX_COPILOT_EVAL_SUITE_CASES * 4;
 
 export interface CopilotEvalResultsPort {
@@ -105,17 +107,82 @@ const suiteRunOutputSchema = z.object({
   }).strict(),
 }).strict();
 
+/**
+ * The behavior-bearing overrides only. The eval route also accepts logo, theme, and branding on
+ * an agent config override; none of them can move a verdict, so offering them would only invite
+ * the model to spend a replay on a cosmetic difference.
+ */
+const replayOverridesSchema = z.object({
+  assistantInstructionsOverride: z.object({
+    customInstruction: z.string().max(4000).optional(),
+  }).strict().optional(),
+  retrievalSettingsOverride: z.object({
+    queryRewriteEnabled: z.boolean().optional(),
+    rerankEnabled: z.boolean().optional(),
+    vectorTopK: z.number().int().min(1).max(200).optional(),
+    similarityThreshold: z.number().min(0).max(1).optional(),
+    rerankTopK: z.number().int().min(1).max(50).optional(),
+    customInstruction: z.string().max(4000).optional(),
+  }).strict().optional(),
+  agentConfigOverride: z.object({
+    customInstruction: z.string().max(4000).optional(),
+    greetingInstruction: z.string().max(4000).optional(),
+    authoredDirectives: z.array(unknownRecord).max(50).optional(),
+  }).strict().optional(),
+  routineStartState: z.object({
+    routineId: z.string().min(1).max(200),
+    path: z.array(z.string().min(1).max(200)).min(1).max(200),
+    variables: unknownRecord,
+    attempts: z.record(z.number().int()).optional(),
+    status: z.enum(["active", "suspended", "completed", "expired"]),
+    metadata: unknownRecord.optional(),
+  }).strict().optional(),
+}).strict();
+
+const replayInputSchema = z.object({
+  caseId: idSchema,
+  overrides: replayOverridesSchema.optional(),
+}).strict();
+const replayOutputSchema = z.object({
+  caseId: idSchema,
+  name: z.string().max(240),
+  /** What the replayed configuration produced. */
+  verdict: z.enum(["pass", "fail", "error", "recorded"]),
+  /** What the library still records, because a replay does not move it. */
+  recordedStatus: z.enum(["pending", "passing", "failing", "error"]),
+  assertionCount: z.number().int().nonnegative(),
+  answer: z.string().max(MAX_REPLAY_ANSWER_CHARS).nullable(),
+  grounding: z.object({
+    verdict: z.string().max(120).nullable(),
+    diagnostics: unknownRecord.nullable(),
+  }).strict(),
+  failedAssertions: z.array(z.object({
+    type: z.string().max(120),
+    reason: z.string().max(400).nullable(),
+  }).strict()).max(MAX_FAILED_ASSERTIONS_PER_CASE),
+  model: z.object({
+    provider: z.string().max(60).nullable(),
+    id: z.string().max(200).nullable(),
+  }).strict(),
+  error: z.string().max(500).nullable(),
+}).strict();
+
 type CaptureInput = z.infer<typeof captureInputSchema>;
 type CaptureOutput = z.infer<typeof captureOutputSchema>;
 type SuiteRunInput = z.infer<typeof suiteRunInputSchema>;
 type SuiteRunOutput = z.infer<typeof suiteRunOutputSchema>;
+type ReplayInput = z.infer<typeof replayInputSchema>;
+type ReplayOutput = z.infer<typeof replayOutputSchema>;
 
 export interface EvalVerificationCopilotToolDependencies {
   readonly evalCaseCapture: CopilotEvalCaseCapturePort;
   readonly evalSuiteProbe: CopilotEvalSuiteProbePort;
+  readonly evalCaseReplay: CopilotEvalCaseReplayPort;
 }
 
 const CAPTURE_DESCRIPTION = "Capture a bad assistant turn as a permanent eval case. Idempotent: a turn that is already captured returns its existing case unchanged.";
+const REPLAY_DESCRIPTION = "Replay one captured eval case against a configuration that is not live yet, and report the verdict it produces. Use this to check a change before proposing it: the case keeps its recorded verdict either way, so a replay never moves the suite's pass rate. Always runs a full assistant turn and costs one, so replay the cases a change should affect rather than the library.";
+
 const SUITE_RUN_DESCRIPTION = `Re-run up to ${MAX_COPILOT_EVAL_SUITE_CASES} named eval cases and report their outcomes plus the whole suite's standing. Each case replays for real: the run is recorded and the case's stored status moves to the new verdict. Cases run sequentially, so select the cases a change should affect rather than the whole library; list case ids with eval_results first.`;
 
 /**
@@ -206,7 +273,60 @@ export const createEvalVerificationCopilotTools = (
       },
     }),
   } satisfies CopilotToolDescriptor<SuiteRunInput, SuiteRunOutput> as CopilotToolDescriptor,
+  {
+    name: "replay_eval_case",
+    // A probe, not an act: the run is stored detached, so the case's verdict, its last-run
+    // pointer, and the suite pass rate are all left where the library had them.
+    shape: "probe",
+    uiLabel: "Replaying an eval case",
+    contributingModule: "eval",
+    dashboardSubject: { type: "eval" },
+    requiredPermissions: ["workspace.retrieval.query"],
+    description: REPLAY_DESCRIPTION,
+    inputSchema: replayInputSchema,
+    outputSchema: replayOutputSchema,
+    createTool: (context) => ({
+      name: "replay_eval_case",
+      description: REPLAY_DESCRIPTION,
+      inputSchema: replayInputSchema,
+      outputSchema: replayOutputSchema,
+      invoke: async ({ caseId, overrides }) => {
+        const replay = await deps.evalCaseReplay.replayCase({
+          workspaceId: context.workspaceId,
+          accountId: context.accountId,
+          operatorUserId: context.operatorUserId,
+          caseId,
+          overrides,
+        });
+        return replayOutputSchema.parse({
+          caseId: replay.caseId,
+          name: clip(replay.name, 240),
+          verdict: replay.verdict,
+          recordedStatus: replay.recordedStatus,
+          assertionCount: replay.assertionCount,
+          answer: replay.answer === null ? null : clip(replay.answer, MAX_REPLAY_ANSWER_CHARS),
+          grounding: {
+            verdict: replay.groundingVerdict === null ? null : clip(replay.groundingVerdict, 120),
+            diagnostics: boundedDiagnostics(replay.groundingDiagnostics),
+          },
+          failedAssertions: replay.assertionVerdicts
+            .filter((verdict) => verdict.status !== "pass")
+            .slice(0, MAX_FAILED_ASSERTIONS_PER_CASE)
+            .map(projectFailedAssertion),
+          model: replay.model,
+          error: replay.error === null ? null : clip(replay.error, 500),
+        });
+      },
+    }),
+    describeOutputEntity: (output) => entity("eval", output.caseId),
+  } satisfies CopilotToolDescriptor<ReplayInput, ReplayOutput> as CopilotToolDescriptor,
 ];
+
+/** Grounding diagnostics are unbounded by contract; a replay carries them only as evidence. */
+const boundedDiagnostics = (diagnostics: unknown): Record<string, unknown> | null => {
+  if (!diagnostics || typeof diagnostics !== "object" || Array.isArray(diagnostics)) return null;
+  return boundPayload(diagnostics as Record<string, unknown>) as Record<string, unknown>;
+};
 
 const projectSuiteCase = (result: CopilotEvalSuiteCaseResult): SuiteRunOutput["results"][number] => ({
   caseId: result.caseId,

@@ -282,8 +282,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
-- `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`)
-- `backend/src/modules/operatorCopilot/contracts/evalCases.ts`, `services/evalCaseCaptureService.ts`, and `services/evalSuiteProbeService.ts` (eval verification boundary)
+- `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`, `replay_eval_case`)
+- `backend/src/modules/operatorCopilot/contracts/evalCases.ts`, `services/evalCaseCaptureService.ts`, `services/evalSuiteProbeService.ts`, and `services/evalCaseReplayService.ts` (eval verification boundary)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
 - `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)
 - `frontend/lib/api-copilot.ts`

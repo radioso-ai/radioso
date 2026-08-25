@@ -5,6 +5,7 @@ import { copilotToolAnnotationsForShape } from "../../../src/modules/operatorCop
 import {
   MAX_COPILOT_EVAL_SUITE_CASES,
   type CopilotEvalCaseCapturePort,
+  type CopilotEvalCaseReplayPort,
   type CopilotEvalSuiteProbePort,
 } from "../../../src/modules/operatorCopilot/contracts/evalCases.js";
 
@@ -25,6 +26,7 @@ const fourthCaseId = "77777777-7777-4777-8777-777777777777";
 const ports = (overrides: {
   capture?: CopilotEvalCaseCapturePort["captureFromTurn"];
   runCases?: CopilotEvalSuiteProbePort["runCases"];
+  replayCase?: CopilotEvalCaseReplayPort["replayCase"];
 } = {}) => {
   const captureFromTurn = overrides.capture ?? vi.fn(async () => ({
     caseId,
@@ -38,12 +40,29 @@ const ports = (overrides: {
     results: [],
     summary: { total: 0, scored: 0, passing: 0, failing: 0, error: 0, pending: 0, unscored: 0 },
   }));
+  const replayCase = overrides.replayCase ?? vi.fn(async () => ({
+    caseId,
+    name: "2026-08-24 · \"Where is my order?\"",
+    verdict: "pass" as const,
+    recordedStatus: "failing" as const,
+    assertionCount: 2,
+    answer: "Refunds are available within 30 days.",
+    groundingVerdict: "grounded",
+    groundingDiagnostics: { unsupportedClaims: 0 },
+    assertionVerdicts: [
+      { assertion: { type: "answer_contains" }, status: "pass" as const, reason: null },
+    ],
+    model: { provider: "openai", id: "gpt-test" },
+    error: null,
+  }));
   return {
     captureFromTurn,
     runCases,
+    replayCase,
     descriptors: createEvalVerificationCopilotTools({
       evalCaseCapture: { captureFromTurn },
       evalSuiteProbe: { runCases },
+      evalCaseReplay: { replayCase },
     }),
   };
 };
@@ -55,7 +74,7 @@ const descriptorNamed = (descriptors: ReturnType<typeof ports>["descriptors"], n
 };
 
 describe("copilot eval verification tools", () => {
-  it("advertises neither tool as read-only, because both persist", () => {
+  it("advertises only the replay probe as read-only, because it alone leaves the library untouched", () => {
     // The hint a transport reads to decide whether a call is safe to run unattended. Capturing
     // writes a case; a suite run writes a run per case and moves each case's status, which is the
     // pass rate the Eval list shows. Neither is work an operator can be assumed to have accepted.
@@ -67,10 +86,11 @@ describe("copilot eval verification tools", () => {
     }))).toEqual([
       { name: "create_eval_case_from_turn", readOnly: false },
       { name: "run_eval_suite", readOnly: false },
+      { name: "replay_eval_case", readOnly: true },
     ]);
   });
 
-  it("declares both tools as acts, matching the eval route permission", () => {
+  it("separates the acts that move the library from the replay that only measures", () => {
     const { descriptors } = ports();
 
     expect(descriptors.map(({ name, shape, requiredPermissions, contributingModule, uiLabel }) => ({
@@ -89,6 +109,13 @@ describe("copilot eval verification tools", () => {
         requiredPermissions: ["workspace.retrieval.query"],
         contributingModule: "eval",
         uiLabel: "Running eval cases",
+      },
+      {
+        name: "replay_eval_case",
+        shape: "probe",
+        requiredPermissions: ["workspace.retrieval.query"],
+        contributingModule: "eval",
+        uiLabel: "Replaying an eval case",
       },
     ]);
   });
@@ -262,5 +289,109 @@ describe("copilot eval verification tools", () => {
       .createTool(context).invoke({ caseIds: [caseId] }, {} as never);
 
     expect(JSON.stringify(result)).not.toContain("x".repeat(1_000));
+  });
+});
+
+describe("replay_eval_case", () => {
+  it("replays a case against a proposed configuration and reports both verdicts", async () => {
+    const { replayCase, descriptors } = ports();
+    const overrides = { agentConfigOverride: { customInstruction: "Always state the refund window." } };
+
+    const result = await descriptorNamed(descriptors, "replay_eval_case")
+      .createTool(context).invoke({ caseId, overrides }, {} as never);
+
+    expect(replayCase).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      operatorUserId: "operator-1",
+      caseId,
+      overrides,
+    });
+    // The measured verdict is only readable next to the one the library still holds.
+    expect(result).toMatchObject({
+      caseId,
+      verdict: "pass",
+      recordedStatus: "failing",
+      answer: "Refunds are available within 30 days.",
+      grounding: { verdict: "grounded" },
+      failedAssertions: [],
+      model: { provider: "openai", id: "gpt-test" },
+      error: null,
+    });
+  });
+
+  it("points the handoff at the replayed case", async () => {
+    const { descriptors } = ports();
+    const descriptor = descriptorNamed(descriptors, "replay_eval_case");
+
+    const result = await descriptor.createTool(context).invoke({ caseId }, {} as never);
+
+    expect(descriptor.describeOutputEntity?.(result)).toEqual({ type: "eval", id: caseId });
+  });
+
+  it("reports the assertions the proposed configuration still fails", async () => {
+    const replay = vi.fn(async () => ({
+      caseId,
+      name: "Refund window",
+      verdict: "fail" as const,
+      recordedStatus: "failing" as const,
+      assertionCount: 3,
+      answer: "I cannot help with that.",
+      groundingVerdict: "ungrounded",
+      groundingDiagnostics: null,
+      assertionVerdicts: [
+        { assertion: { type: "answer_contains" }, status: "fail" as const, reason: "missing window" },
+        { assertion: { type: "answer_cites_document" }, status: "pass" as const, reason: null },
+        { assertion: { type: "llm_judge" }, status: "error" as const, reason: "judge unavailable" },
+      ],
+      model: { provider: null, id: null },
+      error: null,
+    }));
+    const { descriptors } = ports({ replayCase: replay });
+
+    const result = await descriptorNamed(descriptors, "replay_eval_case")
+      .createTool(context).invoke({ caseId }, {} as never);
+
+    expect(result).toMatchObject({
+      verdict: "fail",
+      assertionCount: 3,
+      failedAssertions: [
+        { type: "answer_contains", reason: "missing window" },
+        { type: "llm_judge", reason: "judge unavailable" },
+      ],
+    });
+  });
+
+  it("bounds an unbounded answer so one replay cannot crowd out the turn", async () => {
+    const replay = vi.fn(async () => ({
+      caseId,
+      name: "Long answer",
+      verdict: "recorded" as const,
+      recordedStatus: "pending" as const,
+      assertionCount: 0,
+      answer: "x".repeat(9_000),
+      groundingVerdict: null,
+      groundingDiagnostics: null,
+      assertionVerdicts: [],
+      model: { provider: null, id: null },
+      error: null,
+    }));
+    const { descriptors } = ports({ replayCase: replay });
+
+    const result = await descriptorNamed(descriptors, "replay_eval_case")
+      .createTool(context).invoke({ caseId }, {} as never) as { answer: string };
+
+    expect(result.answer.length).toBeLessThanOrEqual(2_000);
+  });
+
+  it("rejects an override the eval contract does not accept", () => {
+    const { descriptors } = ports();
+
+    const parsed = descriptorNamed(descriptors, "replay_eval_case").inputSchema.safeParse({
+      caseId,
+      overrides: { agentConfigOverride: { theme: { accent: "red" } } },
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });

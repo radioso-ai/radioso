@@ -555,10 +555,10 @@ test("shows what a proposal was verified against, regressions and stale replays 
 
   // The count the operator decides on is visible without expanding, and it names the regression.
   await expect(page.getByText("Verified against 3 cases — 2 improved, 1 regressed")).toBeVisible();
-  await expect(page.getByText("of these ran before this agent changed", { exact: false })).toBeVisible();
+  await expect(page.getByText("measured a captured configuration the agent has changed since", { exact: false })).toBeVisible();
 
   await page.getByRole("button", { name: `Show proposed changes for ${targetLabel}`, exact: true }).click();
   await expect(page.getByText("Refund window question", { exact: false })).toBeVisible();
   await expect(page.getByText("Shipping cost", { exact: false })).toBeVisible();
-  await expect(page.getByText("agent has changed since", { exact: false })).toBeVisible();
+  await expect(page.getByText("agent changed since this case was captured", { exact: false })).toBeVisible();
 });

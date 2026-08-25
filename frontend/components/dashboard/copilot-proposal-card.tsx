@@ -326,6 +326,16 @@ const RECORDED_LABELS: Record<CopilotProposalEvidenceCase['before'], string> = {
   error: 'errored',
 }
 
+/**
+ * A replay measures the configuration its eval case froze, never the live agent, so what dates a
+ * measurement is the agent being edited after that capture. Saying it ran "before the agent
+ * changed" would give the wrong chronology for an old case replayed today.
+ */
+const staleExplanation = (summary: CopilotProposalEvidenceSummary): string =>
+  summary.stale === summary.total
+    ? 'These replays measured the configuration each case captured, and this agent has changed since. They may not describe how it behaves now.'
+    : `${summary.stale} of these measured a captured configuration the agent has changed since, so they may not describe how it behaves now.`
+
 const evidenceHeadline = (summary: CopilotProposalEvidenceSummary): string => {
   const parts = [`${summary.improved} improved`]
   if (summary.regressed > 0) parts.push(`${summary.regressed} regressed`)
@@ -348,10 +358,7 @@ function ProposalEvidence({
       {summary.stale > 0 ? (
         <p className="mt-1 flex items-start gap-2 text-xs text-muted-foreground" role="status">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          <span>
-            {summary.stale === summary.total ? 'This agent changed' : `${summary.stale} of these ran before this agent changed`}
-            {summary.stale === summary.total ? ' after these replays ran, so they describe an earlier configuration.' : ', so they describe an earlier configuration.'}
-          </span>
+          <span>{staleExplanation(summary)}</span>
         </p>
       ) : null}
       {cases && cases.length > 0 ? (
@@ -360,7 +367,7 @@ function ProposalEvidence({
             <li className="text-xs text-muted-foreground" key={measurement.runId}>
               <span className="font-medium text-foreground">{measurement.caseName}</span>
               {' — was '}{RECORDED_LABELS[measurement.before]}{', '}{VERDICT_LABELS[measurement.after]}{' with this change'}
-              {measurement.stale ? ' (agent has changed since)' : ''}
+              {measurement.stale ? ' (agent changed since this case was captured)' : ''}
             </li>
           ))}
         </ul>

@@ -225,6 +225,23 @@ export class WebsiteCrawlerService {
       throw error;
     }
 
+    const flushCheckpointAfterFailure = async (): Promise<void> => {
+      try {
+        await flushCheckpointPersistence();
+      } catch (error) {
+        this.dependencies.logger?.warn(
+          {
+            role: "website-crawler",
+            workspaceId: input.workspaceId,
+            sourceId: documentSource?.id ?? null,
+            requestedUrl: safeWebsiteBaseUrl,
+            error: redactSensitiveText(error instanceof Error ? error.message : String(error)),
+          },
+          "Failed to persist website crawl checkpoint after crawl failure",
+        );
+      }
+    };
+
     const result: WebsiteCrawlPublicationResult = {
       provider: this.dependencies.provider.name,
       runId: null,
@@ -464,7 +481,7 @@ export class WebsiteCrawlerService {
       // A captured tier-quota rejection takes precedence over the abort error the
       // provider surfaces once we stop it, so the caller sees the real 429 cause.
       const surfaced = usageLimitError ?? error;
-      await flushCheckpointPersistence();
+      await flushCheckpointAfterFailure();
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, surfaced);
       if (documentSource) {
         await this.safeUpdateSourceSyncState({
@@ -476,11 +493,10 @@ export class WebsiteCrawlerService {
       throw surfaced;
     }
 
-    await flushCheckpointPersistence();
-
     // The provider may stop gracefully after we abort rather than throwing; if a
     // tier-quota rejection was captured mid-crawl, surface it as a crawl failure.
     if (usageLimitError) {
+      await flushCheckpointAfterFailure();
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, usageLimitError);
       if (documentSource) {
         await this.safeUpdateSourceSyncState({
@@ -491,6 +507,8 @@ export class WebsiteCrawlerService {
       }
       throw usageLimitError;
     }
+
+    await flushCheckpointPersistence();
 
     if (result.outcome === "yielded") {
       return result;

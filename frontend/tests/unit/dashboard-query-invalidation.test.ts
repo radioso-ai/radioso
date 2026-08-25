@@ -80,7 +80,7 @@ describe('dashboard query invalidation coordinator', () => {
     for (const [kind, ownedKey] of cases) {
       expect(matchesWorkspaceInvalidation(kind, ownedKey, workspaceId)).toBe(true)
       expect(matchesWorkspaceInvalidation(kind, dashboardQueryKeys.sources.list(workspaceId), workspaceId))
-        .toBe(kind === 'crawl.status_changed')
+        .toBe(kind === 'document.status_changed' || kind === 'crawl.status_changed')
     }
   })
 
@@ -100,7 +100,7 @@ describe('dashboard query invalidation coordinator', () => {
       humanOwned: dashboardQueryKeys.attention.humanOwned(workspaceId, { pageSize: 25 }),
     }
     const expected: Record<(typeof INVALIDATION_KINDS)[number], readonly (keyof typeof familyKeys)[]> = {
-      'document.status_changed': ['documentList'],
+      'document.status_changed': ['documentList', 'sources'],
       'crawl.status_changed': ['crawlActivity', 'sources', 'sourceCrawlState'],
       'crawl.progress': ['crawlActivity'],
       'conversation.created': ['historyAll', 'historyChat'],

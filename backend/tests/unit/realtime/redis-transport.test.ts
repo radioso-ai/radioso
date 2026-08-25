@@ -665,6 +665,61 @@ describe("RedisInvalidationTransport", () => {
     await vi.waitFor(() => expect(continuity).toHaveBeenCalledWith({ generation: 1, state: "restored" }));
   });
 
+  it("does not treat a pre-loss subscribe acknowledgement as confirmation for restore", async () => {
+    const fake = clients();
+    const transport = new RedisWorkspaceInterestSubscriber({ channelPrefix: "test", commandTimeoutMs: 100, createClient: fake.factory, mode: "standalone" });
+    const acknowledgeInitialSubscribe = deferredVoid();
+    const acknowledgeFreshSubscribe = deferredVoid();
+    const subscribe = fake.subscriber.subscribe.getMockImplementation()!;
+    fake.subscriber.subscribe
+      .mockImplementationOnce(async () => acknowledgeInitialSubscribe.promise)
+      .mockImplementationOnce(async () => acknowledgeFreshSubscribe.promise)
+      .mockImplementation(subscribe);
+    const continuity = vi.fn();
+    transport.onContinuity(continuity);
+
+    const initialSubscription = transport.subscribe(workspaceA, vi.fn());
+    let admissionSettled = false;
+    void initialSubscription.finally(() => { admissionSettled = true; });
+    await vi.waitFor(() => expect(fake.subscriber.subscribe).toHaveBeenCalledTimes(1));
+
+    fake.subscriber.emit("error");
+    fake.subscriber.emit("ready");
+    expect(continuity).toHaveBeenCalledWith({ generation: 1, state: "lost" });
+    expect(continuity).not.toHaveBeenCalledWith({ generation: 1, state: "restored" });
+
+    acknowledgeInitialSubscribe.resolve();
+    await vi.waitFor(() => expect(fake.subscriber.subscribe).toHaveBeenCalledTimes(2));
+    expect(continuity).not.toHaveBeenCalledWith({ generation: 1, state: "restored" });
+    expect(admissionSettled).toBe(false);
+
+    acknowledgeFreshSubscribe.resolve();
+    await vi.waitFor(() => expect(continuity).toHaveBeenCalledWith({ generation: 1, state: "restored" }));
+    await expect(initialSubscription).resolves.toEqual({ generation: 1 });
+  });
+
+  it("cleans up a stale subscribe acknowledgement when admission loses continuity before ready", async () => {
+    const fake = clients();
+    const transport = new RedisWorkspaceInterestSubscriber({ channelPrefix: "test", commandTimeoutMs: 100, createClient: fake.factory, mode: "standalone" });
+    const acknowledgeInitialSubscribe = deferredVoid();
+    const subscribe = fake.subscriber.subscribe.getMockImplementation()!;
+    fake.subscriber.subscribe
+      .mockImplementationOnce(async () => acknowledgeInitialSubscribe.promise)
+      .mockImplementation(subscribe);
+
+    const admission = transport.subscribe(workspaceA, vi.fn());
+    await vi.waitFor(() => expect(fake.subscriber.subscribe).toHaveBeenCalledTimes(1));
+    fake.subscriber.emit("error");
+    fake.subscriber.emit("reconnecting");
+
+    acknowledgeInitialSubscribe.resolve();
+    await expect(admission).rejects.toThrow("Realtime Redis subscriber continuity is unavailable");
+
+    fake.subscriber.emit("ready");
+    await vi.waitFor(() => expect(fake.subscriber.unsubscribe).toHaveBeenCalledTimes(1));
+    expect(fake.subscriber.subscribe).toHaveBeenCalledTimes(1);
+  });
+
   it("does not resolve new subscription readiness while the current generation is restoring", async () => {
     const fake = clients();
     const transport = new RedisWorkspaceInterestSubscriber({ channelPrefix: "test", commandTimeoutMs: 100, createClient: fake.factory, mode: "standalone" });

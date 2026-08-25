@@ -42,6 +42,7 @@ export const matchesWorkspaceInvalidation = (
   switch (kind) {
     case 'document.status_changed':
       return isDashboardQueryFamily(queryKey, workspaceId, 'documents/list')
+        || isDashboardQueryFamily(queryKey, workspaceId, 'sources/list')
     case 'crawl.status_changed':
       return isDashboardQueryFamily(queryKey, workspaceId, 'documents/crawl-activity')
         || isDashboardQueryFamily(queryKey, workspaceId, 'sources/crawl-state')

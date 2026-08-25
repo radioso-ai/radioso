@@ -387,6 +387,12 @@ export class RedisWorkspaceInterestSubscriber implements WorkspaceInterestTransp
         await this.waitForCurrentRestore();
       }
       await this.reconcile(workspaceId, interest);
+      // A loss can begin while this caller is waiting for the broker's first
+      // acknowledgement. Do not admit the listener to that un-restored
+      // generation; restoration will issue a fresh, epoch-fenced subscribe.
+      if (this.transportLost) {
+        await this.waitForCurrentRestore();
+      }
       return { generation: this.continuityGeneration };
     } catch (error) {
       // A rejected admission to a lost generation must not retain a callback
@@ -445,9 +451,25 @@ export class RedisWorkspaceInterestSubscriber implements WorkspaceInterestTransp
         }
       }
       if (interest.listeners.size > 0 && !interest.brokerAttached) {
+        const subscribeEpoch = this.restoreEpoch;
+        const subscribeGeneration = this.continuityGeneration;
         try {
           await this.brokerSubscribe(channel, interest.listener);
           if (this.lifecycle.isClosed() || this.interests.get(workspaceId) !== interest) return;
+          if (
+            !this.socketReady
+            || subscribeEpoch !== this.restoreEpoch
+            || subscribeGeneration !== this.continuityGeneration
+          ) {
+            // The acknowledgement belongs to an older connection continuity.
+            // Its remote effect is unknown, so retain the interest until the
+            // restore pass explicitly cleans it before a fresh current-epoch
+            // subscription is admitted.
+            interest.brokerAttached = false;
+            interest.attachedEpoch = undefined;
+            interest.uncertainRemote = true;
+            return;
+          }
           interest.brokerAttached = true;
         } catch (error) {
           interest.uncertainRemote = true;

@@ -78,6 +78,14 @@ management service used by the dashboard. Operators with read access can
 review or dismiss a pending proposal; the Apply action is available only when
 their session can manage agents.
 
+A proposal that Ray measured first says so. The card states what it was
+verified against — "Verified against 3 cases — 2 improved, 1 regressed" — and
+expanding it lists each case with the verdict it recorded before and the verdict
+the proposed change produced. Regressions are counted alongside fixes, because
+the decision the card exists to support is whether the trade is worth making. A
+proposal Ray drafted without replaying anything carries no evidence section, so
+an unmeasured change never reads as a verified one.
+
 Each proposal is checked against the target version captured while it was
 drafted. If the target changed in the meantime, the card becomes **Stale** and
 explains that the change was not applied. Ask Ray to draft the change again
@@ -160,6 +168,13 @@ replay's own verdict, which is the comparison a proposal rests on.
 Each replay runs a full agent turn and costs one, so name the case a change
 should move rather than the library. When you decide to keep a result, re-run
 the case with the suite so the library records it.
+
+Ask Ray to propose the change it just measured and the proposal carries those
+replays with it. The measurements come from the runs Ray recorded, not from its
+account of them, and each one is tied to the agent it was measured on. If the
+agent changes between the replay and the draft, the card marks those
+measurements as describing an earlier configuration rather than dropping them —
+you can see both what was measured and that it has aged.
 
 These capabilities need `workspace.retrieval.query`, the same permission the
 Eval section uses.

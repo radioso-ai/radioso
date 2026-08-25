@@ -160,6 +160,8 @@ import {
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotReplayEvidenceRecord,
+  type CopilotReplayEvidenceRepositoryPort,
   type CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 import {
@@ -1720,6 +1722,8 @@ export const createTestDependencies = (overrides: {
     readEvidenceAnchor: async () => null,
   } as unknown as AppDependencies["audiencePulseService"];
   const copilotRepository = new InMemoryCopilotRepository();
+  const copilotReplayEvidenceRepository = new InMemoryCopilotReplayEvidenceRepository();
+  const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -1764,7 +1768,9 @@ export const createTestDependencies = (overrides: {
         },
       }),
       evalCaseReplay: new EvalCaseReplayService({
-        cases: evalCaseService,
+        cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+        evidence: copilotReplayEvidenceRepository,
+        agentVersion: copilotAgentVersion,
         runs: {
           execute: (input) => evalRunService.execute({
             ...input,
@@ -1778,6 +1784,7 @@ export const createTestDependencies = (overrides: {
           windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
         },
       }),
+      proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documentIngestionService,
@@ -2197,6 +2204,22 @@ const hashTerm = (term: string): number => {
 
   return hash;
 };
+
+class InMemoryCopilotReplayEvidenceRepository implements CopilotReplayEvidenceRepositoryPort {
+  private records: CopilotReplayEvidenceRecord[] = [];
+
+  async record(input: Omit<CopilotReplayEvidenceRecord, "id" | "createdAt">): Promise<CopilotReplayEvidenceRecord> {
+    const record: CopilotReplayEvidenceRecord = { ...input, id: randomUUID(), createdAt: new Date() };
+    this.records.push(record);
+    return record;
+  }
+
+  async findMany(input: { workspaceId: string; operatorUserId: string; ids: ReadonlyArray<string> }): Promise<ReadonlyArray<CopilotReplayEvidenceRecord>> {
+    return this.records.filter((record) => input.ids.includes(record.id)
+      && record.workspaceId === input.workspaceId
+      && record.operatorUserId === input.operatorUserId);
+  }
+}
 
 class InMemoryCopilotRepository implements CopilotRepositoryPort {
   private conversations: CopilotConversation[] = [];

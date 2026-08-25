@@ -1,17 +1,21 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/expensiveOperation.js";
 import type {
+  CopilotAgentVersionPort,
   CopilotEvalCaseReaderPort,
   CopilotEvalCaseReplayInput,
   CopilotEvalCaseReplayPort,
   CopilotEvalCaseReplayResult,
   CopilotEvalCaseReplayRunnerPort,
+  CopilotReplayEvidenceRepositoryPort,
 } from "../contracts/evalCases.js";
 import { enforceCopilotExpensiveOperation } from "./expensiveOperationGuard.js";
 
 export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
+  evidence: CopilotReplayEvidenceRepositoryPort;
+  agentVersion: CopilotAgentVersionPort;
 }
 
 /**
@@ -42,9 +46,27 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       attachToCase: false,
     });
 
+    // Recorded from the run the replay just wrote, not from anything the assistant reports, so a
+    // proposal that cites this measurement cites what actually happened.
+    const evidenceId = evalCase.sourceAgentId === null ? null : (await this.dependencies.evidence.record({
+      workspaceId: input.workspaceId,
+      operatorUserId: input.operatorUserId,
+      conversationId: input.copilotConversationId,
+      agentId: evalCase.sourceAgentId,
+      caseId: evalCase.id,
+      caseName: evalCase.name,
+      runId: run.id,
+      agentVersionToken: (await this.dependencies.agentVersion.get(input.workspaceId, evalCase.sourceAgentId))
+        .updatedAt.toISOString(),
+      recordedStatus: evalCase.status,
+      verdict: run.observedOutput.error ? "error" : run.status,
+      overrides: input.overrides ?? {},
+    })).id;
+
     return {
       caseId: evalCase.id,
       name: evalCase.name,
+      evidenceId,
       // A case with no assertions aggregates to "recorded", the eval module's word for "nothing
       // scored". A turn that never produced an answer is not unscored, and a freshly captured
       // case has no assertions yet, so capture-then-replay hits this on any model failure.

@@ -44,6 +44,24 @@ export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
 export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
+/** What the card states about replays run before the draft. Absent when nothing was measured. */
+export interface CopilotProposalEvidenceSummary {
+  total: number
+  improved: number
+  regressed: number
+  unchanged: number
+  stale: number
+}
+
+export interface CopilotProposalEvidenceCase {
+  caseId: string
+  caseName: string
+  runId: string
+  before: 'pending' | 'passing' | 'failing' | 'error'
+  after: 'pass' | 'fail' | 'error' | 'recorded'
+  stale: boolean
+}
+
 export interface CopilotProposalSummary {
   id: string
   targetType: CopilotProposalTargetType
@@ -51,6 +69,7 @@ export interface CopilotProposalSummary {
   summary: string
   status: CopilotProposalStatus
   reason?: string | null
+  evidence?: CopilotProposalEvidenceSummary
 }
 
 export interface CopilotProposalPreview {
@@ -74,6 +93,7 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
   reason?: string | null
   failureReason?: string | null
   appliedRef?: Record<string, unknown> | null
+  evidenceCases?: CopilotProposalEvidenceCase[] | null
 }
 
 export interface CopilotProposalApplyResult {
@@ -149,6 +169,7 @@ export interface CopilotProposalEvent {
   targetType: CopilotProposalTargetType
   targetLabel: string
   summary: string
+  evidence?: CopilotProposalEvidenceSummary
 }
 
 export interface CopilotChunkEvent {

@@ -1,4 +1,8 @@
-import type { CopilotAuditPort, CopilotEntityDescription, CopilotProposal } from "../contracts.js";
+import { z } from "zod";
+
+import type { CopilotAuditPort, CopilotEntityDescription, CopilotProposal, CopilotProposalEvidence } from "../contracts.js";
+import { summarizeProposalEvidence } from "../proposalEvidence.js";
+import { resolveProposalEvidence, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 
 export interface CopilotAgentListItem {
   readonly id: string;
@@ -59,3 +63,47 @@ export const recordProposalCreated = async (
 ): Promise<void> => {
   await auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType } });
 };
+
+/**
+ * One ceiling on how much a single draft may claim. A proposal citing dozens of replays is not a
+ * more reviewed proposal; it is a card the operator stops reading.
+ */
+const MAX_CITED_EVIDENCE = 10;
+
+/** Ids from prior replay_eval_case calls. The measurement itself is read server-side. */
+export const citedEvidenceSchema = z.array(z.string().uuid()).max(MAX_CITED_EVIDENCE).optional();
+
+export const proposalOutputSchema = z.object({
+  proposalId: z.string().uuid(),
+  targetType: z.enum(["directive", "agent_setting", "routine"]),
+  targetLabel: z.string(),
+  summary: z.string(),
+  /** Absent when the change was proposed unmeasured, so silence never reads as verified. */
+  evidence: z.object({
+    total: z.number().int().nonnegative(),
+    improved: z.number().int().nonnegative(),
+    regressed: z.number().int().nonnegative(),
+    unchanged: z.number().int().nonnegative(),
+    stale: z.number().int().nonnegative(),
+  }).strict().optional(),
+});
+
+export interface CopilotProposalEvidenceDependencies {
+  readonly proposalEvidence: ProposalEvidenceDependencies;
+}
+
+/** Resolves the ids a draft cites into the measurements stored on the proposal. */
+export const citedProposalEvidence = async (
+  deps: CopilotProposalEvidenceDependencies,
+  context: { workspaceId: string; operatorUserId: string },
+  agentId: string,
+  evidenceIds: ReadonlyArray<string> | undefined,
+): Promise<CopilotProposalEvidence | null> => resolveProposalEvidence(deps.proposalEvidence, {
+  workspaceId: context.workspaceId,
+  operatorUserId: context.operatorUserId,
+  agentId,
+  evidenceIds: evidenceIds ?? [],
+});
+
+export const proposalEvidenceOutput = (evidence: CopilotProposalEvidence | null) =>
+  evidence ? { evidence: summarizeProposalEvidence(evidence) } : {};

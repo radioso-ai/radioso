@@ -427,6 +427,7 @@ export interface CopilotProposals {
   apply_started_at: Timestamp | null;
   conversation_id: string;
   created_at: Generated<Timestamp>;
+  evidence: Json | null;
   failure_reason: string | null;
   id: string;
   message_id: string | null;
@@ -437,6 +438,22 @@ export interface CopilotProposals {
   target_type: string;
   updated_at: Generated<Timestamp>;
   version_token: string;
+  workspace_id: string;
+}
+
+export interface CopilotReplayEvidence {
+  agent_id: string;
+  agent_version_token: string;
+  case_id: string;
+  case_name: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  operator_user_id: string;
+  overrides: Json;
+  recorded_status: string;
+  run_id: string;
+  verdict: string;
   workspace_id: string;
 }
 
@@ -1237,6 +1254,7 @@ export interface DB {
   copilot_conversations: CopilotConversations;
   copilot_messages: CopilotMessages;
   copilot_proposals: CopilotProposals;
+  copilot_replay_evidence: CopilotReplayEvidence;
   directive_states: DirectiveStates;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;

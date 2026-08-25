@@ -10,7 +10,7 @@ import {
   type CopilotEvalSuiteProbePort,
 } from "../contracts/evalCases.js";
 import { boundPayload } from "../payloadCompaction.js";
-import { asRecord, describeNamedAgent, entity, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
+import { asRecord, describeNamedAgent, entity, requiredCopilotConversation, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
@@ -173,6 +173,8 @@ const replayOutputSchema = z.object({
     id: z.string().max(200).nullable(),
   }).strict(),
   error: z.string().max(500).nullable(),
+  /** Cite this on a propose_* call to carry the measurement onto the proposal. */
+  evidenceId: idSchema.nullable(),
 }).strict();
 
 type CaptureInput = z.infer<typeof captureInputSchema>;
@@ -189,7 +191,7 @@ export interface EvalVerificationCopilotToolDependencies {
 }
 
 const CAPTURE_DESCRIPTION = "Capture a bad assistant turn as a permanent eval case. Idempotent: a turn that is already captured returns its existing case unchanged.";
-const REPLAY_DESCRIPTION = "Replay one captured eval case against a configuration that is not live yet, and report the verdict it produces. Use this to check a change before proposing it: the case keeps its recorded verdict either way, so a replay never moves the suite's pass rate. Always runs a full assistant turn and costs one, so replay the cases a change should affect rather than the library.";
+const REPLAY_DESCRIPTION = "Replay one captured eval case against a configuration that is not live yet, and report the verdict it produces, plus an evidenceId a later propose_* call can cite so the proposal carries the measurement. Use this to check a change before proposing it: the case keeps its recorded verdict either way, so a replay never moves the suite's pass rate. Always runs a full assistant turn and costs one, so replay the cases a change should affect rather than the library.";
 
 const SUITE_RUN_DESCRIPTION = `Re-run up to ${MAX_COPILOT_EVAL_SUITE_CASES} named eval cases and report their outcomes plus the whole suite's standing. Each case replays for real: the run is recorded and the case's stored status moves to the new verdict. Cases run sequentially, so select the cases a change should affect rather than the whole library; list case ids with eval_results first.`;
 
@@ -303,6 +305,7 @@ export const createEvalVerificationCopilotTools = (
           workspaceId: context.workspaceId,
           accountId: context.accountId,
           operatorUserId: context.operatorUserId,
+          copilotConversationId: requiredCopilotConversation(context),
           caseId,
           overrides,
         });
@@ -323,6 +326,7 @@ export const createEvalVerificationCopilotTools = (
             .map(projectFailedAssertion),
           model: replay.model,
           error: replay.error === null ? null : clip(replay.error, 500),
+          evidenceId: replay.evidenceId,
         });
       },
     }),

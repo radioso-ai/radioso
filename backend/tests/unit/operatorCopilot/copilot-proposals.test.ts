@@ -30,6 +30,12 @@ type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilot
   & Parameters<typeof createRoutineProposalCopilotTools>[0]
   & Parameters<typeof createAgentSettingProposalCopilotTools>[0];
 
+/** Ports for a draft that cites no replay: nothing is looked up and nothing is measured. */
+const unmeasured = () => ({
+  evidence: { record: vi.fn(), findMany: vi.fn(async () => []) },
+  agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
+});
+
 const createProposalTools = (deps: ProposalToolDependencies) => [
   ...createDirectiveProposalCopilotTools(deps),
   ...createRoutineProposalCopilotTools(deps),
@@ -48,6 +54,7 @@ describe("US3 copilot proposals", () => {
       targetRef: { agentId, directiveId: null },
       payload: { name: "Avoid competitors" },
       versionToken: "version-1",
+      evidence: null,
     });
     const service = new OperatorCopilotService({
       repository,
@@ -98,6 +105,7 @@ describe("US3 copilot proposals", () => {
     }));
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
       proposalAdapters: [
         {
           targetType: "directive",
@@ -141,6 +149,7 @@ describe("US3 copilot proposals", () => {
     const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics." }));
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
       proposalAdapters: [
         { targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
         { targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), validatePayload: vi.fn() },
@@ -165,7 +174,7 @@ describe("US3 copilot proposals", () => {
 
   it("applies only pending proposals through their adapter, recording a stale result without a write", async () => {
     const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "outdated" });
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "outdated", evidence: null });
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "stale" as const }));
     const audit = auditService();
     const service = new OperatorCopilotService({
@@ -187,7 +196,7 @@ describe("US3 copilot proposals", () => {
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
     const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current" });
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const audit = auditService();
     const service = new OperatorCopilotService({
       repository,
@@ -207,7 +216,7 @@ describe("US3 copilot proposals", () => {
 
   it("persists adapter failure reasons so failed proposals still explain themselves after reload", async () => {
     const repository = new MemoryProposalRepository();
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current" });
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
     const message = await repository.createMessage({ conversationId: "conversation-1", role: "copilot", content: "Drafted", outcome: "completed", activity: [] });
     await repository.attachProposalsToMessage({ proposalIds: [proposal.id], conversationId: "conversation-1", messageId: message.id });
     const service = new OperatorCopilotService({
@@ -229,7 +238,7 @@ describe("US3 copilot proposals", () => {
   it("emits routine proposal SSE events", async () => {
     const repository = new MemoryProposalRepository();
     const conversation = await repository.createConversation({ workspaceId, operatorUserId, title: "Draft routine" });
-    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: conversation.id, targetType: "routine", targetRef: { agentId, routineId: null }, payload: { name: "Return intake" }, versionToken: "version-1" });
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: conversation.id, targetType: "routine", targetRef: { agentId, routineId: null }, payload: { name: "Return intake" }, versionToken: "version-1", evidence: null });
     const service = new OperatorCopilotService({
       repository,
       capabilityRunner: {
@@ -358,7 +367,7 @@ describe("proposal card presentation", () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
       id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
-      targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1",
+      targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
     const summary = "Draft routine Return intake has 1 open validation diagnostic.";
@@ -375,4 +384,117 @@ const routineDraftPayload = () => ({
   steps: [{ stableStepId: "step_collect_reason", kind: "chat", instruction: "Ask for {{slot.reason}}.", toolRef: null, ordinal: 0, metadata: {} }],
   transitions: [{ fromStep: "step_collect_reason", toRef: "terminal_complete", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
   terminals: [{ stableStepId: "terminal_complete", kind: "complete", instruction: "Complete return intake for {{slot.reason}}.", ordinal: 1 }],
+});
+
+describe("proposal card evidence", () => {
+  const card = async (evidence: CopilotProposal["evidence"]) => {
+    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    return presentProposalCard({
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      targetType: "directive", targetRef: { agentId: "agent-1", directiveId: null }, payload: { name: "Refund window", rationale: "State it" },
+      versionToken: "v1", evidence, status: "pending", reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
+    });
+  };
+
+  it("states what a measured proposal was verified against, regressions included", async () => {
+    expect(await card({ cases: [
+      { caseId: "case-1", caseName: "Refund window", runId: "run-1", before: "failing", after: "pass", stale: false },
+      { caseId: "case-2", caseName: "Shipping", runId: "run-2", before: "passing", after: "fail", stale: false },
+    ] })).toMatchObject({ evidence: { total: 2, improved: 1, regressed: 1 } });
+  });
+
+  it("leaves an unmeasured proposal without an evidence section rather than an empty one", async () => {
+    // A zero-case section would read as "verified against nothing", which is not what happened.
+    expect(await card(null)).not.toHaveProperty("evidence");
+  });
+});
+
+describe("proposals carrying replay evidence", () => {
+  const evidenceId = randomUUID();
+  const caseId = randomUUID();
+  const runId = randomUUID();
+  const agentUpdatedAt = new Date("2026-08-25T10:00:00.000Z");
+
+  const measured = (overrides: Record<string, unknown> = {}) => ({
+    id: evidenceId,
+    workspaceId,
+    operatorUserId,
+    conversationId: "conversation-1",
+    agentId,
+    caseId,
+    caseName: "Refund window",
+    runId,
+    agentVersionToken: agentUpdatedAt.toISOString(),
+    recordedStatus: "failing" as const,
+    verdict: "pass" as const,
+    overrides: {},
+    createdAt: new Date(),
+    ...overrides,
+  });
+
+  const harness = (options: { records?: ReadonlyArray<ReturnType<typeof measured>>; updatedAt?: Date } = {}) => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
+      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+    }));
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: {
+        evidence: { record: vi.fn(), findMany: vi.fn(async () => options.records ?? [measured()]) },
+        agentVersion: { get: vi.fn(async () => ({ updatedAt: options.updatedAt ?? agentUpdatedAt })) },
+      },
+      proposalAdapters: [
+        {
+          targetType: "directive" as const,
+          readVersionToken: vi.fn(async () => "directive-version"),
+          draft: vi.fn(async () => ({ payload: { name: "Refund window" }, targetLabel: "Refund window", summary: "State the refund window" })),
+          preview: vi.fn(),
+          applyIfVersionMatches: vi.fn(),
+        },
+      ],
+      auditService: { record: vi.fn(async () => undefined) },
+    } as never);
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_directive")!;
+    return { descriptor, createProposal };
+  };
+
+  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+  it("stores the measurement on the proposal and reports it to the operator", async () => {
+    const { descriptor, createProposal } = harness();
+
+    const result = await descriptor.createTool(context).invoke({ intent: "State the refund window", evidenceIds: [evidenceId] }, {} as never);
+
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      evidence: { cases: [{ caseId, caseName: "Refund window", runId, before: "failing", after: "pass", stale: false }] },
+    }));
+    expect(result).toMatchObject({ evidence: { total: 1, improved: 1, regressed: 0, stale: 0 } });
+  });
+
+  it("marks the measurement stale when the agent moved between the replay and the draft", async () => {
+    const { descriptor, createProposal } = harness({ updatedAt: new Date("2026-08-25T12:00:00.000Z") });
+
+    const result = await descriptor.createTool(context).invoke({ intent: "State the refund window", evidenceIds: [evidenceId] }, {} as never);
+
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      evidence: { cases: [expect.objectContaining({ stale: true })] },
+    }));
+    expect(result).toMatchObject({ evidence: { stale: 1 } });
+  });
+
+  it("drafts an unmeasured proposal with no evidence rather than an empty measurement", async () => {
+    const { descriptor, createProposal } = harness();
+
+    const result = await descriptor.createTool(context).invoke({ intent: "State the refund window" }, {} as never);
+
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({ evidence: null }));
+    expect(result).not.toHaveProperty("evidence");
+  });
+
+  it("refuses to attach a measurement taken on another agent", async () => {
+    const { descriptor, createProposal } = harness({ records: [measured({ agentId: randomUUID() })] });
+
+    await expect(descriptor.createTool(context).invoke({ intent: "State it", evidenceIds: [evidenceId] }, {} as never))
+      .rejects.toThrow(/different agent/i);
+    expect(createProposal).not.toHaveBeenCalled();
+  });
 });

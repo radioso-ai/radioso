@@ -138,6 +138,23 @@ export class EvalCaseService {
     return this.repository.findCase(workspaceId, caseId);
   }
 
+  /**
+   * The case plus the agent whose captured configuration a replay of it runs against. The agent
+   * lives on the snapshot, so a caller that needs to attribute a replay would otherwise have to
+   * read both.
+   */
+  async findCaseWithSourceAgent(
+    workspaceId: string,
+    caseId: string,
+  ): Promise<(EvalCase & { sourceAgentId: string | null }) | null> {
+    const evalCase = await this.findCase(workspaceId, caseId);
+    if (!evalCase) {
+      return null;
+    }
+    const snapshot = await this.repository.findSnapshot(workspaceId, evalCase.snapshotId);
+    return { ...evalCase, sourceAgentId: snapshot?.sourceAgentId ?? null };
+  }
+
   async getWithRuns(workspaceId: string, caseId: string): Promise<EvalCaseWithRuns> {
     const evalCase = await this.findCase(workspaceId, caseId);
     if (!evalCase) {

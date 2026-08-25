@@ -19,6 +19,11 @@ import {
   requiredCopilotConversation,
   requiredPageAgent,
   type CopilotAgentLookupPort,
+  citedEvidenceSchema,
+  citedProposalEvidence,
+  proposalEvidenceOutput,
+  proposalOutputSchema,
+  type CopilotProposalEvidenceDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -176,13 +181,7 @@ const describeNamedRoutine = async (
 };
 
 
-const proposalOutputSchema = z.object({
-  proposalId: z.string().uuid(),
-  targetType: z.enum(["directive", "agent_setting", "routine"]),
-  targetLabel: z.string(),
-  summary: z.string(),
-});
-export interface RoutineProposalCopilotToolDependencies {
+export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
@@ -194,17 +193,18 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
     {
       name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
-      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine",
         description: "Draft a new routine proposal for operator review. It does not change configuration.",
-        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
-        invoke: async ({ agentId, intent }) => {
+        invoke: async ({ agentId, intent, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: null };
           const draft = await routineAdapter.draft(context.workspaceId, targetRef, intent);
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds);
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
@@ -213,9 +213,10 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
             targetRef,
             payload: draft.payload,
             versionToken,
+            evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);
-          return { proposalId: proposal.id, targetType: "routine" as const, targetLabel: draft.targetLabel, summary: draft.summary };
+          return { proposalId: proposal.id, targetType: "routine" as const, targetLabel: draft.targetLabel, summary: draft.summary, ...proposalEvidenceOutput(evidence) };
         },
       }),
       describeEntity: (input, context) => {

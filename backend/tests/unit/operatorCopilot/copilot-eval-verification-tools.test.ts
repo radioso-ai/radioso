@@ -13,6 +13,7 @@ const context = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  copilotConversationId: "conversation-1",
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
 
@@ -21,6 +22,7 @@ const otherCaseId = "22222222-2222-4222-8222-222222222222";
 const assistantMessageId = "33333333-3333-4333-8333-333333333333";
 const snapshotId = "44444444-4444-4444-8444-444444444444";
 const thirdCaseId = "66666666-6666-4666-8666-666666666666";
+const evidenceId = "88888888-8888-4888-8888-888888888888";
 const fourthCaseId = "77777777-7777-4777-8777-777777777777";
 
 const ports = (overrides: {
@@ -54,6 +56,7 @@ const ports = (overrides: {
     ],
     model: { provider: "openai", id: "gpt-test" },
     error: null,
+    evidenceId: evidenceId,
   }));
   return {
     captureFromTurn,
@@ -304,6 +307,7 @@ describe("replay_eval_case", () => {
       workspaceId: "workspace-1",
       accountId: "account-1",
       operatorUserId: "operator-1",
+      copilotConversationId: "conversation-1",
       caseId,
       overrides,
     });
@@ -346,6 +350,7 @@ describe("replay_eval_case", () => {
       ],
       model: { provider: null, id: null },
       error: null,
+      evidenceId,
     }));
     const { descriptors } = ports({ replayCase: replay });
 
@@ -375,6 +380,7 @@ describe("replay_eval_case", () => {
       assertionVerdicts: [],
       model: { provider: null, id: null },
       error: null,
+      evidenceId,
     }));
     const { descriptors } = ports({ replayCase: replay });
 

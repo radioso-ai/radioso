@@ -13,6 +13,9 @@ const ids = {
   assistantMessage: "00000000-0000-4000-8000-000000000004",
   case: "00000000-0000-4000-8000-000000000005",
   snapshot: "00000000-0000-4000-8000-000000000006",
+  agent: "00000000-0000-4000-8000-000000000007",
+  run: "00000000-0000-4000-8000-000000000008",
+  conversation: "00000000-0000-4000-8000-000000000009",
 };
 
 const subject = {
@@ -23,6 +26,7 @@ const subject = {
 
 const evalCase = (overrides: Record<string, unknown> = {}) => ({
   id: ids.case,
+  sourceAgentId: ids.agent,
   workspaceId: ids.workspace,
   snapshotId: ids.snapshot,
   name: "2026-08-24 · \"Where is my order?\"",
@@ -221,6 +225,8 @@ describe("copilot eval case replay", () => {
     const service = new EvalCaseReplayService({
       cases: { findCase },
       runs: { execute },
+      evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
+      agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
       abuseControl: { enforce },
       audit: { record },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -231,7 +237,7 @@ describe("copilot eval case replay", () => {
   it("replays the case's snapshot without recording the outcome against the case", async () => {
     const { service, execute } = harness();
 
-    const result = await service.replayCase({ ...subject, caseId: ids.case });
+    const result = await service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation });
 
     expect(execute).toHaveBeenCalledWith({
       workspaceId: ids.workspace,
@@ -258,7 +264,7 @@ describe("copilot eval case replay", () => {
   it("spends the expensive-operation budget before replaying", async () => {
     const { service, order, enforce } = harness();
 
-    await service.replayCase({ ...subject, caseId: ids.case });
+    await service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation });
 
     expect(order).toEqual(["enforce", "execute"]);
     expect(enforce).toHaveBeenCalledWith({
@@ -275,7 +281,7 @@ describe("copilot eval case replay", () => {
     });
     const { service, execute, record } = harness({ enforce });
 
-    await expect(service.replayCase({ ...subject, caseId: ids.case })).rejects.toThrow("Too many requests");
+    await expect(service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation })).rejects.toThrow("Too many requests");
 
     expect(execute).not.toHaveBeenCalled();
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
@@ -288,13 +294,14 @@ describe("copilot eval case replay", () => {
     const findCase = vi.fn(async () => null);
     const { service, execute } = harness({ findCase });
 
-    await expect(service.replayCase({ ...subject, caseId: ids.case })).rejects.toThrow("Eval case not found");
+    await expect(service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation })).rejects.toThrow("Eval case not found");
     expect(execute).not.toHaveBeenCalled();
   });
 
   it("reports a failed turn as an error rather than as a failing verdict", async () => {
     const execute = vi.fn(async () => ({
       run: {
+        id: ids.run,
         status: "error" as const,
         assertionVerdicts: [],
         observedOutput: { error: { message: "Model call timed out" } },
@@ -303,7 +310,7 @@ describe("copilot eval case replay", () => {
     }));
     const { service } = harness({ execute });
 
-    const result = await service.replayCase({ ...subject, caseId: ids.case });
+    const result = await service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation });
 
     expect(result).toMatchObject({
       verdict: "error",
@@ -318,7 +325,7 @@ describe("copilot eval case replay", () => {
     const { service, execute } = harness();
     const overrides = { agentConfigOverride: { customInstruction: "Always state the refund window." } };
 
-    await service.replayCase({ ...subject, caseId: ids.case, overrides });
+    await service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation, overrides });
 
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ overrides }));
   });
@@ -332,6 +339,7 @@ describe("copilot eval case replay verdict projection", () => {
     const findCase = vi.fn(async () => evalCase({ status: "pending", assertions: [] }));
     const execute = vi.fn(async () => ({
       run: {
+        id: ids.run,
         status: "recorded" as const,
         assertionVerdicts: [],
         observedOutput: { error: { message: "Model call timed out" } },
@@ -341,12 +349,14 @@ describe("copilot eval case replay verdict projection", () => {
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
       runs: { execute } as never,
+      evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
+      agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
     });
 
-    const result = await service.replayCase({ ...subject, caseId: ids.case });
+    const result = await service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation });
 
     expect(result).toMatchObject({ verdict: "error", error: "Model call timed out", assertionCount: 0 });
   });
@@ -355,6 +365,7 @@ describe("copilot eval case replay verdict projection", () => {
     const findCase = vi.fn(async () => evalCase({ status: "pending", assertions: [] }));
     const execute = vi.fn(async () => ({
       run: {
+        id: ids.run,
         status: "recorded" as const,
         assertionVerdicts: [],
         observedOutput: { answer: "Refunds take 30 days." },
@@ -364,13 +375,94 @@ describe("copilot eval case replay verdict projection", () => {
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
       runs: { execute } as never,
+      evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
+      agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
     });
 
-    const result = await service.replayCase({ ...subject, caseId: ids.case });
+    const result = await service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation });
 
     expect(result).toMatchObject({ verdict: "recorded", error: null, answer: "Refunds take 30 days." });
+  });
+});
+
+describe("copilot eval case replay evidence", () => {
+  const agentUpdatedAt = new Date("2026-08-25T10:00:00.000Z");
+
+  const harness = (options: { sourceAgentId?: string | null } = {}) => {
+    const findCase = vi.fn(async () => ({
+      id: ids.case,
+      name: "Refund window",
+      snapshotId: ids.snapshot,
+      status: "failing" as const,
+      assertions: [{ type: "answer_contains" }],
+      sourceAgentId: options.sourceAgentId === undefined ? ids.agent : options.sourceAgentId,
+    }));
+    const execute = vi.fn(async () => ({
+      run: {
+        id: ids.run,
+        status: "pass" as const,
+        assertionVerdicts: [],
+        observedOutput: { answer: "Refunds take 30 days." },
+        resolvedConfig: {},
+      },
+    }));
+    const record = vi.fn(async (input: Record<string, unknown>) => ({ ...input, id: "evidence-1", createdAt: new Date() }));
+    const get = vi.fn(async () => ({ updatedAt: agentUpdatedAt }));
+    const service = new EvalCaseReplayService({
+      cases: { findCase } as never,
+      runs: { execute } as never,
+      evidence: { record, findMany: vi.fn() } as never,
+      agentVersion: { get },
+      abuseControl: { enforce: vi.fn(async () => undefined) },
+      audit: { record: vi.fn(async () => undefined) },
+      abusePolicy: { limit: 30, windowMs: 3_600_000 },
+    });
+    return { service, record, get, execute };
+  };
+
+  it("records what it measured so a later proposal can cite it", async () => {
+    const { service, record } = harness();
+    const overrides = { agentConfigOverride: { customInstruction: "State the refund window." } };
+
+    const result = await service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    });
+
+    expect(record).toHaveBeenCalledWith({
+      workspaceId: ids.workspace,
+      operatorUserId: ids.operator,
+      conversationId: ids.conversation,
+      agentId: ids.agent,
+      caseId: ids.case,
+      caseName: "Refund window",
+      runId: ids.run,
+      agentVersionToken: agentUpdatedAt.toISOString(),
+      recordedStatus: "failing",
+      verdict: "pass",
+      overrides,
+    });
+    expect(result.evidenceId).toBe("evidence-1");
+  });
+
+  it("reports no evidence for a snapshot that captured no agent, rather than inventing one", async () => {
+    // Without a captured agent there is no configuration version to date the measurement against,
+    // so the replay stays usable but is not citable.
+    const { service, record, get } = harness({ sourceAgentId: null });
+
+    const result = await service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+    });
+
+    expect(record).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(result.evidenceId).toBeNull();
   });
 });

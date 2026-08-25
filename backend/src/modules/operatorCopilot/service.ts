@@ -9,6 +9,7 @@ import type {
   CopilotProposal,
   CopilotProposalAdapter,
   CopilotProposalCard,
+  CopilotProposalEvidenceSummary,
   CopilotProposalStatus,
   CopilotSseEvent,
   CopilotToolDescriptor,
@@ -193,7 +194,7 @@ export class OperatorCopilotService {
         const proposal = proposalFromTrace(trace);
         if (proposal) {
           proposals.push(proposal);
-          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary } };
+          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}) } };
         }
       }
       const result = await stream.result;
@@ -315,10 +316,13 @@ export class OperatorCopilotService {
 
 const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null => {
   if (trace.kind !== "tool_call_completed" || !isProposalOutput(trace.output)) return null;
-  return { id: trace.output.proposalId, targetType: trace.output.targetType, targetLabel: trace.output.targetLabel, summary: trace.output.summary, status: "pending" };
+  const card = { id: trace.output.proposalId, targetType: trace.output.targetType, targetLabel: trace.output.targetLabel, summary: trace.output.summary, status: "pending" as const };
+  // The draft tool already summarized what it measured, so the card states it on the turn that
+  // drafted it rather than only after a reload.
+  return trace.output.evidence ? { ...card, evidence: trace.output.evidence } : card;
 };
 
-const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string } => {
+const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
   return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting" || output.targetType === "routine") && typeof output.targetLabel === "string" && typeof output.summary === "string";

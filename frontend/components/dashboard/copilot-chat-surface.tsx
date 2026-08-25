@@ -416,6 +416,7 @@ export function CopilotChatSurface({
       targetLabel: event.targetLabel,
       summary: event.summary,
       status: 'pending',
+      ...(event.evidence ? { evidence: event.evidence } : {}),
     }
     updateSession((current) => ({
       ...current,

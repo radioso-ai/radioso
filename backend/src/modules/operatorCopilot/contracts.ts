@@ -86,6 +86,8 @@ export interface CopilotProposal {
   readonly targetRef: unknown;
   readonly payload: unknown;
   readonly versionToken: string;
+  /** Replays measured before the draft, or null when the change was proposed unmeasured. */
+  readonly evidence: CopilotProposalEvidence | null;
   readonly status: CopilotProposalStatus;
   readonly reason?: string | null;
   readonly appliedRef: unknown | null;
@@ -100,6 +102,8 @@ export interface CopilotProposalCard {
   readonly summary: string;
   readonly status: CopilotProposalStatus;
   readonly reason?: string | null;
+  /** Absent when nothing was measured; the card must not imply a verified change either way. */
+  readonly evidence?: CopilotProposalEvidenceSummary;
 }
 
 export interface CopilotProposalAdapter {
@@ -166,7 +170,7 @@ export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }
   | { readonly event: "activity"; readonly data: { toolCallId: string; tool: string; stage: "started" | "completed" | "failed"; entity?: CopilotEntityReference } }
   | { readonly event: "chunk"; readonly data: { text: string } }
-  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string } }
+  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } }
   | { readonly event: "outcome"; readonly data: { status: CopilotTurnOutcome } }
   | { readonly event: "done"; readonly data: Record<string, never> };
 
@@ -174,3 +178,32 @@ export type CopilotTurnOutcome = "completed" | "budget_exhausted" | "failed";
 
 export type CopilotAgentTool = AgentTool<unknown, unknown>;
 export type CopilotAgentToolContext = AgentToolContext;
+
+/** One case a proposal was measured against, as the operator reviews it. */
+export interface CopilotProposalEvidenceCase {
+  readonly caseId: string;
+  readonly caseName: string;
+  readonly runId: string;
+  /** The case's recorded verdict before the replay. */
+  readonly before: "pending" | "passing" | "failing" | "error";
+  /** What the proposed configuration produced. */
+  readonly after: "pass" | "fail" | "error" | "recorded";
+  /** True when the agent moved after this replay, so the measurement describes an older agent. */
+  readonly stale: boolean;
+}
+
+export interface CopilotProposalEvidence {
+  readonly cases: ReadonlyArray<CopilotProposalEvidenceCase>;
+}
+
+/**
+ * What the card states without expanding. Regressions are counted, not hidden: a change that
+ * fixes two cases and breaks one is the review the operator is equipped to make.
+ */
+export interface CopilotProposalEvidenceSummary {
+  readonly total: number;
+  readonly improved: number;
+  readonly regressed: number;
+  readonly unchanged: number;
+  readonly stale: number;
+}

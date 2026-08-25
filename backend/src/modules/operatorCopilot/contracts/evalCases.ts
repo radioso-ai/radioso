@@ -153,6 +153,8 @@ export interface CopilotEvalCaseReplayOverrides {
 
 export interface CopilotEvalCaseReplayInput extends CopilotEvalOperatorSubject {
   caseId: string;
+  /** The thread the measurement belongs to, recorded so evidence stays attributable. */
+  copilotConversationId: string;
   overrides?: CopilotEvalCaseReplayOverrides;
 }
 
@@ -171,6 +173,11 @@ export interface CopilotEvalCaseReplayResult {
   model: { provider: string | null; id: string | null };
   /** Set when the replayed turn itself failed, so no verdict reflects the configuration. */
   error: string | null;
+  /**
+   * Handle a later proposal cites to carry this measurement. Null when the case's snapshot
+   * captured no agent, so there is no configuration version to date the measurement against.
+   */
+  evidenceId: string | null;
 }
 
 export interface CopilotEvalCaseReplayPort {
@@ -185,6 +192,8 @@ export interface CopilotEvalCaseReaderPort {
     snapshotId: string;
     status: CopilotEvalCaseStatus;
     assertions: ReadonlyArray<unknown>;
+    /** The agent whose captured configuration a replay of this case runs against. */
+    sourceAgentId: string | null;
   } | null>;
 }
 
@@ -200,6 +209,7 @@ export interface CopilotEvalCaseReplayRunnerPort {
     attachToCase: boolean;
   }): Promise<{
     run: {
+      id: string;
       status: CopilotEvalRunStatus;
       assertionVerdicts: ReadonlyArray<CopilotEvalSuiteAssertionVerdict>;
       observedOutput: {
@@ -211,4 +221,42 @@ export interface CopilotEvalCaseReplayRunnerPort {
       resolvedConfig: { modelProvider?: string; modelId?: string };
     };
   }>;
+}
+
+/**
+ * One replay an operator ran before drafting a proposal. Recorded server-side rather than
+ * reported by the model: evidence the assistant could author is not evidence.
+ */
+export interface CopilotReplayEvidenceRecord {
+  id: string;
+  workspaceId: string;
+  operatorUserId: string;
+  conversationId: string;
+  agentId: string;
+  caseId: string;
+  caseName: string;
+  runId: string;
+  /** The agent's configuration version when the replay ran. */
+  agentVersionToken: string;
+  /** The case's recorded verdict before the replay. */
+  recordedStatus: CopilotEvalCaseStatus;
+  /** What the replayed configuration produced. */
+  verdict: CopilotEvalRunStatus;
+  overrides: CopilotEvalCaseReplayOverrides;
+  createdAt: Date;
+}
+
+export interface CopilotReplayEvidenceRepositoryPort {
+  record(input: Omit<CopilotReplayEvidenceRecord, "id" | "createdAt">): Promise<CopilotReplayEvidenceRecord>;
+  /** Scoped to the operator who measured it; evidence is never citable across operators. */
+  findMany(input: {
+    workspaceId: string;
+    operatorUserId: string;
+    ids: ReadonlyArray<string>;
+  }): Promise<ReadonlyArray<CopilotReplayEvidenceRecord>>;
+}
+
+/** Reads the agent version that decides whether a measurement still describes today's agent. */
+export interface CopilotAgentVersionPort {
+  get(workspaceId: string, agentId: string): Promise<{ updatedAt: Date }>;
 }

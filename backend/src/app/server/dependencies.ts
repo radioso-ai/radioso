@@ -13,6 +13,7 @@ import { MetadataFieldSuggestionService } from "../../modules/settings/compositi
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { EvalRunOverrides } from "../../modules/eval/composition.js";
+import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
@@ -411,8 +412,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
+  const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
+  const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
   const evalCaseReplayService = new EvalCaseReplayService({
-    cases: evalCaseService,
+    cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+    evidence: copilotReplayEvidenceRepository,
+    agentVersion: copilotAgentVersion,
     runs: {
       // Ray offers a narrowed, behavior-only view of the eval override set, so widening it back to
       // the module's own type belongs here — the same widening the eval route performs on a
@@ -455,6 +460,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       evalCaseCapture: evalCaseCaptureService,
       evalSuiteProbe: evalSuiteProbeService,
       evalCaseReplay: evalCaseReplayService,
+      proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documents.documentIngestionService,

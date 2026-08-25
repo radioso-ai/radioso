@@ -443,7 +443,7 @@ export interface CopilotProposals {
 
 export interface CopilotReplayEvidence {
   agent_id: string;
-  agent_version_token: string;
+  baseline_captured_at: Timestamp;
   case_id: string;
   case_name: string;
   conversation_id: string;

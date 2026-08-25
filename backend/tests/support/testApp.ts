@@ -1770,7 +1770,6 @@ export const createTestDependencies = (overrides: {
       evalCaseReplay: new EvalCaseReplayService({
         cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
         evidence: copilotReplayEvidenceRepository,
-        agentVersion: copilotAgentVersion,
         runs: {
           execute: (input) => evalRunService.execute({
             ...input,

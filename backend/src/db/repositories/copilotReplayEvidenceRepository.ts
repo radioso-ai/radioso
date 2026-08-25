@@ -18,7 +18,7 @@ interface CopilotReplayEvidenceRow {
   case_id: string;
   case_name: string;
   run_id: string;
-  agent_version_token: string;
+  baseline_captured_at: Date;
   recorded_status: string;
   verdict: string;
   overrides: unknown;
@@ -27,7 +27,7 @@ interface CopilotReplayEvidenceRow {
 
 const columns = [
   "id", "workspace_id", "operator_user_id", "conversation_id", "agent_id", "case_id", "case_name",
-  "run_id", "agent_version_token", "recorded_status", "verdict", "overrides", "created_at",
+  "run_id", "baseline_captured_at", "recorded_status", "verdict", "overrides", "created_at",
 ] as const;
 
 const mapRecord = (row: CopilotReplayEvidenceRow): CopilotReplayEvidenceRecord => ({
@@ -39,7 +39,7 @@ const mapRecord = (row: CopilotReplayEvidenceRow): CopilotReplayEvidenceRecord =
   caseId: row.case_id,
   caseName: row.case_name,
   runId: row.run_id,
-  agentVersionToken: row.agent_version_token,
+  baselineCapturedAt: row.baseline_captured_at,
   recordedStatus: row.recorded_status as CopilotEvalCaseStatus,
   verdict: row.verdict as CopilotEvalRunStatus,
   overrides: (row.overrides ?? {}) as CopilotEvalCaseReplayOverrides,
@@ -63,7 +63,7 @@ export class CopilotReplayEvidenceRepository implements CopilotReplayEvidenceRep
         case_id: input.caseId,
         case_name: input.caseName,
         run_id: input.runId,
-        agent_version_token: input.agentVersionToken,
+        baseline_captured_at: input.baselineCapturedAt,
         recorded_status: input.recordedStatus,
         verdict: input.verdict,
         overrides: JSON.stringify(input.overrides),

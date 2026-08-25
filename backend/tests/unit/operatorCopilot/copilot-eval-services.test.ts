@@ -226,7 +226,6 @@ describe("copilot eval case replay", () => {
       cases: { findCase },
       runs: { execute },
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
-      agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
       abuseControl: { enforce },
       audit: { record },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -350,7 +349,6 @@ describe("copilot eval case replay verdict projection", () => {
       cases: { findCase } as never,
       runs: { execute } as never,
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
-      agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -376,7 +374,6 @@ describe("copilot eval case replay verdict projection", () => {
       cases: { findCase } as never,
       runs: { execute } as never,
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
-      agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -389,7 +386,7 @@ describe("copilot eval case replay verdict projection", () => {
 });
 
 describe("copilot eval case replay evidence", () => {
-  const agentUpdatedAt = new Date("2026-08-25T10:00:00.000Z");
+  const capturedAt = new Date("2026-08-25T10:00:00.000Z");
 
   const harness = (options: { sourceAgentId?: string | null } = {}) => {
     const findCase = vi.fn(async () => ({
@@ -399,6 +396,7 @@ describe("copilot eval case replay evidence", () => {
       status: "failing" as const,
       assertions: [{ type: "answer_contains" }],
       sourceAgentId: options.sourceAgentId === undefined ? ids.agent : options.sourceAgentId,
+      snapshotCapturedAt: capturedAt,
     }));
     const execute = vi.fn(async () => ({
       run: {
@@ -415,7 +413,6 @@ describe("copilot eval case replay evidence", () => {
       cases: { findCase } as never,
       runs: { execute } as never,
       evidence: { record, findMany: vi.fn() } as never,
-      agentVersion: { get },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -442,7 +439,7 @@ describe("copilot eval case replay evidence", () => {
       caseId: ids.case,
       caseName: "Refund window",
       runId: ids.run,
-      agentVersionToken: agentUpdatedAt.toISOString(),
+      baselineCapturedAt: capturedAt,
       recordedStatus: "failing",
       verdict: "pass",
       overrides,
@@ -451,9 +448,9 @@ describe("copilot eval case replay evidence", () => {
   });
 
   it("reports no evidence for a snapshot that captured no agent, rather than inventing one", async () => {
-    // Without a captured agent there is no configuration version to date the measurement against,
-    // so the replay stays usable but is not citable.
-    const { service, record, get } = harness({ sourceAgentId: null });
+    // Without a captured agent there is nothing to attribute the measurement to and no capture
+    // point to date it against, so the replay stays usable but is not citable.
+    const { service, record } = harness({ sourceAgentId: null });
 
     const result = await service.replayCase({
       ...subject,
@@ -462,7 +459,6 @@ describe("copilot eval case replay evidence", () => {
     });
 
     expect(record).not.toHaveBeenCalled();
-    expect(get).not.toHaveBeenCalled();
     expect(result.evidenceId).toBeNull();
   });
 });

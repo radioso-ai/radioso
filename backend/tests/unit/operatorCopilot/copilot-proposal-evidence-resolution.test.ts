@@ -14,7 +14,8 @@ const ids = {
   run: "00000000-0000-4000-8000-000000000008",
 };
 
-const agentVersion = new Date("2026-08-25T10:00:00.000Z");
+/** When the eval case froze the agent configuration the replay ran against. */
+const baselineCapturedAt = new Date("2026-08-25T10:00:00.000Z");
 
 const record = (overrides: Partial<CopilotReplayEvidenceRecord> = {}): CopilotReplayEvidenceRecord => ({
   id: ids.evidence,
@@ -25,7 +26,7 @@ const record = (overrides: Partial<CopilotReplayEvidenceRecord> = {}): CopilotRe
   caseId: ids.case,
   caseName: "Refund window",
   runId: ids.run,
-  agentVersionToken: agentVersion.toISOString(),
+  baselineCapturedAt,
   recordedStatus: "failing",
   verdict: "pass",
   overrides: {},
@@ -35,7 +36,7 @@ const record = (overrides: Partial<CopilotReplayEvidenceRecord> = {}): CopilotRe
 
 const harness = (options: { records?: ReadonlyArray<CopilotReplayEvidenceRecord>; updatedAt?: Date } = {}) => {
   const findMany = vi.fn(async () => options.records ?? [record()]);
-  const get = vi.fn(async () => ({ updatedAt: options.updatedAt ?? agentVersion }));
+  const get = vi.fn(async () => ({ updatedAt: options.updatedAt ?? baselineCapturedAt }));
   return { findMany, get, deps: { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } };
 };
 
@@ -125,5 +126,37 @@ describe("proposal evidence resolution", () => {
     });
 
     expect(evidence?.cases).toHaveLength(2);
+  });
+});
+
+describe("proposal evidence staleness window", () => {
+  it("marks a measurement stale when the agent moved before the replay ran", async () => {
+    // A replay runs against the configuration the eval case froze, not the live agent. An agent
+    // edited after that capture makes the measurement describe an older agent even though the
+    // replay itself just happened — comparing against the live agent at replay time would have
+    // called this fresh.
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-24T10:00:00.000Z") }));
+
+    const evidence = await resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, agentId: ids.agent, evidenceIds: [ids.evidence] },
+    );
+
+    expect(evidence?.cases[0]).toMatchObject({ stale: true });
+  });
+
+  it("keeps a measurement fresh when the agent has not changed since the capture", async () => {
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
+
+    const evidence = await resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, agentId: ids.agent, evidenceIds: [ids.evidence] },
+    );
+
+    expect(evidence?.cases[0]).toMatchObject({ stale: false });
   });
 });

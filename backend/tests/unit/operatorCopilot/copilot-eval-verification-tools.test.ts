@@ -77,10 +77,13 @@ const descriptorNamed = (descriptors: ReturnType<typeof ports>["descriptors"], n
 };
 
 describe("copilot eval verification tools", () => {
-  it("advertises only the replay probe as read-only, because it alone leaves the library untouched", () => {
+  it("advertises none of the three as read-only, because each one persists and costs a turn", () => {
     // The hint a transport reads to decide whether a call is safe to run unattended. Capturing
     // writes a case; a suite run writes a run per case and moves each case's status, which is the
-    // pass rate the Eval list shows. Neither is work an operator can be assumed to have accepted.
+    // pass rate the Eval list shows; a replay writes a detached run plus the evidence row a
+    // proposal can cite, and bills a turn. None is work an operator can be assumed to have
+    // accepted. The replay stays a probe because it moves no case's recorded verdict — that is a
+    // statement about the library, not a licence for a transport to call it freely.
     const { descriptors } = ports();
 
     expect(descriptors.map((descriptor) => ({
@@ -89,7 +92,7 @@ describe("copilot eval verification tools", () => {
     }))).toEqual([
       { name: "create_eval_case_from_turn", readOnly: false },
       { name: "run_eval_suite", readOnly: false },
-      { name: "replay_eval_case", readOnly: true },
+      { name: "replay_eval_case", readOnly: false },
     ]);
   });
 

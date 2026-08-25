@@ -11,9 +11,10 @@ CREATE TABLE copilot_replay_evidence (
   case_id UUID NOT NULL REFERENCES eval_cases(id) ON DELETE CASCADE,
   case_name TEXT NOT NULL,
   run_id UUID NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE,
-  -- The agent's configuration version at replay time. A proposal drafted after the agent moved
-  -- carries evidence that describes a configuration the operator is no longer looking at.
-  agent_version_token TEXT NOT NULL,
+  -- When the eval case froze the agent configuration this replay ran against. A replay never uses
+  -- the live agent config, so what dates a measurement is the agent being edited after this point,
+  -- whether that happened before the replay or after it.
+  baseline_captured_at TIMESTAMPTZ NOT NULL,
   -- The case's recorded verdict before the replay, and what the replayed configuration produced.
   recorded_status TEXT NOT NULL CHECK (recorded_status IN ('pending', 'passing', 'failing', 'error')),
   verdict TEXT NOT NULL CHECK (verdict IN ('pass', 'fail', 'error', 'recorded')),

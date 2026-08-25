@@ -1782,7 +1782,7 @@ CREATE TABLE public.copilot_replay_evidence (
     case_id uuid NOT NULL,
     case_name text NOT NULL,
     run_id uuid NOT NULL,
-    agent_version_token text NOT NULL,
+    baseline_captured_at timestamp with time zone NOT NULL,
     recorded_status text NOT NULL,
     verdict text NOT NULL,
     overrides jsonb NOT NULL,

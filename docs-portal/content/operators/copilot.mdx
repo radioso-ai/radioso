@@ -171,10 +171,15 @@ the case with the suite so the library records it.
 
 Ask Ray to propose the change it just measured and the proposal carries those
 replays with it. The measurements come from the runs Ray recorded, not from its
-account of them, and each one is tied to the agent it was measured on. If the
-agent changes between the replay and the draft, the card marks those
-measurements as describing an earlier configuration rather than dropping them —
-you can see both what was measured and that it has aged.
+account of them, and each one is tied to the agent it was measured on.
+
+A replay runs against the configuration the eval case froze, never the agent's
+current one, so a measurement is dated by any edit to that agent after the case
+was captured — whether the edit landed before the replay or after it. When that
+has happened the card marks those measurements as describing an earlier
+configuration rather than dropping them, so you can see both what was measured
+and that it has aged. Capture a fresh case from a recent turn when you want a
+measurement against today's agent.
 
 These capabilities need `workspace.retrieval.query`, the same permission the
 Eval section uses.

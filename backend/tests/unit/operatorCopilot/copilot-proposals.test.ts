@@ -413,7 +413,8 @@ describe("proposals carrying replay evidence", () => {
   const evidenceId = randomUUID();
   const caseId = randomUUID();
   const runId = randomUUID();
-  const agentUpdatedAt = new Date("2026-08-25T10:00:00.000Z");
+  const capturedAt = new Date("2026-08-25T10:00:00.000Z");
+  const agentUpdatedAt = new Date("2026-08-25T09:00:00.000Z");
 
   const measured = (overrides: Record<string, unknown> = {}) => ({
     id: evidenceId,
@@ -424,7 +425,7 @@ describe("proposals carrying replay evidence", () => {
     caseId,
     caseName: "Refund window",
     runId,
-    agentVersionToken: agentUpdatedAt.toISOString(),
+    baselineCapturedAt: capturedAt,
     recordedStatus: "failing" as const,
     verdict: "pass" as const,
     overrides: {},

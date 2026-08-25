@@ -194,6 +194,8 @@ export interface CopilotEvalCaseReaderPort {
     assertions: ReadonlyArray<unknown>;
     /** The agent whose captured configuration a replay of this case runs against. */
     sourceAgentId: string | null;
+    /** When that configuration was captured. */
+    snapshotCapturedAt: Date | null;
   } | null>;
 }
 
@@ -236,8 +238,11 @@ export interface CopilotReplayEvidenceRecord {
   caseId: string;
   caseName: string;
   runId: string;
-  /** The agent's configuration version when the replay ran. */
-  agentVersionToken: string;
+  /**
+   * When the eval case froze the agent configuration the replay ran against. The replay never
+   * reads the live agent config, so an edit any time after this point dates the measurement.
+   */
+  baselineCapturedAt: Date;
   /** The case's recorded verdict before the replay. */
   recordedStatus: CopilotEvalCaseStatus;
   /** What the replayed configuration produced. */

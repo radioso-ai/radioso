@@ -1,7 +1,6 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/expensiveOperation.js";
 import type {
-  CopilotAgentVersionPort,
   CopilotEvalCaseReaderPort,
   CopilotEvalCaseReplayInput,
   CopilotEvalCaseReplayPort,
@@ -15,7 +14,6 @@ export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOpera
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
   evidence: CopilotReplayEvidenceRepositoryPort;
-  agentVersion: CopilotAgentVersionPort;
 }
 
 /**
@@ -48,7 +46,7 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
 
     // Recorded from the run the replay just wrote, not from anything the assistant reports, so a
     // proposal that cites this measurement cites what actually happened.
-    const evidenceId = evalCase.sourceAgentId === null ? null : (await this.dependencies.evidence.record({
+    const evidenceId = evalCase.sourceAgentId === null || evalCase.snapshotCapturedAt === null ? null : (await this.dependencies.evidence.record({
       workspaceId: input.workspaceId,
       operatorUserId: input.operatorUserId,
       conversationId: input.copilotConversationId,
@@ -56,8 +54,10 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       caseId: evalCase.id,
       caseName: evalCase.name,
       runId: run.id,
-      agentVersionToken: (await this.dependencies.agentVersion.get(input.workspaceId, evalCase.sourceAgentId))
-        .updatedAt.toISOString(),
+      // The capture point, not the agent's version now: the replay ran against the configuration
+      // frozen then, so recording today's version would call a measurement of an outdated
+      // baseline fresh.
+      baselineCapturedAt: evalCase.snapshotCapturedAt,
       recordedStatus: evalCase.status,
       verdict: run.observedOutput.error ? "error" : run.status,
       overrides: input.overrides ?? {},

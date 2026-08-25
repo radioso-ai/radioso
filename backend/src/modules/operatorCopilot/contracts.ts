@@ -159,7 +159,10 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
 export type CopilotToolShape =
   /** No state change and no meaningful compute cost. */
   | "read"
-  /** No persisted state change, but incurs real compute cost. */
+  /**
+   * Changes no operator-managed configuration, but spends real compute budget and leaves a record
+   * of the run. Neither safe to auto-run nor safe to retry.
+   */
   | "probe"
   /** Persists a reversible, idempotent change that is not customer-visible. */
   | "act"

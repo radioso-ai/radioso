@@ -49,21 +49,21 @@ export const resolveProposalEvidence = async (
     throw badRequest("Replay evidence was measured against a different agent");
   }
 
-  const currentVersionToken = (await dependencies.agentVersion.get(request.workspaceId, request.agentId))
-    .updatedAt.toISOString();
+  const agentUpdatedAt = (await dependencies.agentVersion.get(request.workspaceId, request.agentId)).updatedAt;
 
   return {
-    cases: evidenceIds.map((id) => projectMeasurement(byId.get(id)!, currentVersionToken)),
+    cases: evidenceIds.map((id) => projectMeasurement(byId.get(id)!, agentUpdatedAt)),
   };
 };
 
-const projectMeasurement = (record: CopilotReplayEvidenceRecord, currentVersionToken: string) => ({
+const projectMeasurement = (record: CopilotReplayEvidenceRecord, agentUpdatedAt: Date) => ({
   caseId: record.caseId,
   caseName: record.caseName,
   runId: record.runId,
   before: record.recordedStatus,
   after: record.verdict,
-  // The replay ran against the case's captured configuration, so what dates it is the live agent
-  // moving underneath: the operator is no longer looking at the agent that was measured.
-  stale: record.agentVersionToken !== currentVersionToken,
+  // The replay ran against the configuration the case captured, never the live one, so the
+  // measurement is dated by any edit after that capture — before the replay or after it. Comparing
+  // against the agent's version at replay time would miss an agent that had already moved on.
+  stale: agentUpdatedAt.getTime() > record.baselineCapturedAt.getTime(),
 });

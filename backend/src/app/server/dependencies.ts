@@ -417,7 +417,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const evalCaseReplayService = new EvalCaseReplayService({
     cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
     evidence: copilotReplayEvidenceRepository,
-    agentVersion: copilotAgentVersion,
     runs: {
       // Ray offers a narrowed, behavior-only view of the eval override set, so widening it back to
       // the module's own type belongs here — the same widening the eval route performs on a

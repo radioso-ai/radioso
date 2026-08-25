@@ -822,6 +822,84 @@ describe('workspace events browser client', () => {
     await closeConnection(pastConnection)
   })
 
+  it('uses Retry-After: 1 as a minimum while repeated HTTP 503 responses continue exponential backoff', async () => {
+    const module = await loadClient()
+    const clock = new TestClock()
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 503, headers: { 'Retry-After': '1' } }),
+    )
+    const callbacks = makeCallbacks()
+    const connection = module.createWorkspaceEventsClient(
+      makeOptions(fetchMock, clock, { random: () => 1 }),
+    ).connect(callbacks)
+
+    await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(1))
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await clock.advance(clock.scheduledDelays[attempt] ?? 0)
+      await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(attempt + 2))
+    }
+
+    expect(clock.scheduledDelays).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
+    expect(callbacks.onRetrying.mock.calls.map(([retry]) => retry.delayMs)).toEqual(clock.scheduledDelays)
+    expect(callbacks.onRetrying.mock.calls.every(([retry]) => retry.reason === 'http')).toBe(true)
+    await closeConnection(connection)
+  })
+
+  it('lets a larger server Retry-After override the current exponential backoff delay', async () => {
+    const module = await loadClient()
+    const clock = new TestClock()
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 503, headers: { 'Retry-After': '45' } }),
+    )
+    const connection = module.createWorkspaceEventsClient(
+      makeOptions(fetchMock, clock, { random: () => 1 }),
+    ).connect(makeCallbacks())
+
+    await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(1))
+    expect(clock.scheduledDelays).toEqual([45_000])
+    await closeConnection(connection)
+  })
+
+  it('uses Retry-After: 2 from repeated 429 responses as a minimum while local backoff grows', async () => {
+    const module = await loadClient()
+    const clock = new TestClock()
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 429, headers: { 'Retry-After': '2' } }),
+    )
+    const connection = module.createWorkspaceEventsClient(
+      makeOptions(fetchMock, clock, { random: () => 1 }),
+    ).connect(makeCallbacks())
+
+    await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(1))
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await clock.advance(clock.scheduledDelays[attempt] ?? 0)
+      await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(attempt + 2))
+    }
+
+    expect(clock.scheduledDelays).toEqual([2_000, 2_000, 4_000, 8_000])
+    await closeConnection(connection)
+  })
+
+  it('ignores Retry-After on unexpected 500 responses and uses local backoff', async () => {
+    const module = await loadClient()
+    const clock = new TestClock()
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(null, { status: 500, headers: { 'Retry-After': '60' } }),
+    )
+    const connection = module.createWorkspaceEventsClient(
+      makeOptions(fetchMock, clock, { random: () => 1 }),
+    ).connect(makeCallbacks())
+
+    await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(1))
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await clock.advance(clock.scheduledDelays[attempt] ?? 0)
+      await vi.waitFor(() => expect(clock.scheduledDelays).toHaveLength(attempt + 2))
+    }
+
+    expect(clock.scheduledDelays).toEqual([1_000, 2_000, 4_000])
+    await closeConnection(connection)
+  })
+
   it('retries network failure, wrong content type, body read failure, and EOF before ready', async () => {
     const module = await loadClient()
     const scenarios: Array<{

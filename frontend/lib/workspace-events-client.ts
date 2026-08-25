@@ -12,7 +12,7 @@ const DEFAULT_STABLE_READY_MS = 5_000
 
 export type WorkspaceEventsClientState = 'opened' | 'ready' | 'retrying' | 'terminal' | 'closed'
 export type WorkspaceEventsRetryReason = 'network' | 'protocol' | 'body' | 'eof' | 'http'
-export type WorkspaceEventsTerminal = { status: number; retryAfterMs?: number }
+export type WorkspaceEventsTerminal = { status: number }
 export type WorkspaceEventsProtocolDiagnostic = { kind: 'malformed' | 'ignored' }
 
 export type WorkspaceEventsClock = {
@@ -287,7 +287,9 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
       return
     }
     if (response.status !== 200) {
-      const retryAfterMs = retryAfterDelay(response.headers.get('retry-after'), this.options.clock.wallNow())
+      const retryAfterMs = response.status === 429 || response.status === 503
+        ? retryAfterDelay(response.headers.get('retry-after'), this.options.clock.wallNow())
+        : undefined
       this.cancelAttemptBody(attempt)
       if (this.isCurrent(attempt)) this.scheduleRetry('http', retryAfterMs)
       return
@@ -362,7 +364,8 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
     }
     const cap = Math.min(MAX_RETRY_MS, MIN_RETRY_MS * (2 ** Math.min(this.retryExponent, 20)))
     const random = Math.max(0, Math.min(1, this.options.random()))
-    const delayMs = serverDelay ?? boundedDelay(cap * random)
+    const localDelay = boundedDelay(cap * random)
+    const delayMs = serverDelay === undefined ? localDelay : Math.max(localDelay, serverDelay)
     this.retryExponent += 1
     this.emitState('retrying')
     if (this.closed) return

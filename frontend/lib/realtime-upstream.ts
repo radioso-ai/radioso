@@ -17,7 +17,18 @@ const RESPONSE_HEADER_ALLOWLIST = [
 
 const PASSTHROUGH_STATUSES = new Set([200, 400, 401, 403, 404, 429, 503])
 
-const invalidUpstream = () =>
+const invalidConfiguration = () =>
+  new Response(null, {
+    status: 503,
+    headers: {
+      'cache-control': 'no-store',
+      // The browser can distinguish a disabled/misconfigured self-host from a
+      // transient upstream failure without receiving configuration details.
+      'retry-after': '60',
+    },
+  })
+
+const unavailableUpstream = () =>
   new Response(null, {
     status: 503,
     headers: {
@@ -45,7 +56,8 @@ const getRealtimeEventsUrl = () => {
       return undefined
     }
 
-    url.pathname = REALTIME_EVENTS_PATH
+    const prefix = url.pathname.replace(/\/+$/, '')
+    url.pathname = `${prefix}${REALTIME_EVENTS_PATH}`
     url.search = ''
     url.hash = ''
     return url.toString()
@@ -107,7 +119,7 @@ export const proxyRealtimeEvents = async (request: Request): Promise<Response> =
 
   const upstreamUrl = getRealtimeEventsUrl()
   if (!upstreamUrl) {
-    return invalidUpstream()
+    return invalidConfiguration()
   }
 
   try {
@@ -121,7 +133,7 @@ export const proxyRealtimeEvents = async (request: Request): Promise<Response> =
 
     if (!PASSTHROUGH_STATUSES.has(upstream.status)) {
       discardUpstreamBody(upstream)
-      return invalidUpstream()
+      return unavailableUpstream()
     }
 
     return new Response(upstream.body, {
@@ -132,6 +144,6 @@ export const proxyRealtimeEvents = async (request: Request): Promise<Response> =
     if (request.signal.aborted) {
       throw request.signal.reason
     }
-    return invalidUpstream()
+    return unavailableUpstream()
   }
 }

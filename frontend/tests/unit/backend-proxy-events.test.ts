@@ -142,15 +142,15 @@ describe('dedicated workspace-events frontend proxy', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(await response.text()).toBe('')
     expect(response.headers.get('cache-control')).toBe('no-store')
-    expect(response.headers.get('retry-after')).toBe('1')
+    expect(response.headers.get('retry-after')).toBe('60')
   })
 
   it.each([
     ['http://realtime.internal.example:8080', 'http://realtime.internal.example:8080/api/v1/events'],
     ['https://realtime.internal.example', 'https://realtime.internal.example/api/v1/events'],
-    ['https://realtime.internal.example/realtime/base', 'https://realtime.internal.example/api/v1/events'],
-    ['https://realtime.internal.example/realtime/base/', 'https://realtime.internal.example/api/v1/events'],
-  ])('uses only the safe internal origin and fixed /api/v1/events path (%s)', async (internalUrl, expectedUrl) => {
+    ['https://realtime.internal.example/realtime/base', 'https://realtime.internal.example/realtime/base/api/v1/events'],
+    ['https://realtime.internal.example/realtime/base/', 'https://realtime.internal.example/realtime/base/api/v1/events'],
+  ])('preserves the safe internal path prefix and appends /api/v1/events exactly once (%s)', async (internalUrl, expectedUrl) => {
       vi.stubEnv('REALTIME_INTERNAL_URL', internalUrl)
       const fetchMock = vi.fn().mockResolvedValue(
         new Response('event: ready\ndata: {}\n\n', {
@@ -420,7 +420,7 @@ describe('dedicated workspace-events frontend proxy', () => {
       expect(configResponse.status).toBe(503)
       expect(await configResponse.text()).toBe('')
       expect(configResponse.headers.get('cache-control')).toBe('no-store')
-      expect(configResponse.headers.get('retry-after')).toBe('1')
+      expect(configResponse.headers.get('retry-after')).toBe('60')
     })
   })
 

@@ -145,8 +145,8 @@
 
 **Goal**: Attach live events to the proven Query substrate, validate fleet behavior, and ship reversible hosted/self-hosted operations.
 
-- [ ] T086 [US1] Add failing provider integration tests for frame-to-active-query mapping, ready/resync reconciliation, dirty trailing fetch, terminal poll-only mode, and visibility ordering in `frontend/tests/unit/workspace-events-provider.test.tsx`
-- [ ] T087 [US1] Implement `frontend/lib/workspace-events-provider.tsx` and compose it inside `DashboardQueryProvider` without adding another request scheduler
+- [ ] T086 [US1] Add failing provider integration tests for frame-to-active-query mapping, ready/resync reconciliation, dirty trailing fetch, terminal poll-only mode, visibility ordering, disabled zero-fetch behavior, and runtime-disable closure in `frontend/tests/unit/workspace-events-provider.test.tsx`
+- [ ] T087 [US1] Implement `frontend/lib/workspace-events-provider.tsx` and compose it inside `DashboardQueryProvider` without adding another request scheduler. Receive only an explicit server-derived, browser-safe `realtimeEnabled` boolean; when false, create neither interest nor an event connection, and on runtime disable close an existing connection exactly once while preserving poll-only behavior.
 - [ ] T088 [P] [US1] Add Playwright journeys for Documents, Sources, History, Quality, Needs Attention counts, and operator-controlled list snapshots in `frontend/tests/e2e/realtime-dashboard-surfaces.spec.ts`
 - [ ] T089 [P] [US2] Add Playwright journeys for disabled mode, silently dropped publication, gateway outage/recovery, hidden/visible, workspace switch, malformed frame, auth terminal outcome, overload retry, and preserved Quality interaction in `frontend/tests/e2e/realtime-fallback.spec.ts`
 - [ ] T090 [P] [US3] Complete the required small-profile producer acceptance in `backend/tests/performance/realtime/producer-load.test.ts`: 10 requests/second for 15 minutes plus a 500-request one-second burst across 50 workspaces with a 50%-hot-workspace case. Assert small map/queue/concurrency caps, no mutation wait, hot-workspace cadence, and stable producer memory.

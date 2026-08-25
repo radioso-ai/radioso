@@ -79,8 +79,8 @@ Heartbeats contain no data and use the same serialized writer as event frames.
 | `401` | Attempt one normal session refresh/login recovery path; otherwise remain poll-only. |
 | `403` | Terminal poll-only; do not reconnect until authorization state changes. |
 | `404` | Realtime disabled; terminal poll-only for this application load. |
-| `429` | Honor `Retry-After`, then retry with jitter while visible. |
-| `503` | Honor `Retry-After`; remain poll-correct and retry with jitter while visible. |
+| `429` | Treat `Retry-After` as a minimum over local jittered exponential backoff, then retry while visible. |
+| `503` | Treat `Retry-After` as a minimum over local jittered exponential backoff, then retry while visible. Self-host configuration failure is sanitized with `Retry-After: 60`; transient upstream failure uses `Retry-After: 1`. |
 
 The client ignores malformed or unknown frames, records an aggregate diagnostic, and keeps its poll floor. Reconnect backoff resets only after a stable ready connection.
 

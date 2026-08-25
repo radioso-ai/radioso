@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   Copy,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 
 import { ConversationDrawer } from './conversation-drawer'
+import type { OperatorActionResult } from './operator-action-bar'
 import {
   CloseReviewPopover,
   type CloseReviewInput,
@@ -26,9 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { LogoSpinner } from '@/components/ui/spinner'
-import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import {
-  chatApi,
   getQualityTriageConflict,
   qualityApi,
   type PendingApprovalDecision,
@@ -36,14 +36,13 @@ import {
   type QualityTriageState,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import {
   buildInboxModel,
+  countNewInboxItems,
   formatInboxDuration,
-  HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
   inboxItemKeys,
   type EscalationType,
   type HumanOwnedConversationSummary,
@@ -53,12 +52,20 @@ import {
 } from '@/lib/needs-attention'
 import {
   createEmptyQualityInboxSnapshot,
-  loadQualityInboxSourceAttempts,
   qualityInboxPresentation,
-  reduceQualityInboxSnapshot,
   removeQualityInboxTurn,
   updateQualityInboxTurn,
 } from '@/lib/needs-attention-quality'
+import type { QualityInboxSnapshot } from '@/lib/needs-attention-quality'
+import {
+  allAttentionSourcesTerminal,
+  buildLatestAttentionSnapshot,
+  qualitySnapshotFromQueries,
+  reconcileAttentionOperatorResult,
+  useNeedsAttentionQueries,
+} from '@/lib/needs-attention-query-state'
+import { patchQualityTriage } from '@/lib/quality-query-state'
+import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
 import { isTerminalQualityTriageState } from '@/lib/quality-signals'
 
 interface NeedsAttentionViewProps {
@@ -551,11 +558,10 @@ function QualityReviewSummary({
 export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionViewProps) {
   const [decisions, setDecisions] = useState<PendingApprovalDecision[]>([])
   const [humanOwnedConversations, setHumanOwnedConversations] = useState<HumanOwnedConversationSummary[]>([])
-  const [qualitySnapshot, setQualitySnapshot] = useState(createEmptyQualityInboxSnapshot)
+  const [qualitySnapshot, setQualitySnapshot] = useState<QualityInboxSnapshot>(createEmptyQualityInboxSnapshot)
+  const [latestQualitySnapshot, setLatestQualitySnapshot] = useState<QualityInboxSnapshot>(createEmptyQualityInboxSnapshot)
   const [selectedInboxItem, setSelectedInboxItem] = useState<InboxItem | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [approvalError, setApprovalError] = useState<string | null>(null)
-  const [conversationError, setConversationError] = useState<string | null>(null)
   const [acknowledgingMessageId, setAcknowledgingMessageId] = useState<string | null>(null)
   const [acknowledgementError, setAcknowledgementError] = useState<string | null>(null)
   const [triageError, setTriageError] = useState<string | null>(null)
@@ -573,7 +579,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     new Set(),
   )
   const isMountedRef = useRef(false)
-  const inboxRequestIdRef = useRef(0)
   const pageTitleRef = useRef<HTMLSpanElement | null>(null)
   const returnFocusKeyRef = useRef<string | null>(null)
   const reviewButtonRefs = useRef(new Map<string, {
@@ -581,68 +586,84 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     mobile?: HTMLButtonElement
   }>())
 
-  const refreshInbox = useCallback(async () => {
-    const requestId = inboxRequestIdRef.current + 1
-    inboxRequestIdRef.current = requestId
+  const workspaceId = routeState.workspaceId ?? ''
+  const attentionQueries = useNeedsAttentionQueries(workspaceId)
+  const queryClient = useQueryClient()
+  const invalidateDashboardQueries = useDashboardQueryInvalidation()
+  const patchLatestQuality = useCallback((messageId: string, triage: QualityTriageRecord, remove: boolean) => {
+    patchQualityTriage(queryClient, attentionQueries.commentedFeedback.queryKey, messageId, triage, remove)
+    patchQualityTriage(queryClient, attentionQueries.reviewSummary.queryKey, messageId, triage, remove)
+    invalidateDashboardQueries(['quality.triage_changed'])
+  }, [attentionQueries.commentedFeedback.queryKey, attentionQueries.reviewSummary.queryKey, invalidateDashboardQueries, queryClient])
+  useEffect(() => {
+    const next = qualitySnapshotFromQueries(
+      latestQualitySnapshot,
+      attentionQueries.commentedFeedback,
+      attentionQueries.reviewSummary,
+    )
+    void Promise.resolve().then(() => setLatestQualitySnapshot(next))
+    // Query status/data/error changes are the source of latest-state updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    attentionQueries.commentedFeedback.data,
+    attentionQueries.commentedFeedback.error,
+    attentionQueries.commentedFeedback.status,
+    attentionQueries.reviewSummary.data,
+    attentionQueries.reviewSummary.error,
+    attentionQueries.reviewSummary.status,
+  ])
+  const allQueriesTerminal = allAttentionSourcesTerminal(attentionQueries.policy.queriesEnabled, [
+    attentionQueries.decisions,
+    attentionQueries.humanOwned,
+    attentionQueries.commentedFeedback,
+    attentionQueries.reviewSummary,
+  ].map((query) => query.status))
+  const approvalError = attentionQueries.decisions.error
+    ? getApiErrorMessage(attentionQueries.decisions.error, 'Failed to load pending approvals.')
+    : null
+  const conversationError = attentionQueries.humanOwned.error
+    ? getApiErrorMessage(attentionQueries.humanOwned.error, 'Failed to load human-owned conversations.')
+    : null
 
-    const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
-      hitlApi.listPendingDecisions(),
-      chatApi.listChatHistory({
-        limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
-        offset: 0,
-        ownership: 'human_owned',
-      }),
-      loadQualityInboxSourceAttempts(),
-    ])
-
-    if (!isMountedRef.current || requestId !== inboxRequestIdRef.current) {
-      return
-    }
-
-    if (approvalsResult.status === 'fulfilled') {
-      setDecisions(approvalsResult.value.decisions)
-      setApprovalError(null)
-    } else {
-      setApprovalError(
-        approvalsResult.reason instanceof Error
-          ? approvalsResult.reason.message
-          : 'Failed to load pending approvals.',
-      )
-    }
-
-    if (conversationsResult.status === 'fulfilled') {
-      setHumanOwnedConversations(selectHumanOwnedConversations(conversationsResult.value.conversations))
-      setConversationError(null)
-    } else {
-      setHumanOwnedConversations([])
-      setConversationError(getApiErrorMessage(conversationsResult.reason, 'Failed to load human-owned conversations.'))
-    }
-
-    if (qualityResult.status === 'fulfilled') {
-      setQualitySnapshot((previous) =>
-        reduceQualityInboxSnapshot(previous, qualityResult.value))
-    }
-
+  const promoteLatest = useCallback(() => {
+    const snapshot = buildLatestAttentionSnapshot({
+      previousQuality: latestQualitySnapshot,
+      decisions: attentionQueries.decisions.data,
+      humanOwned: attentionQueries.humanOwned.data,
+      commentedFeedback: attentionQueries.commentedFeedback,
+      reviewSummary: attentionQueries.reviewSummary,
+    })
+    setDecisions(snapshot.decisions)
+    setHumanOwnedConversations(snapshot.humanOwnedConversations)
+    setQualitySnapshot(snapshot.qualitySnapshot)
     setIsLoading(false)
-  }, [])
+  }, [attentionQueries, latestQualitySnapshot])
 
   useEffect(() => {
-    isMountedRef.current = true
-
-    const loadInitialInbox = async () => {
-      await refreshInbox()
+    if (attentionQueries.policy.queriesEnabled && allQueriesTerminal && isLoading) {
+      void Promise.resolve().then(promoteLatest)
     }
+  }, [allQueriesTerminal, attentionQueries.policy.queriesEnabled, isLoading, promoteLatest])
 
-    void loadInitialInbox()
-    return () => {
-      isMountedRef.current = false
-      inboxRequestIdRef.current += 1
-    }
-  }, [refreshInbox])
+  const refreshInbox = useCallback(async () => {
+    if (!attentionQueries.policy.queriesEnabled) return
+    promoteLatest()
+    void Promise.all([
+      attentionQueries.decisions.refetch(),
+      attentionQueries.humanOwned.refetch(),
+      attentionQueries.commentedFeedback.refetch(),
+      attentionQueries.reviewSummary.refetch(),
+    ])
+  }, [attentionQueries, promoteLatest])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(new Date()), 30_000)
     return () => window.clearInterval(intervalId)
+  }, [])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => { isMountedRef.current = false }
   }, [])
 
   const qualityPresentation = useMemo(
@@ -661,6 +682,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [decisions, humanOwnedConversations, qualityTurns],
   )
   const items = inboxModel.items
+  const latestQualityPresentation = useMemo(
+    () => qualityInboxPresentation(latestQualitySnapshot),
+    [latestQualitySnapshot],
+  )
+  const latestQualityTurns = latestQualityPresentation.turns
   const selectedHistoryItem = useMemo<SelectedHistoryItem>(
     () => selectedInboxItem
       ? { kind: 'chat', id: selectedInboxItem.conversationId }
@@ -684,8 +710,27 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     if (returnFocusKey) {
       setFocusAfterTriageKey(returnFocusKey)
     }
-    void refreshInbox()
-  }, [refreshInbox])
+  }, [])
+
+  const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
+    if (result.kind === 'ownership') {
+      setHumanOwnedConversations((previous) => reconcileAttentionOperatorResult(previous, result))
+    }
+    if (result.kind === 'decision_resolved') {
+      setDecisions((previous) => previous.filter(
+        (decision) => decision.agentId !== result.agentId || decision.handle !== result.handle,
+      ))
+    }
+    if (result.kind === 'ownership') {
+      invalidateDashboardQueries(['conversation.ownership_changed'])
+    } else if (result.kind === 'decision_resolved') {
+      invalidateDashboardQueries(['hitl.decision_resolved'])
+    }
+    await Promise.all([
+      attentionQueries.humanOwned.refetch(),
+      attentionQueries.decisions.refetch(),
+    ])
+  }, [attentionQueries.decisions, attentionQueries.humanOwned, invalidateDashboardQueries])
 
   const [triagingMessageIds, setTriagingMessageIds] = useState<ReadonlySet<string>>(new Set())
 
@@ -710,6 +755,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
           ...turn,
           triage,
         })))
+      patchLatestQuality(messageId, triage, false)
       setSelectedInboxItem((current) =>
         current?.assistantMessageId === messageId
           ? { ...current, triageState: triage.state, triage }
@@ -720,11 +766,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         if (current) {
           if (isTerminalQualityTriageState(current.state)) {
             setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
-            setQualitySnapshot((previous) =>
-              removeQualityInboxTurn(previous, messageId))
-            setSelectedInboxItem(null)
-            returnFocusKeyRef.current = null
-            setFocusAfterTriageKey('page')
+            patchLatestQuality(messageId, current, true)
+            setSelectedInboxItem((selected) => selected?.assistantMessageId === messageId
+              ? { ...selected, triageState: current.state, triage: current }
+              : selected)
             setAcknowledgementError(null)
             setStatusAnnouncement(
               'Another operator already closed this feedback. '
@@ -736,6 +781,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                 ...turn,
                 triage: current,
               })))
+            patchLatestQuality(messageId, current, false)
             setSelectedInboxItem((selected) =>
               selected?.assistantMessageId === messageId
                 ? { ...selected, triageState: current.state, triage: current }
@@ -756,7 +802,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         setAcknowledgingMessageId((current) => current === messageId ? null : current)
       }
     }
-  }, [])
+  }, [patchLatestQuality])
 
   const handleReviewItem = useCallback((item: InboxItem) => {
     returnFocusKeyRef.current = item.key
@@ -799,7 +845,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     setTriageError(null)
 
     try {
-      await qualityApi.setTriageState(messageId, {
+      const triage = await qualityApi.setTriageState(messageId, {
         state,
         expectedVersion: item.triage?.version ?? 0,
         ...(input.resolution ? { resolution: input.resolution } : {}),
@@ -813,6 +859,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       returnFocusKeyRef.current = null
       setFocusAfterTriageKey(nextItem?.key ?? 'page')
       setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
+      patchLatestQuality(messageId, triage, true)
       if (isFeedbackTerminalAction) {
         setSelectedInboxItem(null)
       }
@@ -824,8 +871,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       if (isMountedRef.current) {
         const current = getQualityTriageConflict(caught)
         if (current) {
-          setQualitySnapshot((previous) =>
-            updateQualityInboxTurn(previous, messageId, (turn) => ({ ...turn, triage: current })))
+          const terminal = isTerminalQualityTriageState(current.state)
+          if (terminal) setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
+          setQualitySnapshot((previous) => terminal
+            ? removeQualityInboxTurn(previous, messageId)
+            : updateQualityInboxTurn(previous, messageId, (turn) => ({ ...turn, triage: current })))
+          patchLatestQuality(messageId, current, terminal)
           setSelectedInboxItem((selected) =>
             selected?.assistantMessageId === messageId
               ? { ...selected, triageState: current.state, triage: current }
@@ -863,7 +914,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         })
       }
     }
-  }, [closeReview, items])
+  }, [closeReview, items, patchLatestQuality])
 
   const handleCopyQuestion = useCallback(async () => {
     if (!selectedInboxItem || selectedInboxItem.type !== 'negative_feedback') {
@@ -941,15 +992,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     return qualityTurns.filter((turn) => displayedMessageIds.has(turn.assistantMessageId))
   }, [items, qualityTurns])
 
-  const baselineKeys = useMemo(
-    () => (isLoading ? null : inboxItemKeys(decisions, humanOwnedConversations, displayedQualityTurns)),
-    [decisions, displayedQualityTurns, humanOwnedConversations, isLoading],
+  const displayedKeys = useMemo(
+    () => inboxItemKeys(decisions, humanOwnedConversations, displayedQualityTurns),
+    [decisions, displayedQualityTurns, humanOwnedConversations],
   )
-  const newItemCount = useNeedsAttentionActivity({
-    baselineKeys,
-    // Pause the background poll while a conversation is open; closing it already triggers a refresh.
-    enabled: selectedInboxItem === null,
-  })
+  const latestKeys = useMemo(() => inboxItemKeys(
+    attentionQueries.decisions.data?.decisions ?? [],
+    selectHumanOwnedConversations(attentionQueries.humanOwned.data?.conversations ?? []),
+    latestQualityTurns,
+  ), [attentionQueries.decisions.data?.decisions, attentionQueries.humanOwned.data?.conversations, latestQualityTurns])
+  const newItemCount = isLoading ? 0 : countNewInboxItems(displayedKeys, latestKeys)
   const hasNewActivity = newItemCount > 0
 
   const knowledgeHref = useMemo(
@@ -1002,10 +1054,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   )
 
   const handleRefresh = useCallback(() => {
-    void refreshInbox()
+    refreshInbox()
   }, [refreshInbox])
 
-  const hasQualityLoadFailure = qualityPresentation.hasLoadFailure
+  const hasQualityLoadFailure = latestQualityPresentation.hasLoadFailure
   const showEmptyState = !isLoading
     && !approvalError
     && !conversationError
@@ -1047,7 +1099,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               {conversationError}
             </div>
           ) : null}
-          {qualityPresentation.permissionDenied ? (
+          {latestQualityPresentation.permissionDenied ? (
             <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
               Answer feedback is available to workspace admins and owners. Approvals and handoffs are still shown.
             </div>
@@ -1118,7 +1170,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             </>
           ) : null}
 
-          {!isLoading && !qualityPresentation.permissionDenied ? (
+          {!isLoading && !latestQualityPresentation.permissionDenied ? (
             <QualityReviewSummary
               reviewCount={qualityPresentation.reviewCount}
               commentedFeedbackCount={qualityPresentation.commentedFeedbackCount}
@@ -1156,7 +1208,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
           />
         ) : null}
         onAfterClose={handleDrawerClosed}
-        onOperatorChanged={refreshInbox}
+        onOperatorChanged={handleOperatorChanged}
         pendingDecisions={decisions}
         buildRoutineHref={buildRoutineHref}
       />

@@ -13,19 +13,66 @@ describe("realtime config", () => {
     expect(parseRealtimeConfig({ ...base, REALTIME_MODE: "redis-cluster", REALTIME_REDIS_SEEDS: "redis://one:6379,redis://two:6379", REALTIME_REDIS_TLS: "true", REALTIME_REDIS_IAM: "true" }).redis?.iam).toBe(true);
   });
 
-  it("uses the complete bounded capacity defaults", () => {
+  it("uses the economical bounded capacity defaults", () => {
     const config = parseRealtimeConfig(base);
-    expect(config.producer).toMatchObject({ maxPendingWorkspaces: 4096, flushBatchSize: 256, publishConcurrency: 32, cadenceMs: 100 });
+    expect(config.producer).toMatchObject({ maxPendingWorkspaces: 512, flushBatchSize: 64, publishConcurrency: 4, cadenceMs: 250 });
     expect(config.gateway).toMatchObject({
-      maxConnections: 900, streamAgeMinMs: 720_000, streamAgeMaxMs: 840_000, dbPoolMax: 1,
+      maxConnections: 500, platformConcurrency: 600, streamAgeMinMs: 720_000, streamAgeMaxMs: 840_000, dbPoolMax: 1,
       authTimeoutMs: 2_000, subscribeTimeoutMs: 3_000, edgeTimeoutMs: 1_200_000,
       transportLossGraceMs: 20_000, blockedDurationMs: 10_000, blockedWritableBytes: 262_144,
-      maxWorkspaceInterests: 900, interestReleaseGraceMs: 5_000, shutdownDrainMs: 8_000,
+      maxWorkspaceInterests: 500, interestReleaseGraceMs: 5_000, shutdownDrainMs: 8_000,
       dbApplicationName: "radioso-realtime",
     });
-    expect(config.admission).toMatchObject({ accountLimit: 10_000, workspaceLimit: 5_000, principalLimit: 5, leaseTtlMs: 90_000, renewalMs: 30_000, safetyMs: 20_000, cleanupLimit: 128, renewalJitterPercent: 20, closeJitterMaxMs: 5_000 });
-    expect(config.reconnect).toMatchObject({ principalPerMinute: 12, principalBurst: 4, workspacePerMinute: 2_000, workspaceBurst: 200, accountPerMinute: 5_000, accountBurst: 500 });
-    expect(config.redis).toMatchObject({ queuedCommands: 4096, connectTimeoutMs: 2_000, commandTimeoutMs: 2_000 });
+    expect(config.admission).toMatchObject({ accountLimit: 500, workspaceLimit: 250, principalLimit: 5, leaseTtlMs: 90_000, renewalMs: 30_000, safetyMs: 20_000, cleanupLimit: 128, renewalJitterPercent: 20, closeJitterMaxMs: 5_000 });
+    expect(config.reconnect).toMatchObject({ principalPerMinute: 12, principalBurst: 4, workspacePerMinute: 200, workspaceBurst: 200, accountPerMinute: 500, accountBurst: 500 });
+    expect(config.redis).toMatchObject({ queuedCommands: 512, connectTimeoutMs: 2_000, commandTimeoutMs: 2_000 });
+  });
+
+  it("keeps hosted upper-capacity overrides valid", () => {
+    const config = parseRealtimeConfig({
+      ...base,
+      REALTIME_PLATFORM_CONCURRENCY: "1000",
+      REALTIME_MAX_CONNECTIONS: "900",
+      REALTIME_MAX_WORKSPACE_INTERESTS: "900",
+      REALTIME_PRODUCER_MAX_PENDING_WORKSPACES: "4096",
+      REALTIME_PRODUCER_FLUSH_BATCH_SIZE: "256",
+      REALTIME_PRODUCER_PUBLISH_CONCURRENCY: "32",
+      REALTIME_PRODUCER_CADENCE_MS: "100",
+      REALTIME_REDIS_QUEUED_COMMANDS: "4096",
+      REALTIME_ACCOUNT_CONNECTION_LIMIT: "10000",
+      REALTIME_WORKSPACE_CONNECTION_LIMIT: "5000",
+      REALTIME_RECONNECT_WORKSPACE_PER_MINUTE: "2000",
+      REALTIME_RECONNECT_ACCOUNT_PER_MINUTE: "5000",
+    });
+    expect(config.gateway).toMatchObject({ platformConcurrency: 1000, maxConnections: 900, maxWorkspaceInterests: 900 });
+    expect(config.producer).toMatchObject({ maxPendingWorkspaces: 4096, flushBatchSize: 256, publishConcurrency: 32, cadenceMs: 100 });
+    expect(config.admission).toMatchObject({ accountLimit: 10_000, workspaceLimit: 5_000 });
+    expect(config.reconnect).toMatchObject({ workspacePerMinute: 2_000, accountPerMinute: 5_000 });
+    expect(config.redis.queuedCommands).toBe(4_096);
+  });
+
+  it("allows IAM for standalone TLS and rejects it without TLS or when disabled", () => {
+    const standaloneTls = parseRealtimeConfig({
+      ...base,
+      REALTIME_MODE: "standalone",
+      REALTIME_REDIS_URL: "rediss://localhost:6379",
+      REALTIME_REDIS_TLS: "true",
+      REALTIME_REDIS_IAM: "true",
+    });
+    expect(standaloneTls.redis).toMatchObject({ tls: true, iam: true });
+
+    expect(() => parseRealtimeConfig({
+      ...base,
+      REALTIME_MODE: "standalone",
+      REALTIME_REDIS_URL: "redis://localhost:6379",
+      REALTIME_REDIS_IAM: "true",
+    })).toThrow(/TLS/i);
+
+    expect(() => parseRealtimeConfig({
+      ...base,
+      REALTIME_REDIS_TLS: "true",
+      REALTIME_REDIS_IAM: "true",
+    })).toThrow(/disabled/i);
   });
 
   it("rejects unsafe relational and rollout combinations", () => {

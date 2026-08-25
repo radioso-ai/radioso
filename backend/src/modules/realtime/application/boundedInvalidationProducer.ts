@@ -35,10 +35,10 @@ export interface BoundedInvalidationProducerTelemetry {
 }
 
 const defaults: Required<BoundedInvalidationProducerOptions> = {
-  maxPendingWorkspaces: 4096,
-  flushBatchSize: 256,
-  publishConcurrency: 32,
-  cadenceMs: 100,
+  maxPendingWorkspaces: 512,
+  flushBatchSize: 64,
+  publishConcurrency: 4,
+  cadenceMs: 250,
   publishTimeoutMs: 2_000,
   shutdownTimeoutMs: 8_000,
 };

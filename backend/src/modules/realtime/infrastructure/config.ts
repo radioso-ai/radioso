@@ -19,13 +19,13 @@ export const realtimeEnvShape = {
   REALTIME_REDIS_TLS: booleanish.default(false),
   REALTIME_REDIS_IAM: booleanish.default(false),
   REALTIME_CHANNEL_PREFIX: z.string().min(1).default("radioso"),
-  REALTIME_PRODUCER_MAX_PENDING_WORKSPACES: integer(4096),
-  REALTIME_PRODUCER_FLUSH_BATCH_SIZE: integer(256),
-  REALTIME_PRODUCER_PUBLISH_CONCURRENCY: integer(32),
-  REALTIME_PRODUCER_CADENCE_MS: integer(100),
+  REALTIME_PRODUCER_MAX_PENDING_WORKSPACES: integer(512),
+  REALTIME_PRODUCER_FLUSH_BATCH_SIZE: integer(64),
+  REALTIME_PRODUCER_PUBLISH_CONCURRENCY: integer(4),
+  REALTIME_PRODUCER_CADENCE_MS: integer(250),
   REALTIME_PRODUCER_PUBLISH_TIMEOUT_MS: integer(2_000),
-  REALTIME_MAX_CONNECTIONS: integer(900),
-  REALTIME_PLATFORM_CONCURRENCY: integer(1000),
+  REALTIME_MAX_CONNECTIONS: integer(500),
+  REALTIME_PLATFORM_CONCURRENCY: integer(600),
   REALTIME_STREAM_AGE_MIN_MS: integer(720_000),
   REALTIME_STREAM_AGE_MAX_MS: integer(840_000),
   REALTIME_GATEWAY_TIMEOUT_MS: integer(1_200_000),
@@ -37,10 +37,10 @@ export const realtimeEnvShape = {
   REALTIME_TRANSPORT_LOSS_GRACE_MS: integer(20_000),
   REALTIME_BLOCKED_DURATION_MS: integer(10_000),
   REALTIME_BLOCKED_WRITABLE_BYTES: integer(256 * 1024),
-  REALTIME_MAX_WORKSPACE_INTERESTS: integer(900),
+  REALTIME_MAX_WORKSPACE_INTERESTS: integer(500),
   REALTIME_INTEREST_RELEASE_GRACE_MS: integer(5_000),
-  REALTIME_ACCOUNT_CONNECTION_LIMIT: integer(10_000),
-  REALTIME_WORKSPACE_CONNECTION_LIMIT: integer(5_000),
+  REALTIME_ACCOUNT_CONNECTION_LIMIT: integer(500),
+  REALTIME_WORKSPACE_CONNECTION_LIMIT: integer(250),
   REALTIME_PRINCIPAL_CONNECTION_LIMIT: integer(5),
   REALTIME_ADMISSION_LEASE_TTL_MS: integer(90_000),
   REALTIME_ADMISSION_RENEWAL_MS: integer(30_000),
@@ -50,11 +50,11 @@ export const realtimeEnvShape = {
   REALTIME_ADMISSION_CLOSE_JITTER_MAX_MS: z.coerce.number().int().nonnegative().default(5_000),
   REALTIME_RECONNECT_PRINCIPAL_PER_MINUTE: integer(12),
   REALTIME_RECONNECT_PRINCIPAL_BURST: integer(4),
-  REALTIME_RECONNECT_WORKSPACE_PER_MINUTE: integer(2_000),
+  REALTIME_RECONNECT_WORKSPACE_PER_MINUTE: integer(200),
   REALTIME_RECONNECT_WORKSPACE_BURST: integer(200),
-  REALTIME_RECONNECT_ACCOUNT_PER_MINUTE: integer(5_000),
+  REALTIME_RECONNECT_ACCOUNT_PER_MINUTE: integer(500),
   REALTIME_RECONNECT_ACCOUNT_BURST: integer(500),
-  REALTIME_REDIS_QUEUED_COMMANDS: integer(4_096),
+  REALTIME_REDIS_QUEUED_COMMANDS: integer(512),
   REALTIME_REDIS_CONNECT_TIMEOUT_MS: integer(2_000),
   REALTIME_REDIS_COMMAND_TIMEOUT_MS: integer(2_000),
   REALTIME_SHUTDOWN_DRAIN_MS: integer(8_000),
@@ -109,8 +109,8 @@ const rawRealtimeConfigSchema = z.object(realtimeEnvShape).superRefine((value, c
   if (value.REALTIME_MODE === "disabled" && (value.REALTIME_REDIS_TLS || value.REALTIME_REDIS_IAM)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_MODE"], message: "Redis TLS/IAM cannot be configured while realtime is disabled" });
   }
-  if (value.REALTIME_REDIS_IAM && (!value.REALTIME_REDIS_TLS || value.REALTIME_MODE !== "redis-cluster")) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_REDIS_TLS"], message: "REALTIME_REDIS_IAM requires redis-cluster mode and REALTIME_REDIS_TLS" });
+  if (value.REALTIME_REDIS_IAM && (!value.REALTIME_REDIS_TLS || value.REALTIME_MODE === "disabled")) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_REDIS_TLS"], message: "REALTIME_REDIS_IAM requires an enabled Redis mode and REALTIME_REDIS_TLS" });
   }
   if (value.REALTIME_MAX_CONNECTIONS >= value.REALTIME_PLATFORM_CONCURRENCY) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_MAX_CONNECTIONS"], message: "REALTIME_MAX_CONNECTIONS must remain below platform concurrency" });

@@ -22,6 +22,7 @@ describe("realtime telemetry", () => {
     telemetry.transport.event("reconnect");
     telemetry.admission.event("rejected");
     telemetry.gateway.event("resync");
+    telemetry.gateway.state({ interests: 12, sessions: 34, waiters: 5 });
     telemetry.stream.event("closed");
     const rendered = metrics.renderPrometheus();
     expect(rendered).toContain('outcome="accepted"');
@@ -29,6 +30,9 @@ describe("realtime telemetry", () => {
     expect(rendered).toContain("radioso_realtime_producer_flush_duration_ms");
     expect(rendered).toContain("radioso_realtime_producer_pending_workspaces 4096");
     expect(rendered).toContain("radioso_realtime_producer_saturated 1");
+    expect(rendered).toContain("radioso_realtime_gateway_workspace_interests 12");
+    expect(rendered).toContain("radioso_realtime_gateway_sessions 34");
+    expect(rendered).toContain("radioso_realtime_gateway_readiness_waiters 5");
     expect(rendered).not.toMatch(/4d7293c8|secret|document content/i);
     expect(warn).toHaveBeenCalledWith({
       component: "realtime-producer",

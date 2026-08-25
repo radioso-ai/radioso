@@ -97,7 +97,23 @@ export const createRealtimeTelemetry = (input: {
     },
     transport: { event: (outcome: TransportOutcome) => metric(metrics, "realtime_transport_events_total", outcome) },
     admission: { event: (outcome: AdmissionOutcome) => metric(metrics, "realtime_admission_events_total", outcome) },
-    gateway: { event: (outcome: GatewayOutcome) => metric(metrics, "realtime_gateway_events_total", outcome) },
+    gateway: {
+      event: (outcome: GatewayOutcome) => metric(metrics, "realtime_gateway_events_total", outcome),
+      state: (state: { interests: number; sessions: number; waiters: number }) => {
+        metrics?.setGauge("realtime_gateway_workspace_interests", {
+          help: "Realtime gateway local workspace interest count",
+          value: state.interests,
+        });
+        metrics?.setGauge("realtime_gateway_sessions", {
+          help: "Realtime gateway locally attached session count",
+          value: state.sessions,
+        });
+        metrics?.setGauge("realtime_gateway_readiness_waiters", {
+          help: "Realtime gateway pending readiness waiter count",
+          value: state.waiters,
+        });
+      },
+    },
     stream: { event: (outcome: StreamOutcome) => metric(metrics, "realtime_stream_events_total", outcome) },
   };
 };

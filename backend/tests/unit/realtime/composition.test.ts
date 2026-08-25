@@ -11,7 +11,6 @@ describe("realtime publisher composition", () => {
   });
 
   it("validates enabled startup inputs and keeps mutation enqueue independent of broker failures", async () => {
-    expect(() => createRealtimePublisherComposition({ config: parseRealtimeConfig({ REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_ROLLOUT_MODE: "default-on" }) })).toThrow(/transport/i);
     const publish = vi.fn().mockRejectedValue(new Error("broker unavailable"));
     const composition = createRealtimePublisherComposition({ config: parseRealtimeConfig({ REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_ROLLOUT_MODE: "default-on" }), transport: { publish } });
     expect(composition.publisher.enqueue(workspaceId, ["crawl.progress"])).toMatchObject({ accepted: true });

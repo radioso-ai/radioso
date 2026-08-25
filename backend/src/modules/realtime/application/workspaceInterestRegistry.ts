@@ -5,6 +5,7 @@ import { RealtimeSession } from "../domain/realtimeSession.js";
 interface Interest {
   sessions: Map<string, RealtimeSession>;
   listener: WorkspaceInvalidationListener;
+  generation: number;
   attached: boolean;
   queue: Promise<void>;
 }
@@ -15,7 +16,7 @@ export class WorkspaceInterestRegistry {
 
   constructor(private readonly input: { transport: WorkspaceInterestTransport; maxWorkspaces: number }) {}
 
-  async add(session: RealtimeSession): Promise<void> {
+  async add(session: RealtimeSession): Promise<{ generation: number }> {
     const workspaceId = session.identity.workspaceId;
     let interest = this.interests.get(workspaceId);
     if (!interest) {
@@ -23,6 +24,7 @@ export class WorkspaceInterestRegistry {
       interest = {
         sessions: new Map(),
         listener: (kinds) => this.deliver(workspaceId, kinds),
+        generation: 0,
         attached: false,
         queue: Promise.resolve(),
       };
@@ -30,6 +32,10 @@ export class WorkspaceInterestRegistry {
     }
     interest.sessions.set(session.identity.connectionId, session);
     await this.reconcile(workspaceId, interest);
+    if (this.interests.get(workspaceId) !== interest || !interest.attached) {
+      throw new Error("workspace interest did not establish a current generation");
+    }
+    return { generation: interest.generation };
   }
 
   async remove(session: RealtimeSession): Promise<void> {
@@ -52,8 +58,9 @@ export class WorkspaceInterestRegistry {
       const desired = interest.sessions.size > 0;
       if (desired && !interest.attached) {
         try {
-          await this.input.transport.subscribe(workspaceId, interest.listener);
+          const subscription = await this.input.transport.subscribe(workspaceId, interest.listener);
           if (this.interests.get(workspaceId) !== interest) return;
+          interest.generation = subscription.generation;
           interest.attached = true;
         } catch (error) {
           interest.attached = false;
@@ -72,8 +79,9 @@ export class WorkspaceInterestRegistry {
           if (this.interests.get(workspaceId) !== interest) throw error;
           if (interest.sessions.size > 0) {
             try {
-              await this.input.transport.subscribe(workspaceId, interest.listener);
+              const subscription = await this.input.transport.subscribe(workspaceId, interest.listener);
               if (this.interests.get(workspaceId) !== interest) throw error;
+              interest.generation = subscription.generation;
               interest.attached = true;
               return;
             } catch (reattachError) {

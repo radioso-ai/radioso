@@ -3,6 +3,12 @@ import { BoundedInvalidationProducer } from "../../modules/realtime/application/
 import type { WorkspaceInvalidationTransport } from "../../modules/realtime/domain/contracts.js";
 import type { RealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
 import type { RealtimeTelemetry } from "../../modules/realtime/infrastructure/realtimeTelemetry.js";
+import {
+  createNodeRedisClientFactory,
+  RedisInvalidationPublisher,
+  type RedisCredentialsProvider,
+  type RedisLogicalClientFactory,
+} from "../../modules/realtime/infrastructure/redisInvalidationTransport.js";
 
 export interface RealtimePublisherComposition {
   publisher: WorkspaceInvalidationPublisher;
@@ -13,14 +19,31 @@ export interface RealtimePublisherComposition {
 export const createRealtimePublisherComposition = (input: {
   config: RealtimeConfig;
   transport?: WorkspaceInvalidationTransport;
-  telemetry?: Pick<RealtimeTelemetry, "producer">;
+  /** Composition supplies short-lived IAM credentials; the adapter requests them per new Redis connection. */
+  redisCredentialsProvider?: RedisCredentialsProvider;
+  redisClientFactory?: RedisLogicalClientFactory;
+  telemetry?: Pick<RealtimeTelemetry, "producer"> & Partial<Pick<RealtimeTelemetry, "transport">>;
 }): RealtimePublisherComposition => {
   if (input.config.mode === "disabled" || input.config.rollout.mode === "disabled") {
     return { publisher: createNoopWorkspaceInvalidationPublisher(), shutdown: async () => undefined };
   }
-  if (!input.transport) throw new Error("realtime publisher transport must be supplied for enabled mode");
+  const transport = input.transport ?? new RedisInvalidationPublisher({
+    channelPrefix: input.config.redis.channelPrefix,
+    commandTimeoutMs: input.config.redis.commandTimeoutMs,
+    createClient: input.redisClientFactory ?? createNodeRedisClientFactory({
+      connectTimeoutMs: input.config.redis.connectTimeoutMs,
+      credentialsProvider: input.redisCredentialsProvider,
+      queuedCommands: input.config.redis.queuedCommands,
+      seeds: input.config.redis.seeds,
+      tls: input.config.redis.tls,
+      url: input.config.redis.url,
+    }),
+    credentialsProvider: input.redisCredentialsProvider,
+    mode: input.config.mode,
+    telemetry: input.telemetry?.transport,
+  });
   const publisher = new BoundedInvalidationProducer({
-    transport: input.transport,
+    transport,
     options: { ...input.config.producer, shutdownTimeoutMs: input.config.gateway.shutdownDrainMs },
     telemetry: input.telemetry?.producer,
   });
@@ -30,7 +53,7 @@ export const createRealtimePublisherComposition = (input: {
       try {
         await publisher.shutdown();
       } finally {
-        await input.transport?.close?.();
+        await transport.close?.();
       }
     },
   };

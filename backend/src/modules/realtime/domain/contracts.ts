@@ -8,7 +8,8 @@ export interface WorkspaceInvalidationTransport {
 }
 
 export interface WorkspaceInterestTransport {
-  subscribe(workspaceId: string, listener: WorkspaceInvalidationListener): Promise<void>;
+  /** The returned continuity generation fences gateway readiness after reconnects. */
+  subscribe(workspaceId: string, listener: WorkspaceInvalidationListener): Promise<WorkspaceInterestSubscription>;
   /**
    * Detaches the exact listener from local fan-out before awaiting broker acknowledgement.
    * A rejection may mean remote state is uncertain, but the transport must retain no
@@ -18,6 +19,15 @@ export interface WorkspaceInterestTransport {
 }
 
 export type WorkspaceInvalidationListener = (changeKinds: readonly WorkspaceInvalidationKind[]) => void;
+export type WorkspaceInterestSubscription = { generation: number };
+
+/** Provider-neutral continuity is a convergence signal, never a Redis detail. */
+export type WorkspaceInterestContinuity = { generation: number; state: "lost" | "restored" };
+export type WorkspaceInterestContinuityListener = (event: WorkspaceInterestContinuity) => void;
+
+export interface WorkspaceInterestContinuitySource {
+  onContinuity(listener: WorkspaceInterestContinuityListener): () => void;
+}
 
 /** Phase 4 transport lifecycle vocabulary; Phase 2 only owns subscribing/active cleanup. */
 export type WorkspaceInterestLifecycleState = "subscribing" | "active" | "reconnecting" | "releasing";

@@ -36,9 +36,10 @@ composition calls them and assembles the result.
 - Storage, queue, telemetry, and provider changes: keep provider-specific code
   behind adapters and select those adapters here.
 - Realtime mutation acceleration: `realtimePublisherComposition.ts` selects the
-  disabled no-op or the bounded producer. It exposes only the synchronous
-  publisher port to API/worker graphs; broker adapters remain outside mutation
-  services.
+  disabled no-op or the bounded producer backed by a lazy, publisher-only Redis
+  adapter. It exposes only the synchronous publisher port to API/worker graphs;
+  subscriber/admission clients belong to the dedicated realtime composition and
+  broker adapters remain outside mutation services.
 
 ## Tests
 

@@ -14,6 +14,8 @@ export interface ProposalEvidenceDependencies {
 export interface ProposalEvidenceRequest {
   workspaceId: string;
   operatorUserId: string;
+  /** The thread the draft is being made in; a measurement belongs to the flow that produced it. */
+  copilotConversationId: string;
   /** The agent the proposal changes; evidence measured on any other agent is not about it. */
   agentId: string;
   evidenceIds: ReadonlyArray<string>;
@@ -47,6 +49,13 @@ export const resolveProposalEvidence = async (
   const foreign = records.filter((record) => record.agentId !== request.agentId);
   if (foreign.length > 0) {
     throw badRequest("Replay evidence was measured against a different agent");
+  }
+  // The card presents the measurement as part of this proposal flow. A measurement from another
+  // thread was taken under whatever was being explored there, and nothing on the card separates
+  // the two.
+  const otherThread = records.filter((record) => record.conversationId !== request.copilotConversationId);
+  if (otherThread.length > 0) {
+    throw badRequest("Replay evidence was measured in a different conversation");
   }
 
   const agentUpdatedAt = (await dependencies.agentVersion.get(request.workspaceId, request.agentId)).updatedAt;

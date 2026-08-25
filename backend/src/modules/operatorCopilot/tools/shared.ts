@@ -95,12 +95,13 @@ export interface CopilotProposalEvidenceDependencies {
 /** Resolves the ids a draft cites into the measurements stored on the proposal. */
 export const citedProposalEvidence = async (
   deps: CopilotProposalEvidenceDependencies,
-  context: { workspaceId: string; operatorUserId: string },
+  context: { workspaceId: string; operatorUserId: string; copilotConversationId?: string },
   agentId: string,
   evidenceIds: ReadonlyArray<string> | undefined,
 ): Promise<CopilotProposalEvidence | null> => resolveProposalEvidence(deps.proposalEvidence, {
   workspaceId: context.workspaceId,
   operatorUserId: context.operatorUserId,
+  copilotConversationId: requiredCopilotConversation(context),
   agentId,
   evidenceIds: evidenceIds ?? [],
 });

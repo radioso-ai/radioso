@@ -93,7 +93,8 @@ export interface CopilotProposalDetail extends CopilotProposalSummary {
   reason?: string | null
   failureReason?: string | null
   appliedRef?: Record<string, unknown> | null
-  evidenceCases?: CopilotProposalEvidenceCase[] | null
+  /** Required by the contract and null when nothing was measured, never absent. */
+  evidenceCases: CopilotProposalEvidenceCase[] | null
 }
 
 export interface CopilotProposalApplyResult {

@@ -308,6 +308,7 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
       proposed: { action: "Require approval before issuing a refund", priority: 20 },
     },
     currentVersionMatches: true,
+    evidenceCases: null,
   };
   let messages: unknown[] = [];
 
@@ -374,6 +375,7 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
       proposed: { name: targetLabel, steps: [{ type: "message", text: "Review the refund request." }] },
     },
     currentVersionMatches: true,
+    evidenceCases: null,
   };
   let messages: unknown[] = [];
 

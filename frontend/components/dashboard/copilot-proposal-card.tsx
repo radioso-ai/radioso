@@ -178,6 +178,8 @@ export function CopilotProposalCard({
   const status = cardState.status === 'pending' && proposal.status !== 'pending' ? proposal.status : cardState.status
   const effectiveState = status === cardState.status ? cardState : { ...cardState, status }
   const diff = detail ? buildCopilotProposalDiff(detail.preview) : []
+  // The detail read is authoritative; the streamed card only carries the summary until it loads.
+  const evidenceSummary = detail?.evidence ?? proposal.evidence
   const entityTarget = targetReference(proposal, detail, effectiveState.appliedRef, defaultAgentId)
 
   const loadDetail = async () => {
@@ -253,7 +255,7 @@ export function CopilotProposalCard({
             <span>{statusMessage(effectiveState, detail) ?? proposal.reason}</span>
           </p>
         ) : null}
-        {proposal.evidence ? <ProposalEvidence summary={proposal.evidence} cases={detail?.evidenceCases ?? null} /> : null}
+        {evidenceSummary ? <ProposalEvidence summary={evidenceSummary} cases={detail?.evidenceCases ?? null} /> : null}
         {effectiveState.status === 'applied' && entityTarget ? (
           <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onOpenEntity(entityTarget.entity, entityTarget.agentId)}>
             <Check className="mr-1.5 h-3.5 w-3.5" aria-hidden />

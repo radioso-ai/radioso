@@ -47,6 +47,7 @@ describe("proposal evidence resolution", () => {
     const evidence = await resolveProposalEvidence(deps as never, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
+      copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence],
     });
@@ -67,6 +68,7 @@ describe("proposal evidence resolution", () => {
     const evidence = await resolveProposalEvidence(deps as never, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
+      copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence],
     });
@@ -82,6 +84,7 @@ describe("proposal evidence resolution", () => {
     await expect(resolveProposalEvidence(deps as never, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
+      copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence],
     })).rejects.toThrow(/different agent/i);
@@ -95,6 +98,7 @@ describe("proposal evidence resolution", () => {
     await expect(resolveProposalEvidence(deps as never, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
+      copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence, ids.otherEvidence],
     })).rejects.toThrow(/not found/i);
@@ -106,6 +110,7 @@ describe("proposal evidence resolution", () => {
     const evidence = await resolveProposalEvidence(deps as never, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
+      copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [],
     });
@@ -121,6 +126,7 @@ describe("proposal evidence resolution", () => {
     const evidence = await resolveProposalEvidence(deps as never, {
       workspaceId: ids.workspace,
       operatorUserId: ids.operator,
+      copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence, ids.otherEvidence],
     });
@@ -141,7 +147,7 @@ describe("proposal evidence staleness window", () => {
 
     const evidence = await resolveProposalEvidence(
       { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
-      { workspaceId: ids.workspace, operatorUserId: ids.operator, agentId: ids.agent, evidenceIds: [ids.evidence] },
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence] },
     );
 
     expect(evidence?.cases[0]).toMatchObject({ stale: true });
@@ -154,9 +160,48 @@ describe("proposal evidence staleness window", () => {
 
     const evidence = await resolveProposalEvidence(
       { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
-      { workspaceId: ids.workspace, operatorUserId: ids.operator, agentId: ids.agent, evidenceIds: [ids.evidence] },
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence] },
     );
 
     expect(evidence?.cases[0]).toMatchObject({ stale: false });
+  });
+});
+
+describe("proposal evidence thread scope", () => {
+  it("refuses a measurement taken in a different Ray thread", async () => {
+    // The card claims the measurement belongs to this proposal flow. Evidence from another thread
+    // was taken under whatever the operator was exploring there, and nothing on the card would
+    // tell them apart.
+    const findMany = vi.fn(async () => [record({ conversationId: "conversation-other" })]);
+    const get = vi.fn(async () => ({ updatedAt: baselineCapturedAt }));
+
+    await expect(resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+      },
+    )).rejects.toThrow(/different conversation/i);
+  });
+
+  it("accepts a measurement taken in this thread", async () => {
+    const findMany = vi.fn(async () => [record({ conversationId: "conversation-1" })]);
+    const get = vi.fn(async () => ({ updatedAt: baselineCapturedAt }));
+
+    const evidence = await resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+      },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
   });
 });

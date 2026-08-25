@@ -76,9 +76,9 @@
 - [x] T041 [US1] Migrate Quality stats/turns reads and interaction deferral in `frontend/components/dashboard/quality-view.tsx` and `frontend/components/dashboard/quality/close-review-popover.tsx` without `enabled:false` invalidation suppression
 - [x] T042 [US1] Add failing Needs Attention tests for latest Query results, operator-controlled displayed snapshots, count deltas, Refresh advancement, and rail reuse in `frontend/tests/unit/needs-attention-query-state.test.tsx`
 - [x] T043 [US1] Migrate `frontend/components/dashboard/needs-attention-view.tsx` and the rail/badge consumers to the attention queries while keeping displayed-list advancement explicit
-- [ ] T044 [US2] Add a cross-surface component integration test for workspace switch, filter/page switch, stale-response isolation, one visibility listener, hidden cancellation, and visible convergence in `frontend/tests/unit/dashboard-query-integration.test.tsx`
-- [ ] T045 Remove only the covered obsolete polling/concurrency hooks after proving no remaining consumers with tests; do not remove unrelated conversation-tail behavior
-- [ ] T046 Run frontend unit tests, lint, and build with realtime disabled; verify every visible covered read still reconciles in at most 60 seconds
+- [x] T044 [US2] Add a cross-surface component integration test for workspace switch, filter/page switch, stale-response isolation, one visibility listener, hidden cancellation, and visible convergence in `frontend/tests/unit/dashboard-query-integration.test.tsx`
+- [x] T045 Remove only the covered obsolete polling/concurrency hooks after proving no remaining consumers with tests; do not remove unrelated conversation-tail behavior
+- [x] T046 Run frontend unit tests, lint, and build with realtime disabled; verify every visible covered read still reconciles in at most 60 seconds
 
 **Phase 3 gate**: Galileo frontend diff review; root verifies polling-only behavior before allowing live events to attach.
 

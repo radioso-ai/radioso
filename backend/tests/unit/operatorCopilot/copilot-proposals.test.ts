@@ -428,7 +428,8 @@ describe("proposals carrying replay evidence", () => {
     baselineCapturedAt: capturedAt,
     recordedStatus: "failing" as const,
     verdict: "pass" as const,
-    overrides: {},
+    // A directive proposal can only cite a replay that had directives under test.
+    overrides: { agentConfigOverride: { authoredDirectives: [{ action: "State the refund window" }] } },
     createdAt: new Date(),
     ...overrides,
   });

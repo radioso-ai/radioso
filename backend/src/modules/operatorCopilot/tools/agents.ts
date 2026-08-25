@@ -299,7 +299,7 @@ export const createAgentSettingProposalCopilotTools = (
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };
           const validated = await settingAdapter.validatePayload(context.workspaceId, targetRef, { value, ...(rationale ? { rationale } : {}) });
           const versionToken = await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
-          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "agent_setting", settingKey, value: validated.payload && typeof validated.payload === "object" ? (validated.payload as { value?: unknown }).value : value });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

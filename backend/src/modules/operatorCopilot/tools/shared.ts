@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { CopilotAuditPort, CopilotEntityDescription, CopilotProposal, CopilotProposalEvidence } from "../contracts.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
-import { resolveProposalEvidence, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
+import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 
 export interface CopilotAgentListItem {
   readonly id: string;
@@ -98,12 +98,14 @@ export const citedProposalEvidence = async (
   context: { workspaceId: string; operatorUserId: string; copilotConversationId?: string },
   agentId: string,
   evidenceIds: ReadonlyArray<string> | undefined,
+  change: ProposalChange,
 ): Promise<CopilotProposalEvidence | null> => resolveProposalEvidence(deps.proposalEvidence, {
   workspaceId: context.workspaceId,
   operatorUserId: context.operatorUserId,
   copilotConversationId: requiredCopilotConversation(context),
   agentId,
   evidenceIds: evidenceIds ?? [],
+  change,
 });
 
 export const proposalEvidenceOutput = (evidence: CopilotProposalEvidence | null) =>

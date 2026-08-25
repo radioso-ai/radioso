@@ -204,7 +204,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: null };
           const draft = await routineAdapter.draft(context.workspaceId, targetRef, intent);
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
-          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "routine" });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

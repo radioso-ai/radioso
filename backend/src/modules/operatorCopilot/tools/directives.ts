@@ -49,7 +49,7 @@ export const createDirectiveProposalCopilotTools = (
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId: directiveId ?? null };
           const draft = await directiveAdapter.draft(context.workspaceId, targetRef, intent);
           const versionToken = await directiveAdapter.readVersionToken(context.workspaceId, targetRef);
-          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "directive" });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

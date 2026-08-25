@@ -29,7 +29,7 @@ const record = (overrides: Partial<CopilotReplayEvidenceRecord> = {}): CopilotRe
   baselineCapturedAt,
   recordedStatus: "failing",
   verdict: "pass",
-  overrides: {},
+  overrides: { agentConfigOverride: { authoredDirectives: [{ action: "State the refund window" }] } },
   createdAt: new Date("2026-08-25T10:05:00.000Z"),
   ...overrides,
 });
@@ -50,6 +50,7 @@ describe("proposal evidence resolution", () => {
       copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence],
+      change: { targetType: "directive" },
     });
 
     expect(findMany).toHaveBeenCalledWith({
@@ -71,6 +72,7 @@ describe("proposal evidence resolution", () => {
       copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence],
+      change: { targetType: "directive" },
     });
 
     expect(evidence?.cases[0]).toMatchObject({ stale: true });
@@ -87,6 +89,7 @@ describe("proposal evidence resolution", () => {
       copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence],
+      change: { targetType: "directive" },
     })).rejects.toThrow(/different agent/i);
   });
 
@@ -101,6 +104,7 @@ describe("proposal evidence resolution", () => {
       copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence, ids.otherEvidence],
+      change: { targetType: "directive" },
     })).rejects.toThrow(/not found/i);
   });
 
@@ -113,6 +117,7 @@ describe("proposal evidence resolution", () => {
       copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [],
+      change: { targetType: "directive" },
     });
 
     expect(evidence).toBeNull();
@@ -129,6 +134,7 @@ describe("proposal evidence resolution", () => {
       copilotConversationId: "conversation-1",
       agentId: ids.agent,
       evidenceIds: [ids.evidence, ids.otherEvidence],
+      change: { targetType: "directive" },
     });
 
     expect(evidence?.cases).toHaveLength(2);
@@ -147,7 +153,7 @@ describe("proposal evidence staleness window", () => {
 
     const evidence = await resolveProposalEvidence(
       { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
-      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence] },
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
     );
 
     expect(evidence?.cases[0]).toMatchObject({ stale: true });
@@ -160,7 +166,7 @@ describe("proposal evidence staleness window", () => {
 
     const evidence = await resolveProposalEvidence(
       { evidence: { record: vi.fn(), findMany }, agentVersion: { get } } as never,
-      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence] },
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
     );
 
     expect(evidence?.cases[0]).toMatchObject({ stale: false });
@@ -183,6 +189,7 @@ describe("proposal evidence thread scope", () => {
         copilotConversationId: "conversation-1",
         agentId: ids.agent,
         evidenceIds: [ids.evidence],
+        change: { targetType: "directive" },
       },
     )).rejects.toThrow(/different conversation/i);
   });
@@ -199,6 +206,7 @@ describe("proposal evidence thread scope", () => {
         copilotConversationId: "conversation-1",
         agentId: ids.agent,
         evidenceIds: [ids.evidence],
+        change: { targetType: "directive" },
       },
     );
 

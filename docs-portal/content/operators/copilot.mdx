@@ -171,7 +171,15 @@ the case with the suite so the library records it.
 
 Ask Ray to propose the change it just measured and the proposal carries those
 replays with it. The measurements come from the runs Ray recorded, not from its
-account of them, and each one is tied to the agent it was measured on.
+account of them, and each one is tied to the agent, the conversation, and the
+change it was measured on: a replay of one change cannot be attached to a
+proposal for a different one. A setting proposal has to cite a replay that put
+that exact value under test, and a directive proposal has to cite one that ran
+with directives in place.
+
+Routine proposals do not carry replay evidence. No replay override installs a
+routine, so a passing replay would say nothing about the routine being proposed
+— test a routine draft with a real turn instead.
 
 A replay runs against the configuration the eval case froze, never the agent's
 current one, so a measurement is dated by any edit to that agent after the case

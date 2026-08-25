@@ -408,7 +408,7 @@ describe("copilot eval case replay evidence", () => {
       },
     }));
     const record = vi.fn(async (input: Record<string, unknown>) => ({ ...input, id: "evidence-1", createdAt: new Date() }));
-    const get = vi.fn(async () => ({ updatedAt: agentUpdatedAt }));
+    const get = vi.fn(async () => ({ updatedAt: capturedAt }));
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
       runs: { execute } as never,

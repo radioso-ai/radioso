@@ -190,11 +190,11 @@ test("the queue defaults to the answers that carry a signal and still need triag
   // this the table would return every assistant turn and the chip counts would describe
   // rows nobody can see.
   await expect
-    .poll(() => turnsUrls.at(-1))
-    .toContain(`signal=${encodeURIComponent(ALL_SIGNALS)}`);
+    .poll(() => new URL(turnsUrls.at(-1) ?? "/", "http://test").searchParams.get("signal")?.split(",").sort())
+    .toEqual(ALL_SIGNALS.split(",").sort());
   await expect
-    .poll(() => turnsUrls.at(-1))
-    .toContain(`triage=${encodeURIComponent("open,acknowledged")}`);
+    .poll(() => new URL(turnsUrls.at(-1) ?? "/", "http://test").searchParams.get("triage")?.split(",").sort())
+    .toEqual(["open", "acknowledged"].sort());
   // The default is the default: it does not clutter the URL.
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/quality$`));
   await expect(page.getByRole("button", { name: "All answers" })).toHaveAttribute(

@@ -394,6 +394,13 @@ export function useHistoryDetailState({
   const [selectedSpineStageId, setSelectedSpineStageId] = useState<string | undefined>(undefined)
   const [showGraph, setShowGraph] = useState(false)
   const detailRequestIdRef = useRef(0)
+  const setSelectedItemRef = useRef(setSelectedItem)
+  const onItemNotFoundRef = useRef(onItemNotFound)
+
+  useEffect(() => {
+    setSelectedItemRef.current = setSelectedItem
+    onItemNotFoundRef.current = onItemNotFound
+  }, [onItemNotFound, setSelectedItem])
 
   const loadDetail = useCallback(async () => {
     const requestId = detailRequestIdRef.current + 1
@@ -503,15 +510,15 @@ export function useHistoryDetailState({
         ),
       )
       if (isNotFoundError(error)) {
-        setSelectedItem(null)
-        onItemNotFound?.()
+        setSelectedItemRef.current(null)
+        onItemNotFoundRef.current?.()
       }
     } finally {
       if (isActive()) {
         setIsDetailLoading(false)
       }
     }
-  }, [anchorMessageId, isAudiencePulseEvidence, onItemNotFound, selectedItem, setSelectedItem])
+  }, [anchorMessageId, isAudiencePulseEvidence, selectedItem])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Detail view fetches the current drawer item after selection changes.

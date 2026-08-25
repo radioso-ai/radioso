@@ -225,5 +225,12 @@ describe('reduceQualityInboxSnapshot', () => {
       commentedFeedbackCount: 0,
       reviewCount: 3,
     })
+
+    const removed = removeQualityInboxTurn(acknowledged, 'duplicate')
+    expect(qualityInboxPresentation(removeQualityInboxTurn(removed, 'duplicate'))).toMatchObject({
+      turns: [],
+      commentedFeedbackCount: 0,
+      reviewCount: 3,
+    })
   })
 })

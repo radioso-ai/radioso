@@ -204,6 +204,13 @@ export const removeQualityInboxTurn = (
   snapshot: QualityInboxSnapshot,
   assistantMessageId: string,
 ): QualityInboxSnapshot => {
+  // Conflict reconciliation can observe a terminal record before the operator
+  // replaces that terminal decision. Both outcomes remove the same active item,
+  // so repeated delivery must not decrement the aggregate queue twice.
+  if (!snapshot.commentedFeedback.turns.some((turn) => turn.assistantMessageId === assistantMessageId)) {
+    return snapshot
+  }
+
   const removeFromSource = (
     source: QualityInboxSourceSnapshot,
   ): QualityInboxSourceSnapshot => ({

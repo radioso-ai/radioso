@@ -13,7 +13,11 @@ import {
   WorkspaceReleaseDeadlineScheduler,
 } from "./workspaceReleaseDeadlineScheduler.js";
 
-export type WorkspaceGatewayCloseReason = "superseded" | "shutdown";
+export type WorkspaceGatewayCloseReason = "superseded" | "shutdown" | "transport_lost";
+
+/** Provider-neutral health for the runtime readiness gate. */
+export type WorkspaceGatewayHealth = { state: "degraded" | "restored" };
+export type WorkspaceGatewayHealthListener = (health: WorkspaceGatewayHealth) => void;
 
 /** Presenter-owned connection/mailbox port; the gateway never writes HTTP. */
 export interface WorkspaceGatewayConnection {
@@ -51,9 +55,11 @@ type Interest = {
   listener: WorkspaceInvalidationListener;
   readyWaiters: Map<symbol, ReadyWaiter>;
   releaseDeadline: number | undefined;
+  transportLossDeadline: { dueAtMs: number; generation: number } | undefined;
   sessions: Map<string, Attachment>;
   state: WorkspaceInterestLifecycleState;
   subscribed: boolean;
+  subscribing: boolean;
   workspaceId: string;
 };
 
@@ -65,6 +71,8 @@ export type WorkspaceGatewayInput = {
   maxWorkspaces: number;
   releaseGraceMs?: number;
   telemetry?: WorkspaceGatewayTelemetry;
+  /** Bounded grace before connections which missed broker continuity are closed. */
+  transportLossGraceMs?: number;
   transport: WorkspaceInterestTransport;
 };
 
@@ -80,6 +88,9 @@ export class WorkspaceGateway {
   private readonly releaseGraceMs: number;
   private readonly removeContinuityListener: () => void;
   private readonly releaseScheduler: WorkspaceReleaseDeadlineScheduler<Interest>;
+  private readonly transportLossGraceMs: number;
+  private readonly transportLossScheduler: WorkspaceReleaseDeadlineScheduler<Interest>;
+  private readonly healthListeners = new Set<WorkspaceGatewayHealthListener>();
   private sessionCount = 0;
   private waiterCount = 0;
   private shuttingDown = false;
@@ -91,8 +102,15 @@ export class WorkspaceGateway {
   constructor(private readonly input: WorkspaceGatewayInput) {
     this.clock = input.clock ?? systemMonotonicClock;
     this.releaseGraceMs = Math.max(0, input.releaseGraceMs ?? 0);
+    this.transportLossGraceMs = Math.max(0, input.transportLossGraceMs ?? 20_000);
     this.releaseScheduler = new WorkspaceReleaseDeadlineScheduler(this.clock, (interest) => this.onReleaseDeadline(interest));
+    this.transportLossScheduler = new WorkspaceReleaseDeadlineScheduler(this.clock, (interest) => this.onTransportLossDeadline(interest));
     this.removeContinuityListener = input.continuity.onContinuity((event) => this.onContinuity(event));
+  }
+
+  onHealth(listener: WorkspaceGatewayHealthListener): () => void {
+    this.healthListeners.add(listener);
+    return () => this.healthListeners.delete(listener);
   }
 
   async attach(connection: WorkspaceGatewayConnection, options: { signal?: AbortSignal } = {}): Promise<WorkspaceGatewayAttachment> {
@@ -154,6 +172,7 @@ export class WorkspaceGateway {
     this.shuttingDown = true;
     this.removeContinuityListener();
     this.releaseScheduler.clear();
+    this.transportLossScheduler.clear();
 
     const cleanup: Promise<void>[] = [];
     for (const interest of this.interests.values()) {
@@ -177,9 +196,11 @@ export class WorkspaceGateway {
       listener: (kinds) => this.deliver(workspaceId, kinds),
       readyWaiters: new Map(),
       releaseDeadline: undefined,
+      transportLossDeadline: undefined,
       sessions: new Map(),
       state: "subscribing",
       subscribed: false,
+      subscribing: false,
       workspaceId,
     };
     return interest;
@@ -196,6 +217,7 @@ export class WorkspaceGateway {
 
   private dropInterest(interest: Interest): void {
     if (this.interests.get(interest.workspaceId) !== interest) return;
+    this.cancelTransportLossDeadline(interest);
     this.interests.delete(interest.workspaceId);
     this.recordState();
   }
@@ -217,6 +239,7 @@ export class WorkspaceGateway {
         return;
       }
       interest.state = "subscribing";
+      interest.subscribing = true;
       try {
         const subscription = await this.input.transport.subscribe(interest.workspaceId, interest.listener);
         interest.subscribed = true;
@@ -229,6 +252,8 @@ export class WorkspaceGateway {
         this.dropInterest(interest);
         this.rejectReadyWaiters(interest, error);
         throw error;
+      } finally {
+        interest.subscribing = false;
       }
     }
 
@@ -313,6 +338,8 @@ export class WorkspaceGateway {
     this.recordState();
     if (interest.sessions.size > 0) return Promise.resolve();
 
+    this.cancelTransportLossDeadline(interest);
+
     if (this.releaseGraceMs > 0 && !this.shuttingDown) {
       this.scheduleRelease(interest);
       return Promise.resolve();
@@ -334,12 +361,18 @@ export class WorkspaceGateway {
       this.continuityLost = true;
       this.lossGeneration = event.generation;
       this.continuityGeneration = event.generation;
+      this.emitHealth({ state: "degraded" });
       for (const interest of this.interests.values()) {
         if (interest.sessions.size === 0) continue;
         interest.state = "reconnecting";
+        let affected = false;
         for (const attachment of interest.sessions.values()) {
-          if (attachment.ready) attachment.resyncAfterGeneration = event.generation;
+          if (attachment.ready) {
+            attachment.resyncAfterGeneration = event.generation;
+            affected = true;
+          }
         }
+        if (affected) this.scheduleTransportLossDeadline(interest, event.generation);
       }
       return;
     }
@@ -348,12 +381,22 @@ export class WorkspaceGateway {
     this.continuityLost = false;
     this.continuityGeneration = event.generation;
     this.lossGeneration = undefined;
+    this.emitHealth({ state: "restored" });
     let resynced = false;
     for (const interest of this.interests.values()) {
       if (interest.sessions.size === 0) continue;
+      // The subscriber owns broker reattachment. Cancel the local failure fence
+      // before exposing any resync to presenters; this path never subscribes again.
+      this.cancelTransportLossDeadline(interest, event.generation);
       interest.generation = event.generation;
       if (!interest.subscribed) {
-        void this.enqueue(interest).catch((error) => this.rejectReadyWaiters(interest, error));
+        if (interest.subscribing) continue;
+        // This local interest was never accepted by the subscriber before the
+        // loss, so it is not among the subscriber's desired interests to
+        // restore. Do not create a second subscribe path from a restore event.
+        const error = new Error("Workspace gateway subscription was unavailable during transport recovery");
+        interest.failure = error;
+        this.rejectReadyWaiters(interest, error);
         continue;
       }
       interest.state = "active";
@@ -385,6 +428,44 @@ export class WorkspaceGateway {
     if (this.interests.get(interest.workspaceId) !== interest || interest.sessions.size > 0) return;
     interest.releaseDeadline = undefined;
     void this.enqueue(interest).catch(() => undefined);
+  }
+
+  private scheduleTransportLossDeadline(interest: Interest, generation: number): void {
+    const dueAtMs = this.clock.now() + this.transportLossGraceMs;
+    interest.transportLossDeadline = { dueAtMs, generation };
+    this.transportLossScheduler.schedule(interest.workspaceId, interest, dueAtMs);
+  }
+
+  private cancelTransportLossDeadline(interest: Interest, generation?: number): void {
+    if (!interest.transportLossDeadline) return;
+    if (generation !== undefined && interest.transportLossDeadline.generation !== generation) return;
+    interest.transportLossDeadline = undefined;
+    this.transportLossScheduler.cancel(interest.workspaceId);
+  }
+
+  private onTransportLossDeadline(interest: Interest): void {
+    const deadline = interest.transportLossDeadline;
+    interest.transportLossDeadline = undefined;
+    if (!deadline || this.interests.get(interest.workspaceId) !== interest || !this.continuityLost || deadline.generation !== this.lossGeneration) return;
+
+    let released = false;
+    for (const [connectionId, attachment] of [...interest.sessions]) {
+      if (attachment.resyncAfterGeneration !== deadline.generation) continue;
+      // Fence removal before calling out: a synchronous presenter release is an
+      // ABA-safe no-op and cannot retain the stale workspace interest.
+      attachment.resyncAfterGeneration = undefined;
+      interest.sessions.delete(connectionId);
+      this.sessionCount -= 1;
+      attachment.connection.requestClose("transport_lost");
+      released = true;
+    }
+    if (!released) return;
+    this.recordState();
+    if (interest.sessions.size === 0) void this.enqueue(interest).catch(() => undefined);
+  }
+
+  private emitHealth(health: WorkspaceGatewayHealth): void {
+    for (const listener of this.healthListeners) listener(health);
   }
 
   private async withAbort<T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> {

@@ -950,17 +950,20 @@ describe("SsePresenter RED contract", () => {
     expect(remote.response.destroy).not.toHaveBeenCalled();
     expect(remote.response.writes).toHaveLength(1);
 
-    for (const reason of ["shutdown", "superseded"] as WorkspaceGatewayCloseReason[]) {
+    for (const reason of ["shutdown", "superseded", "transport_lost"] as const) {
       const gatewayClose = fixture();
       const closing = gatewayClose.presenter.start();
       await vi.waitFor(() => expect(gatewayClose.attach).toHaveBeenCalledOnce());
       resolveAttachment(gatewayClose);
       await waitForCommit(gatewayClose.response);
-      gatewayClose.connection?.requestClose(reason);
+      const requestClose = gatewayClose.connection?.requestClose as (closeReason: WorkspaceGatewayCloseReason | "transport_lost") => void;
+      requestClose(reason);
       await closing;
       expect(gatewayClose.response.end).toHaveBeenCalledOnce();
       expect(gatewayClose.response.destroy).not.toHaveBeenCalled();
       expect(gatewayClose.response.writes).toHaveLength(1);
+      expect(gatewayClose.release).toHaveBeenCalledOnce();
+      expect(gatewayClose.leaseRelease).toHaveBeenCalledOnce();
     }
   });
 

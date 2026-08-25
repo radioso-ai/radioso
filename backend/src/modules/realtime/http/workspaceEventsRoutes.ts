@@ -4,7 +4,15 @@ import type { WorkspaceGatewayAttachment, WorkspaceGatewayConnection } from "../
 import type { RealtimeAdmissionController } from "../domain/contracts.js";
 import { RealtimeAdmissionError } from "../domain/contracts.js";
 import type { RealtimeRolloutPolicy } from "../domain/realtimeRolloutPolicy.js";
-import { SsePresenter, type SsePresenterClock, type SsePresenterLimits, type SseResponse } from "./ssePresenter.js";
+import {
+  SsePresenter,
+  type SsePresenterClock,
+  type SsePresenterLimits,
+  type SsePresenterRegistration,
+  type SsePresenterReservation,
+  type SseResponse,
+  type SseStreamTelemetry,
+} from "./ssePresenter.js";
 import { RealtimeSessionAuthError, type RealtimeSessionAuthPort } from "./realtimeSessionAuthenticator.js";
 
 type RouteOutcome = "invalid" | "auth" | "disabled" | "overload" | "ready";
@@ -21,8 +29,14 @@ export type WorkspaceEventsRouteDeps = {
   sessionCookieName: string;
   limits: SsePresenterLimits;
   clock: SsePresenterClock;
+  streamAgeMs?: () => number;
+  streamTelemetry?: SseStreamTelemetry;
   shutdown?: AbortSignal;
   telemetry?: WorkspaceEventsRouteTelemetry;
+  presenters?: {
+    reserve(): SsePresenterReservation;
+    track(registration: SsePresenterRegistration): Promise<void>;
+  };
 };
 
 const workspaceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -63,29 +77,47 @@ export const createWorkspaceEventsRoutes = (deps: WorkspaceEventsRouteDeps): Rou
     request.once("aborted", onAborted);
     response.once("close", onClose);
     const streamResponse = expressSseResponse(response, () => deps.telemetry?.outcome("ready"));
-    const presenter = new SsePresenter({
-      authorize: async (signal) => {
-        const authSignal = AbortSignal.any([requestAbort.signal, signal]);
-        const identity = await deps.authenticate({ sessionToken, requestedWorkspaceId, signal: authSignal });
-        if (authSignal.aborted) throw new RealtimeSessionAuthError("aborted");
-        if (!deps.rollout.allows({ accountId: identity.accountId })) throw new RealtimeRolloutDisabledError();
-        return identity;
-      },
-      admission: deps.admission,
-      gateway: deps.gateway,
-      response: streamResponse,
-      signal: requestAbort.signal,
-      shutdown: deps.shutdown,
-      clock: deps.clock,
-      limits: deps.limits,
-    });
-
+    let reservation: SsePresenterReservation | undefined;
     try {
-      await presenter.start();
+      reservation = deps.presenters?.reserve();
+    } catch (error) {
+      request.off("aborted", onAborted);
+      response.off("close", onClose);
+      mapPrecommitError(response, error, deps.telemetry);
+      return;
+    }
+    try {
+      const limits = deps.streamAgeMs
+        ? { ...deps.limits, streamAgeMs: deps.streamAgeMs() }
+        : deps.limits;
+      const presenter = new SsePresenter({
+        authorize: async (signal) => {
+          const authSignal = AbortSignal.any([requestAbort.signal, signal]);
+          const identity = await deps.authenticate({ sessionToken, requestedWorkspaceId, signal: authSignal });
+          if (authSignal.aborted) throw new RealtimeSessionAuthError("aborted");
+          if (!deps.rollout.allows({ accountId: identity.accountId })) throw new RealtimeRolloutDisabledError();
+          return identity;
+        },
+        admission: deps.admission,
+        gateway: deps.gateway,
+        response: streamResponse,
+        signal: requestAbort.signal,
+        shutdown: deps.shutdown,
+        clock: deps.clock,
+        limits,
+        telemetry: deps.streamTelemetry,
+      });
+      const opening = presenter.start();
+      await (reservation?.track({
+        promise: opening,
+        abortPreflight: () => { if (!response.headersSent) requestAbort.abort(); },
+        forceDestroy: () => response.destroy(),
+      }) ?? opening);
     } catch (error) {
       if (requestAbort.signal.aborted || response.headersSent) return;
       mapPrecommitError(response, error, deps.telemetry);
     } finally {
+      reservation?.release();
       request.off("aborted", onAborted);
       response.off("close", onClose);
     }

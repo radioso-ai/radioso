@@ -54,7 +54,7 @@ const connection = (connectionId: string, workspaceId = workspaceA) => {
     workspaceId,
     enqueueInvalidation: (kinds) => session.mergeInvalidation(kinds),
     enqueueResync: () => session.requireResync(),
-    requestClose: vi.fn((_reason: "superseded" | "shutdown"): void => { session.close(); }),
+    requestClose: vi.fn((_reason: "superseded" | "shutdown" | "transport_lost"): void => { session.close(); }),
     pending: () => session.pending(),
   } satisfies WorkspaceGatewayConnection & { pending(): ReturnType<RealtimeSession["pending"]> };
 };

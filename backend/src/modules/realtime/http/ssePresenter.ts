@@ -44,6 +44,17 @@ export interface SseStreamTelemetry {
   histogram(name: "time_to_ready" | "lifetime" | "blocked_duration" | "backlog", value: number): void;
 }
 
+export type SsePresenterRegistration = {
+  promise: Promise<void>;
+  abortPreflight(): void;
+  forceDestroy(): void;
+};
+
+export type SsePresenterReservation = {
+  track(registration: SsePresenterRegistration): Promise<void>;
+  release(): void;
+};
+
 export type RealtimeStreamIdentity = {
   accountId: string;
   workspaceId: string;
@@ -217,7 +228,7 @@ export class SsePresenter {
         session.requireResync();
         this.pump();
       },
-      requestClose: (reason) => { void this.close(reason === "shutdown" || reason === "superseded" ? "end" : "none"); },
+      requestClose: () => { void this.close("end"); },
     };
   }
 

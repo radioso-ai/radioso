@@ -11,6 +11,7 @@ import {
   type WorkspaceEventsRouteTelemetry,
 } from "../../src/modules/realtime/http/workspaceEventsRoutes.js";
 import { RealtimeSessionAuthError, type RealtimeSessionAuthPort } from "../../src/modules/realtime/http/realtimeSessionAuthenticator.js";
+import { RealtimePresenterRegistry } from "../../src/modules/realtime/infrastructure/realtimePresenterRegistry.js";
 
 import type {
   WorkspaceGatewayAttachment,
@@ -342,6 +343,62 @@ describe("workspace events route contract", () => {
       fixture.mocks.attach.mock.invocationCallOrder[0],
     ];
     expect(orders).toEqual([...orders].sort((left, right) => left - right));
+  });
+
+  it("reserves the presenter slot before start so the 901st request never enters presenter preflight", async () => {
+    const registry = new RealtimePresenterRegistry(900);
+    const track = vi.spyOn(registry, "track");
+    const residents = Array.from({ length: 900 }, () => deferred<void>());
+    const residentRegistrations = residents.map((resident) => registry.track({
+      promise: resident.promise,
+      abortPreflight: vi.fn(),
+      forceDestroy: vi.fn(),
+    }));
+    const fixture = await createRouteFixture({ presenters: registry });
+    const response = await request(fixture.app).get("/api/v1/events").set(headers());
+
+    expect(track).toHaveBeenCalledTimes(901);
+    expect(fixture.authenticate).not.toHaveBeenCalled();
+    expect(fixture.checkReconnect).not.toHaveBeenCalled();
+    expect(fixture.admit).not.toHaveBeenCalled();
+    expect(fixture.attach).not.toHaveBeenCalled();
+    expect(response.status).toBe(503);
+    for (const resident of residents) resident.resolve();
+    await Promise.all(residentRegistrations);
+  });
+
+  it("releases presenter reservations after rejection and asynchronous settle", async () => {
+    const registry = new RealtimePresenterRegistry(1);
+    const rejected = registry.track({
+      promise: Promise.reject(new Error("presenter start failed")),
+      abortPreflight: vi.fn(),
+      forceDestroy: vi.fn(),
+    });
+    await expect(rejected).rejects.toThrow("presenter start failed");
+    await expect(registry.track({
+      promise: Promise.resolve(),
+      abortPreflight: vi.fn(),
+      forceDestroy: vi.fn(),
+    })).resolves.toBeUndefined();
+
+    const pending = deferred<void>();
+    const active = registry.track({
+      promise: pending.promise,
+      abortPreflight: vi.fn(),
+      forceDestroy: vi.fn(),
+    });
+    expect(() => registry.track({
+      promise: Promise.resolve(),
+      abortPreflight: vi.fn(),
+      forceDestroy: vi.fn(),
+    })).toThrow(/capacity/i);
+    pending.resolve();
+    await active;
+    await expect(registry.track({
+      promise: Promise.resolve(),
+      abortPreflight: vi.fn(),
+      forceDestroy: vi.fn(),
+    })).resolves.toBeUndefined();
   });
 
   it.each([

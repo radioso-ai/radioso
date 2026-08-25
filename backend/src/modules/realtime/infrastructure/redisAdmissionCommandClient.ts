@@ -177,13 +177,7 @@ export class RedisAdmissionCommandClient implements RedisAdmissionScriptPort {
     if (wasStarting) this.startReject?.(abortError());
     this.startReject = undefined;
     this.listeners.clear();
-    this.closePromise = (async () => {
-      try {
-        await this.client.close();
-      } catch {
-        // Closing is idempotent even when a timed-out connection was destroyed.
-      }
-    })();
+    this.closePromise = this.closeWithinDeadline();
     return this.closePromise;
   }
 
@@ -207,10 +201,37 @@ export class RedisAdmissionCommandClient implements RedisAdmissionScriptPort {
   private destroyOnce(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.input.telemetry?.event("degraded");
     try {
       this.client.destroy();
     } catch {
       // The lifecycle is already fenced; destruction is best effort.
     }
+  }
+
+  private closeWithinDeadline(): Promise<void> {
+    const clock = this.input.clock ?? systemClock;
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (destroy: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clock.clearTimeout(timer);
+        if (destroy) this.destroyOnce();
+        resolve();
+      };
+      const timer = clock.setTimeout(() => finish(true), this.input.connectTimeoutMs);
+      let closing: Promise<void>;
+      try {
+        closing = this.client.close();
+      } catch {
+        finish(true);
+        return;
+      }
+      void closing.then(
+        () => finish(false),
+        () => finish(true),
+      );
+    });
   }
 }

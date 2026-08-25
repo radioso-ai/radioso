@@ -24,6 +24,7 @@ export type RedisLogicalClientRole = "publisher" | "subscriber";
 export interface RedisLogicalClient {
   connect(): Promise<void>;
   close(): Promise<void>;
+  destroy(): void;
   on(event: "error" | "ready" | "reconnecting" | "end", listener: (...args: never[]) => void): void;
   publish?(channel: string, payload: string): Promise<number>;
   sPublish?(channel: string, payload: string): Promise<number>;
@@ -42,6 +43,23 @@ export type RedisLogicalClientFactory = (input: {
   mode: RedisTransportMode;
   role: RedisLogicalClientRole;
 }) => RedisLogicalClient;
+
+/**
+ * `bufferMode` preserves message bytes, but node-redis also returns the channel
+ * as a Buffer. Convert that provider detail at this edge; an invalid channel is
+ * not a valid transport message and is deliberately dropped.
+ */
+const forwardNodeRedisMessage = (listener: RedisMessageListener) => (payload: string | Buffer, channel: string | Buffer): void => {
+  if (typeof channel === "string") {
+    listener(payload, channel);
+    return;
+  }
+  try {
+    listener(payload, new TextDecoder("utf-8", { fatal: true }).decode(channel));
+  } catch {
+    // Do not let malformed provider metadata crash the subscription callback.
+  }
+};
 
 /** Construction stays here so node-redis's broad types never cross this module boundary. */
 export const createNodeRedisClientFactory = (input: {
@@ -78,18 +96,29 @@ export const createNodeRedisClientFactory = (input: {
   const node = client as unknown as {
     connect(): Promise<void>;
     close(): Promise<void>;
+    destroy(): void;
     on(event: string, listener: () => void): void;
     publish(channel: string, payload: string): Promise<number>;
     sPublish(channel: string, payload: string): Promise<number>;
-    subscribe(channel: string, listener: (payload: string | Buffer, channel: string) => void, bufferMode?: boolean): Promise<void>;
-    sSubscribe(channel: string, listener: (payload: string | Buffer, channel: string) => void, bufferMode?: boolean): Promise<void>;
+    subscribe(channel: string, listener: (payload: string | Buffer, channel: string | Buffer) => void, bufferMode?: boolean): Promise<void>;
+    sSubscribe(channel: string, listener: (payload: string | Buffer, channel: string | Buffer) => void, bufferMode?: boolean): Promise<void>;
     unsubscribe(channel: string): Promise<void>;
     sUnsubscribe(channel: string): Promise<void>;
     withCommandOptions(options: { abortSignal: AbortSignal; timeout: number }): unknown;
   };
+  const messageForwarders = new WeakMap<RedisMessageListener, (payload: string | Buffer, channel: string | Buffer) => void>();
+  const forwardMessage = (listener: RedisMessageListener) => {
+    let forwarder = messageForwarders.get(listener);
+    if (!forwarder) {
+      forwarder = forwardNodeRedisMessage(listener);
+      messageForwarders.set(listener, forwarder);
+    }
+    return forwarder;
+  };
   return {
     connect: () => node.connect(),
     close: () => node.close(),
+    destroy: () => node.destroy(),
     on: (event, listener) => node.on(event, listener),
     withCommandOptions: (options) => {
       const scoped = node.withCommandOptions(options) as typeof node;
@@ -101,12 +130,12 @@ export const createNodeRedisClientFactory = (input: {
     ...(request.mode === "standalone"
       ? {
         publish: (channel, payload) => node.publish(channel, payload),
-        subscribe: (channel, listener) => node.subscribe(channel, listener, true),
+        subscribe: (channel, listener) => node.subscribe(channel, forwardMessage(listener), true),
         unsubscribe: (channel) => node.unsubscribe(channel),
       }
       : {
         sPublish: (channel, payload) => node.sPublish(channel, payload),
-        sSubscribe: (channel, listener) => node.sSubscribe(channel, listener, true),
+        sSubscribe: (channel, listener) => node.sSubscribe(channel, forwardMessage(listener), true),
         sUnsubscribe: (channel) => node.sUnsubscribe(channel),
       }),
   };
@@ -167,7 +196,9 @@ type RedisTransportInput = {
 
 class RedisClientLifecycle {
   private closePromise: Promise<void> | undefined;
+  private readonly destroyedClients = new WeakSet<RedisLogicalClient>();
   private lifecycle: "new" | "ready" | "closed" = "new";
+  private startAbortController: AbortController | undefined;
   private startPromise: Promise<void> | undefined;
 
   constructor(
@@ -180,10 +211,16 @@ class RedisClientLifecycle {
     this.requireOpen();
     if (this.lifecycle === "ready") return;
     if (!this.startPromise) {
-      this.startPromise = this.open().catch((error) => {
-        this.startPromise = undefined;
-        throw error;
-      });
+      const abortController = new AbortController();
+      this.startAbortController = abortController;
+      this.startPromise = this.open(abortController.signal)
+        .finally(() => {
+          if (this.startAbortController === abortController) this.startAbortController = undefined;
+        })
+        .catch((error) => {
+          this.startPromise = undefined;
+          throw error;
+        });
     }
     await this.startPromise;
   }
@@ -200,17 +237,15 @@ class RedisClientLifecycle {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.lifecycle = "closed";
-    this.closePromise = (async () => {
-      const started = this.startPromise;
-      if (started) await started.catch(() => undefined);
-      await this.clientValue?.close();
-    })();
+    this.startAbortController?.abort();
+    const client = this.clientValue;
+    this.closePromise = client ? this.closeClient(client).then(() => undefined) : Promise.resolve();
     return this.closePromise;
   }
 
   private clientValue: RedisLogicalClient | undefined;
 
-  private async open(): Promise<void> {
+  private async open(signal: AbortSignal): Promise<void> {
     const client = this.input.createClient({
       commandTimeoutMs: this.input.commandTimeoutMs,
       credentialsProvider: this.input.credentialsProvider,
@@ -221,15 +256,45 @@ class RedisClientLifecycle {
     this.clientValue = client;
     this.onClient(client);
     try {
-      await withDeadline(client.connect(), this.input.commandTimeoutMs);
+      await withDeadline(client.connect(), this.input.commandTimeoutMs, signal);
       if (this.closePromise) return;
       this.lifecycle = "ready";
       this.input.telemetry?.event("connected");
     } catch (error) {
-      await client.close().catch(() => undefined);
-      this.input.telemetry?.event("failed");
+      if (!this.closePromise) {
+        const forced = await this.closeClient(client);
+        if (!forced) this.input.telemetry?.event("failed");
+      }
       throw error;
     }
+  }
+
+  private async closeClient(client: RedisLogicalClient): Promise<boolean> {
+    let close: Promise<void>;
+    try {
+      close = client.close();
+    } catch {
+      return this.destroyOnce(client);
+    }
+    void close.catch(() => undefined);
+    try {
+      await withDeadline(close, this.input.commandTimeoutMs);
+      return false;
+    } catch {
+      return this.destroyOnce(client);
+    }
+  }
+
+  private destroyOnce(client: RedisLogicalClient): boolean {
+    if (this.destroyedClients.has(client)) return false;
+    this.destroyedClients.add(client);
+    this.input.telemetry?.event("failed");
+    try {
+      client.destroy();
+    } catch {
+      // Shutdown is already fenced; forceful provider cleanup is best effort.
+    }
+    return true;
   }
 
   private requireOpen(): void {
@@ -294,9 +359,11 @@ export class RedisWorkspaceInterestSubscriber implements WorkspaceInterestTransp
   }
 
   start(): Promise<void> {
-    return this.lifecycle.start().then(() => {
+    const starting = this.lifecycle.start().then(() => {
       this.socketReady = true;
     });
+    void starting.catch(() => undefined);
+    return starting;
   }
 
   onContinuity(listener: WorkspaceInterestContinuityListener): () => void {
@@ -504,7 +571,7 @@ export class RedisWorkspaceInterestSubscriber implements WorkspaceInterestTransp
   }
 
   private maxWorkspaceInterests(): number {
-    return this.input.maxWorkspaceInterests ?? 900;
+    return this.input.maxWorkspaceInterests ?? 500;
   }
 
   private markUncertain(): void {

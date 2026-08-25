@@ -58,12 +58,13 @@ const deferred = <T>(): Deferred<T> => {
   return { promise, resolve, reject };
 };
 
-const clientFixture = () => {
+const clientFixture = (options: { closePending?: boolean } = {}) => {
   const connectGate = deferred<void>();
   const events = new Map<string, Set<() => void>>();
+  const closeGate = deferred<void>();
   const client = {
     connect: vi.fn(() => connectGate.promise),
-    close: vi.fn(async (): Promise<void> => undefined),
+    close: vi.fn(() => options.closePending ? closeGate.promise : Promise.resolve()),
     destroy: vi.fn(() => undefined),
     on: vi.fn((event: string, listener: () => void) => {
       const listeners = events.get(event) ?? new Set<() => void>();
@@ -76,6 +77,7 @@ const clientFixture = () => {
   return {
     client,
     connectGate,
+    closeGate,
     emit: (event: string) => {
       for (const listener of events.get(event) ?? []) listener();
     },
@@ -93,6 +95,20 @@ const input = {
 };
 
 const withClock = (clock: TestClock) => ({ ...input, clock });
+
+const withDeadline = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("test lifecycle deadline exceeded")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
 
 describe("RedisAdmissionCommandClient startup RED contract", () => {
   it("aborts a pending connect before late settlement and leaves no deadline/listener or retry", async () => {
@@ -195,7 +211,8 @@ describe("RedisAdmissionCommandClient startup RED contract", () => {
   it("closes directly while a connect is pending and fences its late completion", async () => {
     const fixture = clientFixture();
     const clock = new TestClock();
-    const commandClient = new RedisAdmissionCommandClient(withClock(clock));
+    const telemetry = { event: vi.fn() };
+    const commandClient = new RedisAdmissionCommandClient({ ...withClock(clock), telemetry });
     const starting = commandClient.start();
     await vi.waitFor(() => expect(fixture.client.connect).toHaveBeenCalledOnce());
 
@@ -212,9 +229,77 @@ describe("RedisAdmissionCommandClient startup RED contract", () => {
     clock.advanceBy(input.connectTimeoutMs * 2);
     expect(fixture.client.close).toHaveBeenCalledOnce();
     expect(fixture.client.destroy).not.toHaveBeenCalled();
+    expect(telemetry.event.mock.calls.filter(([health]) => health === "degraded")).toHaveLength(0);
     expect(clock.outstanding()).toBe(0);
     fixture.emit("ready");
     await expect(commandClient.start()).rejects.toThrow(/closed/i);
     expect(fixture.client.connect).toHaveBeenCalledOnce();
+  });
+
+  it("contains a failed open, performs normal idempotent close, and leaves no startup deadline", async () => {
+    const fixture = clientFixture();
+    const clock = new TestClock();
+    fixture.client.connect.mockRejectedValueOnce(new Error("connect failed"));
+    const commandClient = new RedisAdmissionCommandClient(withClock(clock));
+
+    await expect(commandClient.start()).rejects.toThrow("connect failed");
+    expect(clock.outstanding()).toBe(0);
+    const firstClose = commandClient.close();
+    const secondClose = commandClient.close();
+    expect(secondClose).toBe(firstClose);
+    await expect(firstClose).resolves.toBeUndefined();
+    expect(fixture.client.close).toHaveBeenCalledOnce();
+    expect(fixture.client.destroy).not.toHaveBeenCalled();
+    expect(clock.outstanding()).toBe(0);
+  });
+
+  it("closes before a pending connect settles and contains a late rejection without reopening", async () => {
+    const fixture = clientFixture();
+    const clock = new TestClock();
+    const commandClient = new RedisAdmissionCommandClient(withClock(clock));
+    const starting = commandClient.start();
+    await vi.waitFor(() => expect(fixture.client.connect).toHaveBeenCalledOnce());
+
+    const firstClose = commandClient.close();
+    const secondClose = commandClient.close();
+    expect(secondClose).toBe(firstClose);
+    await expect(withDeadline(firstClose, 250)).resolves.toBeUndefined();
+    expect(clock.outstanding()).toBe(0);
+    fixture.connectGate.reject(new Error("late connect failure"));
+    await expect(starting).rejects.toMatchObject({ name: "AbortError" });
+    await expect(commandClient.start()).rejects.toThrow(/closed/i);
+    expect(fixture.client.connect).toHaveBeenCalledOnce();
+    expect(fixture.client.close).toHaveBeenCalledOnce();
+    expect(clock.outstanding()).toBe(0);
+  });
+
+  it("bounds a never-settling provider close with the injected deadline, destroys once, and fences late settlement", async () => {
+    const fixture = clientFixture({ closePending: true });
+    const clock = new TestClock();
+    const telemetry = { event: vi.fn() };
+    const commandClient = new RedisAdmissionCommandClient({ ...withClock(clock), telemetry });
+    fixture.connectGate.resolve();
+    await commandClient.start();
+
+    const firstClose = commandClient.close();
+    const secondClose = commandClient.close();
+    expect(secondClose).toBe(firstClose);
+    expect(clock.outstanding()).toBe(1);
+    const closeSettlement = firstClose.then(() => "closed", () => "failed");
+
+    clock.advanceBy(input.connectTimeoutMs);
+    await expect(withDeadline(closeSettlement, 250)).resolves.toBe("closed");
+    expect(fixture.client.close).toHaveBeenCalledOnce();
+    expect(fixture.client.destroy).toHaveBeenCalledOnce();
+    expect(telemetry.event.mock.calls.filter(([health]) => health === "degraded")).toHaveLength(1);
+    expect(clock.outstanding()).toBe(0);
+
+    fixture.closeGate.resolve();
+    await Promise.allSettled([firstClose]);
+    clock.advanceBy(input.connectTimeoutMs * 2);
+    expect(fixture.client.close).toHaveBeenCalledOnce();
+    expect(fixture.client.destroy).toHaveBeenCalledOnce();
+    expect(clock.outstanding()).toBe(0);
+    await expect(commandClient.start()).rejects.toThrow(/closed/i);
   });
 });

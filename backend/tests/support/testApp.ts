@@ -172,6 +172,7 @@ import { createPublishedRoutineRegistrationSource } from "../../src/app/composit
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import type {
   AgentContextVariableEnablementRecord,
   ContextVariableCreateRecord,
@@ -590,6 +591,7 @@ export const createTestDependencies = (overrides: {
   logger?: AppDependencies["logger"];
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
+  realtimeRolloutPolicy?: RealtimeRolloutPolicy;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore; directiveStateStore: InMemoryDirectiveStateStore } => {
   const env = {
     ...createTestEnv(),
@@ -1807,6 +1809,7 @@ export const createTestDependencies = (overrides: {
     env,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
+    realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,
     qualitySignalsService: qualitySignalsService as any,
@@ -2046,6 +2049,7 @@ export const createTestApp = (overrides: {
   logger?: AppDependencies["logger"];
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
+  realtimeRolloutPolicy?: RealtimeRolloutPolicy;
 } = {}) => {
   const { dependencies, repositories, routineStateStore, directiveStateStore } = createTestDependencies(overrides);
   const app = createApp(dependencies);

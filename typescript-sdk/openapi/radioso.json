@@ -335,6 +335,9 @@
           },
           "organizationName": {
             "type": "string"
+          },
+          "realtimeEnabled": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -342,7 +345,8 @@
           "workspaceId",
           "workspaceName",
           "accountId",
-          "organizationName"
+          "organizationName",
+          "realtimeEnabled"
         ]
       },
       "WorkspaceListResponse": {

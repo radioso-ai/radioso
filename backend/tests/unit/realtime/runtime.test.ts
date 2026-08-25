@@ -818,6 +818,47 @@ describe("realtime runtime RED contract", () => {
     expect(fixture.authDatabase.close).toHaveBeenCalledOnce();
   });
 
+  it("keeps shutdown pending after forced intake close until Redis and DB resources settle", async () => {
+    const fixture = makeFixture();
+    fixture.presenters.closeAll.mockReturnValueOnce(new Promise<void>(() => undefined));
+    const admissionClose = deferred<void>();
+    const clientClose = deferred<void>();
+    const subscriberClose = deferred<void>();
+    const databaseClose = deferred<void>();
+    const tracingStop = deferred<void>();
+    fixture.admissionController.close.mockReturnValueOnce(admissionClose.promise);
+    fixture.admissionClient.close.mockReturnValueOnce(clientClose.promise);
+    fixture.subscriber.close.mockReturnValueOnce(subscriberClose.promise);
+    fixture.authDatabase.close.mockReturnValueOnce(databaseClose.promise);
+    fixture.telemetry.tracing.mockReturnValueOnce(tracingStop.promise);
+
+    const runtime = await start(fixture);
+    let settled = false;
+    const shutdown = runtime.shutdown("SIGTERM").then(() => { settled = true; });
+
+    fixture.clock.advanceBy(8_000);
+    await vi.waitFor(() => expect(fixture.admissionController.close).toHaveBeenCalledOnce());
+    expect(fixture.presenters.forceDestroy).toHaveBeenCalledOnce();
+    expect(fixture.server.forceDestroy).toHaveBeenCalledOnce();
+    expect(fixture.admissionController.close).toHaveBeenCalledOnce();
+    expect(fixture.admissionClient.close).not.toHaveBeenCalled();
+    expect(settled).toBe(false);
+    expect(fixture.telemetry.shutdown).not.toHaveBeenCalled();
+    expect(fixture.telemetry.healthTransition.mock.calls.map(([state]) => state)).not.toContain("stopped");
+
+    admissionClose.resolve();
+    await vi.waitFor(() => expect(fixture.admissionClient.close).toHaveBeenCalledOnce());
+    clientClose.resolve();
+    await vi.waitFor(() => expect(fixture.subscriber.close).toHaveBeenCalledOnce());
+    subscriberClose.resolve();
+    await vi.waitFor(() => expect(fixture.authDatabase.close).toHaveBeenCalledOnce());
+    databaseClose.resolve();
+    tracingStop.resolve();
+    await shutdown;
+    expect(settled).toBe(true);
+    expect(fixture.telemetry.shutdown).toHaveBeenCalledWith("forced", 8_000);
+  });
+
   it("bounds a pending tracing stop by the same shared 8 second shutdown deadline", { timeout: 1_000 }, async () => {
     const fixture = makeFixture();
     fixture.telemetry.tracing.mockReturnValueOnce(new Promise<void>(() => undefined));

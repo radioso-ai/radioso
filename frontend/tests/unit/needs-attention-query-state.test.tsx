@@ -43,7 +43,12 @@ const renderProbe = async (onState: (value: unknown, client: QueryClient) => voi
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
-  const interest = { open: () => ({ close: vi.fn(), outcome: Promise.resolve<'ready'>('ready') }) } as never
+  const interest = {
+    open: ({ onLifecycle }: { onLifecycle(signal: 'ready'): void }) => {
+      onLifecycle('ready')
+      return { close: vi.fn() }
+    },
+  } as never
   const Probe = () => {
     const queries = useNeedsAttentionQueries('workspace-1')
     const rail = useAttentionRailQueries('workspace-1')

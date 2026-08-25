@@ -157,7 +157,15 @@ describeIfDatabase("ApprovalDecisionService resolve + resume integration", () =>
   });
 
   const okRunner = (): ResumeRunner => ({
-    resume: vi.fn(async () => ({ conversationId, resumed: true })),
+    resume: vi.fn(async () => ({
+      conversationId,
+      resumed: true as const,
+      assistantMessageId: randomUUID(),
+      postCommitReceipt: {
+        workspaceId,
+        changeKinds: ["conversation.turn_committed"] as const,
+      },
+    })),
   });
 
   it("lists only this workspace's pending decisions newest first through the service", async () => {

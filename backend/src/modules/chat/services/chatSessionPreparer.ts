@@ -18,6 +18,7 @@ import type {
 } from "../../../db/repositories/messageRepository.js";
 import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -216,6 +217,7 @@ export class ChatSessionPreparer {
     private readonly logger?: Pick<AppLogger, "warn">,
     /** Optional: when wired, an eligible visitor message enqueues a facet extraction job. */
     private readonly facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">,
+    private readonly workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -258,6 +260,9 @@ export class ChatSessionPreparer {
         input.verifiedCustomerId ?? null,
         { entryPageUrl: input.pageContext?.pageUrl ?? null },
       );
+    if (!conversation) {
+      this.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.created"]);
+    }
     if (conversation && input.verifiedCustomerId && !conversation.verifiedCustomerId) {
       await this.conversationRepository.setVerifiedCustomerId(
         conversation.id,

@@ -1,3 +1,8 @@
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -83,6 +88,8 @@ export class DocumentProcessingWorker {
       }): Promise<void>;
     },
     private readonly embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async runPostJobMaintenance(
@@ -157,13 +164,16 @@ export class DocumentProcessingWorker {
       }
 
       await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
-      await this.documentRepository.setStatusIfRevisionMatches({
+      const resetDocument = await this.documentRepository.setStatusIfRevisionMatches({
         documentId: job.documentId,
         workspaceId: job.workspaceId,
         revision: job.documentRevision,
         status: "queued",
         failureReason: null,
       });
+      if (resetDocument) {
+        this.publishDocumentStatusChanged(job.workspaceId);
+      }
     }));
     await this.repairQueueGaps();
     await this.logQueueState("Document processing worker started", "document.worker.started", "started");
@@ -358,13 +368,16 @@ export class DocumentProcessingWorker {
         // Enrich jobs run against an already-ready document; a retry must never
         // knock it back to "queued" — only the vectorize path owns document status.
         if (job.kind === "vectorize") {
-          await this.documentRepository.setStatusIfRevisionMatches({
+          const requeuedDocument = await this.documentRepository.setStatusIfRevisionMatches({
             documentId: job.documentId,
             workspaceId: job.workspaceId,
             revision: job.documentRevision,
             status: "queued",
             failureReason: null,
           });
+          if (requeuedDocument) {
+            this.publishDocumentStatusChanged(job.workspaceId);
+          }
         }
         await this.jobDispatcher.dispatch({
           jobId: job.id,
@@ -430,6 +443,8 @@ export class DocumentProcessingWorker {
         if (!markedFailed) {
           const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
           await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
+        } else {
+          this.publishDocumentStatusChanged(job.workspaceId);
         }
       }
       await this.auditService.record({
@@ -463,6 +478,10 @@ export class DocumentProcessingWorker {
       throw new Error("Embedding profile job service is not configured");
     }
     return this.embeddingProfileJobService;
+  }
+
+  private publishDocumentStatusChanged(workspaceId: string): void {
+    this.workspaceInvalidationPublisher.enqueue(workspaceId, ["document.status_changed"]);
   }
 
   private requireEmbeddingProfileTerminalFailures(): EmbeddingProfileTerminalFailurePort {

@@ -85,6 +85,43 @@ export interface WorkspaceInvalidationPublisher {
   enqueue(workspaceId: string, changeKinds: readonly WorkspaceInvalidationKind[]): EnqueueResult;
 }
 
+/**
+ * A pure description of invalidations made durable by a transaction. Persistence
+ * adapters return this to the application service that owns the outer commit; they
+ * never publish transient transport work themselves.
+ */
+export interface PostCommitInvalidationReceipt {
+  workspaceId: string;
+  changeKinds: readonly WorkspaceInvalidationKind[];
+}
+
+export const createPostCommitInvalidationReceipt = (
+  workspaceId: string,
+  changeKinds: readonly WorkspaceInvalidationKind[],
+): PostCommitInvalidationReceipt => ({
+  workspaceId,
+  changeKinds: [...new Set(changeKinds)].slice(0, INVALIDATION_KINDS.length),
+});
+
+export const mergePostCommitInvalidationReceipts = (
+  ...receipts: readonly (PostCommitInvalidationReceipt | null | undefined)[]
+): PostCommitInvalidationReceipt | undefined => {
+  const present = receipts.filter((receipt): receipt is PostCommitInvalidationReceipt => receipt !== null && receipt !== undefined);
+  if (present.length === 0) return undefined;
+  const workspaceId = present[0]!.workspaceId;
+  if (present.some((receipt) => receipt.workspaceId !== workspaceId)) {
+    throw new Error("Cannot merge post-commit invalidation receipts across workspaces");
+  }
+  return createPostCommitInvalidationReceipt(workspaceId, present.flatMap((receipt) => receipt.changeKinds));
+};
+
+export const flushPostCommitInvalidationReceipt = (
+  publisher: WorkspaceInvalidationPublisher,
+  receipt: PostCommitInvalidationReceipt | null | undefined,
+): EnqueueResult | undefined => receipt && receipt.changeKinds.length > 0
+  ? publisher.enqueue(receipt.workspaceId, receipt.changeKinds)
+  : undefined;
+
 export const createNoopWorkspaceInvalidationPublisher = (): WorkspaceInvalidationPublisher => ({
   enqueue: () => ({ accepted: false, reason: "disabled" }),
 });

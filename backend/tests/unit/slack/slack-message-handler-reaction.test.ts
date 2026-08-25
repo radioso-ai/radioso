@@ -6,6 +6,8 @@ import {
   type SlackAppMentionEvent,
   type SlackInboundEventEnvelope,
 } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
+import type { SlackConversationLinkCreateOutcome } from "../../../src/modules/connectors/plugins/slack/slackPersistence.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import { ChatTurnSupersededError } from "../../../src/modules/chat/services/conversationTurnRegistry.js";
 
 const PROCESSING_REACTION = "eyes";
@@ -42,13 +44,8 @@ const buildHandler = (overrides: {
   events: string[];
   postImpl?: (input: { channel: string; text: string; threadTs?: string }) => Promise<{ channel: string; ts: string }>;
   answerImpl?: ConnectorChatPort["answer"];
-  getOrCreateConversationLinkImpl?: () => Promise<{
-    id: string;
-    workspaceId: string;
-    installationId: string;
-    slackKey: string;
-    conversationId: string;
-  }>;
+  getOrCreateConversationLinkImpl?: () => Promise<SlackConversationLinkCreateOutcome>;
+  publisher?: WorkspaceInvalidationPublisher;
   info?: (entry: unknown, message?: string) => void;
 }) => {
   return new SlackMessageHandler({
@@ -81,11 +78,14 @@ const buildHandler = (overrides: {
       findConversationLink: async () => null,
       findConversationLinkByConversationId: async () => null,
       getOrCreateConversationLink: overrides.getOrCreateConversationLinkImpl ?? (async () => ({
-        id: "link-1",
-        workspaceId: "ws-1",
-        installationId: "inst-1",
-        slackKey: "mention:T1:C1:1700000000.0001",
-        conversationId: "conv-1",
+        link: {
+          id: "link-1",
+          workspaceId: "ws-1",
+          installationId: "inst-1",
+          slackKey: "mention:T1:C1:1700000000.0001",
+          conversationId: "conv-1",
+        },
+        created: false,
       })),
       upsertConversationLink: async () => undefined,
     } as never,
@@ -101,6 +101,7 @@ const buildHandler = (overrides: {
         overrides.reactions.push({ op: "remove", ...input });
       },
     }),
+    workspaceInvalidationPublisher: overrides.publisher,
   });
 };
 
@@ -130,6 +131,49 @@ describe("SlackMessageHandler reaction lifecycle", () => {
       { op: "add", channel: "C1", timestamp: "1700000000.0001", name: ANSWERED_REACTION },
     ]);
     expect(events).toContain("processed");
+  });
+
+  it("publishes conversation.created only for the persisted create outcome", async () => {
+    const publisher: WorkspaceInvalidationPublisher = {
+      enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })),
+    };
+    const handler = buildHandler({
+      reactions: [],
+      events: [],
+      publisher,
+      getOrCreateConversationLinkImpl: async () => ({
+        link: {
+          id: "link-1",
+          workspaceId: "ws-1",
+          installationId: "inst-1",
+          slackKey: "mention:T1:C1:1700000000.0001",
+          conversationId: "conv-1",
+        },
+        created: true,
+      }),
+    });
+
+    await handler.handleAppMention(mentionEnvelope);
+
+    const existingHandler = buildHandler({
+      reactions: [],
+      events: [],
+      publisher,
+      getOrCreateConversationLinkImpl: async () => ({
+        link: {
+          id: "link-1",
+          workspaceId: "ws-1",
+          installationId: "inst-1",
+          slackKey: "mention:T1:C1:1700000000.0001",
+          conversationId: "conv-1",
+        },
+        created: false,
+      }),
+    });
+    await existingHandler.handleAppMention({ ...mentionEnvelope, eventId: "Ev-existing" });
+
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(publisher.enqueue).toHaveBeenCalledWith("ws-1", ["conversation.created"]);
   });
 
   it("swaps the eyes reaction for a failure marker when the reply cannot be delivered", async () => {
@@ -192,16 +236,21 @@ describe("SlackMessageHandler reaction lifecycle", () => {
       reactions,
       events,
       getOrCreateConversationLinkImpl: async () => {
+        let created = false;
         if (!linkedConversationId) {
           createdConversations += 1;
           linkedConversationId = "conv-shared";
+          created = true;
         }
         return {
-          id: "link-1",
-          workspaceId: "ws-1",
-          installationId: "inst-1",
-          slackKey: "mention:T1:C1:1700000000.0001",
-          conversationId: linkedConversationId,
+          link: {
+            id: "link-1",
+            workspaceId: "ws-1",
+            installationId: "inst-1",
+            slackKey: "mention:T1:C1:1700000000.0001",
+            conversationId: linkedConversationId,
+          },
+          created,
         };
       },
       answerImpl: async (input) => {

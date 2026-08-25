@@ -18,6 +18,7 @@ import type { PreparedSession } from "../../src/modules/chat/services/chatSessio
 import { resolveContextForTurn } from "../../src/modules/context-variables/public.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 import type { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
+import type { Db } from "../../src/shared/infra/kysely/types.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
 import type {
@@ -63,7 +64,7 @@ const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter
     undefined,
     metrics,
   );
-  return { lifecycle, records, messageRepository, conversationRepository };
+  return { lifecycle, records, auditService, messageRepository, conversationRepository };
 };
 
 const session = (): PreparedSession =>
@@ -740,7 +741,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
     };
     const assistantTurnPersistence: AssistantTurnPersistencePort = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -751,7 +752,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const lifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -843,6 +844,80 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0]).toBe(persisted.auditEvent);
   });
 
+  it("maps exact committed facts at the application boundary and leaves caller-owned transactions unflushed", async () => {
+    const { auditService, conversationRepository, messageRepository } = harness();
+    const publisher = {
+      enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })),
+    };
+    const assistantTurnPersistence: AssistantTurnPersistencePort = {
+      completeAssistantTurn: vi.fn(async (input) => ({
+        message: {
+          id: input.assistantMessage.id!,
+          conversationId: input.assistantMessage.conversationId,
+          workspaceId: input.assistantMessage.workspaceId,
+          role: "assistant" as const,
+          content: input.assistantMessage.content,
+          createdAt: new Date(),
+        },
+        committedFacts: {
+          insertedActionTypes: ["contact.send", "ticket.create"],
+          decisionCreated: true,
+          ownershipChanged: true,
+        },
+      })),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      conversationRepository,
+      messageRepository,
+      auditService,
+      undefined,
+      undefined,
+      assistantTurnPersistence,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
+    );
+    const transaction = {} as Db;
+    const turn = {
+      workspaceId: "workspace_1",
+      accountId: "account_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+    };
+
+    const callerOwned = await lifecycle.completeAssistantTurn({ ...turn, transaction });
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenLastCalledWith(
+      expect.objectContaining({ transaction }),
+    );
+    expect(callerOwned.postCommitReceipt).toEqual({
+      workspaceId: "workspace_1",
+      changeKinds: [
+        "conversation.turn_committed",
+        "conversation.contact_delivery_changed",
+        "hitl.decision_created",
+        "conversation.ownership_changed",
+      ],
+    });
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+
+    const selfOwned = await lifecycle.completeAssistantTurn(turn);
+
+    expect(selfOwned.postCommitReceipt).toEqual(callerOwned.postCommitReceipt);
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith(
+      "workspace_1",
+      callerOwned.postCommitReceipt.changeKinds,
+    );
+  });
+
   it("persists probe-local continuation state while suppressing an action-emitting routine's product effects", async () => {
     const auditService = {
       record: vi.fn(async () => {}),
@@ -857,14 +932,14 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     } as unknown as MessageRepositoryPort;
     const productAnalyticsService = { track: vi.fn(async () => null) };
     const assistantTurnPersistence: AssistantTurnPersistencePort = {
-      completeAssistantTurn: vi.fn(async (persisted) => ({
+      completeAssistantTurn: vi.fn(async (persisted) => ({ message: {
         id: persisted.assistantMessage.id!,
         conversationId: persisted.assistantMessage.conversationId,
         workspaceId: persisted.assistantMessage.workspaceId,
         role: "assistant" as const,
         content: persisted.assistantMessage.content,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const directiveCommit = vi.fn(async () => {});
     const prepared = session();
@@ -973,7 +1048,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       track: vi.fn(async () => null),
     };
     const assistantTurnPersistence: AssistantTurnPersistencePort = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -984,7 +1059,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const lifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -1084,7 +1159,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       create: vi.fn(async () => ({ id: "assistant_msg_separate_write" })),
     } as unknown as MessageRepositoryPort;
     const assistantTurnPersistence: AssistantTurnPersistencePort = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -1095,7 +1170,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const lifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -1175,7 +1250,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       track: vi.fn(async () => null),
     };
     const assistantTurnPersistence: AssistantTurnPersistencePort = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -1186,7 +1261,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const lifecycle = new ChatTurnLifecycle(
       conversationRepository,
@@ -1301,7 +1376,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       create: vi.fn(async () => ({ id: "assistant_msg_separate_write" })),
     } as unknown as MessageRepositoryPort;
     const assistantTurnPersistence: AssistantTurnPersistencePort = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -1312,7 +1387,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const actionOutbox: ChatActionOutboxPort = {
       enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
@@ -1457,7 +1532,21 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       enqueue: vi.fn(async () => ({ id: "action_1", duplicate: false })),
     };
     const conversationOwnershipRepository = {
-      requestHandoff: vi.fn(async () => null),
+      requestHandoff: vi.fn(async () => ({
+        record: {
+          conversationId: "conv_1",
+          workspaceId: "workspace_1",
+          state: "human_owned" as const,
+          ownerAccountId: null,
+          ownerDisplayName: null,
+          reason: "routine_handoff" as const,
+          version: 1,
+          takenOverAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+        changed: true,
+      })),
     };
     const lifecycle = new ChatTurnLifecycle(
       conversationRepository,

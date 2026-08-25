@@ -216,12 +216,15 @@ components:
           format: uuid
         organizationName:
           type: string
+        realtimeEnabled:
+          type: boolean
       required:
         - workspaceKey
         - workspaceId
         - workspaceName
         - accountId
         - organizationName
+        - realtimeEnabled
     WorkspaceListResponse:
       type: object
       properties:

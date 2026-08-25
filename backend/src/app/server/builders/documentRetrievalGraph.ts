@@ -1,3 +1,5 @@
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+
 import {
   createDefaultDocumentJobDispatcher,
   createRetrievalSkillSettingsResolver,
@@ -45,6 +47,7 @@ export const buildDocumentRetrievalGraph = (input: {
   logger: AppLogger;
   repositories: ReturnType<typeof buildRepositories>;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
   const llmRegistry = buildLlmRegistry(env, logger);
@@ -53,6 +56,7 @@ export const buildDocumentRetrievalGraph = (input: {
     auditService: infrastructure.auditService,
     documentJobDispatcher,
     repositories,
+    workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
   });
   const embeddingCoverage = new EmbeddingCoverageReconciler(
     repositories.documentProcessingJobRepository,
@@ -207,6 +211,7 @@ export const buildDocumentRetrievalGraph = (input: {
         pgVectorAdapter.admin.resetSpace({ workspaceId, spaceId: embeddingSpaceId }),
       dropUnusedIndexes: () => pgVectorAdapter.admin.dropUnusedIndexes(),
     },
+    workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();
@@ -223,6 +228,7 @@ export const buildDocumentRetrievalGraph = (input: {
     skillSettingsResolver,
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
+    workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
   });
   const workspace = buildWorkspaceServices({
     accountMembershipRepository: repositories.accountMembershipRepository,

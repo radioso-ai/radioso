@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+import { sql } from "kysely";
+
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { anyOf, currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
@@ -81,7 +87,11 @@ const feedbackColumns = [
 ] as const;
 
 export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
+  ) {}
 
   async upsert(input: {
     workspaceId: string;
@@ -102,7 +112,7 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
     }
 
     const comment = input.value === "down" ? normalizeComment(input.comment) : null;
-    const row = await this.db
+    const changedRow = await this.db
       .insertInto("assistant_answer_feedback")
       .values({
         id: randomUUID(),
@@ -118,17 +128,37 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
         comment,
       })
       .onConflict((oc) =>
-        oc.columns(["assistant_message_id", "actor_type", "actor_id"]).doUpdateSet((eb) => ({
-          value: eb.ref("excluded.value"),
-          comment: eb.ref("excluded.comment"),
-          account_id: eb.ref("excluded.account_id"),
-          user_id: eb.ref("excluded.user_id"),
-          anonymous_session_id: eb.ref("excluded.anonymous_session_id"),
-          updated_at: currentTimestamp(),
-        })),
+        oc.columns(["assistant_message_id", "actor_type", "actor_id"])
+          .doUpdateSet((eb) => ({
+            value: eb.ref("excluded.value"),
+            comment: eb.ref("excluded.comment"),
+            account_id: eb.ref("excluded.account_id"),
+            user_id: eb.ref("excluded.user_id"),
+            anonymous_session_id: eb.ref("excluded.anonymous_session_id"),
+            updated_at: currentTimestamp(),
+          }))
+          .where(sql<boolean>`
+            assistant_answer_feedback.value IS DISTINCT FROM excluded.value
+            OR assistant_answer_feedback.comment IS DISTINCT FROM excluded.comment
+            OR assistant_answer_feedback.account_id IS DISTINCT FROM excluded.account_id
+            OR assistant_answer_feedback.user_id IS DISTINCT FROM excluded.user_id
+            OR assistant_answer_feedback.anonymous_session_id IS DISTINCT FROM excluded.anonymous_session_id
+          `),
       )
       .returning(feedbackColumns)
+      .executeTakeFirst();
+
+    const row = changedRow ?? await this.db
+      .selectFrom("assistant_answer_feedback")
+      .select(feedbackColumns)
+      .where("assistant_message_id", "=", input.assistantMessageId)
+      .where("actor_type", "=", input.actor.type)
+      .where("actor_id", "=", input.actor.id)
       .executeTakeFirstOrThrow();
+
+    if (changedRow) {
+      this.workspaceInvalidationPublisher.enqueue(input.workspaceId, ["quality.feedback_changed"]);
+    }
 
     return mapFeedbackRow(row as FeedbackRow);
   }
@@ -158,7 +188,11 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
       .returning("id")
       .execute();
 
-    return { cleared: rows.length > 0 };
+    const cleared = rows.length > 0;
+    if (cleared) {
+      this.workspaceInvalidationPublisher.enqueue(input.workspaceId, ["quality.feedback_changed"]);
+    }
+    return { cleared };
   }
 
   async listByAssistantMessageIds(

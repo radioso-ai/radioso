@@ -1109,7 +1109,7 @@ describe("chat service streaming", () => {
   });
 
   const createCapturingAssistantTurnPersistence = () => ({
-    completeAssistantTurn: vi.fn(async (input) => ({
+    completeAssistantTurn: vi.fn(async (input) => ({ message: {
       id: input.assistantMessage.id!,
       conversationId: input.assistantMessage.conversationId,
       workspaceId: input.assistantMessage.workspaceId,
@@ -1120,7 +1120,7 @@ describe("chat service streaming", () => {
       skillOutcome: input.assistantMessage.skillOutcome,
       skillStatus: input.assistantMessage.skillStatus,
       createdAt: new Date(),
-    })),
+    }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
   } satisfies NonNullable<ChatServiceOptions["assistantTurnPersistence"]>);
 
   const createRetrievalHandoffTestService = async (input: {
@@ -2596,7 +2596,7 @@ describe("chat service streaming", () => {
       }),
     };
     const assistantTurnPersistence: NonNullable<ChatServiceOptions["assistantTurnPersistence"]> = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -2607,7 +2607,7 @@ describe("chat service streaming", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const service = makeChatService(
       new InMemoryConversationRepository(),
@@ -2677,7 +2677,7 @@ describe("chat service streaming", () => {
       }),
     };
     const assistantTurnPersistence: NonNullable<ChatServiceOptions["assistantTurnPersistence"]> = {
-      completeAssistantTurn: vi.fn(async (input) => ({
+      completeAssistantTurn: vi.fn(async (input) => ({ message: {
         id: input.assistantMessage.id!,
         conversationId: input.assistantMessage.conversationId,
         workspaceId: input.assistantMessage.workspaceId,
@@ -2688,7 +2688,7 @@ describe("chat service streaming", () => {
         skillOutcome: input.assistantMessage.skillOutcome,
         skillStatus: input.assistantMessage.skillStatus,
         createdAt: new Date(),
-      })),
+      }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
     };
     const service = makeChatService(
       new InMemoryConversationRepository(),

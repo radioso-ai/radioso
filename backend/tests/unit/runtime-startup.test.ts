@@ -203,6 +203,11 @@ describe("runtime startup", () => {
     expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, logger, migrationTimeoutOptionsFor(env));
     expect(dependencies.connectorRegistry.runMigrations).toHaveBeenCalledWith(dependencies.connectorDb);
     expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
+      }),
+    );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();

@@ -24,6 +24,7 @@ export type {
 export type {
   ApprovalDecisionConversationEventPublisher,
   ApprovalDecisionServiceFailureReason,
+  ApprovalResumeResult,
   ResolveApprovalDecisionInput,
   ResolveApprovalDecisionResult,
   ResumeRunner,

@@ -151,8 +151,8 @@ const rawRealtimeConfigSchema = z.object(realtimeEnvShape).superRefine((value, c
   if ([value.REALTIME_RECONNECT_PRINCIPAL_BURST, value.REALTIME_RECONNECT_WORKSPACE_BURST, value.REALTIME_RECONNECT_ACCOUNT_BURST].some((burst, index) => burst > [value.REALTIME_RECONNECT_PRINCIPAL_PER_MINUTE, value.REALTIME_RECONNECT_WORKSPACE_PER_MINUTE, value.REALTIME_RECONNECT_ACCOUNT_PER_MINUTE][index]!)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_RECONNECT_PRINCIPAL_BURST"], message: "reconnect burst cannot exceed rate" });
   if (!/^[A-Za-z0-9:_-]{1,120}$/u.test(value.REALTIME_CHANNEL_PREFIX)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_CHANNEL_PREFIX"], message: "channel prefix is invalid" });
   if (BROWSER_FRAME_MAX_BYTES >= value.REALTIME_BLOCKED_WRITABLE_BYTES || TRANSPORT_ENVELOPE_MAX_BYTES >= value.REALTIME_BLOCKED_WRITABLE_BYTES) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_BLOCKED_WRITABLE_BYTES"], message: "frame caps must fit below the writer budget" });
-  if (value.REALTIME_ROLLOUT_MODE === "allowlist" && value.REALTIME_ROLLOUT_ACCOUNT_IDS.trim() === "") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_ROLLOUT_ACCOUNT_IDS"], message: "allowlist rollout requires account ids" });
+  if (["allowlist", "internal"].includes(value.REALTIME_ROLLOUT_MODE) && value.REALTIME_ROLLOUT_ACCOUNT_IDS.trim() === "") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_ROLLOUT_ACCOUNT_IDS"], message: `${value.REALTIME_ROLLOUT_MODE} rollout requires account ids` });
   }
   if (value.REALTIME_MODE === "disabled" && value.REALTIME_ROLLOUT_MODE !== "disabled") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["REALTIME_ROLLOUT_MODE"], message: "rollout must be disabled when realtime mode is disabled" });

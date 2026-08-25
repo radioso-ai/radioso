@@ -27,6 +27,7 @@ import { buildInfrastructure, buildRepositories } from "./infra.js";
 import type { buildChatServices } from "./chat.js";
 import type { buildRetrievalServices } from "./documentsRetrieval.js";
 import type { buildIntegrationServices } from "./integrations.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 export const buildEvalServices = (input: {
   chat: Pick<ReturnType<typeof buildChatServices>, "answerPresentation" | "chatGateway" | "workbenchReplayRunner">;
@@ -39,6 +40,7 @@ export const buildEvalServices = (input: {
   llmCapabilityResolver: ConstructorParameters<typeof RetrievalPipelineEvalRunner>[2];
   retrievalDefaultsProvider: ConstructorParameters<typeof RetrievalPipelineEvalRunner>[3];
   skillSettingsResolver: NonNullable<ConstructorParameters<typeof RetrievalPipelineEvalRunner>[5]>;
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
 }) => {
   const evalRepository = new EvalRepository(input.infrastructure.database.kysely);
   const evalSnapshotService = new EvalSnapshotService(
@@ -96,6 +98,7 @@ export const buildEvalServices = (input: {
     auditService: input.infrastructure.auditService,
     publicConversationEventBus: input.publicConversationEventBus,
     customerReplyDelivery,
+    publisher: input.workspaceInvalidationPublisher,
   });
   return {
     evalCaseService,

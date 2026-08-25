@@ -112,6 +112,7 @@ import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+import type { RealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 
 export interface AppDependencies {
   env: Env;
@@ -131,6 +132,7 @@ export interface AppDependencies {
   applicationModules: ApplicationModuleCoordinator;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   realtimePublisherLifecycle: Pick<RealtimePublisherComposition, "shutdown">;
+  realtimeRolloutPolicy: RealtimeRolloutPolicy;
   vectorIndexReconciler?: Pick<VectorIndexReconciler, "start" | "stop" | "runUntilIdle">;
   authService: AuthService;
   accessGrantService: AccessGrantService;

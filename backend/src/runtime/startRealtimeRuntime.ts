@@ -309,10 +309,12 @@ export const startRealtimeRuntime = async (input: StartRealtimeRuntimeInput): Pr
       const drained = Promise.allSettled([serverClose, gatewayClose, presenterClose]).then(() => undefined);
       await Promise.race([drained, deadline]);
 
-      await untilDeadline(captureCall(() => admissionController.close(), () => { failed = true; }), deadline);
-      await untilDeadline(captureCall(() => admissionClient.close(), () => { failed = true; }), deadline);
-      await untilDeadline(captureCall(() => subscriber.close(), () => { failed = true; }), deadline);
-      await untilDeadline(captureCall(() => authDatabase.close(), () => { failed = true; }), deadline);
+      // The intake deadline bounds only active streams. Even after it expires,
+      // runtime-owned Redis and database handles must settle before stopped.
+      await captureCall(() => admissionController.close(), () => { failed = true; });
+      await captureCall(() => admissionClient.close(), () => { failed = true; });
+      await captureCall(() => subscriber.close(), () => { failed = true; });
+      await captureCall(() => authDatabase.close(), () => { failed = true; });
       let acceptTracingFailure = true;
       const tracingStop = captureCall(
         () => telemetry.tracing("stop"),

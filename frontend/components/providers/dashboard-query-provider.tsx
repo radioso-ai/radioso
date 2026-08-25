@@ -12,22 +12,11 @@ import {
 
 import {
   DashboardQueryInvalidationCoordinator,
-  type DashboardQueryInvalidation,
 } from '@/lib/dashboard-query-invalidation'
+import type { DashboardLiveInterest, DashboardLiveInterestSignal } from '@/lib/workspace-events-provider'
 import type { WorkspaceInvalidationKind } from '@radioso/workspace-invalidation-contract'
 
-export type DashboardLiveInterestOutcome = 'ready' | 'terminal'
-
-/** Phase 4 supplies the real stream adapter; this is deliberately its only UI seam. */
-export type DashboardLiveInterest = {
-  open(input: {
-    onInvalidation: (event: Extract<DashboardQueryInvalidation, { type: 'invalidate' | 'resync' }>) => void
-    workspaceId: string
-  }): {
-    close(): void | Promise<void>
-    outcome: Promise<DashboardLiveInterestOutcome>
-  }
-}
+export type { DashboardLiveInterest, DashboardLiveInterestSignal } from '@/lib/workspace-events-provider'
 
 export type DashboardQueryPolicy = {
   intervalFor(queryKey: readonly unknown[], knownActiveMs?: number): number
@@ -52,6 +41,8 @@ export class DashboardLiveInterestLifecycle {
   private activeGeneration: number | null = null
   private session: ReturnType<DashboardLiveInterest['open']> | null = null
   private scheduledGeneration: number | null = null
+  private pollingReleased = false
+  private terminal = false
 
   constructor(private readonly input: DashboardLiveInterestLifecycleInput) {}
 
@@ -60,6 +51,8 @@ export class DashboardLiveInterestLifecycle {
     const generation = ++this.generation
     this.activeGeneration = generation
     this.scheduledGeneration = generation
+    this.pollingReleased = false
+    this.terminal = false
     queueMicrotask(() => this.beginAttempt(generation))
   }
 
@@ -67,7 +60,7 @@ export class DashboardLiveInterestLifecycle {
     if (generation !== this.generation || this.activeGeneration !== generation) return
     this.scheduledGeneration = null
     if (!this.input.interest) {
-      this.settleTerminal(generation)
+      this.handleLifecycle(generation, 'terminal')
       return
     }
     if (this.session) return
@@ -75,36 +68,57 @@ export class DashboardLiveInterestLifecycle {
     try {
       session = this.input.interest.open({
         workspaceId: this.input.workspaceId,
+        onLifecycle: (signal) => this.handleLifecycle(generation, signal),
         onInvalidation: (event) => {
-          if (generation === this.generation) this.input.coordinator.process(event)
+          if (generation === this.generation && !this.terminal) this.input.coordinator.process(event)
         },
       })
     } catch {
-      this.settleTerminal(generation)
+      this.handleLifecycle(generation, 'terminal')
+      return
+    }
+    if (generation !== this.generation || this.activeGeneration !== generation) {
+      void Promise.resolve(session.close()).catch(() => undefined)
       return
     }
     this.session = session
-    void session.outcome.then((outcome) => {
-      if (generation !== this.generation || this.activeGeneration !== generation || this.session !== session) return
-      this.input.onReady()
-      this.input.coordinator.process(outcome === 'ready' ? { type: 'ready' } : { type: 'resync' })
-    }).catch(() => {
-      if (generation !== this.generation || this.activeGeneration !== generation || this.session !== session) return
-      this.settleTerminal(generation)
-    })
   }
 
-  private settleTerminal(generation: number): void {
+  private handleLifecycle(generation: number, signal: DashboardLiveInterestSignal): void {
     if (generation !== this.generation || this.activeGeneration !== generation) return
-    // An unavailable stream is terminal for acceleration, never for polling.
+    if (this.terminal) return
+
+    if (signal === 'retrying') {
+      // A reconnecting stream is acceleration only. Polling remains the
+      // authoritative fallback while the same client retries in the background.
+      this.releasePolling()
+      return
+    }
+
+    if (signal === 'terminal') {
+      this.terminal = true
+      this.releasePolling()
+      this.input.coordinator.process({ type: 'resync' })
+      return
+    }
+
+    const reconnecting = this.pollingReleased
+    this.releasePolling()
+    this.input.coordinator.process(reconnecting ? { type: 'resync' } : { type: 'ready' })
+  }
+
+  private releasePolling(): void {
+    if (this.pollingReleased) return
+    this.pollingReleased = true
     this.input.onReady()
-    this.input.coordinator.process({ type: 'resync' })
   }
 
   stop(): void {
     this.generation += 1
     this.activeGeneration = null
     this.scheduledGeneration = null
+    this.pollingReleased = false
+    this.terminal = false
     const session = this.session
     this.session = null
     if (!session) return
@@ -187,14 +201,17 @@ export function DashboardQueryProvider({
     [client, workspaceId],
   )
   const [visible, setVisible] = useState(isDocumentVisible)
-  const [readyWorkspaceId, setReadyWorkspaceId] = useState<string | null>(null)
-  const liveInterestReady = readyWorkspaceId === workspaceId
-  const lifecycle = useMemo(() => new DashboardLiveInterestLifecycle({
-    coordinator,
-    interest,
-    workspaceId,
-    onReady: () => setReadyWorkspaceId(workspaceId),
-  }), [coordinator, interest, workspaceId])
+  const [readyLifecycle, setReadyLifecycle] = useState<DashboardLiveInterestLifecycle | null>(null)
+  const lifecycle = useMemo(() => {
+    const nextLifecycle = new DashboardLiveInterestLifecycle({
+      coordinator,
+      interest,
+      workspaceId,
+      onReady: () => setReadyLifecycle(nextLifecycle),
+    })
+    return nextLifecycle
+  }, [coordinator, interest, workspaceId])
+  const liveInterestReady = readyLifecycle === lifecycle
 
   useEffect(() => coordinator.subscribe(), [coordinator])
 
@@ -204,7 +221,7 @@ export function DashboardQueryProvider({
       setVisible(nextVisible)
       coordinator.setVisible(nextVisible)
       if (!nextVisible) {
-        setReadyWorkspaceId(null)
+        setReadyLifecycle(null)
         void client.cancelQueries({ queryKey: ['workspace', workspaceId] })
       }
     }

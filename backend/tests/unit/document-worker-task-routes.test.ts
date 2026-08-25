@@ -25,6 +25,31 @@ const buildApp = (input: {
 };
 
 describe("createDocumentWorkerTaskRoutes", () => {
+  describe("POST /internal/tasks/document-processing", () => {
+    it("accepts the exact serialized Cloud Tasks document payload", async () => {
+      const runJobById = vi.fn().mockResolvedValue("processed");
+      const app = buildApp({
+        documentProcessingWorker: {
+          runJobById,
+          runOnce: vi.fn(),
+          runPostJobMaintenance: vi.fn(),
+        },
+      });
+
+      const response = await request(app)
+        .post("/internal/tasks/document-processing")
+        .send({
+          jobId: "11111111-1111-4111-8111-111111111111",
+          documentId: "22222222-2222-4222-8222-222222222222",
+          workspaceId: "33333333-3333-4333-8333-333333333333",
+          revision: 1,
+        });
+
+      expect(response.status).toBe(204);
+      expect(runJobById).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
+    });
+  });
+
   describe("POST /internal/tasks/document-processing/recover", () => {
     it("drains one at-most-ten-job facet claim regardless of the document recovery budget", async () => {
       const facetRunOnce = vi.fn().mockResolvedValue(10);

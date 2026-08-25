@@ -6,6 +6,8 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/config.js";
+import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
+import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
@@ -64,7 +66,14 @@ export interface BuildDependenciesOptions {
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
-  const realtimePublisherComposition = options.realtimePublisherComposition ?? createRealtimePublisherComposition({ config: parseRealtimeConfig(env as Record<string, unknown>) });
+  const realtimeConfig = parseRealtimeConfig(env as Record<string, unknown>);
+  const realtimeRolloutPolicy = createRealtimeRolloutPolicy(realtimeConfig.rollout);
+  const realtimePublisherComposition = options.realtimePublisherComposition ?? createRealtimePublisherComposition({
+    config: realtimeConfig,
+    redisCredentialsProvider: realtimeConfig.redis.iam
+      ? resolveGcpRedisCredentialsProvider(true)
+      : undefined,
+  });
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const composition = createDefaultApplicationComposition({
     logger,
@@ -122,6 +131,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     infrastructure,
     logger,
     repositories,
+    workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
   const {
@@ -220,6 +230,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     errorReporter: infrastructure.errorReportingService,
     ingestionSettingsService: settings.ingestionSettingsService,
     routineTriggerEmbeddingService,
+    workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
   });
   const skillCatalog = buildSkillCatalogServices({
     accessGrantService: access.accessGrantService,
@@ -332,6 +343,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrieval,
     retrievalDefaultsProvider,
     skillSettingsResolver,
+    workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
   });
   const {
     evalCaseService,
@@ -349,6 +361,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       getByAssistantMessageIds: (workspaceId, assistantMessageIds) =>
         evalMessageCaseService.lookupVerifications(workspaceId, assistantMessageIds),
     },
+    realtimePublisherComposition.publisher,
   );
   const audiencePulseService = buildAudiencePulseService({
     kysely: infrastructure.database.kysely,
@@ -522,6 +535,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationModules: composition.lifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     realtimePublisherLifecycle: realtimePublisherComposition,
+    realtimeRolloutPolicy,
     vectorIndexReconciler,
     authService,
     accessGrantService: access.accessGrantService,

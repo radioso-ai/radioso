@@ -5,7 +5,7 @@ import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigat
 
 import { AuthPage } from '@/components/auth/auth-page'
 import { DashboardShell } from '@/components/dashboard/dashboard-shell'
-import { DashboardQueryProvider } from '@/components/providers/dashboard-query-provider'
+import { WorkspaceEventsProvider } from '@/components/providers/workspace-events-provider'
 import { LogoSpinner } from '@/components/ui/spinner'
 import {
   accountApi,
@@ -44,6 +44,7 @@ export default function WorkspaceDashboardPage() {
   const { isAuthenticated, isBootstrapping, login, user } = useAuth()
   const workspaceKey = useMemo(() => getParamValue(params.workspaceKey), [params.workspaceKey])
   const [resolvedWorkspace, setResolvedWorkspace] = useState<{
+    realtimeEnabled: boolean
     workspaceId: string
     workspacePublicRouteKey: string
   } | null>(() => {
@@ -58,6 +59,7 @@ export default function WorkspaceDashboardPage() {
     }
 
     return {
+      realtimeEnabled: false,
       workspaceId: storedWorkspaceId,
       workspacePublicRouteKey: storedWorkspacePublicRouteKey,
     }
@@ -130,11 +132,13 @@ export default function WorkspaceDashboardPage() {
         }
         setResolvedWorkspace((current) => {
           const nextState = {
+            realtimeEnabled: resolved.realtimeEnabled,
             workspaceId: resolved.workspaceId,
             workspacePublicRouteKey: resolved.workspaceKey,
           }
           return current &&
             current.workspaceId === nextState.workspaceId &&
+            current.realtimeEnabled === nextState.realtimeEnabled &&
             current.workspacePublicRouteKey === nextState.workspacePublicRouteKey
             ? current
             : nextState
@@ -186,11 +190,14 @@ export default function WorkspaceDashboardPage() {
   }
 
   return (
-    <DashboardQueryProvider workspaceId={resolvedWorkspace.workspaceId}>
+    <WorkspaceEventsProvider
+      workspaceId={resolvedWorkspace.workspaceId}
+      realtimeEnabled={resolvedWorkspace.realtimeEnabled}
+    >
       <DashboardShell
         accountId={user.accountId}
         routeState={resolvedRouteState}
       />
-    </DashboardQueryProvider>
+    </WorkspaceEventsProvider>
   )
 }

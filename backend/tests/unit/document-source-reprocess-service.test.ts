@@ -204,4 +204,54 @@ describe("DocumentSourceReprocessService", () => {
       }),
     }));
   });
+
+  it("publishes one document invalidation for a changed bulk scope and stays silent for a no-op", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const sourceRepository = new InMemoryDocumentSourceRepository();
+    const auditService = createAuditService();
+    const publisher = { enqueue: vi.fn() };
+    const source = await sourceRepository.upsertByExternalId({
+      workspaceId: "workspace-1",
+      kind: "website",
+      name: "Events",
+      externalId: "https://events.example",
+      config: { url: "https://events.example" },
+    });
+    await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Ready",
+      sourceContent: "ready",
+      markdownContent: "ready",
+      status: "ready",
+      sourceId: source.id,
+      sourceKind: "inline_text",
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      sourceSizeBytes: null,
+    });
+    const service = new DocumentSourceReprocessService(
+      documentRepository,
+      sourceRepository,
+      auditService,
+      undefined,
+      undefined,
+      publisher,
+    );
+
+    await expect(service.reprocessSource({ workspaceId: "workspace-1", sourceId: source.id })).resolves.toMatchObject({
+      queuedDocumentCount: 1,
+      status: "queued",
+    });
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+
+    await expect(service.reprocessSource({ workspaceId: "workspace-1", sourceId: source.id })).resolves.toMatchObject({
+      queuedDocumentCount: 0,
+      status: "noop",
+    });
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+  });
 });

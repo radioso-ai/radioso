@@ -5,11 +5,9 @@ export interface RealtimeRolloutPolicy {
 export const createRealtimeRolloutPolicy = (input: {
   mode: "disabled" | "internal" | "allowlist" | "default-on";
   accountIds: readonly string[];
-  internalAccountIds?: readonly string[];
 }): RealtimeRolloutPolicy => {
   const allowed = new Set(input.accountIds);
-  const internal = new Set(input.internalAccountIds ?? []);
   return {
-    allows: ({ accountId }) => input.mode === "default-on" || (input.mode === "allowlist" && allowed.has(accountId)) || (input.mode === "internal" && internal.has(accountId)),
+    allows: ({ accountId }) => input.mode === "default-on" || (["allowlist", "internal"].includes(input.mode) && allowed.has(accountId)),
   };
 };

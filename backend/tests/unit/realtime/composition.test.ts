@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it, vi } from "vitest";
 import { createRealtimePublisherComposition } from "../../../src/app/composition/realtimePublisherComposition.js";
 import { parseRealtimeConfig } from "../../../src/modules/realtime/infrastructure/config.js";
@@ -5,6 +7,47 @@ import { parseRealtimeConfig } from "../../../src/modules/realtime/infrastructur
 const workspaceId = "4d7293c8-d241-4f8f-a4db-3df5b88da44c";
 
 describe("realtime publisher composition", () => {
+  it("wires the GCP Redis IAM provider into API and worker publisher composition", async () => {
+    const source = await readFile("src/app/server/dependencies.ts", "utf8");
+
+    expect(source).toContain("resolveGcpRedisCredentialsProvider");
+    expect(source).toMatch(
+      /createRealtimePublisherComposition\(\{[\s\S]{0,500}redisCredentialsProvider/,
+    );
+  });
+
+  it("passes the IAM credentials provider to the publisher Redis client factory", async () => {
+    const redisCredentialsProvider = vi.fn(async () => ({ password: "short-lived-token" }));
+    const publish = vi.fn(async () => 1);
+    const client = {
+      connect: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+      destroy: vi.fn(),
+      on: vi.fn(),
+      withCommandOptions: vi.fn(() => ({ publish })),
+    };
+    const redisClientFactory = vi.fn(() => client);
+    const composition = createRealtimePublisherComposition({
+      config: parseRealtimeConfig({
+        REALTIME_MODE: "standalone",
+        REALTIME_REDIS_URL: "redis://localhost",
+        REALTIME_ROLLOUT_MODE: "default-on",
+      }),
+      redisCredentialsProvider,
+      redisClientFactory,
+    });
+
+    composition.publisher.enqueue(workspaceId, ["crawl.progress"]);
+    await (composition.publisher as unknown as { flushNow(): Promise<void> }).flushNow();
+
+    expect(redisClientFactory).toHaveBeenCalledWith(expect.objectContaining({
+      credentialsProvider: redisCredentialsProvider,
+      mode: "standalone",
+      role: "publisher",
+    }));
+    await composition.shutdown();
+  });
+
   it("selects a no-op publisher when realtime is disabled", () => {
     const composition = createRealtimePublisherComposition({ config: parseRealtimeConfig({ REALTIME_MODE: "disabled" }) });
     expect(composition.publisher.enqueue(workspaceId, ["crawl.progress"])).toMatchObject({ accepted: false, reason: "disabled" });

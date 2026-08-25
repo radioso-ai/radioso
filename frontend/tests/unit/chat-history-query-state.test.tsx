@@ -46,7 +46,10 @@ describe('history list query', () => {
       return null
     }
     const interest = {
-      open: () => ({ close: vi.fn(), outcome: Promise.resolve<'ready'>('ready') }),
+      open: ({ onLifecycle }: { onLifecycle(signal: 'ready'): void }) => {
+        onLifecycle('ready')
+        return { close: vi.fn() }
+      },
     } as never
     const render = async (value: typeof input) => {
       await act(async () => {

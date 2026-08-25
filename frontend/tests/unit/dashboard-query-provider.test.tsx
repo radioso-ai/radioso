@@ -144,12 +144,12 @@ describe('dashboard query provider policy', () => {
     expect(typeof retry === 'function' && retry(2, new Error('network'))).toBe(false)
   })
 
-  it('opens one session before enabling and terminal outcomes retain polling', async () => {
-    const outcome = deferred<'terminal'>()
-    const session = { outcome: outcome.promise, close: vi.fn() }
+  it('opens one session before enabling and terminal signals retain polling', async () => {
+    let lifecycleInput!: Parameters<DashboardLiveInterest['open']>[0]
+    const session = { close: vi.fn() }
     const interest = {
       open: vi.fn((input: Parameters<DashboardLiveInterest['open']>[0]) => {
-        void input
+        lifecycleInput = input
         return session
       }),
     }
@@ -162,7 +162,7 @@ describe('dashboard query provider policy', () => {
     await flush()
     expect(interest.open).toHaveBeenCalledOnce()
     expect(onReady).not.toHaveBeenCalled()
-    outcome.resolve('terminal')
+    lifecycleInput.onLifecycle('terminal')
     await flush()
     expect(onReady).toHaveBeenCalledOnce()
     lifecycle.stop()
@@ -170,11 +170,15 @@ describe('dashboard query provider policy', () => {
   })
 
   it('fences old sessions and absorbs close rejection without touching a new session', async () => {
-    const firstOutcome = deferred<'ready'>()
-    const secondOutcome = deferred<'ready'>()
-    const first = { outcome: firstOutcome.promise, close: vi.fn(() => Promise.reject(new Error('closed'))) }
-    const second = { outcome: secondOutcome.promise, close: vi.fn() }
-    const interest = { open: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second) }
+    const inputs: Array<Parameters<DashboardLiveInterest['open']>[0]> = []
+    const first = { close: vi.fn(() => Promise.reject(new Error('closed'))) }
+    const second = { close: vi.fn() }
+    const interest = {
+      open: vi.fn((input: Parameters<DashboardLiveInterest['open']>[0]) => {
+        inputs.push(input)
+        return inputs.length === 1 ? first : second
+      }),
+    }
     const onReady = vi.fn()
     const coordinator = new DashboardQueryInvalidationCoordinator({ queryClient: new QueryClient(), workspaceId })
     const lifecycle = new DashboardLiveInterestLifecycle({ coordinator, interest, onReady, workspaceId })
@@ -184,12 +188,36 @@ describe('dashboard query provider policy', () => {
     lifecycle.stop()
     lifecycle.start()
     await flush()
-    firstOutcome.resolve('ready')
-    secondOutcome.resolve('ready')
+    inputs[0]?.onLifecycle('ready')
+    inputs[1]?.onLifecycle('ready')
     await flush()
     expect(first.close).toHaveBeenCalledOnce()
     expect(second.close).not.toHaveBeenCalled()
     expect(onReady).toHaveBeenCalledOnce()
+  })
+
+  it('closes the live session exactly once when realtime is disabled at runtime', async () => {
+    const session = { close: vi.fn() }
+    const interest = { open: vi.fn().mockReturnValue(session) }
+    const { root } = await renderProvider(
+      <DashboardQueryProvider workspaceId={workspaceId} interest={interest}>
+        <Probe onPolicy={() => undefined} />
+      </DashboardQueryProvider>,
+    )
+    await act(async () => { await flush() })
+    expect(interest.open).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      root.render(
+        <DashboardQueryProvider workspaceId={workspaceId}>
+          <Probe onPolicy={() => undefined} />
+        </DashboardQueryProvider>,
+      )
+      await flush()
+    })
+    expect(session.close).toHaveBeenCalledOnce()
+    await act(async () => { root.unmount() })
+    expect(session.close).toHaveBeenCalledOnce()
   })
 
   it('renders in StrictMode without duplicate no-interest readiness and keeps the hidden initial query disabled', async () => {
@@ -237,11 +265,11 @@ describe('dashboard query provider policy', () => {
   })
 
   it('keeps the StrictMode coordinator active after ready and refetches from a live invalidation', async () => {
-    const outcome = deferred<'ready'>()
-    const session = { outcome: outcome.promise, close: vi.fn() }
+    let lifecycleInput!: Parameters<DashboardLiveInterest['open']>[0]
+    const session = { close: vi.fn() }
     const interest = {
       open: vi.fn((input: Parameters<DashboardLiveInterest['open']>[0]) => {
-        void input
+        lifecycleInput = input
         return session
       }),
     }
@@ -256,7 +284,7 @@ describe('dashboard query provider policy', () => {
     )
     await act(async () => { await flush() })
     await act(async () => {
-      outcome.resolve('ready')
+      lifecycleInput.onLifecycle('ready')
       await flush()
     })
     expect(queryFn).toHaveBeenCalledTimes(1)
@@ -275,12 +303,16 @@ describe('dashboard query provider policy', () => {
     await act(async () => { root.unmount() })
   })
 
-  it('aborts a visible pending query on hide and waits for the next terminal interest outcome before refetching', async () => {
-    const firstOutcome = deferred<'ready'>()
-    const secondOutcome = deferred<'terminal'>()
-    const first = { outcome: firstOutcome.promise, close: vi.fn() }
-    const second = { outcome: secondOutcome.promise, close: vi.fn() }
-    const interest = { open: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second) }
+  it('aborts a visible pending query on hide and waits for the next terminal interest signal before refetching', async () => {
+    const inputs: Array<Parameters<DashboardLiveInterest['open']>[0]> = []
+    const first = { close: vi.fn() }
+    const second = { close: vi.fn() }
+    const interest = {
+      open: vi.fn((input: Parameters<DashboardLiveInterest['open']>[0]) => {
+        inputs.push(input)
+        return inputs.length === 1 ? first : second
+      }),
+    }
     const abort = vi.fn()
     let calls = 0
     const queryFn = vi.fn((context: QueryFunctionContext) => {
@@ -301,7 +333,7 @@ describe('dashboard query provider policy', () => {
     )
     await act(async () => { await flush() })
     await act(async () => {
-      firstOutcome.resolve('ready')
+      inputs[0]?.onLifecycle('ready')
       await flush()
     })
     expect(queryFn).toHaveBeenCalledTimes(1)
@@ -322,7 +354,7 @@ describe('dashboard query provider policy', () => {
     expect(policies.at(-1)?.queriesEnabled).toBe(false)
 
     await act(async () => {
-      secondOutcome.resolve('terminal')
+      inputs[1]?.onLifecycle('terminal')
       await flush()
     })
     expect(policies.at(-1)?.queriesEnabled).toBe(true)
@@ -331,11 +363,15 @@ describe('dashboard query provider policy', () => {
   })
 
   it('subscribes before enabling, retains terminal polling, and closes only the old workspace session', async () => {
-    const firstOutcome = deferred<'terminal'>()
-    const secondOutcome = deferred<'ready'>()
-    const first = { outcome: firstOutcome.promise, close: vi.fn() }
-    const second = { outcome: secondOutcome.promise, close: vi.fn() }
-    const interest = { open: vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(second) }
+    const inputs: Array<Parameters<DashboardLiveInterest['open']>[0]> = []
+    const first = { close: vi.fn() }
+    const second = { close: vi.fn() }
+    const interest = {
+      open: vi.fn((input: Parameters<DashboardLiveInterest['open']>[0]) => {
+        inputs.push(input)
+        return inputs.length === 1 ? first : second
+      }),
+    }
     const firstRequest = deferred<unknown>()
     const firstAbort = vi.fn()
     const queryFn = vi.fn((context: QueryFunctionContext) => {
@@ -366,7 +402,7 @@ describe('dashboard query provider policy', () => {
     expect(policies.at(-1)?.queriesEnabled).toBe(false)
 
     await act(async () => {
-      firstOutcome.resolve('terminal')
+      inputs[0]?.onLifecycle('terminal')
       await flush()
     })
     expect(queryFn).toHaveBeenCalledTimes(1)
@@ -398,7 +434,7 @@ describe('dashboard query provider policy', () => {
     expect(queryFn).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      secondOutcome.resolve('ready')
+      inputs[1]?.onLifecycle('ready')
       await flush()
     })
     expect(queryFn).toHaveBeenCalledTimes(2)

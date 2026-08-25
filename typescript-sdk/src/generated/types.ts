@@ -3143,6 +3143,7 @@ export interface components {
             /** Format: uuid */
             accountId: string;
             organizationName: string;
+            realtimeEnabled: boolean;
         };
         WorkspaceListResponse: {
             workspaces: components["schemas"]["Workspace"][];

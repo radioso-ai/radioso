@@ -249,6 +249,54 @@ describe("document import service", () => {
     );
   });
 
+  it("publishes the committed import before fallible audit and dispatch work", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const storage = new InMemoryDocumentStorage();
+    const order: string[] = [];
+    const auditService = createAuditService();
+    vi.spyOn(auditService, "record").mockImplementation(async () => {
+      order.push("audit");
+    });
+    const publisher = {
+      enqueue: vi.fn(() => {
+        order.push("publish");
+        return { accepted: true as const, coalesced: false };
+      }),
+    };
+    const dispatcher = {
+      dispatch: vi.fn().mockImplementation(async () => {
+        order.push("dispatch");
+      }),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentImportService(
+      documentRepository,
+      auditService,
+      storage,
+      undefined,
+      jobRepository,
+      dispatcher,
+      undefined,
+      undefined,
+      publisher,
+    );
+
+    const response = await service.importDocument({
+      workspaceId: "workspace-1",
+      filename: "report.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("report"),
+    });
+
+    expect(response.status).toBe("queued");
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+    expect(order.indexOf("publish")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("publish")).toBeLessThan(order.indexOf("audit"));
+    expect(order.indexOf("publish")).toBeLessThan(order.indexOf("dispatch"));
+  });
+
   it("persists operator-authored metadata on the imported document", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const storage = new InMemoryDocumentStorage();

@@ -80,6 +80,7 @@ describe("realtime config", () => {
     expect(() => parseRealtimeConfig({ ...base, REALTIME_STREAM_AGE_MAX_MS: "900000" })).toThrow(/15 minutes/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_MODE: "standalone" })).toThrow(/REDIS_URL/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_ROLLOUT_MODE: "allowlist", REALTIME_ROLLOUT_ACCOUNT_IDS: "" })).toThrow(/allowlist/i);
+    expect(() => parseRealtimeConfig({ ...base, REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_ROLLOUT_MODE: "internal", REALTIME_ROLLOUT_ACCOUNT_IDS: "" })).toThrow(/internal|account/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_REDIS_TLS: "definitely" })).toThrow();
     expect(() => parseRealtimeConfig({ ...base, REALTIME_MODE: "disabled", REALTIME_REDIS_TLS: "true" })).toThrow(/disabled/i);
     expect(() => parseRealtimeConfig({ ...base, REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_REDIS_IAM: "true" })).toThrow(/TLS/i);
@@ -113,6 +114,8 @@ describe("realtime config", () => {
     }
     const config = parseRealtimeConfig({ ...base, REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_ROLLOUT_MODE: "allowlist", REALTIME_ROLLOUT_ACCOUNT_IDS: "4d7293c8-d241-4f8f-a4db-3df5b88da44c,4d7293c8-d241-4f8f-a4db-3df5b88da44c" });
     expect(config.rollout.accountIds).toEqual(["4d7293c8-d241-4f8f-a4db-3df5b88da44c"]);
+    const internalConfig = parseRealtimeConfig({ ...base, REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_ROLLOUT_MODE: "internal", REALTIME_ROLLOUT_ACCOUNT_IDS: "4d7293c8-d241-4f8f-a4db-3df5b88da44c" });
+    expect(internalConfig.rollout.accountIds).toEqual(["4d7293c8-d241-4f8f-a4db-3df5b88da44c"]);
     const oversizedAllowlist = Array.from({ length: 1025 }, (_, index) => `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`).join(",");
     expect(() => parseRealtimeConfig({ ...base, REALTIME_MODE: "standalone", REALTIME_REDIS_URL: "redis://localhost", REALTIME_ROLLOUT_MODE: "allowlist", REALTIME_ROLLOUT_ACCOUNT_IDS: oversizedAllowlist })).toThrow(/1024/i);
   });

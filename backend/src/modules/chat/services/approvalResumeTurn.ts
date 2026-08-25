@@ -10,7 +10,7 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { AgentService } from "../../agents/public.js";
-import type { ResumeRunner } from "../../approvals/public.js";
+import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatAnswerPresenter } from "./chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
@@ -80,7 +80,7 @@ export class ApprovalResumeTurn {
 
   async resume(
     input: ApprovalResumeTurnInput,
-  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+  ): Promise<ApprovalResumeResult> {
     const coordination: ResumeCoordination = {
       lease: this.options.conversationTurnRegistry.start(input.record.conversationId),
     };
@@ -114,7 +114,7 @@ export class ApprovalResumeTurn {
     input: ApprovalResumeTurnInput,
     coordination: ResumeCoordination,
     modelCallTrace: ModelCallTraceCollector,
-  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+  ): Promise<ApprovalResumeResult> {
     if (!this.options.routineProvider || !this.options.suspendedRoutineReader) {
       throw new Error("approval_resume_routine_provider_missing");
     }
@@ -215,8 +215,9 @@ export class ApprovalResumeTurn {
 
     return {
       conversationId: input.record.conversationId,
-      resumed: result.resumed,
+      resumed: true,
       assistantMessageId: completed.assistantMessageId,
+      postCommitReceipt: completed.postCommitReceipt,
     };
   }
 

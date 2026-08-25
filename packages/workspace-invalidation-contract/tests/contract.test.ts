@@ -1,12 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BROWSER_FRAME_MAX_BYTES,
   INVALIDATION_KINDS,
   TRANSPORT_ENVELOPE_MAX_BYTES,
   browserEventFrameSchema,
+  createPostCommitInvalidationReceipt,
   parseTransportEnvelope,
   decodeBrowserEventFrame,
   protocolVersion,
+  flushPostCommitInvalidationReceipt,
+  mergePostCommitInvalidationReceipts,
   workspaceChannel,
   workspaceInvalidationEnvelopeSchema,
 } from "../src/index.js";
@@ -67,5 +70,27 @@ describe("workspace invalidation contract v1", () => {
     expect(decodeBrowserEventFrame(new Uint8Array([0xff]))).toBeUndefined();
     expect(decodeBrowserEventFrame(new Uint8Array(BROWSER_FRAME_MAX_BYTES + 1))).toBeUndefined();
     expect(decodeBrowserEventFrame("x".repeat(BROWSER_FRAME_MAX_BYTES + 1))).toBeUndefined();
+  });
+
+  it("merges bounded post-commit receipts without duplicating kinds and flushes once", () => {
+    const receipt = mergePostCommitInvalidationReceipts(
+      createPostCommitInvalidationReceipt(workspaceId, ["conversation.turn_committed"]),
+      createPostCommitInvalidationReceipt(workspaceId, ["hitl.decision_resolved", "conversation.turn_committed"]),
+    );
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
+
+    expect(receipt).toEqual({
+      workspaceId,
+      changeKinds: ["conversation.turn_committed", "hitl.decision_resolved"],
+    });
+    flushPostCommitInvalidationReceipt(publisher, receipt);
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it("refuses to merge transaction receipts across workspaces", () => {
+    expect(() => mergePostCommitInvalidationReceipts(
+      createPostCommitInvalidationReceipt(workspaceId, ["conversation.turn_committed"]),
+      createPostCommitInvalidationReceipt("65028a6d-97cb-4417-99cd-c26e39b9569b", ["hitl.decision_resolved"]),
+    )).toThrow(/across workspaces/i);
   });
 });

@@ -235,7 +235,7 @@ export function DashboardQueryProvider({
   }, [coordinator])
 
   return (
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client} key={workspaceId}>
       <DashboardQueryInvalidationContext.Provider value={invalidate}>
         <DashboardQueryPolicyContext.Provider value={policy}>
           {children}

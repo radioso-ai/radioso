@@ -18,7 +18,12 @@ describe("operator copilot catalog coverage", () => {
   //               catalog behind metadata extraction. It lands in the same Wave 3 knowledge-base
   //               bucket as the document and source surfaces it configures, so it becomes
   //               proposable with them rather than ahead of them.
-  const maxDeferredCatalogExclusions = 128;
+  //   128 -> 132  takeOverConversation/transferConversationOwnership/handBackConversation/
+  //               resolveDecision, the operator HITL controls behind Needs Attention. They were
+  //               filed as an end-user surface alongside the public chat routes, which read as a
+  //               boundary and would have let Wave 4 skip the serving controls it exists to give
+  //               a runtime safety model.
+  const maxDeferredCatalogExclusions = 132;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -77,6 +82,29 @@ describe("operator copilot catalog coverage", () => {
       disposition: "deferred",
       reason: expect.stringContaining("snapshot-scoped replay tool"),
     });
+  });
+
+  it("maps the pending-approval queue to the triage digest rather than to the end-user surface", () => {
+    // `/decisions` is the dashboard's own approval queue, gated on workspace.conversation.takeover.
+    // Filing it under "end-user or inbound integration surface" made an operator read look like a
+    // boundary, which is the kind of wrong permanent exclusion this map exists to keep visible.
+    expect(catalogCoverage.listPendingDecisions).toBe("workspace_triage");
+  });
+
+  it("defers the operator serving controls rather than excluding them as an end-user surface", () => {
+    // Every one of these is gated on workspace.conversation.takeover and driven from the operator's
+    // own Needs Attention queue. Filed as permanent, they claimed a boundary Ray does not have.
+    for (const operationId of [
+      "takeOverConversation",
+      "transferConversationOwnership",
+      "handBackConversation",
+      "resolveDecision",
+    ]) {
+      expect(catalogCoverage[operationId]).toMatchObject({
+        disposition: "deferred",
+        reason: expect.stringContaining("Wave 4 serving work"),
+      });
+    }
   });
 
   it("maps the authenticated assistant pipeline to the bounded test-turn probe", () => {

@@ -9,9 +9,44 @@ const entityNameSchema = z.string().trim().min(1).max(160);
 const unknownRecord = z.record(z.unknown());
 const optionalAgentInput = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() });
 
+/**
+ * The stats fields Ray reads by name. `quality_signals` passes the whole record through, so the
+ * response carries more than this; the port names only what a caller may depend on.
+ */
+export interface CopilotQualityStats {
+  /** Active-triage counts per signal, all-time — an untriaged turn never ages out of it. */
+  readonly backlog: Record<string, number>;
+}
+
+/** One reviewable turn, carrying the written evidence the digest ranks and quotes. */
+export interface CopilotQualityTurn {
+  readonly assistantMessageId: string;
+  readonly conversationId: string;
+  readonly agentId: string | null;
+  readonly agentName: string | null;
+  readonly question: string | null;
+  readonly answerPreview: string;
+  readonly createdAt: string;
+  readonly feedback: {
+    readonly downCount: number;
+    readonly latestDownUpdatedAt: string | null;
+    readonly comments: ReadonlyArray<{ value: string; comment: string; updatedAt: string }>;
+  };
+}
+
+export interface CopilotQualityTurnsQuery {
+  limit: number;
+  agentId?: string;
+  feedbackValues?: Array<"up" | "down">;
+  hasComment?: boolean;
+  /** Thumbs-down that has not been triaged since its latest creation or edit. */
+  activeNegativeFeedbackOnly?: boolean;
+  sort?: "turn_created_at" | "negative_feedback_updated_at";
+}
+
 export interface CopilotQualitySignalsPort {
-  getQualityStats(workspaceId: string, input: { range: "30d"; agentId?: string }): Promise<object>;
-  listLowQualityTurns(workspaceId: string, input: { limit: number; agentId?: string }): Promise<{ items: ReadonlyArray<object> }>;
+  getQualityStats(workspaceId: string, input: { range: "30d"; agentId?: string }): Promise<CopilotQualityStats>;
+  listLowQualityTurns(workspaceId: string, input: CopilotQualityTurnsQuery): Promise<{ items: ReadonlyArray<CopilotQualityTurn>; total: number }>;
 }
 
 export interface QualityCopilotToolDependencies {

@@ -8,7 +8,9 @@ import {
   type CopilotDocumentSourceStatusPort,
   type CopilotDocumentStatusPort,
   type CopilotEvalResultsPort,
+  type CopilotPendingApprovalsPort,
   type CopilotQualitySignalsPort,
+  type CopilotTriageLogPort,
   type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
   type CopilotAudiencePulsePort,
@@ -48,6 +50,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly agentTurnProbe: CopilotAgentTurnProbePort;
   readonly documentSearchService: CopilotDocumentSearchPort;
   readonly evalResultsService: CopilotEvalResultsPort;
+  readonly pendingApprovals: CopilotPendingApprovalsPort;
   readonly evalCaseCapture: CopilotEvalCaseCapturePort;
   readonly evalSuiteProbe: CopilotEvalSuiteProbePort;
   readonly evalCaseReplay: CopilotEvalCaseReplayPort;
@@ -63,4 +66,5 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
+  readonly logger?: CopilotTriageLogPort;
 }): ReadonlyArray<CopilotToolDescriptor> => enrichCopilotToolCatalog(createCopilotToolDescriptors(deps), deps.workspaceRouteKeyResolver);

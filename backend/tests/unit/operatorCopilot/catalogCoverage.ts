@@ -284,6 +284,13 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "setQualityTurnTriage",
     "refreshAudiencePulse",
     "getAudiencePulseEvidenceAnchor",
+    // Operator HITL controls, gated on workspace.conversation.takeover and driven from Needs
+    // Attention. They are exactly the serving controls Wave 4 has to give a runtime safety model,
+    // so they are planned work rather than a boundary.
+    "takeOverConversation",
+    "transferConversationOwnership",
+    "handBackConversation",
+    "resolveDecision",
   ], wave4Serving),
   ...coverage([
     "completeMcpConnectionOauth",
@@ -292,12 +299,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "clearAnswerFeedback",
     "upsertPublicAnswerFeedback",
     "clearPublicAnswerFeedback",
-    "takeOverConversation",
-    "transferConversationOwnership",
-    "handBackConversation",
     "forkConversation",
-    "listPendingDecisions",
-    "resolveDecision",
     "createMcpConverseSession",
     "validateMcpConverseSession",
     "askMcpConverseAgent",
@@ -311,6 +313,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "streamPublicChatConversationEvents",
   ], endUserSurface),
 
+  listPendingDecisions: "workspace_triage",
   createAgentDirective: "propose_directive",
   updateAgentDirective: "propose_directive",
   updateAgent: "propose_agent_setting",

@@ -17,6 +17,25 @@ export type CopilotEvalCaseStatus = "pending" | "passing" | "failing" | "error";
 export type CopilotEvalRunMode = "retrieval_only" | "full_assistant";
 export type CopilotEvalSuiteCaseStatus = "pass" | "fail" | "error" | "recorded" | "skipped";
 
+/**
+ * One eval case as Ray's readers see it. Typed here rather than passed through as an opaque
+ * record, because the digest ranks cases by verdict and recency: a reader that re-derives those
+ * fields from `unknown` re-implements the eval row shape at every call site that needs them.
+ */
+export interface CopilotEvalCaseSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly status: CopilotEvalCaseStatus;
+  readonly updatedAt: string;
+  /** The agent the case replays against. `agentId` is null for legacy thin snapshots. */
+  readonly agent: { readonly agentId: string | null; readonly name: string | null };
+  readonly latestRun: { readonly startedAt: string; readonly completedAt: string | null } | null;
+}
+
+export interface CopilotEvalResultsPort {
+  listWithLatestRun(workspaceId: string): Promise<ReadonlyArray<CopilotEvalCaseSummary>>;
+}
+
 export interface CopilotEvalOperatorSubject {
   workspaceId: string;
   accountId: string;

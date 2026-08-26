@@ -154,11 +154,14 @@ import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.
 import {
   AgentTurnProbeService,
   EvalCaseCaptureService,
+  EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotReplayEvidenceRecord,
+  type CopilotReplayEvidenceRepositoryPort,
   type CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 import {
@@ -191,6 +194,7 @@ import {
   EvalRunService,
   EvalSuiteService,
   EvalSnapshotService,
+  type EvalRunOverrides,
 } from "../../src/modules/eval/composition.js";
 import { createInMemoryEvalRepository } from "./inMemoryEvalRepository.js";
 import { ApplicationModuleCoordinator, createApplicationExtensionRegistry } from "../../src/app/composition/applicationModule.js";
@@ -1718,6 +1722,8 @@ export const createTestDependencies = (overrides: {
     readEvidenceAnchor: async () => null,
   } as unknown as AppDependencies["audiencePulseService"];
   const copilotRepository = new InMemoryCopilotRepository();
+  const copilotReplayEvidenceRepository = new InMemoryCopilotReplayEvidenceRepository();
+  const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -1761,6 +1767,23 @@ export const createTestDependencies = (overrides: {
           windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
         },
       }),
+      evalCaseReplay: new EvalCaseReplayService({
+        cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+        evidence: copilotReplayEvidenceRepository,
+        runs: {
+          execute: (input) => evalRunService.execute({
+            ...input,
+            overrides: input.overrides as EvalRunOverrides | undefined,
+          }),
+        },
+        abuseControl: abuseControlService,
+        audit: auditService,
+        abusePolicy: {
+          limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+        },
+      }),
+      proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documentIngestionService,
@@ -2180,6 +2203,22 @@ const hashTerm = (term: string): number => {
 
   return hash;
 };
+
+class InMemoryCopilotReplayEvidenceRepository implements CopilotReplayEvidenceRepositoryPort {
+  private records: CopilotReplayEvidenceRecord[] = [];
+
+  async record(input: Omit<CopilotReplayEvidenceRecord, "id" | "createdAt">): Promise<CopilotReplayEvidenceRecord> {
+    const record: CopilotReplayEvidenceRecord = { ...input, id: randomUUID(), createdAt: new Date() };
+    this.records.push(record);
+    return record;
+  }
+
+  async findMany(input: { workspaceId: string; operatorUserId: string; ids: ReadonlyArray<string> }): Promise<ReadonlyArray<CopilotReplayEvidenceRecord>> {
+    return this.records.filter((record) => input.ids.includes(record.id)
+      && record.workspaceId === input.workspaceId
+      && record.operatorUserId === input.operatorUserId);
+  }
+}
 
 class InMemoryCopilotRepository implements CopilotRepositoryPort {
   private conversations: CopilotConversation[] = [];

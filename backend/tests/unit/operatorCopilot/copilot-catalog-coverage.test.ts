@@ -69,6 +69,16 @@ describe("operator copilot catalog coverage", () => {
     });
   });
 
+  it("keeps the one-off replay operation on the ratchet, because a probe reaches only part of it", () => {
+    // replay_eval_case derives its snapshot from a case and never attaches the run, so the
+    // snapshot-scoped and case-attached halves of createEvalRun remain uncovered. Mapping the
+    // operation to the probe would retire a surface no tool actually reaches.
+    expect(catalogCoverage.createEvalRun).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("snapshot-scoped replay tool"),
+    });
+  });
+
   it("maps the authenticated assistant pipeline to the bounded test-turn probe", () => {
     expect(catalogCoverage.createAssistantChatResponse).toBe("test_agent_turn");
   });

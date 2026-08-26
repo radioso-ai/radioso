@@ -28,7 +28,9 @@ action changes to **Open Eval** and Quality shows the latest case/run status wit
 its run time.
 
 Ray captures turns the same way. Ask it to keep a turn you are investigating and
-it opens or creates the case for you — see [Ray](/operators/copilot).
+it opens or creates the case for you. Ray also replays a case against settings
+you have not adopted yet, leaving the case's recorded verdict alone, and carries
+those replays onto the proposal it drafts — see [Ray](/operators/copilot).
 
 The lower-level endpoints remain useful when you want to choose the case name or
 assertions yourself:
@@ -82,6 +84,8 @@ POST /api/v1/evals/cases/{id}/runs   { mode, overrides? }
 ```
 
 `mode` is `retrieval_only` — replay just the retrieval step and score retrieval assertions — or `full_assistant`, which produces a full answer and scores every assertion. Use `retrieval_only` to isolate whether a change moved retrieval before you spend a model call on the whole answer.
+
+`overrides` replays the case against settings other than the live ones. An instruction, a model, and retrieval settings apply in either mode. An agent config override and a routine start state need `full_assistant` and a snapshot that captured the full agent config; a run that cannot honor them is refused, so a measured verdict always describes the configuration you asked for.
 
 ## Run the whole suite
 

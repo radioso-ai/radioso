@@ -133,8 +133,34 @@ export class EvalCaseService {
     }
   }
 
+  /** Workspace-scoped lookup without the run history, for callers that only need the case. */
+  async findCase(workspaceId: string, caseId: string): Promise<EvalCase | null> {
+    return this.repository.findCase(workspaceId, caseId);
+  }
+
+  /**
+   * The case plus the agent whose captured configuration a replay of it runs against, and when
+   * that configuration was frozen. Both live on the snapshot, so a caller that needs to attribute
+   * a replay or date its baseline would otherwise have to read it separately.
+   */
+  async findCaseWithSourceAgent(
+    workspaceId: string,
+    caseId: string,
+  ): Promise<(EvalCase & { sourceAgentId: string | null; snapshotCapturedAt: Date | null }) | null> {
+    const evalCase = await this.findCase(workspaceId, caseId);
+    if (!evalCase) {
+      return null;
+    }
+    const snapshot = await this.repository.findSnapshot(workspaceId, evalCase.snapshotId);
+    return {
+      ...evalCase,
+      sourceAgentId: snapshot?.sourceAgentId ?? null,
+      snapshotCapturedAt: snapshot ? new Date(snapshot.capturedAt) : null,
+    };
+  }
+
   async getWithRuns(workspaceId: string, caseId: string): Promise<EvalCaseWithRuns> {
-    const evalCase = await this.repository.findCase(workspaceId, caseId);
+    const evalCase = await this.findCase(workspaceId, caseId);
     if (!evalCase) {
       throw notFound("Eval case not found");
     }

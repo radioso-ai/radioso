@@ -26,8 +26,11 @@ describe("bounded invalidation producer", () => {
 
   it("reports aggregate coalesce, capacity-drop, and publish-failure outcomes without payload labels", async () => {
     const outcomes: string[] = [];
+    const publish = vi.fn()
+      .mockRejectedValueOnce(new Error("unavailable"))
+      .mockResolvedValue(undefined);
     const producer = new BoundedInvalidationProducer({
-      transport: { publish: async () => { throw new Error("unavailable"); } },
+      transport: { publish },
       telemetry: {
         enqueue: (outcome) => outcomes.push(outcome),
         publish: (outcome) => outcomes.push(outcome),
@@ -44,6 +47,39 @@ describe("bounded invalidation producer", () => {
     producer.enqueue(second, ["crawl.progress"]);
     await producer.flushNow();
     expect(outcomes).toEqual(expect.arrayContaining(["accepted", "coalesced", "dropped", "failed", "flush"]));
+    await producer.shutdown();
+  });
+
+  it("retries a failed publish with both the original and concurrently enqueued kinds", async () => {
+    let rejectFirstPublish!: (reason: Error) => void;
+    const firstPublish = new Promise<void>((_resolve, reject) => {
+      rejectFirstPublish = reject;
+    });
+    const publish = vi.fn()
+      .mockImplementationOnce(() => firstPublish)
+      .mockResolvedValue(undefined);
+    const producer = new BoundedInvalidationProducer({
+      transport: { publish },
+      options: { cadenceMs: 1 },
+    });
+
+    producer.enqueue(first, ["crawl.progress"]);
+    const failedFlush = producer.flushNow();
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledOnce());
+    producer.enqueue(first, ["crawl.status_changed"]);
+    rejectFirstPublish(new Error("temporarily unavailable"));
+    await failedFlush;
+
+    expect(producer.debugState().pendingWorkspaces).toBe(1);
+    await vi.waitFor(() => expect(publish).toHaveBeenCalledTimes(2));
+    expect(publish).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        workspaceId: first,
+        changeKinds: expect.arrayContaining(["crawl.progress", "crawl.status_changed"]),
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    await producer.shutdown();
   });
 
   it("uses one scheduler and fair workspace order with bounded concurrency", async () => {

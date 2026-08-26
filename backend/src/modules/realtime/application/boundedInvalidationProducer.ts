@@ -230,6 +230,9 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
       this.input.telemetry?.publish("accepted");
       return true;
     } catch {
+      for (const changeKind of changeKinds) {
+        entry.kinds.add(changeKind);
+      }
       this.input.telemetry?.publish("failed");
       return false;
     } finally {

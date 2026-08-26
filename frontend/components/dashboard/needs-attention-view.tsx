@@ -62,6 +62,8 @@ import {
   buildLatestAttentionSnapshot,
   qualitySnapshotFromQueries,
   reconcileAttentionOperatorResult,
+  refetchAttentionInboxSnapshot,
+  refetchAttentionRailSnapshot,
   useNeedsAttentionQueries,
 } from '@/lib/needs-attention-query-state'
 import { patchQualityTriage } from '@/lib/quality-query-state'
@@ -647,14 +649,19 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
 
   const refreshInbox = useCallback(async () => {
     if (!attentionQueries.policy.queriesEnabled) return
-    promoteLatest()
-    void Promise.all([
-      attentionQueries.decisions.refetch(),
-      attentionQueries.humanOwned.refetch(),
-      attentionQueries.commentedFeedback.refetch(),
-      attentionQueries.reviewSummary.refetch(),
-    ])
-  }, [attentionQueries, promoteLatest])
+    const snapshot = await refetchAttentionInboxSnapshot({
+      previous: { decisions, humanOwnedConversations, qualitySnapshot },
+      decisions: attentionQueries.decisions,
+      humanOwned: attentionQueries.humanOwned,
+      commentedFeedback: attentionQueries.commentedFeedback,
+      reviewSummary: attentionQueries.reviewSummary,
+    })
+    if (!isMountedRef.current) return
+    setDecisions(snapshot.decisions)
+    setHumanOwnedConversations(snapshot.humanOwnedConversations)
+    setQualitySnapshot(snapshot.qualitySnapshot)
+    setLatestQualitySnapshot(snapshot.qualitySnapshot)
+  }, [attentionQueries, decisions, humanOwnedConversations, qualitySnapshot])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setNow(new Date()), 30_000)
@@ -713,24 +720,37 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   }, [])
 
   const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
+    const optimisticHumanOwned = result.kind === 'ownership'
+      ? reconcileAttentionOperatorResult(humanOwnedConversations, result)
+      : humanOwnedConversations
+    const optimisticDecisions = result.kind === 'decision_resolved'
+      ? decisions.filter(
+        (decision) => decision.agentId !== result.agentId || decision.handle !== result.handle,
+      )
+      : decisions
     if (result.kind === 'ownership') {
-      setHumanOwnedConversations((previous) => reconcileAttentionOperatorResult(previous, result))
+      setHumanOwnedConversations(optimisticHumanOwned)
     }
     if (result.kind === 'decision_resolved') {
-      setDecisions((previous) => previous.filter(
-        (decision) => decision.agentId !== result.agentId || decision.handle !== result.handle,
-      ))
+      setDecisions(optimisticDecisions)
     }
     if (result.kind === 'ownership') {
       invalidateDashboardQueries(['conversation.ownership_changed'])
     } else if (result.kind === 'decision_resolved') {
       invalidateDashboardQueries(['hitl.decision_resolved'])
     }
-    await Promise.all([
-      attentionQueries.humanOwned.refetch(),
-      attentionQueries.decisions.refetch(),
-    ])
-  }, [attentionQueries.decisions, attentionQueries.humanOwned, invalidateDashboardQueries])
+    const snapshot = await refetchAttentionRailSnapshot({
+      previous: {
+        decisions: optimisticDecisions,
+        humanOwnedConversations: optimisticHumanOwned,
+      },
+      decisions: attentionQueries.decisions,
+      humanOwned: attentionQueries.humanOwned,
+    })
+    if (!isMountedRef.current) return
+    setDecisions(snapshot.decisions)
+    setHumanOwnedConversations(snapshot.humanOwnedConversations)
+  }, [attentionQueries.decisions, attentionQueries.humanOwned, decisions, humanOwnedConversations, invalidateDashboardQueries])
 
   const [triagingMessageIds, setTriagingMessageIds] = useState<ReadonlySet<string>>(new Set())
 
@@ -1054,7 +1074,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   )
 
   const handleRefresh = useCallback(() => {
-    refreshInbox()
+    void refreshInbox()
   }, [refreshInbox])
 
   const hasQualityLoadFailure = latestQualityPresentation.hasLoadFailure

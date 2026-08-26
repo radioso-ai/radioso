@@ -17,6 +17,8 @@ import {
   needsAttentionQualityInputs,
   qualitySnapshotFromQueries,
   reconcileAttentionOperatorResult,
+  refetchAttentionInboxSnapshot,
+  refetchAttentionRailSnapshot,
   useAttentionRailQueries,
   useNeedsAttentionQueries,
 } from '@/lib/needs-attention-query-state'
@@ -153,6 +155,71 @@ describe('Needs Attention query state', () => {
     })
     expect(next.decisions).toEqual([oldDecision])
     expect(previous.commentedFeedback.turns).toEqual([])
+  })
+
+  it('promotes the results returned by a manual inbox refresh', async () => {
+    const staleDecision = { handle: 'stale-decision' }
+    const freshDecision = { handle: 'fresh-decision' }
+    const staleConversation = { id: 'stale-conversation', ownership: { state: 'human_owned' } }
+    const freshConversation = { id: 'fresh-conversation', ownership: { state: 'human_owned' } }
+
+    const next = await refetchAttentionInboxSnapshot({
+      previous: {
+        decisions: [staleDecision] as never,
+        humanOwnedConversations: [staleConversation] as never,
+        qualitySnapshot: createEmptyQualityInboxSnapshot(),
+      },
+      decisions: {
+        refetch: vi.fn().mockResolvedValue({
+          status: 'success', error: null, data: { decisions: [freshDecision] },
+        }),
+      },
+      humanOwned: {
+        refetch: vi.fn().mockResolvedValue({
+          status: 'success', error: null, data: { conversations: [freshConversation] },
+        }),
+      },
+      commentedFeedback: {
+        refetch: vi.fn().mockResolvedValue({
+          status: 'success', error: null, data: { ...page, total: 3 },
+        }),
+      },
+      reviewSummary: {
+        refetch: vi.fn().mockResolvedValue({
+          status: 'success', error: null, data: { ...page, total: 4 },
+        }),
+      },
+    })
+
+    expect(next.decisions).toEqual([freshDecision])
+    expect(next.humanOwnedConversations).toEqual([freshConversation])
+    expect(next.qualitySnapshot.commentedFeedback.total).toBe(3)
+    expect(next.qualitySnapshot.reviewQueue.total).toBe(4)
+  })
+
+  it('promotes fresh rail rows after a drawer operator action', async () => {
+    const freshDecision = { handle: 'fresh-decision' }
+    const freshConversation = { id: 'fresh-conversation', ownership: { state: 'human_owned' } }
+
+    const next = await refetchAttentionRailSnapshot({
+      previous: {
+        decisions: [{ handle: 'stale-decision' }] as never,
+        humanOwnedConversations: [{ id: 'stale-conversation' }] as never,
+      },
+      decisions: {
+        refetch: vi.fn().mockResolvedValue({
+          status: 'success', error: null, data: { decisions: [freshDecision] },
+        }),
+      },
+      humanOwned: {
+        refetch: vi.fn().mockResolvedValue({
+          status: 'success', error: null, data: { conversations: [freshConversation] },
+        }),
+      },
+    })
+
+    expect(next.decisions).toEqual([freshDecision])
+    expect(next.humanOwnedConversations).toEqual([freshConversation])
   })
 
   it('reconciles operator results by result conversationId, never the currently selected row', async () => {

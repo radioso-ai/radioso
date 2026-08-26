@@ -36,6 +36,50 @@ type QualityQueryResult = {
   status: string
 }
 
+type AttentionQueryResult<T> = {
+  data?: T
+  error: unknown
+  status: string
+}
+
+type AttentionRefetchSource<T> = {
+  refetch: () => Promise<AttentionQueryResult<T>>
+}
+
+type DecisionsPage = { decisions: PendingApprovalDecision[] }
+type HumanOwnedPage = { conversations: ChatConversationSummary[] }
+type HumanOwnedConversation = ChatConversationSummary & {
+  ownership: NonNullable<ChatConversationSummary['ownership']>
+}
+
+export interface AttentionRailSnapshot {
+  decisions: PendingApprovalDecision[]
+  humanOwnedConversations: HumanOwnedConversation[]
+}
+
+export interface AttentionInboxSnapshot extends AttentionRailSnapshot {
+  qualitySnapshot: QualityInboxSnapshot
+}
+
+const selectHumanOwned = (
+  conversations: readonly ChatConversationSummary[],
+): HumanOwnedConversation[] => conversations.filter(
+  (conversation): conversation is HumanOwnedConversation => conversation.ownership?.state === 'human_owned',
+)
+
+const mergeAttentionRailResults = (
+  previous: AttentionRailSnapshot,
+  decisions: AttentionQueryResult<DecisionsPage>,
+  humanOwned: AttentionQueryResult<HumanOwnedPage>,
+): AttentionRailSnapshot => ({
+  decisions: decisions.status === 'success' && decisions.data
+    ? decisions.data.decisions
+    : previous.decisions,
+  humanOwnedConversations: humanOwned.status === 'success' && humanOwned.data
+    ? selectHumanOwned(humanOwned.data.conversations)
+    : previous.humanOwnedConversations,
+})
+
 const qualityAttempt = (query: QualityQueryResult): QualityInboxSourceAttempts['commentedFeedback'] => {
   if (query.status === 'success' && query.data) return { status: 'fulfilled', page: query.data }
   if (query.status === 'error') {
@@ -64,15 +108,48 @@ export const buildLatestAttentionSnapshot = (input: {
   reviewSummary: QualityQueryResult
 }) => ({
   decisions: input.decisions?.decisions ?? [],
-  humanOwnedConversations: (input.humanOwned?.conversations ?? []).filter(
-    (conversation): conversation is ChatConversationSummary & { ownership: NonNullable<ChatConversationSummary['ownership']> } => conversation.ownership?.state === 'human_owned',
-  ),
+  humanOwnedConversations: selectHumanOwned(input.humanOwned?.conversations ?? []),
   qualitySnapshot: qualitySnapshotFromQueries(
     input.previousQuality,
     input.commentedFeedback,
     input.reviewSummary,
   ),
 })
+
+export const refetchAttentionRailSnapshot = async (input: {
+  previous: AttentionRailSnapshot
+  decisions: AttentionRefetchSource<DecisionsPage>
+  humanOwned: AttentionRefetchSource<HumanOwnedPage>
+}): Promise<AttentionRailSnapshot> => {
+  const [decisions, humanOwned] = await Promise.all([
+    input.decisions.refetch(),
+    input.humanOwned.refetch(),
+  ])
+  return mergeAttentionRailResults(input.previous, decisions, humanOwned)
+}
+
+export const refetchAttentionInboxSnapshot = async (input: {
+  previous: AttentionInboxSnapshot
+  decisions: AttentionRefetchSource<DecisionsPage>
+  humanOwned: AttentionRefetchSource<HumanOwnedPage>
+  commentedFeedback: AttentionRefetchSource<LowQualityTurnsPage>
+  reviewSummary: AttentionRefetchSource<LowQualityTurnsPage>
+}): Promise<AttentionInboxSnapshot> => {
+  const [decisions, humanOwned, commentedFeedback, reviewSummary] = await Promise.all([
+    input.decisions.refetch(),
+    input.humanOwned.refetch(),
+    input.commentedFeedback.refetch(),
+    input.reviewSummary.refetch(),
+  ])
+  return {
+    ...mergeAttentionRailResults(input.previous, decisions, humanOwned),
+    qualitySnapshot: qualitySnapshotFromQueries(
+      input.previous.qualitySnapshot,
+      commentedFeedback,
+      reviewSummary,
+    ),
+  }
+}
 
 export const needsAttentionQualityInputs: {
   commentedFeedback: QualityTurnsRequest

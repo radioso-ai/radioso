@@ -120,6 +120,26 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     );
   });
 
+  it("refuses a guarded write once the row moved past the version the caller decided against", async () => {
+    // An external authoring surface reads a routine, decides an edit, and writes later. Checking
+    // the version in application code leaves a window a concurrent save lands in, so the guard has
+    // to travel into the statement.
+    const created = await repository.createDraft(agentId, baseDraft());
+    const concurrent = await repository.updateDraft(agentId, created.id, baseDraft({ name: "Someone else's edit" }));
+
+    await expect(repository.updateDraft(agentId, created.id, baseDraft({ name: "Stale edit" }), { expectedUpdatedAt: created.updatedAt }))
+      .rejects.toThrow(`routine_definition_update_conflict:${created.id}`);
+    expect((await repository.findById(agentId, created.id))?.name).toBe("Someone else's edit");
+
+    const guarded = await repository.updateDraft(agentId, created.id, baseDraft({ name: "Current edit" }), { expectedUpdatedAt: concurrent.updatedAt });
+    expect(guarded.name).toBe("Current edit");
+
+    await expect(repository.publish(agentId, created.id, { expectedUpdatedAt: created.updatedAt }))
+      .rejects.toThrow(`routine_definition_publish_conflict:${created.id}`);
+    const published = await repository.publish(agentId, created.id, { expectedUpdatedAt: guarded.updatedAt });
+    expect(published.status).toBe("published");
+  });
+
   it("searches persisted trigger embeddings and identifies candidates without a usable vector", async () => {
     const first = await repository.createDraft(agentId, baseDraft({ name: "Refund search one" }));
     const second = await repository.createDraft(agentId, baseDraft({ name: "Refund search two" }));
@@ -277,6 +297,46 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
 
     expect(await repository.restore(agentId, first.id)).toBe(false);
     expect((await repository.findById(agentId, first.id))?.status).toBe("archived");
+  });
+
+  it("archives only when the draft it would delete is the one the caller was told about", async () => {
+    // Creating a revision does not touch the published row, so no version token on that row can
+    // see one appear. The precondition has to live inside the archive transaction.
+    const created = await repository.createDraft(agentId, baseDraft());
+    const published = await repository.publish(agentId, created.id);
+    const revision = await repository.createRevisionDraft(agentId, published.id);
+
+    await expect(repository.archive(agentId, published.id, { expectedDraftRevision: null }))
+      .rejects.toThrow(`routine_definition_archive_conflict:${published.id}`);
+    expect(await repository.findById(agentId, revision!.id)).not.toBeNull();
+    expect((await repository.findById(agentId, published.id))?.status).toBe("published");
+
+    // Editing the disclosed draft leaves its id alone, so the guard has to carry its version too:
+    // archiving on the strength of the id would throw away work added since it was described.
+    const edited = await repository.updateDraft(agentId, revision!.id, baseDraft({ name: "Edited while the card waited" }));
+    await expect(repository.archive(agentId, published.id, { expectedDraftRevision: { id: revision!.id, updatedAt: revision!.updatedAt } }))
+      .rejects.toThrow(`routine_definition_archive_conflict:${published.id}`);
+    expect(await repository.findById(agentId, revision!.id)).not.toBeNull();
+
+    expect(await repository.archive(agentId, published.id, { expectedDraftRevision: { id: edited.id, updatedAt: edited.updatedAt } })).toBe(true);
+    expect(await repository.findById(agentId, revision!.id)).toBeNull();
+  });
+
+  it("keeps a draft that moved on from the version an undo stated", async () => {
+    const created = await repository.createDraft(agentId, baseDraft());
+    const moved = await repository.updateDraft(agentId, created.id, baseDraft({ name: "Saved by someone else" }));
+
+    expect(await repository.deleteDraft(agentId, created.id, { expectedUpdatedAt: created.updatedAt })).toBe(false);
+    expect(await repository.findById(agentId, created.id)).not.toBeNull();
+    expect(await repository.deleteDraft(agentId, created.id, { expectedUpdatedAt: moved.updatedAt })).toBe(true);
+  });
+
+  it("refuses to revise a lineage that was archived under it", async () => {
+    const created = await repository.createDraft(agentId, baseDraft());
+    const published = await repository.publish(agentId, created.id);
+    await repository.archive(agentId, published.id);
+
+    expect(await repository.createRevisionDraft(agentId, published.id)).toBeNull();
   });
 
   it("deleteDraft removes only drafts", async () => {

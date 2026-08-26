@@ -25,13 +25,33 @@ export interface RoutineDefinitionRepositoryPort {
   listByAgent(agentId: string): Promise<RoutineDefinition[]>;
   findById(agentId: string, id: string): Promise<RoutineDefinition | null>;
   createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
-  updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition>;
+  updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput, options?: RoutineDefinitionWriteGuard): Promise<RoutineDefinition>;
   publish(agentId: string, id: string, options?: RoutineDefinitionPublishOptions): Promise<RoutineDefinition>;
   createRevisionDraft(agentId: string, publishedId: string): Promise<RoutineDefinition | null>;
-  archive(agentId: string, id: string): Promise<boolean>;
+  archive(agentId: string, id: string, options?: RoutineDefinitionArchiveGuard): Promise<boolean>;
   restore(agentId: string, id: string): Promise<boolean>;
-  deleteDraft(agentId: string, id: string): Promise<boolean>;
+  deleteDraft(agentId: string, id: string, options?: RoutineDefinitionWriteGuard): Promise<boolean>;
   listPublishedRoutineNamesReferencingDestination?(workspaceId: string, destinationId: string): Promise<string[]>;
+}
+
+/**
+ * Optimistic guard for a write authored elsewhere. The caller read the routine, decided what to
+ * change, and states the version it decided against; the repository refuses the write if anything
+ * moved in between, so a version check made in application code cannot be raced by a concurrent
+ * edit landing between the check and the write.
+ */
+export interface RoutineDefinitionWriteGuard {
+  expectedUpdatedAt?: Date;
+}
+
+/**
+ * What archiving is allowed to delete along with the routine. Archiving discards the lineage's
+ * draft revision, so a caller that told an operator what would be lost states it here: `null` for
+ * "there was no draft", an id for the one that was disclosed. Absent means the caller made no
+ * claim, which is how the dashboard's own archive keeps working.
+ */
+export interface RoutineDefinitionArchiveGuard {
+  expectedDraftRevision?: { id: string; updatedAt: Date } | null;
 }
 
 export interface RoutineDefinitionSaveResult {
@@ -51,7 +71,7 @@ export interface RoutineDefinitionPublishLifecycleInput {
   transaction: unknown;
 }
 
-export interface RoutineDefinitionPublishOptions {
+export interface RoutineDefinitionPublishOptions extends RoutineDefinitionWriteGuard {
   onPublished?: (input: RoutineDefinitionPublishLifecycleInput) => Promise<void>;
 }
 
@@ -211,6 +231,7 @@ export class RoutineDefinitionService {
     agentId: string,
     id: string,
     input: RoutineDefinitionDraftAuthoringInput,
+    options: RoutineDefinitionWriteGuard = {},
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const existing = await this.requireRoutine(agentId, id);
@@ -220,10 +241,10 @@ export class RoutineDefinitionService {
     const draft = this.validateInput(input);
     let saved: RoutineDefinition;
     try {
-      saved = await this.options.repository.updateDraft(agentId, id, draft);
+      saved = await this.options.repository.updateDraft(agentId, id, draft, options);
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("routine_definition_update_conflict:")) {
-        throw conflict("Routine was published concurrently — revise it to continue editing");
+        throw conflict("Routine changed while it was being edited — reload it and try again");
       }
       throw error;
     }
@@ -239,18 +260,18 @@ export class RoutineDefinitionService {
     target: { id: string } | { input: RoutineDefinitionDraftAuthoringInput },
   ): Promise<RoutineValidationResult> {
     await this.requireAgent(workspaceId, agentId);
-    if ("id" in target) {
-      const routine = await this.requireRoutine(agentId, target.id);
-      const validation = await this.validateWithAvailableSkills(workspaceId, routine);
-      return this.validatePublishReferences(workspaceId, routine, validation);
-    }
-    const draft = this.validateInput(target.input);
-    const routine = draftDefinitionFromInput(agentId, draft);
+    // Validation answers "would this publish?", so it runs every gate publish runs. An action step
+    // whose type is unregistered or whose capability the workspace denies is rejected by publish
+    // alone; leaving it out here reported a routine as valid that could never go live.
+    const routine = "id" in target
+      ? await this.requireRoutine(agentId, target.id)
+      : draftDefinitionFromInput(agentId, this.validateInput(target.input));
     const validation = await this.validateWithAvailableSkills(workspaceId, routine);
-    return this.validatePublishReferences(workspaceId, routine, validation);
+    const actionValidation = await this.validateActionAuthorization(workspaceId, routine, validation);
+    return this.validatePublishReferences(workspaceId, routine, actionValidation);
   }
 
-  async publish(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinitionPublishResult> {
+  async publish(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}): Promise<RoutineDefinitionPublishResult> {
     await this.requireAgent(workspaceId, agentId);
     const routine = await this.requireRoutine(agentId, id);
     if (routine.status !== "draft") {
@@ -275,6 +296,7 @@ export class RoutineDefinitionService {
     const survivingStepIds = new Set(routine.steps.map((step) => step.stableStepId));
     try {
       published = await this.options.repository.publish(agentId, id, {
+        ...options,
         onPublished: async ({ previousPublishedId, newDefinitionId, transaction }) => {
           supersededDefinitionId = previousPublishedId;
           if (!previousPublishedId || !this.options.directiveScopeTags) {
@@ -291,6 +313,9 @@ export class RoutineDefinitionService {
         },
       });
     } catch (error) {
+      if (error instanceof Error && error.message.startsWith("routine_definition_publish_conflict:")) {
+        throw conflict("Routine changed while it was being published — reload it and try again");
+      }
       if (isRoutineCompletionExportDestinationConstraintError(error) && routine.completionExport?.enabled) {
         return {
           rejected: true,
@@ -331,13 +356,21 @@ export class RoutineDefinitionService {
     return revision;
   }
 
-  async archive(workspaceId: string, agentId: string, id: string): Promise<RoutineDefinition> {
+  async archive(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionArchiveGuard = {}): Promise<RoutineDefinition> {
     await this.requireAgent(workspaceId, agentId);
     const routine = await this.requireRoutine(agentId, id);
     if (routine.status !== "published") {
       throw badRequest("Only published routine definitions can be archived");
     }
-    const archived = await this.options.repository.archive(agentId, id);
+    let archived: boolean;
+    try {
+      archived = await this.options.repository.archive(agentId, id, options);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("routine_definition_archive_conflict:")) {
+        throw conflict("The draft revision this would discard changed while the routine was being archived — reload it and try again");
+      }
+      throw error;
+    }
     if (!archived) {
       throw notFound("Published routine definition not found");
     }
@@ -370,9 +403,9 @@ export class RoutineDefinitionService {
     return updated;
   }
 
-  async deleteDraft(workspaceId: string, agentId: string, id: string): Promise<void> {
+  async deleteDraft(workspaceId: string, agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}): Promise<void> {
     await this.requireAgent(workspaceId, agentId);
-    const deleted = await this.options.repository.deleteDraft(agentId, id);
+    const deleted = await this.options.repository.deleteDraft(agentId, id, options);
     if (!deleted) {
       throw notFound("Draft routine definition not found");
     }

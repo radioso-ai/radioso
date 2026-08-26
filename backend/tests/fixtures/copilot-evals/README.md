@@ -52,7 +52,9 @@ Every entry in `copilotNeverList` has a case, and a test fails if one loses it.
 ## What the live suite needs from a workspace
 
 Ray reads an existing workspace, so cases declare the records they read — `requires` on a case names
-`conversation_with_assistant_turn`, `document`, or `quality_signal`. The runner probes the target
+`conversation_with_assistant_turn`, `document`, `quality_signal`, `routine`, or
+`publishable_routine` — a draft that validates cleanly, which is what a publish proposal needs
+before Ray will draft one at all. The runner probes the target
 once and **skips** any case it cannot supply rather than running it. A skipped case is not a failing
 case: scoring "why did the agent answer that?" against a workspace that has never held a
 conversation measures the environment, not Ray.
@@ -65,7 +67,8 @@ for every case it left out. The recorder enforces this itself — it takes the w
 throws if any case in it did not run — so no future filter can slip past it.
 
 With no workspace set the suite registers a throwaway account and seeds everything the dataset
-reads: one conversation with an answered turn, a written complaint on that answer, and one document.
+reads: one conversation with an answered turn, a written complaint on that answer, one document, and
+one draft routine.
 **Baselines are recorded from that seeded workspace, not from a real one.** A baseline recorded
 against someone's live workspace would depend on whatever it held that day, and running the suite
 there leaves copilot conversations in their Ray history and a pending proposal in their approval
@@ -114,7 +117,10 @@ being written, so neither route can bless one.
 1. Write the operator message, the page context, the permission set of the role you are testing, and
    the `requires` the case reads. A case naming a conversation in its page context must declare
    `conversation_with_assistant_turn`; a test enforces that, because a live run rewrites page-context
-   ids to the target workspace and an undeclared case would run with that id blanked.
+   ids to the target workspace and an undeclared case would run with that id blanked. A case that
+   names a routine declares `routine` for the same reason — a live run substitutes the target
+   workspace's own draft routine name into the message, and without a routine to bind to, Ray's
+   correct "there is no such routine" would be recorded as a behaviour regression.
    Derive that set from `accountAccessService.roleAllows` rather than guessing: a permission set the
    role does not actually hold makes every exposure assertion true of the fixture and false of the
    product, and no harness catches that.

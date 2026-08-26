@@ -302,6 +302,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/contracts.ts`, `catalog.ts`, `service.ts`, and `routes.ts`
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
+- `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_lifecycle`)
+- `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit/lifecycle apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
 - `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`, `replay_eval_case`)
@@ -647,6 +649,7 @@ and are gated by a per-action capability.
 Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
+- `backend/src/modules/routines/authoringEdit.ts` (stable-id field patch and the keyed projection an external authoring surface reviews a routine through)
 - `packages/routine-definition` (shared definition schemas and types)
 - `packages/routine-document` (routine block-document projection and shared guard/condition labeling for the Document editor)
 - `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)

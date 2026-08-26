@@ -121,7 +121,7 @@ describe("US3 copilot proposals", () => {
           applyIfVersionMatches: vi.fn(),
           validatePayload: vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload })),
         },
-        { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
+        { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn(), draftLifecycle: vi.fn() },
       ],
       auditService: auditService(),
     });
@@ -130,6 +130,8 @@ describe("US3 copilot proposals", () => {
     expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "propose_directive", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
+      { name: "propose_routine_edit", shape: "propose" },
+      { name: "propose_routine_lifecycle", shape: "propose" },
       { name: "propose_agent_setting", shape: "propose" },
     ]);
 
@@ -146,14 +148,14 @@ describe("US3 copilot proposals", () => {
       id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const payload = { name: "Return intake", steps: [] };
-    const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics." }));
+    const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics.", diagnostics: [] }));
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
       proposalAdapters: [
         { targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
         { targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), validatePayload: vi.fn() },
-        { targetType: "routine", readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: routineDraft },
+        { targetType: "routine", readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: routineDraft, draftEdit: vi.fn(), draftLifecycle: vi.fn() },
       ],
       auditService: auditService(),
     });
@@ -348,8 +350,14 @@ describe("routine proposal adapter", () => {
       payload: storedPayload,
       targetLabel: "Return intake",
       summary,
+      diagnostics: [{ code: "missing_transition" }],
     });
-    expect(await adapter.preview("workspace-1", targetRef, storedPayload)).toEqual({ targetLabel: "Return intake", current: null, proposed: payload });
+    const preview = await adapter.preview("workspace-1", targetRef, storedPayload) as { targetLabel: string; current: unknown; proposed: { steps: Record<string, { instruction: string }> } };
+    expect(preview.targetLabel).toBe("Return intake");
+    expect(preview.current).toBeNull();
+    // A new routine previews element by element too, so the card shows one row per step rather
+    // than one row holding the whole graph.
+    expect(preview.proposed.steps.step_collect_reason!.instruction).toBe("Ask for {{slot.reason}}.");
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, updatedAt.toISOString())).toEqual({
       outcome: "applied",
       appliedRef: { agentId: targetRef.agentId, routineId: "routine-1" },
@@ -498,5 +506,539 @@ describe("proposals carrying replay evidence", () => {
     await expect(descriptor.createTool(context).invoke({ intent: "State it", evidenceIds: [evidenceId] }, {} as never))
       .rejects.toThrow(/different agent/i);
     expect(createProposal).not.toHaveBeenCalled();
+  });
+});
+
+const storedRoutine = (overrides: Record<string, unknown> = {}) => ({
+  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  agentId,
+  lineageId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  version: 1,
+  status: "draft",
+  name: "support-intake",
+  activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
+  slots: [],
+  steps: [
+    { stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+    { stableStepId: "confirm", kind: "chat", instruction: "Confirm it.", toolRef: null, actionType: null, ordinal: 1, metadata: {} },
+  ],
+  transitions: [
+    { fromStep: "collect_topic", toRef: "confirm", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 },
+    { fromStep: "confirm", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 },
+  ],
+  terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thank them.", ordinal: 0 }],
+  createdAt: new Date("2026-08-01T10:00:00.000Z"),
+  updatedAt: new Date("2026-08-02T10:00:00.000Z"),
+  ...overrides,
+});
+
+/** A draft revision of the same lineage; a real one carries a routine id, so the fixture does too. */
+const pendingRevisionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+const routineAdapterPorts = (routine = storedRoutine(), siblings: Array<ReturnType<typeof storedRoutine>> = []) => {
+  const current = { value: routine };
+  const lineage = { siblings };
+  return {
+    current,
+    lineage,
+    list: vi.fn(async () => [current.value, ...lineage.siblings]),
+    get: vi.fn(async () => current.value),
+    createDraft: vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } })),
+    deleteDraft: vi.fn(async () => {}),
+    updateDraft: vi.fn(async (_workspaceId: string, _agentId: string, _routineId: string, _input: unknown) => ({ routine: current.value, validation: { ok: true, diagnostics: [] } })),
+    // The real repository returns the lineage's existing draft when there is one, rather than a
+    // fresh copy of the published routine.
+    revise: vi.fn(async () => lineage.siblings.find((sibling) => sibling.status === "draft")
+      ?? { ...current.value, id: "revision-1", status: "draft", version: 2 }),
+    publish: vi.fn(async () => ({ routine: { ...current.value, id: "published-1", status: "published" }, validation: { ok: true, diagnostics: [] }, directiveScopeOrphans: [] })),
+    archive: vi.fn(async () => ({ ...current.value, status: "archived" })),
+    restore: vi.fn(async () => ({ ...current.value, status: "published" })),
+    validate: vi.fn(async () => ({ ok: true, diagnostics: [] as Array<{ code: string; location: string; message: string }> })),
+  };
+};
+
+const routineAdapter = async (ports: ReturnType<typeof routineAdapterPorts>) => {
+  const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+  return createRoutineCopilotProposalAdapter({
+    agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-01T10:00:00.000Z") })) } as never,
+    routineDraftAssistService: { draft: vi.fn() } as never,
+    routineDefinitionService: ports as never,
+  });
+};
+
+describe("routine edit and lifecycle proposal tools", () => {
+  const proposalTools = (adapter: Record<string, unknown>, createProposal = vi.fn(async (input: Record<string, unknown>) => ({
+    id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+  }))) => ({
+    createProposal,
+    descriptors: createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", ...adapter }],
+      auditService: auditService(),
+    } as never),
+  });
+
+  const toolContext = {
+    workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1",
+    pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
+  };
+  const routineId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  it("targets the routine it edits and guards the edit against the routine it was drafted from", async () => {
+    const order: string[] = [];
+    const readVersionToken = vi.fn(async () => { order.push("token"); return "routine-version"; });
+    const draftEdit = vi.fn(async () => {
+      order.push("draft");
+      return { payload: { kind: "edit", name: "support-intake", changes: {} }, targetLabel: "support-intake", summary: "Edit routine support-intake: step confirm.", diagnostics: [] };
+    });
+    const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftLifecycle: vi.fn() });
+
+    const result = await descriptors.find((descriptor) => descriptor.name === "propose_routine_edit")!
+      .createTool(toolContext)
+      .invoke({ routineId, changes: { steps: [{ stableStepId: "confirm", instruction: "Read the order number back." }] } }, {} as never);
+
+    // The token must be read before the draft: a token taken afterwards could match a routine
+    // revised in between, and the edit would then be applied to content Ray never saw.
+    expect(order).toEqual(["token", "draft"]);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetType: "routine",
+      targetRef: { agentId, routineId },
+      versionToken: "routine-version",
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      targetType: "routine",
+      targetLabel: "support-intake",
+      validation: { ok: true, diagnostics: [] },
+    }));
+  });
+
+  it("refuses to draft an edit for a routine nobody named", async () => {
+    const draftEdit = vi.fn();
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftLifecycle: vi.fn() });
+
+    await expect(descriptors.find((descriptor) => descriptor.name === "propose_routine_edit")!
+      .createTool(toolContext)
+      .invoke({ changes: { name: "renamed" } }, {} as never)).rejects.toThrow(/routine/i);
+    expect(draftEdit).not.toHaveBeenCalled();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("proposes going live as its own card rather than folding it into a content edit", async () => {
+    const draftLifecycle = vi.fn(async () => ({ payload: { kind: "lifecycle", action: "publish", name: "support-intake" }, targetLabel: "support-intake", summary: "Publish routine support-intake.", diagnostics: [] }));
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(async () => "routine-version"), draftLifecycle, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn() });
+
+    const tool = descriptors.find((descriptor) => descriptor.name === "propose_routine_lifecycle")!;
+    await tool.createTool(toolContext).invoke({ routineId, action: "publish" }, {} as never);
+
+    expect(tool.shape).toBe("propose");
+    expect(draftLifecycle).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, "publish", undefined);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetRef: { agentId, routineId },
+      payload: { kind: "lifecycle", action: "publish", name: "support-intake" },
+    }));
+  });
+});
+
+describe("routine proposal adapter edits", () => {
+  const targetRef = { agentId, routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
+  const token = new Date("2026-08-02T10:00:00.000Z").toISOString();
+
+  it("guards an edit with the routine's own version, not the agent's", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+
+    expect(await adapter.readVersionToken(workspaceId, targetRef)).toBe(token);
+  });
+
+  it("edits a draft routine in place, changing only the step it names", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read the order number back." }] });
+
+    expect(draft.summary).toContain("step confirm");
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    const [, , updatedId, input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { steps: Array<{ stableStepId: string; instruction: string }> }];
+    expect(updatedId).toBe(targetRef.routineId);
+    expect(input.steps).toEqual([
+      expect.objectContaining({ stableStepId: "collect_topic", instruction: "Ask how we can help." }),
+      expect.objectContaining({ stableStepId: "confirm", instruction: "Read the order number back." }),
+    ]);
+    expect(ports.revise).not.toHaveBeenCalled();
+  });
+
+  it("revises a published routine into a draft and edits that, leaving the live version serving", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: "revision-1" },
+    });
+    expect(ports.revise).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
+    expect(ports.updateDraft.mock.calls[0]?.[2]).toBe("revision-1");
+  });
+
+  it("declines to write when the routine moved under the proposal", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    ports.current.value = storedRoutine({ updatedAt: new Date("2026-08-03T10:00:00.000Z") });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+    expect(ports.updateDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses an edit that would break the routine, and names what it would break", async () => {
+    const ports = routineAdapterPorts();
+    ports.validate
+      .mockResolvedValueOnce({ ok: true, diagnostics: [] })
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_slot_reference", location: "steps.confirm", message: "No such information field: order_number." }] });
+    const adapter = await routineAdapter(ports);
+
+    await expect(adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] }))
+      .rejects.toThrow(/order_number/);
+  });
+
+  it("lets a rename through when the routine already had a routine-level diagnostic", async () => {
+    // Routine-level diagnostics carry the routine's name in their location, so a rename moves them.
+    // Comparing raw locations read that as newly introduced and blocked the one edit that renames.
+    const ports = routineAdapterPorts();
+    ports.validate
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "routine:support-intake", message: "No ending is reachable." }] })
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "routine:support-intake-v2", message: "No ending is reachable." }] });
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    expect(draft.summary).toContain("name");
+  });
+
+  it("keeps an edit that leaves an existing diagnostic exactly as it found it", async () => {
+    const ports = routineAdapterPorts();
+    const existing = { ok: false, diagnostics: [{ code: "unreachable_step", location: "steps.confirm", message: "Nothing reaches confirm." }] };
+    ports.validate.mockResolvedValueOnce(existing).mockResolvedValueOnce(existing);
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    expect(draft.diagnostics).toEqual(existing.diagnostics);
+  });
+
+  it("previews an edit element by element so a reviewer sees the changed step", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+
+    const preview = await adapter.preview(workspaceId, targetRef, draft.payload) as {
+      targetLabel: string;
+      current: { steps: Record<string, { instruction: string }> };
+      proposed: { steps: Record<string, { instruction: string }> };
+    };
+
+    expect(preview.targetLabel).toBe("support-intake");
+    expect(preview.current.steps.confirm!.instruction).toBe("Confirm it.");
+    expect(preview.proposed.steps.confirm!.instruction).toBe("Read it back.");
+    expect(preview.proposed.steps.collect_topic).toEqual(preview.current.steps.collect_topic);
+  });
+
+  it("says so on the card when an edit no longer applies to the routine", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    ports.current.value = storedRoutine({ steps: [storedRoutine().steps[0]] });
+
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
+      targetLabel: "support-intake",
+      current: null,
+      proposed: { editNoLongerApplies: expect.stringContaining("confirm") },
+    });
+  });
+
+  it("sends the operator to the draft revision instead of editing the published version behind it", async () => {
+    // revise() hands back the lineage's existing draft rather than a fresh copy, so an edit
+    // computed against the published content would overwrite whatever that draft already changed.
+    const pending = storedRoutine({
+      id: pendingRevisionId, status: "draft", version: 2, name: "support-intake",
+      steps: [storedRoutine().steps[0]!, { ...storedRoutine().steps[1]!, instruction: "Half-finished wording." }],
+    });
+    const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "published" }), [pending]));
+
+    await expect(adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] }))
+      .rejects.toThrow(/draft revision/i);
+  });
+
+  it("edits through a revision nobody has touched rather than treating it as work in progress", async () => {
+    // Revising copies the published routine verbatim. A revision created and abandoned — including
+    // one left behind by a failed apply — is that copy, so refusing on its existence alone would
+    // strand the routine for every later edit.
+    const untouched = storedRoutine({ id: pendingRevisionId, status: "draft", version: 2 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [untouched]);
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: pendingRevisionId },
+    });
+  });
+
+  it("declines to write when a draft revision appeared after the card was drafted", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    ports.lineage.siblings = [storedRoutine({
+      id: pendingRevisionId, status: "draft", version: 2,
+      steps: [storedRoutine().steps[0]!, { ...storedRoutine().steps[1]!, instruction: "Someone else's wording." }],
+    })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+    expect(ports.updateDraft).not.toHaveBeenCalled();
+  });
+
+  it("states the version it decided against when it writes", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
+
+    expect(ports.updateDraft).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, expect.anything(), {
+      expectedUpdatedAt: ports.current.value.updatedAt,
+    });
+  });
+
+  it("leaves the revision alone when the edit it was created for fails", async () => {
+    // The revision is a verbatim copy of the published routine, so a failed edit leaves the same
+    // thing an author leaves by revising and walking away — and the next edit reuses it. Racing
+    // whoever else may hold that draft to clean it up costs more than the copy does.
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    ports.updateDraft.mockRejectedValueOnce(new Error("name already taken"));
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "name already taken",
+    });
+    expect(ports.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses to edit an archived routine instead of quietly failing at apply time", async () => {
+    const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "archived" })));
+
+    await expect(adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" })).rejects.toThrow(/archived/i);
+  });
+});
+
+describe("routine lifecycle proposal adapter", () => {
+  const targetRef = { agentId, routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
+  const token = new Date("2026-08-02T10:00:00.000Z").toISOString();
+
+  it("publishes the draft and points the card at the version that went live", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+
+    expect(draft.summary).toContain("Publish");
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
+      targetLabel: "support-intake",
+      current: { status: "draft" },
+      proposed: { status: "published" },
+    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: "published-1" },
+    });
+  });
+
+  it("publishes only the version the operator reviewed", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+
+    await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
+
+    expect(ports.publish).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, {
+      expectedUpdatedAt: ports.current.value.updatedAt,
+    });
+  });
+
+  it("says what archiving throws away, on the card and in the summary", async () => {
+    // Archiving deletes the lineage's in-progress draft. A card that previews only the status
+    // change would destroy unpublished work the operator never saw mentioned.
+    const pending = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [pending]);
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+
+    expect(draft.summary).toContain("draft revision");
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
+      proposed: { status: "archived", discardsDraftRevision: expect.stringContaining("3") },
+    });
+  });
+
+  it("refuses to archive when the disclosed draft has been worked on since", async () => {
+    // The id stays the same while an operator edits the draft, so an id-only guard would archive
+    // on the strength of a description that no longer matches what would be thrown away.
+    const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3, updatedAt: new Date("2026-08-04T10:00:00.000Z") })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: expect.stringContaining("not the one this card described"),
+    });
+    expect(ports.archive).not.toHaveBeenCalled();
+  });
+
+  it("refuses to archive when a draft appeared that the card never disclosed", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: expect.stringContaining("draft revision"),
+    });
+    expect(ports.archive).not.toHaveBeenCalled();
+  });
+
+  it("will not draft a publish for a routine that would be rejected on publish", async () => {
+    const ports = routineAdapterPorts();
+    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] });
+    const adapter = await routineAdapter(ports);
+
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "publish")).rejects.toThrow(/No ending/);
+  });
+
+  it("reports a publish the service rejects as a failure carrying its diagnostics", async () => {
+    const ports = routineAdapterPorts();
+    ports.publish.mockResolvedValueOnce({ rejected: true, validation: { ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] } } as never);
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: expect.stringContaining("No ending"),
+    });
+  });
+
+  it("will not restore a routine that has gone invalid while it was archived", async () => {
+    // Restore puts a routine back in front of customers without publish's gates, so a skill removed
+    // or a capability revoked during the archive would otherwise go live unchecked.
+    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
+    const adapter = await routineAdapter(ports);
+
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "restore")).rejects.toThrow(/billing\.lookup/);
+  });
+
+  it("stops a restore that went invalid between the card and the click", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: expect.stringContaining("billing.lookup"),
+    });
+    expect(ports.restore).not.toHaveBeenCalled();
+  });
+
+  it("reports a lifecycle change that committed before its bookkeeping failed as applied", async () => {
+    // publish() commits the status change, then persists trigger embeddings, writes a lifecycle
+    // audit event, and re-validates. A throw from that tail would mark the card failed for a
+    // routine that is already live, and re-applying it fails the status precondition.
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(new Error("trigger embedding provider is down"));
+    // Publishing flips this row in place, so the row the card names is the one that went live.
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+  });
+
+  it("reports a write that refused before it committed as stale, not as somebody else's publish", async () => {
+    // A conflict means nothing happened. Reconciling it against the routine would let a publish
+    // another writer performed in the same moment be reported as this proposal's.
+    const { conflict } = await import("../../../src/shared/domain/errors.js");
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(conflict("Routine changed while it was being published"));
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+  });
+
+  it("does not read the version already live as this proposal having landed", async () => {
+    // Publishing a revision leaves the previous version published until the flip commits. Accepting
+    // any published member of the lineage would mark a failed publish applied and link the old one.
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(new Error("routine changed while it was being published"));
+    ports.lineage.siblings = [storedRoutine({ id: "previous-version", status: "published", version: 1 })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "routine changed while it was being published",
+    });
+  });
+
+  it("still fails when the lifecycle change never landed", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(new Error("connection reset"));
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "connection reset",
+    });
+  });
+
+  it("refuses a lifecycle move the routine's status cannot take", async () => {
+    const adapter = await routineAdapter(routineAdapterPorts());
+
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "restore")).rejects.toThrow(/archived/i);
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "archive")).rejects.toThrow(/published/i);
+  });
+
+  it("archives and restores through the service, keeping the card on the same routine", async () => {
+    const archivedPorts = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const archiveAdapter = await routineAdapter(archivedPorts);
+    const archiveDraft = await archiveAdapter.draftLifecycle!(workspaceId, targetRef, "archive");
+
+    expect(await archiveAdapter.applyIfVersionMatches(workspaceId, targetRef, archiveDraft.payload, token)).toEqual({
+      outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    // The disclosed draft (none here) travels into the archive transaction, where a revision
+    // created since the card was drafted cannot slip past and be deleted unannounced.
+    expect(archivedPorts.archive).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, { expectedDraftRevision: null });
+
+    const restorePorts = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    const restoreAdapter = await routineAdapter(restorePorts);
+    const restoreDraft = await restoreAdapter.draftLifecycle!(workspaceId, targetRef, "restore");
+
+    expect(await restoreAdapter.applyIfVersionMatches(workspaceId, targetRef, restoreDraft.payload, token)).toEqual({
+      outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    expect(restorePorts.restore).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
   });
 });

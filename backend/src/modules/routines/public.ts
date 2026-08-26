@@ -35,6 +35,15 @@ export {
   type RoutineTerminalKind,
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
+export {
+  applyRoutineFieldPatch,
+  describeRoutineFieldPatch,
+  draftInputFromRoutine,
+  projectRoutineForReview,
+  routineFieldPatchSchema,
+  RoutineFieldPatchError,
+  type RoutineFieldPatch,
+} from "./authoringEdit.js";
 export { RoutineTriggerEmbeddingService, type RoutineTriggerEmbeddingStore } from "./routineTriggerEmbeddingService.js";
 export {
   createRoutineActivationPrefilter,
@@ -72,6 +81,8 @@ export {
   type RoutineDefinitionPublishOptions,
   type RoutineDefinitionPublishRejection,
   type RoutineDefinitionPublishResult,
+  type RoutineDefinitionWriteGuard,
+  type RoutineDefinitionArchiveGuard,
   type RoutineDefinitionSaveResult,
   type RoutineDefinitionServiceOptions,
 } from "./service.js";

@@ -728,6 +728,21 @@ describe("RoutineDefinitionService", () => {
     expect("rejected" in result && result.validation.diagnostics[0]?.message).toContain("unknown.send");
   });
 
+  it("reports an unregistered action type from explicit validation, not only from publish", async () => {
+    // Validation that clears a routine publish then rejects is worse than no validation: it is
+    // what a copilot builds a "ready to go live" proposal on.
+    const { service } = createService({
+      actionCapabilities: new FakeActionCapabilityMap(new Map()),
+      capabilityPolicy: new FakeCapabilityPolicy(),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft("unknown.send"));
+
+    expect(await service.validate(workspaceId, agentId, { id: draft.routine.id })).toMatchObject({
+      ok: false,
+      diagnostics: [expect.objectContaining({ code: "unregistered_action_type", location: "step:step_send" })],
+    });
+  });
+
   it("publishes an action step when the workspace has the required capability", async () => {
     const { service } = createService({
       actionCapabilities: new FakeActionCapabilityMap(new Map([
@@ -1120,11 +1135,11 @@ describe("RoutineDefinitionService", () => {
       });
   });
 
-  it("maps a draft save that raced a publish to an author-facing conflict", async () => {
+  it("maps a draft save the repository refused to an author-facing conflict", async () => {
     const { repository, service } = createService();
     const draft = await service.createDraft(workspaceId, agentId, validDraft());
-    // Simulate publish committing between the service's status pre-check and the
-    // repository write: the repository's zero-row guard throws the marker error.
+    // Simulate the repository's zero-row guard: either a publish committed between the service's
+    // status pre-check and the write, or the caller stated a version the row no longer holds.
     repository.updateDraft = async (_agentId: string, id: string) => {
       throw new Error(`routine_definition_update_conflict:${id}`);
     };
@@ -1132,7 +1147,44 @@ describe("RoutineDefinitionService", () => {
     await expect(service.updateDraft(workspaceId, agentId, draft.routine.id, validDraft()))
       .rejects.toMatchObject({
         statusCode: 409,
-        message: expect.stringContaining("published concurrently"),
+        message: expect.stringContaining("changed while it was being edited"),
       });
+  });
+
+  it("states the version a caller decided against, so the write cannot land on newer content", async () => {
+    // The copilot reads a routine, drafts an edit against it, and applies later. Checking the
+    // version in application code leaves a window; the repository has to enforce it.
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const expectedUpdatedAt = draft.routine.updatedAt;
+    const updateDraft = vi.fn(repository.updateDraft.bind(repository));
+    repository.updateDraft = updateDraft;
+
+    await service.updateDraft(workspaceId, agentId, draft.routine.id, validDraft(), { expectedUpdatedAt });
+
+    expect(updateDraft).toHaveBeenCalledWith(agentId, draft.routine.id, expect.anything(), { expectedUpdatedAt });
+  });
+
+  it("publishes only the version an operator reviewed", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const expectedUpdatedAt = draft.routine.updatedAt;
+    const publish = vi.fn(repository.publish.bind(repository));
+    repository.publish = publish;
+
+    await service.publish(workspaceId, agentId, draft.routine.id, { expectedUpdatedAt });
+
+    expect(publish).toHaveBeenCalledWith(agentId, draft.routine.id, expect.objectContaining({ expectedUpdatedAt }));
+  });
+
+  it("maps a publish the repository refused to an author-facing conflict", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    repository.publish = async (_agentId: string, id: string) => {
+      throw new Error(`routine_definition_publish_conflict:${id}`);
+    };
+
+    await expect(service.publish(workspaceId, agentId, draft.routine.id))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("changed while it was being published") });
   });
 });

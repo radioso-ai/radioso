@@ -33,7 +33,10 @@ export type CopilotEvalFidelity = "deterministic" | "live";
 export type CopilotEvalWorkspaceRequirement =
   | "conversation_with_assistant_turn"
   | "document"
-  | "quality_signal";
+  | "quality_signal"
+  | "routine"
+  /** A draft that validates cleanly — what a publish proposal needs to exist at all. */
+  | "publishable_routine";
 
 export interface CopilotObservedToolCall {
   readonly tool: string;
@@ -186,7 +189,7 @@ export const copilotEvalCaseSchema = z.object({
   history: z.array(z.object({ role: z.enum(["operator", "copilot"]), content: z.string() })).optional(),
   message: z.string().min(1),
   neverListBoundary: z.string().min(1).optional(),
-  requires: z.array(z.enum(["conversation_with_assistant_turn", "document", "quality_signal"])).optional(),
+  requires: z.array(z.enum(["conversation_with_assistant_turn", "document", "quality_signal", "routine", "publishable_routine"])).optional(),
   plan: z.array(z.object({ tool: z.string().min(1), input: z.unknown() })),
   finalMessage: z.string().optional(),
   assertions: z.array(copilotEvalAssertionSchema).min(1),

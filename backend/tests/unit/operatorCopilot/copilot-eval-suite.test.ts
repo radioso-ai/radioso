@@ -14,7 +14,7 @@ import {
   type CopilotEvalCase,
   type CopilotObservedTurn,
 } from "../../support/copilotEvalSuite.js";
-import { runCopilotEvalCaseDeterministically } from "../../support/copilotEvalRunner.js";
+import { COPILOT_EVAL_ROUTINE_NAME, runCopilotEvalCaseDeterministically } from "../../support/copilotEvalRunner.js";
 import { copilotEvalCases } from "../../fixtures/copilot-evals/cases.js";
 
 const turn = (overrides: Partial<CopilotObservedTurn> = {}): CopilotObservedTurn => ({
@@ -242,6 +242,19 @@ describe("copilot eval dataset", () => {
     const undeclared = cases
       .filter((entry) => entry.pageContext.conversationId !== null)
       .filter((entry) => !(entry.requires ?? []).includes("conversation_with_assistant_turn"))
+      .map((entry) => entry.id);
+
+    expect(undeclared).toEqual([]);
+  });
+
+  it("declares a routine requirement on every case that names one", () => {
+    // Same trap as the conversation requirement, one step further out: the routine a case names
+    // lives in its *message*, so a workspace without one runs the case against a routine that does
+    // not exist and records Ray's correct "there is no such routine" as a behaviour regression.
+    const routineTools = ["validate_routine", "propose_routine_edit", "propose_routine_lifecycle"];
+    const undeclared = cases
+      .filter((entry) => entry.plan.some((step) => routineTools.includes(step.tool)) || entry.message.includes(COPILOT_EVAL_ROUTINE_NAME))
+      .filter((entry) => !(entry.requires ?? []).some((requirement) => requirement === "routine" || requirement === "publishable_routine"))
       .map((entry) => entry.id);
 
     expect(undeclared).toEqual([]);

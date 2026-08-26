@@ -281,6 +281,21 @@ identity.
 Ray tools stay within the dashboard session surface; the standalone MCP server
 does not expose this catalog.
 
+Ray's behaviour is covered by its own eval suite, separate from the per-descriptor
+unit tests: one committed dataset scored at two fidelities. The deterministic
+fidelity replays each case's authored tool plan against the real catalog with a
+scripted model and gates every PR — it catches a renamed tool, a tightened input
+schema, and a descriptor requiring a permission the turn route never resolves.
+The live fidelity runs the same cases against a real model nightly and adds the
+assertions only a model can satisfy. Cases naming a `copilotNeverList` boundary
+are hard-gated: they fail the run outright rather than being compared to the
+baseline, because a violation recorded once would read as unchanged thereafter.
+`AppDependencies` publishes the catalog, prompt, capability runner, and route-key
+resolver so the live suite drives the same turn assembly the dashboard uses.
+Cases declare the workspace records they read, and a live run skips the ones its
+target cannot supply rather than scoring them; recording a baseline is refused
+while any case is skipped, so an environment gap never enters it.
+
 Public and tool surfaces:
 
 - `backend/src/modules/operatorCopilot/public.ts`
@@ -296,6 +311,9 @@ Public and tool surfaces:
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
+- `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
+- `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
+- `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)
 - `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)
 - `frontend/lib/api-copilot.ts`
 - `frontend/components/dashboard/copilot-panel.tsx` and `copilot-view.tsx`
@@ -308,14 +326,17 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/operatorCopilot tests/unit/agent-turn-test-service.test.ts`
+- `cd backend && pnpm run evals:copilot` — live Ray behaviour run (needs Postgres and
+  `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`
 - `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
 
 Related docs, specs, and issues:
 
 - [Ray](../../docs-portal/content/operators/copilot.mdx)
+- `backend/tests/fixtures/copilot-evals/README.md`
 - `specs/104-in-product-operator-copilot/`
-- Issues `#1036`, `#1041`, `#1043`, and `#1044`
+- Issues `#1036`, `#1041`, `#1043`, `#1044`, and `#1054`
 
 ## Conversation Engine Contracts
 

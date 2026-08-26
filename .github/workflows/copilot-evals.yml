@@ -1,0 +1,137 @@
+name: Ray Copilot Evals
+
+# Runs the live half of the Ray behaviour suite (real model, real catalog, real database) against a
+# throwaway workspace. This is NOT a per-PR gate: it needs provider credentials, spends tokens, and
+# is nondeterministic. The deterministic half — the catalog contract every case depends on — runs in
+# normal CI via backend/tests/unit/operatorCopilot/copilot-eval-suite.test.ts and needs neither.
+#
+# Two things fail this job. A never-list case that did not hold fails outright, because a safety
+# boundary is a gate rather than a baseline comparison. Anything else fails only on a regression
+# against backend/tests/fixtures/copilot-evals/baseline.json.
+#
+# The job runs on demand rather than on a schedule, because gating needs a recorded baseline and
+# baseline.json holds no cases yet. An empty baseline cannot gate — every case reads as "new" — so
+# the runner exits non-zero on purpose, and a scheduled job would be red every morning regardless of
+# how Ray behaved.
+#
+# Ray reads an existing workspace, so the job registers one and seeds it: a customer conversation
+# with an answered turn, a written complaint on that answer, and a document. Everything the dataset
+# reads comes from that seed, which is why a baseline recorded here is reproducible — it does not
+# depend on whatever some real workspace happened to hold that day, and running the suite leaves
+# nothing behind in anyone's Ray history or approval queue.
+#
+# To record a baseline: run with update_baseline checked, download the copilot-eval-baseline
+# artifact, commit it, and add the schedule trigger back:
+#
+#   on:
+#     schedule:
+#       - cron: "30 6 * * *" # 06:30 UTC daily, after the conversation-quality suite
+#
+# Requires the OPENAI_API_KEY repository secret.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Only run cases carrying this tag (blank = all); cannot be combined with update_baseline
+        required: false
+        default: ""
+      update_baseline:
+        description: Record the run into baseline.json and upload it as an artifact instead of gating
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: copilot-evals
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: Ray behaviour suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.5-pg16
+        env:
+          POSTGRES_DB: radioso_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d radioso_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
+
+      - name: Build workspace packages
+        working-directory: backend
+        run: pnpm run build:workspace-deps
+
+      - name: Prepare eval environment file
+        working-directory: backend
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::OPENAI_API_KEY secret is not set; the live copilot suite cannot run." >&2
+            exit 1
+          fi
+          cp ../.env.example ./.env.evals
+          sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
+          sed -i "s|^INTEGRATION_DATABASE_URL=.*|INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
+          sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" ./.env.evals
+          # Deterministic dummy signing secrets — the workspace is throwaway and never exposed.
+          # The connector key must be base64 of exactly 32 bytes or getEnv() rejects the file.
+          sed -i "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=ci-session-secret-000000000000000000000000000000|" ./.env.evals
+          sed -i "s|^WORKSPACE_TOKEN_SECRET=.*|WORKSPACE_TOKEN_SECRET=ci-workspace-token-secret-0000000000000000000000|" ./.env.evals
+          sed -i "s|^PUBLIC_CHAT_SESSION_SECRET=.*|PUBLIC_CHAT_SESSION_SECRET=ci-public-chat-secret-00000000000000000000000000|" ./.env.evals
+          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=cmFkaW9zby1jaS1ldmFsLWtleS0wMDAwMDAwMDAwMDA=|" ./.env.evals
+
+      - name: Apply migrations
+        working-directory: backend
+        run: node --env-file=./.env.evals --import tsx ./scripts/migrate.ts
+
+      - name: Run Ray behaviour suite
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          # Seeded with the script path so the array is never empty: expanding an empty array under
+          # `set -u` is an unbound-variable error on bash 3.2, which is what a maintainer reproducing
+          # this step on macOS has.
+          args=(./scripts/runCopilotEvals.ts)
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            args+=(--tag "${{ github.event.inputs.tag }}")
+          fi
+          if [ "${{ github.event.inputs.update_baseline }}" = "true" ]; then
+            args+=(--update-baseline)
+          fi
+          node --env-file=./.env.evals --import tsx "${args[@]}"
+
+      # Recording happens on a runner, so the file has to come back out to be committed. A
+      # never-list violation throws inside the recorder rather than being written, so this artifact
+      # can never carry one.
+      - name: Upload recorded baseline
+        if: ${{ github.event.inputs.update_baseline == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: copilot-eval-baseline
+          path: backend/tests/fixtures/copilot-evals/baseline.json
+          if-no-files-found: error

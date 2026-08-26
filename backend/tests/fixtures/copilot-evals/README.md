@@ -72,7 +72,13 @@ there leaves copilot conversations in their Ray history and a pending proposal i
 queue — so `--update-baseline` refuses to combine with `--workspace`.
 
 `--workspace` is for investigating a real workspace's behaviour. The run deletes the copilot
-conversations it created on the way out, and proposals cascade with them.
+conversations it created on the way out — named from the turns themselves, so an operator working in
+Ray alongside the run keeps their own — and proposals cascade with them.
+
+A bootstrapped workspace is removed at the end of the run. It is kept when the run failed, since
+that is when someone wants to open it and see what Ray was reading, and kept on `--keep-workspace`.
+The throwaway account and user behind it stay; they are identifiable by their
+`copilot-eval+…@example.invalid` address.
 
 ## Running the live suite
 

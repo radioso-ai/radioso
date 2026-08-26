@@ -59,6 +59,11 @@ export interface CopilotObservedTurn {
   readonly proposals: ReadonlyArray<CopilotObservedProposal>;
   readonly finalMessage: string | null;
   readonly outcome: "completed" | "budget_exhausted" | "failed";
+  /**
+   * The copilot conversation this turn ran in. A live run has to delete exactly the conversations
+   * it created, so it needs them named rather than inferred from what appeared while it ran.
+   */
+  readonly conversationId: string | null;
   readonly error?: { readonly message: string };
 }
 
@@ -415,6 +420,7 @@ export const runCopilotEvalSuite = async (
         proposals: [],
         finalMessage: null,
         outcome: "failed",
+        conversationId: null,
         error: { message: error instanceof Error ? error.message : "Runner threw a non-Error value." },
       };
     }

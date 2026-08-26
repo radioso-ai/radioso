@@ -198,6 +198,7 @@ export const observeCopilotTurn = async (
     proposals,
     finalMessage: messages.filter((message) => message.role === "copilot").at(-1)?.content ?? null,
     outcome,
+    conversationId: turnConversationId,
   };
 };
 

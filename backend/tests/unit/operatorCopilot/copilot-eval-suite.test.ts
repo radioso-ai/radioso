@@ -25,6 +25,7 @@ const turn = (overrides: Partial<CopilotObservedTurn> = {}): CopilotObservedTurn
   proposals: [],
   finalMessage: "Two handoffs are waiting.",
   outcome: "completed",
+  conversationId: "copilot-conversation-1",
   ...overrides,
 });
 
@@ -269,6 +270,15 @@ describe("copilot eval deterministic run", () => {
       .map((report) => `${report.caseId}: ${report.status} — ${report.reason ?? ""}`);
     expect(notPassing).toEqual([]);
     expect(copilotHardGateViolations(cases, outcomes)).toEqual([]);
+  });
+
+  it("names the copilot conversation the turn ran in", async () => {
+    // A live run deletes exactly the conversations it created, and it gets the ids from here. If
+    // this came back null the runner would fall back to guessing from what appeared while it ran,
+    // which is how an operator's own conversation gets deleted alongside the eval's.
+    const observed = await runCopilotEvalCaseDeterministically(evalCase({ id: "conversation-id" }));
+
+    expect(observed.conversationId).toEqual(expect.any(String));
   });
 
   it("fails a case whose plan names a tool the catalog no longer offers", async () => {

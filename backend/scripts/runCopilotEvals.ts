@@ -57,6 +57,7 @@ interface Flags {
   agentId: string;
   operatorUserId: string;
   migrate: boolean;
+  keepWorkspace: boolean;
 }
 
 const parseFlags = (argv: string[]): Flags => {
@@ -67,10 +68,12 @@ const parseFlags = (argv: string[]): Flags => {
     agentId: process.env.RADIOSO_EVAL_AGENT_ID ?? "",
     operatorUserId: process.env.RADIOSO_EVAL_OPERATOR_USER_ID ?? "",
     migrate: false,
+    keepWorkspace: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === "--update-baseline") flags.updateBaseline = true;
+    else if (arg === "--keep-workspace") flags.keepWorkspace = true;
     else if (arg === "--migrate") flags.migrate = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
     else if (arg === "--workspace") flags.workspaceId = argv[++index] ?? "";
@@ -218,35 +221,57 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
 };
 
 /**
- * Removes the copilot conversations this run created.
+ * Removes the copilot conversations this run created, named exactly.
  *
  * Every case drives a real copilot turn, which persists a conversation and its messages, and the
  * proposal cases persist a pending proposal on top. Against a workspace the operator actually uses,
- * that is the suite showing up in their Ray history and their approval queue. Proposals cascade with
- * the conversation, so deleting what this run added is enough.
+ * that is the suite showing up in their Ray history and their approval queue.
+ *
+ * The ids come from the turns themselves rather than from diffing the conversation list before and
+ * after. An operator investigating alongside the run — which is the whole point of `--workspace` —
+ * would have their own new conversation caught by that diff and deleted, proposals and all.
+ * Proposals cascade with the conversation, so deleting these is enough.
  */
 const cleanUpCopilotArtifacts = async (
   deps: Deps,
   target: EvalTarget,
-  priorConversationIds: ReadonlySet<string>,
+  createdConversationIds: ReadonlySet<string>,
 ): Promise<void> => {
+  if (createdConversationIds.size === 0) return;
   try {
-    const current = await deps.copilotRepository.listConversations({
-      workspaceId: target.workspaceId,
-      operatorUserId: target.operatorUserId,
-    });
-    const created = current.filter((conversation) => !priorConversationIds.has(conversation.id));
-    for (const conversation of created) {
+    for (const id of createdConversationIds) {
       await deps.copilotRepository.deleteConversation({
-        id: conversation.id,
+        id,
         workspaceId: target.workspaceId,
         operatorUserId: target.operatorUserId,
       });
     }
-    if (created.length > 0) console.log(`Cleaned up ${created.length} copilot conversation(s) this run created.`);
+    console.log(`Cleaned up ${createdConversationIds.size} copilot conversation(s) this run created.`);
   } catch (error) {
     // Never mask the run's own failure with a cleanup failure; say what is left behind instead.
     console.warn(`Could not clean up this run's copilot conversations: ${(error as Error).message}`);
+  }
+};
+
+/**
+ * Drops the workspace this run registered, so a local database does not collect one seeded
+ * workspace per run. Kept when the run failed, because a red run is exactly when someone wants to
+ * open the workspace and look at what Ray was reading, and kept on request.
+ *
+ * The throwaway account and its user survive: no delete path is published for them. They are
+ * identifiable by the `copilot-eval+…@example.invalid` address.
+ */
+const tearDownBootstrappedWorkspace = async (deps: Deps, target: EvalTarget, keep: boolean): Promise<void> => {
+  if (!target.bootstrapped) return;
+  if (keep) {
+    console.log(`Kept bootstrapped workspace ${target.workspaceId} for inspection.`);
+    return;
+  }
+  try {
+    await deps.workspaceRepository.deleteByIdAndAccountId(target.workspaceId, target.accountId);
+    console.log(`Removed bootstrapped workspace ${target.workspaceId}.`);
+  } catch (error) {
+    console.warn(`Could not remove bootstrapped workspace ${target.workspaceId}: ${(error as Error).message}`);
   }
 };
 
@@ -305,17 +330,13 @@ const main = async (): Promise<void> => {
   }
   const deps = buildDependencies(env);
   let target: EvalTarget | null = null;
-  let priorCopilotConversationIds: ReadonlySet<string> = new Set();
+  const createdCopilotConversationIds = new Set<string>();
 
   try {
     // Bound to a const as well so the closures below keep the non-null narrowing.
     const resolved = await resolveTarget(deps, flags);
     target = resolved;
     if (resolved.bootstrapped) await seedBootstrappedWorkspace(deps, resolved);
-    priorCopilotConversationIds = new Set(
-      (await deps.copilotRepository.listConversations({ workspaceId: resolved.workspaceId, operatorUserId: resolved.operatorUserId }))
-        .map((conversation) => conversation.id),
-    );
 
     const { satisfied, conversationId } = await probeWorkspace(deps, resolved);
     const selection = selectRunnableCopilotEvalCases(filterByTags(dataset, flags.tags), satisfied);
@@ -344,16 +365,20 @@ const main = async (): Promise<void> => {
     const { reports, outcomes } = await runCopilotEvalSuite(
       cases,
       {
-        run: (evalCase) => observeCopilotTurn(evalCase, {
-          prompt: deps.copilotPrompt,
-          tools: deps.copilotToolCatalog,
-          capabilityRunner: deps.copilotCapabilityRunner,
-          workspaceRouteKeyResolver: deps.copilotWorkspaceRouteKeyResolver,
-          repository: deps.copilotRepository,
-          workspaceId: resolved.workspaceId,
-          accountId: resolved.accountId,
-          operatorUserId: resolved.operatorUserId,
-        }),
+        run: async (evalCase) => {
+          const observed = await observeCopilotTurn(evalCase, {
+            prompt: deps.copilotPrompt,
+            tools: deps.copilotToolCatalog,
+            capabilityRunner: deps.copilotCapabilityRunner,
+            workspaceRouteKeyResolver: deps.copilotWorkspaceRouteKeyResolver,
+            repository: deps.copilotRepository,
+            workspaceId: resolved.workspaceId,
+            accountId: resolved.accountId,
+            operatorUserId: resolved.operatorUserId,
+          });
+          if (observed.conversationId) createdCopilotConversationIds.add(observed.conversationId);
+          return observed;
+        },
       },
       { fidelity: "live" },
     );
@@ -387,7 +412,10 @@ const main = async (): Promise<void> => {
       process.exitCode = 1;
     }
   } finally {
-    if (target) await cleanUpCopilotArtifacts(deps, target, priorCopilotConversationIds);
+    if (target) {
+      await cleanUpCopilotArtifacts(deps, target, createdCopilotConversationIds);
+      await tearDownBootstrappedWorkspace(deps, target, flags.keepWorkspace || process.exitCode === 1);
+    }
     const shutdown = (deps as { shutdown?: () => Promise<void> }).shutdown;
     if (shutdown) await shutdown.call(deps);
   }

@@ -4,6 +4,7 @@ import type { DocumentListResponse, DocumentSummary, WebsiteCrawlJobSummary } fr
 import { documentsApi } from './api'
 
 export const DOCUMENT_CRAWL_RECENT_SINCE_MINUTES = 30
+const ACTIVE_DOCUMENT_WORK_POLL_INTERVAL_MS = 2_000
 
 export const fetchDocumentList = ({
   page,
@@ -36,10 +37,21 @@ export const fetchDocumentCrawlActivity = async (signal: AbortSignal) => {
 export const hasAuthoritativeActiveCrawl = (jobs: readonly WebsiteCrawlJobSummary[]) =>
   jobs.some((job) => job.status === 'queued' || job.status === 'processing')
 
+export const hasAuthoritativeActiveDocument = (documents: readonly DocumentSummary[]) =>
+  documents.some((document) => {
+    const status = typeof document.status === 'string' ? document.status.toLowerCase() : ''
+    return status === 'queued' || status === 'processing'
+  })
+
+export const documentListPollingInterval = (
+  documents: readonly DocumentSummary[],
+  floorMs: number,
+) => hasAuthoritativeActiveDocument(documents) ? ACTIVE_DOCUMENT_WORK_POLL_INTERVAL_MS : floorMs
+
 export const documentCrawlPollingInterval = (
   jobs: readonly WebsiteCrawlJobSummary[],
   floorMs: number,
-) => hasAuthoritativeActiveCrawl(jobs) ? 2_000 : floorMs
+) => hasAuthoritativeActiveCrawl(jobs) ? ACTIVE_DOCUMENT_WORK_POLL_INTERVAL_MS : floorMs
 
 export const effectiveCrawlPresentation = (
   presentationWorkspaceId: string,
@@ -75,7 +87,10 @@ export const useDocumentListQuery = ({
     queryKey,
     queryFn: ({ signal }) => fetchDocumentList({ signal, sourceId, page, pageSize }),
     enabled: enabled && Boolean(workspaceId),
-    refetchInterval: intervalMs,
+    refetchInterval: (query) => documentListPollingInterval(
+      query.state.data?.documents ?? [],
+      intervalMs,
+    ),
   })
   return { ...query, queryKey }
 }

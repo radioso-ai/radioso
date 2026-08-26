@@ -8,10 +8,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { documentsApi } from '@/lib/api'
 import {
   documentCrawlPollingInterval,
+  documentListPollingInterval,
   effectiveCrawlPresentation,
   fetchDocumentCrawlActivity,
   fetchDocumentList,
   hasAuthoritativeActiveCrawl,
+  hasAuthoritativeActiveDocument,
   isInitialDocumentListLoading,
   patchDocumentListRow,
   removeDocumentListRow,
@@ -76,6 +78,16 @@ describe('document query state', () => {
     )).toBe(2_000)
   })
 
+  it('keeps visible queued and processing documents on the fast fallback cadence', () => {
+    expect(hasAuthoritativeActiveDocument([{ status: 'ready' }] as never)).toBe(false)
+    expect(hasAuthoritativeActiveDocument([{ status: 'failed' }] as never)).toBe(false)
+    expect(hasAuthoritativeActiveDocument([{ id: 'optimistic-without-status' }] as never)).toBe(false)
+    expect(hasAuthoritativeActiveDocument([{ status: 'queued' }] as never)).toBe(true)
+    expect(hasAuthoritativeActiveDocument([{ status: 'PROCESSING' }] as never)).toBe(true)
+    expect(documentListPollingInterval([{ status: 'queued' }] as never, 45_000)).toBe(2_000)
+    expect(documentListPollingInterval([{ status: 'ready' }] as never, 45_000)).toBe(45_000)
+  })
+
   it('fetches all and source lists with exact offset, limit, and the query signal', async () => {
     const signal = new AbortController().signal
     const all = vi.spyOn(documentsApi, 'listDocuments').mockResolvedValue({} as never)
@@ -134,7 +146,12 @@ describe('document query state', () => {
   it('gates hidden reads, uses exact workspace/source keys, and retains an optimistic crawl cadence', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const list = vi.spyOn(documentsApi, 'listDocuments').mockResolvedValue({ documents: [], total: 0, hasMore: false, nextCursor: null } as never)
-    const source = vi.spyOn(documentsApi, 'listSourceDocuments').mockResolvedValue({ documents: [], total: 0, hasMore: false, nextCursor: null } as never)
+    const source = vi.spyOn(documentsApi, 'listSourceDocuments').mockResolvedValue({
+      documents: [{ id: 'processing-document', status: 'queued' }],
+      total: 1,
+      hasMore: false,
+      nextCursor: null,
+    } as never)
     const crawls = vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] } as never)
     const root = await renderProbe(client, { enabled: false, workspaceId: 'workspace-a', sourceId: null, optimistic: [] })
     await flush()
@@ -153,6 +170,12 @@ describe('document query state', () => {
       await flush()
     })
     expect(source).toHaveBeenCalledWith('source-a', { limit: 25, offset: 0 }, expect.any(AbortSignal))
+    const documents = client.getQueryCache().find({
+      queryKey: ['workspace', 'workspace-a', 'documents', 'list', 'source-a', 1, 25],
+      exact: true,
+    })
+    const documentInterval = (documents?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval
+    expect(typeof documentInterval === 'function' && (documentInterval as (query: typeof documents) => number)(documents)).toBe(2_000)
     const crawl = client.getQueryCache().find({ queryKey: ['workspace', 'workspace-a', 'documents', 'crawl-activity', 30], exact: true })
     const interval = (crawl?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval
     expect(typeof interval === 'function' && (interval as (query: typeof crawl) => number)(crawl)).toBe(2_000)

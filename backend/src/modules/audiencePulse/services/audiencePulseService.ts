@@ -20,6 +20,7 @@ import {
 import type {
   AudiencePulseAuditPort,
   AudiencePulseEvidenceAnchor,
+  AudiencePulseFacetDrainPort,
   AudiencePulseHistorySource,
   AudiencePulseHydratedEvidence,
   AudiencePulseHydratedReport,
@@ -58,6 +59,7 @@ export interface AudiencePulseServiceDependencies {
   snapshotStore: AudiencePulseSnapshotStore;
   runGate: AudiencePulseRunGate;
   refreshRateLimit: AudiencePulseRefreshRateLimitPort;
+  facetDrain?: AudiencePulseFacetDrainPort;
   inferenceFactory: AudiencePulseInferenceFactory;
   usageLimitPolicy: UsageLimitPolicy;
   auditService: AudiencePulseAuditPort;
@@ -371,6 +373,18 @@ export class AudiencePulseService implements AudiencePulsePort {
     });
   }
 
+  async refreshStatus(input: { workspaceId: string }): Promise<{ pending: boolean }> {
+    const analysisEnd = this.now();
+    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    return {
+      pending: await this.deps.facetDrain?.hasPendingWorkspaceWork({
+        workspaceId: input.workspaceId,
+        analysisStart,
+        analysisEnd,
+      }) ?? false,
+    };
+  }
+
   async refresh(input: {
     accountId: string;
     userId: string;
@@ -422,6 +436,13 @@ export class AudiencePulseService implements AudiencePulsePort {
           period: { start: analysisStart.toISOString(), end: analysisEnd.toISOString() },
           weeklyVolume: history.weeklyVolume,
         };
+      }
+
+      const facetDrainInput = { workspaceId: input.workspaceId, analysisStart, analysisEnd };
+      const hasFacetWork = await this.deps.facetDrain?.hasPendingWorkspaceWork(facetDrainInput) ?? false;
+      if (hasFacetWork) {
+        await this.deps.facetDrain?.requestWorkspaceDrain(facetDrainInput);
+        return { kind: "preparing" };
       }
 
       try {

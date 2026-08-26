@@ -121,16 +121,26 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
    * table statistics, so the subquery form passes on an empty table and breaks later. A
    * `FOR UPDATE` CTE is never inlined, so it is evaluated exactly once and the limit holds.
    */
-  async claimBatch(limit: number, now: Date = new Date()): Promise<FacetExtractionJob[]> {
+  async claimBatch(
+    limit: number,
+    now: Date = new Date(),
+    workspaceId?: string,
+    messageWindow?: { start: Date; end: Date },
+  ): Promise<FacetExtractionJob[]> {
     const rows = await this.db
       .with("due", (qb) =>
         qb
           .selectFrom("facet_extraction_jobs")
           .select("id")
-          .where("status", "=", "queued")
-          .where("scheduled_at", "<=", now)
-          .orderBy("scheduled_at", "asc")
-          .orderBy("created_at", "asc")
+          .where("facet_extraction_jobs.status", "=", "queued")
+          .where("facet_extraction_jobs.scheduled_at", "<=", now)
+          .$if(workspaceId !== undefined, (query) => query.where("facet_extraction_jobs.workspace_id", "=", workspaceId!))
+          .$if(messageWindow !== undefined, (query) => query
+            .innerJoin("messages as facet_source_message", "facet_source_message.id", "facet_extraction_jobs.message_id")
+            .where("facet_source_message.created_at", ">=", messageWindow!.start)
+            .where("facet_source_message.created_at", "<", messageWindow!.end))
+          .orderBy("facet_extraction_jobs.scheduled_at", "asc")
+          .orderBy("facet_extraction_jobs.created_at", "asc")
           .limit(limit)
           .forUpdate()
           .skipLocked(),
@@ -148,6 +158,34 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .execute();
 
     return rows.map((row) => mapJob(row as FacetExtractionJobRow));
+  }
+
+  async nextWorkspaceScheduledAt(workspaceId: string, messageWindow?: { start: Date; end: Date }): Promise<Date | null> {
+    const row = await this.db
+      .selectFrom("facet_extraction_jobs")
+      .$if(messageWindow !== undefined, (query) => query
+        .innerJoin("messages as facet_source_message", "facet_source_message.id", "facet_extraction_jobs.message_id")
+        .where("facet_source_message.created_at", ">=", messageWindow!.start)
+        .where("facet_source_message.created_at", "<", messageWindow!.end))
+      .select((eb) => eb.fn.min<Date>("facet_extraction_jobs.scheduled_at").as("scheduled_at"))
+      .where("facet_extraction_jobs.workspace_id", "=", workspaceId)
+      .where("facet_extraction_jobs.status", "=", "queued")
+      .executeTakeFirst();
+    return row?.scheduled_at ? new Date(row.scheduled_at) : null;
+  }
+
+  async hasPendingWorkspaceWork(workspaceId: string, messageWindow?: { start: Date; end: Date }): Promise<boolean> {
+    const row = await this.db
+      .selectFrom("facet_extraction_jobs")
+      .$if(messageWindow !== undefined, (query) => query
+        .innerJoin("messages as facet_source_message", "facet_source_message.id", "facet_extraction_jobs.message_id")
+        .where("facet_source_message.created_at", ">=", messageWindow!.start)
+        .where("facet_source_message.created_at", "<", messageWindow!.end))
+      .select((eb) => eb.fn.countAll<number>().as("count"))
+      .where("facet_extraction_jobs.workspace_id", "=", workspaceId)
+      .where("facet_extraction_jobs.status", "in", ["queued", "processing"])
+      .executeTakeFirst();
+    return Number(row?.count ?? 0) > 0;
   }
 
   async markCompleted(job: FacetExtractionJobClaim): Promise<boolean> {
@@ -209,7 +247,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
    * The attempt was already counted at claim time, so a released job resumes with its
    * remaining budget and a worker crash loop cannot retry forever.
    */
-  async releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number }): Promise<number> {
+  async releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number; workspaceId?: string }): Promise<number> {
     const failed = await this.db
       .updateTable("facet_extraction_jobs")
       .set({
@@ -222,6 +260,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .where("claimed_at", "is not", null)
       .where("claimed_at", "<=", input.claimedAtOrBefore)
       .where("attempt_count", ">=", input.maxAttempts)
+      .$if(input.workspaceId !== undefined, (query) => query.where("workspace_id", "=", input.workspaceId!))
       .executeTakeFirst();
 
     const released = await this.db
@@ -237,6 +276,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .where("claimed_at", "is not", null)
       .where("claimed_at", "<=", input.claimedAtOrBefore)
       .where("attempt_count", "<", input.maxAttempts)
+      .$if(input.workspaceId !== undefined, (query) => query.where("workspace_id", "=", input.workspaceId!))
       .executeTakeFirst();
 
     return changedRows(failed) + changedRows(released);

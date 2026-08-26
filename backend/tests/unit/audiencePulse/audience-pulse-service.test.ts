@@ -80,6 +80,8 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     replace: 0,
     invalidate: 0,
     censusRun: 0,
+    facetDrain: 0,
+    facetDrainInputs: [] as Array<{ workspaceId: string; analysisStart: Date; analysisEnd: Date }>,
     censusWindows: [] as Array<{ windowStart: Date; windowEnd: Date }>,
     lifecycle: [] as string[],
     auditEvents: [] as Array<{ eventType: string; eventStatus: string; metadata?: Record<string, unknown> }>,
@@ -114,6 +116,15 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     },
     refreshRateLimit: {
       async enforce() { calls.rate += 1; },
+    },
+    facetDrain: {
+      async requestWorkspaceDrain(input) {
+        calls.facetDrain += 1;
+        calls.facetDrainInputs.push(input);
+        calls.lifecycle.push("facet-drain");
+        return false;
+      },
+      async hasPendingWorkspaceWork() { return false; },
     },
     inferenceFactory: {
       async create() {
@@ -384,8 +395,25 @@ describe("AudiencePulseService", () => {
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("completed");
-    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1, censusRun: 1 });
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1, censusRun: 1, facetDrain: 0 });
+    expect(calls.facetDrainInputs).toEqual([]);
     expect(calls.lifecycle).toEqual(["reserve", "census", "commit", "snapshot"]);
+  });
+
+  it("starts durable facet preparation without reserving or publishing a partial report", async () => {
+    let requested = 0;
+    const { service, calls } = createService({
+      facetDrain: {
+        async hasPendingWorkspaceWork() { return true; },
+        async requestWorkspaceDrain() { requested += 1; return false; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toEqual({ kind: "preparing" });
+    expect(requested).toBe(1);
+    expect(calls).toMatchObject({ inference: 0, reserve: 0, replace: 0, censusRun: 0, leaseRelease: 1 });
   });
 
   it("runs the census over the same fixed window as the history read and builds the report from its real membership", async () => {

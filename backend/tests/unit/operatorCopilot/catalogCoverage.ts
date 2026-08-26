@@ -43,6 +43,7 @@ const catalogToolCoverage = {
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
   getAudiencePulse: "audience_topics",
+  getAudiencePulseRefreshStatus: "audience_topics",
   getPlatformSettings: "workspace_settings",
   getSettingsRetrievalDefaults: "workspace_settings",
   getIngestionSettings: "workspace_settings",

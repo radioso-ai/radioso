@@ -19482,6 +19482,7 @@ export interface operations {
             query?: never;
             header: {
                 Accept: string;
+                "X-Workspace-Id": string;
             };
             path?: never;
             cookie?: never;

@@ -36897,8 +36897,7 @@
         "operationId": "streamWorkspaceEvents",
         "security": [
           {
-            "sessionCookie": [],
-            "workspaceSelection": []
+            "sessionCookie": []
           }
         ],
         "parameters": [
@@ -36911,6 +36910,17 @@
             "required": true,
             "in": "header",
             "name": "Accept"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Workspace selected by the authenticated dashboard session.",
+              "example": "4d7293c8-d241-4f8f-a4db-3df5b88da44c"
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Workspace-Id"
           }
         ],
         "responses": {

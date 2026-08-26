@@ -15,11 +15,16 @@ export const registerWorkspaceEventsPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
-  const acceptHeaders = z.object({
+  const requestHeaders = z.object({
     Accept: z.string().openapi({
       description: "Must contain the text/event-stream media range.",
       example: "text/event-stream",
       param: { in: "header", name: "Accept" },
+    }),
+    "X-Workspace-Id": z.string().uuid().openapi({
+      description: "Workspace selected by the authenticated dashboard session.",
+      example: "4d7293c8-d241-4f8f-a4db-3df5b88da44c",
+      param: { in: "header", name: "X-Workspace-Id" },
     }),
   });
   const errorResponse = (description: string) => ({
@@ -38,8 +43,8 @@ export const registerWorkspaceEventsPaths = (
       "Bearer API tokens and anonymous public-chat sessions are rejected. This transport is not an API-token SDK or MCP event surface.",
     ].join(" "),
     operationId: "streamWorkspaceEvents",
-    security: security.workspaceAdminSecurity,
-    request: { headers: acceptHeaders },
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: { headers: requestHeaders },
     responses: {
       200: {
         description: "Workspace event stream committed; ready is the first data event",

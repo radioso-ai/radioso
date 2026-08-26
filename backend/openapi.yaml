@@ -23704,7 +23704,8 @@ paths:
       summary: Stream workspace dashboard invalidations
       description: Opens the dashboard's workspace-scoped SSE transport after authentication, admission, and broker subscription succeed. Requires the dashboard session cookie, X-Workspace-Id, and an Accept header containing text/event-stream. Bearer API tokens and anonymous public-chat sessions are rejected. This transport is not an API-token SDK or MCP event surface.
       operationId: streamWorkspaceEvents
-      security: *a48
+      security:
+        - sessionCookie: []
       parameters:
         - schema:
             type: string
@@ -23713,6 +23714,14 @@ paths:
           required: true
           in: header
           name: Accept
+        - schema:
+            type: string
+            format: uuid
+            description: Workspace selected by the authenticated dashboard session.
+            example: 4d7293c8-d241-4f8f-a4db-3df5b88da44c
+          required: true
+          in: header
+          name: X-Workspace-Id
       responses:
         "200":
           description: Workspace event stream committed; ready is the first data event

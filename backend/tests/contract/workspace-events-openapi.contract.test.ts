@@ -11,7 +11,7 @@ describe("workspace events OpenAPI contract", () => {
 
     expect(operation).toMatchObject({
       operationId: "streamWorkspaceEvents",
-      security: [{ sessionCookie: [], workspaceSelection: [] }],
+      security: [{ sessionCookie: [] }],
       responses: {
         "200": {
           headers: {
@@ -37,6 +37,7 @@ describe("workspace events OpenAPI contract", () => {
     expect(operation?.security).not.toEqual(expect.arrayContaining([{ bearerAuth: [] }]));
     expect(operation?.parameters).toEqual(expect.arrayContaining([
       expect.objectContaining({ in: "header", name: "Accept", required: true }),
+      expect.objectContaining({ in: "header", name: "X-Workspace-Id", required: true }),
     ]));
   });
 
@@ -69,14 +70,17 @@ describe("workspace events OpenAPI contract", () => {
     });
   });
 
-  it("keeps the stream out of API-token convenience methods and MCP tools", async () => {
-    const [generatedClient, mcpReadTools, mcpWriteTools] = await Promise.all([
+  it("types the browser-only stream without adding API-token convenience or MCP surfaces", async () => {
+    const [generatedClient, generatedTypes, mcpReadTools, mcpWriteTools] = await Promise.all([
       readFile(new URL("../../../typescript-sdk/src/generated/client.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../../typescript-sdk/src/generated/types.ts", import.meta.url), "utf8"),
       readFile(new URL("../../../packages/radioso-mcp-server/src/tools/readTools.ts", import.meta.url), "utf8"),
       readFile(new URL("../../../packages/radioso-mcp-server/src/tools/writeTools.ts", import.meta.url), "utf8"),
     ]);
 
     expect(generatedClient).not.toContain("streamWorkspaceEvents");
+    const generatedOperation = generatedTypes.match(/streamWorkspaceEvents: \{[\s\S]*?^    \};/m)?.[0];
+    expect(generatedOperation).toContain('"X-Workspace-Id": string;');
     expect(`${mcpReadTools}\n${mcpWriteTools}`).not.toMatch(/workspace[_ -]?events|streamWorkspaceEvents/i);
   });
 });

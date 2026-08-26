@@ -6232,6 +6232,27 @@ CREATE INDEX idx_website_crawl_jobs_source_status ON public.website_crawl_jobs U
 
 
 --
+-- Name: idx_website_crawl_jobs_stale_paused_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_website_crawl_jobs_stale_paused_claim ON public.website_crawl_jobs USING btree (claimed_at, updated_at, id) INCLUDE (workspace_id) WHERE ((status = 'paused'::text) AND (resume_requested_at IS NULL));
+
+
+--
+-- Name: idx_website_crawl_jobs_stale_paused_resume; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_website_crawl_jobs_stale_paused_resume ON public.website_crawl_jobs USING btree (resume_requested_at, updated_at, id) INCLUDE (workspace_id) WHERE ((status = 'paused'::text) AND (resume_requested_at IS NOT NULL));
+
+
+--
+-- Name: idx_website_crawl_jobs_stale_processing; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_website_crawl_jobs_stale_processing ON public.website_crawl_jobs USING btree (claimed_at, updated_at, id) INCLUDE (workspace_id) WHERE (status = 'processing'::text);
+
+
+--
 -- Name: idx_website_crawl_jobs_workspace_created; Type: INDEX; Schema: public; Owner: -
 --
 

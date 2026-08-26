@@ -145,18 +145,20 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
       persistence.getOrCreateConversationLink(input),
     ]);
 
-    expect(first.conversationId).toBe(second.conversationId);
+    expect(first.link.conversationId).toBe(second.link.conversationId);
     const conversations = await database.query<{ id: string }>(
       `SELECT id FROM conversations WHERE workspace_id = $1 AND source_channel = 'slack'`,
       [workspaceId],
     );
     expect(conversations).toHaveLength(1);
-    expect(conversations[0]?.id).toBe(first.conversationId);
+    expect(conversations[0]?.id).toBe(first.link.conversationId);
     const links = await database.query<{ conversation_id: string }>(
       `SELECT conversation_id FROM slack_conversation_links WHERE slack_key = $1`,
       [slackKey],
     );
-    expect(links).toEqual([{ conversation_id: first.conversationId }]);
+    expect(links).toEqual([{ conversation_id: first.link.conversationId }]);
+
+    expect([first.created, second.created].sort()).toEqual([false, true]);
   });
 
   it("upserts a conversation link on the slack_key conflict, updating conversation + installation", async () => {

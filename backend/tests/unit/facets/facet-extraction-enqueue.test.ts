@@ -59,7 +59,10 @@ const retrievalTurn: RetrievalTurnPort = {
   },
 };
 
-const preparerWith = async (facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">) => {
+const preparerWith = async (
+  facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">,
+  workspaceInvalidationPublisher?: { enqueue(workspaceId: string, kinds: readonly string[]): unknown },
+) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
   const agentRepository = new InMemoryAgentRepository();
@@ -78,6 +81,7 @@ const preparerWith = async (facetExtractionJobs?: Pick<FacetExtractionJobStore, 
       undefined,
       { warn: vi.fn() },
       facetExtractionJobs,
+      workspaceInvalidationPublisher as never,
     ),
   };
 };
@@ -155,5 +159,31 @@ describe("ChatSessionPreparer facet extraction enqueue", () => {
     await expect(
       preparer.prepare({ workspaceId: "ws-1", agentId: agent.id, query: "Hi" }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("ChatSessionPreparer conversation publisher seam", () => {
+  it("publishes only when the authenticated chat session creates a conversation", async () => {
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true })) };
+    const { preparer, agent } = await preparerWith(undefined, publisher);
+
+    const first = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "Hello",
+      anonymousSessionId: "session-1",
+      sourceChannel: "authenticated_chat",
+    });
+    await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      conversationId: first.conversation.id,
+      query: "Again",
+      anonymousSessionId: "session-1",
+      sourceChannel: "authenticated_chat",
+    });
+
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(publisher.enqueue).toHaveBeenCalledWith("ws-1", ["conversation.created"]);
   });
 });

@@ -8,6 +8,7 @@ import { ConversationSummaryService, ModelConversationSummaryGenerator } from ".
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { BootstrapGreetingCacheRepository } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
@@ -63,6 +64,7 @@ import {
   planAwareRoutineSlotCorrection,
   AgentConverseAudit,
   AgentConverseService,
+  CONTACT_SEND_ACTION_TYPE,
 } from "../../../modules/chat/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { createDefaultActionDrainDispatcher } from "../../composition/defaultComposition.js";
@@ -152,6 +154,7 @@ export const buildMcpConverseServices = (
     assistantChatService: dependencies.assistantChatService,
     conversationRepository: dependencies.conversationRepository,
     audit,
+    publisher: dependencies.workspaceInvalidationPublisher,
   });
   const groundedAnswerService = new AgentConverseGroundedAnswerService({
     agentRepository: dependencies.agentRepository,
@@ -210,6 +213,7 @@ export const buildChatServices = (input: {
   errorReporter: ErrorReporter;
   ingestionSettingsService: IngestionSettingsService;
   routineTriggerEmbeddingService: RoutineTriggerEmbeddingService;
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   // Retrieval-sense clarification is answer-first: once a candidate set survives
@@ -414,6 +418,7 @@ export const buildChatServices = (input: {
       ? input.composition.answerFeedbackHistoryProviderRegistration({
           database: input.database.kysely,
           logger: input.logger,
+          workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
   const resolvedChatActionSuggestionProviders = input.composition.chatActionSuggestionProviders.map(
@@ -494,7 +499,14 @@ export const buildChatServices = (input: {
     })),
   );
   const actionDispatchWorker = new ActionDispatchWorker(
-    new ActionDispatcher(actionOutbox, actionHandlerRegistry),
+    new ActionDispatcher(actionOutbox, actionHandlerRegistry, {}, ({ request }) => {
+      if (request.type === CONTACT_SEND_ACTION_TYPE && request.workspaceId) {
+        input.workspaceInvalidationPublisher.enqueue(
+          request.workspaceId,
+          ["conversation.contact_delivery_changed"],
+        );
+      }
+    }),
     {
       logger: input.logger,
       errorReporter: input.errorReporter,
@@ -775,6 +787,7 @@ export const buildChatServices = (input: {
     retrievalSenseClarificationPolicy: turnClarificationPolicy,
     agentSkillTurnSkillProvider,
     recordClarificationDecision: clarificationDecisionRecorder,
+    workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -865,6 +878,7 @@ export const buildChatServices = (input: {
         ...event,
       }),
     },
+    input.workspaceInvalidationPublisher,
   );
   return {
     abuseControlService,

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 import { AnswerFeedbackService } from "../../src/modules/chat/services/answerFeedbackService.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -159,6 +159,20 @@ describeIntegration("AnswerFeedbackService (Postgres)", () => {
     await expect(
       service.clear({ workspaceId, assistantMessageId, actor: authActor }),
     ).resolves.toEqual({ cleared: false });
+  });
+
+  it("publishes only real upsert/clear changes after their database commits", async () => {
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
+    const serviceWithPublisher = new AnswerFeedbackService(database.kysely, publisher);
+
+    await serviceWithPublisher.upsert({ workspaceId, assistantMessageId, value: "down", comment: "x", actor: authActor });
+    await serviceWithPublisher.upsert({ workspaceId, assistantMessageId, value: "down", comment: "x", actor: authActor });
+    await serviceWithPublisher.clear({ workspaceId, assistantMessageId, actor: authActor });
+    await serviceWithPublisher.clear({ workspaceId, assistantMessageId, actor: authActor });
+
+    expect(publisher.enqueue).toHaveBeenCalledTimes(2);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(1, workspaceId, ["quality.feedback_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(2, workspaceId, ["quality.feedback_changed"]);
   });
 
   it("groups feedback by assistant message id ordered by created_at", async () => {

@@ -33,6 +33,11 @@ export interface ConversationRecord {
   updatedAt: Date;
 }
 
+export interface GetOrCreateConversationResult {
+  record: ConversationRecord;
+  created: boolean;
+}
+
 export interface ConversationRepositoryPort {
   // MCP converse requires this capability, while replay/eval repository doubles do not.
   // AgentConverseService fails closed when an application adapter omits it.
@@ -42,7 +47,7 @@ export interface ConversationRepositoryPort {
     sourceChannel: string;
     anonymousSessionId: string;
     sourceOrigin?: string | null;
-  }): Promise<ConversationRecord>;
+  }): Promise<GetOrCreateConversationResult>;
   create(
     workspaceId: string,
     agentId?: string | null,
@@ -187,7 +192,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceChannel: string;
     anonymousSessionId: string;
     sourceOrigin?: string | null;
-  }): Promise<ConversationRecord> {
+  }): Promise<GetOrCreateConversationResult> {
     return this.db.transaction().execute(async (trx) => {
       const lockKey = [
         "anonymous_conversation",
@@ -210,7 +215,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         .orderBy("id", "desc")
         .executeTakeFirst();
       if (existing) {
-        return mapConversation(existing as ConversationRow);
+        return { record: mapConversation(existing as ConversationRow), created: false };
       }
 
       const created = await trx
@@ -225,7 +230,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         })
         .returning(conversationColumns)
         .executeTakeFirstOrThrow();
-      return mapConversation(created as ConversationRow);
+      return { record: mapConversation(created as ConversationRow), created: true };
     });
   }
 

@@ -28,7 +28,7 @@ import {
   type DashboardSection,
   type DashboardRouteState,
 } from '@/lib/dashboard-routes'
-import { useInboxCount } from '@/hooks/use-inbox-count'
+import { useAttentionRailQueries } from '@/lib/needs-attention-query-state'
 import { cn } from '@/lib/utils'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { AccountMenu } from './account-menu'
@@ -57,7 +57,9 @@ const navItems = [
 export function AppSidebar({ accountId, currentView, routeState, areaSubNav, askRaySlot }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const inboxCount = useInboxCount()
+  const railQueries = useAttentionRailQueries(activeWorkspaceId ?? '')
+  const inboxCount = (railQueries.decisions.data?.decisions.length ?? 0)
+    + (railQueries.humanOwned.data?.total ?? 0)
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
   const isAccountActive = currentView === 'account'

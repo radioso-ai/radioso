@@ -58,11 +58,11 @@ class InMemoryActionOutbox {
     return claimed;
   }
 
-  async markDispatched(id: string): Promise<void> {
+  async markDispatched(id: string): Promise<boolean> {
     const row = this.rows.get(id);
-    if (row) {
-      row.status = "dispatched";
-    }
+    if (!row) return false;
+    row.status = "dispatched";
+    return true;
   }
 
   async recordFailure(id: string): Promise<ActionFailureOutcome> {

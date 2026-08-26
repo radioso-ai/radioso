@@ -1,6 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { ConversationTrace, RoutineActionRequest } from "@radioso/conversation-contract";
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  createPostCommitInvalidationReceipt,
+  flushPostCommitInvalidationReceipt,
+  type PostCommitInvalidationReceipt,
+  type WorkspaceInvalidationKind,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
@@ -14,6 +22,7 @@ import type { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
 import type {
   ConversationOwnershipReason,
   ConversationOwnershipRequestHandoffInput,
+  ConversationOwnershipRequestHandoffResult,
 } from "../../../db/repositories/conversationOwnershipRepository.js";
 import {
   ActivitySummaryPresenter,
@@ -56,6 +65,7 @@ import type { ConversationSummaryUpdater } from "./summary/conversationSummarySe
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
+import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -139,6 +149,18 @@ export const getChatTurnRoute = (session: PreparedSession, engineTrace?: Convers
 export interface CompletedAssistantTurn {
   response: ChatResponse;
   assistantMessageId: string;
+  postCommitReceipt: PostCommitInvalidationReceipt;
+}
+
+export interface AssistantTurnCommittedFacts {
+  insertedActionTypes: readonly string[];
+  decisionCreated: boolean;
+  ownershipChanged: boolean;
+}
+
+export interface AssistantTurnPersistenceReceipt {
+  message: MessageRecord;
+  committedFacts: AssistantTurnCommittedFacts;
 }
 
 /** The narrow slice of the action outbox the turn lifecycle needs (idempotent enqueue). */
@@ -196,7 +218,7 @@ export interface AssistantTurnPersistencePort {
     ownershipAuditEvent?: AuditEventInput | null;
     additionalAuditEvent?: AuditEventInput | null;
     transaction?: Db;
-  }): Promise<MessageRecord>;
+  }): Promise<AssistantTurnPersistenceReceipt>;
 }
 
 export interface PendingDecisionWriterPort {
@@ -204,7 +226,7 @@ export interface PendingDecisionWriterPort {
 }
 
 export interface ConversationOwnershipWriterPort {
-  requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<unknown>;
+  requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRequestHandoffResult>;
 }
 
 export interface OwnershipHandoffInput {
@@ -476,6 +498,8 @@ export class ChatTurnLifecycle {
     // regenerated fire-and-forget after the turn is durably persisted.
     private readonly conversationSummaryUpdater?: ConversationSummaryUpdater,
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -486,12 +510,13 @@ export class ChatTurnLifecycle {
     workspaceId: string;
     accountId?: string;
     conversationId: string;
-  }): Promise<void> {
+  }): Promise<readonly string[]> {
     if (!this.actionOutbox || !input.actions?.length) {
-      return;
+      return [];
     }
+    const insertedActionTypes: string[] = [];
     for (const action of input.actions) {
-      await this.actionOutbox.enqueue({
+      const outcome = await this.actionOutbox.enqueue({
         type: action.type,
         payload: action.payload,
         workspaceId: input.workspaceId,
@@ -499,7 +524,28 @@ export class ChatTurnLifecycle {
         conversationId: input.conversationId,
         idempotencyKey: actionIdempotencyKey(input.conversationId, action.type, action.payload),
       });
+      if (!outcome.duplicate) {
+        insertedActionTypes.push(action.type);
+      }
     }
+    return insertedActionTypes;
+  }
+
+  private createPostCommitReceipt(
+    workspaceId: string,
+    committedFacts: AssistantTurnCommittedFacts,
+  ): PostCommitInvalidationReceipt {
+    const changeKinds: WorkspaceInvalidationKind[] = ["conversation.turn_committed"];
+    if (committedFacts.insertedActionTypes.includes(CONTACT_SEND_ACTION_TYPE)) {
+      changeKinds.push("conversation.contact_delivery_changed");
+    }
+    if (committedFacts.decisionCreated) {
+      changeKinds.push("hitl.decision_created");
+    }
+    if (committedFacts.ownershipChanged) {
+      changeKinds.push("conversation.ownership_changed");
+    }
+    return createPostCommitInvalidationReceipt(workspaceId, changeKinds);
   }
 
   private async assertActionsAuthorized(input: {
@@ -595,6 +641,7 @@ export class ChatTurnLifecycle {
       modelCallTrace: input.modelCallTrace,
     });
     let assistantMessage: MessageRecord;
+    let postCommitReceipt: PostCommitInvalidationReceipt;
     const suspended = input.suspended === true;
     const baseAuditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
@@ -626,7 +673,7 @@ export class ChatTurnLifecycle {
       conversationId: input.session.conversation.id,
     });
     if (this.assistantTurnPersistence) {
-      assistantMessage = await this.assistantTurnPersistence.completeAssistantTurn({
+      const persisted = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
@@ -643,6 +690,11 @@ export class ChatTurnLifecycle {
         additionalAuditEvent: safeTestTurn ? undefined : input.additionalAuditEvent,
         transaction: input.transaction,
       });
+      assistantMessage = persisted.message;
+      postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
+      if (!input.transaction) {
+        flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
+      }
       this.auditService.logRecorded?.(auditEvent);
       if (!suspended && !safeTestTurn) {
         await this.trackAssistantTurnCompleted(presentation.successInput);
@@ -650,7 +702,7 @@ export class ChatTurnLifecycle {
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
-      await this.enqueueTurnActions({
+      const insertedActionTypes = await this.enqueueTurnActions({
         actions: safeTestTurn ? undefined : input.actions,
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -658,24 +710,31 @@ export class ChatTurnLifecycle {
       });
       await input.commitRoutineState?.();
       assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
+      let pendingDecisionCreated = false;
       if (input.pendingDecisionTransition && this.pendingDecisionRepository) {
         await this.pendingDecisionRepository.create(input.pendingDecisionTransition);
+        pendingDecisionCreated = true;
       }
-      if (!safeTestTurn && input.ownershipHandoff && this.conversationOwnershipRepository) {
-        await this.conversationOwnershipRepository.requestHandoff({
+      const ownershipResult = !safeTestTurn && input.ownershipHandoff && this.conversationOwnershipRepository
+        ? await this.conversationOwnershipRepository.requestHandoff({
           conversationId: input.session.conversation.id,
           workspaceId: input.workspaceId,
           reason: input.ownershipHandoff.reason,
-        });
-      }
+        })
+        : null;
       await input.commitClarificationState?.();
-      if (safeTestTurn) {
-        await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
-        await this.auditService.record(auditEvent);
-      } else if (suspended) {
-        await this.finalizeSuspendedAssistantTurn(presentation.successInput);
-      } else {
-        await this.finalizeAssistantTurn(presentation.successInput);
+      await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
+      postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, {
+        insertedActionTypes,
+        decisionCreated: pendingDecisionCreated,
+        ownershipChanged: ownershipResult?.changed ?? false,
+      });
+      if (!input.transaction) {
+        flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
+      }
+      await this.auditService.record(auditEvent);
+      if (!safeTestTurn && !suspended) {
+        await this.trackAssistantTurnCompleted(presentation.successInput);
       }
       if (ownershipAuditEvent) {
         await this.auditService.record(ownershipAuditEvent);
@@ -740,6 +799,7 @@ export class ChatTurnLifecycle {
 
     return {
       assistantMessageId: assistantMessage.id,
+      postCommitReceipt,
       response: {
         conversationId: input.session.conversation.id,
         agentId: input.session.agent.id,
@@ -1017,17 +1077,6 @@ export class ChatTurnLifecycle {
         stepId: input.stepId,
       },
     };
-  }
-
-  private async finalizeAssistantTurn(input: AssistantTurnSuccessInput): Promise<void> {
-    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
-    await this.auditService.record(this.buildAssistantTurnSuccessAuditEvent(input));
-    await this.trackAssistantTurnCompleted(input);
-  }
-
-  private async finalizeSuspendedAssistantTurn(input: AssistantTurnSuccessInput): Promise<void> {
-    await this.conversationRepository.touch(input.conversationId, input.workspaceId);
-    await this.auditService.record(this.buildAssistantTurnSuspendedAuditEvent(input));
   }
 
   private async trackAssistantTurnCompleted(input: AssistantTurnSuccessInput): Promise<void> {

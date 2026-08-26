@@ -18,6 +18,7 @@ type ConversationOwnershipRouteDependencies = WorkspaceSessionDependencies & Pic
   | "operatorReplyService"
   | "userRepository"
   | "workspaceRepository"
+  | "workspaceInvalidationPublisher"
 >;
 
 const takeoverBodySchema = z.object({
@@ -127,6 +128,9 @@ export const createConversationOwnershipRoutes = (
         next(conflictWithCurrentOwnership(result.record));
         return;
       }
+      if (result.changed) {
+        dependencies.workspaceInvalidationPublisher.enqueue(workspaceId, ["conversation.ownership_changed"]);
+      }
 
       await dependencies.auditService.record({
         accountId,
@@ -188,6 +192,9 @@ export const createConversationOwnershipRoutes = (
         next(conflictWithCurrentOwnership(result.record));
         return;
       }
+      if (result.changed) {
+        dependencies.workspaceInvalidationPublisher.enqueue(workspaceId, ["conversation.ownership_changed"]);
+      }
 
       await dependencies.auditService.record({
         accountId,
@@ -221,6 +228,9 @@ export const createConversationOwnershipRoutes = (
       if (!result.ok) {
         next(conflictWithCurrentOwnership(result.record));
         return;
+      }
+      if (result.changed) {
+        dependencies.workspaceInvalidationPublisher.enqueue(workspaceId, ["conversation.ownership_changed"]);
       }
 
       await dependencies.auditService.record({

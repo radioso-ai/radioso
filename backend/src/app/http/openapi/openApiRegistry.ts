@@ -16,6 +16,7 @@ import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
 import { registerUsageDetailsSchemas } from "./schemas/usageDetailsSchemas.js";
 import { registerContextVariableSchemas } from "./schemas/contextVariableSchemas.js";
 import { registerAudiencePulseSchemas } from "./schemas/audiencePulseSchemas.js";
+import { registerWorkspaceEventsSchemas } from "./schemas/workspaceEventsSchemas.js";
 
 extendZodWithOpenApi(z);
 
@@ -304,6 +305,11 @@ export interface OpenApiSchemaCatalog {
   WorkspaceSchema: z.ZodTypeAny;
   WorkspaceSummaryResponseSchema: z.ZodTypeAny;
   WorkspaceTokenResponseSchema: z.ZodTypeAny;
+  WorkspaceEventInvalidateDataSchema: z.ZodTypeAny;
+  WorkspaceEventReadyDataSchema: z.ZodTypeAny;
+  WorkspaceEventResyncDataSchema: z.ZodTypeAny;
+  WorkspaceEventStreamSchema: z.ZodTypeAny;
+  WorkspaceInvalidationKindSchema: z.ZodTypeAny;
 }
 
 export const createOpenApiRegistry = () => {
@@ -348,6 +354,7 @@ export const createOpenApiRegistry = () => {
   registerUsageDetailsSchemas(registry, schemas);
   registerContextVariableSchemas(registry, schemas);
   registerAudiencePulseSchemas(registry, schemas);
+  registerWorkspaceEventsSchemas(registry, schemas);
 
   return {
     registry,

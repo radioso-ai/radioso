@@ -68,6 +68,7 @@ describe("Slack interruption", () => {
       sourceChannel: string;
       channelContext: never;
     }) => {
+      const created = linkPromise === undefined;
       linkPromise ??= ctx.repositories.conversationRepository.create(
         input.workspaceId,
         input.agentId,
@@ -82,7 +83,7 @@ describe("Slack interruption", () => {
         slackKey: input.slackKey,
         conversationId: conversation.id,
       }));
-      return linkPromise;
+      return { link: await linkPromise, created };
     });
     const statuses: Array<{ eventId: string; status: string }> = [];
     const posts: string[] = [];

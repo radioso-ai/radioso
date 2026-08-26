@@ -50,6 +50,77 @@ describe("website crawl job service", () => {
     });
   });
 
+  it("publishes lifecycle changes after each affected repository result", async () => {
+    const order: string[] = [];
+    const publisher = {
+      enqueue: vi.fn((workspaceId: string, changeKinds: readonly string[]) => {
+        order.push(`publish:${changeKinds.join(",")}`);
+        void workspaceId;
+        return { accepted: true as const, coalesced: false };
+      }),
+    };
+    const repository = {
+      create: vi.fn().mockImplementation(async () => {
+        order.push("create");
+        return { id: "job-1", workspaceId: "ws-1", sourceId: "source-1", requestedUrl: "https://example.com" };
+      }),
+      deleteById: vi.fn().mockImplementation(async () => {
+        order.push("delete");
+        return true;
+      }),
+      findByIdAndWorkspaceId: vi.fn().mockResolvedValue({ id: "job-1", workspaceId: "ws-1", sourceId: "source-1", status: "completed" }),
+      pauseBySourceId: vi.fn().mockResolvedValue([{ id: "job-1", workspaceId: "ws-1", sourceId: "source-1", status: "paused" }]),
+      resumePausedBySourceId: vi.fn().mockResolvedValue({
+        resumedJobs: [{ id: "job-1", workspaceId: "ws-1", sourceId: "source-1", status: "queued" }],
+        pendingResumeJobCount: 0,
+      }),
+      cancelBySourceId: vi.fn().mockResolvedValue(1),
+    };
+    const dispatch = vi.fn().mockImplementation(async () => { order.push("dispatch"); });
+    const service = new WebsiteCrawlJobService({
+      repository: repository as never,
+      dispatcher: { dispatch },
+      documentIngestionService: { resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }) } as never,
+      publisher,
+      assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await service.enqueue({ workspaceId: "ws-1", url: "https://example.com", limit: 1 });
+    await service.pauseJobsForSource({ workspaceId: "ws-1", sourceId: "source-1" });
+    await service.resumeJobsForSource({ workspaceId: "ws-1", sourceId: "source-1" });
+    await service.cancelJobsForSource({ workspaceId: "ws-1", sourceId: "source-1" });
+    await service.deleteJob({ workspaceId: "ws-1", jobId: "job-1" });
+
+    expect(publisher.enqueue).toHaveBeenCalledTimes(5);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(1, "ws-1", ["crawl.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(2, "ws-1", ["crawl.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(3, "ws-1", ["crawl.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(4, "ws-1", ["crawl.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(5, "ws-1", ["crawl.status_changed"]);
+    expect(order.indexOf("publish:crawl.status_changed")).toBeGreaterThan(order.indexOf("create"));
+    expect(order.indexOf("publish:crawl.status_changed")).toBeLessThan(order.indexOf("dispatch"));
+  });
+
+  it("stays silent for no-op source transitions", async () => {
+    const publisher = { enqueue: vi.fn() };
+    const service = new WebsiteCrawlJobService({
+      repository: {
+        pauseBySourceId: vi.fn().mockResolvedValue([]),
+        resumePausedBySourceId: vi.fn().mockResolvedValue({ resumedJobs: [], pendingResumeJobCount: 0 }),
+        cancelBySourceId: vi.fn().mockResolvedValue(0),
+      } as never,
+      dispatcher: { dispatch: vi.fn() },
+      documentIngestionService: {} as never,
+      publisher,
+    });
+
+    await service.pauseJobsForSource({ workspaceId: "ws-1", sourceId: "source-1" });
+    await service.resumeJobsForSource({ workspaceId: "ws-1", sourceId: "source-1" });
+    await service.cancelJobsForSource({ workspaceId: "ws-1", sourceId: "source-1" });
+
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+  });
+
   it("lists workspace jobs as summaries with documentCount derived from result_json", async () => {
     const baseRecord = {
       id: "11111111-1111-4111-8111-111111111111",

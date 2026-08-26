@@ -131,7 +131,7 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .with("due", (qb) =>
         qb
           .selectFrom("facet_extraction_jobs")
-          .select("id")
+          .select("facet_extraction_jobs.id")
           .where("facet_extraction_jobs.status", "=", "queued")
           .where("facet_extraction_jobs.scheduled_at", "<=", now)
           .$if(workspaceId !== undefined, (query) => query.where("facet_extraction_jobs.workspace_id", "=", workspaceId!))

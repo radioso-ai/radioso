@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import { detectDocumentType, DocumentParserError } from "@radioso/document-parser";
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
@@ -63,6 +67,8 @@ export class DocumentImportService {
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly documentSourceRepository?: DocumentSourceRepositoryPort,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async importDocument(input: DocumentImportInput): Promise<{ documentId: string; status: string }> {
@@ -180,6 +186,7 @@ export class DocumentImportService {
       throw error;
     }
 
+    this.workspaceInvalidationPublisher.enqueue(input.workspaceId, ["document.status_changed"]);
     await this.auditService.record({
       workspaceId: input.workspaceId,
       eventType: "document.import",

@@ -4,6 +4,14 @@ import type {
 } from "../../db/repositories/pendingDecisionRepository.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import {
+  createNoopWorkspaceInvalidationPublisher,
+  createPostCommitInvalidationReceipt,
+  flushPostCommitInvalidationReceipt,
+  mergePostCommitInvalidationReceipts,
+  type PostCommitInvalidationReceipt,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+import {
   ApprovalDecisionDomainError,
   satisfiesDeciderScope,
   resolveDecisionDomain,
@@ -35,7 +43,14 @@ export interface ResumeRunner {
     payload?: unknown;
     decidedBy: string;
     transaction: Db;
-  }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }>;
+  }): Promise<ApprovalResumeResult>;
+}
+
+export interface ApprovalResumeResult {
+  conversationId: string;
+  resumed: true;
+  assistantMessageId: string;
+  postCommitReceipt: PostCommitInvalidationReceipt;
 }
 
 export interface ApprovalDecisionConversationEventPublisher {
@@ -66,7 +81,7 @@ export interface ResolveApprovalDecisionResult {
   // caller's record. Not a binary approve/reject — a gate can have any author-named choices.
   optionId: string;
   conversationId: string;
-  resumed: boolean;
+  resumed: true;
 }
 
 type PendingDecisionReader = Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
@@ -80,6 +95,8 @@ export class ApprovalDecisionService {
     private readonly resumeRunner: ResumeRunner,
     private readonly roleResolver?: ApprovalDecisionRoleResolver,
     private readonly conversationEvents?: ApprovalDecisionConversationEventPublisher,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
@@ -138,14 +155,18 @@ export class ApprovalDecisionService {
       throw new ApprovalDecisionServiceError("concurrent_resolution");
     }
 
-    if (resume.resumed && resume.assistantMessageId) {
-      this.conversationEvents?.publishMessageCreated({
-        workspaceId: record.workspaceId,
-        conversationId: resume.conversationId,
-        messageId: resume.assistantMessageId,
-        createdAt: new Date().toISOString(),
-      });
-    }
+    const postCommitReceipt = mergePostCommitInvalidationReceipts(
+      resume.postCommitReceipt,
+      createPostCommitInvalidationReceipt(record.workspaceId, ["hitl.decision_resolved"]),
+    )!;
+    flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
+
+    this.conversationEvents?.publishMessageCreated({
+      workspaceId: record.workspaceId,
+      conversationId: resume.conversationId,
+      messageId: resume.assistantMessageId,
+      createdAt: new Date().toISOString(),
+    });
 
     return {
       status: "resolved",

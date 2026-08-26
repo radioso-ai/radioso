@@ -35,7 +35,7 @@ const outbox = (
   recordFailure: ReturnType<typeof vi.fn>;
 } => ({
   claimPending: vi.fn(async () => pending),
-  markDispatched: vi.fn(async () => {}),
+  markDispatched: vi.fn(async () => true),
   recordFailure: vi.fn(async () => failureOutcome),
 });
 
@@ -158,6 +158,97 @@ describe("ActionDispatcher", () => {
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();
     expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+  });
+
+  it("does not report delivery when a stale mark-dispatched claim is a no-op", async () => {
+    const handle = vi.fn(async () => undefined);
+    const store = {
+      ...outbox([request()]),
+      markDispatched: vi.fn(async () => false),
+    } as unknown as ActionOutboxConsumerPort & { markDispatched: ReturnType<typeof vi.fn> };
+    const onPersistedOutcome = vi.fn();
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle } }]),
+      {},
+      onPersistedOutcome,
+    );
+
+    await expect(dispatcher.dispatchPending()).resolves.toEqual({ dispatched: 0, retried: 0, failed: 0 });
+    expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
+    expect(handle).toHaveBeenCalledOnce();
+    expect(onPersistedOutcome).toHaveBeenCalledTimes(1);
+    expect(onPersistedOutcome).toHaveBeenCalledWith({ request: expect.objectContaining({ id: "r1" }), outcome: "claimed" });
+  });
+
+  it("reports each real persisted claim and delivery transition through the product-neutral observer", async () => {
+    const onPersistedOutcome = vi.fn();
+    const store = outbox([request()]);
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle: vi.fn() } }]),
+      {},
+      onPersistedOutcome,
+    );
+
+    await dispatcher.dispatchPending();
+
+    expect(onPersistedOutcome.mock.calls.map(([event]) => event.outcome)).toEqual(["claimed", "dispatched"]);
+  });
+
+  it.each([
+    {
+      name: "claimed",
+      failureOutcome: "failed" as const,
+      handle: vi.fn(async () => undefined),
+      throwingOutcome: "claimed" as const,
+      expected: { dispatched: 1, retried: 0, failed: 0 },
+    },
+    {
+      name: "dispatched",
+      failureOutcome: "failed" as const,
+      handle: vi.fn(async () => undefined),
+      throwingOutcome: "dispatched" as const,
+      expected: { dispatched: 1, retried: 0, failed: 0 },
+    },
+    {
+      name: "retry",
+      failureOutcome: "retry" as const,
+      handle: vi.fn(async () => { throw new Error("provider unavailable"); }),
+      throwingOutcome: "retry" as const,
+      expected: { dispatched: 0, retried: 1, failed: 0 },
+    },
+    {
+      name: "failed",
+      failureOutcome: "failed" as const,
+      handle: vi.fn(async () => { throw new Error("invalid destination"); }),
+      throwingOutcome: "failed" as const,
+      expected: { dispatched: 0, retried: 0, failed: 1 },
+    },
+  ])("isolates a throwing $name observer from persisted dispatcher outcomes", async ({
+    failureOutcome,
+    handle,
+    throwingOutcome,
+    expected,
+  }) => {
+    const store = outbox([request()], failureOutcome);
+    const observer = vi.fn((event: { outcome: string }) => {
+      if (event.outcome === throwingOutcome) {
+        throw new Error("observer unavailable");
+      }
+    });
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle } }]),
+      {},
+      observer,
+    );
+
+    await expect(dispatcher.dispatchPending()).resolves.toEqual(expected);
+    expect(observer).toHaveBeenCalledWith(expect.objectContaining({ outcome: throwingOutcome }));
+    if (throwingOutcome === "dispatched") {
+      expect(store.recordFailure).not.toHaveBeenCalled();
+    }
   });
 
   it("ignores a superseded claim's result (another worker reclaimed the row)", async () => {

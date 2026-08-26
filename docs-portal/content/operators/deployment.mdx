@@ -1,19 +1,20 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-08-07
+last_updated: 2026-08-26
 ---
 
 import { Callout } from 'nextra/components'
 
 # Deployment
 
-Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units, and the docs portal should stay separate as well.
+Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units. Deployments that enable live dashboard updates add a dedicated realtime runtime and Redis or Valkey. The docs portal stays separate as well.
 
 ## Production contract
 
 - independent image per service
 - independent Cloud Run service for backend, frontend, and worker
+- a dedicated realtime service and Redis or Valkey when live dashboard updates are enabled
 - Cloud SQL for application state
 - GCS for uploaded document source files
 - Cloud Tasks for request-driven worker dispatch
@@ -30,6 +31,24 @@ At minimum, a production deployment needs:
 - public base URLs for customer-facing flows such as public chat and Enterprise Edition modules
 
 Relevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`.
+
+## Live dashboard updates
+
+Live dashboard updates are optional. With `REALTIME_MODE=disabled`, dashboard queries keep their polling fallback and the realtime process and Redis are unnecessary.
+
+For a small deployment, use standalone mode with one Redis or Valkey 7+ endpoint. Give the backend, workers, and realtime process the same mode, rollout, and Redis settings:
+
+```dotenv
+REALTIME_MODE=standalone
+REALTIME_REDIS_URL=redis://redis.internal:6379
+REALTIME_ROLLOUT_MODE=default-on
+```
+
+Build the backend, then run the dedicated process with `pnpm --dir backend run start:realtime`. It exposes `/health/live`, `/health/ready`, and the internal `/api/v1/events` stream.
+
+Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private base URL, for example `http://realtime:8080`. Browsers connect to the same-origin `/backend/api/v1/events` route; the frontend forwards that request to the internal stream without exposing the realtime service publicly.
+
+The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so workspace API tokens, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
 Radioso's own MCP server is a deployment-level setting: set `RADIOSO_MCP_ENABLED` to turn it on, and set `RADIOSO_MCP_STANDALONE` depending on whether MCP should run merged into the backend or as its own process. See [MCP server](/guides/mcp-server) for both deployment shapes and the credentials each one needs.
 
@@ -78,7 +97,7 @@ The session limit applies to a visitor session. The global limit applies across 
 
 ## Runtime separation
 
-The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. Keep those services independently deployable and independently scalable.
+The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. When enabled, the realtime runtime owns long-lived dashboard streams. Keep those services independently deployable and independently scalable.
 
 That separation matters because worker traffic behaves differently from chat traffic:
 
@@ -113,8 +132,9 @@ The docs portal is its own Next.js app under `docs-portal/`. It syncs the backen
 2. Confirm backend can reach Cloud SQL and storage.
 3. Confirm worker runtime can claim or receive jobs.
 4. Confirm frontend points at the current backend service.
-5. Confirm public URLs used for auth and embed flows are correct.
-6. Confirm docs portal build synced the current OpenAPI document.
+5. If realtime is enabled, confirm Redis connectivity, realtime readiness, and the frontend's exact `/backend/api/v1/events` proxy route.
+6. Confirm public URLs used for auth and embed flows are correct.
+7. Confirm docs portal build synced the current OpenAPI document.
 
 <Callout type="info" emoji="i">
   If the app is live but document uploads never become searchable, treat that as a worker-path or dispatch-path incident first.

@@ -193,6 +193,7 @@ describe("document recrawl accounting", () => {
 
   it("deletes pages whose external ids are missing from a full crawl reap", async () => {
     const documentRepository = new InMemoryDocumentRepository();
+    const publisher = { enqueue: vi.fn() };
     const sourceId = "source-1";
     const keep = await documentRepository.create({
       workspaceId: "workspace-1",
@@ -224,6 +225,9 @@ describe("document recrawl accounting", () => {
       undefined,
       undefined,
       new RecordingUsageLimitPolicy(),
+      undefined,
+      undefined,
+      publisher,
     );
 
     const result = await service.reapMissingPages({
@@ -236,5 +240,14 @@ describe("document recrawl accounting", () => {
     expect(result.deletedContentBytes).toBe(4);
     expect(await documentRepository.findByIdAndWorkspaceId(drop.id, "workspace-1")).toBeNull();
     expect(await documentRepository.findByIdAndWorkspaceId(keep.id, "workspace-1")).not.toBeNull();
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+
+    await service.reapMissingPages({
+      workspaceId: "workspace-1",
+      sourceId,
+      keepExternalDocumentIds: ["keep-1"],
+    });
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
   });
 });

@@ -273,7 +273,16 @@ describe("Slack inbound webhook contract", () => {
         markNeedsReauthForInstallation: async () => false,
       },
       persistence: {
-        getOrCreateConversationLink: async () => ({ conversationId: "conversation-1" }),
+        getOrCreateConversationLink: async () => ({
+          link: {
+            id: "link-1",
+            workspaceId: "workspace-1",
+            installationId: "installation-1",
+            slackKey: "mention:TTEST:C1:1.0",
+            conversationId: "conversation-1",
+          },
+          created: false,
+        }),
         markInboundEventStatus: markHandledStatus,
       } as never,
       clientFactory: () => ({ postMessage, addReaction, removeReaction }),
@@ -356,7 +365,16 @@ describe("Slack inbound webhook contract", () => {
         markNeedsReauthForInstallation: async () => false,
       },
       persistence: {
-        getOrCreateConversationLink: async () => ({ conversationId: "conversation-1" }),
+        getOrCreateConversationLink: async () => ({
+          link: {
+            id: "link-1",
+            workspaceId: "workspace-1",
+            installationId: "installation-1",
+            slackKey: "mention:TTEST:C1:1.0",
+            conversationId: "conversation-1",
+          },
+          created: false,
+        }),
         markInboundEventStatus: markHandledStatus,
       } as never,
       clientFactory: () => ({

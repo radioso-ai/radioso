@@ -92,4 +92,80 @@ describe("OperatorReplyService", () => {
       message: { id: message.id, content: "Human reply" },
     });
   });
+
+  it("publishes a committed operator turn after the message write and stays out of delivery handlers", async () => {
+    const message = {
+      id: "message-2",
+      conversationId: conversation.id,
+      workspaceId: conversation.workspaceId,
+      role: "assistant" as const,
+      source: "human_agent" as const,
+      content: "Human reply",
+      createdAt: new Date("2026-01-01T00:00:01Z"),
+    };
+    const order: string[] = [];
+    const publisher = {
+      enqueue: vi.fn(() => {
+        order.push("publish");
+        return { accepted: true };
+      }),
+    };
+    const service = new OperatorReplyService({
+      conversationRepository: {
+        findByIdAndWorkspaceId: vi.fn(async () => conversation),
+        touch: vi.fn(async () => { order.push("touch"); }),
+      },
+      messageRepository: { create: vi.fn(async () => { order.push("message"); return message; }) },
+      auditService: { record: vi.fn(async () => { order.push("audit"); }) },
+      publicConversationEventBus: { publish: vi.fn() },
+      customerReplyDelivery: { deliver: vi.fn(async () => { order.push("delivery"); }) },
+      publisher,
+    } as never);
+
+    await service.reply({
+      conversationId: conversation.id,
+      workspaceId: conversation.workspaceId,
+      accountId: "account-1",
+      displayName: "Dana",
+      message: "Human reply",
+    });
+
+    expect(publisher.enqueue).toHaveBeenCalledWith(conversation.workspaceId, ["conversation.turn_committed"]);
+    expect(order.indexOf("publish")).toBeGreaterThan(order.indexOf("message"));
+    expect(order.indexOf("publish")).toBeLessThan(order.indexOf("delivery"));
+  });
+
+  it("keeps the committed-turn publication when secondary audit bookkeeping fails", async () => {
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true })) };
+    const service = new OperatorReplyService({
+      conversationRepository: {
+        findByIdAndWorkspaceId: vi.fn(async () => conversation),
+        touch: vi.fn(async () => undefined),
+      },
+      messageRepository: {
+        create: vi.fn(async () => ({
+          id: "message-3",
+          conversationId: conversation.id,
+          workspaceId: conversation.workspaceId,
+          role: "assistant",
+          source: "human_agent",
+          content: "Human reply",
+          createdAt: new Date(),
+        })),
+      },
+      auditService: { record: vi.fn(async () => { throw new Error("audit unavailable"); }) },
+      publicConversationEventBus: { publish: vi.fn() },
+      customerReplyDelivery: { deliver: vi.fn() },
+      publisher,
+    } as never);
+
+    await expect(service.reply({
+      conversationId: conversation.id,
+      workspaceId: conversation.workspaceId,
+      accountId: "account-1",
+      displayName: "Dana",
+      message: "Human reply",
+    })).rejects.toThrow("audit unavailable");
+    expect(publisher.enqueue).toHaveBeenCalledWith(conversation.workspaceId, ["conversation.turn_committed"]);
+  });
 });

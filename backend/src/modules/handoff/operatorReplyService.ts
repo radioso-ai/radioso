@@ -1,4 +1,5 @@
 import { notFound } from "../../shared/domain/errors.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { AuditService } from "../audit/contracts/index.js";
@@ -12,6 +13,7 @@ export class OperatorReplyService {
     auditService: Pick<AuditService, "record">;
     publicConversationEventBus: Pick<PublicConversationEventBus, "publish">;
     customerReplyDelivery: CustomerChannelReplyDeliverer;
+    publisher?: WorkspaceInvalidationPublisher;
   }) {}
 
   async reply(input: {
@@ -39,6 +41,7 @@ export class OperatorReplyService {
       operatorDisplayName: input.displayName,
     });
     await this.dependencies.conversationRepository.touch(input.conversationId, input.workspaceId);
+    this.dependencies.publisher?.enqueue(input.workspaceId, ["conversation.turn_committed"]);
 
     await this.dependencies.auditService.record({
       accountId: input.accountId,

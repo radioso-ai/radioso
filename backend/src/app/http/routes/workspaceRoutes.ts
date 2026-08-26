@@ -26,7 +26,7 @@ export const workspaceKeyParamsSchema = z.object({
 
 type WorkspaceRouteDependencies = SessionDependencies & WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "abuseControlService" | "auditService" | "workspaceService" | "workspaceSummaryService" | "accountRepository"
+  "abuseControlService" | "auditService" | "workspaceService" | "workspaceSummaryService" | "accountRepository" | "realtimeRolloutPolicy"
 >;
 
 export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies): Router => {
@@ -77,6 +77,7 @@ export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies):
         workspaceName: workspace.name,
         accountId: workspace.accountId,
         organizationName: account?.name ?? "Organization",
+        realtimeEnabled: dependencies.realtimeRolloutPolicy.allows({ accountId: workspace.accountId }),
       });
     } catch (error) {
       next(error);

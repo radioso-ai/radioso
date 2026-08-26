@@ -19,6 +19,7 @@ import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
 import { OperatorActionBar } from './operator-action-bar'
+import type { OperatorActionResult } from './operator-action-bar'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
@@ -225,7 +226,7 @@ export interface ConversationDrawerProps {
    * Optional callback fired after operator actions mutate conversation ownership
    * or pending approvals. Use this to sync parent inbox lists.
    */
-  onOperatorChanged?: () => Promise<void> | void
+  onOperatorChanged?: (result: OperatorActionResult) => Promise<void> | void
   /**
    * Optional pending approvals supplied by a parent that already owns the inbox
    * refresh. When present, the drawer derives its conversation-scoped approvals
@@ -381,11 +382,11 @@ export function ConversationDrawer({
     }
   }, [pendingDecisions, selectedChatConversationId])
 
-  const handleOperatorChanged = useCallback(async () => {
+  const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
     if (pendingDecisions) {
       await Promise.all([
         refetchDetail(),
-        onOperatorChanged?.(),
+        onOperatorChanged?.(result),
       ])
       return
     }
@@ -393,7 +394,7 @@ export function ConversationDrawer({
     await Promise.all([
       refetchDetail(),
       loadPendingDecisions(),
-      onOperatorChanged?.(),
+      onOperatorChanged?.(result),
     ])
   }, [loadPendingDecisions, onOperatorChanged, pendingDecisions, refetchDetail])
 

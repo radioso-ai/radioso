@@ -21,6 +21,17 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("advertises the browser-safe realtime enablement flag on workspace route resolution", () => {
+    const document = createOpenApiDocument();
+    const schema = document.components?.schemas?.WorkspaceRouteResolutionResponse as {
+      properties?: Record<string, unknown>;
+      required?: string[];
+    } | undefined;
+
+    expect(schema?.properties?.realtimeEnabled).toEqual({ type: "boolean" });
+    expect(schema?.required).toEqual(expect.arrayContaining(["realtimeEnabled"]));
+  });
+
   it("documents the eval suite batch run so the SDK and coverage map can see it", () => {
     const suiteRun = createOpenApiDocument().paths?.["/api/v1/evals/cases/run"]?.post;
 

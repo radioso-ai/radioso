@@ -33,7 +33,7 @@ describe("Cloud Tasks worker authentication", () => {
     });
 
     const request = client.createTask.mock.calls[0]?.[0] as {
-      task: { httpRequest: { headers: Record<string, string>; oidcToken: unknown } };
+      task: { httpRequest: { body: string; headers: Record<string, string>; oidcToken: unknown } };
     };
     expect(request.task.httpRequest.headers).toEqual({
       "Content-Type": "application/json",
@@ -42,6 +42,12 @@ describe("Cloud Tasks worker authentication", () => {
     expect(request.task.httpRequest.oidcToken).toEqual({
       serviceAccountEmail: "task-invoker@radioso-prod.iam.gserviceaccount.com",
       audience: "https://worker.example.com/internal/tasks/document-processing",
+    });
+    expect(JSON.parse(Buffer.from(request.task.httpRequest.body, "base64").toString("utf8"))).toEqual({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      documentId: "22222222-2222-4222-8222-222222222222",
+      workspaceId: "33333333-3333-4333-8333-333333333333",
+      revision: 1,
     });
   });
 
@@ -64,7 +70,7 @@ describe("Cloud Tasks worker authentication", () => {
     });
 
     const request = client.createTask.mock.calls[0]?.[0] as {
-      task: { httpRequest: { headers: Record<string, string>; oidcToken: unknown } };
+      task: { httpRequest: { body: string; headers: Record<string, string>; oidcToken: unknown } };
     };
     expect(request.task.httpRequest.headers).toEqual({
       "Content-Type": "application/json",
@@ -73,6 +79,10 @@ describe("Cloud Tasks worker authentication", () => {
     expect(request.task.httpRequest.oidcToken).toEqual({
       serviceAccountEmail: "task-invoker@radioso-prod.iam.gserviceaccount.com",
       audience: "https://crawler.example.com/internal/tasks/website-crawl",
+    });
+    expect(JSON.parse(Buffer.from(request.task.httpRequest.body, "base64").toString("utf8"))).toEqual({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      workspaceId: "33333333-3333-4333-8333-333333333333",
     });
   });
 });

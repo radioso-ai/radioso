@@ -54,6 +54,28 @@ interface WorkspaceTokenResponse {
 
 const workspaceTokenRequests = new Map<string, Promise<string>>()
 
+const isAbortError = (error: unknown): boolean =>
+  typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+
+const throwIfAborted = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
+  }
+}
+
+const detachOnAbort = async <T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) return operation
+  throwIfAborted(signal)
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new DOMException('The operation was aborted', 'AbortError'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    operation.then(
+      (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
+      (error) => { signal.removeEventListener('abort', onAbort); reject(error) },
+    )
+  })
+}
+
 export const buildError = async (response: Response): Promise<ErrorResponse> => {
   try {
     const payload = await response.json();
@@ -95,7 +117,8 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
         message: `Request failed with status ${response.status}`,
       },
     };
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error
     return {
       status: response.status,
       error: {
@@ -106,7 +129,8 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
   }
 };
 
-export const requireWorkspaceApiToken = async (): Promise<string> => {
+export const requireWorkspaceApiToken = async (signal?: AbortSignal): Promise<string> => {
+  throwIfAborted(signal)
   const workspaceId = getStoredActiveWorkspaceId()
 
   if (!workspaceId) {
@@ -125,7 +149,7 @@ export const requireWorkspaceApiToken = async (): Promise<string> => {
 
   const inFlightRequest = workspaceTokenRequests.get(workspaceId)
   if (inFlightRequest) {
-    return inFlightRequest
+    return detachOnAbort(inFlightRequest, signal)
   }
 
   const tokenRequest = (async () => {
@@ -157,25 +181,29 @@ export const requireWorkspaceApiToken = async (): Promise<string> => {
   })()
 
   workspaceTokenRequests.set(workspaceId, tokenRequest)
-
-  try {
-    return await tokenRequest
-  } finally {
-    workspaceTokenRequests.delete(workspaceId)
-  }
+  void tokenRequest.then(
+    () => {
+      if (workspaceTokenRequests.get(workspaceId) === tokenRequest) workspaceTokenRequests.delete(workspaceId)
+    },
+    () => {
+      if (workspaceTokenRequests.get(workspaceId) === tokenRequest) workspaceTokenRequests.delete(workspaceId)
+    },
+  )
+  return detachOnAbort(tokenRequest, signal)
 }
 
 export const canRetryWithFreshWorkspaceToken = (response: Response): boolean =>
   response.status === 401 && Boolean(getStoredActiveWorkspaceId())
 
-export const refreshWorkspaceApiToken = async (headers: Headers): Promise<boolean> => {
+export const refreshWorkspaceApiToken = async (headers: Headers, signal?: AbortSignal): Promise<boolean> => {
+  throwIfAborted(signal)
   const workspaceId = getStoredActiveWorkspaceId()
   if (!workspaceId) {
     return false
   }
 
   clearStoredWorkspaceToken(workspaceId)
-  headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`)
+  headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken(signal)}`)
   return true
 }
 
@@ -185,6 +213,8 @@ export const request = async <T>(
   options: { withSession?: boolean; withApiToken?: boolean } = {},
 ): Promise<T> => {
   const headers = new Headers(init.headers);
+  const signal = init.signal ?? undefined
+  throwIfAborted(signal)
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
 
   if (!headers.has("Content-Type") && init.body && !isFormData) {
@@ -201,7 +231,7 @@ export const request = async <T>(
   }
 
   if (options.withApiToken) {
-    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);
+    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken(signal)}`);
   }
 
   const executeFetch = () => fetch(`${API_BASE}${path}`, {
@@ -212,7 +242,8 @@ export const request = async <T>(
   });
 
   let response = await executeFetch()
-  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
+  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers, signal)) {
+    throwIfAborted(signal)
     response = await executeFetch()
   }
 
@@ -238,6 +269,8 @@ export const requestLongRunning = async <T>(
   options: { withSession?: boolean; withApiToken?: boolean } = {},
 ): Promise<T> => {
   const headers = new Headers(init.headers);
+  const signal = init.signal ?? undefined
+  throwIfAborted(signal)
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
 
   if (!headers.has("Content-Type") && init.body && !isFormData) {
@@ -245,7 +278,7 @@ export const requestLongRunning = async <T>(
   }
 
   if (options.withApiToken) {
-    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken()}`);
+    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken(signal)}`);
   }
 
   const executeFetch = () => fetch(path, {
@@ -256,7 +289,8 @@ export const requestLongRunning = async <T>(
   });
 
   let response = await executeFetch()
-  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
+  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers, signal)) {
+    throwIfAborted(signal)
     response = await executeFetch()
   }
 

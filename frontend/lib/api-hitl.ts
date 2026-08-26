@@ -30,8 +30,8 @@ export const isHitlApiStatusError = (
 ): error is ErrorResponse & { status: HitlApiStatus } => getHitlApiErrorStatus(error) === status
 
 export const hitlApi = {
-  async listPendingDecisions(): Promise<PendingApprovalDecisionListResponse> {
-    return request<PendingApprovalDecisionListResponse>('/decisions', { method: 'GET' }, { withApiToken: true })
+  async listPendingDecisions(signal?: AbortSignal): Promise<PendingApprovalDecisionListResponse> {
+    return request<PendingApprovalDecisionListResponse>('/decisions', { method: 'GET', ...(signal ? { signal } : {}) }, { withApiToken: true })
   },
 
   async resolveDecision(
@@ -90,10 +90,11 @@ export const hitlApi = {
   async tailConversation(
     conversationId: string,
     params: { cursor?: string; limit?: number } = {},
+    signal?: AbortSignal,
   ): Promise<ChatConversationTail> {
     return request<ChatConversationTail>(
       withQuery(`/history/chat/${encodeURIComponent(conversationId)}/tail`, params),
-      { method: 'GET' },
+      { method: 'GET', ...(signal ? { signal } : {}) },
       { withApiToken: true },
     )
   },

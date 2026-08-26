@@ -14,14 +14,15 @@ const encoder = new TextEncoder()
 
 type InvalidateFrame = Extract<BrowserEventFrame, { type: 'invalidate' }>
 type ClientTerminal = { status: number; retryAfterMs?: number }
-type ClientRetryReason = 'network' | 'protocol' | 'body' | 'eof' | 'http'
+type ClientRetryReason = 'network' | 'protocol' | 'body' | 'eof' | 'http' | 'timeout'
 type ClientState = 'opened' | 'ready' | 'retrying' | 'terminal' | 'closed'
 type ClientProtocolDiagnostic = { kind: 'malformed' | 'ignored' }
+type ClientTimerPurpose = 'retry' | 'pre-ready'
 
 type ClientClock = {
   now(): number
   wallNow(): number
-  setTimeout(callback: () => void, delayMs: number): number
+  setTimeout(callback: () => void, delayMs: number, purpose?: ClientTimerPurpose): number
   clearTimeout(timer: number): void
 }
 
@@ -38,6 +39,7 @@ type WorkspaceEventsClientOptions = {
   fetch: typeof fetch
   clock: ClientClock
   random: () => number
+  preReadyTimeoutMs?: number
   stableReadyMs?: number
   recoverAuthentication?: (signal: AbortSignal) => Promise<boolean>
   telemetry?: ClientTelemetry
@@ -89,6 +91,7 @@ class TestClock implements ClientClock {
   private nextTimer = 1
   private readonly timers = new Map<number, { at: number; callback: () => void }>()
   readonly scheduledDelays: number[] = []
+  readonly preReadyDelays: number[] = []
   maxOutstanding = 0
   private current = 0
   private wallCurrent = Date.parse('2026-08-25T00:00:00.000Z')
@@ -105,10 +108,11 @@ class TestClock implements ClientClock {
     this.wallCurrent = value
   }
 
-  setTimeout(callback: () => void, delayMs: number): number {
+  setTimeout(callback: () => void, delayMs: number, purpose: ClientTimerPurpose = 'retry'): number {
     const id = this.nextTimer++
     this.timers.set(id, { at: this.current + Math.max(0, delayMs), callback })
-    this.scheduledDelays.push(Math.max(0, delayMs))
+    const target = purpose === 'pre-ready' ? this.preReadyDelays : this.scheduledDelays
+    target.push(Math.max(0, delayMs))
     this.maxOutstanding = Math.max(this.maxOutstanding, this.timers.size)
     return id
   }
@@ -296,6 +300,63 @@ describe('workspace events browser client', () => {
     await closeConnection(connection)
     expect(secondInit?.signal?.aborted).toBe(true)
     second.resolve(responseFromText(readyFrame()))
+  })
+
+  it('bounds a request stalled before response headers and releases polling through the retry lifecycle', async () => {
+    const module = await loadClient()
+    const clock = new TestClock()
+    const pending = deferred<Response>()
+    let requestSignal: AbortSignal | undefined
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation((_input, init) => {
+      requestSignal = init?.signal ?? undefined
+      return pending.promise
+    })
+    const callbacks = makeCallbacks()
+    const connection = module.createWorkspaceEventsClient(makeOptions(fetchMock, clock, {
+      preReadyTimeoutMs: 5_000,
+      random: () => 1,
+    })).connect(callbacks)
+
+    await vi.waitFor(() => expect(clock.preReadyDelays).toEqual([5_000]))
+    await clock.advance(4_999)
+    expect(requestSignal?.aborted).toBe(false)
+    expect(callbacks.onRetrying).not.toHaveBeenCalled()
+
+    await clock.advance(1)
+    expect(requestSignal?.aborted).toBe(true)
+    expect(callbacks.onRetrying).toHaveBeenCalledOnce()
+    expect(callbacks.onRetrying).toHaveBeenCalledWith({ reason: 'timeout', delayMs: 1_000 })
+    expect(clock.scheduledDelays).toEqual([1_000])
+    expect(clock.pendingCount()).toBe(1)
+
+    await closeConnection(connection)
+    pending.resolve(responseFromText(readyFrame()))
+  })
+
+  it('bounds a valid event stream that never sends its first ready frame', async () => {
+    const module = await loadClient()
+    const clock = new TestClock()
+    let cancelCalls = 0
+    const response = new Response(new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelCalls += 1
+      },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(response)
+    const callbacks = makeCallbacks()
+    const connection = module.createWorkspaceEventsClient(makeOptions(fetchMock, clock, {
+      preReadyTimeoutMs: 5_000,
+      random: () => 1,
+    })).connect(callbacks)
+
+    await vi.waitFor(() => expect(clock.preReadyDelays).toEqual([5_000]))
+    await clock.advance(5_000)
+    expect(cancelCalls).toBe(1)
+    expect(callbacks.onReady).not.toHaveBeenCalled()
+    expect(callbacks.onRetrying).toHaveBeenCalledWith({ reason: 'timeout', delayMs: 1_000 })
+    expect(clock.scheduledDelays).toEqual([1_000])
+
+    await closeConnection(connection)
   })
 
   it('parses one-byte fragmentation, split UTF-8, and delivers only normalized invalidation frames', async () => {
@@ -1203,7 +1264,7 @@ describe('workspace events browser client', () => {
       expect(telemetry.onState).toHaveBeenCalledWith('opened')
       expect(telemetry.onState).toHaveBeenCalledWith('ready')
       expect(telemetry.onRetrying.mock.calls.every(([retry]) =>
-        ['network', 'protocol', 'body', 'eof', 'http'].includes(String(retry.reason))
+        ['network', 'protocol', 'body', 'eof', 'http', 'timeout'].includes(String(retry.reason))
         && Number.isFinite(retry.delayMs)
         && retry.delayMs > 0
         && retry.delayMs <= 30_000,

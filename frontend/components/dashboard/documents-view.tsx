@@ -57,6 +57,7 @@ import {
   useDocumentCrawlActivityQuery,
   useDocumentListQuery,
 } from '@/lib/documents-query-state'
+import { useDocumentSourcesListQuery } from '@/lib/document-sources-query-state'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
@@ -68,6 +69,7 @@ import {
 
 const PAGE_SIZE = 100
 const EMPTY_DOCUMENTS: DocumentSummary[] = []
+const EMPTY_SOURCES: DocumentSourceListItem[] = []
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
 const CRAWL_MAX_LIMIT = 1000
 
@@ -156,12 +158,18 @@ export function DocumentsView({
   const [retryingDocumentId, setRetryingDocumentId] = useState<string | null>(null)
   const [retryErrorById, setRetryErrorById] = useState<Record<string, string>>({})
   const [chunkInspectorRequest, setChunkInspectorRequest] = useState<ChunkInspectorRequest>(null)
-  const [availableSources, setAvailableSources] = useState<DocumentSourceListItem[]>([])
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
   const [activeConnectorId, setActiveConnectorId] = useState<string | null>(null)
 
   const sourceFilterId = routeState.documentSourceFilter ?? null
   const workspaceId = routeState.workspaceId ?? ''
+  const sourcesPolicyKey = dashboardQueryKeys.sources.list(workspaceId)
+  const sourcesQuery = useDocumentSourcesListQuery({
+    workspaceId,
+    enabled: queriesEnabled,
+    floorMs: intervalFor(sourcesPolicyKey),
+  })
+  const availableSources = sourcesQuery.data?.sources ?? EMPTY_SOURCES
   const documentFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
       {
@@ -253,21 +261,6 @@ export function DocumentsView({
   }, [crawlPresentationWorkspaceId, crawlQuery.data, invalidateDashboardQueries, workspaceId])
 
   const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
-
-  useEffect(() => {
-    let cancelled = false
-    void documentsApi
-      .listSources()
-      .then((response) => {
-        if (!cancelled) {
-          setAvailableSources(response.sources)
-        }
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [routeState.workspaceId])
 
   useEffect(() => {
     setCrawlPresentationWorkspaceId(workspaceId)
@@ -430,10 +423,7 @@ export function DocumentsView({
     setIsDocumentLoading(true)
 
     try {
-      const [document, sourcesResponse] = await Promise.all([
-        documentsApi.getDocument(documentId),
-        documentsApi.listSources().catch(() => null),
-      ])
+      const document = await documentsApi.getDocument(documentId)
       setActiveDocument(document)
       setFormValues({
         title: document.title,
@@ -441,9 +431,6 @@ export function DocumentsView({
         metadata: toEditableMetadata(document.metadata),
         sourceId: document.sourceId ?? MANUALLY_ADDED_SOURCE_ID,
       })
-      if (sourcesResponse) {
-        setAvailableSources(sourcesResponse.sources)
-      }
       setIsEditingDetail(false)
       setMetadataError(null)
       setMetadataSaveError(null)

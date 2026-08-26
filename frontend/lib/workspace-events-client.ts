@@ -8,17 +8,19 @@ const EVENTS_ENDPOINT = '/backend/api/v1/events'
 const MIN_RETRY_MS = 1_000
 const MAX_RETRY_MS = 30_000
 const MAX_BROWSER_TIMER_MS = 2_147_483_647
+const DEFAULT_PRE_READY_TIMEOUT_MS = 5_000
 const DEFAULT_STABLE_READY_MS = 5_000
 
 export type WorkspaceEventsClientState = 'opened' | 'ready' | 'retrying' | 'terminal' | 'closed'
-export type WorkspaceEventsRetryReason = 'network' | 'protocol' | 'body' | 'eof' | 'http'
+export type WorkspaceEventsRetryReason = 'network' | 'protocol' | 'body' | 'eof' | 'http' | 'timeout'
 export type WorkspaceEventsTerminal = { status: number }
 export type WorkspaceEventsProtocolDiagnostic = { kind: 'malformed' | 'ignored' }
+export type WorkspaceEventsTimerPurpose = 'retry' | 'pre-ready'
 
 export type WorkspaceEventsClock = {
   now(): number
   wallNow(): number
-  setTimeout(callback: () => void, delayMs: number): number
+  setTimeout(callback: () => void, delayMs: number, purpose?: WorkspaceEventsTimerPurpose): number
   clearTimeout(timer: number): void
 }
 
@@ -35,6 +37,7 @@ export type WorkspaceEventsClientOptions = {
   fetch: typeof fetch
   clock: WorkspaceEventsClock
   random: () => number
+  preReadyTimeoutMs?: number
   stableReadyMs?: number
   recoverAuthentication?: (signal: AbortSignal) => Promise<boolean>
   telemetry?: WorkspaceEventsTelemetry
@@ -59,6 +62,7 @@ type Attempt = {
   reader?: ReadableStreamDefaultReader<Uint8Array>
   response?: Response
   bodyCancelled: boolean
+  preReadyTimer?: number
 }
 
 const defaultClock: WorkspaceEventsClock = {
@@ -249,6 +253,11 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
       bodyCancelled: false,
     }
     this.activeAttempt = attempt
+    attempt.preReadyTimer = this.options.clock.setTimeout(
+      () => this.handlePreReadyTimeout(attempt),
+      this.options.preReadyTimeoutMs ?? DEFAULT_PRE_READY_TIMEOUT_MS,
+      'pre-ready',
+    )
     this.readySeen = false
     this.readyAt = undefined
     this.emitCounter('attempt')
@@ -280,6 +289,7 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
         const recovered = await this.options.recoverAuthentication(attempt.controller.signal)
         if (!this.isCurrent(attempt)) return
         if (!recovered) { this.terminal({ status: 401 }); return }
+        this.clearPreReadyTimer(attempt)
         void this.startAttempt(true)
       } catch {
         if (this.isCurrent(attempt)) this.terminal({ status: 401 })
@@ -339,6 +349,7 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
     if (normalized.type === 'ready') {
       if (this.readySeen) { this.diagnostic('ignored'); return }
       this.readySeen = true
+      this.clearPreReadyTimer(attempt)
       this.readyAt = this.options.clock.now()
       this.emitState('ready')
       this.emitCounter('ready')
@@ -354,6 +365,7 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
   }
 
   private scheduleRetry(reason: WorkspaceEventsRetryReason, serverDelay?: number): void {
+    if (this.activeAttempt) this.clearPreReadyTimer(this.activeAttempt)
     if (this.closed || this.retryTimer !== undefined) return
     if (this.readyAt !== undefined) {
       const stableDuration = Math.max(0, this.options.clock.now() - this.readyAt)
@@ -377,7 +389,22 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
     this.retryTimer = this.options.clock.setTimeout(() => {
       this.retryTimer = undefined
       void this.startAttempt()
-    }, delayMs)
+    }, delayMs, 'retry')
+  }
+
+  private handlePreReadyTimeout(attempt: Attempt): void {
+    if (!this.isCurrent(attempt) || this.readySeen) return
+    this.clearPreReadyTimer(attempt)
+    this.activeAttempt = undefined
+    attempt.controller.abort()
+    this.cancelAttemptBody(attempt)
+    this.scheduleRetry('timeout')
+  }
+
+  private clearPreReadyTimer(attempt: Attempt): void {
+    if (attempt.preReadyTimer === undefined) return
+    this.options.clock.clearTimeout(attempt.preReadyTimer)
+    attempt.preReadyTimer = undefined
   }
 
   private terminal(terminal: WorkspaceEventsTerminal): void {
@@ -397,6 +424,7 @@ class BrowserWorkspaceEventsConnection implements WorkspaceEventsConnection {
     this.retryTimer = undefined
     const attempt = this.activeAttempt
     if (attempt) {
+      this.clearPreReadyTimer(attempt)
       attempt.controller.abort()
       this.cancelAttemptBody(attempt)
     }

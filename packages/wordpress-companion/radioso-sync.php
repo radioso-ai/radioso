@@ -4,7 +4,7 @@
  * Description: Pushes published, updated, and deleted content of any post type
  *              — including WooCommerce products — to a Radioso workspace via
  *              signed webhook (HMAC-SHA256).
- * Version:     0.5.0
+ * Version:     0.6.0
  * Requires at least: 5.7
  * Author:      Radioso
  * License:     MIT
@@ -783,42 +783,111 @@ function radioso_plain_price($amount) {
 }
 
 /**
- * The prices as the shop itself displays them, tax handling included. Variable
- * products span their variations, so they carry both ends: quoting one number
- * for a product that spans several would misstate the price in both directions.
+ * The shop's price picture for a product, tax handling included: what the
+ * shopper pays, what the list price was, and whether the shop is discounting.
+ * Derived once and rendered twice — as the figure the agent quotes and as the
+ * numbers a retrieval rule compares — so the two can never disagree.
  *
- * Returns `['min' => float, 'max' => float]`, or an empty array when the shop
- * has no price to state. `max` is only set when it differs from `min`.
+ * Variable products span their variations, so they carry both ends: quoting one
+ * number for a product that spans several would misstate the price in both
+ * directions. They carry no list price, because `min` is the cheapest variation
+ * and the cheapest variation need not be the discounted one — naming a figure
+ * it was reduced from would invent a discount that does not exist.
+ *
+ * A shop whose discounts come from a pricing plugin rather than WooCommerce's
+ * own sale fields computes them while rendering and leaves the product itself
+ * untouched, so nothing readable here knows about them. That is what
+ * `radioso_sync_product_pricing` is for: the site supplies the price it charges
+ * once, and both renderings follow.
+ *
+ * Returns `['min' => float, 'on_sale' => bool]` plus `max` and `regular` where
+ * the shop has them, or an empty array when it has no price to state.
  */
-function radioso_product_prices($product) {
+function radioso_product_pricing($product) {
+    $pricing = [];
+
     if ($product->is_type('variable')) {
         $min = $product->get_variation_price('min', true);
         $max = $product->get_variation_price('max', true);
-        if ($min === '' || $min === null) {
-            return [];
+        if ($min !== '' && $min !== null) {
+            $pricing = ['min' => (float) $min, 'max' => (float) $max];
         }
-        return (float) $min === (float) $max
-            ? ['min' => (float) $min]
-            : ['min' => (float) $min, 'max' => (float) $max];
+    } else {
+        $price = wc_get_price_to_display($product);
+        if ($price !== '' && $price !== null) {
+            $pricing = ['min' => (float) $price];
+            $regular = $product->get_regular_price();
+            if ($regular !== '' && $regular !== null) {
+                $pricing['regular'] = (float) wc_get_price_to_display($product, ['price' => $regular]);
+            }
+        }
     }
 
-    $price = wc_get_price_to_display($product);
-    if ($price === '' || $price === null) {
+    if ($pricing) {
+        $pricing['on_sale'] = (bool) $product->is_on_sale();
+    }
+
+    return radioso_valid_pricing(apply_filters('radioso_sync_product_pricing', $pricing, $product));
+}
+
+/**
+ * A site's own pricing runs before this, and a shop that hands back a string, a
+ * null or a stray key should cost the product its price rather than the whole
+ * push — the same bargain `radioso_valid_fields()` strikes for indexed fields.
+ */
+function radioso_valid_pricing($pricing) {
+    if (!is_array($pricing) || !isset($pricing['min']) || !radioso_is_price($pricing['min'])) {
         return [];
     }
 
-    return ['min' => (float) $price];
+    $valid = ['min' => (float) $pricing['min'], 'on_sale' => !empty($pricing['on_sale'])];
+
+    // A ceiling equal to the floor is not a range, and one below it is not a
+    // ceiling; either way the product is priced at one figure.
+    if (isset($pricing['max']) && radioso_is_price($pricing['max']) && (float) $pricing['max'] > $valid['min']) {
+        $valid['max'] = (float) $pricing['max'];
+    }
+
+    if (isset($pricing['regular']) && radioso_is_price($pricing['regular'])) {
+        $valid['regular'] = (float) $pricing['regular'];
+        // A list price above what the shopper pays is a discount, whether or not
+        // it ever reached WooCommerce's own sale fields.
+        if ($valid['regular'] > $valid['min']) {
+            $valid['on_sale'] = true;
+        }
+    }
+
+    return $valid;
 }
 
-function radioso_product_price_text($product) {
-    $prices = radioso_product_prices($product);
-    if (!$prices) {
+/**
+ * INF and NAN are numeric to PHP and unrepresentable to JSON, so a price has to
+ * clear both bars before anything downstream depends on it.
+ */
+function radioso_is_price($value) {
+    return is_numeric($value) && is_finite((float) $value);
+}
+
+function radioso_product_price_text($pricing) {
+    if (!$pricing) {
         return '';
     }
 
-    return isset($prices['max'])
-        ? radioso_plain_price($prices['min']) . ' – ' . radioso_plain_price($prices['max'])
-        : radioso_plain_price($prices['min']);
+    return isset($pricing['max'])
+        ? radioso_plain_price($pricing['min']) . ' – ' . radioso_plain_price($pricing['max'])
+        : radioso_plain_price($pricing['min']);
+}
+
+/**
+ * A discount is only legible next to what it discounts: a reader told "209 euro"
+ * cannot tell an ordinary price from a reduced one. Stated only when the shop
+ * holds a list price for the same thing it prices, and only when that price is
+ * higher.
+ */
+function radioso_pricing_shows_discount($pricing) {
+    return !empty($pricing['on_sale'])
+        && isset($pricing['regular'])
+        && $pricing['regular'] > $pricing['min'];
 }
 
 function radioso_product_facts($post) {
@@ -838,12 +907,19 @@ function radioso_product_facts($post) {
         $facts[] = ['label' => 'SKU', 'value' => $sku];
     }
 
-    $price_text = radioso_product_price_text($product);
+    $pricing = radioso_product_pricing($product);
+    $price_text = radioso_product_price_text($pricing);
     if ($price_text !== '') {
         // WooCommerce's own translation of the label, so the price is labelled in
         // the shop's language alongside the site-supplied taxonomy and attribute
         // labels. Falls back to English if the text domain is not loaded.
         $facts[] = ['label' => __('Price', 'woocommerce'), 'value' => $price_text];
+        if (radioso_pricing_shows_discount($pricing)) {
+            $facts[] = [
+                'label' => __('Regular price', 'woocommerce'),
+                'value' => radioso_plain_price($pricing['regular']),
+            ];
+        }
     }
 
     // WooCommerce localises this and leaves it empty for an ordinary in-stock
@@ -910,33 +986,28 @@ function radioso_product_fields($post) {
         $fields['sku'] = $sku;
     }
 
-    $prices = radioso_product_prices($product);
-    if ($prices) {
-        $fields['price'] = $prices['min'];
-        if (isset($prices['max'])) {
-            $fields['price_max'] = $prices['max'];
+    $pricing = radioso_product_pricing($product);
+    if ($pricing) {
+        $fields['price'] = $pricing['min'];
+        if (isset($pricing['max'])) {
+            $fields['price_max'] = $pricing['max'];
+        }
+        if (isset($pricing['regular'])) {
+            $fields['regular_price'] = $pricing['regular'];
+        }
+        // Stated only where the list price beside it says what the discount is
+        // from, so a rule never compares against a figure nothing was reduced to.
+        if (radioso_pricing_shows_discount($pricing)) {
+            $fields['sale_price'] = $pricing['min'];
         }
         // A bare number cannot be compared across shops, and Radioso surfaces
         // the value to operators writing rules against it.
         $fields['currency'] = get_woocommerce_currency();
     }
 
-    // Variable products hold regular and sale prices on their variations, so
-    // the parent has none to state; the range above already carries the span.
-    if (!$product->is_type('variable')) {
-        $regular = $product->get_regular_price();
-        if ($regular !== '' && $regular !== null) {
-            $fields['regular_price'] = (float) wc_get_price_to_display($product, ['price' => $regular]);
-        }
-        $sale = $product->get_sale_price();
-        if ($sale !== '' && $sale !== null) {
-            $fields['sale_price'] = (float) wc_get_price_to_display($product, ['price' => $sale]);
-        }
-    }
-
     // Always stated, never omitted: a rule for "not on sale" needs the false as
     // much as a rule for "on sale" needs the true.
-    $fields['on_sale'] = (bool) $product->is_on_sale();
+    $fields['on_sale'] = $pricing ? $pricing['on_sale'] : (bool) $product->is_on_sale();
 
     $stock_status = (string) $product->get_stock_status();
     if ($stock_status !== '') {

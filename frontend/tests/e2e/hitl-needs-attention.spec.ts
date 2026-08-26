@@ -610,7 +610,7 @@ test("operator can turn written negative feedback into a remediation task", asyn
   await resolutionDialog.getByRole("button", { name: "Knowledge gap" }).click();
   await expect.poll(() => triageRequests).toContainEqual({
     state: "resolved",
-    expectedVersion: 1,
+    expectedVersion: 4,
     resolution: { reason: "knowledge_gap", note: null },
   });
   await expect(resolutionDialog.getByRole("heading", {

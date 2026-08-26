@@ -2,8 +2,13 @@ import { ApprovalDecisionServiceError, type ApprovalDecisionService } from "../.
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { SlackInstallationRecord, SlackInstallationRepositoryPort } from "../public.js";
-import type { OperatorReplyService, ConversationOwnershipRecord } from "../../handoff/public.js";
+import type {
+  OperatorReplyService,
+  ConversationOwnershipMutationResult,
+  ConversationOwnershipRecord,
+} from "../../handoff/public.js";
 import {
   OWNERSHIP_REPLY_ACTION_ID,
   OWNERSHIP_REPLY_BLOCK_ID,
@@ -150,11 +155,11 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         workspaceId: string;
         accountId: string;
         displayName: string;
-      }): Promise<{ ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null }>;
+      }): Promise<ConversationOwnershipMutationResult>;
       handBack(input: {
         conversationId: string;
         expectedVersion: number;
-      }): Promise<{ ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null }>;
+      }): Promise<ConversationOwnershipMutationResult>;
     };
     operatorReplyService?: Pick<OperatorReplyService, "reply">;
     slackViews?: {
@@ -167,6 +172,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     responseUrlClient?: SlackResponseUrlClient;
     audit?: Pick<AuditPort, "record">;
     metrics?: Pick<MetricsRegistry, "incrementCounter">;
+    workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
     logger?: { warn(payload: Record<string, unknown>, message: string): void };
   }) {}
 
@@ -381,6 +387,9 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       await this.postEphemeral(payload, "Conversation ownership changed. Refreshing.");
       return;
     }
+    if (result.changed) {
+      this.options.workspaceInvalidationPublisher?.enqueue(input.workspaceId, ["conversation.ownership_changed"]);
+    }
     await this.recordOwnershipAudit({
       accountId: resolved.identity.accountId,
       workspaceId: input.workspaceId,
@@ -432,6 +441,9 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
       return;
     }
     const resultWorkspaceId = result.record.workspaceId;
+    if (result.changed) {
+      this.options.workspaceInvalidationPublisher?.enqueue(resultWorkspaceId, ["conversation.ownership_changed"]);
+    }
     await this.recordOwnershipAudit({
       accountId: resolved.identity.accountId,
       workspaceId: resultWorkspaceId,

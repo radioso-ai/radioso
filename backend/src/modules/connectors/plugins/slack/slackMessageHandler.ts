@@ -21,6 +21,7 @@ import {
   buildOwnershipMessage,
 } from "../../../slack/public.js";
 import type { SlackPersistencePort } from "./slackPersistence.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 export interface SlackMessageImEvent {
   type: "message";
@@ -89,6 +90,7 @@ export interface SlackMessageHandlerOptions {
   persistence: SlackPersistencePort;
   slackPostOutbox?: SlackPostOutboxPort;
   clientFactory?: SlackWebApiClientFactory;
+  workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
 }
 
 const dmSlackKey = (teamId: string, userId: string): string => `dm:${teamId}:${userId}`;
@@ -199,7 +201,7 @@ export class SlackMessageHandler {
 
     const slackKey = input.getSlackKey(installation);
     const channelContext = input.getChannelContext(installation);
-    const conversationLink = await this.options.persistence.getOrCreateConversationLink({
+    const conversationLinkOutcome = await this.options.persistence.getOrCreateConversationLink({
       workspaceId: binding.workspaceId,
       installationId: installation.id,
       slackKey,
@@ -207,6 +209,10 @@ export class SlackMessageHandler {
       sourceChannel: "slack",
       channelContext,
     });
+    const conversationLink = conversationLinkOutcome.link;
+    if (conversationLinkOutcome.created) {
+      this.options.workspaceInvalidationPublisher?.enqueue(binding.workspaceId, ["conversation.created"]);
+    }
 
     this.options.logger.info(
       { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },

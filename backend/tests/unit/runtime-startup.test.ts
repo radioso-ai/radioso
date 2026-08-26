@@ -117,6 +117,12 @@ const migrationTimeoutOptionsFor = (env: Env) => ({
   statementTimeoutMs: env.DB_MIGRATION_STATEMENT_TIMEOUT_MS,
 });
 
+const expectCalledBefore = (before: unknown, after: unknown) => {
+  const callOrder = (candidate: unknown) =>
+    (candidate as { mock: { invocationCallOrder: number[] } }).mock.invocationCallOrder[0];
+  expect(callOrder(before)).toBeLessThan(callOrder(after));
+};
+
 const createLogger = () => {
   const calls = {
     info: [] as Array<{ message: string; payload: unknown }>,
@@ -139,6 +145,8 @@ const createLogger = () => {
 const createDependencies = () =>
   ({
     metricsRegistry: null,
+    workspaceInvalidationPublisher: { enqueue: vi.fn(() => ({ accepted: false, reason: "disabled" })) },
+    realtimePublisherLifecycle: { shutdown: vi.fn().mockResolvedValue(undefined) },
     logger: createLogger().logger,
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -176,13 +184,10 @@ describe("runtime startup", () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const runMigrations = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn((callback?: () => void) => callback?.());
     const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
       onListening();
-      return {
-        close(callback?: () => void) {
-          callback?.();
-        },
-      };
+      return { close };
     });
     const { logger } = createLogger();
 
@@ -198,13 +203,22 @@ describe("runtime startup", () => {
     expect(runMigrations).toHaveBeenCalledWith(env.DATABASE_URL, logger, migrationTimeoutOptionsFor(env));
     expect(dependencies.connectorRegistry.runMigrations).toHaveBeenCalledWith(dependencies.connectorDb);
     expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
+      }),
+    );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
+    expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();
+    expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
+    expectCalledBefore(dependencies.applicationModules.shutdownAll, dependencies.connectorRegistry.shutdownAll);
   });
 
   it("starts the worker runtime without connector bootstrapping and fails fast on pending migrations", async () => {
@@ -254,20 +268,20 @@ describe("runtime startup", () => {
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
+    expectCalledBefore(dependencies.documentProcessingWorker.stop, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
   it("starts the worker task runtime with only the internal task server", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn((callback?: () => void) => callback?.());
     const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
       onListening();
-      return {
-        close(callback?: () => void) {
-          callback?.();
-        },
-      };
+      return { close };
     });
 
     const runtime = await startWorkerTaskRuntime({
@@ -288,7 +302,10 @@ describe("runtime startup", () => {
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
+    expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
   it("starts the crawler worker runtime independently after migration verification", async () => {
@@ -311,20 +328,20 @@ describe("runtime startup", () => {
     await runtime.shutdown("test");
     expect(dependencies.websiteCrawlWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
+    expectCalledBefore(dependencies.websiteCrawlWorker.stop, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
   it("starts the crawler worker task runtime with only the internal task server", async () => {
     const env = createEnv();
     const dependencies = createDependencies();
     const ensureNoPendingMigrations = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn((callback?: () => void) => callback?.());
     const listen = vi.fn((_app: unknown, _port: number, onListening: () => void) => {
       onListening();
-      return {
-        close(callback?: () => void) {
-          callback?.();
-        },
-      };
+      return { close };
     });
 
     const runtime = await startCrawlerWorkerTaskRuntime({
@@ -344,7 +361,10 @@ describe("runtime startup", () => {
     await runtime.shutdown("test");
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
+    expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
   it("passes the metrics registry through API startup composition when metrics are enabled", async () => {

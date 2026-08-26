@@ -1,4 +1,8 @@
 import { CompiledQuery } from "kysely";
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
 
 import { systemClock, type Clock } from "../../shared/domain/clock.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
@@ -129,6 +133,8 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     private readonly outcomeCatalog: QualityOutcomeCatalogPort,
     private readonly clock: Clock = systemClock,
     private readonly verificationSource?: QualityVerificationSourcePort,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
@@ -514,11 +520,15 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       resolution: input.resolution,
       legacyReason: input.legacyReason,
     });
-    return new QualityTriageStore(this.db).transition(workspaceId, {
+    const result = await new QualityTriageStore(this.db).transition(workspaceId, {
       assistantMessageId: input.assistantMessageId,
       ...update,
       updatedBy: input.updatedBy ?? null,
     });
+    if (result.kind === "updated") {
+      this.workspaceInvalidationPublisher.enqueue(workspaceId, ["quality.triage_changed"]);
+    }
+    return result;
   }
 
   private async fetchComments(

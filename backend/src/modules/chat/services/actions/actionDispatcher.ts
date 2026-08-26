@@ -32,7 +32,7 @@ export interface ActionHandler {
 /** The narrow slice of the outbox the dispatcher drains. */
 export interface ActionOutboxConsumerPort {
   claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]>;
-  markDispatched(id: string, attempt: number): Promise<void>;
+  markDispatched(id: string, attempt: number): Promise<boolean>;
   recordFailure(
     id: string,
     error: string,
@@ -50,6 +50,13 @@ export interface ActionDispatchOptions {
   /** Backoff before a failed-but-retryable request is eligible again. */
   retryBackoffSeconds: number;
 }
+
+export interface PersistedActionOutcome {
+  request: ActionRequestRecord;
+  outcome: "claimed" | "dispatched" | "retry" | "failed";
+}
+
+export type PersistedActionOutcomeObserver = (outcome: PersistedActionOutcome) => void;
 
 const DEFAULT_DISPATCH_OPTIONS: ActionDispatchOptions = {
   leaseSeconds: 300,
@@ -96,8 +103,18 @@ export class ActionDispatcher {
     private readonly outbox: ActionOutboxConsumerPort,
     private readonly registry: ActionHandlerRegistry,
     options: Partial<ActionDispatchOptions> = {},
+    private readonly onPersistedOutcome?: PersistedActionOutcomeObserver,
   ) {
     this.options = { ...DEFAULT_DISPATCH_OPTIONS, ...options };
+  }
+
+  private observePersistedOutcome(outcome: PersistedActionOutcome): void {
+    try {
+      this.onPersistedOutcome?.(outcome);
+    } catch {
+      // The persisted outbox transition is authoritative. A downstream observer
+      // (for example, best-effort cache invalidation) cannot undo or reclassify it.
+    }
   }
 
   async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number }> {
@@ -105,6 +122,10 @@ export class ActionDispatcher {
     let dispatched = 0;
     let retried = 0;
     let failed = 0;
+
+    for (const request of claimed) {
+      this.observePersistedOutcome({ request, outcome: "claimed" });
+    }
 
     const onFailure = async (request: ActionRequestRecord, error: string): Promise<void> => {
       const outcome = await this.outbox.recordFailure(
@@ -116,8 +137,10 @@ export class ActionDispatcher {
       );
       if (outcome === "failed") {
         failed += 1;
+        this.observePersistedOutcome({ request, outcome });
       } else if (outcome === "retry") {
         retried += 1;
+        this.observePersistedOutcome({ request, outcome });
       }
       // `superseded` → another worker reclaimed this row; its result is authoritative.
     };
@@ -142,8 +165,11 @@ export class ActionDispatcher {
           payload: request.payload,
           context,
         });
-        await this.outbox.markDispatched(request.id, request.attempts);
-        dispatched += 1;
+        const changed = await this.outbox.markDispatched(request.id, request.attempts);
+        if (changed !== false) {
+          dispatched += 1;
+          this.observePersistedOutcome({ request, outcome: "dispatched" });
+        }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const outcome = await this.outbox.recordFailure(
@@ -155,8 +181,10 @@ export class ActionDispatcher {
         );
         if (outcome === "failed") {
           failed += 1;
+          this.observePersistedOutcome({ request, outcome });
         } else if (outcome === "retry") {
           retried += 1;
+          this.observePersistedOutcome({ request, outcome });
         }
         if (outcome !== "superseded") {
           try {

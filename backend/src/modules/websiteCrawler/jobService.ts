@@ -1,3 +1,8 @@
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
 import type {
   WebsiteCrawlJobRecord,
   WebsiteCrawlJobRepositoryPort,
@@ -106,13 +111,18 @@ const toJobSummary = (record: WebsiteCrawlJobRecord): WebsiteCrawlJobSummary => 
 });
 
 export class WebsiteCrawlJobService {
+  private readonly publisher: WorkspaceInvalidationPublisher;
+
   constructor(private readonly dependencies: {
     repository: WebsiteCrawlJobRepositoryPort;
     dispatcher: WebsiteCrawlJobDispatcherPort;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     logger?: Pick<AppLogger, "warn">;
     assertCrawlUrlAllowed?: (url: string) => Promise<void>;
-  }) {}
+    publisher?: WorkspaceInvalidationPublisher;
+  }) {
+    this.publisher = dependencies.publisher ?? createNoopWorkspaceInvalidationPublisher();
+  }
 
   async enqueue(input: {
     accountId?: string | null;
@@ -155,6 +165,7 @@ export class WebsiteCrawlJobService {
       limit: input.limit,
       policy,
     });
+    this.publisher.enqueue(job.workspaceId, ["crawl.status_changed"]);
     try {
       await this.dependencies.dispatcher.dispatch({
         jobId: job.id,
@@ -192,14 +203,22 @@ export class WebsiteCrawlJobService {
     if (!deleted) {
       throw notFound("Crawl job not found");
     }
+    this.publisher.enqueue(input.workspaceId, ["crawl.status_changed"]);
   }
 
   async cancelJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<number> {
-    return this.dependencies.repository.cancelBySourceId(input.sourceId, input.workspaceId);
+    const cancelledJobCount = await this.dependencies.repository.cancelBySourceId(input.sourceId, input.workspaceId);
+    if (cancelledJobCount > 0) {
+      this.publisher.enqueue(input.workspaceId, ["crawl.status_changed"]);
+    }
+    return cancelledJobCount;
   }
 
   async pauseJobsForSource(input: { workspaceId: string; sourceId: string }): Promise<{ pausedJobCount: number }> {
     const jobs = await this.dependencies.repository.pauseBySourceId(input.sourceId, input.workspaceId);
+    if (jobs.length > 0) {
+      this.publisher.enqueue(input.workspaceId, ["crawl.status_changed"]);
+    }
     return { pausedJobCount: jobs.length };
   }
 
@@ -209,6 +228,9 @@ export class WebsiteCrawlJobService {
     resumeDispatchFailureCount: number;
   }> {
     const result = await this.dependencies.repository.resumePausedBySourceId(input.sourceId, input.workspaceId);
+    if (result.resumedJobs.length + result.pendingResumeJobCount > 0) {
+      this.publisher.enqueue(input.workspaceId, ["crawl.status_changed"]);
+    }
     let resumedJobCount = 0;
     let resumeDispatchFailureCount = 0;
     for (const job of result.resumedJobs) {

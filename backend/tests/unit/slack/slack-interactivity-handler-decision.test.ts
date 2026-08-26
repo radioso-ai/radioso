@@ -67,7 +67,7 @@ const createHandler = (overrides: {
     if (overrides.resolveError) {
       throw overrides.resolveError;
     }
-    return { status: "resolved" as const, optionId: "ship", conversationId: "conv_1", resumed: true };
+    return { status: "resolved" as const, optionId: "ship", conversationId: "conv_1", resumed: true as const };
   });
   const audit = { record: vi.fn(async () => {}) };
   const metrics = { incrementCounter: vi.fn() };

@@ -11,6 +11,7 @@ import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpe
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import {
   actionIdempotencyKey,
+  type AssistantTurnPersistenceReceipt,
   type AssistantTurnPersistencePort,
 } from "../services/chatTurnLifecycle.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
@@ -68,12 +69,13 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
 const enqueueActions = async (
   db: Db,
   input: CompleteAssistantTurnInput,
-): Promise<void> => {
+): Promise<readonly string[]> => {
   if (!input.actions?.length) {
-    return;
+    return [];
   }
+  const insertedActionTypes: string[] = [];
   for (const action of input.actions) {
-    await sql`
+    const result = await sql`
       INSERT INTO routine_action_requests (type, payload, workspace_id, account_id, conversation_id, idempotency_key)
       VALUES (
         ${action.type},
@@ -85,7 +87,11 @@ const enqueueActions = async (
       )
       ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
     `.execute(db);
+    if (Number(result.numAffectedRows ?? 0) > 0) {
+      insertedActionTypes.push(action.type);
+    }
   }
+  return insertedActionTypes;
 };
 
 const saveRoutineState = async (
@@ -261,23 +267,23 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
 
-  async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<MessageRecord> {
-    const run = async (db: Db): Promise<MessageRecord> => {
-      await enqueueActions(db, input);
+  async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
+    const run = async (db: Db): Promise<AssistantTurnPersistenceReceipt> => {
+      const insertedActionTypes = await enqueueActions(db, input);
       await applyRoutineStateTransition(db, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
         await savePendingDecision(db, input.pendingDecisionTransition);
       }
-      if (input.ownershipHandoff) {
-        await this.conversationOwnershipRepository.requestHandoff(
+      const ownershipResult = input.ownershipHandoff
+        ? await this.conversationOwnershipRepository.requestHandoff(
           {
             conversationId: input.conversationId,
             workspaceId: input.workspaceId,
             reason: input.ownershipHandoff.reason,
           },
           db,
-        );
-      }
+        )
+        : null;
       await applyClarificationTransition(db, input.clarificationTransition);
 
       const messageId = input.assistantMessage.id ?? randomUUID();
@@ -328,7 +334,14 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         await insertAuditEvent(db, input.additionalAuditEvent);
       }
 
-      return mapMessage(message);
+      return {
+        message: mapMessage(message),
+        committedFacts: {
+          insertedActionTypes,
+          decisionCreated: input.pendingDecisionTransition !== undefined && input.pendingDecisionTransition !== null,
+          ownershipChanged: ownershipResult?.changed ?? false,
+        },
+      };
     };
 
     // When the caller supplies an open transaction (the pending-decision commit fence),

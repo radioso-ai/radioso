@@ -11,11 +11,17 @@ import { hitlApi, isHitlApiStatusError } from '@/lib/api-hitl'
 import type { ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveOperatorActions } from '@/lib/operator-actions'
 
+export type OperatorActionResult =
+  | { kind: 'ownership'; conversationId: string; ownershipState: ConversationOwnership['state'] }
+  | { kind: 'reply'; conversationId: string }
+  | { kind: 'decision_resolved'; agentId: string; handle: string }
+  | { kind: 'refresh'; conversationId: string; reason: 'conflict' | 'invalid_option' }
+
 interface OperatorActionBarProps {
   conversationId: string
   ownership?: ConversationOwnership
   pendingDecisions: PendingApprovalDecision[]
-  onChanged: () => Promise<void> | void
+  onChanged: (result: OperatorActionResult) => Promise<void> | void
 }
 
 const statusText = (status: ReturnType<typeof deriveOperatorActions>['status'], ownerLabel: string | null) => {
@@ -48,7 +54,7 @@ export function OperatorActionBar({
   const trimmedMessage = message.trim()
   const hasVersion = actions.version !== null
 
-  const runAction = async (actionId: string, callback: () => Promise<void>) => {
+  const runAction = async (actionId: string, callback: () => Promise<OperatorActionResult>) => {
     if (inFlightRef.current) {
       return
     }
@@ -58,12 +64,12 @@ export function OperatorActionBar({
     setError(null)
 
     try {
-      await callback()
-      await onChanged()
+      await onChanged(await callback())
     } catch (caught) {
-      if (isHitlApiStatusError(caught, 409)) {
-        setError('This conversation changed - refreshing.')
-        await onChanged()
+      if (isHitlApiStatusError(caught, 409) || isHitlApiStatusError(caught, 422)) {
+        const invalidOption = isHitlApiStatusError(caught, 422)
+        setError(invalidOption ? 'That option is no longer valid - refreshing.' : 'This conversation changed - refreshing.')
+        await onChanged({ kind: 'refresh', conversationId, reason: invalidOption ? 'invalid_option' : 'conflict' })
         return
       }
 
@@ -76,7 +82,8 @@ export function OperatorActionBar({
 
   const handleTakeOver = () =>
     runAction('takeover', async () => {
-      await hitlApi.takeOverConversation(conversationId, {})
+      const response = await hitlApi.takeOverConversation(conversationId, {})
+      return { kind: 'ownership', conversationId, ownershipState: response.ownership.state }
     })
 
   const handleReply = () =>
@@ -90,6 +97,7 @@ export function OperatorActionBar({
         expectedVersion: actions.version,
       })
       setMessage('')
+      return { kind: 'reply', conversationId }
     })
 
   const handleHandBack = () =>
@@ -98,9 +106,10 @@ export function OperatorActionBar({
         throw new Error('Missing conversation ownership version.')
       }
 
-      await hitlApi.handBackConversation(conversationId, {
+      const response = await hitlApi.handBackConversation(conversationId, {
         expectedVersion: actions.version,
       })
+      return { kind: 'ownership', conversationId, ownershipState: response.ownership.state }
     })
 
   const handleResolveDecision = (
@@ -108,19 +117,11 @@ export function OperatorActionBar({
     optionId: string,
   ) =>
     runAction(`decision:${decision.handle}:${optionId}`, async () => {
-      try {
-        await hitlApi.resolveDecision(decision.agentId, decision.handle, {
-          optionId,
-          contentHash: decision.contentHash,
-        })
-      } catch (caught) {
-        if (isHitlApiStatusError(caught, 422)) {
-          setError('That option is no longer valid - refreshing.')
-          return
-        }
-
-        throw caught
-      }
+      await hitlApi.resolveDecision(decision.agentId, decision.handle, {
+        optionId,
+        contentHash: decision.contentHash,
+      })
+      return { kind: 'decision_resolved', agentId: decision.agentId, handle: decision.handle }
     })
 
   return (

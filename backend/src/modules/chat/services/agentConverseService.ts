@@ -2,6 +2,7 @@ import { serviceUnavailable } from "../../../shared/domain/errors.js";
 import type { AssistantChatService } from "./assistantChatService.js";
 import type { AgentConversePrincipal } from "../../settings/contracts/agentConverseSession.js";
 import type { AgentConverseAudit } from "./agentConverseAudit.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 export interface AgentConverseConversationStore {
   getOrCreateByAnonymousSession?(input: {
@@ -10,7 +11,7 @@ export interface AgentConverseConversationStore {
     sourceChannel: string;
     anonymousSessionId: string;
     sourceOrigin?: string | null;
-  }): Promise<{ id: string }>;
+  }): Promise<{ record: { id: string }; created: boolean }>;
 }
 
 export interface AgentConverseAskResult {
@@ -28,6 +29,7 @@ export class AgentConverseService {
       assistantChatService: Pick<AssistantChatService, "answer">;
       conversationRepository: AgentConverseConversationStore;
       audit?: AgentConverseAudit;
+      publisher?: WorkspaceInvalidationPublisher;
     },
   ) {}
 
@@ -49,12 +51,15 @@ export class AgentConverseService {
         anonymousSessionId: principal.publicSessionId,
         sourceOrigin: null,
       });
+      if (conversation.created) {
+        this.dependencies.publisher?.enqueue(principal.workspaceId, ["conversation.created"]);
+      }
       const response = await this.dependencies.assistantChatService.answer({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
         message: input.message,
         stream: false,
-        conversationId: conversation.id,
+        conversationId: conversation.record.id,
         anonymousSessionId: principal.publicSessionId,
         sourceChannel: "mcp",
         sourceOrigin: null,

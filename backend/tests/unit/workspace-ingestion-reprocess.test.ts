@@ -11,7 +11,14 @@ describe("workspace ingestion reprocess", () => {
   it("queues eligible workspace documents and skips in-flight ones", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const auditService = createAuditService();
-    const service = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+    const publisher = { enqueue: vi.fn() };
+    const service = new WorkspaceIngestionReprocessService(
+      documentRepository,
+      auditService,
+      undefined,
+      undefined,
+      publisher,
+    );
 
     await documentRepository.create({
       workspaceId: "workspace-1",
@@ -61,6 +68,8 @@ describe("workspace ingestion reprocess", () => {
     expect(documents.filter((document) => document.status === "queued")).toHaveLength(3);
     expect(documents.filter((document) => document.status === "processing")).toHaveLength(1);
     expect(documents.filter((document) => document.workspaceId === "workspace-1")).toHaveLength(4);
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
     expect(auditService.events.at(-1)).toMatchObject({
       workspaceId: "workspace-1",
       eventType: "document.reprocess_workspace",
@@ -75,7 +84,14 @@ describe("workspace ingestion reprocess", () => {
   it("returns noop when no workspace documents are eligible", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const auditService = createAuditService();
-    const service = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+    const publisher = { enqueue: vi.fn() };
+    const service = new WorkspaceIngestionReprocessService(
+      documentRepository,
+      auditService,
+      undefined,
+      undefined,
+      publisher,
+    );
 
     await documentRepository.create({
       workspaceId: "workspace-1",
@@ -100,6 +116,7 @@ describe("workspace ingestion reprocess", () => {
       skippedDocumentCount: 2,
       status: "noop",
     });
+    expect(publisher.enqueue).not.toHaveBeenCalled();
   });
 
   it("keeps workspace reprocess successful when dispatching a queued job fails", async () => {
@@ -107,14 +124,25 @@ describe("workspace ingestion reprocess", () => {
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const auditService = createAuditService();
+    const order: string[] = [];
+    const publisher = {
+      enqueue: vi.fn(() => {
+        order.push("publish");
+        return { accepted: true as const, coalesced: false };
+      }),
+    };
     const service = new WorkspaceIngestionReprocessService(
       documentRepository,
       auditService,
       jobRepository,
       {
-        dispatch: vi.fn().mockRejectedValue(new Error("dispatch unavailable")),
+        dispatch: vi.fn().mockImplementation(async () => {
+          order.push("dispatch");
+          throw new Error("dispatch unavailable");
+        }),
         dispatchMany: vi.fn().mockResolvedValue(undefined),
       },
+      publisher,
     );
 
     await documentRepository.create({
@@ -138,5 +166,6 @@ describe("workspace ingestion reprocess", () => {
         eventStatus: "failure",
       }),
     );
+    expect(order).toEqual(["publish", "dispatch"]);
   });
 });

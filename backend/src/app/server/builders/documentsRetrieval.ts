@@ -1,3 +1,5 @@
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
+
 import { AuditEventRepository } from "../../../db/repositories/auditEventRepository.js";
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../../db/repositories/documentSourceRepository.js";
@@ -107,12 +109,14 @@ export const buildWorkspaceIngestionReprocessService = (input: {
   auditService: AuditService;
   documentJobDispatcher: DocumentJobDispatcherPort;
   repositories: ReturnType<typeof buildRepositories>;
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
 }): WorkspaceIngestionReprocessService =>
   new WorkspaceIngestionReprocessService(
     input.repositories.documentRepository,
     input.auditService,
     input.repositories.documentProcessingJobRepository,
     input.documentJobDispatcher,
+    input.workspaceInvalidationPublisher,
   );
 
 export const buildDocumentServices = (input: {
@@ -144,6 +148,7 @@ export const buildDocumentServices = (input: {
   };
   embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort;
   embeddingProfileProjectionCleanup: EmbeddingProfileProjectionCleanupPort;
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
 }) => {
   const {
     auditService,
@@ -188,6 +193,7 @@ export const buildDocumentServices = (input: {
     repositories.documentProcessingJobRepository,
     documentJobDispatcher,
     settings.documentTypeCatalogService,
+    input.workspaceInvalidationPublisher,
   );
   const embeddingProfileJobService = input.pinnedDocumentEmbeddings
     ? new EmbeddingProfileJobService(
@@ -209,12 +215,14 @@ export const buildDocumentServices = (input: {
     usageLimitPolicy,
     documentSourceRepository,
     input.embeddingCoverage,
+    input.workspaceInvalidationPublisher,
   );
   const websiteCrawlJobService = new WebsiteCrawlJobService({
     repository: repositories.websiteCrawlJobRepository,
     dispatcher: websiteCrawlJobDispatcher,
     documentIngestionService,
     logger,
+    publisher: input.workspaceInvalidationPublisher,
   });
   const documentImportService = new DocumentImportService(
     repositories.documentRepository,
@@ -225,6 +233,7 @@ export const buildDocumentServices = (input: {
     documentJobDispatcher,
     usageLimitPolicy,
     documentSourceRepository,
+    input.workspaceInvalidationPublisher,
   );
   const documentProcessingWorker = new DocumentProcessingWorker(
     repositories.documentRepository,
@@ -241,6 +250,7 @@ export const buildDocumentServices = (input: {
     embeddingProfileCleanupService,
     input.postJobMaintenance,
     input.embeddingProfileTerminalFailures,
+    input.workspaceInvalidationPublisher,
   );
   const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
     env,
@@ -256,6 +266,7 @@ export const buildDocumentServices = (input: {
     logger,
     pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,
     jobLeaseMs: env.WEBSITE_CRAWL_JOB_LEASE_MS,
+    publisher: input.workspaceInvalidationPublisher,
   });
   const websiteCrawlJobConsumer = createDefaultWebsiteCrawlJobConsumer(env, logger, websiteCrawlWorker);
   const documentDeletionService = new DocumentDeletionService(
@@ -263,6 +274,7 @@ export const buildDocumentServices = (input: {
     documentStorage,
     auditService,
     composition.capabilityPolicy,
+    input.workspaceInvalidationPublisher,
   );
   const workspaceIngestionReprocessService =
     input.workspaceIngestionReprocessService ??
@@ -270,6 +282,7 @@ export const buildDocumentServices = (input: {
       auditService,
       documentJobDispatcher,
       repositories,
+      workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
     });
   const documentSourceReprocessService = new DocumentSourceReprocessService(
     repositories.documentRepository,
@@ -277,6 +290,7 @@ export const buildDocumentServices = (input: {
     auditService,
     repositories.documentProcessingJobRepository,
     documentJobDispatcher,
+    input.workspaceInvalidationPublisher,
   );
   const documentSearchHistoryService = new DocumentSearchHistoryService(
     input.auditEventRepository,
@@ -313,6 +327,7 @@ export const buildRetrievalServices = (input: {
   skillSettingsResolver?: SkillSettingsResolver;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
+  workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
 }) => {
   const retrieval = createDefaultRetrievalServices(input);
   const retrievalPipeline = buildRetrievalAnswerExecutor(retrieval.retrievalPipeline, input);
@@ -323,6 +338,7 @@ export const buildRetrievalServices = (input: {
       input.documentRepository,
       retrievalPipeline,
       input.auditService,
+      input.workspaceInvalidationPublisher,
     ),
   };
 };

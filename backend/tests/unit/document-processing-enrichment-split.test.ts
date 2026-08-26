@@ -296,6 +296,7 @@ describe("document processing enrichment split", () => {
     documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const persistedSearchTexts: string[] = [];
+    const publisher = { enqueue: vi.fn() };
 
     const document = await documentRepository.create({
       workspaceId: "workspace-1",
@@ -317,9 +318,14 @@ describe("document processing enrichment split", () => {
       alwaysAppliesFirstChunkDate,
       undefined,
       jobRepository,
+      undefined,
+      undefined,
+      publisher,
     );
 
     await service.process(buildVectorizeJob(document.id, document.revision));
+    expect(publisher.enqueue).toHaveBeenCalledTimes(2);
+    publisher.enqueue.mockClear();
     const searchTextsAfterVectorize = persistedSearchTexts.length;
 
     const outcome = await service.processEnrichment(buildEnrichJob(document.id, document.revision));
@@ -339,6 +345,8 @@ describe("document processing enrichment split", () => {
     expect(secondChunk?.metadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
     // Document stays ready throughout.
     expect(documentRepository.items.get(document.id)?.status).toBe("ready");
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
   });
 
   it("skips a stale-revision enrich job without error", async () => {

@@ -260,7 +260,7 @@ const encodeActions = (actions: QualityActionFilter[] | undefined): string | und
 }
 
 export const qualityApi = {
-  async listTurns(options: ListLowQualityTurnsOptions = {}): Promise<LowQualityTurnsPage> {
+  async listTurns(options: ListLowQualityTurnsOptions = {}, signal?: AbortSignal): Promise<LowQualityTurnsPage> {
     const query: Record<string, string | undefined> = {
       signal: encodeSignals(options.signal),
       groundingVerdict: encodeGroundingVerdicts(options.groundingVerdict),
@@ -288,16 +288,16 @@ export const qualityApi = {
       limit: options.limit === undefined ? undefined : String(options.limit),
     }
     const path = withQuery('/quality/turns', query)
-    return request<LowQualityTurnsPage>(path, { method: 'GET' }, { withApiToken: true })
+    return request<LowQualityTurnsPage>(path, { method: 'GET', ...(signal ? { signal } : {}) }, { withApiToken: true })
   },
 
-  async getStats(options: GetQualityStatsOptions = {}): Promise<QualityStats> {
+  async getStats(options: GetQualityStatsOptions = {}, signal?: AbortSignal): Promise<QualityStats> {
     const path = withQuery('/quality/stats', {
       range: options.range,
       agentId: options.agentId,
       channel: options.channel,
     })
-    return request<QualityStats>(path, { method: 'GET' }, { withApiToken: true })
+    return request<QualityStats>(path, { method: 'GET', ...(signal ? { signal } : {}) }, { withApiToken: true })
   },
 
   async setTriageState(

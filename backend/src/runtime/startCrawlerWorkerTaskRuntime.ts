@@ -59,19 +59,26 @@ export const startCrawlerWorkerTaskRuntime = async (
       }
       shuttingDown = true;
       dependencies.logger.info({ role: "crawler-worker-task", signal }, "Radioso crawler worker task runtime shutting down");
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
       try {
-        await dependencies.applicationModules.shutdownAll();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
       } finally {
-        await stopRuntimeTracing();
+        try {
+          await dependencies.realtimePublisherLifecycle.shutdown();
+        } finally {
+          try {
+            await dependencies.applicationModules.shutdownAll();
+          } finally {
+            await stopRuntimeTracing();
+          }
+        }
       }
     },
   };

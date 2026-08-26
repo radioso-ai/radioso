@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
@@ -55,6 +59,8 @@ export class DocumentSearchService {
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly auditService: AuditService,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async search(input: {
@@ -130,6 +136,7 @@ export class DocumentSearchService {
       eventStatus: "success",
       metadata,
     });
+    this.workspaceInvalidationPublisher.enqueue(input.workspaceId, ["search.created"]);
 
     return response;
   }

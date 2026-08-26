@@ -1,3 +1,8 @@
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentProcessingJobOptions } from "../contracts/documentContracts.js";
@@ -17,6 +22,8 @@ export class WorkspaceIngestionReprocessService {
     private readonly auditService: AuditService,
     private readonly jobRepository?: Pick<DocumentProcessingJobRepositoryPort, "findByDocumentRevision">,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async reprocessWorkspace(
@@ -24,6 +31,9 @@ export class WorkspaceIngestionReprocessService {
     options?: DocumentProcessingJobOptions | null,
   ): Promise<WorkspaceIngestionReprocessResult> {
     const result = await this.documentRepository.requeueAllEligibleAndQueue(workspaceId, options);
+    if (result.queuedDocumentCount > 0) {
+      this.workspaceInvalidationPublisher.enqueue(workspaceId, ["document.status_changed"]);
+    }
     await this.dispatchQueuedJobs(workspaceId, result.queuedDocuments);
     await this.auditService.record({
       workspaceId,

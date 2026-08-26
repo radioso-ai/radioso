@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
@@ -83,9 +84,25 @@ import { formatConversationSource, getConversationSourceBadge } from '@/lib/hist
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
-  isTerminalQualityTriageState,
-  resolveQueueScope,
-} from '@/lib/quality-signals'
+  frozenQualityPageForKey,
+  normalizeQualityTurnsRequest,
+  beginQualityInteraction,
+  beginQualityInteractionController,
+  ownsQualityInteraction,
+  settleQualityInteraction,
+  patchQualityTriage,
+  qualityTurnRemainsVisible,
+  useQualityStatsQuery,
+  useQualityTurnsQuery,
+  type FrozenQualityPage,
+  type QualityTurnsRequest,
+} from '@/lib/quality-query-state'
+import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
+import {
+  useDashboardQueryInvalidation,
+  useDashboardQueryPolicy,
+} from '@/components/providers/dashboard-query-provider'
+import { resolveQueueScope } from '@/lib/quality-signals'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
 import {
   CloseReviewPopover,
@@ -592,6 +609,9 @@ function TriageStateControl({
 export function QualityView({ accountId, routeState }: QualityViewProps) {
   const router = useRouter()
   const { activeWorkspaceId } = useWorkspace()
+  const { intervalFor, queriesEnabled } = useDashboardQueryPolicy()
+  const invalidateDashboardQueries = useDashboardQueryInvalidation()
+  const queryClient = useQueryClient()
   const hasComment = routeState.qualityHasComment ?? false
   const currentPage = routeState.qualityPage ?? 1
   // Serialized filter keys: routeState supplies a fresh array every render
@@ -619,11 +639,6 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // Opting out of the queue's default scope: every answer, any triage state.
   const showAll = routeState.qualityShowAll ?? false
 
-  const [items, setItems] = useState<LowQualityTurn[]>([])
-  const [total, setTotal] = useState(0)
-  const [totalPages, setTotalPages] = useState(0)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
-  const [isFetching, setIsFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [creatingEvalMessageId, setCreatingEvalMessageId] = useState<string | null>(null)
   const [openedConversation, setOpenedConversation] = useState<{
@@ -632,21 +647,18 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   } | null>(null)
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogEntry[]>([])
-  const [stats, setStats] = useState<QualityStats | null>(null)
-  const [statsError, setStatsError] = useState<string | null>(null)
-  const [isStatsFetching, setIsStatsFetching] = useState(false)
   const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
+  const [frozenPage, setFrozenPage] = useState<FrozenQualityPage | null>(null)
+  const interactionId = useRef(0)
   const [closeReview, setCloseReview] = useState<{
     turn: LowQualityTurn
     state: 'resolved' | 'dismissed'
     conflict: QualityTriageRecord | null
     anchor: HTMLElement | null
+    interactionId: number
+    queryKey: readonly unknown[]
   } | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
-  // Bumped after a triage change so the active-backlog signal counts refetch.
-  const [countsRefreshKey, setCountsRefreshKey] = useState(0)
-  // Bumped after a triage change so server-filtered rows/totals stay current.
-  const [turnsRefreshKey, setTurnsRefreshKey] = useState(0)
   const drawerSelectedItem: SelectedHistoryItem = openedConversation
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
@@ -679,6 +691,77 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     signal: activeSignal,
     triageStates,
   }), [activeSignal, showAll, triageStates])
+  const turnsRequest = useMemo<QualityTurnsRequest>(() => {
+    const actionTuples = actionsKey
+      ? actionsKey.split(',').map(decodeAction).filter((entry): entry is QualityActionFilter => entry !== null)
+      : undefined
+    const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
+    return {
+      signal: queueScope.signals,
+      actions: actionTuples,
+      statuses: statuses.length > 0 ? statuses : undefined,
+      feedback: feedback.length > 0 ? feedback : undefined,
+      triageStates: queueScope.triageStates,
+      resolutionReasons: resolutionReasons.length > 0 ? resolutionReasons as QualityResolutionBreakdownReason[] : undefined,
+      resolutionFrom,
+      resolutionTo,
+      sort,
+      activeNegativeFeedbackOnly,
+      hasComment,
+      groundingVerdict: groundingVerdicts.length > 0 ? groundingVerdicts : undefined,
+      hasUnsourcedClaims,
+      hasInvalidSources,
+      minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
+      maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
+      page: currentPage,
+      pageSize: PAGE_SIZE,
+    }
+  }, [actionsKey, activeNegativeFeedbackOnly, feedback, groundingVerdicts, hasComment, hasInvalidSources, hasUnsourcedClaims, latency, queueScope, resolutionFrom, resolutionReasons, resolutionTo, sort, statuses, currentPage])
+  const workspaceId = activeWorkspaceId ?? routeState.workspaceId ?? ''
+  const statsInput = useMemo(() => ({ range }), [range])
+  const normalizedTurnsRequest = useMemo(() => normalizeQualityTurnsRequest(turnsRequest), [turnsRequest])
+  const statsQuery = useQualityStatsQuery(
+    workspaceId,
+    statsInput,
+    queriesEnabled,
+    intervalFor(dashboardQueryKeys.quality.stats(workspaceId, statsInput)),
+  )
+  const turnsQuery = useQualityTurnsQuery(
+    workspaceId,
+    normalizedTurnsRequest,
+    queriesEnabled,
+    intervalFor(dashboardQueryKeys.quality.turns(workspaceId, normalizedTurnsRequest)),
+  )
+  const visibleTurnsPage = frozenQualityPageForKey(frozenPage, turnsQuery.queryKey) ?? turnsQuery.data
+  const items = visibleTurnsPage?.items ?? []
+  const total = visibleTurnsPage?.total ?? 0
+  const totalPages = visibleTurnsPage?.totalPages ?? 0
+  const hasLoadedOnce = !turnsQuery.isPending || Boolean(turnsQuery.data)
+  const isFetching = turnsQuery.isFetching
+  const turnsQueryError = turnsQuery.error && !turnsQuery.data
+    ? getApiErrorMessage(turnsQuery.error, 'Failed to load assistant answers')
+    : null
+  const stats = statsQuery.data ?? null
+  const statsError = statsQuery.error && !statsQuery.data
+    ? getApiErrorMessage(statsQuery.error, 'Failed to load quality stats')
+    : null
+  const isStatsFetching = statsQuery.isFetching
+  const turnsKeyText = JSON.stringify(turnsQuery.queryKey)
+  const activeCloseReview = closeReview && JSON.stringify(closeReview.queryKey) === turnsKeyText
+    ? closeReview
+    : null
+
+  useEffect(() => {
+    const generation = interactionId.current = beginQualityInteraction(interactionId.current)
+    // Query-key identity owns the interaction. The render guard above prevents
+    // even this effect's one-frame transition from showing a stale popover.
+    queueMicrotask(() => {
+      if (!ownsQualityInteraction(interactionId.current, generation)) return
+      setFrozenPage(null)
+      setCloseReview(null)
+      setError(null)
+    })
+  }, [turnsKeyText])
 
   useEffect(() => {
     let cancelled = false
@@ -700,44 +783,6 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   }, [])
 
   const actionLookup = useMemo(() => buildActionLookup(skillCatalog), [skillCatalog])
-
-  // One rollup call backs both zones: windowed rates for the health tiles and the
-  // all-time active backlog for the queue chips. Health is windowed; backlog is not.
-  useEffect(() => {
-    let cancelled = false
-
-    const loadStats = async () => {
-      setIsStatsFetching(true)
-      try {
-        const response = await qualityApi.getStats({ range })
-        if (!cancelled) {
-          setStats(response)
-          setStatsError(null)
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          // Drop the previous rollup rather than leaving it on screen. A refetch
-          // fires after every triage change, so keeping the old object would show
-          // backlog counts that the operator's own action just invalidated —
-          // precisely the dishonest-count problem this view exists to fix. The
-          // chips render "—" for a null count.
-          setStats(null)
-          // Health is an overlay on the queue: degrade to a muted panel and leave
-          // the table fully usable rather than failing the page.
-          setStatsError(getApiErrorMessage(caught, 'Failed to load quality stats'))
-        }
-      } finally {
-        if (!cancelled) {
-          setIsStatsFetching(false)
-        }
-      }
-    }
-
-    void loadStats()
-    return () => {
-      cancelled = true
-    }
-  }, [range, countsRefreshKey])
 
   const actionFilterGroups = useMemo<ActionFilterGroup[]>(() => {
     const groups = new Map<string, ActionFilterGroup>()
@@ -1107,101 +1152,25 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     })
   }
 
-  useEffect(() => {
-    let cancelled = false
-
-    const actionTuples = actionsKey
-      ? actionsKey
-          .split(',')
-          .map(decodeAction)
-          .filter((entry): entry is QualityActionFilter => entry !== null)
-      : undefined
-    const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
-    const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
-    const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
-    const loadTurns = async () => {
-      try {
-        if (cancelled) {
-          return
-        }
-        setIsFetching(true)
-        setError(null)
-        const page = await qualityApi.listTurns({
-          signal: queueScope.signals,
-          actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
-          statuses: statusesList,
-          feedback: feedbackList,
-          triageStates: queueScope.triageStates,
-          resolutionReasons: resolutionReasons.length > 0
-            ? (resolutionReasons as QualityResolutionBreakdownReason[])
-            : undefined,
-          resolutionFrom,
-          resolutionTo,
-          sort: sort === 'turn_created_at' ? undefined : sort,
-          activeNegativeFeedbackOnly: activeNegativeFeedbackOnly || undefined,
-          hasComment: hasComment || undefined,
-          groundingVerdict: groundingVerdicts.length > 0 ? groundingVerdicts : undefined,
-          hasUnsourcedClaims: hasUnsourcedClaims || undefined,
-          hasInvalidSources: hasInvalidSources || undefined,
-          minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
-          maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
-          limit: PAGE_SIZE,
-          offset: (currentPage - 1) * PAGE_SIZE,
-        })
-
-        if (cancelled) {
-          return
-        }
-        setItems(page.items)
-        setTotal(page.total)
-        setTotalPages(page.totalPages)
-      } catch (caught) {
-        if (cancelled) {
-          return
-        }
-        setError(getApiErrorMessage(caught, 'Failed to load assistant answers'))
-      } finally {
-        if (!cancelled) {
-          setIsFetching(false)
-          setHasLoadedOnce(true)
-        }
-      }
-    }
-
-    void loadTurns()
-
-    return () => {
-      cancelled = true
-    }
-  }, [
-    activeSignal,
-    showAll,
-    currentPage,
-    feedbackKey,
-    hasComment,
-    groundingVerdictsKey,
-    groundingVerdicts,
-    hasUnsourcedClaims,
-    hasInvalidSources,
-    latency,
-    actionsKey,
-    statusesKey,
-    triageKey,
-    resolutionReasonsKey,
-    resolutionReasons,
-    resolutionFrom,
-    resolutionTo,
-    sort,
-    activeNegativeFeedbackOnly,
-    turnsRefreshKey,
-    queueScope,
-  ])
-
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
       conversationId: turn.conversationId,
       assistantMessageId: turn.assistantMessageId,
     })
+
+  const beginInteraction = (queryKey: readonly unknown[] = turnsQuery.queryKey) => {
+    const next = beginQualityInteractionController({ currentId: interactionId.current, frozenId: null })
+    const id = interactionId.current = next.id
+    const page = queryClient.getQueryData<typeof turnsQuery.data>(queryKey)
+    if (page) setFrozenPage({ queryKey, page })
+    return { id, queryKey }
+  }
+  const finishInteraction = (id: number) => {
+    if (ownsQualityInteraction(interactionId.current, id)) setFrozenPage(null)
+  }
+  const patchCurrentTriage = (assistantMessageId: string, triage: QualityTriageRecord, remove = false) =>
+    patchQualityTriage(queryClient, turnsQuery.queryKey, assistantMessageId, triage, remove)
+  const invalidateTriage = () => invalidateDashboardQueries(['quality.triage_changed'])
 
   const requestCloseReview = (
     turn: LowQualityTurn,
@@ -1210,6 +1179,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   ) => {
     setOpenedConversation(null)
     setError(null)
+    const interaction = beginInteraction()
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         const currentAnchor = anchor?.isConnected
@@ -1217,11 +1187,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           : document.querySelector<HTMLElement>(
               `[data-quality-triage-id="${CSS.escape(turn.assistantMessageId)}"]`,
             )
+        if (!ownsQualityInteraction(interactionId.current, interaction.id)) return
         setCloseReview({
           turn,
           state,
           conflict: null,
           anchor: currentAnchor ?? null,
+          interactionId: interaction.id,
+          queryKey: interaction.queryKey,
         })
       })
     })
@@ -1239,11 +1212,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           if (getApiErrorStatus(caught) !== 404) {
             throw caught
           }
-          setItems((previous) =>
-            previous.map((item) =>
-              item.assistantMessageId === turn.assistantMessageId
-                ? { ...item, verification: null }
-                : item))
+          queryClient.setQueryData(turnsQuery.queryKey, (page: typeof turnsQuery.data) => page
+            ? { ...page, items: page.items.map((item) => item.assistantMessageId === turn.assistantMessageId ? { ...item, verification: null } : item) }
+            : page)
           setStatusAnnouncement(
             'The linked eval was deleted. Creating a replacement from this answer.',
           )
@@ -1286,31 +1257,26 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       requestCloseReview(turn, next, anchor)
       return
     }
+    setError(null)
+    const interaction = beginInteraction()
     setPendingTriageId(turn.assistantMessageId)
     try {
       const record = await qualityApi.setTriageState(turn.assistantMessageId, {
         state: next,
         expectedVersion: turn.triage.version,
       })
-      setItems((prev) =>
-        prev.map((item) =>
-          item.assistantMessageId === turn.assistantMessageId ? { ...item, triage: record } : item,
-        ),
-      )
-      setCountsRefreshKey((key) => key + 1)
-      setTurnsRefreshKey((key) => key + 1)
+      settleQualityInteraction({
+        currentId: interactionId.current,
+        interactionId: interaction.id,
+        outcome: 'success',
+        patch: () => patchCurrentTriage(turn.assistantMessageId, record, !qualityTurnRemainsVisible(turn, record, normalizedTurnsRequest)),
+        invalidate: invalidateTriage,
+        present: () => { finishInteraction(interaction.id); setError(null) },
+      })
     } catch (caught) {
       const current = getQualityTriageConflict(caught)
       if (current) {
-        const terminalOutsideActiveScope = isTerminalQualityTriageState(current.state)
-          && (
-            activeNegativeFeedbackOnly
-            || (
-              queueScope.triageStates !== undefined
-              && !queueScope.triageStates.includes(current.state)
-            )
-          )
-        if (terminalOutsideActiveScope) {
+        if (!qualityTurnRemainsVisible(turn, current, normalizedTurnsRequest)) {
           const turnIndex = items.findIndex(
             (item) => item.assistantMessageId === turn.assistantMessageId,
           )
@@ -1319,38 +1285,54 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             ?? items[turnIndex - 1]?.assistantMessageId
             ?? null
           )
-          setItems((prev) =>
-            prev.filter((item) => item.assistantMessageId !== turn.assistantMessageId))
-          setTotal((currentTotal) => Math.max(0, currentTotal - 1))
-          setError(
-            'Another operator already closed this review. '
-              + 'It was removed from the active queue.',
-          )
-          setStatusAnnouncement(
-            'Another operator already closed this review. It was removed from the active queue.',
-          )
-          focusQualityQueueTarget(adjacentTargetId)
-          setCountsRefreshKey((key) => key + 1)
+          settleQualityInteraction({
+            currentId: interactionId.current,
+            interactionId: interaction.id,
+            outcome: 'conflict',
+            patch: () => patchCurrentTriage(turn.assistantMessageId, current, true),
+            invalidate: invalidateTriage,
+            present: () => {
+              setError('Another operator already closed this review. It was removed from the active queue.')
+              setStatusAnnouncement('Another operator already closed this review. It was removed from the active queue.')
+              focusQualityQueueTarget(adjacentTargetId)
+            },
+          })
         } else {
-          setItems((prev) =>
-            prev.map((item) =>
-              item.assistantMessageId === turn.assistantMessageId
-                ? { ...item, triage: current }
-                : item,
-            ))
-          setError('Another operator changed this review. The current state has been reloaded.')
+          settleQualityInteraction({
+            currentId: interactionId.current,
+            interactionId: interaction.id,
+            outcome: 'conflict',
+            patch: () => patchCurrentTriage(turn.assistantMessageId, current, !qualityTurnRemainsVisible(turn, current, normalizedTurnsRequest)),
+            invalidate: invalidateTriage,
+            present: () => setError('Another operator changed this review. The current state has been reloaded.'),
+          })
         }
       } else {
-        setError(getApiErrorMessage(caught, 'Failed to update triage state'))
+        settleQualityInteraction({
+          currentId: interactionId.current,
+          interactionId: interaction.id,
+          outcome: 'failure',
+          present: () => { setError(getApiErrorMessage(caught, 'Failed to update triage state')); finishInteraction(interaction.id) },
+        })
       }
+      finishInteraction(interaction.id)
     } finally {
-      setPendingTriageId((current) => (current === turn.assistantMessageId ? null : current))
+      if (ownsQualityInteraction(interactionId.current, interaction.id)) {
+        setPendingTriageId((current) => (current === turn.assistantMessageId ? null : current))
+      }
     }
   }
 
   const submitCloseReview = async (input: CloseReviewInput) => {
     const turn = closeReview?.turn
     if (!turn) return
+    const interaction = ownsQualityInteraction(interactionId.current, closeReview.interactionId)
+      && frozenQualityPageForKey(frozenPage, closeReview.queryKey)
+      ? { id: closeReview.interactionId, queryKey: closeReview.queryKey }
+      : beginInteraction(closeReview.queryKey)
+    if (interaction.id !== closeReview.interactionId) {
+      setCloseReview((current) => current === closeReview ? { ...current, interactionId: interaction.id } : current)
+    }
     setPendingTriageId(turn.assistantMessageId)
     setError(null)
     try {
@@ -1367,67 +1349,52 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         expectedVersion: turn.triage.version,
         ...(input.resolution ? { resolution: input.resolution } : {}),
       })
-      const remainsInTriageScope = !queueScope.triageStates
-        || queueScope.triageStates.includes(record.state)
-      const resolutionReason = record.resolution?.reason ?? 'unspecified'
-      const remainsInReasonScope = resolutionReasons.length === 0
-        || resolutionReasons.includes(resolutionReason)
-      const closedAt = record.closedAt ? Date.parse(record.closedAt) : Number.NaN
-      const remainsInTimeScope = (
-        (!resolutionFrom || (!Number.isNaN(closedAt) && closedAt >= Date.parse(resolutionFrom)))
-        && (!resolutionTo || (!Number.isNaN(closedAt) && closedAt < Date.parse(resolutionTo)))
-      )
-      const remainsVisible = Boolean(
-        !activeNegativeFeedbackOnly
-        && remainsInTriageScope
-        && remainsInReasonScope
-        && remainsInTimeScope,
-      )
+      const remainsVisible = qualityTurnRemainsVisible(turn, record, normalizedTurnsRequest)
 
-      setItems((previous) => remainsVisible
-        ? previous.map((item) =>
-            item.assistantMessageId === turn.assistantMessageId
-              ? { ...item, triage: record }
-              : item)
-        : previous.filter((item) => item.assistantMessageId !== turn.assistantMessageId))
-      if (!remainsVisible) {
-        setTotal((current) => Math.max(0, current - 1))
-      }
-      setCloseReview(null)
-      setStatusAnnouncement(
-        input.state === 'resolved'
-          ? 'Review resolved.'
-          : 'Review marked not actionable.',
-      )
-      focusQualityQueueTarget(remainsVisible ? turn.assistantMessageId : adjacentTargetId)
-      setCountsRefreshKey((key) => key + 1)
-      setTurnsRefreshKey((key) => key + 1)
+      settleQualityInteraction({
+        currentId: interactionId.current,
+        interactionId: interaction.id,
+        outcome: 'success',
+        patch: () => patchQualityTriage(queryClient, closeReview.queryKey, turn.assistantMessageId, record, !remainsVisible, turn),
+        invalidate: invalidateTriage,
+        present: () => {
+          finishInteraction(interaction.id)
+          setCloseReview(null)
+          setStatusAnnouncement(input.state === 'resolved' ? 'Review resolved.' : 'Review marked not actionable.')
+          focusQualityQueueTarget(remainsVisible ? turn.assistantMessageId : adjacentTargetId)
+        },
+      })
     } catch (caught) {
       const current = getQualityTriageConflict(caught)
       if (current) {
-        setItems((previous) =>
-          previous.map((item) =>
-            item.assistantMessageId === turn.assistantMessageId
-              ? { ...item, triage: current }
-              : item))
-        setCloseReview((pending) =>
-          pending?.turn.assistantMessageId === turn.assistantMessageId
-            ? {
-                ...pending,
-                conflict: current,
-                turn: { ...pending.turn, triage: current },
-              }
-            : pending)
-        setError(null)
-        setStatusAnnouncement(
-          'Another operator changed this review. Their current decision is shown in the dialog.',
-        )
+        const remainsVisible = qualityTurnRemainsVisible(turn, current, normalizedTurnsRequest)
+        settleQualityInteraction({
+          currentId: interactionId.current,
+          interactionId: interaction.id,
+          outcome: 'conflict',
+          patch: () => patchQualityTriage(queryClient, closeReview.queryKey, turn.assistantMessageId, current, !remainsVisible, turn),
+          invalidate: invalidateTriage,
+          present: () => {
+            setCloseReview((pending) => pending?.turn.assistantMessageId === turn.assistantMessageId
+              ? { ...pending, conflict: current, turn: { ...pending.turn, triage: current } }
+              : pending)
+            setError(null)
+            setStatusAnnouncement('Another operator changed this review. Their current decision is shown in the dialog.')
+          },
+        })
       } else {
-        setError(getApiErrorMessage(caught, 'Failed to close this review'))
+        settleQualityInteraction({
+          currentId: interactionId.current,
+          interactionId: interaction.id,
+          outcome: 'failure',
+          present: () => { setError(getApiErrorMessage(caught, 'Failed to close this review')); finishInteraction(interaction.id) },
+        })
       }
     } finally {
-      setPendingTriageId((current) =>
-        current === turn.assistantMessageId ? null : current)
+      if (ownsQualityInteraction(interactionId.current, interaction.id)) {
+        setPendingTriageId((current) =>
+          current === turn.assistantMessageId ? null : current)
+      }
     }
   }
 
@@ -1495,9 +1462,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       description="Triage the answers that need attention — negative feedback, grounding gaps, and skill failures — then open the conversation to act."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
     >
-      {error ? (
+      {error ?? turnsQueryError ? (
         <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-          {error}
+          {error ?? turnsQueryError}
         </div>
       ) : null}
 
@@ -1788,21 +1755,29 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     <p className="sr-only" role="status" aria-live="polite">
       {statusAnnouncement}
     </p>
-    {closeReview ? (
+    {activeCloseReview ? (
       <CloseReviewPopover
-        key={`${closeReview.turn.assistantMessageId}:${closeReview.state}`}
+        key={`${activeCloseReview.turn.assistantMessageId}:${activeCloseReview.state}`}
         open
-        anchor={closeReview.anchor}
-        state={closeReview.state}
-        submitting={pendingTriageId === closeReview.turn.assistantMessageId}
+        anchor={activeCloseReview.anchor}
+        state={activeCloseReview.state}
+        submitting={pendingTriageId === activeCloseReview.turn.assistantMessageId}
         error={error}
-        conflict={closeReview.conflict}
+        conflict={activeCloseReview.conflict}
         onOpenChange={(open) => {
           if (!open) {
-            const messageId = closeReview.turn.assistantMessageId
-            setCloseReview(null)
-            setOpenedConversation(null)
-            setError(null)
+            const messageId = activeCloseReview.turn.assistantMessageId
+            settleQualityInteraction({
+              currentId: interactionId.current,
+              interactionId: activeCloseReview.interactionId,
+              outcome: 'cancel',
+              present: () => {
+                setCloseReview(null)
+                setFrozenPage(null)
+                setOpenedConversation(null)
+                setError(null)
+              },
+            })
             window.requestAnimationFrame(() => {
               if (
                 document.activeElement instanceof HTMLElement

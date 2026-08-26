@@ -1181,6 +1181,7 @@ export const installDashboardApiMocks = async (
         workspaceName: "Default",
         accountId,
         organizationName: "Radioso Test",
+        realtimeEnabled: false,
       });
       return;
     }

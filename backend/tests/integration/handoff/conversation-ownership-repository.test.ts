@@ -156,7 +156,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       reason: "retrieval_miss",
     });
 
-    expect(requested).toMatchObject({
+    expect(requested.record).toMatchObject({
       conversationId,
       workspaceId,
       state: "human_owned",
@@ -166,7 +166,8 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       version: 1,
       takenOverAt: null,
     });
-    expect(secondRequest).toEqual(requested);
+    expect(requested.changed).toBe(true);
+    expect(secondRequest).toEqual({ record: requested.record, changed: false });
   });
 
   it("takes over a conversation, then rejects a stale CAS takeover", async () => {
@@ -240,6 +241,13 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
     if (!claimed.ok) {
       throw new Error("Expected takeover to succeed");
     }
+    const unchanged = await repository.transfer({
+      conversationId,
+      accountId: claimed.record.ownerAccountId!,
+      displayName: claimed.record.ownerDisplayName!,
+      expectedVersion: claimed.record.version,
+    });
+    expect(unchanged).toEqual({ ok: true, changed: false, record: claimed.record });
     const transferred = await repository.transfer({
       conversationId,
       accountId: nextOperator,
@@ -289,6 +297,10 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       ownerDisplayName: null,
       version: claimed.record.version + 1,
     });
+    await expect(repository.handBack({
+      conversationId,
+      expectedVersion: handedBack.record.version,
+    })).resolves.toEqual({ ok: true, changed: false, record: handedBack.record });
   });
 
   it("re-requests human ownership after a hand-back left the row ai_owned", async () => {
@@ -316,7 +328,7 @@ describeIfDatabase("ConversationOwnershipRepository Postgres integration", () =>
       reason: "retrieval_miss",
     });
 
-    expect(reRequested).toMatchObject({
+    expect(reRequested.record).toMatchObject({
       conversationId,
       workspaceId,
       state: "human_owned",

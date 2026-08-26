@@ -36,6 +36,7 @@ export type McpConverseRouteDependencies = Pick<
   | "documentStorage"
   | "env"
   | "retrievalAnswerService"
+  | "workspaceInvalidationPublisher"
 >;
 
 export interface McpConverseRouteServices {

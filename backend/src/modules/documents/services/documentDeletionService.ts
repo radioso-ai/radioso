@@ -1,3 +1,8 @@
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
@@ -15,6 +20,8 @@ export class DocumentDeletionService {
     private readonly documentStorage: DocumentStoragePort,
     private readonly auditService: AuditService,
     private readonly capabilityPolicy: CapabilityPolicy = new DefaultAllowCapabilityPolicy(),
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async delete(input: { workspaceId: string; documentId: string }): Promise<void> {
@@ -56,6 +63,7 @@ export class DocumentDeletionService {
       throw notFound("Document not found");
     }
 
+    this.workspaceInvalidationPublisher.enqueue(input.workspaceId, ["document.status_changed"]);
     let sourceCleanupFailed = false;
     let sourceCleanupReason: string | undefined;
 

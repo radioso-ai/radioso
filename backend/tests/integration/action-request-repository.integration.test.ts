@@ -67,16 +67,19 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     expect(await repository.claimPending(10, 300)).toEqual([]);
   });
 
-  it("markDispatched only affects the matching attempt", async () => {
+  it("markDispatched reports only a real matching-attempt transition", async () => {
     const a = await enqueue();
     const [claimed] = await repository.claimPending(10, 300);
-    await repository.markDispatched(claimed!.id, 999); // wrong attempt → no-op
+    await expect(repository.markDispatched(claimed!.id, 999)).resolves.toBe(false); // wrong attempt → no-op
     let status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
     expect(status).toBe("in_progress");
 
-    await repository.markDispatched(claimed!.id, claimed!.attempts);
+    await expect(repository.markDispatched(claimed!.id, claimed!.attempts)).resolves.toBe(true);
     status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
     expect(status).toBe("dispatched");
+
+    // A duplicate completion notification is not a second transition.
+    await expect(repository.markDispatched(claimed!.id, claimed!.attempts)).resolves.toBe(false);
   });
 
   it("recordFailure retries within budget, fails at the cap (CASE), and is superseded on stale attempt", async () => {

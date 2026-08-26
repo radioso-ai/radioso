@@ -19,6 +19,7 @@ import type {
   RoutineActionRequest,
   RoutineState,
 } from "@radioso/conversation-contract";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
@@ -32,7 +33,7 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositor
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { AgentService } from "../../agents/public.js";
-import type { ResumeRunner } from "../../approvals/public.js";
+import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents.js";
 import { observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
@@ -238,6 +239,7 @@ export interface ChatServiceOptions {
   turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   /** Per-conversation turn coordinator; application composition wires one process-wide instance. */
   conversationTurnRegistry?: ConversationTurnRegistry;
+  workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
 }
 
 interface TurnCoordinationState {
@@ -351,6 +353,7 @@ export class ChatService {
       turnPlanCoordinator,
       turnPlanInterpretationContextSettings,
       conversationTurnRegistry = new InMemoryConversationTurnRegistry(),
+      workspaceInvalidationPublisher,
     } = options;
     this.conversationRepository = conversationRepository;
     this.messageRepository = messageRepository;
@@ -395,6 +398,7 @@ export class ChatService {
       conversationOwnershipRepository,
       conversationSummaryUpdater,
       turnRuntime.metrics,
+      workspaceInvalidationPublisher,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -408,6 +412,7 @@ export class ChatService {
       conversationSummaryStore,
       logger,
       facetExtractionJobs,
+      workspaceInvalidationPublisher,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,
@@ -557,7 +562,7 @@ export class ChatService {
 
   async resumeAwaitingDecisionTurn(
     input: Parameters<ResumeRunner["resume"]>[0],
-  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+  ): Promise<ApprovalResumeResult> {
     return this.approvalResumeTurn.resume(input);
   }
 

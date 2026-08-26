@@ -69,6 +69,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
     operatorReplyService: dependencies.operatorReplyService,
     auditService: dependencies.auditService,
     metricsRegistry: dependencies.metricsRegistry,
+    workspaceInvalidationPublisher: dependencies.workspaceInvalidationPublisher,
     assertPublicUrl: dependencies.assertPublicWebsiteUrl,
   });
   await dependencies.applicationModules.initializeAll();
@@ -91,21 +92,30 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
       shuttingDown = true;
       dependencies.logger.info({ role: "api", signal }, "Radioso API runtime shutting down");
 
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
-
       try {
-        await dependencies.applicationModules.shutdownAll();
-        await dependencies.connectorRegistry.shutdownAll();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
       } finally {
-        await stopRuntimeTracing();
+        try {
+          await dependencies.realtimePublisherLifecycle.shutdown();
+        } finally {
+          try {
+            await dependencies.applicationModules.shutdownAll();
+          } finally {
+            try {
+              await dependencies.connectorRegistry.shutdownAll();
+            } finally {
+              await stopRuntimeTracing();
+            }
+          }
+        }
       }
     },
   };

@@ -86,6 +86,52 @@ describe("document processing worker runtime signals", () => {
     );
   });
 
+  it("publishes a worker-restart reset only after the document is durably requeued", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Interrupted",
+      sourceContent: "Interrupted",
+      markdownContent: "Interrupted",
+      status: "processing",
+    });
+    const job = await jobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: document.workspaceId,
+      documentRevision: document.revision,
+    });
+    await jobRepository.claimById(job.id, new Date());
+    const publisher = { enqueue: vi.fn() };
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      { process: vi.fn() } as never,
+      createAuditService(),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+      10_000,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
+    );
+
+    await worker.start();
+    await worker.stop();
+
+    expect(await documentRepository.findByIdAndWorkspaceId(document.id, document.workspaceId)).toMatchObject({
+      status: "queued",
+    });
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+  });
+
   it("repairs queued documents that are missing processing jobs", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -214,6 +260,7 @@ describe("document processing worker runtime signals", () => {
     const telemetryService = {
       emit: vi.fn().mockResolvedValue(null),
     };
+    const publisher = { enqueue: vi.fn() };
     const document = await documentRepository.create({
       workspaceId: "workspace-1",
       title: "Retry me",
@@ -246,6 +293,12 @@ describe("document processing worker runtime signals", () => {
       undefined,
       undefined,
       telemetryService as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
     );
 
     await expect(worker.runOnce()).resolves.toBe(true);
@@ -256,12 +309,32 @@ describe("document processing worker runtime signals", () => {
         tags: { outcome: "processing" },
       }),
     );
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
     expect(telemetryService.emit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "document.worker.job_failed",
         tags: { outcome: "retry_scheduled" },
       }),
     );
+
+    publisher.enqueue.mockClear();
+    const staleDocument = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Lost retry race",
+      sourceContent: "Lost retry race",
+      markdownContent: "Lost retry race",
+      status: "queued",
+    });
+    await jobRepository.enqueue({
+      documentId: staleDocument.id,
+      workspaceId: staleDocument.workspaceId,
+      documentRevision: staleDocument.revision,
+    });
+    vi.spyOn(documentRepository, "setStatusIfRevisionMatches").mockResolvedValueOnce(null);
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+    expect(publisher.enqueue).not.toHaveBeenCalled();
   });
 
   it("fails permanent provider errors immediately without scheduling a retry", async () => {
@@ -275,6 +348,7 @@ describe("document processing worker runtime signals", () => {
     const telemetryService = {
       emit: vi.fn().mockResolvedValue(null),
     };
+    const publisher = { enqueue: vi.fn() };
     const document = await documentRepository.create({
       workspaceId: "workspace-1",
       title: "Bad payload",
@@ -315,6 +389,12 @@ describe("document processing worker runtime signals", () => {
       undefined,
       undefined,
       telemetryService as any,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
     );
 
     await expect(worker.runOnce()).resolves.toBe(true);
@@ -322,12 +402,32 @@ describe("document processing worker runtime signals", () => {
     const job = [...jobRepository.items.values()][0];
     expect(job.status).toBe("failed");
     expect(job.attemptCount).toBe(1);
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
     expect(telemetryService.emit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: "document.worker.job_failed",
         tags: { outcome: "failed_permanent" },
       }),
     );
+
+    publisher.enqueue.mockClear();
+    const staleDocument = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Lost failure race",
+      sourceContent: "Lost failure race",
+      markdownContent: "Lost failure race",
+      status: "queued",
+    });
+    await jobRepository.enqueue({
+      documentId: staleDocument.id,
+      workspaceId: staleDocument.workspaceId,
+      documentRevision: staleDocument.revision,
+    });
+    vi.spyOn(jobRepository, "markFailedIfDocumentMatches").mockResolvedValueOnce(false);
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+    expect(publisher.enqueue).not.toHaveBeenCalled();
   });
 
   it("starts and stops the optional document job consumer with the worker runtime", async () => {

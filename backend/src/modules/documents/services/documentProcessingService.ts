@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
@@ -174,6 +179,8 @@ export class DocumentProcessingService {
     // Absent means the default catalog; extraction never depends on the
     // catalog module being wired.
     private readonly documentTypeCatalogReader?: DocumentTypeCatalogReaderPort,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -192,6 +199,7 @@ export class DocumentProcessingService {
         const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
         return document ? "stale" : "deleted";
       }
+      this.publishDocumentStatusChanged(job.workspaceId);
 
       const materializedContent = await traceActiveSpan(
         "document.processing.materialize",
@@ -375,6 +383,7 @@ export class DocumentProcessingService {
         const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
         return currentDocument ? "stale" : "deleted";
       }
+      this.publishDocumentStatusChanged(job.workspaceId);
 
       // The document is now queryable. Decide whether metadata extraction should
       // follow; the enrich job itself is enqueued last (see below).
@@ -517,6 +526,7 @@ export class DocumentProcessingService {
         if (!updatedDocument) {
           return "stale";
         }
+        this.publishDocumentStatusChanged(job.workspaceId);
 
         // Patch only chunks whose metadata the stage changed. Updating
         // chunks.metadata recomputes the stored date columns.
@@ -579,6 +589,10 @@ export class DocumentProcessingService {
       return null;
     }
     return this.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
+  }
+
+  private publishDocumentStatusChanged(workspaceId: string): void {
+    this.workspaceInvalidationPublisher.enqueue(workspaceId, ["document.status_changed"]);
   }
 
   private resolveEnrichmentEnabled(

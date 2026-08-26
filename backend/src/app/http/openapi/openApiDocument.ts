@@ -37,6 +37,7 @@ export const createOpenApiDocument = (
       { name: "Auth" },
       { name: "Account" },
       { name: "Workspace" },
+      { name: "Realtime" },
       { name: "Assistant" },
       { name: "History" },
       { name: "Context Variables" },

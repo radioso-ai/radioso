@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
@@ -126,5 +126,50 @@ describe("QualityTurnsService triage transition", () => {
         updatedAt: "2026-07-30T10:00:00.000Z",
       },
     });
+  });
+
+  it("does not classify a missing target as a changed triage transition", async () => {
+    const db = new SequencedDb([[]]);
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog());
+
+    await expect(service.setTriageState("11111111-1111-1111-1111-111111111111", {
+      assistantMessageId: "22222222-2222-2222-2222-222222222222",
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
+    })).resolves.toEqual({ kind: "not_found" });
+  });
+
+  it("publishes only an updated triage transition, never conflict or not-found outcomes", async () => {
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
+    const db = new SequencedDb([
+      [{
+        state: "resolved",
+        version: 1,
+        resolution_reason: "knowledge_gap",
+        resolution_note: null,
+        legacy_reason: null,
+        closed_at: "2026-07-30T10:00:00.000Z",
+        updated_at: "2026-07-30T10:00:00.000Z",
+      }],
+      [],
+    ]);
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), undefined, undefined, publisher);
+
+    await service.setTriageState("11111111-1111-1111-1111-111111111111", {
+      assistantMessageId: "22222222-2222-2222-2222-222222222222",
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
+    });
+    await service.setTriageState("11111111-1111-1111-1111-111111111111", {
+      assistantMessageId: "33333333-3333-4333-8333-333333333333",
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
+    });
+
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(publisher.enqueue).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111", ["quality.triage_changed"]);
   });
 });

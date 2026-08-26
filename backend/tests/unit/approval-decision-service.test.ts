@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import type { PostCommitInvalidationReceipt } from "@radioso/workspace-invalidation-contract";
 
 import type {
   PendingDecisionRecord,
@@ -45,10 +46,29 @@ const createRepository = (record: PendingDecisionRecord) => ({
 }) as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
 
 const runner = (): ResumeRunner => ({
-  resume: vi.fn(async () => ({ conversationId: "conversation_1", resumed: true })),
+  resume: vi.fn(async () => ({
+    conversationId: "conversation_1",
+    resumed: true as const,
+    assistantMessageId: "assistant_message_1",
+    postCommitReceipt: {
+      workspaceId: "workspace_1",
+      changeKinds: ["conversation.turn_committed"] as const,
+    },
+  })),
 });
 
 describe("ApprovalDecisionService role-scoped decisions", () => {
+  it("requires every successful resume to return its committed message and invalidation receipt", () => {
+    type SuccessfulResume = Awaited<ReturnType<ResumeRunner["resume"]>>;
+
+    expectTypeOf<SuccessfulResume>().toEqualTypeOf<{
+      conversationId: string;
+      resumed: true;
+      assistantMessageId: string;
+      postCommitReceipt: PostCommitInvalidationReceipt;
+    }>();
+  });
+
   it("uses the role resolver when resolving workspace-role scoped decisions", async () => {
     const pending = decision();
     const repository = createRepository(pending);
@@ -87,8 +107,12 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     const resumeRunner: ResumeRunner = {
       resume: vi.fn(async () => ({
         conversationId: pending.conversationId,
-        resumed: true,
+        resumed: true as const,
         assistantMessageId: "assistant_message_1",
+        postCommitReceipt: {
+          workspaceId: pending.workspaceId,
+          changeKinds: ["conversation.turn_committed"] as const,
+        },
       })),
     };
     const publishMessageCreated = vi.fn();
@@ -116,6 +140,86 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       messageId: "assistant_message_1",
       createdAt: expect.any(String),
     });
+  });
+
+  it("carries the nested resume receipt to the outer approval transaction owner", async () => {
+    const pending = decision();
+    const repository = createRepository(pending);
+    const resumeRunner: ResumeRunner = {
+      resume: vi.fn(async () => ({
+        conversationId: pending.conversationId,
+        resumed: true as const,
+        assistantMessageId: "assistant_message_1",
+        postCommitReceipt: {
+          workspaceId: pending.workspaceId,
+          changeKinds: ["conversation.turn_committed"] as const,
+        },
+      })),
+    };
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
+    const service = new ApprovalDecisionService(
+      repository,
+      resumeRunner,
+      { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
+      undefined,
+      publisher,
+    );
+
+    const result = await service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    });
+
+    expect(result).toEqual(expect.objectContaining({ status: "resolved" }));
+    expect(publisher.enqueue).toHaveBeenCalledWith(
+      pending.workspaceId,
+      ["conversation.turn_committed", "hitl.decision_resolved"],
+    );
+  });
+
+  it("flushes the outer decision receipt before a fallible conversation event listener", async () => {
+    const pending = decision();
+    const repository = createRepository(pending);
+    const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
+    const publishMessageCreated = vi.fn(() => {
+      throw new Error("listener unavailable");
+    });
+    const service = new ApprovalDecisionService(
+      repository,
+      {
+        resume: vi.fn(async () => ({
+          conversationId: pending.conversationId,
+          resumed: true as const,
+          assistantMessageId: "assistant_message_1",
+          postCommitReceipt: {
+            workspaceId: pending.workspaceId,
+            changeKinds: ["conversation.turn_committed"] as const,
+          },
+        })),
+      },
+      { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
+      { publishMessageCreated },
+      publisher,
+    );
+
+    await expect(service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    })).rejects.toThrow("listener unavailable");
+
+    expect(publisher.enqueue).toHaveBeenCalledWith(
+      pending.workspaceId,
+      ["conversation.turn_committed", "hitl.decision_resolved"],
+    );
+    expect(publisher.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
+      publishMessageCreated.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("passes the stored option payload into routine resume", async () => {

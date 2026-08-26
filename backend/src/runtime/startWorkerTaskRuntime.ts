@@ -54,19 +54,26 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
       }
       shuttingDown = true;
       dependencies.logger.info({ role: "worker-task", signal }, "Radioso worker task runtime shutting down");
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-          resolve();
-        });
-      });
       try {
-        await dependencies.applicationModules.shutdownAll();
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+            resolve();
+          });
+        });
       } finally {
-        await stopRuntimeTracing();
+        try {
+          await dependencies.realtimePublisherLifecycle.shutdown();
+        } finally {
+          try {
+            await dependencies.applicationModules.shutdownAll();
+          } finally {
+            await stopRuntimeTracing();
+          }
+        }
       }
     },
   };

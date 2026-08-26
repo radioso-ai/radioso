@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
@@ -102,6 +107,8 @@ export class DocumentIngestionService {
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly documentSourceRepository?: DocumentSourceRepositoryPort,
     private readonly embeddingCoverage?: EmbeddingCoverageReconciliationPort,
+    private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
+      createNoopWorkspaceInvalidationPublisher(),
   ) {}
 
   async ingest(input: {
@@ -236,6 +243,7 @@ export class DocumentIngestionService {
       throw error;
     }
 
+    this.publishDocumentStatusChanged(input.workspaceId);
     await this.auditService.record({
       workspaceId: input.workspaceId,
       eventType: "document.ingest",
@@ -387,6 +395,7 @@ export class DocumentIngestionService {
       throw error;
     }
 
+    this.publishDocumentStatusChanged(input.workspaceId);
     await this.auditService.record({
       workspaceId: input.workspaceId,
       eventType: "document.update",
@@ -450,6 +459,7 @@ export class DocumentIngestionService {
       throw error;
     }
 
+    this.publishDocumentStatusChanged(input.workspaceId);
     await this.auditService.record({
       workspaceId: input.workspaceId,
       eventType: "document.metadata.update",
@@ -520,6 +530,7 @@ export class DocumentIngestionService {
       throw notFound("Document not found");
     }
 
+    this.publishDocumentStatusChanged(input.workspaceId);
     await this.embeddingCoverage?.reconcileWorkspace(input.workspaceId);
 
     await this.auditService.record({
@@ -570,6 +581,7 @@ export class DocumentIngestionService {
       throw error;
     }
 
+    this.publishDocumentStatusChanged(input.workspaceId);
     await this.auditService.record({
       workspaceId: input.workspaceId,
       eventType: "document.reprocess",
@@ -664,12 +676,21 @@ export class DocumentIngestionService {
       input.sourceId,
       input.workspaceId,
     );
+    if (deletedDocumentCount > 0) {
+      this.publishDocumentStatusChanged(input.workspaceId);
+    }
     if (input.documentStorage && storageRefs.length > 0) {
       await Promise.allSettled(
         storageRefs.map((ref) => input.documentStorage!.delete(ref)),
       );
     }
-    await this.documentSourceRepository?.deleteByIdAndWorkspaceId(input.sourceId, input.workspaceId);
+    const deletedSource = await this.documentSourceRepository?.deleteByIdAndWorkspaceId(
+      input.sourceId,
+      input.workspaceId,
+    );
+    if (deletedSource) {
+      this.publishDocumentStatusChanged(input.workspaceId);
+    }
     await this.auditService.record({
       workspaceId: input.workspaceId,
       eventType: "document.source.delete",
@@ -734,7 +755,15 @@ export class DocumentIngestionService {
     sourceId: string;
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    return this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
+    const result = await this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
+    if (result.deletedCount > 0) {
+      this.publishDocumentStatusChanged(input.workspaceId);
+    }
+    return result;
+  }
+
+  private publishDocumentStatusChanged(workspaceId: string): void {
+    this.workspaceInvalidationPublisher.enqueue(workspaceId, ["document.status_changed"]);
   }
 
   private async resolveSourceForInput(

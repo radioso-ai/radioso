@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { SlackInteractivityHandler } from "../../../src/modules/slack/public.js";
 import type { MessageRecord } from "../../../src/db/repositories/messageRepository.js";
-import type { ConversationOwnershipRecord } from "../../../src/modules/handoff/public.js";
+import type {
+  ConversationOwnershipMutationResult,
+  ConversationOwnershipRecord,
+} from "../../../src/modules/handoff/public.js";
 import type { SlackInstallationRecord } from "../../../src/modules/slack/public.js";
 
 const installation: SlackInstallationRecord = {
@@ -60,15 +63,17 @@ const viewPayload = (value: string) => ({
 const createHandler = (overrides: {
   identity?: { accountId: string; userId: string | null; displayName: string | null } | { rejected: true };
   currentOwnership?: ConversationOwnershipRecord | null;
-  takeOverResult?: { ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null };
-  handBackResult?: { ok: true; record: ConversationOwnershipRecord } | { ok: false; record: ConversationOwnershipRecord | null };
+  takeOverResult?: ConversationOwnershipMutationResult;
+  handBackResult?: ConversationOwnershipMutationResult;
 } = {}) => {
   const responsePosts: Array<{ url: string; body: Record<string, unknown> }> = [];
   const ownership = {
     load: vi.fn(async () => overrides.currentOwnership ?? ownershipRecord()),
-    takeOver: vi.fn(async () => overrides.takeOverResult ?? { ok: true, record: ownershipRecord({ version: 2 }) }),
-    handBack: vi.fn(async () => overrides.handBackResult ?? {
+    takeOver: vi.fn(async (): Promise<ConversationOwnershipMutationResult> =>
+      overrides.takeOverResult ?? { ok: true, changed: true, record: ownershipRecord({ version: 2 }) }),
+    handBack: vi.fn(async (): Promise<ConversationOwnershipMutationResult> => overrides.handBackResult ?? {
       ok: true,
+      changed: true,
       record: ownershipRecord({
         state: "ai_owned",
         ownerAccountId: null,
@@ -92,6 +97,7 @@ const createHandler = (overrides: {
     })),
   };
   const audit = { record: vi.fn(async () => {}) };
+  const publisher = { enqueue: vi.fn(() => ({ accepted: true as const, coalesced: false })) };
   const identityResolver = {
     resolve: vi.fn(async () => overrides.identity ?? {
       accountId: "acct_1",
@@ -111,13 +117,14 @@ const createHandler = (overrides: {
       }),
     },
     audit,
+    workspaceInvalidationPublisher: publisher,
   });
-  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit, identityResolver };
+  return { handler, ownership, viewsOpen, operatorReply, responsePosts, audit, identityResolver, publisher };
 };
 
 describe("SlackInteractivityHandler ownership branch", () => {
   it("takes over a conversation, audits it, and updates the Slack message with talk and handback", async () => {
-    const { handler, ownership, responsePosts, audit, identityResolver } = createHandler();
+    const { handler, ownership, responsePosts, audit, identityResolver, publisher } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
       conversationId: "conv_1",
@@ -142,6 +149,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
       workspaceId: "ws_conversation",
       slackUserId: "U1",
     });
+    expect(publisher.enqueue).toHaveBeenCalledWith("ws_conversation", ["conversation.ownership_changed"]);
     expect(responsePosts[0]!.body).toMatchObject({ replace_original: true });
     expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("ownership_talk");
     const actions = (responsePosts[0]!.body.blocks as Array<Record<string, unknown>>)
@@ -170,7 +178,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
   it("posts an ephemeral refresh when takeover loses the ownership race", async () => {
     const { handler, responsePosts, audit } = createHandler({
-      takeOverResult: { ok: false, record: ownershipRecord({ ownerDisplayName: "Lee", version: 4 }) },
+      takeOverResult: { ok: false, changed: false, record: ownershipRecord({ ownerDisplayName: "Lee", version: 4 }) },
     });
 
     await handler.handleBlockActions(blockPayload("ownership_takeover", {
@@ -185,8 +193,21 @@ describe("SlackInteractivityHandler ownership branch", () => {
     });
   });
 
+  it("does not publish an ownership invalidation for a truthful takeover no-op", async () => {
+    const { handler, publisher } = createHandler({
+      takeOverResult: { ok: true, changed: false, record: ownershipRecord({ version: 2 }) },
+    });
+
+    await handler.handleBlockActions(blockPayload("ownership_takeover", {
+      conversationId: "conv_1",
+      workspaceId: "ws_conversation",
+    }));
+
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+  });
+
   it("hands back with the expected version and updates the Slack message", async () => {
-    const { handler, ownership, responsePosts, audit } = createHandler();
+    const { handler, ownership, responsePosts, audit, publisher } = createHandler();
 
     await handler.handleBlockActions(blockPayload("ownership_handback", {
       conversationId: "conv_1",
@@ -197,6 +218,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ action: "handed_back", conversationId: "conv_1" }),
     }));
+    expect(publisher.enqueue).toHaveBeenCalledWith("ws_conversation", ["conversation.ownership_changed"]);
     expect(responsePosts[0]!.body).toMatchObject({ replace_original: true });
     expect(JSON.stringify(responsePosts[0]!.body.blocks)).toContain("ownership_takeover");
     expect(JSON.stringify(responsePosts[0]!.body.blocks)).not.toContain("ownership_talk");
@@ -204,7 +226,7 @@ describe("SlackInteractivityHandler ownership branch", () => {
 
   it("posts an ephemeral refresh when handback loses the ownership race", async () => {
     const { handler, responsePosts, audit } = createHandler({
-      handBackResult: { ok: false, record: ownershipRecord({ version: 4 }) },
+      handBackResult: { ok: false, changed: false, record: ownershipRecord({ version: 4 }) },
     });
 
     await handler.handleBlockActions(blockPayload("ownership_handback", {

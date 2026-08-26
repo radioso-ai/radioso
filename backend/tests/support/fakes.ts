@@ -109,6 +109,7 @@ import type { DocumentProcessingJobOptions } from "../../src/modules/documents/c
 import type {
   ConversationRecord,
   ConversationRepositoryPort,
+  GetOrCreateConversationResult,
 } from "../../src/db/repositories/conversationRepository.js";
 import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
 import type { ConversationOwnershipScope } from "../../src/modules/handoff/ownershipState.js";
@@ -118,6 +119,7 @@ import type {
   ConversationOwnershipRecord,
   ConversationOwnershipRepository,
   ConversationOwnershipRequestHandoffInput,
+  ConversationOwnershipRequestHandoffResult,
   ConversationOwnershipTakeOverInput,
   ConversationOwnershipTransferInput,
 } from "../../src/db/repositories/conversationOwnershipRepository.js";
@@ -3529,7 +3531,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceChannel: string;
     anonymousSessionId: string;
     sourceOrigin?: string | null;
-  }): Promise<ConversationRecord> {
+  }): Promise<GetOrCreateConversationResult> {
     const existing = [...this.items.values()]
       .filter((item) =>
         item.workspaceId === input.workspaceId &&
@@ -3544,15 +3546,15 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
         return createdDiff !== 0 ? createdDiff : right.id.localeCompare(left.id);
       })[0];
     if (existing) {
-      return existing;
+      return { record: existing, created: false };
     }
-    return this.create(
+    return { record: await this.create(
       input.workspaceId,
       input.agentId,
       input.sourceChannel,
       input.anonymousSessionId,
       input.sourceOrigin ?? null,
-    );
+    ), created: true };
   }
 
   async create(
@@ -3784,10 +3786,10 @@ export class InMemoryConversationOwnershipRepository implements Pick<
     return result;
   }
 
-  async requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRecord> {
+  async requestHandoff(input: ConversationOwnershipRequestHandoffInput): Promise<ConversationOwnershipRequestHandoffResult> {
     const existing = this.items.get(input.conversationId);
     if (existing?.state === "human_owned") {
-      return existing;
+      return { record: existing, changed: false };
     }
 
     const record = this.createRecord({
@@ -3802,7 +3804,7 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       createdAt: existing?.createdAt,
     });
     this.items.set(input.conversationId, record);
-    return record;
+    return { record, changed: true };
   }
 
   async takeOver(input: ConversationOwnershipTakeOverInput): Promise<ConversationOwnershipMutationResult> {
@@ -3819,15 +3821,15 @@ export class InMemoryConversationOwnershipRepository implements Pick<
         takenOverAt: new Date(),
       });
       this.items.set(input.conversationId, record);
-      return { ok: true, record };
+      return { ok: true, changed: true, record };
     }
 
     if (input.expectedVersion !== undefined && existing.version !== input.expectedVersion) {
-      return { ok: false, record: existing };
+      return { ok: false, changed: false, record: existing };
     }
 
     if (existing.state !== "ai_owned" && existing.ownerAccountId !== null) {
-      return { ok: false, record: existing };
+      return { ok: false, changed: false, record: existing };
     }
 
     const record = this.createRecord({
@@ -3842,13 +3844,16 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       createdAt: existing.createdAt,
     });
     this.items.set(input.conversationId, record);
-    return { ok: true, record };
+    return { ok: true, changed: true, record };
   }
 
   async transfer(input: ConversationOwnershipTransferInput): Promise<ConversationOwnershipMutationResult> {
     const existing = this.items.get(input.conversationId);
     if (!existing || existing.state !== "human_owned" || existing.version !== input.expectedVersion) {
-      return { ok: false, record: existing ?? null };
+      return { ok: false, changed: false, record: existing ?? null };
+    }
+    if (existing.ownerAccountId === input.accountId && existing.ownerDisplayName === input.displayName) {
+      return { ok: true, changed: false, record: existing };
     }
 
     const record = this.createRecord({
@@ -3859,13 +3864,16 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       createdAt: existing.createdAt,
     });
     this.items.set(input.conversationId, record);
-    return { ok: true, record };
+    return { ok: true, changed: true, record };
   }
 
   async handBack(input: ConversationOwnershipHandBackInput): Promise<ConversationOwnershipMutationResult> {
     const existing = this.items.get(input.conversationId);
     if (!existing || existing.version !== input.expectedVersion) {
-      return { ok: false, record: existing ?? null };
+      return { ok: false, changed: false, record: existing ?? null };
+    }
+    if (existing.state === "ai_owned" && existing.ownerAccountId === null && existing.ownerDisplayName === null) {
+      return { ok: true, changed: false, record: existing };
     }
 
     const record = this.createRecord({
@@ -3877,7 +3885,7 @@ export class InMemoryConversationOwnershipRepository implements Pick<
       createdAt: existing.createdAt,
     });
     this.items.set(input.conversationId, record);
-    return { ok: true, record };
+    return { ok: true, changed: true, record };
   }
 
   private createRecord(input: {

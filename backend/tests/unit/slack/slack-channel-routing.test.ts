@@ -72,11 +72,14 @@ const makeHandler = (bindings: InMemorySlackBindingRepository) => {
     findConversationLink: vi.fn(async () => null),
     findConversationLinkByConversationId: vi.fn(async () => null),
     getOrCreateConversationLink: vi.fn(async (input) => ({
-      id: "55555555-5555-4555-8555-555555555555",
-      workspaceId: input.workspaceId,
-      installationId: input.installationId,
-      slackKey: input.slackKey,
-      conversationId: "44444444-4444-4444-4444-444444444444",
+      link: {
+        id: "55555555-5555-4555-8555-555555555555",
+        workspaceId: input.workspaceId,
+        installationId: input.installationId,
+        slackKey: input.slackKey,
+        conversationId: "44444444-4444-4444-4444-444444444444",
+      },
+      created: false,
     })),
     upsertConversationLink: vi.fn(),
   };

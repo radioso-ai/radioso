@@ -44,6 +44,11 @@ describeIfDatabase("Slack skill migration 108 (postgres)", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY)`);
     await client.query(`CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE)`);
+    // 107_slack_keystone.sql carries an FK to conversations. Stubbing it in this
+    // schema keeps the file self-sufficient: resolving it through `public` would
+    // make the test depend on another test file having migrated first, which the
+    // vitest sequencer does not guarantee.
+    await client.query(`CREATE TABLE conversations (id UUID PRIMARY KEY)`);
     await client.query(await readFile(path.join(testMigrationsPath, "093_external_skills.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "094_external_skills_oauth_flow.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "095_integration_oauth_connections.sql"), "utf8"));

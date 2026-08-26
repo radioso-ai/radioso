@@ -112,7 +112,7 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
     const decision = pendingDecisionInput(workspace.id, conversation.id, sessionId);
     const assistantMessageId = randomUUID();
 
-    const message = await persistence.completeAssistantTurn({
+    const { message } = await persistence.completeAssistantTurn({
       workspaceId: workspace.id,
       conversationId: conversation.id,
       routineStateTransition: {

@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { WebsiteCrawlerService } from "../../../src/modules/websiteCrawler/service.js";
+import {
+  WEBSITE_CRAWL_CHECKPOINT_PERSIST_INTERVAL_MS,
+  WebsiteCrawlerService,
+} from "../../../src/modules/websiteCrawler/service.js";
 import type { WebsiteCrawlerProvider } from "../../../src/modules/websiteCrawler/provider.js";
 import { WebsiteCrawlerBadRequestError, WebsiteCrawlerProviderError } from "../../../src/modules/websiteCrawler/errors.js";
 
@@ -16,7 +19,194 @@ const createProvider = (pages: Awaited<ReturnType<WebsiteCrawlerProvider["crawl"
   },
 });
 
+const createCheckpointFlushTestService = (
+  crawlStream: NonNullable<WebsiteCrawlerProvider["crawlStream"]>,
+): WebsiteCrawlerService => new WebsiteCrawlerService({
+  provider: {
+    name: "stream-crawler",
+    crawl: vi.fn(),
+    crawlStream,
+  },
+  documentIngestionService: { ingest: vi.fn() },
+  assertCrawlUrlAllowed: async () => undefined,
+});
+
 describe("website crawler service", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("coalesces rapid frontier checkpoint events into one persistence within the interval", async () => {
+    vi.useFakeTimers();
+    let finishCrawl: (() => void) | undefined;
+    const checkpoints: unknown[] = [];
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "stream-crawler",
+        crawl: vi.fn(),
+        crawlStream: vi.fn(async (request) => {
+          await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/a", canonicalUrl: "https://example.com/a" });
+          await request.onCheckpointEvent?.({ type: "processing", url: "https://example.com/a", canonicalUrl: "https://example.com/a" });
+          await request.onCheckpointEvent?.({ type: "processed", url: "https://example.com/a", canonicalUrl: "https://example.com/a" });
+          await new Promise<void>((resolve) => { finishCrawl = resolve; });
+          return { provider: "stream-crawler", status: "completed" };
+        }),
+      },
+      documentIngestionService: { ingest: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); } });
+    await vi.advanceTimersByTimeAsync(WEBSITE_CRAWL_CHECKPOINT_PERSIST_INTERVAL_MS - 1);
+    expect(checkpoints).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(checkpoints).toEqual([expect.objectContaining({ queuedUrls: [], processingUrls: [], processedCanonicalUrls: ["https://example.com/a"] })]);
+    finishCrawl?.();
+    await crawl;
+    expect(checkpoints).toHaveLength(1);
+  });
+
+  it("flushes the final checkpoint on normal completion", async () => {
+    vi.useFakeTimers();
+    const checkpoints: unknown[] = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/completed", canonicalUrl: "https://example.com/completed" });
+      return { provider: "stream-crawler", status: "completed" };
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); } });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(crawl).resolves.toMatchObject({ outcome: "completed" });
+    expect(checkpoints).toEqual([expect.objectContaining({ queuedUrls: ["https://example.com/completed"] })]);
+  });
+
+  it("writes the final checkpoint immediately without waiting for the throttle interval", async () => {
+    vi.useFakeTimers();
+    const checkpoints: unknown[] = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/immediate", canonicalUrl: "https://example.com/immediate" });
+      return { provider: "stream-crawler", status: "completed" };
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(checkpoints).toEqual([expect.objectContaining({ queuedUrls: ["https://example.com/immediate"] })]);
+    await expect(crawl).resolves.toMatchObject({ outcome: "completed" });
+  });
+
+  it("surfaces a timer-triggered checkpoint persistence error at terminal flush", async () => {
+    vi.useFakeTimers();
+    const checkpointError = new Error("checkpoint write failed");
+    let finishCrawl: (() => void) | undefined;
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/rejected-checkpoint", canonicalUrl: "https://example.com/rejected-checkpoint" });
+      await new Promise<void>((resolve) => { finishCrawl = resolve; });
+      return { provider: "stream-crawler", status: "completed" };
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, onCheckpoint: async () => { throw checkpointError; } });
+    await vi.advanceTimersByTimeAsync(WEBSITE_CRAWL_CHECKPOINT_PERSIST_INTERVAL_MS);
+    finishCrawl?.();
+    await expect(crawl).rejects.toBe(checkpointError);
+  });
+
+  it("flushes the final checkpoint before yielding a crawl slice", async () => {
+    vi.useFakeTimers();
+    const checkpoints: unknown[] = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/yielded", canonicalUrl: "https://example.com/yielded" });
+      return { provider: "stream-crawler", outcome: "yielded" };
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); } });
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(crawl).resolves.toMatchObject({ outcome: "yielded" });
+    expect(checkpoints).toEqual([expect.objectContaining({ queuedUrls: ["https://example.com/yielded"] })]);
+  });
+
+  it("flushes the final checkpoint when cancellation aborts the crawl", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const checkpoints: unknown[] = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/cancelled", canonicalUrl: "https://example.com/cancelled" });
+      controller.abort();
+      return { provider: "stream-crawler", status: "cancelled" };
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, signal: controller.signal, onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); } });
+    const rejected = expect(crawl).rejects.toThrow("request was aborted");
+    await vi.advanceTimersByTimeAsync(0);
+    await rejected;
+    expect(checkpoints).toEqual([expect.objectContaining({ queuedUrls: ["https://example.com/cancelled"] })]);
+  });
+
+  it("flushes the final checkpoint when the provider fails", async () => {
+    vi.useFakeTimers();
+    const providerError = new Error("stream failed");
+    const checkpoints: unknown[] = [];
+    const service = createCheckpointFlushTestService(async (request) => {
+      await request.onCheckpointEvent?.({ type: "discovered", url: "https://example.com/failed", canonicalUrl: "https://example.com/failed" });
+      throw providerError;
+    });
+    const crawl = service.crawlAndPublish({ workspaceId: "workspace-1", url: "https://example.com", limit: 5, onCheckpoint: async (checkpoint) => { checkpoints.push(checkpoint); } });
+    const rejected = expect(crawl).rejects.toBe(providerError);
+    await vi.advanceTimersByTimeAsync(0);
+    await rejected;
+    expect(checkpoints).toEqual([expect.objectContaining({ queuedUrls: ["https://example.com/failed"] })]);
+  });
+
+  it("preserves the crawl failure when terminal checkpoint persistence also fails", async () => {
+    const crawlError = new WebsiteCrawlerProviderError("stream failed", { provider: "stream-crawler" });
+    const checkpointError = new Error("checkpoint write failed token=checkpoint-secret");
+    const record = vi.fn();
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const logger = { warn: vi.fn() };
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "stream-crawler",
+        crawl: vi.fn(),
+        crawlStream: vi.fn(async (request) => {
+          await request.onCheckpointEvent?.({
+            type: "discovered",
+            url: "https://example.com/failed",
+            canonicalUrl: "https://example.com/failed",
+          });
+          throw crawlError;
+        }),
+      },
+      documentIngestionService: {
+        ingest: vi.fn(),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState,
+      },
+      auditService: { record },
+      logger,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+      onCheckpoint: async () => { throw checkpointError; },
+    })).rejects.toBe(crawlError);
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "document.website_crawler.crawl",
+      eventStatus: "failure",
+    }));
+    expect(updateSourceSyncState).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      status: "failure",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        role: "website-crawler",
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+        requestedUrl: "https://example.com",
+        error: "checkpoint write failed [redacted]",
+      },
+      "Failed to persist website crawl checkpoint after crawl failure",
+    );
+  });
+
   it("publishes unique provider pages through document ingestion", async () => {
     const ingest = vi.fn()
       .mockResolvedValueOnce({ documentId: "doc-1", status: "queued" })
@@ -221,6 +411,78 @@ describe("website crawler service", () => {
       processingUrls: ["https://example.com/quota"],
       processedCanonicalUrls: [],
     });
+  });
+
+  it("keeps a captured usage-limit failure primary when graceful stop checkpoint flush fails", async () => {
+    const usageLimitError = Object.assign(new Error("Usage limit exceeded"), {
+      statusCode: 429,
+      code: "usage_limit_exceeded",
+    });
+    const checkpointError = new Error("checkpoint write failed token=checkpoint-secret");
+    const record = vi.fn();
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const logger = { warn: vi.fn() };
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "stream-crawler",
+        crawl: vi.fn(),
+        crawlStream: vi.fn(async (request, onPage) => {
+          await request.onCheckpointEvent?.({
+            type: "discovered",
+            url: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+          });
+          await request.onCheckpointEvent?.({
+            type: "processing",
+            url: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+          });
+          await onPage({
+            sourceUrl: "https://example.com/quota",
+            canonicalUrl: "https://example.com/quota",
+            title: "Quota",
+            content: "# Quota",
+            metadata: {},
+          });
+          return { provider: "stream-crawler", status: request.signal?.aborted ? "cancelled" : "completed" };
+        }),
+      },
+      documentIngestionService: {
+        ingest: vi.fn().mockRejectedValue(usageLimitError),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState,
+      },
+      auditService: { record },
+      logger,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 1,
+      onCheckpoint: async () => { throw checkpointError; },
+    })).rejects.toBe(usageLimitError);
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "document.website_crawler.crawl",
+      eventStatus: "failure",
+    }));
+    expect(updateSourceSyncState).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      status: "failure",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        role: "website-crawler",
+        workspaceId: "workspace-1",
+        sourceId: "source-1",
+        requestedUrl: "https://example.com",
+        error: "checkpoint write failed [redacted]",
+      },
+      "Failed to persist website crawl checkpoint after crawl failure",
+    );
   });
 
   it("uses stable external document IDs for repeated crawls", async () => {

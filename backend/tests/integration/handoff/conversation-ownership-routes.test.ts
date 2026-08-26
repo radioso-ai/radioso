@@ -135,6 +135,7 @@ describe("conversation ownership routes", () => {
     expect(foreignTransfer.status).toBe(404);
     expect(foreignTransfer.body.error.message).toBe("Transfer target not found");
 
+    const publishInvalidation = vi.spyOn(dependencies.workspaceInvalidationPublisher, "enqueue");
     const transfer = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/transfer`)
       .set(adminSessionHeaders(member))
@@ -145,20 +146,21 @@ describe("conversation ownership routes", () => {
       state: "human_owned",
       ownerAccountId: owner.accountId,
       ownerDisplayName: "Ownership Owner Organization",
-      version: 2,
+      version: 1,
     });
+    expect(publishInvalidation).not.toHaveBeenCalled();
 
     const handback = await request(app)
       .post(`/api/v1/conversations/${conversation.id}/handback`)
       .set(adminSessionHeaders(member))
-      .send({ expectedVersion: 2 });
+      .send({ expectedVersion: 1 });
 
     expect(handback.status).toBe(200);
     expect(handback.body.ownership).toMatchObject({
       state: "ai_owned",
       ownerAccountId: null,
       ownerDisplayName: null,
-      version: 3,
+      version: 2,
     });
 
     const staleReply = await request(app)
@@ -170,7 +172,7 @@ describe("conversation ownership routes", () => {
     expect(staleReply.body.error.details.ownership).toMatchObject({
       conversationId: conversation.id,
       state: "ai_owned",
-      version: 3,
+      version: 2,
     });
 
     expect(repositories.auditEventRepository.items.filter((event) =>

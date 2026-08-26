@@ -1,4 +1,14 @@
-import type { WebsiteCrawlJobRecord, WebsiteCrawlJobRepositoryPort } from "../../db/repositories/websiteCrawlJobRepository.js";
+import {
+  createNoopWorkspaceInvalidationPublisher,
+  type WorkspaceInvalidationKind,
+  type WorkspaceInvalidationPublisher,
+} from "@radioso/workspace-invalidation-contract";
+
+import {
+  DEFAULT_STALE_CLAIM_RECOVERY_BATCH_SIZE,
+  type WebsiteCrawlJobRecord,
+  type WebsiteCrawlJobRepositoryPort,
+} from "../../db/repositories/websiteCrawlJobRepository.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
 import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
@@ -6,14 +16,18 @@ import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type W
 
 export class WebsiteCrawlWorker {
   private static readonly DEFAULT_SLICE_DURATION_MS = 120_000;
+  private static readonly DEFAULT_STALE_CLAIM_RECOVERY_INTERVAL_MS = 60_000;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   // Tracks the currently in-flight tick (claim + process) so that stop() can
   // drain it. Wrapping the entire tick — not just processClaimedJob — closes
   // the race where SIGTERM lands between claimNext returning and processing
   // starting; without that, the just-claimed row would be stranded in
-  // `processing` until the lease window expires (default 15 min).
-  private activeJob: Promise<unknown> | null = null;
+  // `processing` until the lease window expires (default 5 min).
+  private readonly activeInvocations = new Set<Promise<unknown>>();
+  private staleClaimRecovery: Promise<boolean> | null = null;
+  private nextStaleClaimRecoveryAtMs = Number.NEGATIVE_INFINITY;
+  private readonly publisher: WorkspaceInvalidationPublisher;
 
   constructor(private readonly dependencies: {
     repository: WebsiteCrawlJobRepositoryPort;
@@ -26,7 +40,12 @@ export class WebsiteCrawlWorker {
     jobLeaseMs?: number;
     cancellationPollMs?: number;
     sliceDurationMs?: number;
-  }) {}
+    staleClaimRecoveryBatchSize?: number;
+    staleClaimRecoveryIntervalMs?: number;
+    publisher?: WorkspaceInvalidationPublisher;
+  }) {
+    this.publisher = dependencies.publisher ?? createNoopWorkspaceInvalidationPublisher();
+  }
 
   async start(): Promise<void> {
     if (this.running) {
@@ -43,74 +62,73 @@ export class WebsiteCrawlWorker {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    if (this.activeJob) {
-      try {
-        await this.activeJob;
-      } catch {
-        // processClaimedJob already logs failures and marks the row failed;
-        // we just need to wait for it before returning from stop().
-      }
+    while (this.activeInvocations.size > 0) {
+      await Promise.allSettled([...this.activeInvocations]);
     }
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean | "yielded"> {
-    await this.releaseStaleJobs(now);
     // The whole claim+process tick is tracked so stop() can await it. Tracking
     // only the process half would leave a window where claimNext just returned
     // a job but processing has not yet started — stop() would not see anything
     // to drain, return immediately, and the just-claimed row would be stranded
     // in `processing` for the full lease window.
     return this.runTracked(async () => {
-      const job = await this.dependencies.repository.claimNext(now);
+      const recoveryHasMore = await this.releaseStaleJobs(now);
+      // Batch recovery stamps available_at from the database clock. Claim with
+      // that same clock source instead of the tick's earlier app timestamp, or
+      // the final recovered batch can be invisible until a later invocation.
+      const job = await this.dependencies.repository.claimNext();
       if (!job) {
-        return false;
+        return recoveryHasMore;
       }
+      this.publish(job.workspaceId, "crawl.status_changed");
       return (await this.processClaimedJob(job)) ?? true;
     });
   }
 
   async runJobById(jobId: string, now: Date = new Date()): Promise<"processed" | "noop" | "busy"> {
-    const existing = await this.dependencies.repository.findById(jobId);
-    if (!existing) {
-      return "noop";
-    }
-    if (existing.status === "completed" || existing.status === "failed") {
-      return "noop";
-    }
-    if (existing.status === "processing") {
-      const claimedBefore = new Date(now.getTime() - (this.dependencies.jobLeaseMs ?? 300_000));
-      const released = await this.dependencies.repository.releaseTimedOutClaim(jobId, claimedBefore, "claim_expired");
-      if (!released) {
-        return "busy";
+    return this.runTracked(async () => {
+      const existing = await this.dependencies.repository.findById(jobId);
+      if (!existing) {
+        return "noop";
       }
-    }
-    const claimed = await this.dependencies.repository.claimById(jobId, now);
-    if (!claimed) {
-      const current = await this.dependencies.repository.findById(jobId);
-      if (
-        current?.status === "processing"
-        && current.claimedAt
-        && current.claimedAt.getTime() > now.getTime() - (this.dependencies.jobLeaseMs ?? 300_000)
-      ) {
-        return "busy";
+      if (existing.status === "completed" || existing.status === "failed") {
+        return "noop";
       }
-      return "noop";
-    }
-    await this.runTracked(async () => {
+      if (existing.status === "processing") {
+        const claimedBefore = new Date(now.getTime() - (this.dependencies.jobLeaseMs ?? 300_000));
+        const released = await this.dependencies.repository.releaseTimedOutClaim(jobId, claimedBefore, "claim_expired");
+        if (!released) {
+          return "busy";
+        }
+        this.publish(existing.workspaceId, "crawl.status_changed");
+      }
+      const claimed = await this.dependencies.repository.claimById(jobId, now);
+      if (!claimed) {
+        const current = await this.dependencies.repository.findById(jobId);
+        if (
+          current?.status === "processing"
+          && current.claimedAt
+          && current.claimedAt.getTime() > now.getTime() - (this.dependencies.jobLeaseMs ?? 300_000)
+        ) {
+          return "busy";
+        }
+        return "noop";
+      }
+      this.publish(claimed.workspaceId, "crawl.status_changed");
       await this.processClaimedJob(claimed);
+      return "processed";
     });
-    return "processed";
   }
 
   private async runTracked<T>(work: () => Promise<T>): Promise<T> {
     const promise = work();
-    this.activeJob = promise;
+    this.activeInvocations.add(promise);
     try {
       return await promise;
     } finally {
-      if (this.activeJob === promise) {
-        this.activeJob = null;
-      }
+      this.activeInvocations.delete(promise);
     }
   }
 
@@ -132,28 +150,79 @@ export class WebsiteCrawlWorker {
     }, delayMs);
   }
 
-  private async releaseStaleJobs(now: Date): Promise<void> {
+  private async releaseStaleJobs(now: Date): Promise<boolean> {
+    if (this.staleClaimRecovery) {
+      return this.staleClaimRecovery;
+    }
+    if (now.getTime() < this.nextStaleClaimRecoveryAtMs) {
+      return false;
+    }
+    const intervalMs = Math.max(
+      0,
+      this.dependencies.staleClaimRecoveryIntervalMs
+        ?? WebsiteCrawlWorker.DEFAULT_STALE_CLAIM_RECOVERY_INTERVAL_MS,
+    );
+    this.nextStaleClaimRecoveryAtMs = now.getTime() + intervalMs;
+    const recovery = this.performStaleJobRecovery(now);
+    this.staleClaimRecovery = recovery;
+    try {
+      const hasMore = await recovery;
+      if (hasMore) {
+        this.nextStaleClaimRecoveryAtMs = Number.NEGATIVE_INFINITY;
+      }
+      return hasMore;
+    } finally {
+      if (this.staleClaimRecovery === recovery) {
+        this.staleClaimRecovery = null;
+      }
+    }
+  }
+
+  private async performStaleJobRecovery(now: Date): Promise<boolean> {
     try {
       const leaseMs = this.dependencies.jobLeaseMs ?? 300_000;
       const cutoff = new Date(now.getTime() - leaseMs);
-      const released = await this.dependencies.repository.releaseAllTimedOutClaims(cutoff, "claim_expired");
-      if (released > 0) {
+      const batchLimit = this.dependencies.staleClaimRecoveryBatchSize
+        ?? DEFAULT_STALE_CLAIM_RECOVERY_BATCH_SIZE;
+      const released = await this.dependencies.repository.releaseTimedOutClaimsBatch(
+        cutoff,
+        "claim_expired",
+        batchLimit,
+      );
+      for (const workspaceId of released.workspaceIds) {
+        this.publish(workspaceId, "crawl.status_changed");
+      }
+      if (released.releasedCount > 0) {
         this.dependencies.logger.warn(
-          { role: "website-crawl-worker", releasedCount: released },
+          {
+            role: "website-crawl-worker",
+            releasedCount: released.releasedCount,
+            workspaceCount: released.workspaceIds.length,
+            batchLimit,
+            hasMore: released.hasMore,
+          },
           "Released stale processing crawl jobs back to queue",
         );
       }
+      return released.hasMore;
     } catch (error) {
       this.dependencies.logger.error(
         { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
         "Failed to release stale crawl jobs",
       );
+      return false;
     }
   }
 
   private async processClaimedJob(job: WebsiteCrawlJobRecord): Promise<"yielded" | void> {
     if (!this.dependencies.provider) {
-      await this.dependencies.repository.markFailed(job.id, "Website crawler is not configured");
+      if (await this.dependencies.repository.markFailed(
+        job.id,
+        job.attemptCount,
+        "Website crawler is not configured",
+      )) {
+        this.publish(job.workspaceId, "crawl.status_changed");
+      }
       return;
     }
 
@@ -182,7 +251,9 @@ export class WebsiteCrawlWorker {
         policy: job.policy,
         checkpoint: job.checkpoint,
         onCheckpoint: async (checkpoint) => {
-          await this.dependencies.repository.updateCheckpoint(job.id, checkpoint);
+          if (await this.dependencies.repository.updateCheckpoint(job.id, job.attemptCount, checkpoint)) {
+            this.publish(job.workspaceId, "crawl.progress");
+          }
         },
       });
       clearInterval(cancellationMonitor);
@@ -190,10 +261,14 @@ export class WebsiteCrawlWorker {
         return;
       }
       if (result.outcome === "yielded") {
-        releasedForContinuation = await this.dependencies.repository.releaseForContinuation(job.id, job.claimedAt!);
+        releasedForContinuation = await this.dependencies.repository.releaseForContinuation(
+          job.id,
+          job.attemptCount,
+        );
         if (!releasedForContinuation) {
           return;
         }
+        this.publish(job.workspaceId, "crawl.status_changed");
         this.dependencies.logger.info(
           {
             role: "website-crawl-worker",
@@ -209,7 +284,13 @@ export class WebsiteCrawlWorker {
         });
         return "yielded";
       }
-      await this.dependencies.repository.markCompleted(job.id, result as unknown as Record<string, unknown>);
+      if (await this.dependencies.repository.markCompleted(
+        job.id,
+        job.attemptCount,
+        result as unknown as Record<string, unknown>,
+      )) {
+        this.publish(job.workspaceId, "crawl.status_changed");
+      }
     } catch (error) {
       if (releasedForContinuation) {
         this.dependencies.logger.error(
@@ -226,10 +307,14 @@ export class WebsiteCrawlWorker {
       if (cancelled) {
         return;
       }
-      await this.dependencies.repository.markFailed(
+      const failed = await this.dependencies.repository.markFailed(
         job.id,
+        job.attemptCount,
         error instanceof Error && error.message.trim() ? error.message : "Website crawl failed",
       );
+      if (failed) {
+        this.publish(job.workspaceId, "crawl.status_changed");
+      }
       this.dependencies.logger.error(
         {
           role: "website-crawl-worker",
@@ -241,19 +326,29 @@ export class WebsiteCrawlWorker {
       );
     } finally {
       clearInterval(cancellationMonitor);
-      await this.releasePausedClaim(job.id);
+      await this.releasePausedClaim(job.id, job.attemptCount, job.workspaceId);
     }
   }
 
-  private async releasePausedClaim(jobId: string): Promise<void> {
+  private async releasePausedClaim(
+    jobId: string,
+    expectedAttemptCount: number,
+    workspaceId: string,
+  ): Promise<void> {
     try {
-      await this.dependencies.repository.releasePausedClaim(jobId);
+      if (await this.dependencies.repository.releasePausedClaim(jobId, expectedAttemptCount)) {
+        this.publish(workspaceId, "crawl.status_changed");
+      }
     } catch (error) {
       this.dependencies.logger.warn(
         { role: "website-crawl-worker", jobId, error: error instanceof Error ? error.message : String(error) },
         "Failed to release paused crawl job claim",
       );
     }
+  }
+
+  private publish(workspaceId: string, changeKind: WorkspaceInvalidationKind): void {
+    this.publisher.enqueue(workspaceId, [changeKind]);
   }
 
   private startCancellationMonitor(
@@ -263,7 +358,13 @@ export class WebsiteCrawlWorker {
     const timer = setInterval(async () => {
       try {
         const current = await this.dependencies.repository.findById(job.id);
-        if (!current || current.workspaceId !== job.workspaceId || current.status !== "processing") {
+        if (
+          !current
+          || current.workspaceId !== job.workspaceId
+          || current.status !== "processing"
+          || !current.claimedAt
+          || current.attemptCount !== job.attemptCount
+        ) {
           cancel();
         }
       } catch (error) {

@@ -80,6 +80,92 @@ describe("document ingestion", () => {
     );
   });
 
+  it("publishes create, update, and reprocess transitions after their durable writes", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const publisher = { enqueue: vi.fn() };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      createAuditService(),
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
+    );
+
+    const created = await service.ingest({ workspaceId: "workspace-1", title: "First", content: "one" });
+    await service.update({ workspaceId: "workspace-1", documentId: created.documentId, title: "Updated", content: "two" });
+    await service.reprocess({ workspaceId: "workspace-1", documentId: created.documentId });
+
+    expect(publisher.enqueue).toHaveBeenCalledTimes(3);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(1, "workspace-1", ["document.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(2, "workspace-1", ["document.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(3, "workspace-1", ["document.status_changed"]);
+  });
+
+  it("publishes each committed source-deletion seam and stays silent for an empty no-op", async () => {
+    const publisher = { enqueue: vi.fn() };
+    const documentRepository = {
+      deleteBySourceIdAndWorkspaceId: vi.fn()
+        .mockResolvedValueOnce({ count: 2, storageRefs: [] })
+        .mockResolvedValueOnce({ count: 0, storageRefs: [] }),
+    };
+    const sourceRepository = {
+      deleteByIdAndWorkspaceId: vi.fn()
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository as never,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      sourceRepository as never,
+      undefined,
+      publisher,
+    );
+
+    await service.deleteSourceWithDocuments({ workspaceId: "workspace-1", sourceId: "source-1" });
+    expect(publisher.enqueue).toHaveBeenCalledTimes(2);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(1, "workspace-1", ["document.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(2, "workspace-1", ["document.status_changed"]);
+
+    publisher.enqueue.mockClear();
+    await service.deleteSourceWithDocuments({ workspaceId: "workspace-1", sourceId: "missing-source" });
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("publishes a committed document removal even when the later source deletion fails", async () => {
+    const publisher = { enqueue: vi.fn() };
+    const service = new DocumentIngestionService(
+      { deleteBySourceIdAndWorkspaceId: vi.fn(async () => ({ count: 1, storageRefs: [] })) } as never,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { deleteByIdAndWorkspaceId: vi.fn(async () => { throw new Error("source delete failed"); }) } as never,
+      undefined,
+      publisher,
+    );
+
+    await expect(service.deleteSourceWithDocuments({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+    })).rejects.toThrow("source delete failed");
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+  });
+
   it("stores a one-run enrichment override on the ingest job for manual documents", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -338,6 +424,20 @@ describe("document ingestion", () => {
     documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
+    const order: string[] = [];
+    const recordAudit = auditService.record.bind(auditService);
+    vi.spyOn(auditService, "record").mockImplementation(async (event) => {
+      if (event.eventType === "document.process") {
+        order.push("audit");
+      }
+      await recordAudit(event);
+    });
+    const publisher = {
+      enqueue: vi.fn(() => {
+        order.push("publish");
+        return { accepted: true as const, coalesced: false };
+      }),
+    };
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
@@ -357,6 +457,14 @@ describe("document ingestion", () => {
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        publisher,
       ),
       auditService,
       createLogger("silent"),
@@ -374,6 +482,10 @@ describe("document ingestion", () => {
     const [document] = await documentRepository.listByWorkspaceId("workspace-1");
     expect(document.status).toBe("ready");
     expect(chunkRepository.items.get(document.id)).toHaveLength(1);
+    expect(publisher.enqueue).toHaveBeenCalledTimes(2);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(1, "workspace-1", ["document.status_changed"]);
+    expect(publisher.enqueue).toHaveBeenNthCalledWith(2, "workspace-1", ["document.status_changed"]);
+    expect(order).toEqual(["publish", "publish", "audit"]);
   });
 
   it("uses the document embedding port without supplying provider-owned options", async () => {
@@ -508,6 +620,7 @@ describe("document ingestion", () => {
     documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
+    const publisher = { enqueue: vi.fn() };
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
@@ -527,6 +640,14 @@ describe("document ingestion", () => {
           },
         },
         new ChunkingStrategyRegistry([fixedWindowStrategy]),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        publisher,
       ),
       auditService,
       createLogger("silent"),
@@ -554,6 +675,7 @@ describe("document ingestion", () => {
     expect(current?.status).toBe("ready");
     expect(current?.revision).toBe(2);
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
+    expect(publisher.enqueue).toHaveBeenCalledTimes(2);
   });
 
   it("reuses the same document for repeated ingest requests with the same externalDocumentId", async () => {
@@ -590,7 +712,19 @@ describe("document ingestion", () => {
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const auditService = createAuditService();
-    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot());
+    const publisher = { enqueue: vi.fn() };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
+    );
 
     const metadata = { sourceUrl: "https://example.com/p", author: "Sabine Kaphingst" };
     const first = await service.ingest({
@@ -611,6 +745,7 @@ describe("document ingestion", () => {
 
     const current = await documentRepository.findByIdAndWorkspaceId(first.documentId, "workspace-1");
     expect(current?.revision).toBe(1);
+    expect(publisher.enqueue).toHaveBeenCalledOnce();
   });
 
   it("re-ingests a synced document when only searchable metadata changes (e.g. author becomes available)", async () => {
@@ -851,6 +986,7 @@ describe("document ingestion", () => {
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
+    const publisher = { enqueue: vi.fn() };
     let processingService!: DocumentProcessingService;
     let newerRevisionPublished = false;
 
@@ -889,6 +1025,14 @@ describe("document ingestion", () => {
         },
       },
       new ChunkingStrategyRegistry([fixedWindowStrategy]),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
     );
 
     const olderJob = await jobRepository.claimNext();
@@ -899,6 +1043,9 @@ describe("document ingestion", () => {
     expect(current?.status).toBe("ready");
     expect(current?.revision).toBe(2);
     expect(chunkRepository.items.get(first.documentId)?.[0]?.content).toContain("Second content");
+    // Older processing was visible once, but its rejected ready publication
+    // must not emit a fourth invalidation after revision 2 won the race.
+    expect(publisher.enqueue).toHaveBeenCalledTimes(3);
   });
 
   it("rejects source changes when the document is not in the manually-added bucket", async () => {

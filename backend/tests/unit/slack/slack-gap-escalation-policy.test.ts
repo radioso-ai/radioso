@@ -44,11 +44,14 @@ const basePersistence = (): SlackPersistencePort => ({
   findConversationLink: vi.fn(async () => null),
   findConversationLinkByConversationId: vi.fn(async () => null),
   getOrCreateConversationLink: vi.fn(async (input) => ({
-    id: "77777777-7777-4777-8777-777777777777",
-    workspaceId: input.workspaceId,
-    installationId: input.installationId,
-    slackKey: input.slackKey,
-    conversationId: "44444444-4444-4444-4444-444444444444",
+    link: {
+      id: "77777777-7777-4777-8777-777777777777",
+      workspaceId: input.workspaceId,
+      installationId: input.installationId,
+      slackKey: input.slackKey,
+      conversationId: "44444444-4444-4444-4444-444444444444",
+    },
+    created: false,
   })),
   upsertConversationLink: vi.fn(),
 });
@@ -237,11 +240,14 @@ describe("Slack gap escalation policy", () => {
   it("handles app mentions in the originating thread and reuses a thread-scoped conversation", async () => {
     const persistence = basePersistence();
     vi.mocked(persistence.getOrCreateConversationLink).mockResolvedValue({
-      id: "77777777-7777-7777-7777-777777777777",
-      workspaceId: installation.workspaceId,
-      installationId: installation.id,
-      slackKey: "mention:T1:CCHANNEL:1700000000.000100",
-      conversationId: "44444444-4444-4444-4444-444444444444",
+      link: {
+        id: "77777777-7777-7777-7777-777777777777",
+        workspaceId: installation.workspaceId,
+        installationId: installation.id,
+        slackKey: "mention:T1:CCHANNEL:1700000000.000100",
+        conversationId: "44444444-4444-4444-4444-444444444444",
+      },
+      created: false,
     });
     const chat: ConnectorChatPort = {
       answer: vi.fn(async (input) => ({

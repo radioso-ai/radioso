@@ -105,12 +105,13 @@ export const chatApi = {
     return payload ? normalizeChatResponse(payload) : payload
   },
 
-  async listHistory(input?: { limit?: number; offset?: number }): Promise<HistoryItemsResponse> {
+  async listHistory(input?: { limit?: number; offset?: number }, signal?: AbortSignal): Promise<HistoryItemsResponse> {
     const response = await request<HistoryItemsApiResponse>(withQuery('/history', {
       limit: input?.limit,
       offset: input?.offset,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
 
     return normalizeHistoryItemsResponse(response)
@@ -124,7 +125,7 @@ export const chatApi = {
     // returns only them (the workbench's recent test sessions); `all` returns both.
     sourceScope?: 'end_user' | 'operator_test' | 'all'
     ownership?: 'human_owned'
-  }): Promise<ChatHistoryListResponse> {
+  }, signal?: AbortSignal): Promise<ChatHistoryListResponse> {
     return request<ChatHistoryListResponse>(withQuery('/history/chat', {
       limit: input?.limit,
       offset: input?.offset,
@@ -133,6 +134,7 @@ export const chatApi = {
       ownership: input?.ownership,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
@@ -147,28 +149,31 @@ export const chatApi = {
     )
   },
 
-  async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {
+  async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentSearchHistoryListResponse> {
     return request<DocumentSearchHistoryListResponse>(withQuery('/history/search', {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async listContactHistory(input?: { limit?: number; offset?: number }): Promise<ContactHistoryListResponse> {
+  async listContactHistory(input?: { limit?: number; offset?: number }, signal?: AbortSignal): Promise<ContactHistoryListResponse> {
     return request<ContactHistoryListResponse>(withQuery('/history/contact', {
       limit: input?.limit,
       offset: input?.offset,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
   async getHistoryConversation(
     conversationId: string,
     input?: { limit?: number; offset?: number; cursor?: string },
+    signal?: AbortSignal,
   ): Promise<ChatConversationDetail> {
     return request<ChatConversationDetail>(withQuery(`/history/chat/${conversationId}`, {
       limit: input?.limit,
@@ -176,12 +181,14 @@ export const chatApi = {
       cursor: input?.cursor,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
+  async getSearchHistory(searchId: string, signal?: AbortSignal): Promise<DocumentSearchResponse> {
     const payload = await request<DocumentSearchResponse>(`/history/search/${searchId}?includeDebug=true`, {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
     return normalizeDocumentSearchResponse(payload)
   },
@@ -189,6 +196,7 @@ export const chatApi = {
   async getContactHistory(
     requestId: string,
     input?: { limit?: number; offset?: number; cursor?: string },
+    signal?: AbortSignal,
   ): Promise<ContactHistoryDetailResponse> {
     return request<ContactHistoryDetailResponse>(withQuery(`/history/contact/${requestId}`, {
       limit: input?.limit,
@@ -196,6 +204,7 @@ export const chatApi = {
       cursor: input?.cursor,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 }

@@ -150,6 +150,7 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
   | ((context: {
       database: Db;
       logger: AppLogger;
+      workspaceInvalidationPublisher?: import("@radioso/workspace-invalidation-contract").WorkspaceInvalidationPublisher;
     }) => AnswerFeedbackHistoryProviderPort);
 
 export interface ApplicationDirectiveRegistration {

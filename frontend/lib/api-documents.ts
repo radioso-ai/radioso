@@ -33,37 +33,42 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async getDocument(documentId: string): Promise<DocumentDetails> {
+  async getDocument(documentId: string, signal?: AbortSignal): Promise<DocumentDetails> {
     return request<DocumentDetails>(`/document/${documentId}`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async listDocumentChunks(documentId: string): Promise<DocumentChunkListResponse> {
+  async listDocumentChunks(documentId: string, signal?: AbortSignal): Promise<DocumentChunkListResponse> {
     return request<DocumentChunkListResponse>(`/document/${documentId}/chunks`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async getDocumentChunk(documentId: string, chunkId: string): Promise<DocumentChunkDetail> {
+  async getDocumentChunk(documentId: string, chunkId: string, signal?: AbortSignal): Promise<DocumentChunkDetail> {
     return request<DocumentChunkDetail>(`/document/${documentId}/chunks/${chunkId}`, {
       method: "GET",
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async listDocuments(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentListResponse> {
+  async listDocuments(input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentListResponse> {
     return request<DocumentListResponse>(withQuery('/document/', {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
     }), {
       method: "GET",
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async listSources(): Promise<DocumentSourceListResponse> {
+  async listSources(signal?: AbortSignal): Promise<DocumentSourceListResponse> {
     return request<DocumentSourceListResponse>('/document/sources', {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
@@ -158,7 +163,7 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listCrawlJobs(input?: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number; sourceId?: string }): Promise<WebsiteCrawlJobListResponse> {
+  async listCrawlJobs(input?: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number; sourceId?: string }, signal?: AbortSignal): Promise<WebsiteCrawlJobListResponse> {
     return request<WebsiteCrawlJobListResponse>(withQuery('/document/crawl/jobs', {
       status: input?.status,
       sinceMinutes: input?.sinceMinutes,
@@ -166,6 +171,7 @@ export const documentsApi = {
       sourceId: input?.sourceId,
     }), {
       method: "GET",
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
@@ -175,13 +181,14 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async listSourceDocuments(sourceId: string, input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentListResponse> {
+  async listSourceDocuments(sourceId: string, input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentListResponse> {
     return request<DocumentListResponse>(withQuery(`/document/sources/${encodeURIComponent(sourceId)}/documents`, {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
     }), {
       method: "GET",
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
@@ -264,19 +271,21 @@ export const documentsApi = {
     return normalizeDocumentSearchResponse(payload)
   },
 
-  async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }): Promise<DocumentSearchHistoryListResponse> {
+  async listSearchHistory(input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentSearchHistoryListResponse> {
     return request<DocumentSearchHistoryListResponse>(withQuery('/document/search/history', {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
     }), {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
   },
 
-  async getSearchHistory(searchId: string): Promise<DocumentSearchResponse> {
+  async getSearchHistory(searchId: string, signal?: AbortSignal): Promise<DocumentSearchResponse> {
     const payload = await request<DocumentSearchResponse>(`/document/search/history/${searchId}?includeDebug=true`, {
       method: 'GET',
+      ...(signal ? { signal } : {}),
     }, { withApiToken: true })
     return normalizeDocumentSearchResponse(payload)
   }

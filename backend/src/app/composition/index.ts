@@ -1,5 +1,6 @@
 export * from "./applicationModule.js";
 export * from "./defaultComposition.js";
+export * from "./realtimePublisherComposition.js";
 export * from "./skillSettingsResolver.js";
 export * from "./retrievalDefaultsProvider.js";
 export * from "./workspaceEmbeddingBindingResolver.js";

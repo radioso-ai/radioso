@@ -16,6 +16,11 @@ export interface SlackConversationLinkRecord {
   conversationId: string;
 }
 
+export interface SlackConversationLinkCreateOutcome {
+  link: SlackConversationLinkRecord;
+  created: boolean;
+}
+
 export interface SlackPersistencePort {
   createInboundEvent(input: { eventId: string; teamId: string }): Promise<boolean>;
   markInboundEventStatus(eventId: string, status: "processed" | "skipped" | "failed"): Promise<void>;
@@ -32,7 +37,7 @@ export interface SlackPersistencePort {
     agentId: string;
     sourceChannel: string;
     channelContext: ConversationChannelContext;
-  }): Promise<SlackConversationLinkRecord>;
+  }): Promise<SlackConversationLinkCreateOutcome>;
   upsertConversationLink(input: {
     workspaceId: string;
     installationId: string;
@@ -125,7 +130,7 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
     agentId: string;
     sourceChannel: string;
     channelContext: ConversationChannelContext;
-  }): Promise<SlackConversationLinkRecord> {
+  }): Promise<SlackConversationLinkCreateOutcome> {
     const conflict = new Error("slack_conversation_link_conflict");
     try {
       return await this.db.transaction().execute(async (trx) => {
@@ -137,7 +142,7 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
           .where("slack_key", "=", input.slackKey)
           .executeTakeFirst();
         if (existing) {
-          return mapLink(existing);
+          return { link: mapLink(existing), created: false };
         }
 
         const conversation = await new ConversationRepository(trx).create(
@@ -165,7 +170,7 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
           // transaction releases its snapshot and advisory lock.
           throw conflict;
         }
-        return mapLink(inserted);
+        return { link: mapLink(inserted), created: true };
       });
     } catch (error) {
       if (error !== conflict) {
@@ -178,7 +183,7 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
       if (!winner) {
         throw new Error("slack_conversation_link_winner_missing");
       }
-      return winner;
+      return { link: winner, created: false };
     }
   }
 

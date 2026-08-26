@@ -109,6 +109,15 @@ export interface ResumePausedWebsiteCrawlJobsResult {
   pendingResumeJobCount: number;
 }
 
+export interface StaleWebsiteCrawlClaimReleaseBatch {
+  releasedCount: number;
+  workspaceIds: string[];
+  hasMore: boolean;
+}
+
+export const DEFAULT_STALE_CLAIM_RECOVERY_BATCH_SIZE = 100;
+const MAX_STALE_CLAIM_RECOVERY_BATCH_SIZE = 500;
+
 export interface WebsiteCrawlJobRepositoryPort {
   create(input: {
     accountId?: string | null;
@@ -126,15 +135,19 @@ export interface WebsiteCrawlJobRepositoryPort {
   cancelBySourceId(sourceId: string, workspaceId: string): Promise<number>;
   pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
   resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<ResumePausedWebsiteCrawlJobsResult>;
-  updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void>;
-  releaseForContinuation(jobId: string, claimedAt: Date): Promise<boolean>;
+  updateCheckpoint(jobId: string, expectedAttemptCount: number, checkpoint: WebsiteCrawlCheckpoint): Promise<boolean>;
+  releaseForContinuation(jobId: string, expectedAttemptCount: number): Promise<boolean>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
-  releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number>;
-  releasePausedClaim(jobId: string): Promise<void>;
-  markCompleted(jobId: string, result: Record<string, unknown>): Promise<void>;
-  markFailed(jobId: string, errorMessage: string): Promise<void>;
+  releaseTimedOutClaimsBatch(
+    claimedAtOrBefore: Date,
+    errorMessage: string,
+    limit?: number,
+  ): Promise<StaleWebsiteCrawlClaimReleaseBatch>;
+  releasePausedClaim(jobId: string, expectedAttemptCount: number): Promise<boolean>;
+  markCompleted(jobId: string, expectedAttemptCount: number, result: Record<string, unknown>): Promise<boolean>;
+  markFailed(jobId: string, expectedAttemptCount: number, errorMessage: string): Promise<boolean>;
 }
 
 export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort {
@@ -253,8 +266,12 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     };
   }
 
-  async updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void> {
-    await this.db
+  async updateCheckpoint(
+    jobId: string,
+    expectedAttemptCount: number,
+    checkpoint: WebsiteCrawlCheckpoint,
+  ): Promise<boolean> {
+    const result = await this.db
       .updateTable("website_crawl_jobs")
       .set({
         checkpoint_json: toJsonb(checkpoint),
@@ -262,10 +279,12 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       })
       .where("id", "=", jobId)
       .where("status", "in", ["processing", "paused"])
-      .execute();
+      .where("attempt_count", "=", expectedAttemptCount)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 
-  async releaseForContinuation(jobId: string, claimedAt: Date): Promise<boolean> {
+  async releaseForContinuation(jobId: string, expectedAttemptCount: number): Promise<boolean> {
     const result = await this.db
       .updateTable("website_crawl_jobs")
       .set({
@@ -277,7 +296,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       })
       .where("id", "=", jobId)
       .where("status", "=", "processing")
-      .where("claimed_at", "=", claimedAt)
+      .where("attempt_count", "=", expectedAttemptCount)
       .executeTakeFirst();
 
     return Number(result.numUpdatedRows) > 0;
@@ -313,13 +332,14 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return rows.map((row) => mapWebsiteCrawlJob(row as WebsiteCrawlJobRow));
   }
 
-  async claimNext(now: Date = new Date()): Promise<WebsiteCrawlJobRecord | null> {
+  async claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null> {
     return this.db.transaction().execute(async (trx) => {
+      const claimTimestamp = now ?? currentTimestamp();
       const nextJob = await trx
         .selectFrom("website_crawl_jobs")
         .select("id")
         .where("status", "=", "queued")
-        .where("available_at", "<=", now)
+        .where("available_at", "<=", claimTimestamp)
         .orderBy("created_at", "asc")
         .forUpdate()
         .skipLocked()
@@ -335,8 +355,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
         .set((eb) => ({
           status: "processing",
           attempt_count: eb("attempt_count", "+", 1),
-          claimed_at: now,
-          updated_at: now,
+          claimed_at: claimTimestamp,
+          updated_at: claimTimestamp,
         }))
         .where("id", "=", nextJob.id)
         .returning(websiteCrawlJobColumns)
@@ -383,44 +403,77 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return Number(result.numUpdatedRows) > 0;
   }
 
-  async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number> {
-    const result = await this.db
-      .updateTable("website_crawl_jobs")
-      .set((eb) => ({
-        status: eb
-          .case()
-          .when("status", "=", "processing")
-          .then("queued")
-          .when(eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null)]))
-          .then("queued")
-          .else(eb.ref("status"))
-          .end(),
-        available_at: eb
-          .case()
-          .when(eb.or([eb("status", "=", "processing"), eb("resume_requested_at", "is not", null)]))
-          .then(currentTimestamp())
-          .else(eb.ref("available_at"))
-          .end(),
-        claimed_at: null,
-        resume_requested_at: null,
-        last_error: eb.case().when("status", "=", "processing").then(errorMessage).else(eb.ref("last_error")).end(),
-        updated_at: currentTimestamp(),
-      }))
-      .where("status", "in", ["processing", "paused"])
-      .where((eb) =>
-        eb.or([
-          eb.and([eb("status", "=", "processing"), eb("claimed_at", "<=", claimedAtOrBefore)]),
-          eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is", null), eb("claimed_at", "<=", claimedAtOrBefore)]),
-          eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null), eb("resume_requested_at", "<=", claimedAtOrBefore)]),
-        ]),
-      )
-      .executeTakeFirst();
+  async releaseTimedOutClaimsBatch(
+    claimedAtOrBefore: Date,
+    errorMessage: string,
+    limit = DEFAULT_STALE_CLAIM_RECOVERY_BATCH_SIZE,
+  ): Promise<StaleWebsiteCrawlClaimReleaseBatch> {
+    const requestedBatchSize = Number.isFinite(limit)
+      ? Math.floor(limit)
+      : DEFAULT_STALE_CLAIM_RECOVERY_BATCH_SIZE;
+    const batchSize = Math.min(Math.max(requestedBatchSize, 1), MAX_STALE_CLAIM_RECOVERY_BATCH_SIZE);
+    return this.db.transaction().execute(async (trx) => {
+      // Lock one lookahead row so hasMore reflects the same database snapshot,
+      // but mutate only the bounded batch. Concurrent workers skip these locks
+      // and can recover other work without double-reporting a released row.
+      const staleRows = await trx
+        .selectFrom("website_crawl_jobs")
+        .select(["id", "workspace_id"])
+        .where((eb) =>
+          eb.or([
+            eb.and([eb("status", "=", "processing"), eb("claimed_at", "<=", claimedAtOrBefore)]),
+            eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is", null), eb("claimed_at", "<=", claimedAtOrBefore)]),
+            eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null), eb("resume_requested_at", "<=", claimedAtOrBefore)]),
+          ]),
+        )
+        .orderBy("updated_at", "asc")
+        .orderBy("id", "asc")
+        .forUpdate()
+        .skipLocked()
+        .limit(batchSize + 1)
+        .execute();
 
-    return Number(result.numUpdatedRows);
+      const selectedIds = staleRows.slice(0, batchSize).map((row) => row.id);
+      if (selectedIds.length === 0) {
+        return { releasedCount: 0, workspaceIds: [], hasMore: false };
+      }
+
+      const releasedRows = await trx
+        .updateTable("website_crawl_jobs")
+        .set((eb) => ({
+          status: eb
+            .case()
+            .when("status", "=", "processing")
+            .then("queued")
+            .when(eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null)]))
+            .then("queued")
+            .else(eb.ref("status"))
+            .end(),
+          available_at: eb
+            .case()
+            .when(eb.or([eb("status", "=", "processing"), eb("resume_requested_at", "is not", null)]))
+            .then(currentTimestamp())
+            .else(eb.ref("available_at"))
+            .end(),
+          claimed_at: null,
+          resume_requested_at: null,
+          last_error: eb.case().when("status", "=", "processing").then(errorMessage).else(eb.ref("last_error")).end(),
+          updated_at: currentTimestamp(),
+        }))
+        .where("id", "in", selectedIds)
+        .returning("workspace_id")
+        .execute();
+
+      return {
+        releasedCount: releasedRows.length,
+        workspaceIds: [...new Set(releasedRows.map((row) => row.workspace_id))],
+        hasMore: staleRows.length > batchSize,
+      };
+    });
   }
 
-  async releasePausedClaim(jobId: string): Promise<void> {
-    await this.db
+  async releasePausedClaim(jobId: string, expectedAttemptCount: number): Promise<boolean> {
+    const result = await this.db
       .updateTable("website_crawl_jobs")
       .set((eb) => ({
         status: eb.case().when("resume_requested_at", "is", null).then("paused").else("queued").end(),
@@ -431,11 +484,17 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       }))
       .where("id", "=", jobId)
       .where("status", "=", "paused")
-      .execute();
+      .where("attempt_count", "=", expectedAttemptCount)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 
-  async markCompleted(jobId: string, result: Record<string, unknown>): Promise<void> {
-    await this.db
+  async markCompleted(
+    jobId: string,
+    expectedAttemptCount: number,
+    result: Record<string, unknown>,
+  ): Promise<boolean> {
+    const updateResult = await this.db
       .updateTable("website_crawl_jobs")
       .set({
         status: "completed",
@@ -447,11 +506,13 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       })
       .where("id", "=", jobId)
       .where("status", "in", ["processing", "paused"])
-      .execute();
+      .where("attempt_count", "=", expectedAttemptCount)
+      .executeTakeFirst();
+    return Number(updateResult.numUpdatedRows) > 0;
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
-    await this.db
+  async markFailed(jobId: string, expectedAttemptCount: number, errorMessage: string): Promise<boolean> {
+    const result = await this.db
       .updateTable("website_crawl_jobs")
       .set({
         status: "failed",
@@ -462,6 +523,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       })
       .where("id", "=", jobId)
       .where("status", "=", "processing")
-      .execute();
+      .where("attempt_count", "=", expectedAttemptCount)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 }

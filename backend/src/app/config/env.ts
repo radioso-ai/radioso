@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseRealtimeConfig, realtimeEnvShape } from "../../modules/realtime/infrastructure/config.js";
 
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
@@ -53,6 +54,7 @@ const envSchema = z.object({
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
   ERROR_SINKS: z.string().min(1).default("audit"),
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
+  ...realtimeEnvShape,
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_CDN_URL_MAP: emptyStringToUndefined(z.string().min(1)),
   DATABASE_URL: z.string().min(1),
@@ -313,7 +315,11 @@ const envSchema = z.object({
 
 type ParsedEnv = z.infer<typeof envSchema>;
 
-export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT"> & {
+type RealtimeEnvInputKey = Extract<keyof ParsedEnv, `REALTIME_${string}`>;
+
+// Realtime is an opt-in runtime: existing API/worker test compositions may omit
+// its inputs and the realtime parser supplies the disabled defaults.
+export type Env = Omit<ParsedEnv, "OBSERVABILITY_ENVIRONMENT" | RealtimeEnvInputKey> & Partial<Pick<ParsedEnv, RealtimeEnvInputKey>> & {
   OBSERVABILITY_ENVIRONMENT: string;
 };
 
@@ -322,6 +328,7 @@ let cachedEnv: Env | null = null;
 export const getEnv = (source: NodeJS.ProcessEnv = process.env): Env => {
   if (!cachedEnv || source !== process.env) {
     const parsed = envSchema.parse(source);
+    parseRealtimeConfig(parsed);
     cachedEnv = {
       ...parsed,
       OBSERVABILITY_ENVIRONMENT: parsed.OBSERVABILITY_ENVIRONMENT ?? parsed.NODE_ENV,

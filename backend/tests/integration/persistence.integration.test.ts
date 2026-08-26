@@ -428,7 +428,11 @@ describeIfDatabase("persistence integration", () => {
       conversationRepository.getOrCreateByAnonymousSession(input),
     ]);
 
-    expect(first.id).toBe(second.id);
+    const firstOutcome = first as typeof first & { record?: typeof first; recordOrConversation?: typeof first; recordOrLink?: typeof first; created?: boolean };
+    const secondOutcome = second as typeof second & { record?: typeof second; recordOrConversation?: typeof second; recordOrLink?: typeof second; created?: boolean };
+    const firstRecord = firstOutcome.record ?? firstOutcome.recordOrConversation ?? firstOutcome.recordOrLink ?? first;
+    const secondRecord = secondOutcome.record ?? secondOutcome.recordOrConversation ?? secondOutcome.recordOrLink ?? second;
+    expect(firstRecord.id).toBe(secondRecord.id);
     const conversations = await database.query<{ id: string }>(
       `SELECT id
        FROM conversations
@@ -438,7 +442,8 @@ describeIfDatabase("persistence integration", () => {
          AND anonymous_session_id = $3`,
       [workspace.id, agentId, anonymousSessionId],
     );
-    expect(conversations).toEqual([{ id: first.id }]);
+    expect(conversations).toEqual([{ id: firstRecord.id }]);
+    expect([firstOutcome.created, secondOutcome.created].sort()).toEqual([false, true]);
 
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });

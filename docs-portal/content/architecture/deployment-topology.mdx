@@ -1,20 +1,23 @@
 ---
 title: Deployment topology
 description: The Radioso production topology and where the docs portal fits.
+last_updated: 2026-08-26
 ---
 
 import { Callout } from 'nextra/components'
 
 # Deployment topology
 
-Radioso is deployed as separate services with a shared PostgreSQL database and explicit separation between request-driven application traffic and background document work.
+Radioso is deployed as separate services with a shared PostgreSQL database and explicit separation between request-driven application traffic, background document work, and optional long-lived dashboard streams.
 
 ## Main components
 
 - Backend API service: handles authenticated app traffic, workspace APIs, retrieval, chat, auth flows, and enqueueing document jobs.
 - Frontend app service: serves the product UI and proxies user-facing app traffic to the backend.
 - Document worker service: processes queued document jobs outside the request path.
+- Realtime service: when enabled, authenticates and serves workspace-scoped dashboard event streams outside the frontend request pool.
 - PostgreSQL: stores application state, document metadata, chunks, sessions, settings, and audit data.
+- Redis or Valkey: when realtime is enabled, carries transient invalidation hints and short-lived admission leases. PostgreSQL remains authoritative.
 - Object storage: uploaded source files use local filesystem storage in local development and GCS in cloud deployments.
 
 ## Why the worker is separate
@@ -23,7 +26,9 @@ Document parsing, chunking, embedding, and retry behavior are operationally diff
 
 ## Production shape
 
-The Terraform deployment uses separate Cloud Run services for backend, frontend, and worker. The backend connects to Cloud SQL through a VPC connector. Uploaded source files are stored in GCS, and request-driven document jobs are dispatched to the worker through Cloud Tasks.
+The base Terraform deployment uses separate Cloud Run services for backend, frontend, and worker. The backend connects to Cloud SQL through a VPC connector. Uploaded source files are stored in GCS, and request-driven document jobs are dispatched to the worker through Cloud Tasks.
+
+A deployment with live dashboard updates adds a dedicated realtime runtime and Redis or Valkey. The frontend keeps the browser connection same-origin at `/backend/api/v1/events` and forwards that exact route to the realtime service's internal `/api/v1/events` endpoint. This keeps long-lived streams out of the ordinary frontend and backend request pools.
 
 ## Docs portal placement
 
@@ -36,7 +41,9 @@ The docs portal should stay outside the product frontend runtime. It has its own
 ## Operational consequences
 
 - backend scale settings and worker scale settings should be tuned independently
+- realtime connection capacity should be tuned independently from ordinary HTTP concurrency
 - a document-processing incident should not require frontend changes
+- a realtime or Redis incident falls back to polling instead of changing mutation correctness
 - public docs deployment should not be coupled to the app frontend release
 - storage, secrets, and queue configuration belong to infrastructure, not app code
 

@@ -1,4 +1,3 @@
-import type { Env } from "../app/config/env.js";
 import {
   initializeOpenTelemetryLogging,
   shutdownOpenTelemetryLogging,
@@ -12,10 +11,27 @@ import {
   type TraceSamplerName,
 } from "../shared/observability/tracing/index.js";
 
+export interface RuntimeTracingEnv {
+  NODE_ENV?: string;
+  OBSERVABILITY_ENVIRONMENT?: string;
+  OBSERVABILITY_SERVICE_NAME?: string;
+  OBSERVABILITY_VERSION?: string;
+  OTEL_ENABLED?: boolean;
+  OTEL_EXPORTER_OTLP_ENDPOINT?: string;
+  OTEL_EXPORTER_OTLP_LOGS_AUTH_BEARER?: string;
+  OTEL_EXPORTER_OTLP_LOGS_ENDPOINT?: string;
+  OTEL_LOGS_ENABLED?: boolean;
+  OTEL_LOGS_MIN_LEVEL?: string;
+  OTEL_TRACES_SAMPLER?: string;
+  OTEL_TRACES_SAMPLER_ARG?: string;
+}
+
 const defaultServiceName = (runtimeRole: RuntimeRole): string => {
   switch (runtimeRole) {
     case "api":
       return "radioso-api";
+    case "realtime":
+      return "radioso-realtime";
     case "crawler-worker":
     case "crawler-worker-task-server":
       return "radioso-crawler-worker";
@@ -25,7 +41,7 @@ const defaultServiceName = (runtimeRole: RuntimeRole): string => {
   }
 };
 
-const serviceName = (env: Env, runtimeRole: RuntimeRole): string => {
+const serviceName = (env: RuntimeTracingEnv, runtimeRole: RuntimeRole): string => {
   if (runtimeRole !== "api" && env.OBSERVABILITY_SERVICE_NAME === "radioso-api") {
     return defaultServiceName(runtimeRole);
   }
@@ -33,7 +49,7 @@ const serviceName = (env: Env, runtimeRole: RuntimeRole): string => {
 };
 
 export const startRuntimeTracing = (
-  env: Env,
+  env: RuntimeTracingEnv,
   logger: AppLogger,
   runtimeRole: RuntimeRole,
 ): void => {

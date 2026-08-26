@@ -22,6 +22,11 @@ export interface ConversationOwnershipRequestHandoffInput {
   reason: ConversationOwnershipReason;
 }
 
+export interface ConversationOwnershipRequestHandoffResult {
+  record: ConversationOwnershipRecord;
+  changed: boolean;
+}
+
 export interface ConversationOwnershipTakeOverInput {
   conversationId: string;
   workspaceId: string;
@@ -43,8 +48,8 @@ export interface ConversationOwnershipHandBackInput {
 }
 
 export type ConversationOwnershipMutationResult =
-  | { ok: true; record: ConversationOwnershipRecord }
-  | { ok: false; record: ConversationOwnershipRecord | null };
+  | { ok: true; changed: boolean; record: ConversationOwnershipRecord }
+  | { ok: false; changed: false; record: ConversationOwnershipRecord | null };
 
 interface ConversationOwnershipRow {
   conversation_id: string;
@@ -125,7 +130,7 @@ export class ConversationOwnershipRepository {
   async requestHandoff(
     input: ConversationOwnershipRequestHandoffInput,
     db: Db = this.db,
-  ): Promise<ConversationOwnershipRecord> {
+  ): Promise<ConversationOwnershipRequestHandoffResult> {
     // Request human ownership when none exists yet, OR re-request it after a prior
     // hand-back left the row ai_owned (a later routine/retrieval handoff must be able
     // to re-enter human ownership). An already human_owned row is left untouched so a
@@ -158,12 +163,12 @@ export class ConversationOwnershipRepository {
 
     const row = result.rows[0];
     if (row) {
-      return mapRecord(row);
+      return { record: mapRecord(row), changed: true };
     }
 
     const existing = await this.load(input.conversationId, db);
     if (existing) {
-      return existing;
+      return { record: existing, changed: false };
     }
 
     throw new Error("conversation_ownership_request_handoff_unresolved");
@@ -192,7 +197,7 @@ export class ConversationOwnershipRepository {
 
     const inserted = insertedResult.rows[0];
     if (inserted) {
-      return { ok: true, record: mapRecord(inserted) };
+      return { ok: true, changed: true, record: mapRecord(inserted) };
     }
 
     // CAS on the version only when an expected version is supplied; otherwise claim any
@@ -219,10 +224,10 @@ export class ConversationOwnershipRepository {
 
     const updated = updatedResult.rows[0];
     if (updated) {
-      return { ok: true, record: mapRecord(updated) };
+      return { ok: true, changed: true, record: mapRecord(updated) };
     }
 
-    return { ok: false, record: await this.load(input.conversationId, db) };
+    return { ok: false, changed: false, record: await this.load(input.conversationId, db) };
   }
 
   async transfer(
@@ -238,15 +243,20 @@ export class ConversationOwnershipRepository {
         WHERE conversation_id = ${input.conversationId}
           AND state = 'human_owned'
           AND version = ${input.expectedVersion}
+          AND (owner_account_id IS DISTINCT FROM ${input.accountId} OR owner_display_name IS DISTINCT FROM ${input.displayName})
         RETURNING ${conversationOwnershipColumns}
     `.execute(db);
 
     const row = result.rows[0];
     if (row) {
-      return { ok: true, record: mapRecord(row) };
+      return { ok: true, changed: true, record: mapRecord(row) };
     }
-
-    return { ok: false, record: await this.load(input.conversationId, db) };
+    const existing = await this.load(input.conversationId, db);
+    if (existing?.state === "human_owned" && existing.version === input.expectedVersion
+      && existing.ownerAccountId === input.accountId && existing.ownerDisplayName === input.displayName) {
+      return { ok: true, changed: false, record: existing };
+    }
+    return { ok: false, changed: false, record: existing };
   }
 
   async handBack(
@@ -262,14 +272,19 @@ export class ConversationOwnershipRepository {
               updated_at = now()
         WHERE conversation_id = ${input.conversationId}
           AND version = ${input.expectedVersion}
+          AND (state IS DISTINCT FROM 'ai_owned' OR owner_account_id IS NOT NULL OR owner_display_name IS NOT NULL)
         RETURNING ${conversationOwnershipColumns}
     `.execute(db);
 
     const row = result.rows[0];
     if (row) {
-      return { ok: true, record: mapRecord(row) };
+      return { ok: true, changed: true, record: mapRecord(row) };
     }
-
-    return { ok: false, record: await this.load(input.conversationId, db) };
+    const existing = await this.load(input.conversationId, db);
+    if (existing?.version === input.expectedVersion && existing.state === "ai_owned"
+      && existing.ownerAccountId === null && existing.ownerDisplayName === null) {
+      return { ok: true, changed: false, record: existing };
+    }
+    return { ok: false, changed: false, record: existing };
   }
 }

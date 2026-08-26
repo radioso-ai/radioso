@@ -1,6 +1,7 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   ChevronDown,
   ChevronRight,
@@ -35,6 +36,10 @@ import {
 } from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import {
+  useDashboardQueryInvalidation,
+  useDashboardQueryPolicy,
+} from '@/components/providers/dashboard-query-provider'
+import {
   DashboardTable,
   DashboardTableBody,
   DashboardTableHead,
@@ -63,11 +68,27 @@ import {
 } from '@/lib/api'
 import type { ConnectorDetail } from '@/lib/api-connectors'
 import {
-  applySourceResumeResult,
   getCrawlPageIssueSummaries,
   getResumeDispatchWarning,
   runSourceCrawlAction,
 } from '@/lib/crawl-jobs'
+import {
+  emptySourceCrawlOverlay,
+  effectiveSourceCrawlOverlay,
+  patchSourceListRow,
+  reconcileSourceCrawlOverlay,
+  removeSourceListRow,
+  useDocumentSourcesCrawlQuery,
+  useDocumentSourcesListQuery,
+  withSourceCrawlOverlay,
+  withoutSourceCrawlOverlay,
+  deriveSourceCrawlState,
+  sourceCrawlOverlaySourceIds,
+  sourceMutationInvalidationKinds,
+  shouldOverlayPausedSource,
+  type SourceCrawlOverlay,
+} from '@/lib/document-sources-query-state'
+import { dashboardQueryKeys } from '@/lib/dashboard-query-keys'
 import { useWorkspace } from '@/lib/workspace-context'
 
 const MANUALLY_ADDED_SOURCE_ID = '00000000-0000-0000-0000-000000000001'
@@ -466,6 +487,7 @@ function SourceExpandedPanel({
   onSourceUpdated,
   ingestionSettings,
   onIngestionSettingsUpdated,
+  onReprocessComplete,
 }: {
   source: DocumentSourceListItem
   crawlStatusVersion: number
@@ -477,6 +499,7 @@ function SourceExpandedPanel({
   onSourceUpdated: (source: DocumentSourceListItem) => void
   ingestionSettings: IngestionSettings | null
   onIngestionSettingsUpdated: (settings: IngestionSettings) => void
+  onReprocessComplete: () => void
 }) {
   const connectorId = source.kind === 'connector'
     ? connectorIdFromExternalId(source.externalId)
@@ -545,6 +568,7 @@ function SourceExpandedPanel({
     setSourceActionMessage(null)
     try {
       const response = await documentsApi.reprocessSource(source.id)
+      onReprocessComplete()
       setSourceActionMessage(
         `Queued ${response.queuedDocumentCount} document${response.queuedDocumentCount === 1 ? '' : 's'} for reprocessing. Skipped ${response.skippedDocumentCount}.`,
       )
@@ -657,10 +681,16 @@ function SourceExpandedPanel({
 }
 
 export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }: DocumentSourcesViewProps) {
+  const invalidateDashboardQueries = useDashboardQueryInvalidation()
+  const { intervalFor, queriesEnabled } = useDashboardQueryPolicy()
+  const queryClient = useQueryClient()
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
-  const [sources, setSources] = useState<DocumentSourceListItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const workspaceId = activeWorkspaceId ?? ''
+  const [crawlOverlayState, setCrawlOverlayState] = useState(() => ({
+    workspaceId,
+    overlay: emptySourceCrawlOverlay(),
+  }))
+  const currentWorkspaceId = useRef(workspaceId)
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
   const [crawlLogSource, setCrawlLogSource] = useState<DocumentSourceListItem | null>(null)
   const [connectorSetupSource, setConnectorSetupSource] = useState<DocumentSourceListItem | null>(null)
@@ -671,12 +701,84 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
   const [recrawlingSourceId, setRecrawlingSourceId] = useState<string | null>(null)
   const [pausingSourceId, setPausingSourceId] = useState<string | null>(null)
   const [resumingSourceId, setResumingSourceId] = useState<string | null>(null)
-  const [crawlingSourceIds, setCrawlingSourceIds] = useState<Set<string>>(new Set())
-  const [pausedSourceIds, setPausedSourceIds] = useState<Set<string>>(new Set())
-  const [pendingResumeSourceIds, setPendingResumeSourceIds] = useState<Set<string>>(new Set())
   const [crawlStatusVersion, setCrawlStatusVersion] = useState(0)
   const [ingestionSettings, setIngestionSettings] = useState<IngestionSettings | null>(null)
   const sectionShellClassName = 'w-full'
+  const listQueryKey = dashboardQueryKeys.sources.list(workspaceId)
+  const crawlQueryKey = dashboardQueryKeys.sources.crawlState(workspaceId)
+  const workspaceCrawlOverlay = effectiveSourceCrawlOverlay(
+    crawlOverlayState.workspaceId,
+    workspaceId,
+    crawlOverlayState.overlay,
+  )
+  const sourcesQuery = useDocumentSourcesListQuery({
+    workspaceId,
+    enabled: queriesEnabled && !isWorkspaceLoading,
+    floorMs: intervalFor(listQueryKey),
+  })
+  const crawlQuery = useDocumentSourcesCrawlQuery({
+    workspaceId,
+    enabled: queriesEnabled && !isWorkspaceLoading,
+    floorMs: intervalFor(crawlQueryKey),
+    overlay: workspaceCrawlOverlay,
+  })
+  const effectiveCrawlOverlay: SourceCrawlOverlay = useMemo(
+    () => reconcileSourceCrawlOverlay(workspaceCrawlOverlay, crawlQuery.data),
+    [crawlQuery.data, workspaceCrawlOverlay],
+  )
+  const crawlState = useMemo(
+    () => deriveSourceCrawlState(crawlQuery.data, effectiveCrawlOverlay),
+    [crawlQuery.data, effectiveCrawlOverlay],
+  )
+  const sources = sourcesQuery.data?.sources ?? []
+  const isLoading = sourcesQuery.isPending && !sourcesQuery.data
+  const error = sourcesQuery.error && !sourcesQuery.data
+    ? getApiErrorMessage(sourcesQuery.error, 'Failed to load sources.')
+    : null
+  const crawlingSourceIds = crawlState.active
+  const pausedSourceIds = crawlState.paused
+  const pendingResumeSourceIds = sourceCrawlOverlaySourceIds(effectiveCrawlOverlay, 'resume')
+
+  useLayoutEffect(() => {
+    currentWorkspaceId.current = workspaceId
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (!crawlQuery.data) return
+    // The acknowledgement belongs to presentation state, never the server
+    // snapshot in QueryCache. Persisting it prevents a later empty snapshot
+    // from resurrecting an already-reflected action.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setCrawlOverlayState((current) => {
+      if (current.workspaceId !== workspaceId) return current
+      const overlay = reconcileSourceCrawlOverlay(current.overlay, crawlQuery.data)
+      return overlay === current.overlay ? current : { ...current, overlay }
+    })
+  }, [crawlQuery.data, workspaceId])
+
+  const updateCrawlOverlay = useCallback((input: {
+    action: 'pause' | 'recrawl' | 'resume'
+    jobId?: string
+    sourceId: string
+  }) => {
+    const actionWorkspaceId = workspaceId
+    setCrawlOverlayState((current) => {
+      if (currentWorkspaceId.current !== actionWorkspaceId) return current
+      const overlay = current.workspaceId === actionWorkspaceId ? current.overlay : emptySourceCrawlOverlay()
+      return {
+        workspaceId: actionWorkspaceId,
+        overlay: withSourceCrawlOverlay(overlay, { ...input, completedAtMs: Date.now() }),
+      }
+    })
+  }, [workspaceId])
+
+  const removeCrawlOverlay = useCallback((sourceId: string) => {
+    const actionWorkspaceId = workspaceId
+    setCrawlOverlayState((current) => current.workspaceId === actionWorkspaceId
+      && currentWorkspaceId.current === actionWorkspaceId
+      ? { ...current, overlay: withoutSourceCrawlOverlay(current.overlay, sourceId) }
+      : current)
+  }, [workspaceId])
 
   useEffect(() => {
     let cancelled = false
@@ -695,108 +797,13 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
     }
   }, [activeWorkspaceId])
 
-  const refreshCrawlingStatus = useCallback((pendingResumeSourceIdsOverride?: ReadonlySet<string>) => {
-    void Promise.all([
-      documentsApi.listCrawlJobs({ sinceMinutes: 60 }),
-      documentsApi.listCrawlJobs({ status: 'paused' }),
-    ])
-      .then(([recentResponse, pausedResponse]) => {
-        const effectivePendingResumeSourceIds = pendingResumeSourceIdsOverride ?? pendingResumeSourceIds
-        const jobsById = new Map(recentResponse.jobs.map((job) => [job.id, job]))
-        for (const job of pausedResponse.jobs) {
-          jobsById.set(job.id, job)
-        }
-        const active = new Set<string>()
-        const paused = new Set<string>()
-        const staleThresholdMs = 10 * 60 * 1000
-        for (const job of jobsById.values()) {
-          if (!job.sourceId) continue
-          if (job.status === 'queued') {
-            active.add(job.sourceId)
-          } else if (job.status === 'paused') {
-            paused.add(job.sourceId)
-          } else if (job.status === 'processing') {
-            const age = Date.now() - new Date(job.updatedAt).getTime()
-            if (age < staleThresholdMs) {
-              active.add(job.sourceId)
-            }
-          }
-        }
-        const nextPendingResumeSourceIds = new Set(effectivePendingResumeSourceIds)
-        let pendingResumeChanged = false
-        for (const sourceId of effectivePendingResumeSourceIds) {
-          if (!paused.has(sourceId)) {
-            nextPendingResumeSourceIds.delete(sourceId)
-            pendingResumeChanged = true
-            continue
-          }
-          paused.delete(sourceId)
-          active.add(sourceId)
-        }
-        if (pendingResumeChanged) {
-          setPendingResumeSourceIds(nextPendingResumeSourceIds)
-          setCrawlStatusVersion((version) => version + 1)
-        }
-        setCrawlingSourceIds(active)
-        setPausedSourceIds(paused)
-      })
-      .catch(() => {})
-  }, [pendingResumeSourceIds])
-
-  const loadSources = async () => {
-    if (isWorkspaceLoading) {
-      setIsLoading(true)
-      return
-    }
-
-    if (!activeWorkspaceId) {
-      setSources([])
-      setIsLoading(false)
-      return
-    }
-    setIsLoading(true)
-    try {
-      const response = await documentsApi.listSources()
-      setSources(response.sources)
-      setError(null)
-    } catch (loadError) {
-      setSources([])
-      setError(getApiErrorMessage(loadError, 'Failed to load sources.'))
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Load request sets source list/error state in this effect.
-    void loadSources()
-    refreshCrawlingStatus()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId, isWorkspaceLoading])
-
-  useEffect(() => {
-    if (crawlingSourceIds.size === 0) return
-    const interval = setInterval(() => {
-      refreshCrawlingStatus()
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [crawlingSourceIds.size, refreshCrawlingStatus])
-
   const handleRecrawl = async (source: DocumentSourceListItem) => {
     setRecrawlingSourceId(source.id)
-    const nextPendingResumeSourceIds = new Set(pendingResumeSourceIds)
-    nextPendingResumeSourceIds.delete(source.id)
-    setPendingResumeSourceIds(nextPendingResumeSourceIds)
     try {
-      await documentsApi.recrawlSource(source.id)
-      setCrawlingSourceIds((prev) => new Set([...prev, source.id]))
-      setPausedSourceIds((prev) => {
-        const next = new Set(prev)
-        next.delete(source.id)
-        return next
-      })
+      const result = await documentsApi.recrawlSource(source.id)
+      invalidateDashboardQueries(sourceMutationInvalidationKinds.recrawl)
+      updateCrawlOverlay({ action: 'recrawl', sourceId: source.id, jobId: result.jobId })
       setCrawlStatusVersion((version) => version + 1)
-      refreshCrawlingStatus(nextPendingResumeSourceIds)
     } catch {
       // Recrawl failure is visible via the crawl jobs banner
     } finally {
@@ -807,9 +814,6 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
   const handlePause = async (source: DocumentSourceListItem) => {
     setPausingSourceId(source.id)
     setCrawlActionError(null)
-    const nextPendingResumeSourceIds = new Set(pendingResumeSourceIds)
-    nextPendingResumeSourceIds.delete(source.id)
-    setPendingResumeSourceIds(nextPendingResumeSourceIds)
     try {
       const result = await runSourceCrawlAction({
         request: () => documentsApi.pauseSourceCrawl(source.id),
@@ -819,14 +823,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
         setCrawlActionError(result.error)
         return
       }
-      setCrawlingSourceIds((prev) => {
-        const next = new Set(prev)
-        next.delete(source.id)
-        return next
-      })
-      setPausedSourceIds((prev) => new Set([...prev, source.id]))
+      invalidateDashboardQueries(sourceMutationInvalidationKinds.pause)
+      if (shouldOverlayPausedSource(result.result.pausedJobCount)) {
+        updateCrawlOverlay({ action: 'pause', sourceId: source.id })
+      }
       setCrawlStatusVersion((version) => version + 1)
-      refreshCrawlingStatus(nextPendingResumeSourceIds)
     } finally {
       setPausingSourceId(null)
     }
@@ -844,32 +845,16 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
         setCrawlActionError(result.error)
         return
       }
+      invalidateDashboardQueries(sourceMutationInvalidationKinds.resume)
       const resumeDispatchWarning = getResumeDispatchWarning(result.result)
       if (resumeDispatchWarning) {
         setCrawlActionError(resumeDispatchWarning)
       }
       const pendingResumeJobCount = result.result.pendingResumeJobCount ?? 0
-      if (pendingResumeJobCount > 0) {
-        setPendingResumeSourceIds((prev) => new Set([...prev, source.id]))
+      if (result.result.resumedJobCount > 0 || pendingResumeJobCount > 0) {
+        updateCrawlOverlay({ action: 'resume', sourceId: source.id })
       }
-      setPausedSourceIds((prev) => applySourceResumeResult({
-        sourceId: source.id,
-        resumedJobCount: result.result.resumedJobCount,
-        pendingResumeJobCount: result.result.pendingResumeJobCount,
-        pausedSourceIds: prev,
-        crawlingSourceIds: new Set(),
-      }).pausedSourceIds)
-      setCrawlingSourceIds((prev) => applySourceResumeResult({
-        sourceId: source.id,
-        resumedJobCount: result.result.resumedJobCount,
-        pendingResumeJobCount: result.result.pendingResumeJobCount,
-        pausedSourceIds: new Set(),
-        crawlingSourceIds: prev,
-      }).crawlingSourceIds)
       setCrawlStatusVersion((version) => version + 1)
-      if (pendingResumeJobCount === 0) {
-        refreshCrawlingStatus()
-      }
     } finally {
       setResumingSourceId(null)
     }
@@ -881,11 +866,13 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
     setDeleteError(null)
     try {
       await documentsApi.deleteSource(deleteCandidate.id)
+      invalidateDashboardQueries(sourceMutationInvalidationKinds.delete)
+      removeSourceListRow(queryClient, listQueryKey, deleteCandidate.id)
+      removeCrawlOverlay(deleteCandidate.id)
       setDeleteCandidate(null)
       if (expandedSourceId === deleteCandidate.id) {
         setExpandedSourceId(null)
       }
-      void loadSources()
     } catch (err) {
       setDeleteError(getApiErrorMessage(err, 'Failed to delete source.'))
     } finally {
@@ -916,7 +903,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
           <p className="font-medium text-foreground">Unable to load sources</p>
           <p className="mt-1 text-sm text-muted-foreground">{error}</p>
         </div>
-        <Button type="button" variant="outline" onClick={() => void loadSources()}>
+        <Button type="button" variant="outline" onClick={() => void sourcesQuery.refetch()}>
           <RefreshCw className="mr-2 h-4 w-4" />
           Retry
         </Button>
@@ -1098,17 +1085,15 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
                         onOpenCrawlLog={() => setCrawlLogSource(source)}
                         onOpenConnectorSettings={() => setConnectorSetupSource(source)}
                         onSourceUpdated={(updated) => {
-                          setSources((current) =>
-                            current.map((entry) => (entry.id === updated.id ? updated : entry)),
-                          )
+                          patchSourceListRow(queryClient, listQueryKey, updated.id, () => updated)
                         }}
                         onSettingsSaved={(settings) => {
-                          setSources((current) =>
-                            current.map((entry) =>
-                              entry.id === source.id ? { ...entry, crawlSettings: settings } : entry,
-                            ),
-                          )
+                          patchSourceListRow(queryClient, listQueryKey, source.id, (entry) => ({
+                            ...entry,
+                            crawlSettings: settings,
+                          }))
                         }}
+                        onReprocessComplete={() => invalidateDashboardQueries(sourceMutationInvalidationKinds.reprocess)}
                         ingestionSettings={ingestionSettings}
                         onIngestionSettingsUpdated={setIngestionSettings}
                       />
@@ -1135,7 +1120,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }:
           onOpenChange={(open) => {
             if (!open) {
               setConnectorSetupSource(null)
-              void loadSources()
+              invalidateDashboardQueries(['crawl.status_changed'])
             }
           }}
         />

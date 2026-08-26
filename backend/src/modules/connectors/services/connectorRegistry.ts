@@ -20,6 +20,7 @@ import type { ApprovalDecisionService } from "../../approvals/public.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { OperatorReplyService } from "../../handoff/public.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   decryptField,
   encryptField,
@@ -123,6 +124,7 @@ export class ConnectorRegistry {
     operatorReplyService?: Pick<OperatorReplyService, "reply">;
     auditService?: Pick<AuditPort, "record">;
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+    workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
     assertPublicUrl?: (url: string) => Promise<void>;
   }): Promise<void> {
     for (const plugin of this.plugins.values()) {
@@ -136,6 +138,7 @@ export class ConnectorRegistry {
           operatorReplyService: context.operatorReplyService,
           auditService: context.auditService,
           metricsRegistry: context.metricsRegistry,
+          workspaceInvalidationPublisher: context.workspaceInvalidationPublisher,
           assertPublicUrl: context.assertPublicUrl,
           state: this.createPluginState(context.db, plugin.id),
           http: this.createHttpHost(plugin.id),

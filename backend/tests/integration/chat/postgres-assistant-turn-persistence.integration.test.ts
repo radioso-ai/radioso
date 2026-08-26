@@ -74,7 +74,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const sessionId = conversation.id;
     const assistantMessageId = randomUUID();
 
-    const message = await persistence.completeAssistantTurn({
+    const { message } = await persistence.completeAssistantTurn({
       workspaceId: workspace.id,
       conversationId: conversation.id,
       assistantMessage: {
@@ -315,6 +315,126 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(ownershipAudit.event_type).toBe("hitl.ownership");
   });
 
+  it("returns facts to a caller-owned transaction while leaving a later rollback silent and durable-state free", async () => {
+    const { accountId, workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+    let returnedFacts: Awaited<ReturnType<PostgresAssistantTurnPersistence["completeAssistantTurn"]>>["committedFacts"] | undefined;
+
+    await expect(database.kysely.transaction().execute(async (transaction) => {
+      const result = await persistence.completeAssistantTurn({
+        workspaceId: workspace.id,
+        accountId,
+        conversationId: conversation.id,
+        actions: [{ type: "contact.send", payload: { email: "visitor@example.com" } }],
+        assistantMessage: {
+          id: assistantMessageId,
+          conversationId: conversation.id,
+          workspaceId: workspace.id,
+          role: "assistant",
+          content: "This transaction will roll back.",
+        },
+        auditEvent: {
+          eventType: "chat.answer",
+          eventStatus: "success",
+          workspaceId: workspace.id,
+          metadata: {},
+        },
+        transaction,
+      });
+      returnedFacts = result.committedFacts;
+      throw new Error("rollback requested");
+    })).rejects.toThrow("rollback requested");
+
+    expect(returnedFacts).toEqual({
+      insertedActionTypes: ["contact.send"],
+      decisionCreated: false,
+      ownershipChanged: false,
+    });
+    const counts = await database.queryOne<{ messages: string; actions: string }>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM messages WHERE id = $1) AS messages,
+         (SELECT COUNT(*)::text FROM routine_action_requests WHERE conversation_id = $2) AS actions`,
+      [assistantMessageId, conversation.id],
+    );
+    expect(counts).toEqual({ messages: "0", actions: "0" });
+  });
+
+  it("returns exact committed facts without translating them into product invalidations", async () => {
+    const { accountId, workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+    const result = await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      accountId,
+      conversationId: conversation.id,
+      actions: [{ type: "contact.send", payload: { email: "visitor@example.com" } }],
+      ownershipHandoff: { reason: "needs_operator" },
+      pendingDecisionTransition: {
+        handle: `decision_${randomUUID()}`,
+        conversationId: conversation.id,
+        sessionId: conversation.id,
+        workspaceId: workspace.id,
+        agentId: randomUUID(),
+        routineId: "routine_1",
+        stepId: "approval",
+        reason: "Needs review",
+        options: [{ id: "approve", label: "Approve" }],
+        deciderScope: { kind: "workspace_member" },
+        contentHash: `sha256:${randomUUID()}`,
+        deadline: null,
+      },
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "I have handed this to an operator.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    expect(result.committedFacts).toEqual({
+      insertedActionTypes: ["contact.send"],
+      decisionCreated: true,
+      ownershipChanged: true,
+    });
+    expect(result).not.toHaveProperty("postCommitReceipt");
+  });
+
+  it("does not report a duplicate contact action as newly inserted", async () => {
+    const { accountId, workspace, conversation } = await seedConversation();
+    const action = { type: "contact.send", payload: { email: "visitor@example.com" } };
+    const complete = (messageId: string) => persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      accountId,
+      conversationId: conversation.id,
+      actions: [action],
+      assistantMessage: {
+        id: messageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Contact requested.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    const first = await complete(randomUUID());
+    const duplicate = await complete(randomUUID());
+
+    expect(first.committedFacts.insertedActionTypes).toEqual(["contact.send"]);
+    expect(duplicate.committedFacts.insertedActionTypes).toEqual([]);
+  });
+
   // This transactional raw INSERT is the second write path for assistant turns
   // (MessageRepository.create is the other). A column wired on only one of them is
   // NULL for half the traffic, so the persister gets its own assertion.
@@ -463,7 +583,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     };
     const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
 
-    const message = await persistenceWithPush.completeAssistantTurn({
+    const { message } = await persistenceWithPush.completeAssistantTurn({
       workspaceId: workspace.id,
       conversationId: conversation.id,
       actions: [{ type: "contact.send", payload: { email: "visitor@example.com" } }],

@@ -100,6 +100,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       workspaceName: z.string(),
       accountId: z.string().uuid(),
       organizationName: z.string(),
+      realtimeEnabled: z.boolean(),
     }),
   );
 

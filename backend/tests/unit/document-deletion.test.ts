@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DocumentDeletionService } from "../../src/modules/documents/services/documentDeletionService.js";
 import { createAuditService } from "../support/fakes.js";
@@ -74,6 +74,101 @@ describe("document deletion", () => {
         metadata: { documentId: "doc-1" },
       }),
     );
+  });
+
+  it("publishes only after a true delete and before post-delete audit", async () => {
+    const order: string[] = [];
+    const auditService = createAuditService();
+    vi.spyOn(auditService, "record").mockImplementation(async () => {
+      order.push("audit");
+    });
+    const publisher = {
+      enqueue: vi.fn(() => {
+        order.push("publish");
+        return { accepted: true as const, coalesced: false };
+      }),
+    };
+    const service = new DocumentDeletionService(
+      {
+        async findByIdAndWorkspaceId() {
+          return {
+            id: "doc-1",
+            workspaceId: "workspace-1",
+            title: "Inline",
+            sourceContent: "body",
+            markdownContent: "body",
+            metadata: {},
+            sourceKind: "inline_text" as const,
+            sourceFilename: null,
+            sourceMimeType: "text/plain",
+            sourceStorageBucket: null,
+            sourceStorageObject: null,
+            sourceStorageGeneration: null,
+            sourceSizeBytes: null,
+            status: "ready",
+            revision: 1,
+            failureReason: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            retrievalEnabled: true,
+            retrievalExpiresAt: null,
+          };
+        },
+        async deleteByIdAndWorkspaceId() {
+          order.push("delete");
+          return true;
+        },
+      },
+      { async upload() { throw new Error("unused"); }, async read() { throw new Error("unused"); }, async delete() { throw new Error("unused"); } },
+      auditService,
+      undefined,
+      publisher,
+    );
+
+    await service.delete({ workspaceId: "workspace-1", documentId: "doc-1" });
+
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+    expect(order).toEqual(["delete", "publish", "audit"]);
+  });
+
+  it("does not publish when the conditional delete reports no affected row", async () => {
+    const publisher = { enqueue: vi.fn() };
+    const service = new DocumentDeletionService(
+      {
+        async findByIdAndWorkspaceId() {
+          return {
+            id: "doc-1",
+            workspaceId: "workspace-1",
+            title: "Inline",
+            sourceContent: "body",
+            markdownContent: "body",
+            metadata: {},
+            sourceKind: "inline_text" as const,
+            sourceFilename: null,
+            sourceMimeType: "text/plain",
+            sourceStorageBucket: null,
+            sourceStorageObject: null,
+            sourceStorageGeneration: null,
+            sourceSizeBytes: null,
+            status: "ready",
+            revision: 1,
+            failureReason: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            retrievalEnabled: true,
+            retrievalExpiresAt: null,
+          };
+        },
+        async deleteByIdAndWorkspaceId() { return false; },
+      },
+      { async upload() { throw new Error("unused"); }, async read() { throw new Error("unused"); }, async delete() { throw new Error("unused"); } },
+      createAuditService(),
+      undefined,
+      publisher,
+    );
+
+    await expect(service.delete({ workspaceId: "workspace-1", documentId: "doc-1" })).rejects.toMatchObject({ statusCode: 404 });
+    expect(publisher.enqueue).not.toHaveBeenCalled();
   });
 
   it("removes the document record before attempting uploaded source cleanup", async () => {

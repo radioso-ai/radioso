@@ -34,6 +34,8 @@
     "evals": "tsx ./scripts/runEvals.ts",
     "evals:ci": "tsx ./scripts/runEvals.ts --samples 5",
     "evals:update-baseline": "tsx ./scripts/runEvals.ts --update-baseline",
+    "evals:copilot": "tsx ./scripts/runCopilotEvals.ts",
+    "evals:copilot:update-baseline": "tsx ./scripts/runCopilotEvals.ts --update-baseline",
     "db:migrate": "tsx ./scripts/migrate.ts",
     "db:schema": "bash ./scripts/dump-schema.sh",
     "db:schema:check": "bash ./scripts/dump-schema.sh --check",

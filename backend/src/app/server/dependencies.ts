@@ -464,75 +464,81 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   });
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository: repositories.workspaceRepository });
+  const copilotCapabilityRunner = new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) });
+  const copilotPrompt = loadPromptTemplate("copilot/system.md");
+  // Named rather than inlined so the copilot's behavioural eval suite can drive a real turn through
+  // the same catalog, prompt, and runner the dashboard uses. A suite that assembled its own would
+  // measure a copilot nobody talks to.
+  const copilotToolCatalog = createCopilotToolCatalog({
+    agentService: {
+      get: agentService.get.bind(agentService),
+      listExisting: agentService.listExisting.bind(agentService),
+      resolve: agentService.resolve.bind(agentService),
+    },
+    routineDefinitionService: {
+      get: routineDefinitionService.get.bind(routineDefinitionService),
+      list: routineDefinitionService.list.bind(routineDefinitionService),
+    },
+    chatHistoryService: chat.chatHistoryService,
+    agentTurnProbe: agentTurnProbeService,
+    documentSearchService: retrieval.documentSearchService,
+    evalResultsService: evalCaseService,
+    pendingApprovals: chat.approvalDecisionService,
+    evalCaseCapture: evalCaseCaptureService,
+    evalSuiteProbe: evalSuiteProbeService,
+    evalCaseReplay: evalCaseReplayService,
+    proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
+    qualitySignalsService,
+    audiencePulseService,
+    documentStatusService: documents.documentIngestionService,
+    documentSourceStatusService: repositories.documentSourceRepository,
+    agentSkillsService,
+    skillCapabilityRegistry,
+    workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
+    workspaceSettings: {
+      async getRetrievalDefaults(workspaceId) {
+        return retrievalDefaultsProvider.getDefaults(workspaceId);
+      },
+      async getIngestionSettings(workspaceId) {
+        return settings.ingestionSettingsService.getForWorkspace(workspaceId);
+      },
+      async getEmbeddingCoverage(workspaceId) {
+        return repositories.documentProcessingJobRepository
+          .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+      },
+      async listLlmModels(workspaceId) {
+        return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+      },
+      async getProviderCredentialHealth(workspaceId) {
+        return {
+          encryptionConfigured: workspaceProviderCredentialsService.isEncryptionConfigured(),
+          credentials: await workspaceProviderCredentialsService.listConfigured(workspaceId),
+          envProviderAvailability: {
+            openai: Boolean(env.OPENAI_API_KEY),
+            "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
+            gemini: Boolean(env.GEMINI_API_KEY),
+            claude: Boolean(env.ANTHROPIC_API_KEY),
+          },
+        };
+      },
+      async getGeneralSettings(workspaceId) {
+        return platformSettingsService.getForWorkspace(workspaceId);
+      },
+    },
+    proposalRepository: repositories.copilotRepository,
+    proposalAdapters: copilotProposalAdapters,
+    auditService: infrastructure.auditService,
+    logger,
+  });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
-    capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
+    capabilityRunner: copilotCapabilityRunner,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     proposalAdapters: copilotProposalAdapters,
-    prompt: loadPromptTemplate("copilot/system.md"),
-    tools: createCopilotToolCatalog({
-      agentService: {
-        get: agentService.get.bind(agentService),
-        listExisting: agentService.listExisting.bind(agentService),
-        resolve: agentService.resolve.bind(agentService),
-      },
-      routineDefinitionService: {
-        get: routineDefinitionService.get.bind(routineDefinitionService),
-        list: routineDefinitionService.list.bind(routineDefinitionService),
-      },
-      chatHistoryService: chat.chatHistoryService,
-      agentTurnProbe: agentTurnProbeService,
-      documentSearchService: retrieval.documentSearchService,
-      evalResultsService: evalCaseService,
-      pendingApprovals: chat.approvalDecisionService,
-      evalCaseCapture: evalCaseCaptureService,
-      evalSuiteProbe: evalSuiteProbeService,
-      evalCaseReplay: evalCaseReplayService,
-      proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
-      qualitySignalsService,
-      audiencePulseService,
-      documentStatusService: documents.documentIngestionService,
-      documentSourceStatusService: repositories.documentSourceRepository,
-      agentSkillsService,
-      skillCapabilityRegistry,
-      workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
-      workspaceSettings: {
-        async getRetrievalDefaults(workspaceId) {
-          return retrievalDefaultsProvider.getDefaults(workspaceId);
-        },
-        async getIngestionSettings(workspaceId) {
-          return settings.ingestionSettingsService.getForWorkspace(workspaceId);
-        },
-        async getEmbeddingCoverage(workspaceId) {
-          return repositories.documentProcessingJobRepository
-            .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
-        },
-        async listLlmModels(workspaceId) {
-          return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
-        },
-        async getProviderCredentialHealth(workspaceId) {
-          return {
-            encryptionConfigured: workspaceProviderCredentialsService.isEncryptionConfigured(),
-            credentials: await workspaceProviderCredentialsService.listConfigured(workspaceId),
-            envProviderAvailability: {
-              openai: Boolean(env.OPENAI_API_KEY),
-              "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
-              gemini: Boolean(env.GEMINI_API_KEY),
-              claude: Boolean(env.ANTHROPIC_API_KEY),
-            },
-          };
-        },
-        async getGeneralSettings(workspaceId) {
-          return platformSettingsService.getForWorkspace(workspaceId);
-        },
-      },
-      proposalRepository: repositories.copilotRepository,
-      proposalAdapters: copilotProposalAdapters,
-      auditService: infrastructure.auditService,
-      logger,
-    }),
+    prompt: copilotPrompt,
+    tools: copilotToolCatalog,
   });
   return {
     env,
@@ -649,6 +655,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorDb: infrastructure.database,
     chatInferencePipeline,
     operatorCopilotService,
+    copilotToolCatalog,
+    copilotCapabilityRunner,
+    copilotPrompt,
+    copilotWorkspaceRouteKeyResolver,
     qualitySignalsService,
     audiencePulseService,
     copilotRepository: repositories.copilotRepository,

@@ -75,6 +75,16 @@ export type SsePresenterInput = {
 };
 
 type CloseMode = "none" | "end" | "destroy";
+type SsePrecommitExpiryReason = "session_expiring" | "runtime_expired";
+
+export class SsePrecommitExpiredError extends Error {
+  constructor(readonly reason: SsePrecommitExpiryReason) {
+    super(reason === "session_expiring"
+      ? "Realtime session expires too soon to open a stream"
+      : "Realtime stream preflight exceeded its runtime deadline");
+    this.name = "SsePrecommitExpiredError";
+  }
+}
 
 const SESSION_TIMEOUT_SAFETY_MS = 30_000;
 const abortError = () => Object.assign(new Error("Realtime stream operation aborted"), { name: "AbortError" });
@@ -105,6 +115,7 @@ export class SsePresenter {
   private nextHeartbeatAt: number | undefined;
   private riskCloseAt: number | undefined;
   private effectiveExpiryAt: number | undefined;
+  private effectiveExpiryReason: "session" | "runtime" | undefined;
   private pumping = false;
   private readyPending = false;
   private readonly listeners: Array<[ResponseEvent, () => void]> = [];
@@ -126,9 +137,17 @@ export class SsePresenter {
       const identity = await this.awaitDependency((signal) => this.input.authorize(signal), this.input.limits.authTimeoutMs);
       if (!identity || this.closed) return;
 
+      this.effectiveExpiryAt = this.effectiveExpiry(identity.sessionExpiresAt);
+      if (this.input.clock.monotonicNow() >= this.effectiveExpiryAt) {
+        throw this.precommitExpiredError();
+      }
+
       const admissionIdentity = { accountId: identity.accountId, workspaceId: identity.workspaceId, principalId: identity.principalId };
       await this.awaitDependency((signal) => this.input.admission.checkReconnect(admissionIdentity));
       if (this.closed) return;
+      if (this.input.clock.monotonicNow() >= this.effectiveExpiryAt) {
+        throw this.precommitExpiredError();
+      }
 
       const lease = await this.awaitDependency(
         (signal) => this.input.admission.admit(admissionIdentity),
@@ -147,10 +166,8 @@ export class SsePresenter {
       this.observeLeaseRisk(lease.risk);
       if (this.closed) return;
 
-      this.effectiveExpiryAt = this.effectiveExpiry(identity.sessionExpiresAt);
       if (this.input.clock.monotonicNow() >= this.effectiveExpiryAt) {
-        await this.close("none");
-        return;
+        throw this.precommitExpiredError();
       }
 
       const connection = this.createConnection(identity.workspaceId);
@@ -164,10 +181,13 @@ export class SsePresenter {
         await this.settleLateCleanup();
         return;
       }
-      if (this.closed || this.input.clock.monotonicNow() >= this.effectiveExpiryAt) {
+      if (this.closed) {
         await this.releaseAttachment(attachment);
-        await this.close("none");
         return;
+      }
+      if (this.input.clock.monotonicNow() >= this.effectiveExpiryAt) {
+        await this.releaseAttachment(attachment);
+        throw this.precommitExpiredError();
       }
       this.attachment = attachment;
 
@@ -235,12 +255,19 @@ export class SsePresenter {
   private effectiveExpiry(sessionExpiresAt: Date): number {
     const now = this.input.clock.monotonicNow();
     const sessionRemaining = sessionExpiresAt.getTime() - this.input.clock.wallNow() - SESSION_TIMEOUT_SAFETY_MS;
-    return Math.min(
-      this.startedAt + this.input.limits.streamAgeMs,
-      now + sessionRemaining,
-      this.startedAt + this.input.limits.gatewayTimeoutMs - SESSION_TIMEOUT_SAFETY_MS,
-      this.startedAt + this.input.limits.edgeTimeoutMs - SESSION_TIMEOUT_SAFETY_MS,
-    );
+    const deadlines = [
+      { at: now + sessionRemaining, reason: "session" as const },
+      { at: this.startedAt + this.input.limits.streamAgeMs, reason: "runtime" as const },
+      { at: this.startedAt + this.input.limits.gatewayTimeoutMs - SESSION_TIMEOUT_SAFETY_MS, reason: "runtime" as const },
+      { at: this.startedAt + this.input.limits.edgeTimeoutMs - SESSION_TIMEOUT_SAFETY_MS, reason: "runtime" as const },
+    ];
+    const selected = deadlines.reduce((earliest, candidate) => candidate.at < earliest.at ? candidate : earliest);
+    this.effectiveExpiryReason = selected.reason;
+    return selected.at;
+  }
+
+  private precommitExpiredError(): SsePrecommitExpiredError {
+    return new SsePrecommitExpiredError(this.effectiveExpiryReason === "session" ? "session_expiring" : "runtime_expired");
   }
 
   private observeLeaseRisk(risk: Promise<AdmissionLeaseRisk>): void {

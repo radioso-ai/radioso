@@ -303,6 +303,28 @@ describe("workspace events route contract", () => {
     expect(JSON.stringify(fixture.telemetryOutcome.mock.calls)).not.toMatch(/4d7293c8|user-42|dashboard-session-token|invalid|forbidden/);
   });
 
+  it("returns 401 instead of leaving a valid but near-expiring session open without headers", async () => {
+    const authenticate = vi.fn(async () => ({
+      ...identity(),
+      sessionExpiresAt: new Date(Date.now() + 20_000),
+    }));
+    const fixture = await createRouteFixture({ authenticate });
+
+    const response = await request(fixture.app)
+      .get("/api/v1/events")
+      .set(headers())
+      .timeout({ response: 250, deadline: 500 });
+
+    expect(response.status).toBe(401);
+    expectNoRetryAfter(response);
+    expect(response.body).toEqual({ error: { code: "unauthorized", message: "Realtime session is not authorized" } });
+    expect(fixture.checkReconnect).not.toHaveBeenCalled();
+    expect(fixture.admit).not.toHaveBeenCalled();
+    expect(fixture.attach).not.toHaveBeenCalled();
+    expect(fixture.leaseRelease).not.toHaveBeenCalled();
+    expect(fixture.telemetryOutcome).toHaveBeenCalledWith("auth");
+  });
+
   it("returns 404 after authentication when realtime rollout is disabled", async () => {
     const rollout = { allows: vi.fn(() => false) };
     const fixture = await createRouteFixture({ rollout });

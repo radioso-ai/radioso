@@ -559,7 +559,10 @@ describe("SsePresenter RED contract", () => {
     await vi.waitFor(() => expect(f.attach).toHaveBeenCalledOnce());
     f.clock.advance(21_000);
     resolveAttachment(f);
-    await opening;
+    await expect(opening).rejects.toMatchObject({
+      name: "SsePrecommitExpiredError",
+      reason: "session_expiring",
+    });
     expect(f.response.commitSse).not.toHaveBeenCalled();
     expect(f.response.writes).toHaveLength(0);
     expect(f.release).toHaveBeenCalledOnce();
@@ -577,7 +580,10 @@ describe("SsePresenter RED contract", () => {
     await vi.waitFor(() => expect(f.admit).toHaveBeenCalledOnce());
     f.clock.advance(21_000);
     pendingAdmit.resolve({ risk: f.leaseRisk.promise, release: f.leaseRelease });
-    await opening;
+    await expect(opening).rejects.toMatchObject({
+      name: "SsePrecommitExpiredError",
+      reason: "session_expiring",
+    });
     expect(f.attach).not.toHaveBeenCalled();
     expect(f.response.commitSse).not.toHaveBeenCalled();
     expect(f.response.writes).toHaveLength(0);
@@ -635,11 +641,15 @@ describe("SsePresenter RED contract", () => {
     f.clock.advance(21_000);
     f.clock.jumpWall(-7 * 24 * 60 * 60_000);
     auth.resolve({ accountId, workspaceId, principalId, sessionExpiresAt: new Date(f.clock.wallNow() + 120_000) });
-    await opening;
+    await expect(opening).rejects.toMatchObject({
+      name: "SsePrecommitExpiredError",
+      reason: "runtime_expired",
+    });
     expect(f.attach).not.toHaveBeenCalled();
     expect(f.response.commitSse).not.toHaveBeenCalled();
     expect(f.response.writes).toHaveLength(0);
-    expect(f.leaseRelease).toHaveBeenCalledOnce();
+    expect(f.admit).not.toHaveBeenCalled();
+    expect(f.leaseRelease).not.toHaveBeenCalled();
     expect(attachmentRelease).not.toHaveBeenCalled();
   });
 

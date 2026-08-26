@@ -6,6 +6,7 @@ import { RealtimeAdmissionError } from "../domain/contracts.js";
 import type { RealtimeRolloutPolicy } from "../domain/realtimeRolloutPolicy.js";
 import {
   SsePresenter,
+  SsePrecommitExpiredError,
   type SsePresenterClock,
   type SsePresenterLimits,
   type SsePresenterRegistration,
@@ -113,6 +114,9 @@ export const createWorkspaceEventsRoutes = (deps: WorkspaceEventsRouteDeps): Rou
         abortPreflight: () => { if (!response.headersSent) requestAbort.abort(); },
         forceDestroy: () => response.destroy(),
       }) ?? opening);
+      if (!response.headersSent && !requestAbort.signal.aborted) {
+        throw new Error("Realtime presenter closed before committing a response");
+      }
     } catch (error) {
       if (requestAbort.signal.aborted || response.headersSent) return;
       mapPrecommitError(response, error, deps.telemetry);
@@ -187,6 +191,11 @@ const expressSseResponse = (response: Response, onCommit: () => void): SseRespon
 });
 
 const mapPrecommitError = (response: Response, error: unknown, telemetry?: WorkspaceEventsRouteTelemetry): void => {
+  if (error instanceof SsePrecommitExpiredError && error.reason === "session_expiring") {
+    telemetry?.outcome("auth");
+    sendError(response, 401, "unauthorized", "Realtime session is not authorized");
+    return;
+  }
   if (error instanceof RealtimeSessionAuthError) {
     telemetry?.outcome("auth");
     sendError(response, error.statusCode, error.statusCode === 401 ? "unauthorized" : "forbidden", "Realtime session is not authorized");

@@ -15,6 +15,7 @@ tags:
   - name: Auth
   - name: Account
   - name: Workspace
+  - name: Realtime
   - name: Assistant
   - name: History
   - name: Context Variables
@@ -10241,6 +10242,72 @@ components:
           type: boolean
       required:
         - pending
+    WorkspaceInvalidationKind:
+      type: string
+      enum:
+        - document.status_changed
+        - crawl.status_changed
+        - crawl.progress
+        - conversation.created
+        - conversation.turn_committed
+        - conversation.contact_delivery_changed
+        - conversation.ownership_changed
+        - search.created
+        - hitl.decision_created
+        - hitl.decision_resolved
+        - quality.feedback_changed
+        - quality.triage_changed
+    WorkspaceEventReadyData:
+      type: object
+      properties:
+        protocolVersion:
+          type: number
+          enum:
+            - 1
+      required:
+        - protocolVersion
+      additionalProperties: false
+    WorkspaceEventInvalidateData:
+      type: object
+      properties:
+        protocolVersion:
+          type: number
+          enum:
+            - 1
+        changeKinds:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkspaceInvalidationKind"
+          minItems: 1
+          maxItems: 12
+          description: Unique invalidation kinds; clients ignore unknown future kinds and retain their polling floor.
+          uniqueItems: true
+      required:
+        - protocolVersion
+        - changeKinds
+      additionalProperties: false
+    WorkspaceEventResyncData:
+      type: object
+      properties:
+        protocolVersion:
+          type: number
+          enum:
+            - 1
+      required:
+        - protocolVersion
+      additionalProperties: false
+    WorkspaceEventStream:
+      type: string
+      description: "A server-sent event stream with named ready, invalidate, and resync events. Each data field is JSON matching the corresponding WorkspaceEvent*Data schema. Heartbeat records are SSE comments (`: heartbeat`) and carry no data. Protocol version 1 has no event ID, cursor, replay, timestamp, or resource identifier."
+      example: |
+        event: ready
+        data: {"protocolVersion":1}
+
+        event: invalidate
+        data: {"protocolVersion":1,"changeKinds":["document.status_changed"]}
+
+        event: resync
+        data: {"protocolVersion":1}
     PendingApprovalDecisionOption:
       type: object
       properties:
@@ -23630,4 +23697,98 @@ paths:
         Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/v1/events:
+    get:
+      tags:
+        - Realtime
+      summary: Stream workspace dashboard invalidations
+      description: Opens the dashboard's workspace-scoped SSE transport after authentication, admission, and broker subscription succeed. Requires the dashboard session cookie, X-Workspace-Id, and an Accept header containing text/event-stream. Bearer API tokens and anonymous public-chat sessions are rejected. This transport is not an API-token SDK or MCP event surface.
+      operationId: streamWorkspaceEvents
+      security: *a48
+      parameters:
+        - schema:
+            type: string
+            description: Must contain the text/event-stream media range.
+            example: text/event-stream
+          required: true
+          in: header
+          name: Accept
+      responses:
+        "200":
+          description: Workspace event stream committed; ready is the first data event
+          headers:
+            Cache-Control:
+              description: Disables intermediary transformation and caching.
+              schema:
+                type: string
+                const: no-cache, no-transform
+            Connection:
+              description: Keeps the HTTP connection open for the event stream.
+              schema:
+                type: string
+                const: keep-alive
+            X-Accel-Buffering:
+              description: Disables reverse-proxy response buffering.
+              schema:
+                type: string
+                const: no
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/WorkspaceEventStream"
+        "400":
+          description: Accept or workspace selection is malformed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Dashboard session is missing, invalid, expired, or too near expiry to open a stream
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Dashboard session cannot access the selected workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Realtime is disabled for this deployment or account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "405":
+          description: Only GET is supported
+          headers:
+            Allow:
+              description: Allowed method.
+              schema:
+                type: string
+                const: GET
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Reconnect or distributed workspace/account/principal admission limit exceeded
+          headers: &a88
+            Retry-After:
+              description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
+              schema:
+                type: string
+                pattern: ^[1-9][0-9]*$
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
+          headers: *a88
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 webhooks: {}

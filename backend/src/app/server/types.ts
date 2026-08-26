@@ -108,6 +108,8 @@ import type {
 } from "../../modules/embeddingProfiles/public.js";
 import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
+import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
+import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
@@ -239,6 +241,15 @@ export interface AppDependencies {
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;
   operatorCopilotService: OperatorCopilotService;
+  /**
+   * The three pieces the copilot turn is assembled from, published alongside the service so the
+   * behavioural eval suite can drive a real turn through the same catalog, prompt, and runner
+   * rather than assembling a parallel copilot that nobody talks to.
+   */
+  copilotToolCatalog: ReadonlyArray<CopilotToolDescriptor>;
+  copilotCapabilityRunner: AgenticCapabilityRunner;
+  copilotPrompt: string;
+  copilotWorkspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   qualitySignalsService: QualityTurnsService;
   audiencePulseService: AudiencePulsePort;
   copilotRepository: CopilotRepositoryPort;

@@ -3,12 +3,9 @@ import { z } from "zod";
 
 import {
   OperatorCopilotService,
-  type CopilotConversation,
-  type CopilotMessage,
-  type CopilotProposal,
-  type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
 import { copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
+import { InMemoryCopilotRepository as MemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
 
 const now = new Date("2026-08-11T00:00:00.000Z");
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
@@ -228,23 +225,3 @@ const tool = (name: string, requiredPermission: "workspace.agents.read" | "works
   dashboardSubject: { type: "workspace" },
   createTool: () => ({ name, description: "reader", inputSchema: z.object({}), outputSchema: z.object({ value: z.string() }), invoke }),
 });
-
-class MemoryCopilotRepository implements CopilotRepositoryPort {
-  conversations: CopilotConversation[] = [];
-  messages: CopilotMessage[] = [];
-  proposals: CopilotProposal[] = [];
-  async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const conversation = { id: `c${this.conversations.length}`, ...input, status: "idle" as const, createdAt: now, updatedAt: now }; this.conversations.push(conversation); return conversation; }
-  async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { return this.conversations.find((conversation) => conversation.id === input.id && conversation.workspaceId === input.workspaceId && conversation.operatorUserId === input.operatorUserId) ?? null; }
-  async listConversations(): Promise<ReadonlyArray<CopilotConversation>> { return this.conversations; }
-  async deleteConversation(): Promise<boolean> { return false; }
-  async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> { const message = { id: `m${this.messages.length}`, ...input, createdAt: now }; this.messages.push(message); return message; }
-  async listMessages(): Promise<ReadonlyArray<CopilotMessage>> { return this.messages; }
-  async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation) return null; if (conversation.status === "running") return "running"; return this.replace(conversation, "running"); }
-  async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.replace(conversation, "idle"); }
-  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const proposal = { id: `p${this.proposals.length}`, ...input, messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt: now, updatedAt: now }; this.proposals.push(proposal); return proposal; }
-  async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((proposal) => proposal.id === input.id && proposal.workspaceId === input.workspaceId && proposal.operatorUserId === input.operatorUserId) ?? null; }
-  async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal || proposal.status !== "pending") return null; const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null }; this.proposals[this.proposals.indexOf(proposal)] = updated; return updated; }
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); return proposal?.status === "pending" ? proposal : null; }
-  private replace(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation { const next = { ...conversation, status }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
-}

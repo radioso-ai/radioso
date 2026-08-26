@@ -39,6 +39,9 @@ block to the content it pushes:
 - On WooCommerce products: the SKU, the price, the availability WooCommerce is
   currently showing, and every visible product attribute, labelled the way the
   shop labels it (ISBN, format, page count, publisher, and so on).
+- On a discounted product: the list price beside the price the shopper pays,
+  under WooCommerce's own label for it. A reduced figure on its own reads as an
+  ordinary one, so the block names what the reduction is from.
 
 Labels come from the site's own registrations, so the block arrives in the
 language the site is authored in. Internal taxonomies such as WooCommerce's
@@ -60,7 +63,7 @@ Radioso stores as document metadata:
 | `price` | The display price — for a variable product, the cheapest variation. |
 | `price_max` | The dearest variation, when a variable product spans a range. |
 | `regular_price` | The list price, before any discount. |
-| `sale_price` | The discounted price, when a sale is configured. |
+| `sale_price` | What the shopper pays, when the shop is charging less than the list price. |
 | `on_sale` | Whether the discount is live. Always stated, true or false. |
 | `currency` | The shop currency, so a bare number can be read. |
 | `stock_status` | `instock`, `outofstock` or `onbackorder`. |
@@ -81,6 +84,44 @@ fields per product, keys of the form `^[A-Za-z][A-Za-z0-9_]{0,63}$`, and scalar
 values with strings up to 256 characters. The plugin drops anything outside
 that shape before it sends, so a field you add that does not fit costs you that
 field rather than the whole push.
+
+### Shops that price with a plugin
+
+Everything above reads WooCommerce's own price and sale fields. A dynamic
+pricing or discount plugin works differently: it computes the reduction while
+the page renders and leaves the product itself at the list price. WooCommerce
+then reports no sale — its REST and Store APIs say the same thing — so the plugin
+publishes the undiscounted figure, faithfully and wrongly.
+
+Filter `radioso_sync_product_pricing` to supply the price the shop actually
+charges. It runs once per product and feeds both renderings, so the figure the
+agent quotes and the number a metadata rule compares can never disagree:
+
+```php
+add_filter('radioso_sync_product_pricing', function ($pricing, $product) {
+    $charged = my_pricing_plugin_price_for($product);
+    if ($charged !== null) {
+        $pricing['min'] = (float) $charged;
+    }
+    return $pricing;
+}, 10, 2);
+```
+
+The array carries `min` (what the shopper pays), `on_sale`, and, where the shop
+has them, `max` (a variable product's ceiling) and `regular` (the list price).
+Leaving `regular` above `min` is what marks the product as discounted — the
+plugin sets `on_sale` from that, so a shop supplying a reduced `min` gets the
+list-price fact and the `sale_price` field without stating anything twice.
+
+Return values are checked the way indexed fields are: a price that is not a
+finite number costs the product its price rather than failing the push.
+
+Two limits worth knowing. A product is only re-pushed when WooCommerce touches
+it, so a pricing *rule* that changes without touching the products it covers
+leaves those documents stale until their next sync — use **Resync all content**
+after editing one. And a variable product publishes no `regular`, because its
+`min` is the cheapest variation and the cheapest variation need not be the
+discounted one; supply your own if the shop can name one.
 
 ### Keeping price and availability current
 

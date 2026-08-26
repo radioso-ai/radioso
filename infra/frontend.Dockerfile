@@ -28,6 +28,7 @@ COPY frontend/package.json ./frontend/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
 COPY packages/routine-document/package.json ./packages/routine-document/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
+COPY packages/workspace-invalidation-contract/package.json ./packages/workspace-invalidation-contract/package.json
 COPY ee/package.json ./ee/package.json
 COPY ee/packages/operator-console/package.json ./ee/packages/operator-console/package.json
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend ./ee/packages/auth-frontend
@@ -55,6 +56,7 @@ COPY frontend ./frontend
 COPY packages/routine-definition ./packages/routine-definition
 COPY packages/routine-document ./packages/routine-document
 COPY packages/ui ./packages/ui
+COPY packages/workspace-invalidation-contract ./packages/workspace-invalidation-contract
 COPY typescript-sdk ./typescript-sdk
 COPY scripts/sync-ee-frontend-routes.mjs ./scripts/sync-ee-frontend-routes.mjs
 COPY scripts/enterprise-feature-manifests.mjs ./scripts/enterprise-feature-manifests.mjs
@@ -89,6 +91,7 @@ COPY --chown=node:node --from=builder /app/frontend ./frontend
 COPY --chown=node:node --from=builder /app/packages/routine-definition ./packages/routine-definition
 COPY --chown=node:node --from=builder /app/packages/routine-document ./packages/routine-document
 COPY --chown=node:node --from=builder /app/packages/ui ./packages/ui
+COPY --chown=node:node --from=builder /app/packages/workspace-invalidation-contract ./packages/workspace-invalidation-contract
 USER node
 WORKDIR /app/frontend
 EXPOSE 3000

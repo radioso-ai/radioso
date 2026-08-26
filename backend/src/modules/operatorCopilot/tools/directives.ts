@@ -15,17 +15,16 @@ import {
   requiredCopilotConversation,
   requiredPageAgent,
   type CopilotAgentLookupPort,
+  citedEvidenceSchema,
+  citedProposalEvidence,
+  proposalEvidenceOutput,
+  proposalOutputSchema,
+  type CopilotProposalEvidenceDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
-const proposalOutputSchema = z.object({
-  proposalId: z.string().uuid(),
-  targetType: z.enum(["directive", "agent_setting", "routine"]),
-  targetLabel: z.string(),
-  summary: z.string(),
-});
-export interface DirectiveProposalCopilotToolDependencies {
+export interface DirectiveProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
@@ -39,17 +38,18 @@ export const createDirectiveProposalCopilotTools = (
     {
       name: "propose_directive", shape: "propose", uiLabel: "Drafting a directive", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
-      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive",
         description: "Draft a directive proposal for operator review. It does not change configuration.",
-        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
-        invoke: async ({ agentId, directiveId, intent }) => {
+        invoke: async ({ agentId, directiveId, intent, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId: directiveId ?? null };
           const draft = await directiveAdapter.draft(context.workspaceId, targetRef, intent);
           const versionToken = await directiveAdapter.readVersionToken(context.workspaceId, targetRef);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "directive" });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
@@ -58,9 +58,10 @@ export const createDirectiveProposalCopilotTools = (
             targetRef,
             payload: draft.payload,
             versionToken,
+            evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);
-          return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: draft.targetLabel, summary: draft.summary };
+          return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: draft.targetLabel, summary: draft.summary, ...proposalEvidenceOutput(evidence) };
         },
       }),
       describeEntity: (input, context) => {

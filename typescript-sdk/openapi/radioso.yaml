@@ -22051,6 +22051,25 @@ paths:
                                     type:
                                       - string
                                       - "null"
+                                  evidence:
+                                    type: object
+                                    properties:
+                                      total:
+                                        type: integer
+                                      improved:
+                                        type: integer
+                                      regressed:
+                                        type: integer
+                                      unchanged:
+                                        type: integer
+                                      stale:
+                                        type: integer
+                                    required:
+                                      - total
+                                      - improved
+                                      - regressed
+                                      - unchanged
+                                      - stale
                                 required:
                                   - id
                                   - targetType
@@ -22255,6 +22274,63 @@ paths:
                       - string
                       - "null"
                   appliedRef: {}
+                  evidence:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      improved:
+                        type: integer
+                      regressed:
+                        type: integer
+                      unchanged:
+                        type: integer
+                      stale:
+                        type: integer
+                    required:
+                      - total
+                      - improved
+                      - regressed
+                      - unchanged
+                      - stale
+                  evidenceCases:
+                    type:
+                      - array
+                      - "null"
+                    items:
+                      type: object
+                      properties:
+                        caseId:
+                          type: string
+                          format: uuid
+                        caseName:
+                          type: string
+                        runId:
+                          type: string
+                          format: uuid
+                        before:
+                          type: string
+                          enum:
+                            - pending
+                            - passing
+                            - failing
+                            - error
+                        after:
+                          type: string
+                          enum:
+                            - pass
+                            - fail
+                            - error
+                            - recorded
+                        stale:
+                          type: boolean
+                      required:
+                        - caseId
+                        - caseName
+                        - runId
+                        - before
+                        - after
+                        - stale
                 required:
                   - id
                   - targetType
@@ -22263,6 +22339,7 @@ paths:
                   - status
                   - preview
                   - currentVersionMatches
+                  - evidenceCases
         "404":
           description: Not found
   /api/v1/copilot/proposals/{proposalId}/apply:

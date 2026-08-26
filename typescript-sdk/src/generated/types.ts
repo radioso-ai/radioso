@@ -18131,6 +18131,13 @@ export interface operations {
                                 /** @enum {string} */
                                 status: "pending" | "applied" | "dismissed" | "failed" | "stale";
                                 reason?: string | null;
+                                evidence?: {
+                                    total: number;
+                                    improved: number;
+                                    regressed: number;
+                                    unchanged: number;
+                                    stale: number;
+                                };
                             }[];
                         })[];
                     };
@@ -18269,6 +18276,25 @@ export interface operations {
                         currentVersionMatches: boolean;
                         reason?: string | null;
                         appliedRef?: unknown;
+                        evidence?: {
+                            total: number;
+                            improved: number;
+                            regressed: number;
+                            unchanged: number;
+                            stale: number;
+                        };
+                        evidenceCases: {
+                            /** Format: uuid */
+                            caseId: string;
+                            caseName: string;
+                            /** Format: uuid */
+                            runId: string;
+                            /** @enum {string} */
+                            before: "pending" | "passing" | "failing" | "error";
+                            /** @enum {string} */
+                            after: "pass" | "fail" | "error" | "recorded";
+                            stale: boolean;
+                        }[] | null;
                     };
                 };
             };

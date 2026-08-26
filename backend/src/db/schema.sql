@@ -1763,8 +1763,32 @@ CREATE TABLE public.copilot_proposals (
     applied_ref jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    evidence jsonb,
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
     CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent_setting'::text, 'routine'::text])))
+);
+
+
+--
+-- Name: copilot_replay_evidence; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.copilot_replay_evidence (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    operator_user_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    agent_id uuid NOT NULL,
+    case_id uuid NOT NULL,
+    case_name text NOT NULL,
+    run_id uuid NOT NULL,
+    baseline_captured_at timestamp with time zone NOT NULL,
+    recorded_status text NOT NULL,
+    verdict text NOT NULL,
+    overrides jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT copilot_replay_evidence_recorded_status_check CHECK ((recorded_status = ANY (ARRAY['pending'::text, 'passing'::text, 'failing'::text, 'error'::text]))),
+    CONSTRAINT copilot_replay_evidence_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'error'::text, 'recorded'::text])))
 );
 
 
@@ -3890,6 +3914,14 @@ ALTER TABLE ONLY public.copilot_proposals
 
 
 --
+-- Name: copilot_replay_evidence copilot_replay_evidence_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: directive_states directive_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5441,6 +5473,13 @@ CREATE INDEX copilot_proposals_conversation_message_idx ON public.copilot_propos
 --
 
 CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals USING btree (workspace_id, operator_user_id, created_at DESC);
+
+
+--
+-- Name: copilot_replay_evidence_operator_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_replay_evidence_operator_created_idx ON public.copilot_replay_evidence USING btree (workspace_id, operator_user_id, created_at DESC);
 
 
 --
@@ -7999,6 +8038,54 @@ ALTER TABLE ONLY public.copilot_proposals
 
 ALTER TABLE ONLY public.copilot_proposals
     ADD CONSTRAINT copilot_proposals_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_case_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_case_id_fkey FOREIGN KEY (case_id) REFERENCES public.eval_cases(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_operator_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_operator_user_id_fkey FOREIGN KEY (operator_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.eval_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

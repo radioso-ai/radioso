@@ -62,6 +62,12 @@ const wave3IngestionSettings = deferred(
   `Deferred to Wave 3 ingestion settings proposals. ${copilotNeverList.embedding_model_switch_without_typed_confirmation.reason}`,
 );
 const wave4Serving = deferred("Deferred to Wave 4 serving work: operator serving controls need an explicit runtime safety model.");
+// `replay_eval_case` reaches this operation only through a case: it derives the snapshot from one
+// and never attaches the run. Replaying a bare snapshot, and replaying one *into* a case's record,
+// are still uncovered, so the operation stays on the ratchet rather than reading as done.
+const snapshotOnlyReplay = deferred(
+  "Deferred: replay_eval_case covers the case-derived, detached replay only. A snapshot-scoped replay tool would cover the rest.",
+);
 const wave5WorkspaceConfig = deferred("Deferred to Wave 5 workspace configuration: these settings need bounded, operator-confirmed configuration flows.");
 // A permanent exclusion is the strongest claim this map makes — it is what a future implementer
 // reads to decide whether something may be built at all. These were previously one bucket reasoned
@@ -248,8 +254,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateAgentSkill",
     "deleteAgentSkill",
     "deleteEvalCase",
-    "createEvalRun",
   ], wave2BehaviorAuthoring),
+  ...coverage(["createEvalRun"], snapshotOnlyReplay),
   ...coverage([
     "searchRetrievalEvidence",
     "listDocumentSearchHistory",

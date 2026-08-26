@@ -9,17 +9,30 @@ name: Ray Copilot Evals
 # boundary is a gate rather than a baseline comparison. Anything else fails only on a regression
 # against backend/tests/fixtures/copilot-evals/baseline.json.
 #
+# The job runs on demand rather than on a schedule, because gating needs a recorded baseline and
+# baseline.json holds no cases yet. An empty baseline cannot gate — every case reads as "new" — so
+# the runner exits non-zero on purpose, and a scheduled job would be red every morning regardless of
+# how Ray behaved. To record one: run this workflow with update_baseline checked, download the
+# copilot-eval-baseline artifact, commit it, and add the schedule trigger back:
+#
+#   on:
+#     schedule:
+#       - cron: "30 6 * * *" # 06:30 UTC daily, after the conversation-quality suite
+#
 # Requires the OPENAI_API_KEY repository secret.
 
 on:
-  schedule:
-    - cron: "30 6 * * *" # 06:30 UTC daily, after the conversation-quality suite
   workflow_dispatch:
     inputs:
       tag:
         description: Only run cases carrying this tag (blank = all)
         required: false
         default: ""
+      update_baseline:
+        description: Record the run into baseline.json and upload it as an artifact instead of gating
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: copilot-evals
@@ -90,8 +103,26 @@ jobs:
       - name: Run Ray behaviour suite
         working-directory: backend
         run: |
+          set -euo pipefail
+          # Seeded with the script path so the array is never empty: expanding an empty array under
+          # `set -u` is an unbound-variable error on bash 3.2, which is what a maintainer reproducing
+          # this step on macOS has.
+          args=(./scripts/runCopilotEvals.ts)
           if [ -n "${{ github.event.inputs.tag }}" ]; then
-            node --env-file=./.env.evals --import tsx ./scripts/runCopilotEvals.ts --tag "${{ github.event.inputs.tag }}"
-          else
-            node --env-file=./.env.evals --import tsx ./scripts/runCopilotEvals.ts
+            args+=(--tag "${{ github.event.inputs.tag }}")
           fi
+          if [ "${{ github.event.inputs.update_baseline }}" = "true" ]; then
+            args+=(--update-baseline)
+          fi
+          node --env-file=./.env.evals --import tsx "${args[@]}"
+
+      # Recording happens on a runner, so the file has to come back out to be committed. A
+      # never-list violation throws inside the recorder rather than being written, so this artifact
+      # can never carry one.
+      - name: Upload recorded baseline
+        if: ${{ github.event.inputs.update_baseline == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: copilot-eval-baseline
+          path: backend/tests/fixtures/copilot-evals/baseline.json
+          if-no-files-found: error

@@ -28,9 +28,10 @@ real catalog. This gates the contract every case rests on — the tool still exi
 its input schema still accepts those arguments, and the case's operator permissions still expose it.
 All three of those have broken in main before, and each one reaches the runtime as a rejected call.
 
-**Live** (`pnpm run evals:copilot`, nightly): the real model gets the same prompt and catalog, the
-plan is ignored, and the model's own choices are scored against the same assertions — plus the ones
-only a model can satisfy: the wording of a refusal, the handoff link, the answer text.
+**Live** (`pnpm run evals:copilot`, or the **Ray Copilot Evals** workflow on demand): the real model
+gets the same prompt and catalog, the plan is ignored, and the model's own choices are scored against
+the same assertions — plus the ones only a model can satisfy: the wording of a refusal, the handoff
+link, the answer text.
 
 Assertions whose subject is model-produced prose (`answer_contains`, `boundary_offered`,
 `llm_judge`) resolve to `skipped` in a deterministic run and are shown as such in the report, so a
@@ -59,8 +60,16 @@ pnpm run evals:copilot                   # thereafter: run + gate
 pnpm run evals:copilot -- --tag never_list
 ```
 
-`baseline.json` ships empty, and an empty baseline cannot gate — every case reads as "new" — so the
-runner exits non-zero until you initialize it.
+`baseline.json` holds no cases yet, and an empty baseline cannot gate — every case reads as "new" —
+so the runner exits non-zero until you record one. That is also why the workflow runs on demand
+rather than on a schedule: a scheduled job would be red every morning regardless of how Ray behaved.
+Recording a baseline enables the schedule, and the header of `.github/workflows/copilot-evals.yml`
+carries the cron line to add back.
+
+Without Postgres and an `OPENAI_API_KEY` to hand, record it from CI instead: run the **Ray Copilot
+Evals** workflow with `update_baseline` checked, download the `copilot-eval-baseline` artifact, and
+commit it over `baseline.json`. A never-list violation throws inside the recorder rather than being
+written, so neither route can bless one.
 
 ## Adding a case
 
@@ -77,7 +86,7 @@ runner exits non-zero until you initialize it.
 For a case about a boundary, set `neverListBoundary`, leave the plan empty, and assert
 `boundary_offered` plus `no_proposal_drafted`. Resist adding `no_tools_called` to one: the catalog
 is what makes the action impossible, and reading before refusing is legitimate, so asserting it
-turns a reasonable answer into a red nightly.
+fails the gate on a reasonable answer.
 
 ## Judge grading
 

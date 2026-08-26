@@ -91,7 +91,7 @@ pnpm run evals:ci              # sampled 5× (what the nightly workflow runs)
 pnpm run evals:update-baseline # re-record the committed baseline after an intended change
 ```
 
-Ray behaviour evals (tool selection, proposal quality, never-list adherence). The deterministic half runs in normal CI via `tests/unit/operatorCopilot/copilot-eval-suite.test.ts`; the live half is nightly/on-demand and needs Postgres plus `OPENAI_API_KEY`:
+Ray behaviour evals (tool selection, proposal quality, never-list adherence). The deterministic half runs in normal CI via `tests/unit/operatorCopilot/copilot-eval-suite.test.ts`; the live half runs on demand and needs Postgres plus `OPENAI_API_KEY`:
 
 ```bash
 cd backend

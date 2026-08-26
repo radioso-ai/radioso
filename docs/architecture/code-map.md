@@ -310,7 +310,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
 - `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
-- `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live nightly run)
+- `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)
 - `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)
 - `frontend/lib/api-copilot.ts`
 - `frontend/components/dashboard/copilot-panel.tsx` and `copilot-view.tsx`
@@ -324,7 +324,7 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/operatorCopilot tests/unit/agent-turn-test-service.test.ts`
 - `cd backend && pnpm run evals:copilot` — live Ray behaviour run (needs Postgres and
-  `OPENAI_API_KEY`); nightly, not per-PR
+  `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`
 - `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`
 

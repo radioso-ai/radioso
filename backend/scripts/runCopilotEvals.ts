@@ -236,6 +236,13 @@ const probeWorkspace = async (deps: Deps, target: EvalTarget): Promise<{
 const main = async (): Promise<void> => {
   const flags = parseFlags(process.argv.slice(2));
   const dataset = parseCopilotEvalCases(copilotEvalCases);
+  // The recorder refuses a partial baseline anyway; catching it here costs nothing and saves a
+  // whole suite of model calls that could never be written.
+  if (flags.updateBaseline && flags.tags.length > 0) {
+    console.error("--update-baseline records the whole dataset, so it cannot be combined with --tag. Run the full suite to record.");
+    process.exitCode = 1;
+    return;
+  }
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
@@ -295,7 +302,8 @@ const main = async (): Promise<void> => {
     if (flags.updateBaseline) {
       // buildCopilotBaselineFile throws on a never-list violation rather than recording it, so a
       // refusal that stopped working cannot be blessed as the new normal by re-running with the flag.
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(cases, outcomes, new Date().toISOString()), null, 2)}\n`);
+      // The full dataset, not the subset that ran: the recorder is what enforces that the two match.
+      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, outcomes, new Date().toISOString()), null, 2)}\n`);
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
     }

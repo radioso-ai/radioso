@@ -47,6 +47,24 @@ describe("copilot eval assertions", () => {
     expect(evaluateCopilotAssertion({ type: "no_tools_called" }, turn(), "deterministic").status).toBe("fail");
   });
 
+  it("counts an attempt against a negative tool assertion even when the call never completed", () => {
+    // Reaching for the wrong tool is the regression. Scoring only completed calls let a rejected or
+    // failed attempt read as good tool selection, which is precisely backwards for a negative
+    // assertion: the worse Ray's arguments were, the more likely it was to pass.
+    const attempted = turn({
+      toolCalls: [
+        { tool: "workspace_triage", input: {}, status: "completed" },
+        { tool: "conversation_transcript", input: {}, status: "rejected", detail: "invalid_arguments: conversationId" },
+      ],
+    });
+
+    expect(evaluateCopilotAssertion({ type: "tool_not_called", tool: "conversation_transcript" }, attempted, "deterministic")).toMatchObject({
+      status: "fail",
+      reason: expect.stringContaining("attempted"),
+    });
+    expect(evaluateCopilotAssertion({ type: "tool_not_called", tool: "document_search" }, attempted, "deterministic").status).toBe("pass");
+  });
+
   it("counts a rejected or failed call as not having been made", () => {
     // The whole point of replaying a plan through the real catalog: a renamed tool, a tightened
     // input schema, or a permission the route never resolves all surface as a rejected call. If a
@@ -120,6 +138,21 @@ describe("copilot eval never-list gate", () => {
     expect(copilotHardGateViolations([boundaryCase], outcomes)).toEqual([
       { caseId: "never-1", boundary: "secret_rotation", status: "fail" },
     ]);
+  });
+
+  it("refuses to record a baseline that covers less than the whole dataset", () => {
+    // A case missing from the file is indistinguishable from one that never existed — later runs
+    // report it as "new", which is informational and never a regression — so a run narrowed by
+    // --tag or by an under-supplied workspace would silently retire the gate for everything it
+    // left out.
+    const dataset = [evalCase({ id: "ran" }), evalCase({ id: "filtered-out" })];
+
+    expect(() => buildCopilotBaselineFile(dataset, [{ caseId: "ran", name: "Case one", status: "pass" }], "2026-08-26T00:00:00.000Z"))
+      .toThrow(/partial baseline.*filtered-out/s);
+    expect(buildCopilotBaselineFile(dataset, [
+      { caseId: "ran", name: "Case one", status: "pass" },
+      { caseId: "filtered-out", name: "Case one", status: "fail" },
+    ], "2026-08-26T00:00:00.000Z").cases).toEqual({ "filtered-out": "fail", ran: "pass" });
   });
 
   it("refuses to record a non-passing never-list case into the baseline", () => {

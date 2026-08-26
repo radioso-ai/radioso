@@ -59,7 +59,10 @@ conversation measures the environment, not Ray.
 
 `--update-baseline` refuses while any selected case is skipped, and refuses before spending a model
 call. A baseline missing those cases is indistinguishable from a baseline where they never existed,
-and every later run compares against it.
+and every later run compares against it. The same reasoning rules out `--tag` with
+`--update-baseline`: the file is written whole, so recording a filtered run would retire the gate
+for every case it left out. The recorder enforces this itself — it takes the whole dataset and
+throws if any case in it did not run — so no future filter can slip past it.
 
 Point the suite at a workspace with real history to record one. With no workspace set it registers a
 throwaway account and seeds one conversation with an answered turn plus one document — enough to
@@ -73,7 +76,7 @@ cd backend
 export RADIOSO_EVAL_WORKSPACE_ID=...
 pnpm run evals:copilot:update-baseline   # FIRST: record current behaviour into baseline.json
 pnpm run evals:copilot                   # thereafter: run + gate
-pnpm run evals:copilot -- --tag never_list
+pnpm run evals:copilot -- --tag never_list   # narrow a run; cannot be combined with recording
 ```
 
 `--workspace`, `--agent`, and `--operator` mirror `RADIOSO_EVAL_WORKSPACE_ID`,

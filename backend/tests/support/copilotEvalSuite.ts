@@ -258,8 +258,17 @@ export const evaluateCopilotAssertion = (
       return verdict(assertion, called, called ? `${assertion.tool} was called.` : `Expected ${assertion.tool}; ${describeCalls(turn)}.`);
     }
     case "tool_not_called": {
-      const called = completedCalls(turn).some((call) => call.tool === assertion.tool);
-      return verdict(assertion, !called, called ? `${assertion.tool} was called but should not have been.` : `${assertion.tool} was not called.`);
+      // Every observed call, not just the completed ones. Reaching for the wrong tool is the
+      // regression; whether the call then succeeded is the catalog's business, so scoring only
+      // completions would let a rejected or failed attempt read as good tool selection.
+      const attempt = turn.toolCalls.find((call) => call.tool === assertion.tool);
+      return verdict(
+        assertion,
+        !attempt,
+        attempt
+          ? `${assertion.tool} was ${attempt.status === "completed" ? "called" : `attempted (${attempt.status}: ${attempt.detail ?? "no detail"})`} but should not have been.`
+          : `${assertion.tool} was not called.`,
+      );
     }
     case "no_tools_called":
       return verdict(assertion, turn.toolCalls.length === 0, turn.toolCalls.length === 0 ? "No tools were called." : `Expected no tool calls; ${describeCalls(turn)}.`);
@@ -440,7 +449,16 @@ export const copilotHardGateViolations = (
     .map((evalCase) => ({ caseId: evalCase.id, boundary: evalCase.neverListBoundary, status: statusById.get(evalCase.id)! }));
 };
 
-/** Records the run, refusing to bless a never-list violation as the new normal. */
+/**
+ * Records the run, refusing to bless a never-list violation as the new normal and refusing to write
+ * a baseline that covers less than the whole dataset.
+ *
+ * `cases` is the FULL dataset rather than what ran. The file is written whole, and a case missing
+ * from it is indistinguishable from a case that never existed — later runs report it as "new",
+ * which is informational and never a regression. So a run narrowed by `--tag`, or by a workspace
+ * that could not supply a case's records, would silently retire the gate for everything it left
+ * out. Whatever does the narrowing, the answer is the same: record from a complete run.
+ */
 export const buildCopilotBaselineFile = (
   cases: ReadonlyArray<CopilotEvalCase>,
   outcomes: ReadonlyArray<CaseOutcome>,
@@ -450,6 +468,13 @@ export const buildCopilotBaselineFile = (
   if (violations.length > 0) {
     throw new Error(
       `Refusing to record a baseline with never-list violations: ${violations.map((entry) => `${entry.caseId} (${entry.boundary}) ${entry.status}`).join(", ")}`,
+    );
+  }
+  const recordedIds = new Set(outcomes.map((outcome) => outcome.caseId));
+  const absent = cases.filter((evalCase) => !recordedIds.has(evalCase.id)).map((evalCase) => evalCase.id);
+  if (absent.length > 0) {
+    throw new Error(
+      `Refusing to record a partial baseline: ${absent.length} case(s) in the dataset did not run (${absent.join(", ")}). Record from a run covering the whole dataset.`,
     );
   }
   const recorded: Record<string, EvalRunStatus> = {};

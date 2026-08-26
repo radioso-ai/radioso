@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Only run cases carrying this tag (blank = all)
+        description: Only run cases carrying this tag (blank = all); cannot be combined with update_baseline
         required: false
         default: ""
       workspace_id:

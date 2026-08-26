@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 import { getEnv } from "../src/app/config/env.js";
 import { buildDependencies } from "../src/app/server/dependencies.js";
 import { runMigrations } from "../src/db/runMigrations.js";
+import { AnswerFeedbackService } from "../src/modules/chat/composition.js";
 import { createLogger } from "../src/shared/observability/logger.js";
 import { diffAgainstBaseline, isBaselineInitialized, type BaselineFile } from "../src/modules/eval/suite/index.js";
 import {
@@ -192,7 +193,7 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     role: "user",
     content: SEED_QUESTION,
   });
-  await deps.messageRepository.create({
+  const answer = await deps.messageRepository.create({
     conversationId: conversation.id,
     workspaceId: target.workspaceId,
     role: "assistant",
@@ -203,7 +204,50 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     title: "Shipping rates",
     content: "Shipping within the EU costs nine euro. Italy is included in the EU rate.",
   });
-  console.log("Seeded one conversation and one document into the bootstrapped workspace.");
+  // A written complaint on that answer, which is what puts the turn in front of quality_signals and
+  // the triage digest. Ray's cases about acting on complaints have nothing to read without it.
+  await new AnswerFeedbackService(deps.connectorDb.kysely).upsert({
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    assistantMessageId: answer.id,
+    value: "down",
+    comment: "That shipping price is wrong.",
+    actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
+  });
+  console.log("Seeded one answered conversation with a complaint, and one document.");
+};
+
+/**
+ * Removes the copilot conversations this run created.
+ *
+ * Every case drives a real copilot turn, which persists a conversation and its messages, and the
+ * proposal cases persist a pending proposal on top. Against a workspace the operator actually uses,
+ * that is the suite showing up in their Ray history and their approval queue. Proposals cascade with
+ * the conversation, so deleting what this run added is enough.
+ */
+const cleanUpCopilotArtifacts = async (
+  deps: Deps,
+  target: EvalTarget,
+  priorConversationIds: ReadonlySet<string>,
+): Promise<void> => {
+  try {
+    const current = await deps.copilotRepository.listConversations({
+      workspaceId: target.workspaceId,
+      operatorUserId: target.operatorUserId,
+    });
+    const created = current.filter((conversation) => !priorConversationIds.has(conversation.id));
+    for (const conversation of created) {
+      await deps.copilotRepository.deleteConversation({
+        id: conversation.id,
+        workspaceId: target.workspaceId,
+        operatorUserId: target.operatorUserId,
+      });
+    }
+    if (created.length > 0) console.log(`Cleaned up ${created.length} copilot conversation(s) this run created.`);
+  } catch (error) {
+    // Never mask the run's own failure with a cleanup failure; say what is left behind instead.
+    console.warn(`Could not clean up this run's copilot conversations: ${(error as Error).message}`);
+  }
 };
 
 /** What the target workspace can actually supply, probed once and shared by every case. */
@@ -227,7 +271,10 @@ const probeWorkspace = async (deps: Deps, target: EvalTarget): Promise<{
   const documents = await deps.documentIngestionService.summarizeWorkspace(target.workspaceId);
   if (documents.documentCount > 0) satisfied.add("document");
 
-  const quality = await deps.qualitySignalsService.listLowQualityTurns(target.workspaceId, { limit: 1 });
+  // Scoped to the agent under test, because that is how the case reads it: the page context binds to
+  // this agent and quality_signals filters by it. A workspace whose only complaints belong to
+  // another agent would otherwise look able to run the case and hand Ray an empty result.
+  const quality = await deps.qualitySignalsService.listLowQualityTurns(target.workspaceId, { limit: 1, agentId: target.agentId });
   if (quality.items.length > 0) satisfied.add("quality_signal");
 
   return { satisfied, conversationId };
@@ -243,18 +290,34 @@ const main = async (): Promise<void> => {
     process.exitCode = 1;
     return;
   }
+  // Recording against someone's real workspace records whatever that workspace held that day, and
+  // running the suite there leaves copilot conversations and a pending proposal behind. A baseline
+  // has to come from the seeded workspace this run builds, which is reproducible and disposable.
+  if (flags.updateBaseline && flags.workspaceId) {
+    console.error("--update-baseline records from the seeded throwaway workspace this run creates, so it cannot be combined with --workspace.");
+    process.exitCode = 1;
+    return;
+  }
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
     await runMigrations(env.DATABASE_URL, createLogger("silent"));
   }
   const deps = buildDependencies(env);
+  let target: EvalTarget | null = null;
+  let priorCopilotConversationIds: ReadonlySet<string> = new Set();
 
   try {
-    const target = await resolveTarget(deps, flags);
-    if (target.bootstrapped) await seedBootstrappedWorkspace(deps, target);
+    // Bound to a const as well so the closures below keep the non-null narrowing.
+    const resolved = await resolveTarget(deps, flags);
+    target = resolved;
+    if (resolved.bootstrapped) await seedBootstrappedWorkspace(deps, resolved);
+    priorCopilotConversationIds = new Set(
+      (await deps.copilotRepository.listConversations({ workspaceId: resolved.workspaceId, operatorUserId: resolved.operatorUserId }))
+        .map((conversation) => conversation.id),
+    );
 
-    const { satisfied, conversationId } = await probeWorkspace(deps, target);
+    const { satisfied, conversationId } = await probeWorkspace(deps, resolved);
     const selection = selectRunnableCopilotEvalCases(filterByTags(dataset, flags.tags), satisfied);
     for (const skipped of selection.unmet) {
       console.warn(`SKIPPED ${skipped.caseId} "${skipped.name}" — workspace supplies no ${skipped.missing.join(", ")}.`);
@@ -276,7 +339,7 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    const cases = bindToLiveWorkspace(selection.runnable, { agentId: target.agentId, conversationId });
+    const cases = bindToLiveWorkspace(selection.runnable, { agentId: resolved.agentId, conversationId });
 
     const { reports, outcomes } = await runCopilotEvalSuite(
       cases,
@@ -287,9 +350,9 @@ const main = async (): Promise<void> => {
           capabilityRunner: deps.copilotCapabilityRunner,
           workspaceRouteKeyResolver: deps.copilotWorkspaceRouteKeyResolver,
           repository: deps.copilotRepository,
-          workspaceId: target.workspaceId,
-          accountId: target.accountId,
-          operatorUserId: target.operatorUserId,
+          workspaceId: resolved.workspaceId,
+          accountId: resolved.accountId,
+          operatorUserId: resolved.operatorUserId,
         }),
       },
       { fidelity: "live" },
@@ -324,6 +387,7 @@ const main = async (): Promise<void> => {
       process.exitCode = 1;
     }
   } finally {
+    if (target) await cleanUpCopilotArtifacts(deps, target, priorCopilotConversationIds);
     const shutdown = (deps as { shutdown?: () => Promise<void> }).shutdown;
     if (shutdown) await shutdown.call(deps);
   }

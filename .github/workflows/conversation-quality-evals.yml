@@ -76,10 +76,11 @@ jobs:
           sed -i "s|^INTEGRATION_DATABASE_URL=.*|INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
           sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" ./.env.evals
           # Deterministic dummy signing secrets — the workspace is throwaway and never exposed.
+          # The connector key must be base64 of exactly 32 bytes or getEnv() rejects the file.
           sed -i "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=ci-session-secret-000000000000000000000000000000|" ./.env.evals
           sed -i "s|^WORKSPACE_TOKEN_SECRET=.*|WORKSPACE_TOKEN_SECRET=ci-workspace-token-secret-0000000000000000000000|" ./.env.evals
           sed -i "s|^PUBLIC_CHAT_SESSION_SECRET=.*|PUBLIC_CHAT_SESSION_SECRET=ci-public-chat-secret-00000000000000000000000000|" ./.env.evals
-          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=ci-connector-encryption-key-000000000000000000000|" ./.env.evals
+          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=cmFkaW9zby1jaS1ldmFsLWtleS0wMDAwMDAwMDAwMDA=|" ./.env.evals
 
       - name: Apply migrations
         working-directory: backend

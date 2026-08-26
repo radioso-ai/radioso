@@ -14,30 +14,26 @@ name: Ray Copilot Evals
 # the runner exits non-zero on purpose, and a scheduled job would be red every morning regardless of
 # how Ray behaved.
 #
-# Ray reads an existing workspace, so recording a baseline needs one with real history: a customer
-# conversation with an answered turn, documents, and quality feedback. Without workspace_id this job
-# registers a throwaway workspace and seeds a conversation and a document into it — enough for a
-# smoke run, and the runner refuses to record a baseline from it because the cases reading quality
-# feedback cannot run there. To record one, point workspace_id at a workspace holding that history,
-# check update_baseline, download the copilot-eval-baseline artifact, commit it, and add the
-# schedule trigger back:
+# Ray reads an existing workspace, so the job registers one and seeds it: a customer conversation
+# with an answered turn, a written complaint on that answer, and a document. Everything the dataset
+# reads comes from that seed, which is why a baseline recorded here is reproducible — it does not
+# depend on whatever some real workspace happened to hold that day, and running the suite leaves
+# nothing behind in anyone's Ray history or approval queue.
+#
+# To record a baseline: run with update_baseline checked, download the copilot-eval-baseline
+# artifact, commit it, and add the schedule trigger back:
 #
 #   on:
 #     schedule:
 #       - cron: "30 6 * * *" # 06:30 UTC daily, after the conversation-quality suite
 #
-# Requires the OPENAI_API_KEY repository secret. A workspace_id run also needs DATABASE_URL pointed
-# at the database holding that workspace, in place of the throwaway Postgres service below.
+# Requires the OPENAI_API_KEY repository secret.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: Only run cases carrying this tag (blank = all); cannot be combined with update_baseline
-        required: false
-        default: ""
-      workspace_id:
-        description: Workspace to run against (blank = register and seed a throwaway one)
         required: false
         default: ""
       update_baseline:
@@ -103,10 +99,11 @@ jobs:
           sed -i "s|^INTEGRATION_DATABASE_URL=.*|INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
           sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" ./.env.evals
           # Deterministic dummy signing secrets — the workspace is throwaway and never exposed.
+          # The connector key must be base64 of exactly 32 bytes or getEnv() rejects the file.
           sed -i "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=ci-session-secret-000000000000000000000000000000|" ./.env.evals
           sed -i "s|^WORKSPACE_TOKEN_SECRET=.*|WORKSPACE_TOKEN_SECRET=ci-workspace-token-secret-0000000000000000000000|" ./.env.evals
           sed -i "s|^PUBLIC_CHAT_SESSION_SECRET=.*|PUBLIC_CHAT_SESSION_SECRET=ci-public-chat-secret-00000000000000000000000000|" ./.env.evals
-          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=ci-connector-encryption-key-000000000000000000000|" ./.env.evals
+          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=cmFkaW9zby1jaS1ldmFsLWtleS0wMDAwMDAwMDAwMDA=|" ./.env.evals
 
       - name: Apply migrations
         working-directory: backend
@@ -122,9 +119,6 @@ jobs:
           args=(./scripts/runCopilotEvals.ts)
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             args+=(--tag "${{ github.event.inputs.tag }}")
-          fi
-          if [ -n "${{ github.event.inputs.workspace_id }}" ]; then
-            args+=(--workspace "${{ github.event.inputs.workspace_id }}")
           fi
           if [ "${{ github.event.inputs.update_baseline }}" = "true" ]; then
             args+=(--update-baseline)

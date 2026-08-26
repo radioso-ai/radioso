@@ -64,19 +64,27 @@ and every later run compares against it. The same reasoning rules out `--tag` wi
 for every case it left out. The recorder enforces this itself — it takes the whole dataset and
 throws if any case in it did not run — so no future filter can slip past it.
 
-Point the suite at a workspace with real history to record one. With no workspace set it registers a
-throwaway account and seeds one conversation with an answered turn plus one document — enough to
-exercise most cases as a smoke run, and deliberately not enough to record from.
+With no workspace set the suite registers a throwaway account and seeds everything the dataset
+reads: one conversation with an answered turn, a written complaint on that answer, and one document.
+**Baselines are recorded from that seeded workspace, not from a real one.** A baseline recorded
+against someone's live workspace would depend on whatever it held that day, and running the suite
+there leaves copilot conversations in their Ray history and a pending proposal in their approval
+queue — so `--update-baseline` refuses to combine with `--workspace`.
+
+`--workspace` is for investigating a real workspace's behaviour. The run deletes the copilot
+conversations it created on the way out, and proposals cascade with them.
 
 ## Running the live suite
 
 ```bash
 cd backend
-# The account and operator are resolved from the workspace; the agent defaults to the workspace's.
-export RADIOSO_EVAL_WORKSPACE_ID=...
-pnpm run evals:copilot:update-baseline   # FIRST: record current behaviour into baseline.json
+pnpm run evals:copilot:update-baseline   # FIRST: seed a throwaway workspace and record into baseline.json
 pnpm run evals:copilot                   # thereafter: run + gate
 pnpm run evals:copilot -- --tag never_list   # narrow a run; cannot be combined with recording
+
+# Investigate a real workspace instead. The account and operator are resolved from it, and the
+# agent defaults to the workspace's own.
+pnpm run evals:copilot -- --workspace <id>
 ```
 
 `--workspace`, `--agent`, and `--operator` mirror `RADIOSO_EVAL_WORKSPACE_ID`,
@@ -91,10 +99,9 @@ Recording a baseline enables the schedule, and the header of `.github/workflows/
 carries the cron line to add back.
 
 Without Postgres and an `OPENAI_API_KEY` to hand, record it from CI instead: run the **Ray Copilot
-Evals** workflow with `workspace_id` set to a workspace holding that history and `update_baseline`
-checked, then download the `copilot-eval-baseline` artifact and commit it over `baseline.json`. A
-never-list violation throws inside the recorder rather than being written, so neither route can
-bless one.
+Evals** workflow with `update_baseline` checked, then download the `copilot-eval-baseline` artifact
+and commit it over `baseline.json`. A never-list violation throws inside the recorder rather than
+being written, so neither route can bless one.
 
 ## Adding a case
 

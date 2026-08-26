@@ -1,7 +1,7 @@
 ---
 title: "Self-hosting operations"
-description: "Backup, restore, upgrade, and worker incident practices for self-hosted Radioso deployments."
-last_updated: 2026-08-17
+description: "Backup, restore, upgrade, realtime, and worker incident practices for self-hosted Radioso deployments."
+last_updated: 2026-08-26
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -14,6 +14,8 @@ Self-hosted Radioso has two durable data surfaces:
 - uploaded source-file storage, either the local document-storage volume or the configured object-storage bucket
 
 Back up both surfaces together. A database backup without source files can leave document records whose original uploads cannot be reprocessed. Source files without the database are not enough to restore accounts, settings, embeddings, or chat history.
+
+Redis or Valkey used for live dashboard updates is transient. Restore PostgreSQL and source files, then let the realtime runtime rebuild subscriptions and admission leases as browsers reconnect.
 
 ## Minimum operating baseline
 
@@ -28,6 +30,8 @@ For a small private deployment, the minimum baseline is:
 - test restore before relying on the backup
 - pin the deployed image tag or Git commit
 - apply upgrades manually after reading the migration list
+
+Live dashboard updates are optional. An enabled deployment also runs Redis or Valkey 7+ and the dedicated realtime process described below.
 
 ## Backup
 
@@ -50,7 +54,7 @@ Keep database and source-file backups from the same time window. That makes docu
 <Steps>
 ### Stop writers
 
-Stop the backend, document worker, and crawler worker before restoring. This prevents new writes while the database and file storage are out of sync.
+Stop the backend, document worker, crawler worker, and realtime process before restoring. This prevents new writes while the database and file storage are out of sync and closes active dashboard streams.
 
 ### Restore PostgreSQL
 
@@ -67,6 +71,10 @@ Start the backend and confirm `/health` returns success. The backend owns SQL mi
 ### Start workers
 
 Start the document worker and crawler worker. Watch for pending or failed processing jobs before opening the deployment to users.
+
+### Start realtime and the frontend
+
+If realtime is enabled, start Redis or Valkey and the realtime process, then wait for `/health/ready`. Start the frontend after its internal realtime upstream is reachable.
 </Steps>
 
 ## Upgrade
@@ -75,12 +83,13 @@ Use this order for self-hosted upgrades:
 
 1. Read the release notes or inspect `backend/src/db/migrations/` for new SQL migrations.
 2. Back up PostgreSQL and document storage.
-3. Build or pull the new backend, frontend, and worker images.
+3. Build or pull the new backend, frontend, worker, and optional realtime images.
 4. Start the backend and let migrations run.
 5. Start the document worker and crawler worker.
-6. Start or refresh the frontend.
-7. Upload a small document and confirm it becomes searchable.
-8. Ask one grounded question and verify citations or retrieval trace data.
+6. If enabled, start Redis or Valkey and the realtime process and confirm `/health/ready` succeeds.
+7. Start or refresh the frontend.
+8. Upload a small document and confirm it becomes searchable.
+9. Ask one grounded question and verify citations or retrieval trace data.
 
 Do not auto-pull `main` into production without a backup. A failed application upgrade is usually reversible; a partially applied schema or mismatched storage restore is harder to recover.
 
@@ -92,6 +101,28 @@ Migration startup metadata checks have their own timeout controls:
 - `DB_MIGRATION_STATEMENT_TIMEOUT_MS`
 
 Keep these values shorter than your platform startup-probe window. That way a blocked migration metadata check appears as a clear application log instead of a silent port-listen timeout. Large migration SQL bodies, such as index builds or backfills, are not capped by these local metadata timeouts.
+
+## Live dashboard updates
+
+The default `REALTIME_MODE=disabled` needs no Redis service and leaves dashboard freshness to polling. To enable live updates for a small deployment, use the same configuration on the backend, workers, and realtime process:
+
+```dotenv
+REALTIME_MODE=standalone
+REALTIME_REDIS_URL=redis://redis:6379
+REALTIME_ROLLOUT_MODE=default-on
+```
+
+Build the backend and run `pnpm --dir backend run start:realtime`. Configure the frontend with the realtime process's private base URL:
+
+```dotenv
+REALTIME_INTERNAL_URL=http://realtime:8080
+```
+
+Keep the realtime process on the private service network. The browser opens `GET /backend/api/v1/events` on the frontend, and the frontend forwards it to the realtime process's `/api/v1/events` route. Preserve the request's cookie and `x-workspace-id` headers when placing another proxy in front of the frontend.
+
+This stream accepts the dashboard session cookie rather than workspace API tokens. It is used by the dashboard itself and is not an SDK or MCP event subscription API.
+
+For rollback, set `REALTIME_MODE=disabled` and `REALTIME_ROLLOUT_MODE=disabled` across the application runtimes, then stop the realtime process and Redis. Visible dashboard queries continue through their polling fallback.
 
 ## Migration startup incidents
 
@@ -155,6 +186,8 @@ At minimum, monitor:
 - backend `/health`
 - frontend reachability
 - worker process liveness
+- realtime `/health/live` and `/health/ready` when enabled
+- stream connection counts, rejected admissions, reconnect rates, and Redis transport loss when realtime is enabled
 - PostgreSQL connection errors
 - document-processing failures
 - embedding provider failures

@@ -64,7 +64,7 @@ the failed one" lands on that document rather than on the Knowledge Base index.
 A conversation that is already an approval or a handoff does not also appear as
 a review line; the escalation is the more urgent statement of the same work.
 
-Ray also reports which of the five reads it managed. A section your session may
+Ray also reports which of its six reads it managed. A section your session may
 not read, or one that errored, comes back marked rather than empty — so "nothing
 in Quality" and "Quality could not be read" never look the same. Members hold no
 quality permission, for example, and their digest says so instead of reporting a
@@ -76,8 +76,10 @@ knowledge base stays workspace-wide, because every agent answers from it.
 
 Each source contributes at most ten lines, and reports the number of rows it
 matched alongside them. A workspace with 60 failing eval cases sees ten of them
-and the count 60. The backlog counts stand for whole groups rather than for
-individual rows, so they are always complete.
+and the count 60. Documents and document sources are counted separately, so a
+run of failed documents cannot push the broken sync that caused them out of the
+digest. The backlog counts stand for whole groups rather than for individual
+rows, so they are always complete.
 
 ## Ask about what you see
 

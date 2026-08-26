@@ -99,7 +99,7 @@ const triageOutputSchema = z.object({
     dashboardUrl: z.string().startsWith("/"),
   }).strict()),
   sources: z.array(z.object({
-    source: z.enum(["approvals", "handoffs", "quality", "documents", "evals"]),
+    source: z.enum(["approvals", "handoffs", "quality", "documents", "document_sources", "evals"]),
     status: z.enum(["ok", "unauthorized", "failed"]),
     total: z.number().int().nonnegative().nullable(),
     included: z.number().int().nonnegative(),
@@ -150,6 +150,7 @@ export const copilotTriageSourcePermissions: Record<CopilotTriageSourceId, Accou
   handoffs: "workspace.history.read",
   quality: "workspace.quality.read",
   documents: "workspace.documents.read",
+  document_sources: "workspace.documents.read",
   evals: "workspace.retrieval.query",
 };
 
@@ -199,6 +200,7 @@ const buildDigest = async (
     readSource(deps, context, "handoffs", () => readHandoffs(deps, context.workspaceId, agentId)),
     readSource(deps, context, "quality", () => readQuality(deps, context.workspaceId, agentId)),
     readSource(deps, context, "documents", () => readDocuments(deps, context.workspaceId)),
+    readSource(deps, context, "document_sources", () => readDocumentSources(deps, context.workspaceId)),
     readSource(deps, context, "evals", () => readEvalCases(deps, context.workspaceId, agentId)),
   ]);
 
@@ -354,18 +356,15 @@ const readDocuments = async (
   deps: WorkspaceTriageCopilotToolDependencies,
   workspaceId: string,
 ): Promise<SourceResult> => {
-  const [summary, failed, sources] = await Promise.all([
+  const [summary, failed] = await Promise.all([
     deps.documentStatusService.summarizeWorkspace(workspaceId),
     deps.documentStatusService.listByStatuses(workspaceId, ["failed"], { limit: MAX_ITEMS_PER_SOURCE }),
-    deps.documentSourceStatusService.listByWorkspaceIdWithDocumentCounts(workspaceId),
   ]);
-  const failingSources = sources.filter((source) =>
-    source.lastSyncStatus !== null && source.lastSyncStatus !== SUCCESSFUL_SYNC_STATUS);
 
   return {
-    total: summary.failedDocumentCount + failingSources.length,
+    total: summary.failedDocumentCount,
     items: [
-      ...failed.map((document) => ({
+      ...failed.slice(0, MAX_ITEMS_PER_SOURCE).map((document) => ({
         kind: "failed_document" as const,
         urgency: "attention" as const,
         title: document.title,
@@ -375,17 +374,6 @@ const readDocuments = async (
         agentId: null,
         conversationId: null,
         subject: { type: "document", id: document.id },
-      })),
-      ...failingSources.slice(0, MAX_ITEMS_PER_SOURCE).map((source) => ({
-        kind: "failed_source_sync" as const,
-        urgency: "attention" as const,
-        title: source.name,
-        detail: source.lastSyncStatus,
-        since: source.lastSyncedAt ? source.lastSyncedAt.toISOString() : null,
-        count: 1,
-        agentId: null,
-        conversationId: null,
-        subject: { type: "document" },
       })),
       ...(summary.pendingDocumentCount > 0 ? [{
         kind: "documents_processing" as const,
@@ -399,6 +387,29 @@ const readDocuments = async (
         subject: { type: "document" },
       }] : []),
     ],
+  };
+};
+
+const readDocumentSources = async (
+  deps: WorkspaceTriageCopilotToolDependencies,
+  workspaceId: string,
+): Promise<SourceResult> => {
+  const failing = (await deps.documentSourceStatusService.listByWorkspaceIdWithDocumentCounts(workspaceId))
+    .filter((source) => source.lastSyncStatus !== null && source.lastSyncStatus !== SUCCESSFUL_SYNC_STATUS);
+
+  return {
+    total: failing.length,
+    items: failing.slice(0, MAX_ITEMS_PER_SOURCE).map((source) => ({
+      kind: "failed_source_sync" as const,
+      urgency: "attention" as const,
+      title: source.name,
+      detail: source.lastSyncStatus,
+      since: source.lastSyncedAt ? source.lastSyncedAt.toISOString() : null,
+      count: 1,
+      agentId: null,
+      conversationId: null,
+      subject: { type: "document" },
+    })),
   };
 };
 

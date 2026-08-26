@@ -34,8 +34,13 @@ export interface CopilotTriageItem {
   readonly subject: CopilotEntityReference;
 }
 
-/** The reads the digest is composed from. One report per read, always present. */
-export type CopilotTriageSourceId = "approvals" | "handoffs" | "quality" | "documents" | "evals";
+/**
+ * The reads the digest is composed from. One report per read, always present, and one cap per
+ * report. Documents and their sources read the same permission but stay separate: a broken crawl
+ * is the cause of the failed documents under it and there are far fewer of them, so sharing a cap
+ * would let a run of recent document failures bury the handful of syncs that explain them.
+ */
+export type CopilotTriageSourceId = "approvals" | "handoffs" | "quality" | "documents" | "document_sources" | "evals";
 
 /**
  * A source that could not be read reports why. Absence and emptiness are different answers, and
@@ -63,7 +68,7 @@ const sourceByKind: Record<CopilotTriageItemKind, CopilotTriageSourceId> = {
   untriaged_quality_turns: "quality",
   failed_document: "documents",
   documents_processing: "documents",
-  failed_source_sync: "documents",
+  failed_source_sync: "document_sources",
   failing_eval_case: "evals",
 };
 

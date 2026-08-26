@@ -182,6 +182,7 @@ describe("workspace_triage", () => {
       { source: "handoffs", status: "ok", total: 0, included: 0 },
       { source: "quality", status: "unauthorized", total: null, included: 0 },
       { source: "documents", status: "unauthorized", total: null, included: 0 },
+      { source: "document_sources", status: "unauthorized", total: null, included: 0 },
       { source: "evals", status: "unauthorized", total: null, included: 0 },
     ]);
   });
@@ -265,9 +266,10 @@ describe("workspace_triage", () => {
       ["failed_source_sync", "/w/acme/knowledge"],
       ["documents_processing", "/w/acme/knowledge"],
     ]);
-    // A source whose status is neither a recorded success nor absent surfaces rather than hides.
     // The processing line stands for a group, so it is listed without counting as a matched row.
-    expect(result.sources).toContainEqual({ source: "documents", status: "ok", total: 2, included: 2 });
+    expect(result.sources).toContainEqual({ source: "documents", status: "ok", total: 1, included: 1 });
+    // A sync status that is neither a recorded success nor absent surfaces rather than hides.
+    expect(result.sources).toContainEqual({ source: "document_sources", status: "ok", total: 1, included: 1 });
   });
 
   it("narrows every agent-scoped source to the requested agent and keeps the shared knowledge base", async () => {
@@ -295,6 +297,51 @@ describe("workspace_triage", () => {
     expect(listLowQualityTurns).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ agentId: "agent-1" }));
     expect(result.items.map((item) => item.kind)).toEqual(["failed_document"]);
     expect(result.sources).toContainEqual({ source: "approvals", status: "ok", total: 0, included: 0 });
+  });
+
+  it("holds every source to its own cap when several overflow at once", async () => {
+    const overflowing = <T,>(build: (index: number) => T) => Array.from({ length: 25 }, (_unused, index) => build(index));
+    const result = await digest(dependencies({
+      pendingApprovals: {
+        listPending: vi.fn(async () => overflowing((index) => ({
+          conversationId: `conversation-approval-${index}`,
+          agentId: "agent-1",
+          reason: `Approval ${index}`,
+          createdAt: new Date(`2026-08-26T06:${String(index).padStart(2, "0")}:00.000Z`),
+        }))),
+      },
+      documentStatusService: {
+        summarizeWorkspace: vi.fn(async () => ({ documentCount: 60, readyDocumentCount: 0, pendingDocumentCount: 5, failedDocumentCount: 25 })),
+        // The repository honours the limit; the tool must not rely on that alone.
+        listByStatuses: vi.fn(async () => overflowing((index) => ({
+          id: `document-${index}`,
+          title: `Document ${index}`,
+          status: "failed",
+          failureReason: null,
+          updatedAt: new Date(`2026-08-26T04:${String(index).padStart(2, "0")}:00.000Z`),
+          sourceId: null,
+        }))),
+      },
+      documentSourceStatusService: {
+        listByWorkspaceIdWithDocumentCounts: vi.fn(async () => overflowing((index) => ({
+          id: `source-${index}`,
+          kind: "website",
+          name: `Source ${index}`,
+          lastSyncStatus: "failure",
+          lastSyncedAt: new Date(`2026-08-26T03:${String(index).padStart(2, "0")}:00.000Z`),
+          documentCount: 1,
+        }))),
+      },
+    }));
+
+    // Documents and their sources read the same permission, and sharing one cap would let the
+    // recent document failures bury the broken syncs that explain them.
+    for (const source of result.sources) {
+      expect(source.included).toBeLessThanOrEqual(10);
+    }
+    expect(result.sources).toContainEqual({ source: "documents", status: "ok", total: 25, included: 10 });
+    expect(result.sources).toContainEqual({ source: "document_sources", status: "ok", total: 25, included: 10 });
+    expect(result.items.filter((item) => item.kind === "failed_source_sync")).toHaveLength(10);
   });
 
   it("counts an aggregate line as listed without counting it as a matched row", async () => {

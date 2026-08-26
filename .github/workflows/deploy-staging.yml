@@ -26,6 +26,7 @@ on:
       - packages/document-parser/**
       - packages/routine-definition/**
       - packages/routine-document/**
+      - packages/workspace-invalidation-contract/**
       - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:
 

@@ -11,6 +11,7 @@ COPY frontend/package.json ./frontend/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
 COPY packages/routine-document/package.json ./packages/routine-document/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
+COPY packages/workspace-invalidation-contract/package.json ./packages/workspace-invalidation-contract/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile --filter radioso-frontend...
 
@@ -22,6 +23,7 @@ COPY frontend ./frontend
 COPY packages/routine-definition ./packages/routine-definition
 COPY packages/routine-document ./packages/routine-document
 COPY packages/ui ./packages/ui
+COPY packages/workspace-invalidation-contract ./packages/workspace-invalidation-contract
 COPY typescript-sdk ./typescript-sdk
 RUN pnpm --dir frontend run build
 
@@ -36,6 +38,7 @@ COPY --from=builder /app/frontend ./frontend
 COPY --from=builder /app/packages/routine-definition ./packages/routine-definition
 COPY --from=builder /app/packages/routine-document ./packages/routine-document
 COPY --from=builder /app/packages/ui ./packages/ui
+COPY --from=builder /app/packages/workspace-invalidation-contract ./packages/workspace-invalidation-contract
 RUN chown -R node:node /app
 USER node
 WORKDIR /app/frontend

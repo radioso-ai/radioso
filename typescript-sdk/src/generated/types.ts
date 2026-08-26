@@ -6766,8 +6766,8 @@ export interface components {
         WorkspaceEventInvalidateData: {
             /** @enum {number} */
             protocolVersion: 1;
-            /** @description Unique invalidation kinds; clients ignore unknown future kinds and retain their polling floor. */
-            changeKinds: components["schemas"]["WorkspaceInvalidationKind"][];
+            /** @description Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor. */
+            changeKinds: string[];
         };
         WorkspaceEventResyncData: {
             /** @enum {number} */

@@ -57,12 +57,17 @@ describe("workspace events OpenAPI contract", () => {
         changeKinds: {
           type: "array",
           minItems: 1,
-          maxItems: 12,
           uniqueItems: true,
-          items: { $ref: "#/components/schemas/WorkspaceInvalidationKind" },
+          items: { type: "string", minLength: 1 },
+          description: expect.stringMatching(/known.*document\.status_changed.*unknown future/iu),
         },
       },
     });
+    const invalidateSchema = schemas?.WorkspaceEventInvalidateData as {
+      properties?: { changeKinds?: Record<string, unknown> }
+    } | undefined;
+    expect(invalidateSchema?.properties?.changeKinds).not.toHaveProperty("maxItems");
+    expect(invalidateSchema?.properties?.changeKinds?.items).not.toHaveProperty("$ref");
     expect(schemas?.WorkspaceEventResyncData).toMatchObject({
       type: "object",
       required: ["protocolVersion"],
@@ -81,6 +86,9 @@ describe("workspace events OpenAPI contract", () => {
     expect(generatedClient).not.toContain("streamWorkspaceEvents");
     const generatedOperation = generatedTypes.match(/streamWorkspaceEvents: \{[\s\S]*?^    \};/m)?.[0];
     expect(generatedOperation).toContain('"X-Workspace-Id": string;');
+    const generatedInvalidateData = generatedTypes.match(/WorkspaceEventInvalidateData: \{[\s\S]*?^        \};/m)?.[0];
+    expect(generatedInvalidateData).toContain("changeKinds: string[];");
+    expect(generatedInvalidateData).not.toContain("WorkspaceInvalidationKind");
     expect(`${mcpReadTools}\n${mcpWriteTools}`).not.toMatch(/workspace[_ -]?events|streamWorkspaceEvents/i);
   });
 });

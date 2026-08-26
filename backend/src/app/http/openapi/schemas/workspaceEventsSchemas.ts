@@ -22,11 +22,13 @@ export const registerWorkspaceEventsSchemas = (registry: OpenAPIRegistry, schema
     "WorkspaceEventInvalidateData",
     z.object({
       ...protocolData,
-      changeKinds: z.array(WorkspaceInvalidationKindSchema)
+      changeKinds: z.array(z.string().min(1))
         .min(1)
-        .max(INVALIDATION_KINDS.length)
         .openapi({
-          description: "Unique invalidation kinds; clients ignore unknown future kinds and retain their polling floor.",
+          description: [
+            `Unique invalidation kind strings. Known protocol version 1 kinds: ${INVALIDATION_KINDS.join(", ")}.`,
+            "Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor.",
+          ].join(" "),
           uniqueItems: true,
         }),
     }).strict(),

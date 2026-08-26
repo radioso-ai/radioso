@@ -10277,10 +10277,10 @@ components:
         changeKinds:
           type: array
           items:
-            $ref: "#/components/schemas/WorkspaceInvalidationKind"
+            type: string
+            minLength: 1
           minItems: 1
-          maxItems: 12
-          description: Unique invalidation kinds; clients ignore unknown future kinds and retain their polling floor.
+          description: "Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor."
           uniqueItems: true
       required:
         - protocolVersion

@@ -10,6 +10,7 @@ import {
   parseCopilotEvalCases,
   runCopilotEvalSuite,
   scoreCopilotTurn,
+  selectRunnableCopilotEvalCases,
   type CopilotEvalCase,
   type CopilotObservedTurn,
 } from "../../support/copilotEvalSuite.js";
@@ -129,6 +130,36 @@ describe("copilot eval never-list gate", () => {
   });
 });
 
+describe("copilot eval workspace requirements", () => {
+  it("runs cases the workspace can supply and reports what the rest are missing", () => {
+    const selection = selectRunnableCopilotEvalCases(
+      [
+        evalCase({ id: "no-requirements" }),
+        evalCase({ id: "needs-conversation", requires: ["conversation_with_assistant_turn"] }),
+        evalCase({ id: "needs-both", requires: ["document", "quality_signal"] }),
+      ],
+      new Set(["conversation_with_assistant_turn", "document"] as const),
+    );
+
+    expect(selection.runnable.map((entry) => entry.id)).toEqual(["no-requirements", "needs-conversation"]);
+    expect(selection.unmet).toEqual([
+      { caseId: "needs-both", name: "Case one", missing: ["quality_signal"] },
+    ]);
+  });
+
+  it("keeps a case out of the run rather than failing it when the workspace is empty", () => {
+    // Scoring these against an empty workspace and recording the result would put an environment
+    // gap into the baseline, where every later run would compare against it as Ray's normal.
+    const selection = selectRunnableCopilotEvalCases(
+      [evalCase({ id: "needs-conversation", requires: ["conversation_with_assistant_turn"] })],
+      new Set(),
+    );
+
+    expect(selection.runnable).toEqual([]);
+    expect(selection.unmet[0]).toMatchObject({ caseId: "needs-conversation", missing: ["conversation_with_assistant_turn"] });
+  });
+});
+
 describe("copilot eval report", () => {
   it("names the never-list violations and keeps skipped assertions visible", () => {
     // The nightly job's only output. A skipped assertion that vanished from the report would let a
@@ -168,6 +199,18 @@ describe("copilot eval dataset", () => {
     // a boundary nothing measures, and it would stay unmeasured as the catalog grows.
     const covered = new Set(cases.map((entry) => entry.neverListBoundary).filter(Boolean));
     expect([...Object.keys(copilotNeverList)].filter((boundary) => !covered.has(boundary))).toEqual([]);
+  });
+
+  it("declares a conversation requirement on every case that puts one on screen", () => {
+    // A live run rebinds page-context ids to the target workspace. A case that names a conversation
+    // without declaring the requirement would have that id rewritten to null and run anyway,
+    // measuring Ray against a page it was never given.
+    const undeclared = cases
+      .filter((entry) => entry.pageContext.conversationId !== null)
+      .filter((entry) => !(entry.requires ?? []).includes("conversation_with_assistant_turn"))
+      .map((entry) => entry.id);
+
+    expect(undeclared).toEqual([]);
   });
 
   it("gives every never-list case an empty plan", () => {

@@ -49,16 +49,37 @@ absolute bar instead of against history.
 
 Every entry in `copilotNeverList` has a case, and a test fails if one loses it.
 
+## What the live suite needs from a workspace
+
+Ray reads an existing workspace, so cases declare the records they read — `requires` on a case names
+`conversation_with_assistant_turn`, `document`, or `quality_signal`. The runner probes the target
+once and **skips** any case it cannot supply rather than running it. A skipped case is not a failing
+case: scoring "why did the agent answer that?" against a workspace that has never held a
+conversation measures the environment, not Ray.
+
+`--update-baseline` refuses while any selected case is skipped, and refuses before spending a model
+call. A baseline missing those cases is indistinguishable from a baseline where they never existed,
+and every later run compares against it.
+
+Point the suite at a workspace with real history to record one. With no workspace set it registers a
+throwaway account and seeds one conversation with an answered turn plus one document — enough to
+exercise most cases as a smoke run, and deliberately not enough to record from.
+
 ## Running the live suite
 
 ```bash
 cd backend
-# A disposable workspace; without these a throwaway account is registered.
-export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
+# The account and operator are resolved from the workspace; the agent defaults to the workspace's.
+export RADIOSO_EVAL_WORKSPACE_ID=...
 pnpm run evals:copilot:update-baseline   # FIRST: record current behaviour into baseline.json
 pnpm run evals:copilot                   # thereafter: run + gate
 pnpm run evals:copilot -- --tag never_list
 ```
+
+`--workspace`, `--agent`, and `--operator` mirror `RADIOSO_EVAL_WORKSPACE_ID`,
+`RADIOSO_EVAL_AGENT_ID`, and `RADIOSO_EVAL_OPERATOR_USER_ID`. A workspace id that does not resolve
+is an error rather than a reason to substitute a fresh workspace, and an operator id that is not an
+active member of that workspace's account is an error too.
 
 `baseline.json` holds no cases yet, and an empty baseline cannot gate — every case reads as "new" —
 so the runner exits non-zero until you record one. That is also why the workflow runs on demand
@@ -67,13 +88,17 @@ Recording a baseline enables the schedule, and the header of `.github/workflows/
 carries the cron line to add back.
 
 Without Postgres and an `OPENAI_API_KEY` to hand, record it from CI instead: run the **Ray Copilot
-Evals** workflow with `update_baseline` checked, download the `copilot-eval-baseline` artifact, and
-commit it over `baseline.json`. A never-list violation throws inside the recorder rather than being
-written, so neither route can bless one.
+Evals** workflow with `workspace_id` set to a workspace holding that history and `update_baseline`
+checked, then download the `copilot-eval-baseline` artifact and commit it over `baseline.json`. A
+never-list violation throws inside the recorder rather than being written, so neither route can
+bless one.
 
 ## Adding a case
 
-1. Write the operator message, the page context, and the permission set of the role you are testing.
+1. Write the operator message, the page context, the permission set of the role you are testing, and
+   the `requires` the case reads. A case naming a conversation in its page context must declare
+   `conversation_with_assistant_turn`; a test enforces that, because a live run rewrites page-context
+   ids to the target workspace and an undeclared case would run with that id blanked.
    Derive that set from `accountAccessService.roleAllows` rather than guessing: a permission set the
    role does not actually hold makes every exposure assertion true of the fixture and false of the
    product, and no harness catches that.

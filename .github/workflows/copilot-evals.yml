@@ -12,20 +12,32 @@ name: Ray Copilot Evals
 # The job runs on demand rather than on a schedule, because gating needs a recorded baseline and
 # baseline.json holds no cases yet. An empty baseline cannot gate — every case reads as "new" — so
 # the runner exits non-zero on purpose, and a scheduled job would be red every morning regardless of
-# how Ray behaved. To record one: run this workflow with update_baseline checked, download the
-# copilot-eval-baseline artifact, commit it, and add the schedule trigger back:
+# how Ray behaved.
+#
+# Ray reads an existing workspace, so recording a baseline needs one with real history: a customer
+# conversation with an answered turn, documents, and quality feedback. Without workspace_id this job
+# registers a throwaway workspace and seeds a conversation and a document into it — enough for a
+# smoke run, and the runner refuses to record a baseline from it because the cases reading quality
+# feedback cannot run there. To record one, point workspace_id at a workspace holding that history,
+# check update_baseline, download the copilot-eval-baseline artifact, commit it, and add the
+# schedule trigger back:
 #
 #   on:
 #     schedule:
 #       - cron: "30 6 * * *" # 06:30 UTC daily, after the conversation-quality suite
 #
-# Requires the OPENAI_API_KEY repository secret.
+# Requires the OPENAI_API_KEY repository secret. A workspace_id run also needs DATABASE_URL pointed
+# at the database holding that workspace, in place of the throwaway Postgres service below.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
         description: Only run cases carrying this tag (blank = all)
+        required: false
+        default: ""
+      workspace_id:
+        description: Workspace to run against (blank = register and seed a throwaway one)
         required: false
         default: ""
       update_baseline:
@@ -110,6 +122,9 @@ jobs:
           args=(./scripts/runCopilotEvals.ts)
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             args+=(--tag "${{ github.event.inputs.tag }}")
+          fi
+          if [ -n "${{ github.event.inputs.workspace_id }}" ]; then
+            args+=(--workspace "${{ github.event.inputs.workspace_id }}")
           fi
           if [ "${{ github.event.inputs.update_baseline }}" = "true" ]; then
             args+=(--update-baseline)

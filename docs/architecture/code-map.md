@@ -292,6 +292,9 @@ are hard-gated: they fail the run outright rather than being compared to the
 baseline, because a violation recorded once would read as unchanged thereafter.
 `AppDependencies` publishes the catalog, prompt, capability runner, and route-key
 resolver so the live suite drives the same turn assembly the dashboard uses.
+Cases declare the workspace records they read, and a live run skips the ones its
+target cannot supply rather than scoring them; recording a baseline is refused
+while any case is skipped, so an environment gap never enters it.
 
 Public and tool surfaces:
 

@@ -24,6 +24,17 @@ import type { EvalRunStatus } from "../../src/modules/eval/domain/types.js";
 
 export type CopilotEvalFidelity = "deterministic" | "live";
 
+/**
+ * Workspace records a case needs before it means anything. Ray reads an existing workspace, so a
+ * case about diagnosing a bad answer is not "failing" in a workspace that has never held a
+ * conversation — it is unrunnable, and scoring it there would record an environment gap as Ray's
+ * behaviour. Deterministic runs supply all of these from fixtures; live runs probe the target.
+ */
+export type CopilotEvalWorkspaceRequirement =
+  | "conversation_with_assistant_turn"
+  | "document"
+  | "quality_signal";
+
 export interface CopilotObservedToolCall {
   readonly tool: string;
   readonly input: unknown;
@@ -133,6 +144,8 @@ export interface CopilotEvalCase {
    * whatever fidelity it ran, and the baseline refuses to record it failing.
    */
   readonly neverListBoundary?: string;
+  /** Workspace records this case needs; a live run that cannot supply them skips the case. */
+  readonly requires?: CopilotEvalWorkspaceRequirement[];
   readonly plan: Array<{ tool: string; input: unknown }>;
   /** The answer the scripted model returns at deterministic fidelity. */
   readonly finalMessage?: string;
@@ -168,6 +181,7 @@ export const copilotEvalCaseSchema = z.object({
   history: z.array(z.object({ role: z.enum(["operator", "copilot"]), content: z.string() })).optional(),
   message: z.string().min(1),
   neverListBoundary: z.string().min(1).optional(),
+  requires: z.array(z.enum(["conversation_with_assistant_turn", "document", "quality_signal"])).optional(),
   plan: z.array(z.object({ tool: z.string().min(1), input: z.unknown() })),
   finalMessage: z.string().optional(),
   assertions: z.array(copilotEvalAssertionSchema).min(1),
@@ -326,6 +340,33 @@ export const scoreCopilotTurn = (
     };
   }
   return combine(assertions.map((assertion) => evaluateCopilotAssertion(assertion, turn, fidelity)));
+};
+
+export interface CopilotEvalCaseSelection {
+  readonly runnable: CopilotEvalCase[];
+  readonly unmet: Array<{ readonly caseId: string; readonly name: string; readonly missing: CopilotEvalWorkspaceRequirement[] }>;
+}
+
+/**
+ * Splits a dataset by what the target workspace can actually supply.
+ *
+ * Unmet cases are dropped rather than run, and the caller must refuse to record a baseline while
+ * any exist. Running them would score an empty workspace and recording that would bless the
+ * environment gap as Ray's normal behaviour — which is exactly the shape of mistake a baseline
+ * makes permanent, because every later run then compares against it.
+ */
+export const selectRunnableCopilotEvalCases = (
+  cases: ReadonlyArray<CopilotEvalCase>,
+  satisfied: ReadonlySet<CopilotEvalWorkspaceRequirement>,
+): CopilotEvalCaseSelection => {
+  const runnable: CopilotEvalCase[] = [];
+  const unmet: CopilotEvalCaseSelection["unmet"][number][] = [];
+  for (const evalCase of cases) {
+    const missing = (evalCase.requires ?? []).filter((requirement) => !satisfied.has(requirement));
+    if (missing.length === 0) runnable.push(evalCase);
+    else unmet.push({ caseId: evalCase.id, name: evalCase.name, missing });
+  }
+  return { runnable, unmet };
 };
 
 export interface CopilotEvalRunnerPort {

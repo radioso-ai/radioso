@@ -2,6 +2,7 @@ import { getEnv, type Env } from "../config/env.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
+  createDefaultFacetExtractionDrainDispatcher,
   createRealtimePublisherComposition,
   type ApplicationModule,
 } from "../composition/index.js";
@@ -11,7 +12,11 @@ import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRed
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
-import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
+import {
+  createFacetExtractionWorker,
+  FacetExtractionService,
+  FacetExtractionWorkspaceDrainService,
+} from "../../modules/facets/composition.js";
 import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/public.js";
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
@@ -366,6 +371,30 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     realtimePublisherComposition.publisher,
   );
+  // Per-message facet extraction (topic census). This same durable worker serves
+  // the local poll loop, task recovery, and an operator-requested Pulse refresh.
+  const facetExtractionWorker = createFacetExtractionWorker({
+    jobs: repositories.facetExtractionJobRepository,
+    extraction: composition.facetExtraction ?? new FacetExtractionService({
+      messages: repositories.messageRepository,
+      facets: repositories.messageFacetRepository,
+      embeddings: embeddingPorts,
+      inferenceFactory: createRewriteTierStructuredInferenceFactory(
+        { resolver: llmCapabilityResolver },
+        infrastructure.usageEventRecorder,
+      ),
+    }),
+    logger,
+    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
+    batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
+    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
+    telemetryService: infrastructure.telemetryService,
+    errorReporter: infrastructure.errorReportingService,
+  });
+  const facetExtractionWorkspaceDrain = new FacetExtractionWorkspaceDrainService(
+    repositories.facetExtractionJobRepository,
+    createDefaultFacetExtractionDrainDispatcher(env, logger),
+  );
   const audiencePulseService = buildAudiencePulseService({
     kysely: infrastructure.database.kysely,
     llmCapabilityResolver,
@@ -376,6 +405,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     abuseControlService: chat.abuseControlService,
     embeddingBindingResolver,
+    facetDrain: facetExtractionWorkspaceDrain,
   });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
@@ -520,29 +550,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       auditService: infrastructure.auditService,
     }),
   });
-  // Per-message facet extraction (topic census). `composition.facetExtraction` lets a
-  // host override the extractor entirely (mirroring `chunkingProvider` /
-  // `websiteCrawlerProvider`); the OSS default below uses the cheap `"rewrite"` model
-  // tier and the workspace's clustering embedding profile, the same ports the census
-  // read path will consume.
-  const facetExtractionWorker = createFacetExtractionWorker({
-    jobs: repositories.facetExtractionJobRepository,
-    extraction: composition.facetExtraction ?? new FacetExtractionService({
-      messages: repositories.messageRepository,
-      facets: repositories.messageFacetRepository,
-      embeddings: embeddingPorts,
-      inferenceFactory: createRewriteTierStructuredInferenceFactory(
-        { resolver: llmCapabilityResolver },
-        infrastructure.usageEventRecorder,
-      ),
-    }),
-    logger,
-    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
-    batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
-    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
-    telemetryService: infrastructure.telemetryService,
-    errorReporter: infrastructure.errorReportingService,
-  });
   return {
     env,
     logger,
@@ -609,6 +616,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentProcessingWorker: documents.documentProcessingWorker,
     documentJobConsumer: documents.documentJobConsumer,
     facetExtractionWorker,
+    facetExtractionWorkspaceDrain,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
     websiteCrawlJobService: documents.websiteCrawlJobService,
     websiteCrawlWorker: documents.websiteCrawlWorker,

@@ -63,7 +63,12 @@ export interface FacetExtractionJobStore {
    * them to `processing` and counting the attempt. Implementations must use
    * `FOR UPDATE SKIP LOCKED` so concurrent workers claim disjoint rows.
    */
-  claimBatch(limit: number, now?: Date): Promise<FacetExtractionJob[]>;
+  claimBatch(
+    limit: number,
+    now?: Date,
+    workspaceId?: string,
+    messageWindow?: { start: Date; end: Date },
+  ): Promise<FacetExtractionJob[]>;
   /**
    * Terminal/progress updates are fenced to the claim returned by `claimBatch`.
    * Returns false when the row has since been released/reclaimed/completed by another
@@ -80,7 +85,25 @@ export interface FacetExtractionJobStore {
    * Return `processing` rows claimed at or before `claimedAtOrBefore` to the queue, so a
    * worker that died mid-batch cannot strand jobs. Returns the number released.
    */
-  releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number }): Promise<number>;
+  releaseExpiredClaims(input: { claimedAtOrBefore: Date; maxAttempts: number; workspaceId?: string }): Promise<number>;
+  /** The next queued job for one workspace, if work remains. */
+  nextWorkspaceScheduledAt(workspaceId: string, messageWindow?: { start: Date; end: Date }): Promise<Date | null>;
+  hasPendingWorkspaceWork(workspaceId: string, messageWindow?: { start: Date; end: Date }): Promise<boolean>;
+}
+
+/** Requests one bounded, authenticated worker slice. Duplicate requests are safe: claims are lease fenced. */
+export interface FacetExtractionDrainDispatcher {
+  requestWorkspaceDrain(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+    scheduleAt?: Date;
+  }): Promise<void>;
+}
+
+/** Local development keeps using the worker poll loop, so no remote task is needed. */
+export class NoopFacetExtractionDrainDispatcher implements FacetExtractionDrainDispatcher {
+  async requestWorkspaceDrain(): Promise<void> {}
 }
 
 export type FacetExtractionOutcome =

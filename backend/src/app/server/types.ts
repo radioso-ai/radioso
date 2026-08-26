@@ -20,7 +20,7 @@ import type {
   DocumentSourceReprocessService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
-import type { FacetExtractionWorker } from "../../modules/facets/composition.js";
+import type { FacetExtractionWorker, FacetExtractionWorkspaceDrainService } from "../../modules/facets/composition.js";
 import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
@@ -182,6 +182,7 @@ export interface AppDependencies {
   // Worker-process poll loop for per-message facet extraction. Absent until an
   // extraction implementation is registered through application composition.
   facetExtractionWorker?: FacetExtractionWorker;
+  facetExtractionWorkspaceDrain?: FacetExtractionWorkspaceDrainService;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
   websiteCrawlWorker: WebsiteCrawlWorker;

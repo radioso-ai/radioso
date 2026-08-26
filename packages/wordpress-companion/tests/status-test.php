@@ -532,6 +532,29 @@ assert_true(
     'dispatch publishes the field map alongside the facts block'
 );
 
+// One payload quotes one price. A site's pricing callback may be stateful, time
+// sensitive, or backed by an external service, so asking it twice for the same
+// push is how the facts block and the field map come to disagree.
+$GLOBALS['pricing_calls'] = 0;
+$GLOBALS['filters']['radioso_sync_product_pricing'] = function ($pricing) {
+    $GLOBALS['pricing_calls']++;
+    // A different answer every time, so a second call cannot go unnoticed.
+    $pricing['min'] = 17.0 - $GLOBALS['pricing_calls'];
+    return $pricing;
+};
+radioso_dispatch('updated', $catalogue_post);
+$once = json_decode($GLOBALS['last_webhook_body'], true);
+assert_true($GLOBALS['pricing_calls'] === 1, 'a push asks the site for its price once');
+assert_true(
+    strpos($once['post']['content_rendered'], 'Prezzo: €16,00') !== false,
+    'the facts block quotes the price the site supplied'
+);
+assert_true(
+    (float) $once['post']['fields']['price'] === 16.0,
+    'the field map carries the same number the facts block quotes'
+);
+unset($GLOBALS['filters']['radioso_sync_product_pricing']);
+
 $page_post = (object) [
     'ID' => 901, 'post_type' => 'page', 'post_status' => 'publish', 'post_name' => 'chi-siamo',
     'post_content' => '<p>Ciao</p>', 'post_excerpt' => '', 'post_modified_gmt' => '2026-05-16T12:00:00',

@@ -785,8 +785,9 @@ function radioso_plain_price($amount) {
 /**
  * The shop's price picture for a product, tax handling included: what the
  * shopper pays, what the list price was, and whether the shop is discounting.
- * Derived once and rendered twice — as the figure the agent quotes and as the
- * numbers a retrieval rule compares — so the two can never disagree.
+ * Derived once per push by `radioso_post_pricing()` and rendered twice — as the
+ * figure the agent quotes and as the numbers a retrieval rule compares — so the
+ * two can never disagree.
  *
  * Variable products span their variations, so they carry both ends: quoting one
  * number for a product that spans several would misstate the price in both
@@ -890,7 +891,29 @@ function radioso_pricing_shows_discount($pricing) {
         && $pricing['regular'] > $pricing['min'];
 }
 
-function radioso_product_facts($post) {
+/**
+ * The pricing for a post, or an empty array when it prices nothing.
+ *
+ * A push resolves this once and hands it to both renderings. A site's pricing
+ * filter may be stateful, time sensitive, or backed by a service it queries, so
+ * asking it a second time for the same push is how a quoted figure and an
+ * indexed number come to disagree inside one payload.
+ */
+function radioso_post_pricing($post) {
+    if (!function_exists('wc_get_product')) {
+        return [];
+    }
+
+    $product = wc_get_product($post->ID);
+    return $product ? radioso_product_pricing($product) : [];
+}
+
+/**
+ * `$pricing` is what the push already resolved. Omitting it prices the product
+ * here instead, which is right for a caller reading one product on its own and
+ * wrong for anything assembling a payload — see `radioso_post_pricing()`.
+ */
+function radioso_product_facts($post, $pricing = null) {
     if (!function_exists('wc_get_product')) {
         return [];
     }
@@ -907,7 +930,7 @@ function radioso_product_facts($post) {
         $facts[] = ['label' => 'SKU', 'value' => $sku];
     }
 
-    $pricing = radioso_product_pricing($product);
+    $pricing = $pricing === null ? radioso_product_pricing($product) : $pricing;
     $price_text = radioso_product_price_text($pricing);
     if ($price_text !== '') {
         // WooCommerce's own translation of the label, so the price is labelled in
@@ -969,7 +992,7 @@ function radioso_product_facts($post) {
  * Prices are the display prices, so they match what the facts block quotes and
  * what the shopper is charged.
  */
-function radioso_product_fields($post) {
+function radioso_product_fields($post, $pricing = null) {
     if (!function_exists('wc_get_product')) {
         return [];
     }
@@ -986,7 +1009,7 @@ function radioso_product_fields($post) {
         $fields['sku'] = $sku;
     }
 
-    $pricing = radioso_product_pricing($product);
+    $pricing = $pricing === null ? radioso_product_pricing($product) : $pricing;
     if ($pricing) {
         $fields['price'] = $pricing['min'];
         if (isset($pricing['max'])) {
@@ -1089,8 +1112,8 @@ function radioso_valid_fields($fields) {
  * publish because `woocommerce_update_product` and
  * `woocommerce_product_set_stock_status` re-push the product when they change.
  */
-function radioso_facts_html($post) {
-    $facts = array_merge(radioso_taxonomy_facts($post), radioso_product_facts($post));
+function radioso_facts_html($post, $pricing = null) {
+    $facts = array_merge(radioso_taxonomy_facts($post), radioso_product_facts($post, $pricing));
     if (!$facts) {
         return '';
     }
@@ -1105,8 +1128,8 @@ function radioso_facts_html($post) {
     return '<ul class="radioso-facts">' . $items . '</ul>';
 }
 
-function radioso_rendered_content($post) {
-    return apply_filters('the_content', $post->post_content) . radioso_facts_html($post);
+function radioso_rendered_content($post, $pricing = null) {
+    return apply_filters('the_content', $post->post_content) . radioso_facts_html($post, $pricing);
 }
 
 function radioso_dispatch($event, $post) {
@@ -1116,6 +1139,10 @@ function radioso_dispatch($event, $post) {
         return new WP_Error('radioso_not_configured', 'Webhook URL or shared secret is missing.');
     }
 
+    // Resolved before the payload so the facts block and the field map below are
+    // built from one answer rather than two.
+    $pricing = radioso_post_pricing($post);
+
     $post_payload = [
         'id'               => (int) $post->ID,
         'type'             => $post->post_type,
@@ -1123,7 +1150,7 @@ function radioso_dispatch($event, $post) {
         'slug'             => $post->post_name,
         'title'            => get_the_title($post),
         'content_raw'      => $post->post_content,
-        'content_rendered' => radioso_rendered_content($post),
+        'content_rendered' => radioso_rendered_content($post, $pricing),
         'excerpt_rendered' => apply_filters('the_excerpt', $post->post_excerpt),
         'link'             => get_permalink($post),
         'modified_gmt'     => $post->post_modified_gmt,
@@ -1135,7 +1162,7 @@ function radioso_dispatch($event, $post) {
         $post_payload['author'] = $author;
     }
 
-    $fields = radioso_product_fields($post);
+    $fields = radioso_product_fields($post, $pricing);
     if ($fields) {
         $post_payload['fields'] = $fields;
     }

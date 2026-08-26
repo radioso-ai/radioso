@@ -112,6 +112,7 @@ describe("Postgres realtime session store", () => {
     const touchLastSeen = vi.fn().mockResolvedValue(undefined);
     const authenticator = new RealtimeSessionAuthenticator({
       store: { lookup: async () => mapped, touchLastSeen },
+      now: () => Date.parse("2026-08-25T00:00:00.000Z"),
     });
     await expect(authenticator.authenticate(canonicalInput)).rejects.toMatchObject(expect.objectContaining({
       statusCode: typedForbiddenStatus,

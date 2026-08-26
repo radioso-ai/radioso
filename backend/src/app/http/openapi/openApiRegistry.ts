@@ -192,6 +192,7 @@ export interface OpenApiSchemaCatalog {
   AudiencePulseEvidenceAnchorResponseSchema: z.ZodTypeAny;
   AudiencePulseReadResponseSchema: z.ZodTypeAny;
   AudiencePulseRefreshResponseSchema: z.ZodTypeAny;
+  AudiencePulseRefreshStatusResponseSchema: z.ZodTypeAny;
   UsageTrendBucketSchema: z.ZodTypeAny;
   UsageTrendGranularitySchema: z.ZodTypeAny;
   UsageTrendsQuerySchema: RouteParameterSchema;

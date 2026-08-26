@@ -2641,6 +2641,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/audience-pulse/refresh-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read pending Audience Pulse preparation work
+         * @description Reports whether the durable facet queue still has work for this workspace. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
+         */
+        get: operations["getAudiencePulseRefreshStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/quality/audience-pulse/evidence-anchor": {
         parameters: {
             query?: never;
@@ -6702,6 +6722,9 @@ export interface components {
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
         } | {
             /** @enum {string} */
+            kind: "preparing";
+        } | {
+            /** @enum {string} */
             kind: "unavailable";
             /** @enum {string} */
             reason: "provider" | "validation" | "cancelled";
@@ -6709,6 +6732,9 @@ export interface components {
             /** @enum {string} */
             kind: "completed";
             report: components["schemas"]["AudiencePulseReport"];
+        };
+        AudiencePulseRefreshStatusResponse: {
+            pending: boolean;
         };
         PendingApprovalDecisionOption: {
             id: string;
@@ -17941,6 +17967,44 @@ export interface operations {
             };
             /** @description Workspace inference capability is unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAudiencePulseRefreshStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Facet preparation status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseRefreshStatusResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.read */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

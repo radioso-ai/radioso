@@ -14,14 +14,21 @@ const recoveryTaskSchema = z.object({
   maxJobs: z.number().int().min(1).max(50).default(5),
 }).default({});
 
+const facetDrainTaskSchema = z.object({
+  workspaceId: z.string().uuid(),
+  analysisStart: z.coerce.date(),
+  analysisEnd: z.coerce.date(),
+});
+
 // One recovery request must have a predictable LLM-work budget even when the
 // facet worker's normal poll-loop batch size is configured much higher. A
 // stricter worker configuration remains authoritative.
 const FACET_RECOVERY_MAX_JOBS = 10;
+const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -95,6 +102,32 @@ export const createDocumentWorkerTaskRoutes = (
         ?.runOnce(new Date(), FACET_RECOVERY_MAX_JOBS) ?? 0;
 
       res.status(200).json({ processedJobCount, processedFacetJobCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/facet-extraction/drain", async (req, res, next) => {
+    const parsed = facetDrainTaskSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_task_payload" });
+      return;
+    }
+    if (!dependencies.facetExtractionWorker) {
+      res.status(503).json({ error: "facet_extraction_unavailable" });
+      return;
+    }
+    try {
+      const processedJobCount = await dependencies.facetExtractionWorker.drainWorkspace({
+        workspaceId: parsed.data.workspaceId,
+        analysisStart: parsed.data.analysisStart,
+        analysisEnd: parsed.data.analysisEnd,
+        maxJobs: FACET_TASK_DRAIN_MAX_JOBS,
+      });
+      // Chain only after this slice completes. The queue is durable and claims are
+      // fenced, so duplicate tasks simply find no jobs and do no provider work.
+      await dependencies.facetExtractionWorkspaceDrain?.requestWorkspaceDrain(parsed.data);
+      res.status(200).json({ processedJobCount });
     } catch (error) {
       next(error);
     }

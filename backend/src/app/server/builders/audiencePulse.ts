@@ -16,6 +16,7 @@ import {
   createRewriteTierStructuredInferenceFactory,
 } from "../../../shared/infra/llm/contextualGateways.js";
 import type { DB } from "../../../shared/infra/kysely/schema.js";
+import type { AudiencePulseFacetDrainPort } from "../../../modules/audiencePulse/contracts.js";
 
 type AudiencePulseBuilderInput = {
   kysely: Kysely<DB>;
@@ -27,6 +28,7 @@ type AudiencePulseBuilderInput = {
   telemetryService: ConstructorParameters<typeof ContextualCensusServiceFactory>[0]["telemetryService"];
   abuseControlService: ConstructorParameters<typeof AudiencePulseRefreshRateLimiter>[0]["abuseControlService"];
   embeddingBindingResolver: ConstructorParameters<typeof ContextualCensusServiceFactory>[0]["embeddingBindingResolver"];
+  facetDrain: AudiencePulseFacetDrainPort;
 };
 
 /**
@@ -44,6 +46,7 @@ export const buildAudiencePulseService = (input: AudiencePulseBuilderInput): Aud
       abuseControlService: input.abuseControlService,
       auditService: input.auditService,
     }),
+    facetDrain: input.facetDrain,
     inferenceFactory: new ContextualStructuredInferenceFactory({ resolver: input.llmCapabilityResolver }, input.usageEventRecorder),
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,

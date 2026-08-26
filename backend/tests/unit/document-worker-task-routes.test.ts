@@ -10,13 +10,15 @@ const buildApp = (input: {
     runOnce: ReturnType<typeof vi.fn>;
     runPostJobMaintenance: ReturnType<typeof vi.fn>;
   };
-  facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn> };
+  facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn>; drainWorkspace: ReturnType<typeof vi.fn> };
+  facetExtractionWorkspaceDrain?: { requestWorkspaceDrain: ReturnType<typeof vi.fn> };
 }) => {
   const app = express();
   app.use(express.json());
   app.use(createDocumentWorkerTaskRoutes({
     documentProcessingWorker: input.documentProcessingWorker as never,
     facetExtractionWorker: input.facetExtractionWorker as never,
+    facetExtractionWorkspaceDrain: input.facetExtractionWorkspaceDrain as never,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(500).json({ error: "internal" });
@@ -34,7 +36,7 @@ describe("createDocumentWorkerTaskRoutes", () => {
           runOnce: vi.fn().mockResolvedValue(false),
           runPostJobMaintenance: vi.fn().mockResolvedValue(undefined),
         },
-        facetExtractionWorker: { runOnce: facetRunOnce },
+        facetExtractionWorker: { runOnce: facetRunOnce, drainWorkspace: vi.fn() },
       });
 
       const response = await request(app)
@@ -62,6 +64,44 @@ describe("createDocumentWorkerTaskRoutes", () => {
 
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ processedJobCount: 0, processedFacetJobCount: 0 });
+    });
+  });
+
+  describe("POST /internal/tasks/facet-extraction/drain", () => {
+    it("drains a bounded workspace slice and schedules the following slice", async () => {
+      const drainWorkspace = vi.fn().mockResolvedValue(100);
+      const requestWorkspaceDrain = vi.fn().mockResolvedValue(false);
+      const app = buildApp({
+        documentProcessingWorker: {
+          runJobById: vi.fn(),
+          runOnce: vi.fn().mockResolvedValue(false),
+          runPostJobMaintenance: vi.fn().mockResolvedValue(undefined),
+        },
+        facetExtractionWorker: { runOnce: vi.fn(), drainWorkspace },
+        facetExtractionWorkspaceDrain: { requestWorkspaceDrain },
+      });
+
+      const response = await request(app)
+        .post("/internal/tasks/facet-extraction/drain")
+        .send({
+          workspaceId: "11111111-1111-1111-1111-111111111111",
+          analysisStart: "2026-07-01T00:00:00.000Z",
+          analysisEnd: "2026-08-01T00:00:00.000Z",
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ processedJobCount: 100 });
+      expect(drainWorkspace).toHaveBeenCalledWith({
+        workspaceId: "11111111-1111-1111-1111-111111111111",
+        analysisStart: new Date("2026-07-01T00:00:00.000Z"),
+        analysisEnd: new Date("2026-08-01T00:00:00.000Z"),
+        maxJobs: 100,
+      });
+      expect(requestWorkspaceDrain).toHaveBeenCalledWith({
+        workspaceId: "11111111-1111-1111-1111-111111111111",
+        analysisStart: new Date("2026-07-01T00:00:00.000Z"),
+        analysisEnd: new Date("2026-08-01T00:00:00.000Z"),
+      });
     });
   });
 });

@@ -784,7 +784,7 @@ Public surfaces and contracts:
 - `backend/src/modules/audiencePulse/contracts/topicCensus.ts` (`TopicRepositoryPort` and the run/topic/membership/transition input shapes)
 - `backend/src/modules/audiencePulse/contracts/topicLabel.ts` (`TopicNamingPort`, `TopicLabelPrivacyAuditPort`)
 - `backend/src/modules/audiencePulse/composition.ts`
-- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse` and `POST /api/v1/quality/audience-pulse/evidence-anchor`)
+- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse`, `GET /api/v1/quality/audience-pulse/refresh-status`, and `POST /api/v1/quality/audience-pulse/evidence-anchor`)
 - `frontend/components/dashboard/audience-pulse-view.tsx`
 - `frontend/lib/api-audience-pulse.ts`
 - `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
@@ -824,9 +824,10 @@ the topic census: one durable job per message, a polling claim loop in the
 worker process, the retry policy around it, and the `message_facets` store the
 census reads from.
 
-Facet extraction is batch analytics — no turn, request, or user-visible surface
-waits on it — so local development drains it with a poll loop rather than a
-per-message queue dispatcher. The spine knows nothing about what a facet is:
+Facet extraction is batch analytics — no chat turn waits on it. An Audience
+Pulse refresh asks the task worker to drain only its 30-day workspace window in bounded,
+automatically chained slices and the dashboard polls task status until it can
+generate the complete report. The spine knows nothing about what a facet is:
 extraction arrives as an injected port, registered through application
 composition. With no extractor registered the worker is not built, so queued
 jobs stay durable rather than being drained into a no-op. Eligibility for a
@@ -835,11 +836,12 @@ Chat module (`chatSessionPreparer.ts`) — the same predicate Audience Pulse
 reads history with, restated as a write-time check rather than duplicated.
 
 The local document-worker runtime starts that poll loop. Cloud Run instead
-serves authenticated task requests, so its scheduled
-`/internal/tasks/document-processing/recover` invocation drains the same
-bounded claim of at most ten facet jobs alongside document recovery. Both
-paths use the job repository's claim and lease rules, so a recovery request can
-race safely with a local poller or another recovery request.
+serves authenticated task requests: `POST /internal/tasks/facet-extraction/drain`
+drains a bounded workspace slice and schedules the next one while work remains.
+The scheduled `/internal/tasks/document-processing/recover` invocation retains
+its ten-job cap as recovery only. Both paths use the job repository's claim and
+lease rules, so task retries and recovery can race safely without claiming the
+same row.
 
 Public surfaces and contracts:
 
@@ -850,6 +852,8 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/facets/services/facetExtractionWorker.ts`
+- `backend/src/modules/facets/services/facetExtractionWorkspaceDrainService.ts`
+- `backend/src/modules/facets/infra/cloudTasksFacetExtractionDrainDispatcher.ts`
 - `backend/src/modules/facets/services/facetExtractionService.ts` (extraction on the `"rewrite"` model tier plus embedding through `ClusteringEmbeddingPort`)
 - `backend/src/db/repositories/facetExtractionJobRepository.ts` (`facet_extraction_jobs`)
 - `backend/src/db/repositories/messageFacetRepository.ts` (`message_facets`)

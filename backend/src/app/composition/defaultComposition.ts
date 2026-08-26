@@ -41,6 +41,11 @@ import {
   type TurnSelectionStrategy,
 } from "../../modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../modules/chat/infra/cloudTasksActionDrainDispatcher.js";
+import {
+  CloudTasksFacetExtractionDrainDispatcher,
+  NoopFacetExtractionDrainDispatcher,
+  type FacetExtractionDrainDispatcher,
+} from "../../modules/facets/composition.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import {
@@ -308,6 +313,35 @@ export const createDefaultActionDrainDispatcher = (
         logger,
       })
     : new NoopActionDrainDispatcher();
+
+/**
+ * Facet jobs share the configured Cloud Tasks worker queue with document work. The
+ * queue is already rate/concurrency limited in Terraform, while the durable facet
+ * job table provides idempotency and lease fencing.
+ */
+export const createDefaultFacetExtractionDrainDispatcher = (
+  env: Pick<Env,
+    | "WORKER_DISPATCH_DRIVER"
+    | "GOOGLE_CLOUD_PROJECT"
+    | "WORKER_TASKS_QUEUE_LOCATION"
+    | "WORKER_TASKS_QUEUE_NAME"
+    | "WORKER_TASKS_SERVICE_URL"
+    | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
+  >,
+  logger: AppLogger,
+): FacetExtractionDrainDispatcher =>
+  env.WORKER_DISPATCH_DRIVER === "cloud-tasks"
+    ? new CloudTasksFacetExtractionDrainDispatcher({
+        projectId: env.GOOGLE_CLOUD_PROJECT!,
+        location: env.WORKER_TASKS_QUEUE_LOCATION!,
+        queueName: env.WORKER_TASKS_QUEUE_NAME!,
+        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
+        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
+        logger,
+      })
+    : new NoopFacetExtractionDrainDispatcher();
 
 export const createDefaultDocumentJobConsumer = (
   env: Pick<Env,

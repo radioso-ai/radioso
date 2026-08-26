@@ -22,6 +22,20 @@ export const registerAudiencePulsePaths = (
     },
   });
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/quality/audience-pulse/refresh-status",
+    tags: ["Audience Pulse"],
+    summary: "Read pending Audience Pulse preparation work",
+    description: "Reports whether the durable facet queue still has work for this workspace. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.",
+    operationId: "getAudiencePulseRefreshStatus",
+    security: security.workspaceAdminSecurity,
+    responses: {
+      200: { description: "Facet preparation status", content: { "application/json": { schema: schemas.AudiencePulseRefreshStatusResponseSchema } } },
+      401: { description: "Browser dashboard session required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Caller lacks workspace.quality.read", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+  registry.registerPath({
     method: "post",
     path: "/api/v1/quality/audience-pulse/evidence-anchor",
     tags: ["Audience Pulse"],

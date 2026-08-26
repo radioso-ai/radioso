@@ -122,10 +122,45 @@ export class FacetExtractionWorker {
     return processed;
   }
 
-  private async releaseExpiredClaims(now: Date): Promise<void> {
+  /**
+   * Drains one workspace's due jobs for an operator-requested Audience Pulse refresh.
+   * Claims remain scoped and lease-fenced, while concurrent extraction inside each
+   * normal-sized batch makes the initial historical report practical to wait for.
+   */
+  async drainWorkspace(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+    maxJobs: number;
+    now?: Date;
+  }): Promise<number> {
+    const now = input.now ?? new Date();
+    await this.releaseExpiredClaims(now, input.workspaceId);
+
+    let processed = 0;
+    while (!this.stopRequested && processed < input.maxJobs) {
+      const limit = Math.min(this.batchSize, input.maxJobs - processed);
+      const batch = await this.jobs.claimBatch(limit, now, input.workspaceId, {
+        start: input.analysisStart,
+        end: input.analysisEnd,
+      });
+      if (batch.length === 0) {
+        break;
+      }
+      await Promise.all(batch.map((job) => this.processJob(job, now)));
+      processed += batch.length;
+      if (batch.length < limit) {
+        break;
+      }
+    }
+    return processed;
+  }
+
+  private async releaseExpiredClaims(now: Date, workspaceId?: string): Promise<void> {
     const released = await this.jobs.releaseExpiredClaims({
       claimedAtOrBefore: new Date(now.getTime() - this.jobLeaseMs),
       maxAttempts: FACET_EXTRACTION_MAX_ATTEMPTS,
+      ...(workspaceId === undefined ? {} : { workspaceId }),
     });
     if (released > 0) {
       this.logger.warn(

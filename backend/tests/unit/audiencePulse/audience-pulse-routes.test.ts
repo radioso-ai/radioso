@@ -16,6 +16,7 @@ const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
 class CapturingService implements AudiencePulsePort {
   reads = 0;
   refreshes = 0;
+  refreshStatuses = 0;
   refreshSignalAborted: boolean | undefined;
   anchors: Array<{ accountId: string; userId: string; workspaceId: string; conversationId: string; messageId: string }> = [];
 
@@ -33,6 +34,11 @@ class CapturingService implements AudiencePulsePort {
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
       weeklyVolume: [],
     };
+  }
+
+  async refreshStatus(): Promise<{ pending: boolean }> {
+    this.refreshStatuses += 1;
+    return { pending: false };
   }
 
   async readEvidenceAnchor(input: {
@@ -201,6 +207,21 @@ describe("Audience Pulse routes", () => {
     expect(response.body).toEqual({ error: { code: "internal_error" } });
     expect(calls).toEqual({ bearer: 0, permission: 1, rate: 0, permissions: ["workspace.quality.read"] });
     expect(service.refreshes).toBe(1);
+  });
+
+  it("returns durable preparation status through the dashboard quality permission", async () => {
+    const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+    const service = new CapturingService();
+
+    const response = await request(createApp(service, calls))
+      .get("/api/v1/quality/audience-pulse/refresh-status")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("X-Workspace-Id", WORKSPACE_ID);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ pending: false });
+    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 0, permissions: ["workspace.quality.read"] });
+    expect(service.refreshStatuses).toBe(1);
   });
 
   it("uses a dashboard session and history permission for a body-only bounded evidence anchor", async () => {

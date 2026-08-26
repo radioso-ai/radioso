@@ -43,6 +43,8 @@ const buildStore = (batches: FacetExtractionJob[][]): StoreStub => {
     markSkipped: vi.fn<FacetExtractionJobStore["markSkipped"]>(async () => true),
     markFailed: vi.fn<FacetExtractionJobStore["markFailed"]>(async () => true),
     releaseExpiredClaims: vi.fn<FacetExtractionJobStore["releaseExpiredClaims"]>(async () => 0),
+    nextWorkspaceScheduledAt: vi.fn<FacetExtractionJobStore["nextWorkspaceScheduledAt"]>(async () => null),
+    hasPendingWorkspaceWork: vi.fn<FacetExtractionJobStore["hasPendingWorkspaceWork"]>(async () => false),
   };
 };
 
@@ -206,6 +208,28 @@ describe("FacetExtractionWorker", () => {
     await worker.runOnce(NOW, 10);
 
     expect(store.claimBatch).toHaveBeenCalledWith(10, NOW);
+  });
+
+  it("drains the requested workspace through successive batches without claiming another workspace's jobs", async () => {
+    const store = buildStore([
+      [buildJob({ id: "job-1" }), buildJob({ id: "job-2", messageId: "message-2" })],
+      [buildJob({ id: "job-3", messageId: "message-3" })],
+    ]);
+    const port = buildPort(async () => ({ status: "extracted" }));
+    const worker = buildWorker(store, port, { batchSize: 2 });
+
+    const window = { start: new Date("2026-07-01T00:00:00.000Z"), end: new Date("2026-08-01T00:00:00.000Z") };
+    const processed = await worker.drainWorkspace({ workspaceId: "workspace-1", analysisStart: window.start, analysisEnd: window.end, maxJobs: 500, now: NOW });
+
+    expect(processed).toBe(3);
+    expect(store.releaseExpiredClaims).toHaveBeenCalledWith({
+      claimedAtOrBefore: new Date(NOW.getTime() - 300_000),
+      maxAttempts: FACET_EXTRACTION_MAX_ATTEMPTS,
+      workspaceId: "workspace-1",
+    });
+    expect(store.claimBatch).toHaveBeenNthCalledWith(1, 2, NOW, "workspace-1", window);
+    expect(store.claimBatch).toHaveBeenNthCalledWith(2, 2, NOW, "workspace-1", window);
+    expect(port.extract).toHaveBeenCalledTimes(3);
   });
 
   it("keeps processing the rest of the batch when one job throws", async () => {

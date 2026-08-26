@@ -107,12 +107,18 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
       period: z.object({ start: z.string().datetime(), end: z.string().datetime() }),
       weeklyVolume: z.array(AudiencePulseWeeklyVolumeSchema),
     }),
+    z.object({ kind: z.literal("preparing") }),
     z.object({ kind: z.literal("unavailable"), reason: z.enum(["provider", "validation", "cancelled"]) }),
     z.object({ kind: z.literal("completed"), report: AudiencePulseReportSchema }),
   ]));
+  const AudiencePulseRefreshStatusResponseSchema = registry.register(
+    "AudiencePulseRefreshStatusResponse",
+    z.object({ pending: z.boolean() }),
+  );
 
   schemas.AudiencePulseReadResponseSchema = AudiencePulseReadResponseSchema;
   schemas.AudiencePulseRefreshResponseSchema = AudiencePulseRefreshResponseSchema;
+  schemas.AudiencePulseRefreshStatusResponseSchema = AudiencePulseRefreshStatusResponseSchema;
   schemas.AudiencePulseEvidenceAnchorRequestSchema = AudiencePulseEvidenceAnchorRequestSchema;
   schemas.AudiencePulseEvidenceAnchorResponseSchema = AudiencePulseEvidenceAnchorResponseSchema;
 };

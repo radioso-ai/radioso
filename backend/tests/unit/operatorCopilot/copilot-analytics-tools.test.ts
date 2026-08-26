@@ -23,10 +23,11 @@ describe("copilot analytics readers", () => {
     const getQualityStats = vi.fn(async () => ({ backlog: { grounding_gaps: 1 } }));
     const listLowQualityTurns = vi.fn(async () => ({ items: [{ assistantMessageId: "message-1" }], total: 1 }));
     const read = vi.fn(async () => ({ kind: "completed" as const, report: { themes: [{ title: "Checkout questions" }] } }));
+    const refreshStatus = vi.fn(async () => ({ pending: true }));
     const descriptors = [
       ...createEvalCopilotTools({ evalResultsService: { listWithLatestRun } }),
       ...createQualityCopilotTools({ qualitySignalsService: { getQualityStats, listLowQualityTurns } }),
-      ...createAudiencePulseCopilotTools({ audiencePulseService: { read } }),
+      ...createAudiencePulseCopilotTools({ audiencePulseService: { read, refreshStatus } }),
     ];
 
     expect(descriptors.map(({ name, requiredPermissions, shape }) => ({ name, requiredPermissions, shape }))).toEqual([
@@ -43,9 +44,10 @@ describe("copilot analytics readers", () => {
     expect(getQualityStats).toHaveBeenCalledWith("workspace-1", { range: "30d", agentId: "agent-1" });
     expect(listLowQualityTurns).toHaveBeenCalledWith("workspace-1", { limit: 20, agentId: "agent-1" });
     expect(read).toHaveBeenCalledWith({ accountId: "account-1", userId: "operator-1", workspaceId: "workspace-1" });
+    expect(refreshStatus).toHaveBeenCalledWith({ accountId: "account-1", userId: "operator-1", workspaceId: "workspace-1" });
     expect(JSON.stringify(evalResult).length).toBeGreaterThan(0);
     expect(JSON.stringify(evalResult)).not.toContain("x".repeat(1_000));
     expect(qualityResult).toMatchObject({ summary: { backlog: { grounding_gaps: 1 } } });
-    expect(audienceResult).toMatchObject({ result: { kind: "completed" } });
+    expect(audienceResult).toMatchObject({ result: { kind: "completed" }, preparation: { pending: true } });
   });
 });

@@ -70,6 +70,16 @@ export interface AudiencePulseRefreshRateLimitPort {
   enforce(input: { accountId: string; workspaceId: string }): Promise<void>;
 }
 
+/**
+ * The only facet-processing capability Audience Pulse needs. The facets module owns
+ * claiming, retries, model calls, and persistence; Audience Pulse merely asks it to
+ * make this workspace's report population ready before running a census.
+ */
+export interface AudiencePulseFacetDrainPort {
+  requestWorkspaceDrain(input: { workspaceId: string; analysisStart: Date; analysisEnd: Date }): Promise<boolean>;
+  hasPendingWorkspaceWork(input: { workspaceId: string; analysisStart: Date; analysisEnd: Date }): Promise<boolean>;
+}
+
 export interface AudiencePulseInferenceFactory {
   create(input: {
     workspaceContext: { workspaceId: string; accountId?: string | null };
@@ -157,6 +167,7 @@ export type AudiencePulseReadResult =
 
 export type AudiencePulseRefreshResult =
   | { kind: "no_traffic"; period: { start: string; end: string }; weeklyVolume: AudiencePulseWeeklyVolume[] }
+  | { kind: "preparing" }
   | { kind: "unavailable"; reason: "provider" | "validation" | "cancelled" }
   | { kind: "busy" }
   | { kind: "usage_limited" }
@@ -184,6 +195,7 @@ export const audiencePulseEvidenceAnchorInputSchema = audiencePulseReadInputSche
 export interface AudiencePulsePort {
   read(input: z.infer<typeof audiencePulseReadInputSchema>): Promise<AudiencePulseReadResult>;
   refresh(input: z.infer<typeof audiencePulseRefreshInputSchema>): Promise<AudiencePulseRefreshResult>;
+  refreshStatus(input: z.infer<typeof audiencePulseReadInputSchema>): Promise<{ pending: boolean }>;
   readEvidenceAnchor(
     input: z.infer<typeof audiencePulseEvidenceAnchorInputSchema>,
   ): Promise<AudiencePulseEvidenceAnchor | null>;

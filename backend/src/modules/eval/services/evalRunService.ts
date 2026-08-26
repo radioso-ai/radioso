@@ -49,6 +49,13 @@ export interface EvalRunInput {
   caseId?: string | null;
   mode: EvalRunMode;
   overrides?: EvalRunOverrides;
+  /**
+   * False scores the case's assertions without recording the outcome against it: the run is
+   * stored detached and the case keeps its verdict and last-run pointer. A caller measuring a
+   * configuration it has not adopted replays this way, so trying a change never moves the
+   * library's pass rate. Defaults to attaching.
+   */
+  attachToCase?: boolean;
 }
 
 export interface EvalRunOutcome {
@@ -119,6 +126,10 @@ const resolveReplayRetrievalSettingsOverride = (
   };
 };
 
+/** Overrides that only the conversation-engine replay path can honor. */
+const requiresWorkbenchReplay = (overrides: EvalRunOverrides): boolean =>
+  Boolean(overrides.agentConfigOverride || overrides.routineStartState);
+
 const workbenchAgentConfigOverride = (
   overrides: EvalRunOverrides,
 ): Partial<InternalAgentConfig> | undefined => {
@@ -167,6 +178,13 @@ export class EvalRunService {
       && snapshot.sourceAgentId
     ) {
       return this.executeWorkbenchReplay(input);
+    }
+    if (requiresWorkbenchReplay(overrides)) {
+      // The retrieval fallback ignores both of these, so continuing would answer from the
+      // captured configuration and report it as the override's result.
+      throw badRequest(
+        "agentConfigOverride and routineStartState require full_assistant mode and a full agent config snapshot",
+      );
     }
 
     const replay = buildReplayInputs(snapshot);
@@ -286,7 +304,7 @@ export class EvalRunService {
 
     const aggregate = combineVerdicts(verdicts);
 
-    const attachableCase = evalCase
+    const attachableCase = evalCase && input.attachToCase !== false
       ? await this.repository.findCase(input.workspaceId, evalCase.id)
       : null;
     const run = await this.repository.createRun({
@@ -438,7 +456,7 @@ export class EvalRunService {
         );
     const aggregate = combineVerdicts(verdicts);
 
-    const attachableCase = evalCase
+    const attachableCase = evalCase && input.attachToCase !== false
       ? await this.repository.findCase(input.workspaceId, evalCase.id)
       : null;
     const run = await this.repository.createRun({

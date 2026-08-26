@@ -6,7 +6,10 @@ import { buildCopilotNeverListContext, copilotNeverList, neverListExclusion } fr
 describe("operator copilot write shapes", () => {
   it("derives MCP annotation hints without adding MCP plumbing", () => {
     expect(copilotToolAnnotationsForShape("read")).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
-    expect(copilotToolAnnotationsForShape("probe")).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true });
+    // A probe changes no operator-managed configuration, but it spends real model budget and
+    // leaves a record of having run. A transport told "read-only, idempotent" is entitled to
+    // auto-run it and to retry it, and each retry is another billed turn and another row.
+    expect(copilotToolAnnotationsForShape("probe")).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false });
     expect(copilotToolAnnotationsForShape("act")).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: true });
     expect(copilotToolAnnotationsForShape("propose")).toEqual({ readOnlyHint: false, destructiveHint: false, idempotentHint: false });
   });

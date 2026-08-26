@@ -111,3 +111,157 @@ export interface CopilotEvalSuiteRunnerPort {
     caseIds?: string[];
   }): Promise<CopilotEvalSuiteProbeResult>;
 }
+
+export type CopilotEvalRunStatus = "pass" | "fail" | "error" | "recorded";
+
+/**
+ * The behavior-bearing subset of the eval module's override set. A replay measures configuration
+ * Ray is about to propose, so the cosmetic agent fields the eval route also accepts — logo, theme,
+ * branding — are deliberately absent: they cannot change a verdict and would only invite the model
+ * to send them. Everything `propose_agent_setting` can propose that *does* change behavior belongs
+ * here, or Ray can draft a proposal it has no way to measure.
+ */
+export interface CopilotEvalCaseReplayOverrides {
+  /** Answers "would another model get this right"; the grader keeps the workspace default. */
+  modelOverride?: { provider: "openai" | "openai-compatible" | "gemini" | "claude"; model: string };
+  assistantInstructionsOverride?: { customInstruction?: string };
+  retrievalSettingsOverride?: {
+    queryRewriteEnabled?: boolean;
+    rerankEnabled?: boolean;
+    vectorTopK?: number;
+    similarityThreshold?: number;
+    rerankTopK?: number;
+    customInstruction?: string;
+  };
+  agentConfigOverride?: {
+    customInstruction?: string;
+    greetingInstruction?: string;
+    /** Merged key by key onto the captured settings, so a single skill's entry stands alone. */
+    skillSettings?: Record<string, unknown>;
+    authoredDirectives?: ReadonlyArray<Record<string, unknown>>;
+  };
+  /** Seeds a mid-routine starting position, which is where routine defects concentrate. */
+  routineStartState?: {
+    routineId: string;
+    path: ReadonlyArray<string>;
+    variables: Record<string, unknown>;
+    attempts?: Record<string, number>;
+    status: "active" | "suspended" | "completed" | "expired";
+    metadata?: Record<string, unknown>;
+  };
+}
+
+export interface CopilotEvalCaseReplayInput extends CopilotEvalOperatorSubject {
+  caseId: string;
+  /** The thread the measurement belongs to, recorded so evidence stays attributable. */
+  copilotConversationId: string;
+  overrides?: CopilotEvalCaseReplayOverrides;
+}
+
+export interface CopilotEvalCaseReplayResult {
+  caseId: string;
+  name: string;
+  /** What this replay's configuration produced. */
+  verdict: CopilotEvalRunStatus;
+  /** The case's stored verdict, which a replay leaves untouched. */
+  recordedStatus: CopilotEvalCaseStatus;
+  assertionCount: number;
+  answer: string | null;
+  groundingVerdict: string | null;
+  groundingDiagnostics: unknown;
+  assertionVerdicts: ReadonlyArray<CopilotEvalSuiteAssertionVerdict>;
+  model: { provider: string | null; id: string | null };
+  /** Set when the replayed turn itself failed, so no verdict reflects the configuration. */
+  error: string | null;
+  /**
+   * Handle a later proposal cites to carry this measurement. Null when the case's snapshot
+   * captured no agent, so there is no configuration version to date the measurement against.
+   */
+  evidenceId: string | null;
+}
+
+export interface CopilotEvalCaseReplayPort {
+  replayCase(input: CopilotEvalCaseReplayInput): Promise<CopilotEvalCaseReplayResult>;
+}
+
+/** Narrow port over the eval module's case reader. */
+export interface CopilotEvalCaseReaderPort {
+  findCase(workspaceId: string, caseId: string): Promise<{
+    id: string;
+    name: string;
+    snapshotId: string;
+    status: CopilotEvalCaseStatus;
+    assertions: ReadonlyArray<unknown>;
+    /** The agent whose captured configuration a replay of this case runs against. */
+    sourceAgentId: string | null;
+    /** When that configuration was captured. */
+    snapshotCapturedAt: Date | null;
+  } | null>;
+}
+
+/** Narrow port over the eval module's run path, in its detached form. */
+export interface CopilotEvalCaseReplayRunnerPort {
+  execute(input: {
+    workspaceId: string;
+    accountId?: string | null;
+    snapshotId: string;
+    caseId: string;
+    mode: CopilotEvalRunMode;
+    overrides?: CopilotEvalCaseReplayOverrides;
+    attachToCase: boolean;
+  }): Promise<{
+    run: {
+      id: string;
+      status: CopilotEvalRunStatus;
+      assertionVerdicts: ReadonlyArray<CopilotEvalSuiteAssertionVerdict>;
+      observedOutput: {
+        answer?: string;
+        groundingVerdict?: string;
+        groundingDiagnostics?: unknown;
+        error?: { message: string };
+      };
+      resolvedConfig: { modelProvider?: string; modelId?: string };
+    };
+  }>;
+}
+
+/**
+ * One replay an operator ran before drafting a proposal. Recorded server-side rather than
+ * reported by the model: evidence the assistant could author is not evidence.
+ */
+export interface CopilotReplayEvidenceRecord {
+  id: string;
+  workspaceId: string;
+  operatorUserId: string;
+  conversationId: string;
+  agentId: string;
+  caseId: string;
+  caseName: string;
+  runId: string;
+  /**
+   * When the eval case froze the agent configuration the replay ran against. The replay never
+   * reads the live agent config, so an edit any time after this point dates the measurement.
+   */
+  baselineCapturedAt: Date;
+  /** The case's recorded verdict before the replay. */
+  recordedStatus: CopilotEvalCaseStatus;
+  /** What the replayed configuration produced. */
+  verdict: CopilotEvalRunStatus;
+  overrides: CopilotEvalCaseReplayOverrides;
+  createdAt: Date;
+}
+
+export interface CopilotReplayEvidenceRepositoryPort {
+  record(input: Omit<CopilotReplayEvidenceRecord, "id" | "createdAt">): Promise<CopilotReplayEvidenceRecord>;
+  /** Scoped to the operator who measured it; evidence is never citable across operators. */
+  findMany(input: {
+    workspaceId: string;
+    operatorUserId: string;
+    ids: ReadonlyArray<string>;
+  }): Promise<ReadonlyArray<CopilotReplayEvidenceRecord>>;
+}
+
+/** Reads the agent version that decides whether a measurement still describes today's agent. */
+export interface CopilotAgentVersionPort {
+  get(workspaceId: string, agentId: string): Promise<{ updatedAt: Date }>;
+}

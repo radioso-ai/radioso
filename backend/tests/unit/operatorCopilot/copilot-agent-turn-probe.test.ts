@@ -88,10 +88,12 @@ describe("test_agent_turn", () => {
       ],
       contributingModule: "chat",
     });
+    // The probe writes a conversation and its messages and spends a model call, so a transport
+    // must not treat it as free to run unattended or to retry.
     expect(copilotToolAnnotationsForShape(descriptor.shape)).toEqual({
-      readOnlyHint: true,
+      readOnlyHint: false,
       destructiveHint: false,
-      idempotentHint: true,
+      idempotentHint: false,
     });
   });
 

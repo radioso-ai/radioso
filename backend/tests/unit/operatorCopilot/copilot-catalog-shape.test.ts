@@ -73,6 +73,7 @@ describe("copilot catalog wiring", () => {
       { name: "eval_results", shape: "read" },
       { name: "create_eval_case_from_turn", shape: "act" },
       { name: "run_eval_suite", shape: "act" },
+      { name: "replay_eval_case", shape: "probe" },
     ]);
   });
 

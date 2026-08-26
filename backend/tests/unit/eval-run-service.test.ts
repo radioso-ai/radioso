@@ -1509,3 +1509,79 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(run.assertionVerdicts[0]!.reason).toMatch(/full_assistant/);
   });
 });
+
+describe("EvalRunService detached runs", () => {
+  it("scores the case's assertions but leaves the case's recorded verdict alone", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "detached replay",
+      assertions: [refundIncludes],
+    });
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner());
+
+    const { run, case: updated } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      attachToCase: false,
+    });
+
+    // The assertions are the case's, so the verdict is real; the case's record is not touched.
+    expect(run.assertionVerdicts).toHaveLength(1);
+    expect(run.status).toBe("pass");
+    expect(run.caseId).toBeNull();
+    expect(updated).toBeNull();
+    const stored = await repo.findCase("ws-1", evalCase.id);
+    expect(stored).toMatchObject({ status: "pending", lastRunId: null });
+  });
+
+  it("still records the case's verdict when the run is attached", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "attached replay",
+      assertions: [refundIncludes],
+    });
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner());
+
+    const { run } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+    });
+
+    expect(run.caseId).toBe(evalCase.id);
+    expect(await repo.findCase("ws-1", evalCase.id)).toMatchObject({ status: "passing", lastRunId: run.id });
+  });
+
+  it("refuses a behavior override the snapshot cannot replay instead of silently dropping it", async () => {
+    // The retrieval fallback ignores agentConfigOverride and routineStartState entirely, so a
+    // caller measuring a proposed configuration would be handed the baseline's answer as if it
+    // were the proposal's.
+    const snapshot = makeSnapshot({ originalAgentConfig: null, sourceAgentId: null });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner());
+
+    await expect(service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "full_assistant",
+      overrides: { agentConfigOverride: { customInstruction: "Proposed instruction." } },
+    })).rejects.toThrow(/full agent config snapshot/);
+  });
+});

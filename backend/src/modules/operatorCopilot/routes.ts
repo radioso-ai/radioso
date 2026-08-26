@@ -7,6 +7,7 @@ import type { WorkspaceSessionDependencies } from "../../app/http/middleware/req
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
+import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotConflictError, CopilotNotFoundError } from "./public.js";
 import type { OperatorCopilotService } from "./public.js";
@@ -78,6 +79,10 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
         currentVersionMatches: result.currentVersionMatches,
         reason: result.proposal.reason ?? null,
         appliedRef: result.proposal.appliedRef,
+        // The same counts the card states, plus the cases behind them, so expanding the card
+        // reads as detail on one claim rather than as a second, differently shaped one.
+        evidence: result.proposal.evidence ? summarizeProposalEvidence(result.proposal.evidence) : undefined,
+        evidenceCases: result.proposal.evidence?.cases ?? null,
       });
     } catch (error) { next(error); }
   });

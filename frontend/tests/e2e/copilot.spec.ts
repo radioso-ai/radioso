@@ -308,6 +308,7 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
       proposed: { action: "Require approval before issuing a refund", priority: 20 },
     },
     currentVersionMatches: true,
+    evidenceCases: null,
   };
   let messages: unknown[] = [];
 
@@ -374,6 +375,7 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
       proposed: { name: targetLabel, steps: [{ type: "message", text: "Review the refund request." }] },
     },
     currentVersionMatches: true,
+    evidenceCases: null,
   };
   let messages: unknown[] = [];
 
@@ -492,4 +494,71 @@ test("shows the stale explanation when applying a changed proposal", async ({ pa
   await page.getByRole("button", { name: "Apply", exact: true }).click();
   await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
   await expect(page.getByText("The target changed since this proposal was drafted. Ask Ray to draft it again.", { exact: true })).toBeVisible();
+});
+
+test("shows what a proposal was verified against, regressions and stale replays included", async ({ page }) => {
+  const copilotConversationId = "copilot-proposal-evidence";
+  const proposalId = "proposal-evidence-1";
+  const targetLabel = "Refund window";
+  const evidence = { total: 3, improved: 2, regressed: 1, unchanged: 0, stale: 1 };
+  const detail = {
+    id: proposalId,
+    targetType: "directive",
+    targetLabel,
+    summary: "Always state the refund window.",
+    status: "pending",
+    targetRef: { agentId: defaultAgentId, directiveId: null },
+    preview: { current: null, proposed: { action: "Always state the refund window" } },
+    currentVersionMatches: true,
+    evidence,
+    evidenceCases: [
+      { caseId: "case-1", caseName: "Refund window question", runId: "run-1", before: "failing", after: "pass", stale: false },
+      { caseId: "case-2", caseName: "Late delivery", runId: "run-2", before: "failing", after: "pass", stale: true },
+      { caseId: "case-3", caseName: "Shipping cost", runId: "run-3", before: "passing", after: "fail", stale: false },
+    ],
+  };
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: [] } });
+    if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string };
+      messages = [
+        { id: "operator-evidence", role: "operator", content: body.message, createdAt: nowIso },
+        { id: "answer-evidence", role: "copilot", content: "I replayed three cases against the change.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "directive", targetLabel, summary: detail.summary, status: "pending", evidence }] },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-evidence" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "directive", targetLabel, summary: detail.summary, evidence })}`,
+          "event: chunk\ndata: {\"text\":\"I replayed three cases against the change.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Refunds", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Fix the refund answers");
+  await page.getByRole("button", { name: "Send question" }).click();
+
+  // The count the operator decides on is visible without expanding, and it names the regression.
+  await expect(page.getByText("Verified against 3 cases — 2 improved, 1 regressed")).toBeVisible();
+  await expect(page.getByText("measured a captured configuration the agent has changed since", { exact: false })).toBeVisible();
+
+  await page.getByRole("button", { name: `Show proposed changes for ${targetLabel}`, exact: true }).click();
+  await expect(page.getByText("Refund window question", { exact: false })).toBeVisible();
+  await expect(page.getByText("Shipping cost", { exact: false })).toBeVisible();
+  await expect(page.getByText("agent changed since this case was captured", { exact: false })).toBeVisible();
 });

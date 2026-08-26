@@ -20,6 +20,11 @@ import {
   requiredPageAgent,
   type CopilotAgentListItem,
   type CopilotAgentLookupPort,
+  citedEvidenceSchema,
+  citedProposalEvidence,
+  proposalEvidenceOutput,
+  proposalOutputSchema,
+  type CopilotProposalEvidenceDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -267,14 +272,8 @@ const projectDirectiveDetail = (
 };
 
 
-const proposalOutputSchema = z.object({
-  proposalId: z.string().uuid(),
-  targetType: z.enum(["directive", "agent_setting", "routine"]),
-  targetLabel: z.string(),
-  summary: z.string(),
-});
 
-export interface AgentSettingProposalCopilotToolDependencies {
+export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
@@ -289,17 +288,18 @@ export const createAgentSettingProposalCopilotTools = (
     {
       name: "propose_agent_setting", shape: "propose", uiLabel: "Drafting a setting change", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
-      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_agent_setting",
         description: "Draft an agent setting change for operator review. It does not change configuration.",
-        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
-        invoke: async ({ agentId, settingKey, value, rationale }) => {
+        invoke: async ({ agentId, settingKey, value, rationale, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };
           const validated = await settingAdapter.validatePayload(context.workspaceId, targetRef, { value, ...(rationale ? { rationale } : {}) });
           const versionToken = await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "agent_setting", settingKey, value: validated.payload && typeof validated.payload === "object" ? (validated.payload as { value?: unknown }).value : value });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
@@ -308,9 +308,10 @@ export const createAgentSettingProposalCopilotTools = (
             targetRef: validated.targetRef,
             payload: validated.payload,
             versionToken,
+            evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);
-          return { proposalId: proposal.id, targetType: "agent_setting" as const, targetLabel: settingKey, summary: rationale ?? settingKey };
+          return { proposalId: proposal.id, targetType: "agent_setting" as const, targetLabel: settingKey, summary: rationale ?? settingKey, ...proposalEvidenceOutput(evidence) };
         },
       }),
       describeEntity: (input, context) => {

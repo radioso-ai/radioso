@@ -23,6 +23,8 @@ import {
   type CopilotEntityReference,
   type CopilotProposalApplyResult,
   type CopilotProposalDetail,
+  type CopilotProposalEvidenceCase,
+  type CopilotProposalEvidenceSummary,
   type CopilotProposalPreview,
   type CopilotProposalSummary,
   type CopilotProposalStatus,
@@ -176,6 +178,8 @@ export function CopilotProposalCard({
   const status = cardState.status === 'pending' && proposal.status !== 'pending' ? proposal.status : cardState.status
   const effectiveState = status === cardState.status ? cardState : { ...cardState, status }
   const diff = detail ? buildCopilotProposalDiff(detail.preview) : []
+  // The detail read is authoritative; the streamed card only carries the summary until it loads.
+  const evidenceSummary = detail?.evidence ?? proposal.evidence
   const entityTarget = targetReference(proposal, detail, effectiveState.appliedRef, defaultAgentId)
 
   const loadDetail = async () => {
@@ -251,6 +255,7 @@ export function CopilotProposalCard({
             <span>{statusMessage(effectiveState, detail) ?? proposal.reason}</span>
           </p>
         ) : null}
+        {evidenceSummary ? <ProposalEvidence summary={evidenceSummary} cases={detail?.evidenceCases ?? null} /> : null}
         {effectiveState.status === 'applied' && entityTarget ? (
           <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => onOpenEntity(entityTarget.entity, entityTarget.agentId)}>
             <Check className="mr-1.5 h-3.5 w-3.5" aria-hidden />
@@ -304,5 +309,69 @@ export function CopilotProposalCard({
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+  )
+}
+
+const VERDICT_LABELS: Record<CopilotProposalEvidenceCase['after'], string> = {
+  pass: 'passed',
+  fail: 'failed',
+  error: 'errored',
+  recorded: 'not scored',
+}
+
+const RECORDED_LABELS: Record<CopilotProposalEvidenceCase['before'], string> = {
+  pending: 'not yet run',
+  passing: 'passing',
+  failing: 'failing',
+  error: 'errored',
+}
+
+/**
+ * A replay measures the configuration its eval case froze, never the live agent, so what dates a
+ * measurement is the agent being edited after that capture. Saying it ran "before the agent
+ * changed" would give the wrong chronology for an old case replayed today.
+ */
+const staleExplanation = (summary: CopilotProposalEvidenceSummary): string =>
+  summary.stale === summary.total
+    ? 'These replays measured the configuration each case captured, and this agent has changed since. They may not describe how it behaves now.'
+    : `${summary.stale} of these measured a captured configuration the agent has changed since, so they may not describe how it behaves now.`
+
+const evidenceHeadline = (summary: CopilotProposalEvidenceSummary): string => {
+  const parts = [`${summary.improved} improved`]
+  if (summary.regressed > 0) parts.push(`${summary.regressed} regressed`)
+  if (summary.unchanged > 0) parts.push(`${summary.unchanged} unchanged`)
+  return parts.join(', ')
+}
+
+function ProposalEvidence({
+  summary,
+  cases,
+}: {
+  summary: CopilotProposalEvidenceSummary
+  cases: CopilotProposalEvidenceCase[] | null
+}) {
+  return (
+    <div className="rounded-md border border-border/70 bg-background/50 p-3" aria-label="Replay evidence">
+      <p className="text-xs font-medium">
+        Verified against {summary.total} {summary.total === 1 ? 'case' : 'cases'} — {evidenceHeadline(summary)}
+      </p>
+      {summary.stale > 0 ? (
+        <p className="mt-1 flex items-start gap-2 text-xs text-muted-foreground" role="status">
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>{staleExplanation(summary)}</span>
+        </p>
+      ) : null}
+      {cases && cases.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {cases.map((measurement) => (
+            <li className="text-xs text-muted-foreground" key={measurement.runId}>
+              <span className="font-medium text-foreground">{measurement.caseName}</span>
+              {' — was '}{RECORDED_LABELS[measurement.before]}{', '}{VERDICT_LABELS[measurement.after]}{' with this change'}
+              {measurement.stale ? ' (agent changed since this case was captured)' : ''}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   )
 }

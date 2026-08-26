@@ -12,6 +12,8 @@ import { MetadataRuleFieldReferenceService } from "../../modules/retrieval/publi
 import { MetadataFieldSuggestionService } from "../../modules/settings/composition.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
+import type { EvalRunOverrides } from "../../modules/eval/composition.js";
+import { CopilotReplayEvidenceRepository } from "../../db/repositories/copilotReplayEvidenceRepository.js";
 import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
@@ -45,6 +47,7 @@ import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawle
 import {
   AgentTurnProbeService,
   EvalCaseCaptureService,
+  EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
 } from "../../modules/operatorCopilot/public.js";
@@ -409,6 +412,27 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
+  const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
+  const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
+  const evalCaseReplayService = new EvalCaseReplayService({
+    cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+    evidence: copilotReplayEvidenceRepository,
+    runs: {
+      // Ray offers a narrowed, behavior-only view of the eval override set, so widening it back to
+      // the module's own type belongs here — the same widening the eval route performs on a
+      // validated request body.
+      execute: (input) => evalRunService.execute({
+        ...input,
+        overrides: input.overrides as EvalRunOverrides | undefined,
+      }),
+    },
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository: repositories.workspaceRepository });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
@@ -434,6 +458,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       evalResultsService: evalCaseService,
       evalCaseCapture: evalCaseCaptureService,
       evalSuiteProbe: evalSuiteProbeService,
+      evalCaseReplay: evalCaseReplayService,
+      proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documents.documentIngestionService,

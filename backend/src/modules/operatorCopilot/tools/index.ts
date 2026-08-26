@@ -19,6 +19,8 @@ import { createQualityCopilotTools } from "./quality.js";
 import type { CopilotQualitySignalsPort, QualityCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
 import type { CopilotRoutineDefinitionPort, RoutineDefinitionCopilotToolDependencies, RoutineProposalCopilotToolDependencies } from "./routines.js";
+import { createWorkspaceTriageCopilotTools } from "./triage.js";
+import type { CopilotPendingApprovalsPort, CopilotTriageLogPort, WorkspaceTriageCopilotToolDependencies } from "./triage.js";
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
 
@@ -35,6 +37,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
   & { readonly workspaceSettings: CopilotWorkspaceSettingsPort }
+  & Omit<WorkspaceTriageCopilotToolDependencies, "agentLookup">
   & Omit<RoutineDefinitionCopilotToolDependencies, "agentLookup">
   & Omit<DirectiveProposalCopilotToolDependencies, "agentLookup">
   & Omit<RoutineProposalCopilotToolDependencies, "agentLookup">
@@ -56,6 +59,7 @@ export const createCopilotToolDescriptors = (
   ...createDocumentStatusCopilotTools(deps),
   ...createAgentSkillsCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
+  ...createWorkspaceTriageCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createRoutineProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -70,3 +74,4 @@ export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort } from "./quality.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";
+export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./triage.js";

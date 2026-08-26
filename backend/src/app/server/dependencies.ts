@@ -486,6 +486,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentTurnProbe: agentTurnProbeService,
       documentSearchService: retrieval.documentSearchService,
       evalResultsService: evalCaseService,
+      pendingApprovals: chat.approvalDecisionService,
       evalCaseCapture: evalCaseCaptureService,
       evalSuiteProbe: evalSuiteProbeService,
       evalCaseReplay: evalCaseReplayService,
@@ -530,6 +531,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       proposalRepository: repositories.copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService: infrastructure.auditService,
+      logger,
     }),
   });
   return {

@@ -28,6 +28,10 @@ export const buildCopilotDashboardLink = (
         : `${base}/activity`;
     case "quality_turn":
       return `${base}/quality`;
+    // Activity opens on Needs Attention by default, and the dashboard drops the default tab from
+    // the URL, so the bare section path is the canonical link to the operator's inbox.
+    case "needs_attention":
+      return `${base}/activity`;
     case "proposal":
       return `${base}/copilot`;
     case "eval":

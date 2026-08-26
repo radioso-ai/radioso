@@ -259,6 +259,13 @@ permission declarations, bounded tool projections, and dashboard handoff links.
 The module defines narrow consumer ports for the workspace capabilities Ray can
 use. Application composition supplies their implementations.
 
+Operator Copilot owns the triage digest that composes its family readers into
+one ranked answer to "what needs my attention". The composition is the module's
+own: each source reads under its own permission and reports whether it was read,
+so an unauthorized or failed section stays distinguishable from an empty one.
+The ranking rules live in `triageDigest.ts` as pure functions over already-read
+items. Contributing modules own the reads themselves.
+
 Operator Copilot owns its eval verification loop: capturing a turn as a case
 runs through a copilot-owned capture service that audits the write, and suite
 runs go through a probe service that bounds the selection and spends the
@@ -283,6 +290,7 @@ Public and tool surfaces:
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
 - `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`, `replay_eval_case`)
+- `backend/src/modules/operatorCopilot/tools/triage.ts` and `triageDigest.ts` (`workspace_triage`: per-source reads and their permissions, and the ranking those reads feed)
 - `backend/src/modules/operatorCopilot/contracts/evalCases.ts`, `services/evalCaseCaptureService.ts`, `services/evalSuiteProbeService.ts`, and `services/evalCaseReplayService.ts` (eval verification boundary)
 - `backend/src/modules/operatorCopilot/proposalEvidence.ts` and `services/proposalEvidenceService.ts` (replay evidence carried on a proposal)
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
@@ -307,7 +315,7 @@ Related docs, specs, and issues:
 
 - [Ray](../../docs-portal/content/operators/copilot.mdx)
 - `specs/104-in-product-operator-copilot/`
-- Issues `#1036`, `#1041`, and `#1043`
+- Issues `#1036`, `#1041`, `#1043`, and `#1044`
 
 ## Conversation Engine Contracts
 

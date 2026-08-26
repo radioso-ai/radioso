@@ -1714,7 +1714,7 @@ export const createTestDependencies = (overrides: {
   const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, logger);
   const qualitySignalsService = {
     getQualityStats: async () => ({ backlog: {} }),
-    listLowQualityTurns: async () => ({ items: [] }),
+    listLowQualityTurns: async () => ({ items: [], total: 0 }),
   };
   const audiencePulseService = {
     read: async () => ({ kind: "not_generated" }),
@@ -1784,6 +1784,7 @@ export const createTestDependencies = (overrides: {
         },
       }),
       proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
+      pendingApprovals: approvalDecisionService,
       qualitySignalsService,
       audiencePulseService,
       documentStatusService: documentIngestionService,

@@ -10,6 +10,7 @@ import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorC
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { createCopilotToolDescriptors } from "../../../src/modules/operatorCopilot/tools/index.js";
 import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
+import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/triage.js";
 import { buildDescriptors, dependencies } from "./copilot-tools-test-helpers.js";
 
 const context = {
@@ -85,6 +86,16 @@ describe("copilot catalog wiring", () => {
       .flatMap((descriptor) => descriptor.requiredPermissions
         .filter((permission) => !(copilotToolPermissions as ReadonlyArray<string>).includes(permission))
         .map((permission) => `${descriptor.name} needs ${permission}`));
+
+    expect(missing).toEqual([]);
+  });
+
+  it("resolves every permission the triage digest gates a section on", () => {
+    // The digest's sections are gated inside the tool, so a permission missing from the route's
+    // list does not hide the tool — it reports that section as unauthorized on every turn, for
+    // every operator. That reads as a boundary rather than as the wiring gap it is.
+    const missing = Object.values(copilotTriageSourcePermissions)
+      .filter((permission) => !(copilotToolPermissions as ReadonlyArray<string>).includes(permission));
 
     expect(missing).toEqual([]);
   });

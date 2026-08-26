@@ -79,6 +79,13 @@ describe("operator copilot catalog coverage", () => {
     });
   });
 
+  it("maps the pending-approval queue to the triage digest rather than to the end-user surface", () => {
+    // `/decisions` is the dashboard's own approval queue, gated on workspace.conversation.takeover.
+    // Filing it under "end-user or inbound integration surface" made an operator read look like a
+    // boundary, which is the kind of wrong permanent exclusion this map exists to keep visible.
+    expect(catalogCoverage.listPendingDecisions).toBe("workspace_triage");
+  });
+
   it("maps the authenticated assistant pipeline to the bounded test-turn probe", () => {
     expect(catalogCoverage.createAssistantChatResponse).toBe("test_agent_turn");
   });

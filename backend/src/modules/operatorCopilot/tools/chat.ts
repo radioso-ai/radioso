@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { boundConversationPayload, boundTurnTracePayload } from "./chatPayloadBounds.js";
-import { entity, requiredPageConversation } from "./shared.js";
+import { asRecord, entity, requiredPageConversation } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
@@ -132,7 +132,34 @@ const turnTraceOutputSchema = z.object({
 export interface CopilotConversationHistoryPort {
   getConversation(workspaceId: string, conversationId: string, options: { limit: number }, debug: CopilotConversationOptions): Promise<CopilotConversationDetail>;
   getConversationTurn(workspaceId: string, messageId: string, options: CopilotConversationOptions): Promise<CopilotConversationTurnDetail>;
-  listConversations(workspaceId: string, options: { limit: number }): Promise<{ conversations: ReadonlyArray<unknown> }>;
+  listConversations(workspaceId: string, options: CopilotConversationListOptions): Promise<{ conversations: ReadonlyArray<CopilotConversationSummary>; total: number }>;
+}
+
+export interface CopilotConversationListOptions {
+  limit: number;
+  /** Narrows to conversations a person currently owns — the workspace's waiting handoffs. */
+  ownership?: "human_owned";
+}
+
+/** Ownership is present only while a person owns the conversation; absent reads as AI-owned. */
+export interface CopilotConversationOwnershipSummary {
+  readonly state: string;
+  readonly ownerDisplayName: string | null;
+  readonly reason: string | null;
+  /** Set once an operator takes the conversation over; null while it waits unassigned. */
+  readonly takenOverAt: string | null;
+  /** When ownership last changed — the clock a waiting handoff is measured against. */
+  readonly updatedAt: string;
+}
+
+export interface CopilotConversationSummary {
+  readonly id: string;
+  readonly agentId: string | null;
+  readonly agentName: string | null;
+  readonly preview: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly ownership?: CopilotConversationOwnershipSummary;
 }
 
 interface CopilotConversationOptions {
@@ -341,7 +368,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
     name: "conversation_history_search", shape: "read", uiLabel: "Searching conversations", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
     description: "List recent customer conversations in this workspace for investigation.",
     inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations as Record<string, unknown>[] }).conversations as Record<string, unknown>[] }) }),
+    createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations as Record<string, unknown>[] }) }),
   },
 
 ];

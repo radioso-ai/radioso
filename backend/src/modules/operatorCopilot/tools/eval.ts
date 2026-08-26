@@ -5,6 +5,8 @@ import {
   MAX_COPILOT_EVAL_SUITE_CASES,
   type CopilotEvalCaseCapturePort,
   type CopilotEvalCaseReplayPort,
+  type CopilotEvalCaseSummary,
+  type CopilotEvalResultsPort,
   type CopilotEvalSuiteAssertionVerdict,
   type CopilotEvalSuiteCaseResult,
   type CopilotEvalSuiteProbePort,
@@ -19,9 +21,7 @@ const MAX_FAILED_ASSERTIONS_PER_CASE = 5;
 const MAX_REPLAY_ANSWER_CHARS = 2_000;
 const MAX_SUITE_CASE_ID_ARGUMENTS = MAX_COPILOT_EVAL_SUITE_CASES * 4;
 
-export interface CopilotEvalResultsPort {
-  listWithLatestRun(workspaceId: string): Promise<ReadonlyArray<object>>;
-}
+export type { CopilotEvalResultsPort } from "../contracts/evalCases.js";
 
 export interface EvalCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
@@ -35,10 +35,11 @@ export const createEvalCopilotTools = (deps: EvalCopilotToolDependencies): Reado
     inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "eval_results", description: "Read recent evaluation cases and their latest outcomes for an agent.", inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }), invoke: async ({ agentId, limit }) => {
       const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
-      const cases = (await deps.evalResultsService.listWithLatestRun(context.workspaceId)).map(asRecord)
-        .filter((item) => agentIdForEvalCase(item) === resolvedAgentId)
-        .sort((left, right) => newestEvalResultFirst(left, right))
-        .slice(0, limit ?? 20);
+      const cases = (await deps.evalResultsService.listWithLatestRun(context.workspaceId))
+        .filter((evalCase) => evalCase.agent.agentId === resolvedAgentId)
+        .sort(newestEvalResultFirst)
+        .slice(0, limit ?? 20)
+        .map(asRecord);
       return boundPayload({ cases }) as { cases: Record<string, unknown>[] };
     } }),
     describeEntity: (input, context) => {
@@ -358,17 +359,11 @@ const projectFailedAssertion = (verdict: CopilotEvalSuiteAssertionVerdict): { ty
 
 const clip = (value: string, max: number): string => value.length <= max ? value : value.slice(0, max);
 
-const agentIdForEvalCase = (item: Record<string, unknown>): string | null => {
-  const agent = item.agent;
-  return agent && typeof agent === "object" && "agentId" in agent && typeof agent.agentId === "string" ? agent.agentId : null;
-};
-const newestEvalResultFirst = (left: Record<string, unknown>, right: Record<string, unknown>): number => latestEvalTime(right) - latestEvalTime(left);
-const latestEvalTime = (item: Record<string, unknown>): number => {
-  const latestRun = item.latestRun;
-  if (!latestRun || typeof latestRun !== "object") return 0;
-  const completedAt = "completedAt" in latestRun ? latestRun.completedAt : undefined;
-  const startedAt = "startedAt" in latestRun ? latestRun.startedAt : undefined;
-  const timestamp = typeof completedAt === "string" ? completedAt : typeof startedAt === "string" ? startedAt : undefined;
+const newestEvalResultFirst = (left: CopilotEvalCaseSummary, right: CopilotEvalCaseSummary): number =>
+  latestEvalTime(right) - latestEvalTime(left);
+/** A case that has never run sorts last rather than crowding out cases with real results. */
+const latestEvalTime = (evalCase: CopilotEvalCaseSummary): number => {
+  const timestamp = evalCase.latestRun?.completedAt ?? evalCase.latestRun?.startedAt;
   const value = timestamp ? Date.parse(timestamp) : 0;
   return Number.isFinite(value) ? value : 0;
 };

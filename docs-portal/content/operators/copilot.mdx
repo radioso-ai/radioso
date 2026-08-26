@@ -1,7 +1,7 @@
 ---
 title: "Ray"
-description: "Use Ray in the dashboard to investigate agent behavior, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-24
+description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, test routine drafts, and review linked activity and proposals."
+last_updated: 2026-08-26
 ---
 
 # Ray
@@ -42,6 +42,42 @@ The panel puts the conversation first:
 
 The full-page **Ray** view shows the same thread with the conversation list and
 context rail alongside it, which gives more room for a longer investigation.
+
+## Start with what needs attention
+
+Ask Ray "what needs my attention?" and it answers in one read instead of opening
+five sections. The digest is ranked the way an operator works through a morning:
+
+1. **Someone is waiting.** Conversations handed to a person and approval
+   requests a routine paused on, longest wait first. A handoff nobody has picked
+   up shows no owner, so an unassigned wait reads differently from one an
+   operator is already on.
+2. **Something is failing.** Documents that failed to process, sources whose
+   last sync did not succeed, eval cases sitting at failing or error, and turns
+   a customer left a written complaint on — most recent first, because for a
+   failure the useful question is what just broke.
+3. **Backlog.** Untriaged review counts per quality signal, and how many
+   documents are queued or still processing.
+
+Every line carries a link to the dashboard surface that resolves it, so "open
+the failed one" lands on that document rather than on the Knowledge Base index.
+A conversation that is already an approval or a handoff does not also appear as
+a review line; the escalation is the more urgent statement of the same work.
+
+Ray also reports which of the five reads it managed. A section your session may
+not read, or one that errored, comes back marked rather than empty — so "nothing
+in Quality" and "Quality could not be read" never look the same. Members hold no
+quality permission, for example, and their digest says so instead of reporting a
+clear backlog.
+
+Name an agent to narrow it: "what needs attention on the Support agent?" scopes
+the conversations, approvals, quality signals, and eval cases to that agent. The
+knowledge base stays workspace-wide, because every agent answers from it.
+
+Each source contributes at most ten lines, and reports the number of rows it
+matched alongside them. A workspace with 60 failing eval cases sees ten of them
+and the count 60. The backlog counts stand for whole groups rather than for
+individual rows, so they are always complete.
 
 ## Ask about what you see
 

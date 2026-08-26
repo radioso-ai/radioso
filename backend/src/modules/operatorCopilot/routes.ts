@@ -20,7 +20,7 @@ const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
  * requiredPermissions member is absent here is silently dropped from every live turn, so this list must
  * cover the whole catalog — asserted by copilot-catalog-shape.test.ts.
  */
-export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.chat.use", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read"] as const;
+export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.chat.use", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read", "workspace.conversation.takeover"] as const;
 
 export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   env: Env;

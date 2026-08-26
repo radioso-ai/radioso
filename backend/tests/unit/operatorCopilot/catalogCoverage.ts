@@ -296,7 +296,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "transferConversationOwnership",
     "handBackConversation",
     "forkConversation",
-    "listPendingDecisions",
     "resolveDecision",
     "createMcpConverseSession",
     "validateMcpConverseSession",
@@ -311,6 +310,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "streamPublicChatConversationEvents",
   ], endUserSurface),
 
+  listPendingDecisions: "workspace_triage",
   createAgentDirective: "propose_directive",
   updateAgentDirective: "propose_directive",
   updateAgent: "propose_agent_setting",

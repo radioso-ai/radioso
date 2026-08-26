@@ -48,7 +48,7 @@ Existing documents pick up the author, publish date, and facts block on their ne
 
 WordPress hands Radioso the post body, and a catalogue keeps most of what a shopper asks about outside it. The plugin closes that gap twice over: once in prose the agent can read out, once in values retrieval can filter on.
 
-The facts block carries the readable copy — the SKU, the price, the availability the shop is currently showing, and every visible product attribute, each labelled the way the shop labels it (ISBN, format, page count, publisher, and so on). Prices carry the shop's own tax and currency settings, and a variable product carries the range across its variations rather than one figure that would misstate it in both directions. Internal taxonomies such as WooCommerce's visibility flags stay out, as do hidden attributes.
+The facts block carries the readable copy — the SKU, the price, the availability the shop is currently showing, and every visible product attribute, each labelled the way the shop labels it (ISBN, format, page count, publisher, and so on). Prices carry the shop's own tax and currency settings, and a variable product carries the range across its variations rather than one figure that would misstate it in both directions. Internal taxonomies such as WooCommerce's visibility flags stay out, as do hidden attributes. A discounted product also carries its list price, under WooCommerce's own label for it, because a reduced figure standing alone reads as an ordinary one — the agent needs both numbers to tell a shopper what the saving is.
 
 ### Filter and boost on shop values
 
@@ -60,7 +60,7 @@ Alongside the facts block, every product publishes a machine-readable copy as do
 | `price` | The display price — for a variable product, the cheapest variation. |
 | `price_max` | The dearest variation, when a variable product spans a range. |
 | `regular_price` | The list price, before any discount. |
-| `sale_price` | The discounted price, when a sale is configured. |
+| `sale_price` | What the shopper pays, when the shop is charging less than the list price. |
 | `on_sale` | Whether the discount is live. Always stated, true or false. |
 | `currency` | The shop currency, so a bare number can be read. |
 | `stock_status` | `instock`, `outofstock`, or `onbackorder`. |
@@ -76,6 +76,26 @@ When one of these values changes, the document re-indexes on its own, even if no
 Both move without anyone opening the editor — scheduled sales, CSV imports, bulk edits, and orders all change them through the WooCommerce data store. The plugin follows every one of those paths: a whole-product save, a direct stock-status write that skips a full save, a variable product's recalculated price range, and a variation saved on a path that skips the parent's deferred sync.
 
 Publishes and updates go out at the end of the request. WordPress runs the status transition from inside `wp_insert_post()`, before the pass where WooCommerce writes price, stock, and attributes, so sending at the transition would publish the values as they stood before the edit. Waiting also collapses the several hooks one save trips into a single push, which re-embeds the document once, carrying the state the request finished with. Deletes go out immediately, while the post and its permalink still exist, and a delete cancels any update queued for the same post.
+
+### Shops that price with a plugin
+
+Everything above reads WooCommerce's own price and sale fields. A dynamic pricing or discount plugin works differently: it computes the reduction while the page renders and leaves the product itself at the list price. WooCommerce reports no sale for that product — its REST and Store APIs say the same — so the figure that reaches Radioso is the one before the discount.
+
+The `radioso_sync_product_pricing` filter is where such a site supplies the price it charges. It runs once per product and feeds both renderings, so the number the agent quotes and the number a metadata rule compares stay the same number:
+
+```php
+add_filter('radioso_sync_product_pricing', function ($pricing, $product) {
+    $charged = my_pricing_plugin_price_for($product);
+    if ($charged !== null) {
+        $pricing['min'] = (float) $charged;
+    }
+    return $pricing;
+}, 10, 2);
+```
+
+The array carries `min` — what the shopper pays — along with `on_sale` and, where the shop has them, `max` for a variable product's ceiling and `regular` for the list price. A `regular` above `min` is what marks the product as discounted, so supplying a reduced `min` earns the list-price fact and the `sale_price` metadata without stating the discount twice. A price that is not a finite number costs that product its price rather than failing the push.
+
+Two limits are worth planning around. A product re-syncs when WooCommerce touches it, so editing a pricing *rule* leaves the products it covers unchanged and their documents stale — run **Resync all content** after changing one. And a variable product carries no `regular`, because its `min` is the cheapest variation and the cheapest variation is not always the discounted one; supply your own where the shop can name a list price for the range.
 
 ## Publish your own fields
 
@@ -114,6 +134,7 @@ A workspace WordPress connector accepts one configured site. Companion-plugin we
 - **A manual sync fails while pushes work.** The site is blocking Radioso's REST calls. Use **Resync all content** in the plugin instead — it goes out from WordPress.
 - **A product's own field never shows up in the rules editor.** It fell outside the 32-field, key-pattern, or 256-character bounds and the plugin dropped it before sending.
 - **Prices in answers lag the shop.** Read the document's metadata: if `price` matches the shop and the answer does not, the agent is reading a stale facts block from a document that has not re-synced.
+- **The shop page shows a discount the agent never mentions.** Check the product in WooCommerce: if its price and sale fields hold the list price, the discount comes from a pricing plugin that computes it at render time. Supply it through `radioso_sync_product_pricing`.
 
 ## Read next
 

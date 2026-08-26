@@ -136,7 +136,10 @@ function wc_get_price_to_display($product, $args = []) {
 function get_woocommerce_currency() { return 'EUR'; }
 function wp_get_post_parent_id($post_id) { return $GLOBALS['post_parents'][$post_id] ?? 0; }
 // Stands in for a loaded Italian WooCommerce text domain.
-function __($text, $domain = '') { return $text === 'Price' ? 'Prezzo' : $text; }
+function __($text, $domain = '') {
+    $italian = ['Price' => 'Prezzo', 'Regular price' => 'Prezzo di listino'];
+    return $italian[$text] ?? $text;
+}
 
 class WC_Attribute_Stub {
     private $name; private $options; private $visible; private $taxonomy;
@@ -346,6 +349,17 @@ assert_true(
     strpos($variable_facts, 'Prezzo: €20,00 – €950,00') !== false,
     'a variable product publishes its price range rather than one number'
 );
+assert_true(
+    strpos($variable_facts, 'Prezzo di listino') === false,
+    'a product the shop is not discounting names no list price'
+);
+
+// A discounted figure on its own is indistinguishable from an ordinary one, so
+// the block states what the discount is from, under WooCommerce's own label.
+assert_true(
+    strpos($facts, 'Prezzo di listino: €20,00') !== false,
+    'a discounted product names its list price beside the price the shopper pays'
+);
 
 // ── Indexed fields ──────────────────────────────────────────────────────────
 
@@ -382,6 +396,70 @@ assert_true(
     'a product that is not discounted publishes no sale price'
 );
 assert_true($variable_fields['on_sale'] === false, 'on_sale is stated even when false');
+
+// ── The price the shop actually charges ─────────────────────────────────────
+
+// A shop whose discounts come from a pricing plugin rather than WooCommerce's
+// own sale fields leaves the product itself at the undiscounted price, so
+// nothing the plugin can read knows about the discount.
+$discounted_post = (object) ['ID' => 506, 'post_type' => 'product'];
+$GLOBALS['wc_products'][506] = new WC_Product_Stub(
+    506, 'AEY0104', '', [], 0, '220', 'simple', [], '220', '', 'instock'
+);
+$undiscounted_facts = radioso_facts_html($discounted_post);
+assert_true(
+    strpos($undiscounted_facts, 'Prezzo: €220,00') !== false,
+    'a product the shop is not discounting publishes the price WooCommerce holds'
+);
+assert_true(
+    strpos($undiscounted_facts, 'Prezzo di listino') === false,
+    'a list price equal to the price the shopper pays is not a discount'
+);
+$undiscounted_fields = radioso_product_fields($discounted_post);
+assert_true($undiscounted_fields['on_sale'] === false, 'WooCommerce alone reports no discount');
+assert_true(
+    !array_key_exists('sale_price', $undiscounted_fields),
+    'a product with no discount publishes no sale price'
+);
+
+// Supplying the price it charges is one filter, and it reaches both renderings:
+// the figure the agent quotes and the number a metadata rule compares.
+$GLOBALS['filters']['radioso_sync_product_pricing'] = function ($pricing, $product) {
+    assert_true($product->get_id() === 506, 'the pricing filter receives the product it prices');
+    $pricing['min'] = 209.0;
+    return $pricing;
+};
+$repriced_facts = radioso_facts_html($discounted_post);
+assert_true(
+    strpos($repriced_facts, 'Prezzo: €209,00') !== false,
+    'the facts block quotes the price the shop charges'
+);
+assert_true(
+    strpos($repriced_facts, 'Prezzo di listino: €220,00') !== false,
+    'the facts block still names what the discount is from'
+);
+$repriced_fields = radioso_product_fields($discounted_post);
+assert_true($repriced_fields['price'] === 209.0, 'the field map carries the price the shop charges');
+assert_true($repriced_fields['regular_price'] === 220.0, 'the list price is unchanged by the filter');
+assert_true($repriced_fields['sale_price'] === 209.0, 'the discounted price is comparable by a rule');
+assert_true(
+    $repriced_fields['on_sale'] === true,
+    'a list price above what the shopper pays is a discount, whatever WooCommerce thinks'
+);
+unset($GLOBALS['filters']['radioso_sync_product_pricing']);
+
+// A site that returns something no rule could compare costs the product its
+// price, not the whole push.
+$GLOBALS['filters']['radioso_sync_product_pricing'] = function () { return 'quasi gratis'; };
+$broken_facts = radioso_facts_html($discounted_post);
+assert_true(strpos($broken_facts, 'Prezzo') === false, 'a price no rule could read is not quoted');
+assert_true(strpos($broken_facts, 'SKU: AEY0104') !== false, 'the rest of the product still publishes');
+$broken_fields = radioso_product_fields($discounted_post);
+foreach (['price', 'price_max', 'regular_price', 'sale_price', 'currency'] as $key) {
+    assert_true(!array_key_exists($key, $broken_fields), $key . ' is dropped rather than published wrong');
+}
+assert_true($broken_fields['sku'] === 'AEY0104', 'the product own values survive a bad pricing filter');
+unset($GLOBALS['filters']['radioso_sync_product_pricing']);
 
 $GLOBALS['filters']['radioso_sync_product_fields'] = function ($fields) {
     $fields['lending_days'] = 14;
@@ -453,6 +531,29 @@ assert_true(
         && (float) $body['post']['fields']['sale_price'] === 17.0,
     'dispatch publishes the field map alongside the facts block'
 );
+
+// One payload quotes one price. A site's pricing callback may be stateful, time
+// sensitive, or backed by an external service, so asking it twice for the same
+// push is how the facts block and the field map come to disagree.
+$GLOBALS['pricing_calls'] = 0;
+$GLOBALS['filters']['radioso_sync_product_pricing'] = function ($pricing) {
+    $GLOBALS['pricing_calls']++;
+    // A different answer every time, so a second call cannot go unnoticed.
+    $pricing['min'] = 17.0 - $GLOBALS['pricing_calls'];
+    return $pricing;
+};
+radioso_dispatch('updated', $catalogue_post);
+$once = json_decode($GLOBALS['last_webhook_body'], true);
+assert_true($GLOBALS['pricing_calls'] === 1, 'a push asks the site for its price once');
+assert_true(
+    strpos($once['post']['content_rendered'], 'Prezzo: €16,00') !== false,
+    'the facts block quotes the price the site supplied'
+);
+assert_true(
+    (float) $once['post']['fields']['price'] === 16.0,
+    'the field map carries the same number the facts block quotes'
+);
+unset($GLOBALS['filters']['radioso_sync_product_pricing']);
 
 $page_post = (object) [
     'ID' => 901, 'post_type' => 'page', 'post_status' => 'publish', 'post_name' => 'chi-siamo',

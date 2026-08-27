@@ -6,6 +6,7 @@ import {
   minimumRequiredProbes,
   summarizeParity,
 } from "../../../scripts/canonicalVectorParity.js";
+import { legacyEmbeddingExpressionForDimensions } from "../../../scripts/canonicalVectorParityRunner.js";
 
 // Retiring chunks.embedding is gated on the canonical leg returning what the legacy
 // leg returns. These helpers own what "returns the same thing" means, so the gate is
@@ -15,6 +16,12 @@ const ranked = (entries: Array<[string, number]>) =>
   entries.map(([chunkId, score]) => ({ chunkId, score }));
 
 describe("compareRankings", () => {
+  it("uses the wide legacy projection for non-1536 parity probes", () => {
+    expect(legacyEmbeddingExpressionForDimensions(1536)).toBe("c.embedding");
+    expect(legacyEmbeddingExpressionForDimensions(3072))
+      .toBe("COALESCE(c.embedding_unbounded, c.embedding)");
+  });
+
   it("reports full recall when the candidate returns every reference chunk", () => {
     const comparison = compareRankings({
       reference: ranked([["a", 0.9], ["b", 0.8]]),

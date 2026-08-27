@@ -8,10 +8,9 @@ import { EmbeddingCoverageReconciler } from "../src/modules/embeddingProfiles/se
  * without a `chunk_embeddings` row.
  *
  * Coverage reconciliation otherwise runs only when a document is ingested, so a
- * workspace that has not ingested since canonical embeddings shipped keeps its
- * chunks in the legacy `chunks.embedding` column only. Retrieval still answers from
- * the legacy index, but the canonical table — the one that supports more than one
- * embedding width — stays empty, so changing embedding model would find no vectors.
+ * workspace that has not ingested since canonical embeddings shipped has no active
+ * vector projection. The canonical table is the one that supports more than one
+ * embedding width, so changing embedding model would otherwise find no vectors.
  *
  * Enqueued jobs are drained by the document worker's own polling loop, so no
  * dispatcher is needed here; the reconciler's default no-op dispatch is correct for

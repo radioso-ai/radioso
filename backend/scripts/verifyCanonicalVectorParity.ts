@@ -22,11 +22,13 @@ import {
 /**
  * Gate for retiring `chunks.embedding` (issue #1063, step 2).
  *
- * Every chunk's vector is stored twice — in `chunks.embedding` and in
- * `chunk_embeddings` — and every retrieval turn searches both, keeping whatever the
- * merge produces. Removing the legacy leg is only safe once the canonical leg returns
- * what that merge returned, so this runs the same probes through each leg and reports
- * what canonical alone would have lost.
+ * Chunks ingested before step 4 carry their vector twice — in `chunks.embedding` and
+ * in `chunk_embeddings`. Those are the rows a column drop would put at risk, and they
+ * are what this gate measures: it runs the same probes through both storage paths and
+ * reports what canonical alone would lose. Chunks written after step 4 have a
+ * canonical row only, so they contribute an empty reference and are excluded from the
+ * comparison — see the minimum-comparable-probes floor in canonicalVectorParity.ts,
+ * which fails the run rather than letting a shrinking reference read as a clean pass.
  *
  *   pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts
  *   pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts --workspace <id> --probes 200

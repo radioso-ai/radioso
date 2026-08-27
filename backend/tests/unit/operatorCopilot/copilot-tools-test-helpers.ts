@@ -117,6 +117,7 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
   const listRoutines = vi.fn(async () => routineDefinitions);
   const getRoutine = vi.fn(async (_workspaceId: string, _agentId: string, routineId: string) =>
     routineDefinitions.find((definition) => definition.id === routineId) ?? routine({ id: routineId }));
+  const validateRoutine = vi.fn(async () => ({ ok: true, diagnostics: [] as Array<{ code: string; location: string; message: string }> }));
   const getConversation = vi.fn();
   const getConversationTurn = vi.fn();
   const listConversations = vi.fn();
@@ -125,12 +126,13 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
     resolveAgent,
     listRoutines,
     getRoutine,
+    validateRoutine,
     getConversation,
     getConversationTurn,
     listConversations,
     descriptors: [
       ...createAgentConfigurationCopilotTools({ agentService: { listExisting: listAgents, resolve: resolveAgent } }),
-      ...createRoutineDefinitionCopilotTools({ agentLookup: { listExisting: listAgents }, routineDefinitionService: { list: listRoutines, get: getRoutine } }),
+      ...createRoutineDefinitionCopilotTools({ agentLookup: { listExisting: listAgents }, routineDefinitionService: { list: listRoutines, get: getRoutine, validate: validateRoutine } }),
       ...createChatCopilotTools({ chatHistoryService: { getConversation, getConversationTurn, listConversations } }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ],

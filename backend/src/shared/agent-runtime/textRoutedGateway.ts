@@ -83,25 +83,59 @@ const formatToolForCatalog = (schema: ToolSchema): string =>
   `- ${schema.name}${formatToolSignature(schema.inputSchema)} — ${schema.description}`;
 
 const formatToolSignature = (schema: ZodTypeAny): string => {
-  const def = schema._def as { typeName: string };
+  const unwrapped = unwrapSchema(schema);
+  const def = unwrapped._def as { typeName: string };
   if (def.typeName !== z.ZodFirstPartyTypeKind.ZodObject) {
     return "(unknown)";
   }
-  const shape = (schema as z.ZodObject<z.ZodRawShape>).shape;
-  const params: string[] = [];
-  for (const [name, child] of Object.entries(shape)) {
-    const childSchema = child as ZodTypeAny;
-    const optional = isOptional(childSchema);
-    const inner = optional ? (childSchema as unknown as z.ZodOptional<ZodTypeAny>)._def.innerType : childSchema;
-    params.push(`${name}${optional ? "?" : ""}: ${formatZodType(inner)}`);
-  }
-  return `(${params.join(", ")})`;
+  return `(${formatObjectFields(unwrapped as z.ZodObject<z.ZodRawShape>, 0).join(", ")})`;
 };
 
-const isOptional = (schema: ZodTypeAny): boolean =>
-  (schema._def as { typeName: string }).typeName === z.ZodFirstPartyTypeKind.ZodOptional;
+const formatObjectFields = (schema: z.ZodObject<z.ZodRawShape>, depth: number): string[] => {
+  const fields: string[] = [];
+  for (const [name, child] of Object.entries(schema.shape)) {
+    const childSchema = child as ZodTypeAny;
+    const optional = isOptional(childSchema);
+    fields.push(`${name}${optional ? "?" : ""}: ${formatZodType(unwrapSchema(childSchema), depth)}`);
+  }
+  return fields;
+};
 
-const formatZodType = (schema: ZodTypeAny): string => {
+/**
+ * Sees through the wrappers that carry no shape of their own — `.optional()`, `.nullable()`,
+ * `.default()`, and the `ZodEffects` a `.refine()` produces. A refined object rendered as its
+ * wrapper tells a model nothing about what to send.
+ */
+const unwrapSchema = (schema: ZodTypeAny): ZodTypeAny => {
+  const def = schema._def as { typeName: string; innerType?: ZodTypeAny; schema?: ZodTypeAny };
+  switch (def.typeName) {
+    case z.ZodFirstPartyTypeKind.ZodOptional:
+    case z.ZodFirstPartyTypeKind.ZodNullable:
+    case z.ZodFirstPartyTypeKind.ZodDefault:
+      return def.innerType ? unwrapSchema(def.innerType) : schema;
+    case z.ZodFirstPartyTypeKind.ZodEffects:
+      return def.schema ? unwrapSchema(def.schema) : schema;
+    default:
+      return schema;
+  }
+};
+
+const isOptional = (schema: ZodTypeAny): boolean => {
+  const typeName = (schema._def as { typeName: string }).typeName;
+  if (typeName === z.ZodFirstPartyTypeKind.ZodOptional || typeName === z.ZodFirstPartyTypeKind.ZodDefault) return true;
+  if (typeName === z.ZodFirstPartyTypeKind.ZodEffects) {
+    const inner = (schema._def as { schema?: ZodTypeAny }).schema;
+    return inner ? isOptional(inner) : false;
+  }
+  return false;
+};
+
+// One level of nesting is spelled out, deeper structure collapses to `object`. A tool whose input
+// shape renders as the bare word "object" cannot be called correctly: the model has nothing to go
+// on and invents a shape, which is a rejected call rather than a wrong answer.
+const MAX_SHAPE_DEPTH = 2;
+
+const formatZodType = (schema: ZodTypeAny, depth = 0): string => {
   const def = schema._def as { typeName: string; [key: string]: unknown };
   switch (def.typeName) {
     case z.ZodFirstPartyTypeKind.ZodString:
@@ -127,10 +161,13 @@ const formatZodType = (schema: ZodTypeAny): string => {
       const maxLength = arrayDef.maxLength?.value;
       const constraints =
         minLength !== undefined || maxLength !== undefined ? `[${minLength ?? 0}..${maxLength ?? "∞"}]` : "";
-      return `array of ${formatZodType(arrayDef.type)}${constraints}`;
+      return `array of ${formatZodType(unwrapSchema(arrayDef.type), depth)}${constraints}`;
+    }
+    case z.ZodFirstPartyTypeKind.ZodObject: {
+      if (depth >= MAX_SHAPE_DEPTH) return "object";
+      return `{${formatObjectFields(schema as z.ZodObject<z.ZodRawShape>, depth + 1).join(", ")}}`;
     }
     case z.ZodFirstPartyTypeKind.ZodRecord:
-    case z.ZodFirstPartyTypeKind.ZodObject:
       return "object";
     case z.ZodFirstPartyTypeKind.ZodUnion:
       return "union";

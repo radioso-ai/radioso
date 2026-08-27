@@ -27,7 +27,7 @@ name: Ray Copilot Evals
 #     schedule:
 #       - cron: "30 6 * * *" # 06:30 UTC daily, after the conversation-quality suite
 #
-# Requires the OPENAI_API_KEY repository secret.
+# Requires the OPENAI_API_KEY secret on the `staging` environment, which the job names below.
 
 on:
   workflow_dispatch:
@@ -49,6 +49,11 @@ concurrency:
 jobs:
   evals:
     name: Ray behaviour suite
+    # `OPENAI_API_KEY` is an environment secret, not a repository one, so the job has to name
+    # the environment to see it. Without this `secrets.OPENAI_API_KEY` resolves empty and the
+    # guard below fails the run. `staging` carries no protection rules or branch policy, so a
+    # scheduled run never waits on an approval.
+    environment: staging
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:

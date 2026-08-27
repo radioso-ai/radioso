@@ -6,7 +6,7 @@ name: Conversation Quality Evals
 # it runs nightly (and on demand). The deterministic harness logic is covered separately
 # by tests/unit/eval-suite in the normal CI job.
 #
-# Requires the OPENAI_API_KEY repository secret. Sampling (--samples 5) matches how the
+# Requires the OPENAI_API_KEY secret on the `staging` environment, which the job names below. Sampling (--samples 5) matches how the
 # baseline is recorded, so run-to-run LLM variance does not produce false regressions.
 
 on:
@@ -26,6 +26,11 @@ concurrency:
 jobs:
   evals:
     name: Conversation-quality suite
+    # `OPENAI_API_KEY` is an environment secret, not a repository one, so the job has to name
+    # the environment to see it. Without this `secrets.OPENAI_API_KEY` resolves empty and the
+    # guard below fails the run. `staging` carries no protection rules or branch policy, so a
+    # scheduled run never waits on an approval.
+    environment: staging
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:

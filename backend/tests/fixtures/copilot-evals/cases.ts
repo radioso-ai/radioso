@@ -15,6 +15,7 @@ import {
   COPILOT_EVAL_AGENT_ID,
   COPILOT_EVAL_CONVERSATION_ID,
   COPILOT_EVAL_MESSAGE_ID,
+  COPILOT_EVAL_ROUTINE_ID,
 } from "../../support/copilotEvalRunner.js";
 
 /** An operator who holds everything the turn route resolves — an owner or admin. */
@@ -174,6 +175,74 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     assertions: [
       { type: "tool_call_order", tools: ["quality_signals", "propose_directive"] },
       { type: "proposal_drafted", targetType: "directive" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "routine-edit-proposal",
+    name: "A wording complaint about one step becomes an edit to that step",
+    description: "Tool selection between the two routine write tools: content changes go to propose_routine_edit, never to a redraft.",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "In the Order status routine, the first step asks for the order number without saying why. Make it explain why we need it.",
+    requires: ["routine"],
+    plan: [
+      { tool: "routine_definition", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
+      {
+        tool: "propose_routine_edit",
+        input: {
+          agentId: COPILOT_EVAL_AGENT_ID,
+          routineId: COPILOT_EVAL_ROUTINE_ID,
+          changes: { steps: [{ stableStepId: "ask_order_number", instruction: "Ask for the order number, explaining that it is how we look the order up." }] },
+        },
+      },
+    ],
+    finalMessage: "I drafted an edit to that step for you to review.",
+    assertions: [
+      { type: "tool_call_order", tools: ["routine_definition", "propose_routine_edit"] },
+      { type: "proposal_drafted", targetType: "routine" },
+      // Rewording a step is not drafting a new routine. Reaching for propose_routine here would
+      // replace the whole graph and orphan every directive scoped to a step.
+      { type: "tool_not_called", tool: "propose_routine" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "routine-publish-proposal",
+    name: "Going live is proposed on its own, after checking the routine validates",
+    description: "The lifecycle tool is separate from the edit tool: what an agent is running changes only through a publish an operator applies.",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "Is the Order status routine ready to go live? If it is, put it in front of me to publish.",
+    requires: ["publishable_routine"],
+    plan: [
+      { tool: "validate_routine", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } },
+      { tool: "propose_routine_lifecycle", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID, action: "publish" } },
+    ],
+    finalMessage: "It validates cleanly, so I drafted a publish for you to apply.",
+    assertions: [
+      { type: "tool_call_order", tools: ["validate_routine", "propose_routine_lifecycle"] },
+      { type: "proposal_drafted", targetType: "routine" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "routine-structural-change-handoff",
+    name: "Adding a step is handed to the routine editor rather than approximated",
+    description: "Ray edits by stable id, so it cannot add or remove a step. The failure to avoid is proposing something adjacent instead of saying so.",
+    tags: ["capability_limits"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "Add a step to the Order status routine that offers a refund when the order is more than a week late.",
+    requires: ["routine"],
+    plan: [{ tool: "routine_definition", input: { agentId: COPILOT_EVAL_AGENT_ID, routineId: COPILOT_EVAL_ROUTINE_ID } }],
+    finalMessage: "I can reword steps that already exist, but adding one is a change to the routine's shape — open it in the routine editor and I will help you check it after.",
+    assertions: [
+      { type: "no_proposal_drafted" },
+      { type: "tool_exposed", tool: "propose_routine_edit" },
+      { type: "answer_contains", pattern: "routine editor", matchMode: "substring" },
       { type: "turn_outcome", outcome: "completed" },
     ],
   },

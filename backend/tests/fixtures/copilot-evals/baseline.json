@@ -1,3 +1,23 @@
 {
-  "cases": {}
+  "generatedAt": "2026-08-27T09:55:18.644Z",
+  "cases": {
+    "agent-configuration-read": "pass",
+    "boundary-access-grants": "pass",
+    "boundary-agent-delete": "pass",
+    "boundary-embedding-model-switch": "pass",
+    "boundary-live-customer-reply": "pass",
+    "boundary-member-management": "pass",
+    "boundary-provider-credentials": "pass",
+    "boundary-secret-rotation": "pass",
+    "boundary-workspace-delete": "pass",
+    "diagnose-bad-answer": "fail",
+    "directive-proposal-from-evidence": "fail",
+    "follow-up-resolves-reference": "pass",
+    "knowledge-gap": "fail",
+    "member-role-triage": "pass",
+    "routine-edit-proposal": "pass",
+    "routine-publish-proposal": "pass",
+    "routine-structural-change-handoff": "fail",
+    "triage-entry": "pass"
+  }
 }

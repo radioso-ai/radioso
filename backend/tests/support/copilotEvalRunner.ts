@@ -43,6 +43,9 @@ export const COPILOT_EVAL_OPERATOR_ID = "33333333-3333-4333-8333-333333333333";
 export const COPILOT_EVAL_AGENT_ID = "44444444-4444-4444-8444-444444444444";
 export const COPILOT_EVAL_CONVERSATION_ID = "55555555-5555-4555-8555-555555555555";
 export const COPILOT_EVAL_MESSAGE_ID = "66666666-6666-4666-8666-666666666666";
+export const COPILOT_EVAL_ROUTINE_ID = "88888888-8888-4888-8888-888888888888";
+/** Cases name the routine the way an operator would, so a live run substitutes the real name here. */
+export const COPILOT_EVAL_ROUTINE_NAME = "Order status";
 
 export const copilotSystemPrompt = (): string =>
   readFileSync(fileURLToPath(new URL("../../prompts/copilot/system.md", import.meta.url)), "utf8");
@@ -292,6 +295,22 @@ const fixtureAssistantMessage = () => ({
   },
 });
 
+const fixtureRoutine = () => ({
+  id: COPILOT_EVAL_ROUTINE_ID,
+  agentId: COPILOT_EVAL_AGENT_ID,
+  lineageId: "99999999-9999-4999-8999-999999999999",
+  version: 1,
+  status: "draft" as const,
+  name: COPILOT_EVAL_ROUTINE_NAME,
+  activation: { triggerDescription: "When a customer asks where their order is", gateRef: null, priority: 10, reentryMode: "always" as const },
+  slots: [],
+  steps: [{ stableStepId: "ask_order_number", kind: "chat" as const, instruction: "Ask for the order number.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+  transitions: [{ fromStep: "ask_order_number", toRef: "done", guardKind: "default" as const, guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+  terminals: [{ stableStepId: "done", kind: "complete" as const, instruction: "Give the status.", ordinal: 0 }],
+  createdAt: evalDate("2026-08-20T09:00:00.000Z"),
+  updatedAt: evalDate("2026-08-25T09:00:00.000Z"),
+});
+
 const fixtureConversationSummaries = () => [{
   id: COPILOT_EVAL_CONVERSATION_ID,
   agentId: COPILOT_EVAL_AGENT_ID,
@@ -320,7 +339,11 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       resolve: async () => agent,
       get: async () => agent,
     },
-    routineDefinitionService: { list: async () => [], get: unusedPort("routineDefinitionService.get") },
+    routineDefinitionService: {
+      list: async () => [fixtureRoutine()],
+      get: async () => fixtureRoutine(),
+      validate: async () => ({ ok: true, diagnostics: [] }),
+    },
     chatHistoryService: {
       getConversation: async () => ({
         conversationId: COPILOT_EVAL_CONVERSATION_ID,
@@ -411,6 +434,19 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         payload: { intent },
         targetLabel: "Support",
         summary: `Draft ${targetType}: ${intent.slice(0, 60)}`,
+        diagnostics: [],
+      }),
+      draftEdit: async (_workspaceId: string, _targetRef: unknown, changes: unknown) => ({
+        payload: { kind: "edit", name: "Order status", changes },
+        targetLabel: "Order status",
+        summary: "Edit routine Order status.",
+        diagnostics: [],
+      }),
+      draftLifecycle: async (_workspaceId: string, _targetRef: unknown, action: string) => ({
+        payload: { kind: "lifecycle", action, name: "Order status" },
+        targetLabel: "Order status",
+        summary: `${action} routine Order status.`,
+        diagnostics: [],
       }),
       preview: async () => ({ targetLabel: "Support", current: null, proposed: {} }),
       readVersionToken: async () => "v1",

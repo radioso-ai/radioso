@@ -12,6 +12,7 @@ import { agentSkillInvocationModes, type AgentSkillInvocationMode, type AgentSki
 import type { AgentSkillRepositoryPort } from "./repository.js";
 
 const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
+const skillNamePatternMessage = "must start with a lowercase letter and contain only lowercase letters, numbers, and underscores";
 
 const targetSchema = z.object({
   kind: z.string().trim().min(1),
@@ -19,7 +20,7 @@ const targetSchema = z.object({
 }).strict();
 
 export const agentSkillCreateSchema = z.object({
-  name: z.string().trim().min(1).max(120).regex(skillNamePattern),
+  name: z.string().trim().min(1).max(120).regex(skillNamePattern, skillNamePatternMessage),
   capability: skillCapabilityIdSchema,
   target: targetSchema,
   config: z.record(z.unknown()).default({}),

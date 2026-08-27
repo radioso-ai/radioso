@@ -15,7 +15,13 @@ import {
   type RoutineDefinitionService,
   type RoutineDraftAssistService,
 } from "../../modules/routines/public.js";
-import { AgentSkillsService, type AgentSkillInvocationMode, type AgentSkillView } from "../../modules/agentSkills/public.js";
+import {
+  AgentSkillsService,
+  agentSkillCreateSchema,
+  agentSkillUpdateSchema,
+  type AgentSkillInvocationMode,
+  type AgentSkillView,
+} from "../../modules/agentSkills/public.js";
 import { skillCapabilityIds, type SkillCapabilityDescriptor, type SkillCapabilityId, type SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
@@ -226,6 +232,17 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     const existing = await findExisting(workspaceId, targetRef.agentId, targetRef.skillId);
     if (targetRef.skillId && !existing) throw notFound("Skill not found");
 
+    // AgentSkillsService.update has no name or capability field at all (agentSkillUpdateSchema is
+    // .strict() and omits both) - renaming or re-capabilitying an existing skill is not a supported
+    // operation. A proposal that claimed one would preview cleanly and "apply successfully" while
+    // persisting neither change, so it is refused here rather than reaching the operator.
+    if (existing && payload.name !== undefined && payload.name !== existing.name) {
+      throw badRequest(`Cannot rename the existing skill "${existing.name}" to "${payload.name}": the agent skills service has no rename path. Propose a new skill instead.`);
+    }
+    if (existing && payload.capability !== undefined && payload.capability !== existing.capability) {
+      throw badRequest(`Cannot change the existing skill "${existing.name}"'s capability from "${existing.capability}" to "${payload.capability}": the agent skills service has no re-capability path. Propose a new skill instead.`);
+    }
+
     const capabilityId = payload.capability ?? existing?.capability;
     if (!capabilityId) throw badRequest("A skill capability is required to propose a new skill");
     if (!isSkillCapabilityId(capabilityId)) throw badRequest(`Unsupported skill capability "${capabilityId}"`);
@@ -248,16 +265,30 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       throw badRequest(`The "${descriptor.id}" skill capability does not support invocation mode "${invocationMode}"`);
     }
     const target = payload.target ?? existing?.target ?? { kind: descriptor.targetKind, id: null };
+    const normalized = {
+      name,
+      capability: descriptor.id,
+      target,
+      config: validatedConfig.data as Record<string, unknown>,
+      invocationMode,
+      enabled: payload.enabled ?? existing?.enabled ?? true,
+    };
+
+    // Validated here against the same exported schemas AgentSkillsService.create/update parse
+    // internally, so a name or shape the service would reject on Apply (e.g. "FAQ Search" failing
+    // the create schema's lowercase-snake-case rule) is caught before the proposal is ever
+    // persisted, not only after the operator clicks Apply.
+    const schemaResult = existing
+      ? agentSkillUpdateSchema.safeParse({ target: normalized.target, replaceConfig: normalized.config, invocationMode: normalized.invocationMode, enabled: normalized.enabled })
+      : agentSkillCreateSchema.safeParse(normalized);
+    if (!schemaResult.success) {
+      throw badRequest(`This skill configuration would be rejected by the agent skills service: ${describeSchemaIssues(normalized, schemaResult.error)}`);
+    }
 
     return {
       existing,
       normalized: {
-        name,
-        capability: descriptor.id,
-        target,
-        config: validatedConfig.data as Record<string, unknown>,
-        invocationMode,
-        enabled: payload.enabled ?? existing?.enabled ?? true,
+        ...normalized,
         ...(payload.rationale ? { rationale: payload.rationale } : {}),
       },
     };
@@ -446,6 +477,17 @@ const readByPath = (source: Record<string, unknown>, path: string): unknown =>
     (value, segment) => value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[segment] : undefined,
     source,
   );
+
+/**
+ * Turns a rejection from the service's own schema into a message Ray can act on: which field,
+ * what it was, and why it failed - without restating the rule the schema already enforces.
+ */
+const describeSchemaIssues = (input: Record<string, unknown>, error: z.ZodError): string =>
+  error.issues.map((issue) => {
+    const path = issue.path.length ? issue.path.map(String).join(".") : "value";
+    const received = issue.path.length ? readByPath(input, path) : input;
+    return `${path} (received ${JSON.stringify(received)}): ${issue.message}`;
+  }).join("; ");
 
 /**
  * A settings field with `dependsOnKey` only takes effect while its parent is on. Ray proposing a

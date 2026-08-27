@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   OperatorCopilotService,
+  copilotProposalTargetTypes,
+  type CopilotProposalTargetType,
 } from "../../../src/modules/operatorCopilot/public.js";
 import { copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
 import { InMemoryCopilotRepository as MemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
@@ -210,6 +212,34 @@ describe("OperatorCopilotService", () => {
     expect(repository.messages.at(-1)).toMatchObject({ outcome: "completed" });
     // The label degrades to no entity, which is already a normal result for this path.
     expect(events.filter((event) => event.event === "activity").every((event) => !("entity" in (event.data as Record<string, unknown>)))).toBe(true);
+  });
+});
+
+// Regression: this fixture's reload label logic once listed only "directive"/"routine" for the
+// name-bearing branch, the same OR-chain shape isProposalOutput drifted on. A conversation reload
+// for an agent_skill or context_variable proposal card silently showed an empty targetLabel. Every
+// registered target type must reload with a real label, sourced from wherever the real
+// presentProposalCard sources it (payload.name, or targetRef.settingKey for agent_setting).
+describe("InMemoryCopilotRepository proposal card reload", () => {
+  it.each(copilotProposalTargetTypes)("reloads a %s proposal card with a non-empty label", async (targetType: CopilotProposalTargetType) => {
+    const repository = new MemoryCopilotRepository();
+    const conversation = await repository.createConversation({ workspaceId: "workspace", operatorUserId: "operator", title: "Draft it" });
+    const message = await repository.createMessage({ conversationId: conversation.id, role: "copilot", content: "Drafted it.", outcome: "completed", activity: [] });
+    const proposal = await repository.createProposal({
+      workspaceId: "workspace",
+      operatorUserId: "operator",
+      conversationId: conversation.id,
+      targetType,
+      targetRef: { agentId: "agent-1", settingKey: "retrievalEnabled" },
+      payload: { name: "Example" },
+      versionToken: "v1",
+      evidence: null,
+    });
+    await repository.attachProposalsToMessage({ proposalIds: [proposal.id], messageId: message.id, conversationId: conversation.id });
+
+    const [reloaded] = await repository.listMessages({ conversationId: conversation.id });
+    const expectedLabel = targetType === "agent_setting" ? "retrievalEnabled" : "Example";
+    expect(reloaded?.proposals?.[0]).toMatchObject({ id: proposal.id, targetLabel: expectedLabel });
   });
 });
 

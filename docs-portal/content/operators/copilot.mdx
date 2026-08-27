@@ -129,7 +129,9 @@ A skill config proposal creates a new skill or updates an existing one by the
 same rules the Skills editor enforces: a setting that depends on another stays
 refused while its parent is off, and a notify skill needs at least a recipient
 email or a webhook URL before Ray will propose it — Ray asks you for either
-rather than inventing one.
+rather than inventing one. Updating a skill can change its target, configuration,
+invocation mode, or enabled state, but not its name or capability — Ray proposes
+a new skill for either of those.
 
 A context variable proposal can create or update the variable's definition,
 enable or reconfigure it for the agent, or do both in the same card. A

@@ -69,8 +69,11 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
       proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map((proposal) => ({
         id: proposal.id,
         targetType: proposal.targetType,
-        targetLabel: (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
-        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
+        // Mirrors presentProposalCard's own name-bearing-vs-setting-bearing split (copilotRepository.ts):
+        // every target type reads its label from payload.name except agent_setting, which reads
+        // targetRef.settingKey.
+        targetLabel: proposal.targetType !== "agent_setting" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
+        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : proposal.targetType !== "agent_setting" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
         status: proposal.status,
         reason: proposal.reason ?? null,
       })),

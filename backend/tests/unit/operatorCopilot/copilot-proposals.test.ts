@@ -10,9 +10,11 @@ vi.mock("../../../src/modules/routines/public.js", async (importOriginal) => ({
 
 import {
   OperatorCopilotService,
+  copilotProposalTargetTypes,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotProposalTargetType,
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
 import { createAgentSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
@@ -95,6 +97,67 @@ describe("US3 copilot proposals", () => {
     })) events.push(event);
 
     expect(events).toContainEqual({ event: "proposal", data: { proposalId: proposal.id, targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft directive" } });
+    const message = (await repository.listMessages({ conversationId: conversation.id })).find((item) => item.role === "copilot");
+    expect(message?.proposals).toEqual([expect.objectContaining({ id: proposal.id, status: "pending" })]);
+  });
+
+  // Regression for the isProposalOutput/narrowTargetType drift: a target type accepted by the
+  // repository and the tool catalog but missing from the service's own output guard is silently
+  // dropped — the DB row exists, but the operator never sees a card. Every registered target type
+  // must round-trip through proposalFromTrace into a persisted card, not just the ones a hand
+  // written OR-chain happened to list.
+  it.each(copilotProposalTargetTypes)("emits a proposal event and card for a %s draft, not just a subset of target types", async (targetType: CopilotProposalTargetType) => {
+    const repository = new MemoryProposalRepository();
+    const conversation = await repository.createConversation({ workspaceId, operatorUserId, title: "Draft it" });
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId: conversation.id,
+      targetType,
+      targetRef: { agentId },
+      payload: { name: "Example" },
+      versionToken: "version-1",
+      evidence: null,
+    });
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: {
+        runStreaming: () => ({
+          events: (async function* () {
+            yield { kind: "tool_call_invoked" as const, stepIndex: 0, toolName: "propose_x", callId: "draft-1", at: 1 };
+            yield {
+              kind: "tool_call_completed" as const,
+              stepIndex: 0,
+              toolName: "propose_x",
+              callId: "draft-1",
+              output: { proposalId: proposal.id, targetType, targetLabel: "Example", summary: "Draft change" },
+              resultTokens: 1,
+              latencyMs: 1,
+              at: 2,
+            };
+          })(),
+          result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "I drafted it.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+        }),
+      },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [tool("propose_x", "workspace.agents.manage")],
+    });
+
+    const events = [];
+    for await (const event of service.runTurn({
+      workspaceId,
+      accountId,
+      operatorUserId,
+      conversationId: conversation.id,
+      message: "Draft it",
+      pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
+      permissions: new Set(["workspace.agents.manage"]),
+    })) events.push(event);
+
+    expect(events).toContainEqual({ event: "proposal", data: { proposalId: proposal.id, targetType, targetLabel: "Example", summary: "Draft change" } });
     const message = (await repository.listMessages({ conversationId: conversation.id })).find((item) => item.role === "copilot");
     expect(message?.proposals).toEqual([expect.objectContaining({ id: proposal.id, status: "pending" })]);
   });
@@ -607,6 +670,63 @@ describe("agent skill config proposal adapter", () => {
       capability: "not_a_real_capability",
       config: {},
     })).rejects.toThrow(/unsupported skill capability/i);
+  });
+
+  // AgentSkillsService.update has no name/capability field at all (agentSkillUpdateSchema.strict()
+  // omits them) - there is no rename or re-capability path today. A proposal that claims one would
+  // preview cleanly and "apply successfully" while persisting nothing changed about the name or
+  // capability, so it must be refused before it is ever stored as a proposal.
+  it("refuses a proposal that renames an existing skill, since the update service has no rename path", async () => {
+    const existing = {
+      id: existingSkillId,
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null }, exposedInputs: { message: true } },
+      invocationMode: "routine_named",
+      enabled: true,
+      updatedAt: new Date(5).toISOString(),
+    };
+    const { adapter, update } = await buildAdapter({ agentSkills: [existing] });
+
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: existingSkillId }, {
+      name: "notify_ops_v2",
+    })).rejects.toThrow(/rename|new skill/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a proposal that changes an existing skill's capability, since the update service has no re-capability path", async () => {
+    const existing = {
+      id: existingSkillId,
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null }, exposedInputs: { message: true } },
+      invocationMode: "routine_named",
+      enabled: true,
+      updatedAt: new Date(5).toISOString(),
+    };
+    const { adapter, update } = await buildAdapter({ agentSkills: [existing] });
+
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: existingSkillId }, {
+      capability: "retrieve",
+    })).rejects.toThrow(/capability|new skill/i);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  // agentSkillCreateSchema requires name to match /^[a-z][a-z0-9_]*$/u. The copilot's own
+  // skillConfigPayloadSchema only checks non-empty, so a proposal like "FAQ Search" previously
+  // passed validatePayload, created a pending card, and failed only when the operator clicked
+  // Apply. The proposal must be validated against the service's real create schema before it is
+  // ever persisted.
+  it("refuses a new skill name the create schema's own format rule will reject, before persisting the proposal", async () => {
+    const { adapter, create } = await buildAdapter();
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, {
+      name: "FAQ Search",
+      capability: "retrieve",
+      config: {},
+    })).rejects.toThrow(/name/i);
+    expect(create).not.toHaveBeenCalled();
   });
 });
 

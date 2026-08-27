@@ -73,7 +73,14 @@ export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
 
-export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
+/**
+ * The single runtime list of proposal target types. Every completeness guard over target types
+ * (the copilot service's tool-output narrowing, the repository's row narrowing, the OpenAPI and
+ * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
+ * literal enum, so adding a target type cannot silently miss one of those sites again.
+ */
+export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const;
+export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {

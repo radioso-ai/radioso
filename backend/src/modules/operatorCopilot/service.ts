@@ -2,19 +2,20 @@ import { randomUUID } from "node:crypto";
 
 import { AGENT_BUDGET_DEFAULTS, type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import type {
-  CopilotPageContext,
-  CopilotEntityReference,
-  CopilotAuditPort,
-  CopilotProposal,
-  CopilotProposalAdapter,
-  CopilotProposalCard,
-  CopilotProposalEvidenceSummary,
-  CopilotProposalStatus,
-  CopilotSseEvent,
-  CopilotToolDescriptor,
-  CopilotTurnOutcome,
-  CopilotWorkspaceRouteKeyResolver,
+import {
+  copilotProposalTargetTypes,
+  type CopilotPageContext,
+  type CopilotEntityReference,
+  type CopilotAuditPort,
+  type CopilotProposal,
+  type CopilotProposalAdapter,
+  type CopilotProposalCard,
+  type CopilotProposalEvidenceSummary,
+  type CopilotProposalStatus,
+  type CopilotSseEvent,
+  type CopilotToolDescriptor,
+  type CopilotTurnOutcome,
+  type CopilotWorkspaceRouteKeyResolver,
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
@@ -325,7 +326,7 @@ const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null =
 const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
-  return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting" || output.targetType === "routine") && typeof output.targetLabel === "string" && typeof output.summary === "string";
+  return typeof output.proposalId === "string" && (copilotProposalTargetTypes as ReadonlyArray<unknown>).includes(output.targetType) && typeof output.targetLabel === "string" && typeof output.summary === "string";
 };
 
 const trackActivity = (trace: AgentTraceEvent, labels: ReadonlyMap<string, string>, entitiesByToolCall: ReadonlyMap<string, CopilotEntityReference>, activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>): void => {

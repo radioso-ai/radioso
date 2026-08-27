@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { CopilotAuditPort, CopilotEntityDescription, CopilotProposal, CopilotProposalEvidence } from "../contracts.js";
+import { copilotProposalTargetTypes, type CopilotAuditPort, type CopilotEntityDescription, type CopilotProposal, type CopilotProposalEvidence } from "../contracts.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
 import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 
@@ -75,7 +75,7 @@ export const citedEvidenceSchema = z.array(z.string().uuid()).max(MAX_CITED_EVID
 
 export const proposalOutputSchema = z.object({
   proposalId: z.string().uuid(),
-  targetType: z.enum(["directive", "agent_setting", "routine", "agent_skill", "context_variable"]),
+  targetType: z.enum(copilotProposalTargetTypes),
   targetLabel: z.string(),
   summary: z.string(),
   /** Absent when the change was proposed unmeasured, so silence never reads as verified. */

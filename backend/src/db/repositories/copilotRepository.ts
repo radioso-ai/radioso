@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalCard, CopilotProposalEvidence, CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
-import { summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
+import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
@@ -16,7 +16,7 @@ const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | unde
 const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: narrowStatus(row.status), createdAt: row.created_at, updatedAt: row.updated_at });
 const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role === "copilot" ? "copilot" : "operator", content: row.content, ...(narrowOutcome(row.outcome) ? { outcome: narrowOutcome(row.outcome) } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
 const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => {
-  if (targetType === "directive" || targetType === "agent_setting" || targetType === "routine" || targetType === "agent_skill" || targetType === "context_variable") return targetType;
+  if ((copilotProposalTargetTypes as ReadonlyArray<string>).includes(targetType)) return targetType as CopilotProposal["targetType"];
   throw new Error(`Unknown copilot proposal target type: ${targetType}`);
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
@@ -29,7 +29,10 @@ const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
 export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
   const targetRef = asRecord(proposal.targetRef);
   const payload = asRecord(proposal.payload);
-  const targetLabel = proposal.targetType === "directive" || proposal.targetType === "routine" || proposal.targetType === "agent_skill" || proposal.targetType === "context_variable" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
+  // agent_setting is the only target type with no drafted name of its own - it targets an existing
+  // setting key instead. Every other target type (present or future) proposes a named thing, so
+  // this reads as "not agent_setting" rather than an OR-chain a new target type could miss.
+  const targetLabel = proposal.targetType !== "agent_setting" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
   const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };

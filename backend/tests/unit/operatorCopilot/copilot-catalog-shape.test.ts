@@ -42,12 +42,13 @@ const realCatalog = () => {
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
     skillCapabilityTargets: { list: stub() },
+    contextVariables: { listByWorkspace: stub(), listByAgent: stub() },
     workspaceSettings: {
       getRetrievalDefaults: stub(), getIngestionSettings: stub(), listLlmModels: stub(),
       getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },
-    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill"] as const).map((targetType) => ({
+    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
       targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(), validatePayload: stub(),
     })),
     auditService: { record: stub() },

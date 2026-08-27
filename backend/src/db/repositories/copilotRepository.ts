@@ -16,7 +16,7 @@ const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | unde
 const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: narrowStatus(row.status), createdAt: row.created_at, updatedAt: row.updated_at });
 const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role === "copilot" ? "copilot" : "operator", content: row.content, ...(narrowOutcome(row.outcome) ? { outcome: narrowOutcome(row.outcome) } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
 const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => {
-  if (targetType === "directive" || targetType === "agent_setting" || targetType === "routine" || targetType === "agent_skill") return targetType;
+  if (targetType === "directive" || targetType === "agent_setting" || targetType === "routine" || targetType === "agent_skill" || targetType === "context_variable") return targetType;
   throw new Error(`Unknown copilot proposal target type: ${targetType}`);
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
@@ -29,7 +29,7 @@ const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
 export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
   const targetRef = asRecord(proposal.targetRef);
   const payload = asRecord(proposal.payload);
-  const targetLabel = proposal.targetType === "directive" || proposal.targetType === "routine" || proposal.targetType === "agent_skill" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
+  const targetLabel = proposal.targetType === "directive" || proposal.targetType === "routine" || proposal.targetType === "agent_skill" || proposal.targetType === "context_variable" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
   const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };

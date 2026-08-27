@@ -141,6 +141,16 @@ describe("cited evidence must be about the change being proposed", () => {
     )).rejects.toThrow(/routine/i);
   });
 
+  it("refuses to attach replay evidence to a context variable proposal at all", async () => {
+    // CopilotEvalCaseReplayOverrides has no seam that installs a pushed, browser, or resolver
+    // value — a replay never sees visitor context, so a passing replay says nothing about a
+    // proposed variable or enablement.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 20 } } } },
+      { targetType: "context_variable" },
+    )).rejects.toThrow(/context variable/i);
+  });
+
   it("accepts a skill config proposal whose configuration is the one the replay measured", async () => {
     const evidence = await resolve(
       { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 40 } } } },

@@ -130,7 +130,7 @@ export const targetReference = (
   const ref = detail?.targetRef ?? detail?.target ?? {}
   const applied = appliedRef ?? {}
   const agentId = typeof (applied.agentId ?? ref.agentId ?? defaultAgentId) === 'string' ? String(applied.agentId ?? ref.agentId ?? defaultAgentId) : undefined
-  if (summary.targetType === 'agent_setting') {
+  if (summary.targetType === 'agent_setting' || summary.targetType === 'context_variable') {
     const id = agentId
     return id ? { entity: { type: 'agent', id }, agentId: id } : null
   }

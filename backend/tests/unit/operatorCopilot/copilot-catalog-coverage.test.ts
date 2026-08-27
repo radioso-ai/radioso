@@ -25,7 +25,13 @@ describe("operator copilot catalog coverage", () => {
   //               a runtime safety model.
   //   132 -> 130  createAgentSkill/updateAgentSkill moved to propose_skill_config.
   //   130 -> 129  deleteAgentDirective moved to propose_directive_removal.
-  const maxDeferredCatalogExclusions = 129;
+  //   129 -> 120  createContextVariable/updateContextVariable/upsertAgentContextVariable moved to
+  //               propose_context_variable; listContextVariables/getContextVariable/
+  //               listAgentContextVariables moved to the new context_variables reader; the
+  //               per-scope value operations (upsertContextVariableValue/getContextVariableValue/
+  //               deleteContextVariableValue) turned out to be a permanent exclusion rather than
+  //               deferred scope, since they carry visitor runtime data rather than configuration.
+  const maxDeferredCatalogExclusions = 120;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -40,6 +46,13 @@ describe("operator copilot catalog coverage", () => {
     expect(reasonFor("switchAccount")).toContain("does not administer identity");
     expect(reasonFor("listAccountUsers")).toContain("account-scoped");
     expect(reasonFor("getWorkspaceMcpContext")).toContain("workspace-token integration clients");
+    // The signing key derives the secret an embed uses to sign visitor identity; it must never
+    // become readable, and the context_variables reader and propose_context_variable must never
+    // grow a path to it.
+    expect(catalogCoverage.getAgentContextVariableSigningKey).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("carries secret material"),
+    });
 
     // Grant metadata carries no token material and its siblings are already readable, so it is
     // planned work rather than a boundary. Issuing and revoking grants stay never-list.

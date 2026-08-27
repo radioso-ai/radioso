@@ -6,6 +6,7 @@ import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
   CopilotAuditPort,
+  CopilotContextVariableProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotProposal,
   CopilotRoutineProposalAdapter,
@@ -277,7 +278,7 @@ const projectDirectiveDetail = (
 export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }
 
@@ -326,7 +327,7 @@ export const createAgentSettingProposalCopilotTools = (
 };
 
 const proposalAdapter = (
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>,
+  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>,
 ): CopilotAgentSettingProposalAdapter => {
   const adapter = adapters.find((candidate) => candidate.targetType === "agent_setting");
   if (!adapter) throw new Error("No copilot proposal adapter registered for agent_setting");

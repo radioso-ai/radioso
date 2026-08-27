@@ -64,7 +64,7 @@ import {
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
@@ -412,6 +412,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
+    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository }),
   ] as const;
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: repositories.conversationRepository,
@@ -513,6 +514,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSourceStatusService: repositories.documentSourceRepository,
     agentSkillsService,
     skillCapabilityRegistry,
+    contextVariables: contextVariableRepository,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {

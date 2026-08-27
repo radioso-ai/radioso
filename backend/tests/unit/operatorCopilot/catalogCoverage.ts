@@ -83,6 +83,12 @@ const endUserSurface = permanent("Permanent exclusion: this is an end-user or in
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
+// A context variable *value* is data written for one session, customer, agent, or workspace scope
+// at runtime (by a resolver skill, a pushed API call, or the browser SDK) — it is what a visitor's
+// conversation carries, not a setting an operator tunes. propose_context_variable covers the
+// variable's definition and an agent's enablement of it; the values themselves stay off Ray's
+// catalog on the same ground conversation content does.
+const visitorScopedRuntimeData = permanent("Permanent exclusion: this reads or writes a context variable's per-scope runtime value, not agent configuration Ray authors.");
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
@@ -218,17 +224,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "uploadAgentAssistantLogo",
     "deleteAgentAssistantLogo",
     "setDefaultAgent",
-    "createContextVariable",
-    "listContextVariables",
-    "getContextVariable",
-    "updateContextVariable",
-    "deleteContextVariable",
-    "listAgentContextVariables",
-    "upsertAgentContextVariable",
-    "deleteAgentContextVariable",
-    "upsertContextVariableValue",
-    "getContextVariableValue",
-    "deleteContextVariableValue",
     "listSkills",
     "getSkill",
     "createMcpConnection",
@@ -325,6 +320,28 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   // Disabling a skill is the reversible equivalent already reachable through propose_skill_config
   // (enabled: false); removal is destructive and stays out of Ray's reach for now.
   deleteAgentSkill: deferred("Deferred to Wave 2 behavior authoring: disabling a skill through propose_skill_config is the reversible equivalent; removal is destructive."),
+  listContextVariables: "context_variables",
+  getContextVariable: "context_variables",
+  listAgentContextVariables: "context_variables",
+  createContextVariable: "propose_context_variable",
+  updateContextVariable: "propose_context_variable",
+  upsertAgentContextVariable: "propose_context_variable",
+  // A routine step can bind an input to a context variable by name (routines/validator.ts), with
+  // no foreign key enforcing the reference. Deleting the definition an agent's routines already
+  // bind to breaks that binding silently until the routine is next validated or run. Disabling the
+  // variable for the agent through propose_context_variable (enabled: false) is the reversible
+  // equivalent and stays reachable; deleting the definition outright does not.
+  deleteContextVariable: deferred("Deferred to Wave 2 behavior authoring: disabling an agent's use of a variable through propose_context_variable is the reversible equivalent; deleting the definition can silently break a routine step bound to it by name."),
+  // Same reference risk, scoped to one agent: a routine step's contextVariableRef binding resolves
+  // against this agent's enabled variables, so removing the enablement row breaks that binding the
+  // same way deleting the definition does. enabled: false through propose_context_variable is the
+  // reversible equivalent.
+  deleteAgentContextVariable: deferred("Deferred to Wave 2 behavior authoring: disabling through propose_context_variable (enabled: false) is the reversible equivalent; removing the enablement row can silently break a routine step bound to it by name."),
+  ...coverage([
+    "upsertContextVariableValue",
+    "getContextVariableValue",
+    "deleteContextVariableValue",
+  ], visitorScopedRuntimeData),
   createAgentRoutine: "propose_routine",
   updateAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: routine proposals create drafts only; editing remains in the routine editor."),
   draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: routine proposals create drafts only; drafting remains in the routine editor."),

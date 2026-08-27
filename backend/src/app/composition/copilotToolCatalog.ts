@@ -14,11 +14,13 @@ import {
   type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
   type CopilotAudiencePulsePort,
+  type CopilotContextVariablesPort,
   type CopilotWorkspaceSettingsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
+  CopilotContextVariableProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -62,9 +64,10 @@ export const createCopilotToolCatalog = (deps: {
   readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
   readonly agentSkillsService: CopilotAgentSkillsPort;
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
+  readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;

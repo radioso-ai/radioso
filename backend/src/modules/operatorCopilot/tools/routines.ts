@@ -5,6 +5,7 @@ import type {
   CopilotAuditPort,
   CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
+  CopilotContextVariableProposalAdapter,
   CopilotEntityDescription,
   CopilotProposal,
   CopilotDirectiveProposalAdapter,
@@ -185,7 +186,7 @@ const describeNamedRoutine = async (
 export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }
 export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => {
@@ -230,7 +231,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
 
   ];
 };
-const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>): CopilotRoutineProposalAdapter => {
+const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>): CopilotRoutineProposalAdapter => {
   const adapter = adapters.find((candidate) => candidate.targetType === "routine");
   if (!adapter) throw new Error("No copilot proposal adapter registered for routine");
   return adapter as CopilotRoutineProposalAdapter;

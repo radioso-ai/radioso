@@ -30,7 +30,8 @@ export type ProposalChange =
   | { targetType: "directive"; directiveId?: string }
   | { targetType: "routine" }
   | { targetType: "agent_setting"; settingKey: string; value: unknown }
-  | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown };
+  | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown }
+  | { targetType: "context_variable" };
 
 /**
  * Which replay override carries a given agent setting. A setting absent from this map cannot be
@@ -70,6 +71,9 @@ const sameValue = (left: unknown, right: unknown): boolean => {
  *   authored with. Requiring that directives were the thing under test is the strongest honest
  *   check available; it does not prove the drafted directive is the one that was measured.
  * - No override installs a routine, so no replay can support a routine proposal.
+ * - No override installs visitor context either, so the same is true of a context variable
+ *   proposal: nothing in CopilotEvalCaseReplayOverrides can put a pushed, browser, or resolver
+ *   value under test.
  */
 const assertMeasuredTheProposedChange = (
   record: CopilotReplayEvidenceRecord,
@@ -78,6 +82,9 @@ const assertMeasuredTheProposedChange = (
   const overrides = asRecord(record.overrides);
   if (change.targetType === "routine") {
     throw badRequest("A replay cannot measure a routine proposal; use test_agent_turn against the draft instead");
+  }
+  if (change.targetType === "context_variable") {
+    throw badRequest("A replay cannot measure a context variable proposal; no replay override installs visitor context");
   }
   if (change.targetType === "directive") {
     const directives = asRecord(overrides.agentConfigOverride).authoredDirectives;

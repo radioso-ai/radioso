@@ -99,6 +99,32 @@ describe('CopilotProposalCard', () => {
     })
   })
 
+  it('resolves a context variable proposal to its agent, the same way an agent setting proposal does', () => {
+    // A context variable's definition is workspace-scoped, not agent-scoped, so there is no
+    // per-variable dashboard page to deep-link to yet — the card links to the agent that proposed
+    // it, exactly like agent_setting.
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-context-variable',
+      targetType: 'context_variable',
+      targetLabel: 'loyalty_tier',
+      summary: 'Add a loyalty_tier context variable',
+      status: 'pending',
+    }
+
+    expect(targetReference(proposal, { targetRef: { agentId: 'agent-1', variableId: null } } as CopilotProposalDetail, null)).toEqual({
+      entity: { type: 'agent', id: 'agent-1' },
+      agentId: 'agent-1',
+    })
+
+    // Live-apply path: no detail ever loaded, apply response alone carries the agent id.
+    expect(targetReference(proposal, null, { agentId: 'agent-9', variableId: 'variable-applied' })).toEqual({
+      entity: { type: 'agent', id: 'agent-9' },
+      agentId: 'agent-9',
+    })
+
+    expect(targetReference(proposal, null, null)).toBeNull()
+  })
+
   it('renders a directive removal preview as one legible row instead of every field marked blank', () => {
     // Without a fix, a record-shaped `current` next to a null/undefined `proposed` recurses through
     // the generic diff algorithm and expands into one row per field, each showing "current value"

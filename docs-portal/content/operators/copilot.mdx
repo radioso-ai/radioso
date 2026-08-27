@@ -26,6 +26,12 @@ detail, like a webhook target, stays name-only. So Ray can tell you that a
 webhook skill has no connection configured, without reading the token you
 would put there.
 
+Ray also reads the workspace's context variable definitions and which of them
+an agent has enabled — the source (pushed, browser, or a resolver skill) and
+how the variable surfaces to the model. It never reads a variable's value for
+a particular visitor session or customer, because that value belongs to a
+conversation Ray was not asked to inspect.
+
 ## Open the panel
 
 Ray is available on every dashboard view. Choose **Ray** in the top bar, or
@@ -124,6 +130,14 @@ same rules the Skills editor enforces: a setting that depends on another stays
 refused while its parent is off, and a notify skill needs at least a recipient
 email or a webhook URL before Ray will propose it — Ray asks you for either
 rather than inventing one.
+
+A context variable proposal can create or update the variable's definition,
+enable or reconfigure it for the agent, or do both in the same card. A
+resolver-sourced enablement needs the skill that resolves the value; every
+other source refuses one. Applying the proposal writes the definition, the
+enablement, or both, in that order, so a proposal that creates a variable and
+enables it for the agent in one step always has an id to enable by the time it
+runs.
 
 Operators with `workspace.agents.manage` can choose **Apply** and confirm the
 change. Ray sends the confirmed proposal through the same guarded
@@ -245,6 +259,12 @@ retrieve skill — the one that answers without a routine naming it. A replay
 can put that skill's settings under test the same way it can a setting
 proposal's value; every other skill capability has no equivalent replay
 override, so Ray proposes those changes unmeasured.
+
+A context variable proposal never carries replay evidence. A replay measures
+the configuration Ray sends the model — instructions, directives, skill
+settings — and none of the settings a replay can override install a pushed,
+browser, or resolver value for a visitor session, so no replay can speak to a
+context variable proposal either way.
 
 A replay runs against the configuration the eval case froze, never the agent's
 current one, so a measurement is dated by any edit to that agent after the case

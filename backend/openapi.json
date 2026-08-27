@@ -34499,7 +34499,8 @@
                                         "directive",
                                         "agent_setting",
                                         "routine",
-                                        "agent_skill"
+                                        "agent_skill",
+                                        "context_variable"
                                       ]
                                     },
                                     "targetLabel": {
@@ -34812,7 +34813,8 @@
                         "directive",
                         "agent_setting",
                         "routine",
-                        "agent_skill"
+                        "agent_skill",
+                        "context_variable"
                       ]
                     },
                     "targetRef": {},
@@ -34825,7 +34827,8 @@
                             "directive",
                             "agent_setting",
                             "routine",
-                            "agent_skill"
+                            "agent_skill",
+                            "context_variable"
                           ]
                         },
                         "ref": {}

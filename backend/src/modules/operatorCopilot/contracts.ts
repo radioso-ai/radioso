@@ -73,7 +73,7 @@ export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
 
-export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine" | "agent_skill";
+export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {
@@ -135,6 +135,15 @@ export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapt
 /** A skill config is supplied by Ray from settings it read, not drafted from prose. */
 export interface CopilotAgentSkillProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "agent_skill";
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
+}
+
+/**
+ * A context variable proposal is supplied by Ray from a definition and/or an agent enablement it
+ * already read, not drafted from prose — the same reason agent_skill validates rather than drafts.
+ */
+export interface CopilotContextVariableProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "context_variable";
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
 }
 

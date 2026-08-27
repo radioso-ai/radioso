@@ -20,9 +20,12 @@ import { skillCapabilityIds, type SkillCapabilityDescriptor, type SkillCapabilit
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
+  CopilotContextVariableProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotRoutineProposalAdapter,
 } from "../../modules/operatorCopilot/public.js";
+import type { ContextVariable, AgentContextVariableEnablement } from "../../modules/context-variables/public.js";
+import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
 import { badRequest, notFound, AppError } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
@@ -47,6 +50,57 @@ const skillConfigStoredPayloadSchema = z.object({
   config: z.record(z.unknown()),
   invocationMode: z.string(),
   enabled: z.boolean(),
+  rationale: z.string().optional(),
+}).strict();
+
+// Mirrors contextVariableRoutes.ts's own literal arrays and superRefine business rules. The
+// context-variables module has no service layer to validate against — the route is the only other
+// place these rules are enforced, so this adapter re-states them the way skillConfigPayloadSchema
+// re-states the capability registry's own shape rather than importing the route's zod schema.
+const contextVariableValueTypes = ["string", "json"] as const;
+const contextVariableTrustTiers = ["unverified", "signed"] as const;
+const contextVariableSensitivities = ["normal", "sensitive"] as const;
+const contextVariableSurfacings = ["always", "on_reference", "operator_only"] as const;
+const contextVariableSources = ["pushed", "browser", "resolver"] as const;
+const contextVariableTargetRefSchema = z.object({ agentId: z.string().uuid(), variableId: z.string().uuid().nullable() }).strict();
+const contextVariableEnablementInputSchema = z.object({
+  source: z.enum(contextVariableSources),
+  resolverSkillId: z.string().uuid().nullable().optional(),
+  maxAgeSeconds: z.number().int().nonnegative().nullable().optional(),
+  resolverTimeoutMs: z.number().int().positive().nullable().optional(),
+  surfacing: z.enum(contextVariableSurfacings),
+  enabled: z.boolean().optional(),
+}).strict();
+const contextVariableProposalPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  description: z.string().max(2_000).nullable().optional(),
+  valueType: z.enum(contextVariableValueTypes).optional(),
+  trustTier: z.enum(contextVariableTrustTiers).optional(),
+  sensitivity: z.enum(contextVariableSensitivities).optional(),
+  defaultSurfacing: z.enum(contextVariableSurfacings).optional(),
+  enablement: contextVariableEnablementInputSchema.optional(),
+  rationale: z.string().trim().min(1).max(1_000).optional(),
+}).strict();
+const contextVariableDefinitionStoredSchema = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+  valueType: z.enum(contextVariableValueTypes),
+  trustTier: z.enum(contextVariableTrustTiers),
+  sensitivity: z.enum(contextVariableSensitivities),
+  defaultSurfacing: z.enum(contextVariableSurfacings),
+}).strict();
+const contextVariableEnablementStoredSchema = z.object({
+  source: z.enum(contextVariableSources),
+  resolverSkillId: z.string().uuid().nullable(),
+  maxAgeSeconds: z.number().int().nonnegative().nullable(),
+  resolverTimeoutMs: z.number().int().positive().nullable(),
+  surfacing: z.enum(contextVariableSurfacings),
+  enabled: z.boolean(),
+}).strict();
+const contextVariableStoredPayloadSchema = z.object({
+  name: z.string(),
+  definition: contextVariableDefinitionStoredSchema.nullable(),
+  enablement: contextVariableEnablementStoredSchema.nullable(),
   rationale: z.string().optional(),
 }).strict();
 
@@ -426,4 +480,195 @@ const assertNotifyDeliveryIsReachable = (capabilityId: string, config: Record<st
   if (recipients.length === 0 && typeof webhookUrl !== "string") {
     throw badRequest("This notify skill has no recipient email and no webhook URL. Ask the operator which to use before proposing this change.");
   }
+};
+
+interface NormalizedContextVariableDefinition {
+  readonly name: string;
+  readonly description: string | null;
+  readonly valueType: ContextVariable["valueType"];
+  readonly trustTier: ContextVariable["trustTier"];
+  readonly sensitivity: ContextVariable["sensitivity"];
+  readonly defaultSurfacing: ContextVariable["defaultSurfacing"];
+}
+
+interface NormalizedContextVariableEnablement {
+  readonly source: AgentContextVariableEnablement["source"];
+  readonly resolverSkillId: string | null;
+  readonly maxAgeSeconds: number | null;
+  readonly resolverTimeoutMs: number | null;
+  readonly surfacing: AgentContextVariableEnablement["surfacing"];
+  readonly enabled: boolean;
+}
+
+const findAgentContextVariableEnablement = async (
+  contextVariableRepository: Pick<ContextVariableRepositoryPort, "listByAgent">,
+  workspaceId: string,
+  agentId: string,
+  variableId: string | null,
+): Promise<AgentContextVariableEnablement | null> => {
+  if (!variableId) return null;
+  const enablements = await contextVariableRepository.listByAgent(workspaceId, agentId);
+  return enablements.find((enablement) => enablement.variableId === variableId) ?? null;
+};
+
+/**
+ * Mirrors contextVariableRoutes.ts's own superRefine: browser-sourced variables have no resolver
+ * pipeline yet, a resolver source must name the skill that supplies the value, and every other
+ * source must not carry resolver-only fields — an enablement combining those would be inert or
+ * contradictory once persisted.
+ */
+const assertEnablementIsWellFormed = (enablement: z.infer<typeof contextVariableEnablementInputSchema>): void => {
+  if (enablement.source === "browser") {
+    throw badRequest("browser-sourced context variables are not yet supported");
+  }
+  if (enablement.source === "resolver") {
+    if (!enablement.resolverSkillId) {
+      throw badRequest("resolverSkillId is required when source is resolver");
+    }
+    return;
+  }
+  if (enablement.resolverSkillId !== undefined && enablement.resolverSkillId !== null) {
+    throw badRequest("resolverSkillId is only allowed when source is resolver");
+  }
+  if (enablement.maxAgeSeconds !== undefined && enablement.maxAgeSeconds !== null) {
+    throw badRequest("maxAgeSeconds is only allowed when source is resolver");
+  }
+  if (enablement.resolverTimeoutMs !== undefined && enablement.resolverTimeoutMs !== null) {
+    throw badRequest("resolverTimeoutMs is only allowed when source is resolver");
+  }
+};
+
+/**
+ * Composition adapter: a context variable's workspace-scoped definition and one agent's
+ * enablement of it are two separate resources this adapter can create or update from a single
+ * proposal. Ray supplies concrete field values it already read (from the context_variables
+ * reader), never a draft from prose, so validation happens entirely in `validatePayload` — the
+ * same shape as propose_skill_config.
+ */
+export const createContextVariableCopilotProposalAdapter = (deps: {
+  readonly agentService: Pick<AgentService, "get">;
+  readonly contextVariableRepository: Pick<ContextVariableRepositoryPort, "get" | "create" | "update" | "listByAgent" | "upsertEnablement">;
+}): CopilotContextVariableProposalAdapter => {
+  const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
+    findAgentContextVariableEnablement(deps.contextVariableRepository, workspaceId, agentId, variableId);
+
+  // A proposal can touch the definition, the enablement, or both, so the version token guards
+  // whichever of the two was most recently changed — the one a stale apply would otherwise clobber.
+  const readCurrentToken = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }): Promise<string> => {
+    if (!targetRef.variableId) {
+      return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+    }
+    const variable = await deps.contextVariableRepository.get(workspaceId, targetRef.variableId);
+    if (!variable) throw notFound("Context variable no longer exists");
+    const enablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
+    const latest = enablement && enablement.updatedAt.getTime() > variable.updatedAt.getTime() ? enablement.updatedAt : variable.updatedAt;
+    return versionToken(latest);
+  };
+
+  const resolveProposal = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }, rawPayload: unknown) => {
+    const payload = contextVariableProposalPayloadSchema.parse(rawPayload);
+    const existing = targetRef.variableId ? await deps.contextVariableRepository.get(workspaceId, targetRef.variableId) : null;
+    if (targetRef.variableId && !existing) throw notFound("Context variable not found");
+
+    const hasDefinitionFields = payload.name !== undefined || payload.description !== undefined
+      || payload.valueType !== undefined || payload.trustTier !== undefined
+      || payload.sensitivity !== undefined || payload.defaultSurfacing !== undefined;
+    if (!existing && !hasDefinitionFields) {
+      throw badRequest("A new context variable needs a name, value type, trust tier, sensitivity, and default surfacing");
+    }
+    if (!hasDefinitionFields && !payload.enablement) {
+      throw badRequest("Propose a variable definition change, an agent enablement change, or both");
+    }
+
+    let definition: NormalizedContextVariableDefinition | null = null;
+    if (hasDefinitionFields || !existing) {
+      const name = payload.name ?? existing?.name;
+      const valueType = payload.valueType ?? existing?.valueType;
+      const trustTier = payload.trustTier ?? existing?.trustTier;
+      const sensitivity = payload.sensitivity ?? existing?.sensitivity;
+      const defaultSurfacing = payload.defaultSurfacing ?? existing?.defaultSurfacing;
+      if (!name) throw badRequest("A context variable name is required to propose a new variable");
+      if (!valueType) throw badRequest("A value type is required to propose a new variable");
+      if (!trustTier) throw badRequest("A trust tier is required to propose a new variable");
+      if (!sensitivity) throw badRequest("A sensitivity is required to propose a new variable");
+      if (!defaultSurfacing) throw badRequest("A default surfacing is required to propose a new variable");
+      definition = {
+        name,
+        description: "description" in payload ? payload.description ?? null : existing?.description ?? null,
+        valueType,
+        trustTier,
+        sensitivity,
+        defaultSurfacing,
+      };
+    }
+
+    let enablement: NormalizedContextVariableEnablement | null = null;
+    if (payload.enablement) {
+      assertEnablementIsWellFormed(payload.enablement);
+      enablement = {
+        source: payload.enablement.source,
+        resolverSkillId: payload.enablement.resolverSkillId ?? null,
+        maxAgeSeconds: payload.enablement.maxAgeSeconds ?? null,
+        resolverTimeoutMs: payload.enablement.resolverTimeoutMs ?? null,
+        surfacing: payload.enablement.surfacing,
+        enabled: payload.enablement.enabled ?? true,
+      };
+    }
+
+    return {
+      existing,
+      normalized: {
+        name: definition?.name ?? existing!.name,
+        definition,
+        enablement,
+        ...(payload.rationale ? { rationale: payload.rationale } : {}),
+      },
+    };
+  };
+
+  return {
+    targetType: "context_variable",
+    async readVersionToken(workspaceId, rawTargetRef) {
+      const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
+      return readCurrentToken(workspaceId, targetRef);
+    },
+    async preview(workspaceId, rawTargetRef, rawPayload) {
+      const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
+      const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
+      const existing = targetRef.variableId ? await deps.contextVariableRepository.get(workspaceId, targetRef.variableId) : null;
+      const existingEnablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
+      return { targetLabel: payload.name, current: { definition: existing, enablement: existingEnablement }, proposed: payload };
+    },
+    async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
+      const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
+      const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
+      try {
+        const currentToken = await readCurrentToken(workspaceId, targetRef);
+        if (currentToken !== token) return { outcome: "stale" as const };
+
+        let variableId = targetRef.variableId;
+        if (payload.definition) {
+          if (variableId) {
+            await deps.contextVariableRepository.update(workspaceId, variableId, payload.definition);
+          } else {
+            const created = await deps.contextVariableRepository.create({ workspaceId, ...payload.definition });
+            variableId = created.id;
+          }
+        }
+        if (payload.enablement) {
+          if (!variableId) throw badRequest("Cannot enable a context variable with no resolved id");
+          await deps.contextVariableRepository.upsertEnablement({ agentId: targetRef.agentId, variableId, ...payload.enablement });
+        }
+        return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, variableId } };
+      } catch (error) {
+        if (isStale(error)) return { outcome: "stale" as const };
+        return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Context variable apply failed" };
+      }
+    },
+    async validatePayload(workspaceId, rawTargetRef, rawPayload) {
+      const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
+      const { normalized } = await resolveProposal(workspaceId, targetRef, rawPayload);
+      return { targetRef, payload: normalized };
+    },
+  };
 };

@@ -67,6 +67,7 @@ export interface CopilotSkillSettingsField {
   readonly group?: string;
   readonly advanced?: boolean;
   readonly defaultValue?: string | number | boolean;
+  readonly showValueToCopilot?: boolean;
 }
 export interface CopilotSkillCapabilityTargetsPort {
   list(): ReadonlyArray<{ id: string; targetKind: string; requiresTarget?: boolean; settingsFields: ReadonlyArray<CopilotSkillSettingsField>; enumerateTargets(context: { workspaceId: string; agentId: string }): Promise<ReadonlyArray<{ id: string; label: string; status?: string }>> }>;
@@ -85,13 +86,18 @@ const readByPath = (source: Record<string, unknown>, path: string): unknown =>
   );
 
 /**
- * Values for declared settings-field keys only. A config key with no matching settingsField entry
- * never reaches this record, however sensitive its value — this is the boundary that keeps
- * `configKeys` (names only) from silently growing a value-carrying sibling.
+ * Values for settings-field keys the capability explicitly opts into copilot visibility, and only
+ * those. A config key with no matching settingsField entry never reaches this record, however
+ * sensitive its value — that keeps `configKeys` (names only) from silently growing a
+ * value-carrying sibling. A declared settingsField whose `showValueToCopilot` is not exactly
+ * `true` is hidden by the same rule: deny-by-default, so a capability author adding a new field
+ * cannot silently widen what the model reads. Field names (key, label, type, help) always reach
+ * the model regardless, via the capability's `settingsFields` metadata — this only gates values.
  */
 const declaredSettingsValues = (config: Record<string, unknown>, fields: ReadonlyArray<CopilotSkillSettingsField>): Record<string, unknown> => {
   const settings: Record<string, unknown> = {};
   for (const field of fields) {
+    if (field.showValueToCopilot !== true) continue;
     const value = readByPath(config, field.key);
     if (value !== undefined) settings[field.key] = value;
   }

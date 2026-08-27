@@ -46,6 +46,14 @@ export interface SkillCapabilitySettingsField {
   // default). Editors use it to render the real behavior instead of showing an
   // unset toggle as "off" when the behavior is actually on.
   defaultValue?: string | number | boolean;
+  // Opt-in only: the operator copilot reader (agent_skills) includes this field's *value* in what
+  // it hands to the model only when this is exactly `true`. Every field is always named to the
+  // copilot regardless of this flag (key, label, type, help) - this only gates the value. Default
+  // is hidden, on purpose: a capability author adding a field must not silently widen what the
+  // model reads. Set it only for settings that are genuinely safe operator-tunable configuration,
+  // never for anything that can carry a credential, token, or personal data (for example notify's
+  // delivery.webhook.url or delivery.recipientEmails).
+  showValueToCopilot?: boolean;
 }
 
 export interface SkillCapabilityDescriptor<

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { agentSkillPorts, buildDescriptors, documentSkillsContext as context, documentStatusPorts } from "./copilot-tools-test-helpers.js";
 
@@ -51,10 +51,33 @@ describe("copilot agent skills readers", () => {
     expect(serialized).not.toContain("shhh-secret");
   });
 
-  it("exposes a value only for a config key the capability declares as a settings field", async () => {
-    // notify_ops's config carries delivery.token, which is not a declared settingsField (only
-    // delivery.recipientEmails and delivery.webhook.url are). That undeclared value must never
-    // leak into `settings`, even though the reader now surfaces declared values.
+  it("never surfaces a notify skill's webhook URL or recipient emails, only their key names", async () => {
+    // The fixture skill's config carries a real webhook URL and recipient email (secret-bearing
+    // and PII respectively). Neither notify settingsField opts into `showValueToCopilot`, so both
+    // must stay out of the tool output entirely while their key names remain visible via
+    // configKeys and the capability's settingsFields metadata.
+    const skills = agentSkillPorts();
+    const descriptors = buildDescriptors(documentStatusPorts(), skills);
+
+    const result = await descriptors[1].createTool(context).invoke({}, {} as never) as {
+      skills: Array<{ configKeys: string[]; settings: Record<string, unknown> }>;
+    };
+    const serialized = JSON.stringify(result);
+
+    expect(result.skills[0]?.configKeys).toEqual(["boundPayload", "delivery"]);
+    expect(result.skills[0]?.settings).toEqual({});
+    expect(serialized).not.toContain("ops@example.com");
+    expect(serialized).not.toContain("abc123secrettoken");
+    expect(serialized).not.toContain("hooks.example.com");
+    expect(serialized).toContain("delivery.recipientEmails");
+    expect(serialized).toContain("delivery.webhook.url");
+  });
+
+  it("exposes a value only for a settings field the capability opts into copilot visibility, never an undeclared key", async () => {
+    // notify_ops's config carries delivery.token, which is not a declared settingsField at all
+    // (only delivery.recipientEmails and delivery.webhook.url are, and neither opts in). That
+    // undeclared value must never leak into `settings`, and neither may the declared-but-hidden
+    // ones.
     const skills = agentSkillPorts();
     skills.list.mockResolvedValueOnce([
       {
@@ -71,8 +94,47 @@ describe("copilot agent skills readers", () => {
 
     const result = await descriptors[1].createTool(context).invoke({}, {} as never) as { skills: Array<{ settings: Record<string, unknown> }> };
 
-    expect(result.skills[0]?.settings).toEqual({ "delivery.recipientEmails": ["ops@example.com"] });
+    expect(result.skills[0]?.settings).toEqual({});
     expect(JSON.stringify(result)).not.toContain("shhh-secret");
+    expect(JSON.stringify(result)).not.toContain("ops@example.com");
+  });
+
+  it("hides a settings field's value by default and only surfaces it once a capability opts in with showValueToCopilot", async () => {
+    // Two settingsFields on the same skill: one carries no `showValueToCopilot` flag (the
+    // deny-by-default case a capability author gets for free), the other explicitly opts in. Only
+    // the opted-in field's value may reach `settings` — proving the filter is opt-in, not a
+    // blanket hide that would pass this test even if the opt-in check were deleted.
+    const skills = agentSkillPorts();
+    skills.registryList.mockReturnValueOnce([
+      {
+        id: "notify",
+        targetKind: "webhook_destination",
+        requiresTarget: true,
+        settingsFields: [
+          { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list" },
+          { key: "exposedInputs.message", label: "Expose message", type: "boolean", showValueToCopilot: true },
+        ],
+        enumerateTargets: vi.fn(async () => [{ id: "target-1", label: "Ops webhook", status: "active" }]),
+      },
+      { id: "mcp_tool", targetKind: "mcp_connection", requiresTarget: true, settingsFields: [], enumerateTargets: vi.fn(async () => []) },
+      { id: "retrieve", targetKind: "workspace", requiresTarget: false, settingsFields: [], enumerateTargets: vi.fn(async () => []) },
+    ]);
+    skills.list.mockResolvedValueOnce([
+      {
+        id: "skill-4",
+        name: "notify_ops",
+        capability: "notify",
+        target: { kind: "webhook_destination", id: "target-1" },
+        config: { delivery: { recipientEmails: ["ops@example.com"] }, exposedInputs: { message: true } },
+        invocationMode: "routine_named",
+        enabled: true,
+      },
+    ]);
+    const descriptors = buildDescriptors(documentStatusPorts(), skills);
+
+    const result = await descriptors[1].createTool(context).invoke({}, {} as never) as { skills: Array<{ settings: Record<string, unknown> }> };
+
+    expect(result.skills[0]?.settings).toEqual({ "exposedInputs.message": true });
   });
 
   it("proves the agent belongs to the workspace before enumerating agent-scoped targets", async () => {

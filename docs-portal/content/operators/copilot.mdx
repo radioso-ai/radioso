@@ -19,12 +19,13 @@ authored definition, so questions about overlapping directives or a routine
 that never triggers can start from the agent name rather than an internal id.
 
 Ray sees document titles, processing status, and failure reasons rather than
-document text. For a skill, it sees every setting's name, and the value of a
-setting the skill's capability marks safe to show — a retrieve skill's vector
-top K, a notify skill's recipient list. A setting that can hold a connection
-detail, like a webhook target, stays name-only. So Ray can tell you that a
-webhook skill has no connection configured, without reading the token you
-would put there.
+document text. For a skill, it sees every setting's name. It also sees the
+value of a setting only when that skill's capability opts the setting in as
+safe to show — a retrieve skill's vector top K, retrieval strategy, and
+instruction text; an email skill's draft-or-send mode. Every other setting
+stays name-only, including a notify skill's recipient list and webhook URL, so
+Ray can tell you that a notify skill has no delivery destination configured
+without ever reading the address or URL you put there.
 
 Ray also reads the workspace's context variable definitions and which of them
 an agent has enabled — the source (pushed, browser, or a resolver skill) and

@@ -8,18 +8,23 @@ import {
   RoutineDefinitionLifecycleCommittedError,
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
+  type RoutineDefinitionArchiveGuard,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
+  type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
 import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../../src/modules/skills/public.js";
 import type { AgentContextVariableEnablement, ContextVariable } from "../../src/modules/context-variables/public.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
+import { InMemoryRoutineDefinitionRepository } from "../support/fakes.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
 const knownDestinationId = "33333333-3333-4333-8333-333333333333";
 const missingDestinationId = "44444444-4444-4444-8444-444444444444";
+const nextFakeRoutineUpdatedAt = (current: Date): Date =>
+  new Date(Math.max(Date.now(), current.getTime() + 1));
 
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
@@ -65,7 +70,7 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     inputAgentId: string,
     id: string,
     input: RoutineDefinitionDraftInput,
-    options: { expectedUpdatedAt?: Date } = {},
+    options: RoutineDefinitionWriteGuard = {},
   ): Promise<RoutineDefinition> {
     const existing = await this.findById(inputAgentId, id);
     if (
@@ -78,7 +83,7 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     const routine = {
       ...existing,
       ...routineDefinitionDraftInputSchema.parse(input),
-      updatedAt: new Date(),
+      updatedAt: nextFakeRoutineUpdatedAt(existing.updatedAt),
     };
     this.items.set(id, routine);
     return routine;
@@ -102,7 +107,6 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     ) {
       throw new Error(`routine_definition_publish_conflict:${id}`);
     }
-    const now = new Date();
     const previousPublished = [...this.items.values()].find((definition) =>
       definition.agentId === inputAgentId &&
       definition.lineageId === draft.lineageId &&
@@ -111,7 +115,7 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     const routine: RoutineDefinition = {
       ...draft,
       status: "published",
-      updatedAt: now,
+      updatedAt: nextFakeRoutineUpdatedAt(draft.updatedAt),
     };
     await options?.onPublished?.({
       previousPublishedId: previousPublished?.id ?? null,
@@ -122,7 +126,7 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
       this.items.set(previousPublished.id, {
         ...previousPublished,
         status: "superseded",
-        updatedAt: now,
+        updatedAt: nextFakeRoutineUpdatedAt(previousPublished.updatedAt),
       });
     }
     this.items.set(routine.id, routine);
@@ -163,7 +167,7 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
   async archive(
     inputAgentId: string,
     id: string,
-    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
+    options: RoutineDefinitionArchiveGuard = {},
   ): Promise<boolean> {
     const existing = await this.findById(inputAgentId, id);
     if (!existing || existing.status !== "published") {
@@ -196,7 +200,11 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
         this.items.delete(definition.id);
       }
     }
-    this.items.set(id, { ...existing, status: "archived", updatedAt: new Date() });
+    this.items.set(id, {
+      ...existing,
+      status: "archived",
+      updatedAt: nextFakeRoutineUpdatedAt(existing.updatedAt),
+    });
     return true;
   }
 
@@ -216,14 +224,18 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     if (hasPublished) {
       return false;
     }
-    this.items.set(id, { ...existing, status: "published", updatedAt: new Date() });
+    this.items.set(id, {
+      ...existing,
+      status: "published",
+      updatedAt: nextFakeRoutineUpdatedAt(existing.updatedAt),
+    });
     return true;
   }
 
   async deleteDraft(
     inputAgentId: string,
     id: string,
-    options: { expectedUpdatedAt?: Date } = {},
+    options: RoutineDefinitionWriteGuard = {},
   ): ReturnType<RoutineDefinitionRepositoryPort["deleteDraft"]> {
     const existing = await this.findById(inputAgentId, id);
     if (!existing || existing.status !== "draft") return { outcome: "not_found" };
@@ -456,6 +468,45 @@ const createService = (options: {
 };
 
 describe("RoutineDefinitionService", () => {
+  it("keeps shared in-memory write tokens monotonic and enforces every routine guard", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-27T12:00:00.000Z"));
+    try {
+      const repository = new InMemoryRoutineDefinitionRepository();
+      const original = await repository.createDraft(agentId, validDraft());
+      const updated = await repository.updateDraft(agentId, original.id, validDraft(), {
+        expectedUpdatedAt: original.updatedAt,
+      });
+
+      expect(updated.updatedAt.getTime()).toBeGreaterThan(original.updatedAt.getTime());
+      await expect(repository.updateDraft(agentId, original.id, validDraft(), {
+        expectedUpdatedAt: original.updatedAt,
+      })).rejects.toThrow(`routine_definition_update_conflict:${original.id}`);
+      await expect(repository.publish(agentId, original.id, {
+        expectedUpdatedAt: original.updatedAt,
+      })).rejects.toThrow(`routine_definition_publish_conflict:${original.id}`);
+
+      const published = await repository.publish(agentId, original.id, {
+        expectedUpdatedAt: updated.updatedAt,
+      });
+      const revision = await repository.createRevisionDraft(agentId, published.id);
+      if (!revision) throw new Error("Expected revision draft");
+      const editedRevision = await repository.updateDraft(agentId, revision.id, {
+        ...validDraft(),
+        name: "Edited revision",
+      }, { expectedUpdatedAt: revision.updatedAt });
+
+      await expect(repository.archive(agentId, published.id, {
+        expectedDraftRevision: { id: revision.id, updatedAt: revision.updatedAt },
+      })).rejects.toThrow(`routine_definition_archive_conflict:${published.id}`);
+      await expect(repository.archive(agentId, published.id, {
+        expectedDraftRevision: { id: editedRevision.id, updatedAt: editedRevision.updatedAt },
+      })).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("saves graph-invalid drafts and returns advisory author-facing diagnostics", async () => {
     const { service } = createService();
 
@@ -1380,6 +1431,7 @@ describe("RoutineDefinitionService", () => {
     const { repository, service } = createService();
     const draft = await service.createDraft(workspaceId, agentId, validDraft());
     const published = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in published) throw new Error("Expected routine publish to succeed");
     const revision = await repository.createRevisionDraft(agentId, published.routine.id);
 
     await expect(service.archive(workspaceId, agentId, published.routine.id, {
@@ -1397,6 +1449,7 @@ describe("RoutineDefinitionService", () => {
     const { repository, service } = createService();
     const draft = await service.createDraft(workspaceId, agentId, validDraft());
     const published = await service.publish(workspaceId, agentId, draft.routine.id);
+    if ("rejected" in published) throw new Error("Expected routine publish to succeed");
     const revision = await repository.createRevisionDraft(agentId, published.routine.id);
     if (!revision) throw new Error("Expected revision draft");
     repository.items.set(revision.id, {

@@ -74,8 +74,10 @@ import type {
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
+  type RoutineDefinitionArchiveGuard,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
+  type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
 import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
@@ -1235,6 +1237,9 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
   }
 }
 
+const nextInMemoryRoutineUpdatedAt = (current: Date): Date =>
+  new Date(Math.max(Date.now(), current.getTime() + 1));
+
 export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
 
@@ -1291,7 +1296,7 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     agentId: string,
     id: string,
     input: RoutineDefinitionDraftInput,
-    options: { expectedUpdatedAt?: Date } = {},
+    options: RoutineDefinitionWriteGuard = {},
   ): Promise<RoutineDefinition> {
     const existing = await this.findById(agentId, id);
     if (
@@ -1306,7 +1311,7 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     const updated: RoutineDefinition = {
       ...existing,
       ...draft,
-      updatedAt: new Date(),
+      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     };
     this.items.set(id, updated);
     return updated;
@@ -1327,7 +1332,6 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     ) {
       throw new Error(`routine_definition_publish_conflict:${draftId}`);
     }
-    const now = new Date();
     for (const definition of this.items.values()) {
       if (
         definition.agentId === agentId &&
@@ -1337,14 +1341,14 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
         this.items.set(definition.id, {
           ...definition,
           status: "superseded",
-          updatedAt: now,
+          updatedAt: nextInMemoryRoutineUpdatedAt(definition.updatedAt),
         });
       }
     }
     const published: RoutineDefinition = {
       ...draft,
       status: "published",
-      updatedAt: now,
+      updatedAt: nextInMemoryRoutineUpdatedAt(draft.updatedAt),
     };
     this.items.set(draftId, published);
     return published;
@@ -1384,7 +1388,7 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
   async archive(
     agentId: string,
     id: string,
-    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
+    options: RoutineDefinitionArchiveGuard = {},
   ): Promise<boolean> {
     const existing = await this.findById(agentId, id);
     if (!existing || existing.status !== "published") {
@@ -1419,7 +1423,7 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     this.items.set(id, {
       ...existing,
       status: "archived",
-      updatedAt: new Date(),
+      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     });
     return true;
   }
@@ -1440,12 +1444,12 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     this.items.set(id, {
       ...existing,
       status: "published",
-      updatedAt: new Date(),
+      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     });
     return true;
   }
 
-  async deleteDraft(agentId: string, id: string, options: { expectedUpdatedAt?: Date } = {}) {
+  async deleteDraft(agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}) {
     const existing = await this.findById(agentId, id);
     if (!existing || existing.status !== "draft") {
       return { outcome: "not_found" as const };

@@ -22144,6 +22144,7 @@ paths:
                                       - directive
                                       - agent_setting
                                       - routine
+                                      - agent_skill
                                   targetLabel:
                                     type: string
                                   summary:

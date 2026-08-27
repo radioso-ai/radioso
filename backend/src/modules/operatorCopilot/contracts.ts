@@ -73,7 +73,7 @@ export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
 
-export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine";
+export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine" | "agent_skill";
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {
@@ -129,6 +129,12 @@ export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {
 
 export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "agent_setting";
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
+}
+
+/** A skill config is supplied by Ray from settings it read, not drafted from prose. */
+export interface CopilotAgentSkillProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "agent_skill";
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
 }
 

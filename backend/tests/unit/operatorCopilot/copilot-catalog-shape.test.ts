@@ -47,8 +47,8 @@ const realCatalog = () => {
       getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },
-    proposalAdapters: (["directive", "agent_setting", "routine"] as const).map((targetType) => ({
-      targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(),
+    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill"] as const).map((targetType) => ({
+      targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(), validatePayload: stub(),
     })),
     auditService: { record: stub() },
   } as unknown as Parameters<typeof createCopilotToolDescriptors>[0]);

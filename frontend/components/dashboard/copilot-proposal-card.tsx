@@ -141,6 +141,15 @@ export const targetReference = (
       ...(agentId ? { agentId } : {}),
     } : null
   }
+  if (summary.targetType === 'agent_skill') {
+    // A skill proposal that has not yet been applied carries a null skillId when it drafts a new
+    // skill (the id does not exist until the operator applies it), so no link renders until then.
+    const skillId = applied.skillId ?? ref.skillId
+    return typeof skillId === 'string' ? {
+      entity: { type: 'agent_skill', id: skillId },
+      ...(agentId ? { agentId } : {}),
+    } : null
+  }
   const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
   return typeof directiveId === 'string' ? {
     entity: { type: 'directive', id: directiveId },

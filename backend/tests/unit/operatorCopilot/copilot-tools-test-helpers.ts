@@ -192,7 +192,7 @@ export const agentSkillPorts = () => {
       name: "notify_ops",
       capability: "notify",
       target: { kind: "webhook_destination", id: "target-1" },
-      config: { boundPayload: { customerEmail: "person@example.com" }, delivery: { token: "shhh-secret" } },
+      config: { boundPayload: { customerEmail: "person@example.com" }, delivery: { token: "shhh-secret" } } as Record<string, unknown>,
       invocationMode: "routine_named",
       enabled: true,
     },
@@ -202,18 +202,28 @@ export const agentSkillPorts = () => {
       id: "notify",
       targetKind: "webhook_destination",
       requiresTarget: true,
+      // Mirrors the real notify capability's declared settings: neither is present on the fixture
+      // skill's config above, so the reader must never surface the undeclared `delivery.token`.
+      settingsFields: [
+        { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list" },
+        { key: "delivery.webhook.url", label: "Webhook URL", type: "text" },
+      ],
       enumerateTargets: vi.fn(async () => [{ id: "target-1", label: "Ops webhook", status: "active" }]),
     },
     {
       id: "mcp_tool",
       targetKind: "mcp_connection",
       requiresTarget: true,
+      settingsFields: [],
       enumerateTargets: vi.fn(async () => []),
     },
     {
       id: "retrieve",
       targetKind: "workspace",
       requiresTarget: false,
+      settingsFields: [
+        { key: "vectorTopK", label: "Vector top K", type: "number", defaultValue: 20 },
+      ],
       enumerateTargets: vi.fn(async () => []),
     },
   ]);

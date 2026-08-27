@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   CopilotAuditPort,
   CopilotAgentSettingProposalAdapter,
+  CopilotAgentSkillProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
@@ -27,7 +28,7 @@ const entityNameSchema = z.string().trim().min(1).max(160);
 export interface DirectiveProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }
 export const createDirectiveProposalCopilotTools = (
@@ -74,7 +75,7 @@ export const createDirectiveProposalCopilotTools = (
 
   ];
 };
-const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>): CopilotDirectiveProposalAdapter => {
+const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>): CopilotDirectiveProposalAdapter => {
   const adapter = adapters.find((candidate) => candidate.targetType === "directive");
   if (!adapter) throw new Error("No copilot proposal adapter registered for directive");
   return adapter as CopilotDirectiveProposalAdapter;

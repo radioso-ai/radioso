@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-26
+last_updated: 2026-08-27
 ---
 
 # Ray
@@ -19,9 +19,12 @@ authored definition, so questions about overlapping directives or a routine
 that never triggers can start from the agent name rather than an internal id.
 
 Ray sees document titles, processing status, and failure reasons rather than
-document text, and it sees the names of a skill's settings rather than their
-values. So it can tell you that a webhook skill has no connection configured,
-without reading the token you would put there.
+document text. For a skill, it sees every setting's name, and the value of a
+setting the skill's capability marks safe to show — a retrieve skill's vector
+top K, a notify skill's recipient list. A setting that can hold a connection
+detail, like a webhook target, stays name-only. So Ray can tell you that a
+webhook skill has no connection configured, without reading the token you
+would put there.
 
 ## Open the panel
 
@@ -103,12 +106,19 @@ conversation.
 ## Review proposals
 
 When Ray identifies a configuration change, it can draft a proposal for a
-directive, an agent setting, or a routine. The proposal card names the target,
-summarizes the change, and shows the current and proposed values before
-anything is written. Expand **Show changes** to inspect the field-level diff.
+directive, an agent setting, a routine, or a skill's configuration. The
+proposal card names the target, summarizes the change, and shows the current
+and proposed values before anything is written. Expand **Show changes** to
+inspect the field-level diff.
 
 Applying a routine proposal creates a draft routine. Review and publish it in
 the routine editor.
+
+A skill config proposal creates a new skill or updates an existing one by the
+same rules the Skills editor enforces: a setting that depends on another stays
+refused while its parent is off, and a notify skill needs at least a recipient
+email or a webhook URL before Ray will propose it — Ray asks you for either
+rather than inventing one.
 
 Operators with `workspace.agents.manage` can choose **Apply** and confirm the
 change. Ray sends the confirmed proposal through the same guarded
@@ -218,6 +228,12 @@ with directives in place.
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed
 — test a routine draft with a real turn instead.
+
+A skill config proposal can carry replay evidence only for an agent's default
+retrieve skill — the one that answers without a routine naming it. A replay
+can put that skill's settings under test the same way it can a setting
+proposal's value; every other skill capability has no equivalent replay
+override, so Ray proposes those changes unmeasured.
 
 A replay runs against the configuration the eval case froze, never the agent's
 current one, so a measurement is dated by any edit to that agent after the case

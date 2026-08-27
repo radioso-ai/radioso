@@ -75,7 +75,7 @@ export const citedEvidenceSchema = z.array(z.string().uuid()).max(MAX_CITED_EVID
 
 export const proposalOutputSchema = z.object({
   proposalId: z.string().uuid(),
-  targetType: z.enum(["directive", "agent_setting", "routine"]),
+  targetType: z.enum(["directive", "agent_setting", "routine", "agent_skill"]),
   targetLabel: z.string(),
   summary: z.string(),
   /** Absent when the change was proposed unmeasured, so silence never reads as verified. */

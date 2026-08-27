@@ -34498,7 +34498,8 @@
                                       "enum": [
                                         "directive",
                                         "agent_setting",
-                                        "routine"
+                                        "routine",
+                                        "agent_skill"
                                       ]
                                     },
                                     "targetLabel": {
@@ -34810,7 +34811,8 @@
                       "enum": [
                         "directive",
                         "agent_setting",
-                        "routine"
+                        "routine",
+                        "agent_skill"
                       ]
                     },
                     "targetRef": {},
@@ -34822,7 +34824,8 @@
                           "enum": [
                             "directive",
                             "agent_setting",
-                            "routine"
+                            "routine",
+                            "agent_skill"
                           ]
                         },
                         "ref": {}

@@ -64,7 +64,7 @@ import {
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
@@ -411,6 +411,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
+    createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
   ] as const;
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: repositories.conversationRepository,

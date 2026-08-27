@@ -23,7 +23,8 @@ describe("operator copilot catalog coverage", () => {
   //               filed as an end-user surface alongside the public chat routes, which read as a
   //               boundary and would have let Wave 4 skip the serving controls it exists to give
   //               a runtime safety model.
-  const maxDeferredCatalogExclusions = 132;
+  //   132 -> 130  createAgentSkill/updateAgentSkill moved to propose_skill_config.
+  const maxDeferredCatalogExclusions = 130;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

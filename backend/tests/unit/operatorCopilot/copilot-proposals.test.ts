@@ -362,6 +362,127 @@ describe("routine proposal adapter", () => {
   });
 });
 
+describe("agent skill config proposal adapter", () => {
+  const agentSkillAgentId = "6a6a6a6a-1111-2222-3333-444444444444";
+  const existingSkillId = "6a6a6a6a-1111-2222-3333-444444444445";
+
+  const buildAdapter = async (overrides: {
+    agentSkills?: Array<{ id: string; name: string; capability: string; target: { kind: string | null; id: string | null }; config: Record<string, unknown>; invocationMode: string; enabled: boolean; updatedAt: string }>;
+    agentUpdatedAt?: Date;
+    create?: ReturnType<typeof vi.fn>;
+    update?: ReturnType<typeof vi.fn>;
+  } = {}) => {
+    const { createAgentSkillCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createDefaultSkillCapabilityRegistry } = await import("../../../src/modules/skills/public.js");
+    const list = vi.fn(async () => overrides.agentSkills ?? []);
+    const create = overrides.create ?? vi.fn(async () => ({ id: "created-skill-1" }));
+    const update = overrides.update ?? vi.fn(async () => ({ id: existingSkillId }));
+    const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
+    const adapter = createAgentSkillCopilotProposalAdapter({
+      agentService: agentService as never,
+      agentSkillsService: { list, create, update } as never,
+      skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
+    });
+    return { adapter, list, create, update, agentService };
+  };
+
+  it("validates a brand-new retrieve skill and creates it, guarding against a moved agent", async () => {
+    const { adapter, create, agentService } = await buildAdapter();
+    const targetRef = { agentId: agentSkillAgentId, skillId: null };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, {
+      name: "faq_search",
+      capability: "retrieve",
+      config: { vectorTopK: 40 },
+    });
+    expect(validated.payload).toMatchObject({ name: "faq_search", capability: "retrieve", invocationMode: "default_answer", enabled: true, config: expect.objectContaining({ vectorTopK: 40 }) });
+
+    const token = await adapter.readVersionToken("workspace-1", targetRef);
+    expect(token).toBe(new Date(0).toISOString());
+
+    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token);
+    expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: agentSkillAgentId, skillId: "created-skill-1" } });
+    expect(create).toHaveBeenCalledWith("workspace-1", agentSkillAgentId, expect.objectContaining({ name: "faq_search", capability: "retrieve" }));
+
+    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
+  });
+
+  it("merges a proposed config onto the existing skill and updates it by id", async () => {
+    const existing = {
+      id: existingSkillId,
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null }, exposedInputs: { message: true } },
+      invocationMode: "routine_named",
+      enabled: true,
+      updatedAt: new Date(5).toISOString(),
+    };
+    const { adapter, update, list } = await buildAdapter({ agentSkills: [existing] });
+    const targetRef = { agentId: agentSkillAgentId, skillId: existingSkillId };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, { config: { delivery: { recipientEmails: ["ops@example.com", "escalations@example.com"], webhook: null } } });
+    expect(validated.payload).toMatchObject({ name: "notify_ops", capability: "notify" });
+
+    const token = await adapter.readVersionToken("workspace-1", targetRef);
+    expect(token).toBe(new Date(5).toISOString());
+
+    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token);
+    expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: agentSkillAgentId, skillId: existingSkillId } });
+    expect(update).toHaveBeenCalledWith("workspace-1", agentSkillAgentId, existingSkillId, expect.objectContaining({
+      replaceConfig: expect.objectContaining({ delivery: expect.objectContaining({ recipientEmails: ["ops@example.com", "escalations@example.com"] }) }),
+    }));
+
+    list.mockResolvedValueOnce([{ ...existing, updatedAt: new Date(6).toISOString() }]);
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
+  });
+
+  it("refuses a proposal with no capability and no existing skill to infer one from", async () => {
+    const { adapter } = await buildAdapter();
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, { name: "faq_search" }))
+      .rejects.toThrow(/capability/i);
+  });
+
+  it("refuses a dependent setting proposed while its parent field is off", async () => {
+    // retrieve's rerankTopK settings field depends on rerankEnabled.
+    const { adapter } = await buildAdapter();
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, {
+      name: "faq_search",
+      capability: "retrieve",
+      config: { rerankTopK: 10 },
+    })).rejects.toThrow(/depends on "rerankEnabled"/);
+  });
+
+  it("accepts a dependent setting when the same proposal also turns its parent on", async () => {
+    const { adapter } = await buildAdapter();
+    const validated = await adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, {
+      name: "faq_search",
+      capability: "retrieve",
+      config: { rerankEnabled: true, rerankTopK: 10 },
+    });
+    expect(validated.payload).toMatchObject({ config: expect.objectContaining({ rerankEnabled: true, rerankTopK: 10 }) });
+  });
+
+  it("refuses a notify skill with neither a recipient email nor a webhook URL, rather than inventing one", async () => {
+    const { adapter } = await buildAdapter();
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, {
+      name: "notify_ops",
+      capability: "notify",
+      config: {},
+    })).rejects.toThrow(/no recipient email and no webhook URL/);
+  });
+
+  it("refuses an unsupported skill capability", async () => {
+    const { adapter } = await buildAdapter();
+    await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, {
+      name: "made_up",
+      capability: "not_a_real_capability",
+      config: {},
+    })).rejects.toThrow(/unsupported skill capability/i);
+  });
+});
+
 describe("proposal card presentation", () => {
   it("keeps a routine proposal's drafted summary across a reload", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");

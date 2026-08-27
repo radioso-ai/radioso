@@ -4,6 +4,7 @@ import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
+  CopilotAgentSkillProposalAdapter,
   CopilotAuditPort,
   CopilotDirectiveProposalAdapter,
   CopilotProposal,
@@ -276,7 +277,7 @@ const projectDirectiveDetail = (
 export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }
 
@@ -325,7 +326,7 @@ export const createAgentSettingProposalCopilotTools = (
 };
 
 const proposalAdapter = (
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>,
+  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>,
 ): CopilotAgentSettingProposalAdapter => {
   const adapter = adapters.find((candidate) => candidate.targetType === "agent_setting");
   if (!adapter) throw new Error("No copilot proposal adapter registered for agent_setting");

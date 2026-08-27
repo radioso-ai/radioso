@@ -320,6 +320,11 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   createAgentDirective: "propose_directive",
   updateAgentDirective: "propose_directive",
   updateAgent: "propose_agent_setting",
+  createAgentSkill: "propose_skill_config",
+  updateAgentSkill: "propose_skill_config",
+  // Disabling a skill is the reversible equivalent already reachable through propose_skill_config
+  // (enabled: false); removal is destructive and stays out of Ray's reach for now.
+  deleteAgentSkill: deferred("Deferred to Wave 2 behavior authoring: disabling a skill through propose_skill_config is the reversible equivalent; removal is destructive."),
   createAgentRoutine: "propose_routine",
   updateAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: routine proposals create drafts only; editing remains in the routine editor."),
   draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: routine proposals create drafts only; drafting remains in the routine editor."),

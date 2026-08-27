@@ -23,7 +23,7 @@ export interface CopilotPageContext {
   entities: CopilotPageEntity[]
 }
 
-export type CopilotPageEntityType = 'agent' | 'conversation' | 'routine' | 'directive' | 'document' | 'evalCase'
+export type CopilotPageEntityType = 'agent' | 'conversation' | 'routine' | 'directive' | 'document' | 'evalCase' | 'agent_skill'
 
 export interface CopilotPageEntity {
   type: CopilotPageEntityType
@@ -41,7 +41,7 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
@@ -81,6 +81,7 @@ export interface CopilotProposalTargetReference {
   agentId?: string | null
   directiveId?: string | null
   routineId?: string | null
+  skillId?: string | null
   settingKey?: string | null
   id?: string | null
 }

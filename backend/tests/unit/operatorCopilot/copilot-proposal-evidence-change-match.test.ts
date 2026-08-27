@@ -113,4 +113,29 @@ describe("cited evidence must be about the change being proposed", () => {
       { targetType: "routine" },
     )).rejects.toThrow(/routine/i);
   });
+
+  it("accepts a skill config proposal whose configuration is the one the replay measured", async () => {
+    const evidence = await resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 40 } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
+  it("refuses evidence that measured a different skill configuration than the one proposed", async () => {
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 20 } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+    )).rejects.toThrow(/did not measure/i);
+  });
+
+  it("refuses a skill config proposal no replay override can express, rather than accepting unrelated evidence", async () => {
+    // Only the retrieve capability's default-answer skill is synced onto a legacy skillSettings
+    // slot a replay can override; every other capability/invocation-mode combination has no seam.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": {} } } },
+      { targetType: "agent_skill", skillSettingsKey: null, config: { delivery: { recipientEmails: ["ops@example.com"] } } },
+    )).rejects.toThrow(/cannot be measured/i);
+  });
 });

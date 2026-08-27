@@ -1,8 +1,8 @@
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { createAgentConfigurationCopilotTools, createAgentSettingProposalCopilotTools } from "./agents.js";
 import type { AgentConfigurationCopilotToolDependencies, AgentSettingProposalCopilotToolDependencies, CopilotAgentConfigurationPort } from "./agents.js";
-import { createAgentSkillsCopilotTools } from "./agentSkills.js";
-import type { AgentSkillsCopilotToolDependencies, CopilotAgentSkillsAgentPort, CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
+import { createAgentSkillConfigProposalCopilotTools, createAgentSkillsCopilotTools } from "./agentSkills.js";
+import type { AgentSkillConfigProposalCopilotToolDependencies, AgentSkillsCopilotToolDependencies, CopilotAgentSkillsAgentPort, CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 import { createAudiencePulseCopilotTools } from "./audiencePulse.js";
 import type { AudiencePulseCopilotToolDependencies, CopilotAudiencePulsePort } from "./audiencePulse.js";
 import { createChatCopilotTools } from "./chat.js";
@@ -41,7 +41,8 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & Omit<RoutineDefinitionCopilotToolDependencies, "agentLookup">
   & Omit<DirectiveProposalCopilotToolDependencies, "agentLookup">
   & Omit<RoutineProposalCopilotToolDependencies, "agentLookup">
-  & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">;
+  & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">
+  & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">;
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -63,6 +64,7 @@ export const createCopilotToolDescriptors = (
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createRoutineProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createAgentSkillConfigProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
 ];
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";

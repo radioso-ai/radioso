@@ -26,7 +26,8 @@ export interface ProposalEvidenceRequest {
 export type ProposalChange =
   | { targetType: "directive" }
   | { targetType: "routine" }
-  | { targetType: "agent_setting"; settingKey: string; value: unknown };
+  | { targetType: "agent_setting"; settingKey: string; value: unknown }
+  | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown };
 
 /**
  * Which replay override carries a given agent setting. A setting absent from this map cannot be
@@ -79,6 +80,21 @@ const assertMeasuredTheProposedChange = (
     const directives = asRecord(overrides.agentConfigOverride).authoredDirectives;
     if (!Array.isArray(directives) || directives.length === 0) {
       throw badRequest("Replay evidence did not measure a configuration with directives in place");
+    }
+    return;
+  }
+  if (change.targetType === "agent_skill") {
+    // Only the retrieve capability's default-answer skill round-trips through a replay override
+    // today: agentRepository syncs that one agent_skills row with the legacy skillSettings["retrieval.answer"]
+    // slot (by kind + invocation_mode, not by the skill's own name), and skillSettingsResolver only
+    // ever reads that one hard-coded key. Every other capability and invocation mode has no override
+    // slot at all, so a replay cannot speak to it and evidence cannot be attached.
+    if (!change.skillSettingsKey) {
+      throw badRequest("This skill's configuration cannot be measured by a replay, so evidence cannot support it");
+    }
+    const skillSettings = asRecord(asRecord(overrides.agentConfigOverride).skillSettings);
+    if (!sameValue(skillSettings[change.skillSettingsKey], change.config)) {
+      throw badRequest("Replay evidence did not measure the proposed skill configuration");
     }
     return;
   }

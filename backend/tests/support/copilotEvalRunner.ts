@@ -405,7 +405,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         ...input,
       }),
     },
-    proposalAdapters: (["directive", "agent_setting", "routine"] as const).map((targetType) => ({
+    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill"] as const).map((targetType) => ({
       targetType,
       draft: async (_workspaceId: string, _targetRef: unknown, intent: string) => ({
         payload: { intent },

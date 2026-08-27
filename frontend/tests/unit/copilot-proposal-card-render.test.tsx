@@ -74,4 +74,28 @@ describe('CopilotProposalCard', () => {
       agentId: 'agent-9',
     })
   })
+
+  it('resolves an agent-skill target only once an id exists, from the applied reference or the target reference', () => {
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-skill',
+      targetType: 'agent_skill',
+      targetLabel: 'notify_ops',
+      summary: 'Add a notify skill',
+      status: 'pending',
+    }
+
+    // A drafted "create" proposal has no skill id until it is applied, so no link renders yet.
+    expect(targetReference(proposal, { targetRef: { agentId: 'agent-1', skillId: null } } as CopilotProposalDetail, null)).toBeNull()
+
+    expect(targetReference(proposal, { targetRef: { agentId: 'agent-1', skillId: 'skill-ref' } } as CopilotProposalDetail, null)).toEqual({
+      entity: { type: 'agent_skill', id: 'skill-ref' },
+      agentId: 'agent-1',
+    })
+
+    // Live-apply path: no detail ever loaded, apply response alone carries both ids.
+    expect(targetReference(proposal, null, { agentId: 'agent-9', skillId: 'skill-applied' })).toEqual({
+      entity: { type: 'agent_skill', id: 'skill-applied' },
+      agentId: 'agent-9',
+    })
+  })
 })

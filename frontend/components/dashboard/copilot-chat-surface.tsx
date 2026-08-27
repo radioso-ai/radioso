@@ -543,6 +543,8 @@ export function CopilotChatSurface({
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', anchor: 'assistant-directives-card' }))
     } else if (entity.type === 'routine') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', agentRoutineId: entity.id }))
+    } else if (entity.type === 'agent_skill') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', anchor: 'assistant-skills' }))
     }
   }
 

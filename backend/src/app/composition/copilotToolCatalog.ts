@@ -18,6 +18,7 @@ import {
 } from "../../modules/operatorCopilot/tools/index.js";
 import type {
   CopilotAgentSettingProposalAdapter,
+  CopilotAgentSkillProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -63,7 +64,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter>;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;

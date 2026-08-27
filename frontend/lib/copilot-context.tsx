@@ -27,6 +27,7 @@ export const COPILOT_ENTITY_TYPES = [
   'directive',
   'document',
   'evalCase',
+  'agent_skill',
 ] as const
 
 export type CopilotEntityType = (typeof COPILOT_ENTITY_TYPES)[number]

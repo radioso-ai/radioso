@@ -45,7 +45,7 @@ import {
   type CopilotEvalCase,
   type CopilotEvalWorkspaceRequirement,
 } from "../tests/support/copilotEvalSuite.js";
-import { observeCopilotTurn } from "../tests/support/copilotEvalRunner.js";
+import { COPILOT_EVAL_ROUTINE_NAME, observeCopilotTurn } from "../tests/support/copilotEvalRunner.js";
 import { copilotEvalCases } from "../tests/fixtures/copilot-evals/cases.js";
 
 const BASELINE_PATH = fileURLToPath(new URL("../tests/fixtures/copilot-evals/baseline.json", import.meta.url));
@@ -104,7 +104,7 @@ const filterByTags = (cases: CopilotEvalCase[], tags: string[]): CopilotEvalCase
  */
 const bindToLiveWorkspace = (
   cases: CopilotEvalCase[],
-  live: { agentId: string; conversationId: string | null },
+  live: { agentId: string; conversationId: string | null; routine: { id: string; name: string } | null },
 ): CopilotEvalCase[] =>
   cases.map((entry) => ({
     ...entry,
@@ -113,7 +113,18 @@ const bindToLiveWorkspace = (
       agentId: entry.pageContext.agentId ? live.agentId : null,
       conversationId: entry.pageContext.conversationId ? live.conversationId : null,
     },
+    // A case names its routine the way an operator does — by title, in the message — so binding
+    // rewrites the name as well as the id. Ray resolves the name against the live workspace.
+    ...(live.routine ? {
+      message: entry.message.replaceAll(COPILOT_EVAL_ROUTINE_NAME, live.routine.name),
+      plan: entry.plan.map((step) => bindRoutineId(step, live.routine!.id)),
+    } : {}),
   }));
+
+const bindRoutineId = (step: { tool: string; input: unknown }, routineId: string) =>
+  step.input && typeof step.input === "object" && !Array.isArray(step.input) && "routineId" in step.input
+    ? { ...step, input: { ...step.input as Record<string, unknown>, routineId } }
+    : step;
 
 interface EvalTarget {
   workspaceId: string;
@@ -217,7 +228,15 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     comment: "That shipping price is wrong.",
     actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
   });
-  console.log("Seeded one answered conversation with a complaint, and one document.");
+  await deps.routineDefinitionService.createDraft(target.workspaceId, target.agentId, {
+    name: COPILOT_EVAL_ROUTINE_NAME,
+    activation: { triggerDescription: "When a customer asks where their order is", gateRef: null, priority: 10, reentryMode: "always" },
+    slots: [],
+    steps: [{ stableStepId: "ask_order_number", kind: "chat", instruction: "Ask for the order number.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+    transitions: [{ fromStep: "ask_order_number", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+    terminals: [{ stableStepId: "done", kind: "complete", instruction: "Give the order's status.", ordinal: 0 }],
+  });
+  console.log("Seeded one answered conversation with a complaint, one document, and one draft routine.");
 };
 
 /**
@@ -279,6 +298,7 @@ const tearDownBootstrappedWorkspace = async (deps: Deps, target: EvalTarget, kee
 const probeWorkspace = async (deps: Deps, target: EvalTarget): Promise<{
   satisfied: Set<CopilotEvalWorkspaceRequirement>;
   conversationId: string | null;
+  routine: { id: string; name: string } | null;
 }> => {
   const satisfied = new Set<CopilotEvalWorkspaceRequirement>();
 
@@ -302,7 +322,23 @@ const probeWorkspace = async (deps: Deps, target: EvalTarget): Promise<{
   const quality = await deps.qualitySignalsService.listLowQualityTurns(target.workspaceId, { limit: 1, agentId: target.agentId });
   if (quality.items.length > 0) satisfied.add("quality_signal");
 
-  return { satisfied, conversationId };
+  // Routine cases edit and publish, so they need a routine that is still a draft; proposing an
+  // edit to a published one would revise a real routine in an operator's workspace. The publish
+  // case additionally needs one that validates: against an invalid draft, Ray's correct refusal to
+  // draft a publish would be scored as a behaviour regression.
+  const drafts = (await deps.routineDefinitionService.list(target.workspaceId, target.agentId))
+    .filter((candidate) => candidate.status === "draft");
+  let routine = drafts[0] ?? null;
+  for (const candidate of drafts) {
+    if ((await deps.routineDefinitionService.validate(target.workspaceId, target.agentId, { id: candidate.id })).ok) {
+      routine = candidate;
+      satisfied.add("publishable_routine");
+      break;
+    }
+  }
+  if (routine) satisfied.add("routine");
+
+  return { satisfied, conversationId, routine: routine ? { id: routine.id, name: routine.name } : null };
 };
 
 const main = async (): Promise<void> => {
@@ -338,7 +374,7 @@ const main = async (): Promise<void> => {
     target = resolved;
     if (resolved.bootstrapped) await seedBootstrappedWorkspace(deps, resolved);
 
-    const { satisfied, conversationId } = await probeWorkspace(deps, resolved);
+    const { satisfied, conversationId, routine } = await probeWorkspace(deps, resolved);
     const selection = selectRunnableCopilotEvalCases(filterByTags(dataset, flags.tags), satisfied);
     for (const skipped of selection.unmet) {
       console.warn(`SKIPPED ${skipped.caseId} "${skipped.name}" — workspace supplies no ${skipped.missing.join(", ")}.`);
@@ -360,7 +396,7 @@ const main = async (): Promise<void> => {
       return;
     }
 
-    const cases = bindToLiveWorkspace(selection.runnable, { agentId: resolved.agentId, conversationId });
+    const cases = bindToLiveWorkspace(selection.runnable, { agentId: resolved.agentId, conversationId, routine });
 
     const { reports, outcomes } = await runCopilotEvalSuite(
       cases,

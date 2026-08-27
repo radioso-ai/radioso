@@ -20704,6 +20704,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Routine definition is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+                }
+              }
+            }
           }
         }
       }

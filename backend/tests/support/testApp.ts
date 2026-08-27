@@ -1812,6 +1812,7 @@ export const createTestDependencies = (overrides: {
     routineDefinitionService: {
       get: routineDefinitionService.get.bind(routineDefinitionService),
       list: routineDefinitionService.list.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,

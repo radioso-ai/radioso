@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../src/modules/routines/public.js", () => ({
+vi.mock("../../../src/modules/routines/public.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../src/modules/routines/public.js")>(),
   routineToPortableDocument: vi.fn(),
 }));
 
@@ -33,7 +34,7 @@ const realCatalog = () => {
   };
   return createCopilotToolDescriptors({
     agentService,
-    routineDefinitionService: { list: stub(), get: stub() },
+    routineDefinitionService: { list: stub(), get: stub(), validate: stub() },
     chatHistoryService: { getConversation: stub(), getConversationTurn: stub(), listConversations: stub() },
     documentSearchService: { search: stub() },
     documentStatusService: { summarize: stub() },
@@ -122,6 +123,8 @@ describe("copilot catalog shape", () => {
     expect(dependencies().descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "agent_configuration", shape: "read" },
       { name: "routine_definition", shape: "read" },
+      // Validation is structural: no model budget, nothing persisted, safe to retry.
+      { name: "validate_routine", shape: "read" },
       { name: "conversation_transcript", shape: "read" },
       { name: "turn_trace", shape: "read" },
       { name: "conversation_history_search", shape: "read" },
@@ -133,7 +136,7 @@ describe("copilot catalog shape", () => {
     const agentService = { listExisting: vi.fn(), resolve: vi.fn() };
     const descriptors = [
       ...createAgentConfigurationCopilotTools({ agentService }),
-      ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn() } }),
+      ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn(), validate: vi.fn() } }),
       ...createChatCopilotTools({ chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() } }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ];

@@ -74,8 +74,10 @@ import type {
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
+  type RoutineDefinitionArchiveGuard,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionRepositoryPort,
+  type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
 import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
@@ -1235,6 +1237,9 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
   }
 }
 
+const nextInMemoryRoutineUpdatedAt = (current: Date): Date =>
+  new Date(Math.max(Date.now(), current.getTime() + 1));
+
 export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
 
@@ -1287,31 +1292,46 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return definition;
   }
 
-  async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+  async updateDraft(
+    agentId: string,
+    id: string,
+    input: RoutineDefinitionDraftInput,
+    options: RoutineDefinitionWriteGuard = {},
+  ): Promise<RoutineDefinition> {
     const existing = await this.findById(agentId, id);
-    if (existing && existing.status !== "draft") {
-      // Mirrors the SQL repository's zero-row guard for a save racing publish.
+    if (
+      !existing ||
+      existing.status !== "draft" ||
+      (options.expectedUpdatedAt !== undefined && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime())
+    ) {
+      // Mirrors the SQL repository's zero-row guard for a save racing publish or edit.
       throw new Error(`routine_definition_update_conflict:${id}`);
-    }
-    if (!existing) {
-      throw new Error(`Routine definition ${id} not found`);
     }
     const draft = routineDefinitionDraftInputSchema.parse(input);
     const updated: RoutineDefinition = {
       ...existing,
       ...draft,
-      updatedAt: new Date(),
+      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     };
     this.items.set(id, updated);
     return updated;
   }
 
-  async publish(agentId: string, draftId: string): Promise<RoutineDefinition> {
+  async publish(
+    agentId: string,
+    draftId: string,
+    options: Parameters<RoutineDefinitionRepositoryPort["publish"]>[2] = {},
+  ): Promise<RoutineDefinition> {
     const draft = await this.findById(agentId, draftId);
-    if (!draft || draft.status !== "draft") {
-      throw new Error(`Routine definition ${draftId} not found`);
+    if (!draft) {
+      throw new Error(`routine_definition_not_found:${draftId}`);
     }
-    const now = new Date();
+    if (
+      draft.status !== "draft" ||
+      (options.expectedUpdatedAt !== undefined && draft.updatedAt.getTime() !== options.expectedUpdatedAt.getTime())
+    ) {
+      throw new Error(`routine_definition_publish_conflict:${draftId}`);
+    }
     for (const definition of this.items.values()) {
       if (
         definition.agentId === agentId &&
@@ -1321,14 +1341,14 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
         this.items.set(definition.id, {
           ...definition,
           status: "superseded",
-          updatedAt: now,
+          updatedAt: nextInMemoryRoutineUpdatedAt(definition.updatedAt),
         });
       }
     }
     const published: RoutineDefinition = {
       ...draft,
       status: "published",
-      updatedAt: now,
+      updatedAt: nextInMemoryRoutineUpdatedAt(draft.updatedAt),
     };
     this.items.set(draftId, published);
     return published;
@@ -1365,10 +1385,31 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     return draft;
   }
 
-  async archive(agentId: string, id: string): Promise<boolean> {
+  async archive(
+    agentId: string,
+    id: string,
+    options: RoutineDefinitionArchiveGuard = {},
+  ): Promise<boolean> {
     const existing = await this.findById(agentId, id);
     if (!existing || existing.status !== "published") {
       return false;
+    }
+    const drafts = [...this.items.values()].filter((definition) =>
+      definition.agentId === agentId &&
+      definition.lineageId === existing.lineageId &&
+      definition.status === "draft"
+    );
+    if (options.expectedDraftRevision === null && drafts.length > 0) {
+      throw new Error(`routine_definition_archive_conflict:${id}`);
+    }
+    if (options.expectedDraftRevision) {
+      const discarded = drafts.find((definition) =>
+        definition.id === options.expectedDraftRevision!.id &&
+        definition.updatedAt.getTime() === options.expectedDraftRevision!.updatedAt.getTime()
+      );
+      if (!discarded) {
+        throw new Error(`routine_definition_archive_conflict:${id}`);
+      }
     }
     for (const definition of [...this.items.values()]) {
       if (
@@ -1382,7 +1423,7 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     this.items.set(id, {
       ...existing,
       status: "archived",
-      updatedAt: new Date(),
+      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     });
     return true;
   }
@@ -1403,17 +1444,21 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     this.items.set(id, {
       ...existing,
       status: "published",
-      updatedAt: new Date(),
+      updatedAt: nextInMemoryRoutineUpdatedAt(existing.updatedAt),
     });
     return true;
   }
 
-  async deleteDraft(agentId: string, id: string): Promise<boolean> {
+  async deleteDraft(agentId: string, id: string, options: RoutineDefinitionWriteGuard = {}) {
     const existing = await this.findById(agentId, id);
     if (!existing || existing.status !== "draft") {
-      return false;
+      return { outcome: "not_found" as const };
     }
-    return this.items.delete(id);
+    if (options.expectedUpdatedAt && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+      return { outcome: "conflict" as const };
+    }
+    this.items.delete(id);
+    return { outcome: "deleted" as const };
   }
 
   async listPublishedRoutineNamesReferencingDestination(

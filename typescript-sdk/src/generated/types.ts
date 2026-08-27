@@ -10597,6 +10597,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Routine definition is invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
+                };
+            };
         };
     };
     uploadAgentAssistantLogo: {

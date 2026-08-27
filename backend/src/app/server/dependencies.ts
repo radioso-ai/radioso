@@ -410,7 +410,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
-    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository }),
   ] as const;
@@ -513,6 +513,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService: {
       get: routineDefinitionService.get.bind(routineDefinitionService),
       list: routineDefinitionService.list.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService: chat.chatHistoryService,
     agentTurnProbe: agentTurnProbeService,

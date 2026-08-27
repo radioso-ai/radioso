@@ -1,6 +1,6 @@
 ---
 title: "Ray"
-description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, test routine drafts, and review linked activity and proposals."
+description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit and publish routines, test routine drafts, and review linked activity and proposals."
 last_updated: 2026-08-27
 ---
 
@@ -17,6 +17,7 @@ read the selected agent's settings, authored directives, and built-in answer
 directives. It can also list that agent's routines and inspect a routine's
 authored definition, so questions about overlapping directives or a routine
 that never triggers can start from the agent name rather than an internal id.
+When the answer is a change, Ray drafts it for you to review.
 
 Ray sees document titles, processing status, and failure reasons rather than
 document text. For a skill, it sees every setting's name. It also sees the
@@ -118,8 +119,9 @@ proposal card names the target, summarizes the change, and shows the current
 and proposed values before anything is written. Expand **Show changes** to
 inspect the field-level diff.
 
-Applying a routine proposal creates a draft routine. Review and publish it in
-the routine editor.
+A routine proposal comes in three shapes: a new routine, an edit to one that
+already exists, and a lifecycle change — publish, archive, or restore. See
+[Change a routine](#change-a-routine).
 
 A directive removal proposal targets an existing directive by id and drafts
 nothing else. The card shows the directive as it stands on the current side
@@ -162,6 +164,49 @@ explains that the change was not applied. Ask Ray to draft the change again
 so the proposal reflects the current configuration. Applied proposals link to
 the target entity, while failed proposals show the reason returned by the
 management service.
+
+## Change a routine
+
+Most routine work is fixing one that already exists. Tell Ray what misbehaves —
+"in the Order status routine, the first step asks for the order number without
+saying why" — and it drafts an edit to that step alone.
+
+Ray addresses each change by the element you named: the routine's name, its
+trigger, priority, and re-entry mode; the wording of a step or an ending; an
+information field's description or whether it's required. The proposal card
+shows one row per changed element, so you review the step that changed rather
+than the whole flow.
+
+Changing the routine's shape — adding or removing a step, or rewiring which step
+leads where — happens in the routine editor. Ask Ray for one of those and it
+points you there.
+
+Applying an edit to a published routine revises it into a draft and edits the
+draft. What your agent is serving keeps running until you publish. If that
+routine already has a draft revision, Ray points you at the draft instead: an
+edit worked out against the published version would land on top of whatever is
+already unpublished in that draft and replace it.
+
+Ray checks an edit before it becomes a card. If the change would introduce a
+validation problem the routine doesn't already have — a step referring to an
+information field that isn't defined, say — Ray tells you what would break
+rather than drafting it. You can ask for that check on its own too: "does the
+Order status routine validate?" reports each diagnostic and where it is.
+
+Publishing is its own proposal, because it's the moment a change starts
+reaching customers. Ask Ray to publish and it validates the routine first, then
+drafts a publish card for you to apply. Archiving a published routine and
+restoring an archived one work the same way, each as its own card. Restoring is
+validated too: a routine can lose a skill or an action capability while it sits
+archived, and restoring puts it straight back in front of customers.
+
+Archiving a routine discards the draft revision in its lineage, so an archive
+proposal names that draft in its summary and on the card. If a draft appears
+after the card was drafted, applying it stops and asks Ray to draft the archive
+again — with the draft named this time.
+
+Once a draft exists, a good order is: test it with a real message, replay the
+eval cases it touches, then publish.
 
 ## Test a routine draft
 

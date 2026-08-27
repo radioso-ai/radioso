@@ -1787,6 +1787,7 @@ CREATE TABLE public.copilot_replay_evidence (
     verdict text NOT NULL,
     overrides jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    directives_excluded jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT copilot_replay_evidence_recorded_status_check CHECK ((recorded_status = ANY (ARRAY['pending'::text, 'passing'::text, 'failing'::text, 'error'::text]))),
     CONSTRAINT copilot_replay_evidence_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'error'::text, 'recorded'::text])))
 );

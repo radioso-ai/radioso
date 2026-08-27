@@ -30,6 +30,7 @@ const record = (overrides: Partial<CopilotReplayEvidenceRecord> = {}): CopilotRe
   recordedStatus: "failing",
   verdict: "pass",
   overrides: { agentConfigOverride: { authoredDirectives: [{ action: "State the refund window" }] } },
+  directivesExcluded: [],
   createdAt: new Date("2026-08-25T10:05:00.000Z"),
   ...overrides,
 });

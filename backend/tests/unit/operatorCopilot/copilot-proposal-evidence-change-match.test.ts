@@ -11,7 +11,10 @@ const ids = {
 };
 const capturedAt = new Date("2026-08-25T10:00:00.000Z");
 
-const record = (overrides: CopilotReplayEvidenceRecord["overrides"]): CopilotReplayEvidenceRecord => ({
+const record = (
+  overrides: CopilotReplayEvidenceRecord["overrides"],
+  directivesExcluded: ReadonlyArray<string> = [],
+): CopilotReplayEvidenceRecord => ({
   id: ids.evidence,
   workspaceId: ids.workspace,
   operatorUserId: ids.operator,
@@ -24,15 +27,17 @@ const record = (overrides: CopilotReplayEvidenceRecord["overrides"]): CopilotRep
   recordedStatus: "failing",
   verdict: "pass",
   overrides,
+  directivesExcluded,
   createdAt: capturedAt,
 });
 
 const resolve = (
   measured: CopilotReplayEvidenceRecord["overrides"],
   change: Parameters<typeof resolveProposalEvidence>[1]["change"],
+  directivesExcluded: ReadonlyArray<string> = [],
 ) => resolveProposalEvidence(
   {
-    evidence: { record: vi.fn(), findMany: vi.fn(async () => [record(measured)]) },
+    evidence: { record: vi.fn(), findMany: vi.fn(async () => [record(measured, directivesExcluded)]) },
     agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-24T10:00:00.000Z") })) },
   } as never,
   {
@@ -105,31 +110,44 @@ describe("cited evidence must be about the change being proposed", () => {
     )).rejects.toThrow(/did not measure/i);
   });
 
-  it("accepts a directive removal proposal measured with the directive absent from the replay's directive set", async () => {
-    // The honest evidence for removing a directive is a replay that ran without it, not one with
-    // "some directives" in place — the inverse of what a save proposal needs to show.
+  it("accepts a directive removal proposal whose replay recorded the proposed directive as excluded", async () => {
+    // The honest evidence for removing a directive is directivesExcluded: a list the replay
+    // service computed itself by resolving ids against the source agent's real directives, not
+    // anything read from the model-supplied overrides.
     const evidence = await resolve(
       { agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] } },
       { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
     );
 
     expect(evidence?.cases).toHaveLength(1);
   });
 
-  it("refuses a directive removal proposal measured with the directive still present in the replay's directive set", async () => {
+  it("refuses a directive removal proposal whose replay did not record the proposed directive as excluded", async () => {
     await expect(resolve(
       { agentConfigOverride: { authoredDirectives: [{ id: "removed-directive", action: "State the refund window" }] } },
       { targetType: "directive", directiveId: "removed-directive" },
-    )).rejects.toThrow(/still includes/i);
+    )).rejects.toThrow(/did not exclude/i);
+  });
+
+  it("refuses a directive removal proposal even when the replay's authored-directives array simply omits the directive's id", async () => {
+    // The exact hole this closes: canonical directive serialization never carries an id, and the
+    // overrides array is whatever the model supplied, so an id-less array that happens not to
+    // contain a matching id used to read as proof of removal even though the directive's content
+    // was still right there. Only a server-computed directivesExcluded entry counts now.
+    await expect(resolve(
+      { agentConfigOverride: { authoredDirectives: [{ name: "Refund policy", action: "State the refund window" }] } },
+      { targetType: "directive", directiveId: "removed-directive" },
+    )).rejects.toThrow(/did not exclude/i);
   });
 
   it("refuses a directive removal proposal measured without a deliberate directive-set override at all", async () => {
-    // No authoredDirectives override at all means the replay ran against the live directive set,
-    // which still includes the one being removed.
+    // No excludedDirectiveIds means the replay service recorded no exclusion, so directivesExcluded
+    // is empty regardless of what the replay's overrides otherwise look like.
     await expect(resolve(
       { retrievalSettingsOverride: { vectorTopK: 20 } },
       { targetType: "directive", directiveId: "removed-directive" },
-    )).rejects.toThrow(/did not measure/i);
+    )).rejects.toThrow(/did not exclude/i);
   });
 
   it("refuses to attach replay evidence to a routine proposal at all", async () => {

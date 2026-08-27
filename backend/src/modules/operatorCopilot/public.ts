@@ -6,6 +6,7 @@ export type {
   CopilotAgentTurnProbeResult,
 } from "./contracts/agentTurnProbe.js";
 export type {
+  CopilotAgentDirectivesPort,
   CopilotAgentVersionPort,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReaderPort,

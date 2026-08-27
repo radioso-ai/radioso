@@ -22,12 +22,14 @@ interface CopilotReplayEvidenceRow {
   recorded_status: string;
   verdict: string;
   overrides: unknown;
+  directives_excluded: unknown;
   created_at: Date;
 }
 
 const columns = [
   "id", "workspace_id", "operator_user_id", "conversation_id", "agent_id", "case_id", "case_name",
-  "run_id", "baseline_captured_at", "recorded_status", "verdict", "overrides", "created_at",
+  "run_id", "baseline_captured_at", "recorded_status", "verdict", "overrides", "directives_excluded",
+  "created_at",
 ] as const;
 
 const mapRecord = (row: CopilotReplayEvidenceRow): CopilotReplayEvidenceRecord => ({
@@ -43,6 +45,7 @@ const mapRecord = (row: CopilotReplayEvidenceRow): CopilotReplayEvidenceRecord =
   recordedStatus: row.recorded_status as CopilotEvalCaseStatus,
   verdict: row.verdict as CopilotEvalRunStatus,
   overrides: (row.overrides ?? {}) as CopilotEvalCaseReplayOverrides,
+  directivesExcluded: (row.directives_excluded ?? []) as ReadonlyArray<string>,
   createdAt: row.created_at,
 });
 
@@ -67,6 +70,7 @@ export class CopilotReplayEvidenceRepository implements CopilotReplayEvidenceRep
         recorded_status: input.recordedStatus,
         verdict: input.verdict,
         overrides: JSON.stringify(input.overrides),
+        directives_excluded: JSON.stringify(input.directivesExcluded),
       })
       .returning(columns)
       .executeTakeFirstOrThrow();

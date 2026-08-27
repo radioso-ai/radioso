@@ -70,6 +70,12 @@ const sameValue = (left: unknown, right: unknown): boolean => {
  * - A directive payload is drafted from prose, so it never matches the directive an override was
  *   authored with. Requiring that directives were the thing under test is the strongest honest
  *   check available; it does not prove the drafted directive is the one that was measured.
+ * - A directive removal is the opposite claim — that the directive was absent — and `overrides`
+ *   cannot prove that: it is whatever the model supplied, canonical directive serialization never
+ *   carries an id, and an override that simply omits an id reads as "absent" to a naive scan even
+ *   when the directive's content is still right there. `directivesExcluded` is checked instead: a
+ *   list the replay service computed itself by resolving ids against the source agent's real
+ *   directives, so it cannot be manufactured by an override the model wrote.
  * - No override installs a routine, so no replay can support a routine proposal.
  * - No override installs visitor context either, so the same is true of a context variable
  *   proposal: nothing in CopilotEvalCaseReplayOverrides can put a pushed, browser, or resolver
@@ -87,18 +93,14 @@ const assertMeasuredTheProposedChange = (
     throw badRequest("A replay cannot measure a context variable proposal; no replay override installs visitor context");
   }
   if (change.targetType === "directive") {
-    const directives = asRecord(overrides.agentConfigOverride).authoredDirectives;
-    if (!Array.isArray(directives)) {
-      throw badRequest("Replay evidence did not measure a configuration with directives in place");
-    }
     if (change.directiveId) {
-      const stillPresent = directives.some((directive) => asRecord(directive).id === change.directiveId);
-      if (stillPresent) {
-        throw badRequest("Replay evidence measured a configuration that still includes the directive being removed");
+      if (!record.directivesExcluded.includes(change.directiveId)) {
+        throw badRequest("Replay evidence did not exclude the directive being removed; replay with excludedDirectiveIds set to measure its absence");
       }
       return;
     }
-    if (directives.length === 0) {
+    const directives = asRecord(overrides.agentConfigOverride).authoredDirectives;
+    if (!Array.isArray(directives) || directives.length === 0) {
       throw badRequest("Replay evidence did not measure a configuration with directives in place");
     }
     return;

@@ -1,8 +1,10 @@
-import { notFound } from "../../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/expensiveOperation.js";
 import type {
+  CopilotAgentDirectivesPort,
   CopilotEvalCaseReaderPort,
   CopilotEvalCaseReplayInput,
+  CopilotEvalCaseReplayOverrides,
   CopilotEvalCaseReplayPort,
   CopilotEvalCaseReplayResult,
   CopilotEvalCaseReplayRunnerPort,
@@ -14,6 +16,14 @@ export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOpera
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
   evidence: CopilotReplayEvidenceRepositoryPort;
+  /** Resolves a directive exclusion against real agent state; see {@link CopilotAgentDirectivesPort}. */
+  agentDirectives: CopilotAgentDirectivesPort;
+}
+
+interface ResolvedDirectiveExclusion {
+  overrides: CopilotEvalCaseReplayOverrides | undefined;
+  /** Real directive ids the replay actually excluded, for the evidence row to carry. */
+  directivesExcluded: ReadonlyArray<string>;
 }
 
 /**
@@ -34,13 +44,19 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       throw notFound("Eval case not found");
     }
 
+    const { overrides, directivesExcluded } = await this.resolveDirectiveExclusion(
+      input.workspaceId,
+      evalCase.sourceAgentId,
+      input.overrides,
+    );
+
     const { run } = await this.dependencies.runs.execute({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       snapshotId: evalCase.snapshotId,
       caseId: evalCase.id,
       mode: "full_assistant",
-      overrides: input.overrides,
+      overrides,
       attachToCase: false,
     });
 
@@ -60,7 +76,8 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       baselineCapturedAt: evalCase.snapshotCapturedAt,
       recordedStatus: evalCase.status,
       verdict: run.observedOutput.error ? "error" : run.status,
-      overrides: input.overrides ?? {},
+      overrides: overrides ?? {},
+      directivesExcluded,
     })).id;
 
     return {
@@ -82,6 +99,53 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
         id: run.resolvedConfig.modelId ?? null,
       },
       error: run.observedOutput.error?.message ?? null,
+    };
+  }
+
+  /**
+   * Turns `excludedDirectiveIds` into the concrete directive set the run actually uses, resolved
+   * and validated against the case's source agent's real directives rather than trusted from the
+   * override. `authoredDirectives` is a freeform, model-authored array that never carries a
+   * directive's real id, so it cannot back a removal claim; `excludedDirectiveIds` is the only
+   * seam that can, precisely because the server — not the model — decides what it resolves to.
+   * Returns the input overrides unchanged when no exclusion was requested.
+   */
+  private async resolveDirectiveExclusion(
+    workspaceId: string,
+    sourceAgentId: string | null,
+    overrides: CopilotEvalCaseReplayOverrides | undefined,
+  ): Promise<ResolvedDirectiveExclusion> {
+    const excludedDirectiveIds = overrides?.agentConfigOverride?.excludedDirectiveIds;
+    if (!excludedDirectiveIds || excludedDirectiveIds.length === 0) {
+      return { overrides, directivesExcluded: [] };
+    }
+    if (overrides?.agentConfigOverride?.authoredDirectives) {
+      throw badRequest("excludedDirectiveIds cannot be combined with an authoredDirectives override in the same replay");
+    }
+    if (!sourceAgentId) {
+      throw badRequest("This case has no source agent, so a directive exclusion cannot be resolved");
+    }
+
+    const liveDirectives = await this.dependencies.agentDirectives.listDirectives(workspaceId, sourceAgentId);
+    const liveIds = new Set(liveDirectives.map((directive) => directive.id));
+    const unknownIds = excludedDirectiveIds.filter((id) => !liveIds.has(id));
+    if (unknownIds.length > 0) {
+      throw badRequest(`Replay cannot exclude directive id(s) not on the source agent: ${unknownIds.join(", ")}`);
+    }
+
+    const excludedIdSet = new Set(excludedDirectiveIds);
+    return {
+      overrides: {
+        ...overrides,
+        agentConfigOverride: {
+          ...overrides?.agentConfigOverride,
+          excludedDirectiveIds: undefined,
+          authoredDirectives: liveDirectives
+            .filter((directive) => !excludedIdSet.has(directive.id))
+            .map((directive) => directive.config),
+        },
+      },
+      directivesExcluded: excludedDirectiveIds,
     };
   }
 }

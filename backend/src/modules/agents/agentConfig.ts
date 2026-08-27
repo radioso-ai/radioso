@@ -424,6 +424,21 @@ const serializeAuthoredDirectives = (
     metadata: cloneJson(directive.metadata),
   }));
 
+/**
+ * Pairs each of an agent's authored directives with its stable id and canonical serialized
+ * content. Canonical serialization (`serializeAuthoredDirectives`, and every replay override an
+ * operator or model can author) never carries a directive's real id, so a caller that must
+ * resolve directive identity against something the model cannot author — e.g. a replay asked to
+ * exclude a specific directive — reads it from here instead of trusting an override's own claim.
+ */
+export const serializeAuthoredDirectivesWithIds = (
+  agent: Pick<ConversationAgent, "authoredDirectives">,
+): ReadonlyArray<{ id: string; config: AuthoredDirectiveConfig }> => {
+  const directives = agent.authoredDirectives ?? [];
+  const serialized = serializeAuthoredDirectives(directives);
+  return directives.map((directive, index) => ({ id: directive.id, config: serialized[index]! }));
+};
+
 const descriptor = <FieldName extends AgentConfigFieldName>(
   field: AgentConfigFieldDescriptor<FieldName>,
 ): AgentConfigFieldDescriptor<FieldName> => field;

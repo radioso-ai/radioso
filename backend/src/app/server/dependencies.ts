@@ -10,7 +10,7 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
 import {
   createFacetExtractionWorker,
@@ -464,9 +464,24 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
+  // Directive removal evidence needs a directive's real id and content from the live agent, never
+  // from a model-supplied replay override, so this reads through the same resolver the agent's
+  // own config serialization uses rather than trusting anything the copilot sends.
+  const copilotAgentDirectives = {
+    listDirectives: async (workspaceId: string, agentId: string) => {
+      const agent = await agentService.resolve(workspaceId, agentId);
+      // The port takes an opaque record — Ray's replay tool schema does too — so the widening from
+      // the agents module's typed config to that shape belongs at this composition boundary.
+      return serializeAuthoredDirectivesWithIds(agent).map((directive) => ({
+        id: directive.id,
+        config: directive.config as unknown as Record<string, unknown>,
+      }));
+    },
+  };
   const evalCaseReplayService = new EvalCaseReplayService({
     cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
     evidence: copilotReplayEvidenceRepository,
+    agentDirectives: copilotAgentDirectives,
     runs: {
       // Ray offers a narrowed, behavior-only view of the eval override set, so widening it back to
       // the module's own type belongs here — the same widening the eval route performs on a

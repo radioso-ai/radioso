@@ -158,6 +158,14 @@ export interface CopilotEvalCaseReplayOverrides {
     /** Merged key by key onto the captured settings, so a single skill's entry stands alone. */
     skillSettings?: Record<string, unknown>;
     authoredDirectives?: ReadonlyArray<Record<string, unknown>>;
+    /**
+     * Directive ids to drop from the replayed configuration. The replay service resolves and
+     * applies these itself against the case's source agent's real directives — never against a
+     * model-supplied `authoredDirectives` array, which carries no id a caller can trust — so this
+     * is the only seam that can honestly back `propose_directive_removal` evidence. Mutually
+     * exclusive with `authoredDirectives` in the same call.
+     */
+    excludedDirectiveIds?: ReadonlyArray<string>;
   };
   /** Seeds a mid-routine starting position, which is where routine defects concentrate. */
   routineStartState?: {
@@ -267,6 +275,14 @@ export interface CopilotReplayEvidenceRecord {
   /** What the replayed configuration produced. */
   verdict: CopilotEvalRunStatus;
   overrides: CopilotEvalCaseReplayOverrides;
+  /**
+   * Real directive ids the replay service validated and excluded from this replay's
+   * configuration, resolved against the source agent's actual directives rather than read from
+   * `overrides`. Empty when the replay requested no exclusion. This is what a
+   * `propose_directive_removal` evidence citation checks — never `overrides` itself, which is
+   * whatever the model supplied and can omit a directive's id without proving its absence.
+   */
+  directivesExcluded: ReadonlyArray<string>;
   createdAt: Date;
 }
 
@@ -283,4 +299,17 @@ export interface CopilotReplayEvidenceRepositoryPort {
 /** Reads the agent version that decides whether a measurement still describes today's agent. */
 export interface CopilotAgentVersionPort {
   get(workspaceId: string, agentId: string): Promise<{ updatedAt: Date }>;
+}
+
+/**
+ * Reads the real identity behind an agent's authored directives — id paired with canonical
+ * content — so a replay's `excludedDirectiveIds` can be validated and applied against something
+ * the model cannot author. No replay override carries a directive's real id, so this is the only
+ * source of truth for "does this id exist, and what does it serialize to."
+ */
+export interface CopilotAgentDirectivesPort {
+  listDirectives(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<ReadonlyArray<{ id: string; config: Record<string, unknown> }>>;
 }

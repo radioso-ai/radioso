@@ -247,11 +247,14 @@ proposal for a different one. A setting proposal has to cite a replay that put
 that exact value under test, and a directive proposal has to cite one that ran
 with directives in place.
 
-A directive removal proposal cites replay evidence the opposite way: the
-replay must have measured a configuration where the directive was already
-gone. Cite a replay that still included the directive and Ray refuses it,
-because that replay measured a turn with the directive still in force — not
-the removal being proposed.
+A directive removal proposal cites replay evidence the opposite way: ask Ray
+to replay a case with that specific directive excluded. The replay service
+resolves the directive against the agent's real configuration and drops it
+before running the turn, so the exclusion it records is something Ray cannot
+fake by handing back a directive list that merely looks like it left the
+directive out. Cite a replay that did not explicitly exclude the directive —
+including one built by hand-editing the directive list — and Ray refuses it,
+because nothing proves that replay ran without the directive in force.
 
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed

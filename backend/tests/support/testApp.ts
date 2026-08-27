@@ -36,7 +36,7 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService, serializeAuthoredDirectivesWithIds } from "../../src/modules/agents/public.js";
 import { RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
 import {
   type ComposedDecline,
@@ -1769,6 +1769,15 @@ export const createTestDependencies = (overrides: {
     evalCaseReplay: new EvalCaseReplayService({
       cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
       evidence: copilotReplayEvidenceRepository,
+      agentDirectives: {
+        listDirectives: async (workspaceId, agentId) => {
+          const agent = await agentService.resolve(workspaceId, agentId);
+          return serializeAuthoredDirectivesWithIds(agent).map((directive) => ({
+            id: directive.id,
+            config: directive.config as unknown as Record<string, unknown>,
+          }));
+        },
+      },
       runs: {
         execute: (input) => evalRunService.execute({
           ...input,

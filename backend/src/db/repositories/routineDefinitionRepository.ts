@@ -8,6 +8,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionPublishOptions,
+  type RoutineDefinitionDeleteDraftResult,
   type RoutineApprovalOption,
   type RoutineFieldGuardOp,
   type RoutineFieldGuardUnit,
@@ -17,7 +18,7 @@ import {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "../../modules/routines/public.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface RoutineDefinitionRow {
@@ -50,6 +51,39 @@ export interface RoutineTriggerEmbeddingSearchResult {
   matches: Array<{ routineId: string; distance: number }>;
   noVectorRoutineIds: string[];
 }
+
+// A row's timestamptz carries microseconds; the Date a caller read back from it carries
+// milliseconds, so an equality guard has to compare at the precision both sides can hold. Same
+// comparison the agent and directive writers use for their own expectedUpdatedAt guards.
+/**
+ * Serializes the structural writes of one lineage: publish, revise, and archive. Publishing has
+ * always taken it; archive and revision creation take it because archive deletes the lineage's
+ * draft, and under READ COMMITTED a revision inserted concurrently could either be deleted without
+ * the caller ever being told or survive as an orphan of a retired lineage.
+ *
+ * The key string still says "publish" so that a rolling deploy cannot leave two versions of this
+ * code serializing on different names.
+ */
+// Internal marker: the lineage was archived under us, so there is nothing to revise.
+const routineLineageRetiredMarker = "routine_definition_lineage_retired";
+
+const lockLineage = async (trx: Db, lineageId: string): Promise<void> => {
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`routine_definition_publish:${lineageId}`}, 0))`.execute(trx);
+};
+
+const matchesExpectedUpdatedAt = (expectedUpdatedAt: Date) =>
+  sql<boolean>`date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)`;
+
+/**
+ * Advances an authored-write token at the precision JavaScript Date preserves.
+ *
+ * Postgres timestamps carry microseconds while the service boundary carries milliseconds. Plain
+ * `now()` can therefore produce two distinct database values that collapse to one client token,
+ * allowing a stale guard to match. The previous value plus one millisecond is the lower bound;
+ * `now()` keeps the timestamp aligned with wall time when the database clock is ahead.
+ */
+const nextAuthoredUpdatedAt = () =>
+  sql<Date>`greatest(now(), updated_at + interval '1 millisecond')`;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -455,7 +489,12 @@ export class RoutineDefinitionRepository {
     return loaded;
   }
 
-  async updateDraft(agentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+  async updateDraft(
+    agentId: string,
+    id: string,
+    input: RoutineDefinitionDraftInput,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinition> {
     const draft = routineDefinitionDraftInputSchema.parse(input);
     await this.db.transaction().execute(async (trx) => {
       const updated = await trx
@@ -466,16 +505,19 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
-          updated_at: currentTimestamp(),
+          updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
         .where("id", "=", id)
         .where("status", "=", "draft")
+        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
         .returning("id")
         .execute();
       // A save racing publish (which flips the draft row to published in place)
       // matches zero rows here; replacing children then would silently mutate
-      // the published version. Abort before touching children.
+      // the published version. Abort before touching children. A caller that
+      // supplied expectedUpdatedAt lands here for a racing edit too, which is the
+      // point: its decision was made against content this row no longer holds.
       if (updated.length === 0) {
         throw new Error(`routine_definition_update_conflict:${id}`);
       }
@@ -496,20 +538,23 @@ export class RoutineDefinitionRepository {
     await this.db.transaction().execute(async (trx) => {
       // Serialize concurrent publishes of the same lineage before any supersede/flip,
       // so the supersede→publish pair below is atomic per lineage. Order matters.
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${`routine_definition_publish:${draft.lineageId}`}, 0))`.execute(trx);
+      await lockLineage(trx, draft.lineageId);
       const superseded = await trx
         .updateTable("routine_definition")
-        .set({ status: "superseded", updated_at: currentTimestamp() })
+        .set({ status: "superseded", updated_at: nextAuthoredUpdatedAt() })
         .where("lineage_id", "=", draft.lineageId)
         .where("status", "=", "published")
         .returning("id")
         .execute();
       const published = await trx
         .updateTable("routine_definition")
-        .set({ status: "published", updated_at: currentTimestamp() })
+        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
         .where("agent_id", "=", agentId)
         .where("id", "=", draftId)
         .where("status", "=", "draft")
+        // Publishing puts this content in front of customers, so a caller that reviewed a
+        // specific version states it here rather than publishing whatever the draft became.
+        .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
         .returning("id")
         .execute();
       if (published.length === 0) {
@@ -542,6 +587,19 @@ export class RoutineDefinitionRepository {
     const id = randomUUID();
     try {
       await this.db.transaction().execute(async (trx) => {
+        await lockLineage(trx, published.lineageId);
+        // Re-read under the lock. An archive that committed since the read above retires the whole
+        // lineage, and a revision inserted for it would outlive the routine it revises.
+        const stillPublished = await trx
+          .selectFrom("routine_definition")
+          .select("id")
+          .where("agent_id", "=", agentId)
+          .where("id", "=", publishedId)
+          .where("status", "=", "published")
+          .executeTakeFirst();
+        if (!stillPublished) {
+          throw new Error(routineLineageRetiredMarker);
+        }
         await trx
           .insertInto("routine_definition")
           .values({
@@ -566,6 +624,9 @@ export class RoutineDefinitionRepository {
         await this.replaceChildren(trx, id, published);
       });
     } catch (error) {
+      if (error instanceof Error && error.message === routineLineageRetiredMarker) {
+        return null;
+      }
       if (!isUniqueViolation(error)) {
         throw error;
       }
@@ -582,11 +643,27 @@ export class RoutineDefinitionRepository {
     return loaded;
   }
 
-  async archive(agentId: string, id: string): Promise<boolean> {
+  async archive(
+    agentId: string,
+    id: string,
+    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
+  ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      const target = await trx
+        .selectFrom("routine_definition")
+        .select("lineage_id")
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .executeTakeFirst();
+      if (!target) {
+        return false;
+      }
+      // Held before the status flip so a revision cannot be created against this lineage while the
+      // draft precondition below is being checked and the draft deleted.
+      await lockLineage(trx, target.lineage_id);
       const row = await trx
         .updateTable("routine_definition")
-        .set({ status: "archived", updated_at: currentTimestamp() })
+        .set({ status: "archived", updated_at: nextAuthoredUpdatedAt() })
         .where("agent_id", "=", agentId)
         .where("id", "=", id)
         .where("status", "=", "published")
@@ -595,14 +672,50 @@ export class RoutineDefinitionRepository {
       if (!row) {
         return false;
       }
-      // Archiving retires the routine, so discard any in-progress revision draft in the
-      // same lineage instead of leaving it orphaned once nothing is published.
-      await trx
+      // Archiving retires the routine, so it discards any in-progress revision draft in the same
+      // lineage rather than leaving it orphaned once nothing is published. A caller that told an
+      // operator what would be lost states it, and the delete itself carries that claim.
+      const expected = options.expectedDraftRevision;
+      if (expected === undefined) {
+        await trx
+          .deleteFrom("routine_definition")
+          .where("agent_id", "=", agentId)
+          .where("lineage_id", "=", row.lineage_id)
+          .where("status", "=", "draft")
+          .execute();
+        return true;
+      }
+      if (expected === null) {
+        // No new draft can appear while this transaction holds the lineage lock, so a plain read
+        // settles "there was nothing to lose".
+        const draft = await trx
+          .selectFrom("routine_definition")
+          .select("id")
+          .where("agent_id", "=", agentId)
+          .where("lineage_id", "=", row.lineage_id)
+          .where("status", "=", "draft")
+          .executeTakeFirst();
+        if (draft) {
+          throw new Error(`routine_definition_archive_conflict:${id}`);
+        }
+        return true;
+      }
+      // Editing a draft does not take the lineage lock, so reading it and then deleting it would
+      // leave a window a save commits in. The predicate travels into the delete instead: it waits
+      // on that save's row lock and is re-evaluated against the row the save left behind, so a
+      // draft that moved on matches nothing and the archive is refused rather than taking it.
+      const discarded = await trx
         .deleteFrom("routine_definition")
         .where("agent_id", "=", agentId)
         .where("lineage_id", "=", row.lineage_id)
         .where("status", "=", "draft")
-        .execute();
+        .where("id", "=", expected.id)
+        .where(matchesExpectedUpdatedAt(expected.updatedAt))
+        .returning("id")
+        .executeTakeFirst();
+      if (!discarded) {
+        throw new Error(`routine_definition_archive_conflict:${id}`);
+      }
       return true;
     });
   }
@@ -613,7 +726,7 @@ export class RoutineDefinitionRepository {
       // no-op if another version of this lineage is already published.
       const row = await trx
         .updateTable("routine_definition as target")
-        .set({ status: "published", updated_at: currentTimestamp() })
+        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
         .where("target.agent_id", "=", agentId)
         .where("target.id", "=", id)
         .where("target.status", "=", "archived")
@@ -639,15 +752,39 @@ export class RoutineDefinitionRepository {
     });
   }
 
-  async deleteDraft(agentId: string, id: string): Promise<boolean> {
-    const row = await this.db
-      .deleteFrom("routine_definition")
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("status", "=", "draft")
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(row);
+  async deleteDraft(
+    agentId: string,
+    id: string,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinitionDeleteDraftResult> {
+    return this.db.transaction().execute(async (trx) => {
+      const current = await trx
+        .selectFrom("routine_definition")
+        .select(["status", "updated_at"])
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current || current.status !== "draft") {
+        return { outcome: "not_found" };
+      }
+      // The row lock makes this classification and the delete one decision: a draft that moved
+      // since the caller read it is a conflict, while absence or a lifecycle transition remains
+      // the existing not-found behavior.
+      if (
+        options.expectedUpdatedAt !== undefined &&
+        current.updated_at.getTime() !== options.expectedUpdatedAt.getTime()
+      ) {
+        return { outcome: "conflict" };
+      }
+      await trx
+        .deleteFrom("routine_definition")
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("status", "=", "draft")
+        .execute();
+      return { outcome: "deleted" };
+    });
   }
 
   async listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {

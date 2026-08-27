@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { AgentSkillsService } from "../../../src/modules/agentSkills/service.js";
@@ -225,6 +225,62 @@ describe("AgentSkillsService", () => {
       sourceScope: "all",
       exposedInputs: { query: true },
     });
+  });
+
+  it("raises a conflict and leaves a concurrent edit intact when expectedUpdatedAt no longer matches", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "answer",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: { sourceScope: "all", exposedInputs: { query: true } },
+      invocationMode: "default_answer",
+      enabled: true,
+    });
+
+    // Simulates a concurrent edit landing after a caller read created.updatedAt as its version
+    // token but before it called update. The repository stamps updated_at from the wall clock,
+    // so the clock must actually advance between the two writes for the timestamps to differ.
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(1_000);
+      const concurrentEdit = await service.update(workspaceId, agentId, created.id, { enabled: false });
+      expect(concurrentEdit.enabled).toBe(false);
+      expect(concurrentEdit.updatedAt).not.toBe(created.updatedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await expect(
+      service.update(workspaceId, agentId, created.id, { enabled: true }, { expectedUpdatedAt: new Date(created.updatedAt) }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" });
+
+    // The concurrent edit must survive the stale update attempt.
+    const persisted = (await service.list(workspaceId, agentId)).find((skill) => skill.id === created.id);
+    expect(persisted?.enabled).toBe(false);
+  });
+
+  it("updates when expectedUpdatedAt matches the skill's current version", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "answer",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: { sourceScope: "all", exposedInputs: { query: true } },
+      invocationMode: "default_answer",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, { enabled: false }, {
+      expectedUpdatedAt: new Date(created.updatedAt),
+    });
+    expect(updated.enabled).toBe(false);
   });
 
   describe("persistence-error translation", () => {

@@ -136,12 +136,10 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     if (isDirectiveRemoval(payload)) {
       if (!targetRef.directiveId) return { outcome: "failed" as const, reason: "Directive removal requires an existing directive" };
       try {
-        const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
-        // Checked before the delete call rather than passed into it: AuthoredDirectiveService.delete
-        // has no version-gated form, so a stale token must short-circuit here instead of letting a
-        // delete run regardless of what changed underneath the proposal.
-        if (!directive || versionToken(directive.updatedAt) !== token) return { outcome: "stale" as const };
-        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId);
+        // The version check lives in the delete call itself (expectedUpdatedAt reaches the
+        // repository's DELETE predicate), not in a read-then-compare here: a pre-read leaves a
+        // window where a concurrent edit lands between the check and the delete and gets destroyed.
+        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId, { expectedUpdatedAt: versionDate(token) });
         return { outcome: "applied" as const, appliedRef: { directiveId: targetRef.directiveId } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
@@ -307,14 +305,15 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       const payload = skillConfigStoredPayloadSchema.parse(rawPayload);
       try {
         if (targetRef.skillId) {
-          const currentToken = versionToken(new Date((await findExisting(workspaceId, targetRef.agentId, targetRef.skillId))?.updatedAt ?? 0));
-          if (currentToken !== token) return { outcome: "stale" as const };
+          // The version check lives in the update call itself (expectedUpdatedAt reaches the
+          // repository's UPDATE predicate), not in a read-then-compare here: a pre-read leaves a
+          // window where a concurrent edit lands between the check and the write and is overwritten.
           const updated = await deps.agentSkillsService.update(workspaceId, targetRef.agentId, targetRef.skillId, {
             target: payload.target,
             replaceConfig: payload.config,
             invocationMode: payload.invocationMode as AgentSkillInvocationMode,
             enabled: payload.enabled,
-          });
+          }, { expectedUpdatedAt: versionDate(token) });
           return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, skillId: updated.id } };
         }
         const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
@@ -450,6 +449,23 @@ const settingValue = (settings: object, settingKey: string): unknown => Object.h
 const versionToken = (updatedAt: Date): string => updatedAt.toISOString();
 const versionDate = (token: string): Date => new Date(token);
 const isStale = (error: unknown): boolean => error instanceof AppError && (error.code === "conflict" || error.code === "not_found");
+
+/**
+ * A context-variable proposal's version token encodes two independently-versioned timestamps
+ * (the variable's own `updatedAt`, and this agent's enablement `updatedAt` or empty when none
+ * existed at draft time) rather than the single ISO string every other target type's token is.
+ * See the comment on readCurrentVersionParts for why a single combined value can't do this job.
+ */
+const encodeContextVariableVersionToken = (variableUpdatedAt: Date, enablementUpdatedAt: Date | null): string =>
+  `${variableUpdatedAt.toISOString()}|${enablementUpdatedAt ? enablementUpdatedAt.toISOString() : ""}`;
+
+const decodeContextVariableVersionToken = (token: string): { variableUpdatedAt: Date; enablementUpdatedAt: Date | null } => {
+  const [variablePart, enablementPart] = token.split("|");
+  return {
+    variableUpdatedAt: new Date(variablePart ?? ""),
+    enablementUpdatedAt: enablementPart ? new Date(enablementPart) : null,
+  };
+};
 
 const isSkillCapabilityId = (value: string): value is SkillCapabilityId => (skillCapabilityIds as readonly string[]).includes(value);
 
@@ -589,28 +605,34 @@ const assertEnablementIsWellFormed = (enablement: z.infer<typeof contextVariable
  */
 export const createContextVariableCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
-  readonly contextVariableRepository: Pick<ContextVariableRepositoryPort, "get" | "create" | "update" | "listByAgent" | "upsertEnablement">;
+  readonly contextVariableRepository: Pick<ContextVariableRepositoryPort, "get" | "listByAgent" | "applyProposal">;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
     findAgentContextVariableEnablement(deps.contextVariableRepository, workspaceId, agentId, variableId);
 
-  // A proposal can touch the definition, the enablement, or both, so the version token guards
-  // whichever of the two was most recently changed — the one a stale apply would otherwise clobber.
-  //
-  // agent_context_variables.agent_id carries no foreign key (see migration 112), so resolving the
-  // agent through the workspace here - on every call, not only when there is no variableId - is
-  // the only thing standing between a hallucinated or cross-workspace agent id and an orphan
-  // enablement row. Matches the requireAgent check contextVariableRoutes.ts runs on every write.
-  const readCurrentToken = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }): Promise<string> => {
+  // A proposal can touch the definition, the enablement, or both — two independently-versioned
+  // rows behind a single proposal. A single `max(...)` timestamp token can't be decomposed back
+  // into two per-row expectations (whichever side did NOT change would still fail its own
+  // WHERE-clause guard when the token derives from the other side's later timestamp), so the
+  // token carries both timestamps explicitly instead.
+  const readCurrentVersionParts = async (
+    workspaceId: string,
+    targetRef: { agentId: string; variableId: string | null },
+  ): Promise<{ variableUpdatedAt: Date; enablementUpdatedAt: Date | null }> => {
+    // agent_context_variables.agent_id carries no foreign key (see migration 112), so resolving
+    // the agent through the workspace here - on every call, not only when there is no
+    // variableId - is the only thing standing between a hallucinated or cross-workspace agent id
+    // and an orphan enablement row. Matches the requireAgent check contextVariableRoutes.ts runs
+    // on every write. It also anchors the "new variable" branch below, which has no row of its
+    // own yet to gate against.
     const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
     if (!targetRef.variableId) {
-      return versionToken(agent.updatedAt);
+      return { variableUpdatedAt: agent.updatedAt, enablementUpdatedAt: null };
     }
     const variable = await deps.contextVariableRepository.get(workspaceId, targetRef.variableId);
     if (!variable) throw notFound("Context variable no longer exists");
     const enablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
-    const latest = enablement && enablement.updatedAt.getTime() > variable.updatedAt.getTime() ? enablement.updatedAt : variable.updatedAt;
-    return versionToken(latest);
+    return { variableUpdatedAt: variable.updatedAt, enablementUpdatedAt: enablement?.updatedAt ?? null };
   };
 
   const resolveProposal = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }, rawPayload: unknown) => {
@@ -682,7 +704,8 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
     targetType: "context_variable",
     async readVersionToken(workspaceId, rawTargetRef) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
-      return readCurrentToken(workspaceId, targetRef);
+      const parts = await readCurrentVersionParts(workspaceId, targetRef);
+      return encodeContextVariableVersionToken(parts.variableUpdatedAt, parts.enablementUpdatedAt);
     },
     async preview(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
@@ -695,23 +718,33 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
       try {
-        const currentToken = await readCurrentToken(workspaceId, targetRef);
-        if (currentToken !== token) return { outcome: "stale" as const };
+        // agent_context_variables.agent_id carries no foreign key; resolved unconditionally and
+        // before any write, matching the requireAgent check contextVariableRoutes.ts runs on
+        // every write (see readCurrentVersionParts's comment).
+        const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
+        const decoded = decodeContextVariableVersionToken(token);
 
-        let variableId = targetRef.variableId;
-        if (payload.definition) {
-          if (variableId) {
-            await deps.contextVariableRepository.update(workspaceId, variableId, payload.definition);
-          } else {
-            const created = await deps.contextVariableRepository.create({ workspaceId, ...payload.definition });
-            variableId = created.id;
-          }
+        // A new variable has no row of its own to gate the write against, so the token instead
+        // anchors the agent's own updatedAt (matching readVersionToken's no-variableId branch).
+        // This is the one remaining read-then-compare in this adapter, and it is intentionally
+        // low-stakes: nothing exists yet to lose if the agent changed between draft and apply.
+        if (!targetRef.variableId && decoded.variableUpdatedAt.getTime() !== agent.updatedAt.getTime()) {
+          return { outcome: "stale" as const };
         }
-        if (payload.enablement) {
-          if (!variableId) throw badRequest("Cannot enable a context variable with no resolved id");
-          await deps.contextVariableRepository.upsertEnablement({ agentId: targetRef.agentId, variableId, ...payload.enablement });
-        }
-        return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, variableId } };
+
+        // Every other version check is enforced inside applyProposal's own transaction (each
+        // write gated by its own predicate), not by a read-then-compare here: a pre-read leaves a
+        // window where a concurrent edit lands between the check and the write.
+        const result = await deps.contextVariableRepository.applyProposal({
+          workspaceId,
+          agentId: targetRef.agentId,
+          variableId: targetRef.variableId,
+          definition: payload.definition,
+          expectedVariableUpdatedAt: targetRef.variableId ? decoded.variableUpdatedAt : null,
+          enablement: payload.enablement,
+          expectedEnablementUpdatedAt: decoded.enablementUpdatedAt,
+        });
+        return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, variableId: result.variableId } };
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Context variable apply failed" };

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
-import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, jsonbConcat, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { AgentSkillInvocationMode, AgentSkillKind, AgentSkillSpine } from "./domain.js";
 
 export interface AgentSkillCreateRecord {
@@ -23,6 +23,12 @@ export interface AgentSkillUpdateRecord {
   replaceConfig?: Record<string, unknown>;
   invocationMode?: AgentSkillInvocationMode;
   enabled?: boolean;
+  /**
+   * Optional optimistic-concurrency guard, enforced in the UPDATE's own WHERE predicate: when
+   * supplied, the update is a no-op (returns null) unless the row's current `updated_at` matches.
+   * Omitted entirely by callers that do not need version gating (the pre-existing default).
+   */
+  expectedUpdatedAt?: Date;
 }
 
 export interface AgentSkillRepositoryPort {
@@ -183,6 +189,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where("workspace_id", "=", workspaceId)
       .where("agent_id", "=", agentId)
       .where("id", "=", id)
+      .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedUpdatedAt))
       .returningAll()
       .executeTakeFirst();
     return row ? mapRow(row as AgentSkillRow) : null;

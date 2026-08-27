@@ -29,7 +29,7 @@ import {
 } from "../../modules/agents/public.js";
 import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
 
@@ -569,7 +569,7 @@ export interface AgentRepositoryPort {
   listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]>;
   createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
-  deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean>;
+  deleteDirective(agentId: string, workspaceId: string, directiveId: string, options?: AgentDirectiveUpdateOptions): Promise<boolean>;
   repointRoutineScopeTags?(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
   deleteByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<boolean>;
@@ -890,7 +890,7 @@ export class AgentRepository implements AgentRepositoryPort {
     return mapDirectiveRow(row);
   }
 
-  async deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean> {
+  async deleteDirective(agentId: string, workspaceId: string, directiveId: string, options: AgentDirectiveUpdateOptions = {}): Promise<boolean> {
     const result = await sql<{ deleted: boolean }>`
       WITH deleted_directive AS (
         DELETE FROM agent_directives
@@ -899,6 +899,7 @@ export class AgentRepository implements AgentRepositoryPort {
           AND agent_directives.agent_id = ${agentId}
           AND agents.id = agent_directives.agent_id
           AND agents.workspace_id = ${workspaceId}
+          AND ${optionalTimestampMatch(sql.ref("agent_directives.updated_at"), options.expectedUpdatedAt)}
         RETURNING agent_directives.agent_id
       ), touched_agent AS (
         UPDATE agents

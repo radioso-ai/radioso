@@ -12,7 +12,8 @@ import type {
   ContextVariableValueType,
 } from "../../modules/context-variables/public.js";
 import type { ContextVariableSurfacing } from "../../modules/context-variables/public.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { badRequest, conflict } from "../../shared/domain/errors.js";
+import { currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface ContextVariableCreateRecord {
@@ -45,6 +46,53 @@ export interface AgentContextVariableEnablementRecord {
   enabled?: boolean;
 }
 
+/** Full replacement value for a variable's definition, used only by {@link ApplyContextVariableProposalInput}. */
+export interface ContextVariableDefinitionWrite {
+  readonly name: string;
+  readonly description: string | null;
+  readonly valueType: ContextVariableValueType;
+  readonly trustTier: ContextVariableTrustTier;
+  readonly sensitivity: ContextVariableSensitivity;
+  readonly defaultSurfacing: ContextVariableSurfacing;
+}
+
+/** Full replacement value for one agent's enablement, used only by {@link ApplyContextVariableProposalInput}. */
+export interface ContextVariableEnablementWrite {
+  readonly source: ContextVariableSource;
+  readonly resolverSkillId: string | null;
+  readonly maxAgeSeconds: number | null;
+  readonly resolverTimeoutMs: number | null;
+  readonly surfacing: ContextVariableSurfacing;
+  readonly enabled: boolean;
+}
+
+export interface ApplyContextVariableProposalInput {
+  readonly workspaceId: string;
+  readonly agentId: string;
+  /** Existing variable id, or null to create a new variable. */
+  readonly variableId: string | null;
+  /** Definition create/update, or null when the proposal only touches the enablement. */
+  readonly definition: ContextVariableDefinitionWrite | null;
+  /**
+   * Required (and enforced) only when variableId is set and definition is non-null: the
+   * variable's `updated_at` at draft time. Ignored for a fresh insert (variableId null) — there is
+   * nothing yet to race against.
+   */
+  readonly expectedVariableUpdatedAt: Date | null;
+  /** Enablement upsert, or null when the proposal only touches the definition. */
+  readonly enablement: ContextVariableEnablementWrite | null;
+  /**
+   * Draft-time enablement `updated_at`, or `null` when no enablement existed for this
+   * agent+variable at draft time (the proposal expects a fresh insert). Ignored when enablement
+   * is null.
+   */
+  readonly expectedEnablementUpdatedAt: Date | null;
+}
+
+export interface ApplyContextVariableProposalResult {
+  readonly variableId: string;
+}
+
 export interface ContextVariableRepositoryPort {
   create(input: ContextVariableCreateRecord): Promise<ContextVariable>;
   update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null>;
@@ -65,6 +113,16 @@ export interface ContextVariableRepositoryPort {
     agentId: string,
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]>;
+
+  /**
+   * Applies a copilot proposal's definition write, enablement write, or both as a single
+   * all-or-nothing transaction, each write version-gated in its own predicate rather than by a
+   * separate read-then-compare. Throws a `conflict` AppError (not a discriminated "stale" return)
+   * when either write's version guard fails, so a partially-applied write is always rolled back —
+   * a definition update that would have succeeded on its own must not survive a stale enablement
+   * write, and vice versa.
+   */
+  applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult>;
 }
 
 interface ContextVariableRow {
@@ -445,5 +503,93 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       }
     }
     return null;
+  }
+
+  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+    return this.db.transaction().execute(async (trx) => {
+      let variableId = input.variableId;
+
+      if (input.definition) {
+        if (variableId) {
+          const row = await trx
+            .updateTable("context_variables")
+            .set({
+              updated_at: currentTimestamp(),
+              name: input.definition.name,
+              description: input.definition.description,
+              value_type: input.definition.valueType,
+              trust_tier: input.definition.trustTier,
+              sensitivity: input.definition.sensitivity,
+              default_surfacing: input.definition.defaultSurfacing,
+            })
+            .where("workspace_id", "=", input.workspaceId)
+            .where("id", "=", variableId)
+            .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedVariableUpdatedAt))
+            .returning(["id"])
+            .executeTakeFirst();
+          if (!row) {
+            throw conflict("Context variable was updated by another writer; reload before saving again");
+          }
+        } else {
+          const created = await trx
+            .insertInto("context_variables")
+            .values({
+              id: randomUUID(),
+              workspace_id: input.workspaceId,
+              name: input.definition.name,
+              description: input.definition.description,
+              value_type: input.definition.valueType,
+              trust_tier: input.definition.trustTier,
+              sensitivity: input.definition.sensitivity,
+              default_surfacing: input.definition.defaultSurfacing,
+            })
+            .returning(["id"])
+            .executeTakeFirstOrThrow();
+          variableId = created.id;
+        }
+      }
+
+      if (input.enablement) {
+        if (!variableId) {
+          throw badRequest("Cannot enable a context variable with no resolved id");
+        }
+        const row = await trx
+          .insertInto("agent_context_variables")
+          .values({
+            id: randomUUID(),
+            agent_id: input.agentId,
+            variable_id: variableId,
+            source: input.enablement.source,
+            resolver_skill_id: input.enablement.resolverSkillId,
+            max_age_seconds: input.enablement.maxAgeSeconds,
+            resolver_timeout_ms: input.enablement.resolverTimeoutMs,
+            surfacing: input.enablement.surfacing,
+            enabled: input.enablement.enabled,
+          })
+          .onConflict((oc) =>
+            oc.columns(["agent_id", "variable_id"]).doUpdateSet((eb) => ({
+              source: eb.ref("excluded.source"),
+              resolver_skill_id: eb.ref("excluded.resolver_skill_id"),
+              max_age_seconds: eb.ref("excluded.max_age_seconds"),
+              resolver_timeout_ms: eb.ref("excluded.resolver_timeout_ms"),
+              surfacing: eb.ref("excluded.surfacing"),
+              enabled: eb.ref("excluded.enabled"),
+              updated_at: currentTimestamp(),
+            // Qualified with the table name: inside ON CONFLICT ... DO UPDATE ... WHERE, an
+            // unqualified column is ambiguous between the target row and the `excluded` row.
+            })).where((eb) => timestampMatchOrAbsent(eb.ref("agent_context_variables.updated_at"), input.expectedEnablementUpdatedAt)),
+          )
+          .returning(["id"])
+          .executeTakeFirst();
+        if (!row) {
+          throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+        }
+      }
+
+      if (!variableId) {
+        throw badRequest("A context variable proposal must include a definition or target an existing variable");
+      }
+      return { variableId };
+    });
   }
 }

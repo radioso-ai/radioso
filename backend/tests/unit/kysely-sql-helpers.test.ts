@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
-import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, setLocal, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -73,5 +73,72 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toContain('= any($1::uuid[])');
     expect(compiled.parameters).toEqual([ids]);
+  });
+
+  it("optionalTimestampMatch skips the check (always true) when expected is undefined or null", () => {
+    const undefinedCompiled = db
+      .selectFrom("agent_skills")
+      .select("id")
+      .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), undefined))
+      .compile();
+    expect(undefinedCompiled.sql).toContain("IS NULL OR date_trunc('milliseconds'");
+    expect(undefinedCompiled.parameters[0]).toBeNull();
+
+    const nullCompiled = db
+      .selectFrom("agent_skills")
+      .select("id")
+      .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), null))
+      .compile();
+    expect(nullCompiled.parameters[0]).toBeNull();
+  });
+
+  it("optionalTimestampMatch requires a millisecond-truncated match when expected is a Date", () => {
+    const expected = new Date("2026-01-01T00:00:00.123Z");
+    const compiled = db
+      .updateTable("agent_skills")
+      .set({ enabled: true })
+      .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), expected))
+      .compile();
+
+    expect(compiled.sql).toContain("date_trunc('milliseconds', \"updated_at\") = date_trunc('milliseconds'");
+    expect(compiled.parameters).toContain(expected);
+  });
+
+  it("timestampMatchOrAbsent emits an always-false guard when expected is null", () => {
+    const compiled = db
+      .insertInto("agent_context_variables")
+      .values({
+        id: "00000000-0000-0000-0000-000000000000",
+        agent_id: "00000000-0000-0000-0000-000000000001",
+        variable_id: "00000000-0000-0000-0000-000000000002",
+        source: "pushed",
+        surfacing: "always",
+      })
+      .onConflict((oc) =>
+        oc.columns(["agent_id", "variable_id"]).doUpdateSet({ enabled: true }).where((eb) => timestampMatchOrAbsent(eb.ref("updated_at"), null)),
+      )
+      .compile();
+
+    expect(compiled.sql).toContain("where false");
+  });
+
+  it("timestampMatchOrAbsent emits a millisecond-truncated match when expected is a Date", () => {
+    const expected = new Date("2026-01-01T00:00:00.456Z");
+    const compiled = db
+      .insertInto("agent_context_variables")
+      .values({
+        id: "00000000-0000-0000-0000-000000000000",
+        agent_id: "00000000-0000-0000-0000-000000000001",
+        variable_id: "00000000-0000-0000-0000-000000000002",
+        source: "pushed",
+        surfacing: "always",
+      })
+      .onConflict((oc) =>
+        oc.columns(["agent_id", "variable_id"]).doUpdateSet({ enabled: true }).where((eb) => timestampMatchOrAbsent(eb.ref("updated_at"), expected)),
+      )
+      .compile();
+
+    expect(compiled.sql).toContain("date_trunc('milliseconds', \"updated_at\") = date_trunc('milliseconds'");
+    expect(compiled.parameters).toContain(expected);
   });
 });

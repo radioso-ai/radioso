@@ -20,6 +20,7 @@ import {
 import { createAgentSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
+import { conflict } from "../../../src/shared/domain/errors.js";
 
 const workspaceId = randomUUID();
 const accountId = randomUUID();
@@ -475,23 +476,27 @@ describe("directive proposal adapter payload mapping", () => {
 
   it("removes a directive when the version token matches, and never deletes when it is stale", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
-    const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(5) };
-    const list = vi.fn(async () => [existing]);
-    const deleteDirective = vi.fn(async () => undefined);
+    const currentUpdatedAt = new Date(5);
+    // Mirrors AuthoredDirectiveService.delete: the version check is enforced by the delete call
+    // itself (via expectedUpdatedAt), not by a read-then-compare the adapter runs beforehand.
+    const deleteDirective = vi.fn(async (_workspaceId: string, _agentId: string, _directiveId: string, options?: { expectedUpdatedAt?: Date }) => {
+      if (options?.expectedUpdatedAt && options.expectedUpdatedAt.getTime() !== currentUpdatedAt.getTime()) {
+        throw conflict("Directive was updated by another writer; reload before saving again");
+      }
+    });
     const adapter = createDirectiveCopilotProposalAdapter({
-      authoredDirectiveService: { list, create: vi.fn(), update: vi.fn(), delete: deleteDirective } as never,
+      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: deleteDirective } as never,
       directiveAuthorService: { draft: vi.fn() } as never,
-      agentService: { get: vi.fn(async () => ({ updatedAt: new Date(5) })) } as never,
+      agentService: { get: vi.fn(async () => ({ updatedAt: currentUpdatedAt })) } as never,
     });
     const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
 
     // A stale token races an edit made after the proposal drafted. Deleting here would discard
     // whatever changed the directive between drafting and apply, so it must be refused outright.
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale" });
-    expect(deleteDirective).not.toHaveBeenCalled();
 
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(5).toISOString())).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
-    expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-3333-444444444445");
+    expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-3333-444444444445", { expectedUpdatedAt: new Date(5) });
   });
 
   it("previews a removal as the directive in place today, next to a plain removal notice", async () => {
@@ -619,7 +624,16 @@ describe("agent skill config proposal adapter", () => {
       enabled: true,
       updatedAt: new Date(5).toISOString(),
     };
-    const { adapter, update, list } = await buildAdapter({ agentSkills: [existing] });
+    // Mirrors AgentSkillsService.update: the version check is enforced by the update call itself
+    // (via expectedUpdatedAt), not by a read-then-compare the adapter runs beforehand.
+    let currentUpdatedAt = new Date(5);
+    const update = vi.fn(async (_workspaceId: string, _agentId: string, _skillId: string, _input: unknown, options?: { expectedUpdatedAt?: Date }) => {
+      if (options?.expectedUpdatedAt && options.expectedUpdatedAt.getTime() !== currentUpdatedAt.getTime()) {
+        throw conflict("Skill was updated by another writer; reload before saving again");
+      }
+      return { id: existingSkillId };
+    });
+    const { adapter } = await buildAdapter({ agentSkills: [existing], update });
     const targetRef = { agentId: agentSkillAgentId, skillId: existingSkillId };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, { config: { delivery: { recipientEmails: ["ops@example.com", "escalations@example.com"], webhook: null } } });
@@ -632,9 +646,11 @@ describe("agent skill config proposal adapter", () => {
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: agentSkillAgentId, skillId: existingSkillId } });
     expect(update).toHaveBeenCalledWith("workspace-1", agentSkillAgentId, existingSkillId, expect.objectContaining({
       replaceConfig: expect.objectContaining({ delivery: expect.objectContaining({ recipientEmails: ["ops@example.com", "escalations@example.com"] }) }),
-    }));
+    }), { expectedUpdatedAt: new Date(5) });
 
-    list.mockResolvedValueOnce([{ ...existing, updatedAt: new Date(6).toISOString() }]);
+    // A concurrent edit lands after the token was read: the gated update call itself must refuse,
+    // not a pre-read the adapter compared beforehand.
+    currentUpdatedAt = new Date(6);
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
   });
 
@@ -752,26 +768,23 @@ describe("context variable proposal adapter", () => {
     variable?: { id: string; workspaceId: string; name: string; description: string | null; valueType: string; trustTier: string; sensitivity: string; defaultSurfacing: string; updatedAt: Date } | null;
     enablements?: Array<{ id: string; agentId: string; variableId: string; source: string; resolverSkillId: string | null; maxAgeSeconds: number | null; resolverTimeoutMs: number | null; surfacing: string; enabled: boolean; updatedAt: Date }>;
     agentUpdatedAt?: Date;
-    create?: ReturnType<typeof vi.fn>;
-    update?: ReturnType<typeof vi.fn>;
-    upsertEnablement?: ReturnType<typeof vi.fn>;
+    applyProposal?: ReturnType<typeof vi.fn>;
   } = {}) => {
     const { createContextVariableCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
     const get = vi.fn(async () => overrides.variable ?? null);
     const listByAgent = vi.fn(async () => overrides.enablements ?? []);
-    const create = overrides.create ?? vi.fn(async () => ({ id: "created-variable-1" }));
-    const update = overrides.update ?? vi.fn(async () => overrides.variable ?? null);
-    const upsertEnablement = overrides.upsertEnablement ?? vi.fn(async () => ({ id: "enablement-1" }));
+    const applyProposal = overrides.applyProposal ?? vi.fn(async () => ({ variableId: overrides.variable?.id ?? "created-variable-1" }));
     const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
     const adapter = createContextVariableCopilotProposalAdapter({
       agentService: agentService as never,
-      contextVariableRepository: { get, create, update, listByAgent, upsertEnablement } as never,
+      contextVariableRepository: { get, listByAgent, applyProposal } as never,
     });
-    return { adapter, get, create, update, listByAgent, upsertEnablement, agentService };
+    return { adapter, get, listByAgent, applyProposal, agentService };
   };
 
   it("validates a brand-new variable definition and creates it, guarding against a moved agent", async () => {
-    const { adapter, create, agentService } = await buildAdapter();
+    const applyProposal = vi.fn(async () => ({ variableId: "created-variable-1" }));
+    const { adapter, agentService } = await buildAdapter({ applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: null };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, {
@@ -787,12 +800,19 @@ describe("context variable proposal adapter", () => {
       enablement: null,
     });
 
+    // A brand-new variable has no row of its own to gate against, so the token instead anchors
+    // the agent's own updatedAt - hence the trailing "|" with an empty enablement segment.
     const token = await adapter.readVersionToken("workspace-1", targetRef);
-    expect(token).toBe(new Date(0).toISOString());
+    expect(token).toBe(`${new Date(0).toISOString()}|`);
 
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-1" } });
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "workspace-1", name: "loyalty_tier", valueType: "string" }));
+    expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      agentId: contextVariableAgentId,
+      variableId: null,
+      definition: expect.objectContaining({ name: "loyalty_tier", valueType: "string" }),
+    }));
 
     agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
@@ -800,27 +820,35 @@ describe("context variable proposal adapter", () => {
 
   it("updates an existing variable's definition by id without touching its enablement", async () => {
     const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(5) };
-    const { adapter, update, upsertEnablement, get } = await buildAdapter({ variable });
+    const applyProposal = vi.fn(async () => ({ variableId: existingVariableId }));
+    const { adapter } = await buildAdapter({ variable, applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, { sensitivity: "sensitive" });
     expect(validated.payload).toMatchObject({ name: "loyalty_tier", definition: expect.objectContaining({ sensitivity: "sensitive" }), enablement: null });
 
     const token = await adapter.readVersionToken("workspace-1", targetRef);
-    expect(token).toBe(new Date(5).toISOString());
+    expect(token).toBe(`${new Date(5).toISOString()}|`);
 
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: existingVariableId } });
-    expect(update).toHaveBeenCalledWith("workspace-1", existingVariableId, expect.objectContaining({ sensitivity: "sensitive" }));
-    expect(upsertEnablement).not.toHaveBeenCalled();
+    expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({
+      variableId: existingVariableId,
+      definition: expect.objectContaining({ sensitivity: "sensitive" }),
+      expectedVariableUpdatedAt: new Date(5),
+      enablement: null,
+    }));
 
-    get.mockResolvedValueOnce({ ...variable, updatedAt: new Date(6) });
+    // A concurrent edit is now detected by the write's own predicate, not a pre-read the adapter
+    // compares beforehand - simulate that by having the gated mutation itself refuse.
+    applyProposal.mockRejectedValueOnce(conflict("Context variable was updated by another writer; reload before saving again"));
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
   });
 
   it("upserts a per-agent enablement onto an existing variable, independent of its definition", async () => {
     const variable = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
-    const { adapter, upsertEnablement, update } = await buildAdapter({ variable });
+    const applyProposal = vi.fn(async () => ({ variableId: existingVariableId }));
+    const { adapter } = await buildAdapter({ variable, applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, {
@@ -830,13 +858,18 @@ describe("context variable proposal adapter", () => {
 
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, await adapter.readVersionToken("workspace-1", targetRef));
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: existingVariableId } });
-    expect(upsertEnablement).toHaveBeenCalledWith(expect.objectContaining({ agentId: contextVariableAgentId, variableId: existingVariableId, source: "pushed", surfacing: "always" }));
-    expect(update).not.toHaveBeenCalled();
+    expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: contextVariableAgentId,
+      variableId: existingVariableId,
+      definition: null,
+      enablement: expect.objectContaining({ source: "pushed", surfacing: "always" }),
+      expectedEnablementUpdatedAt: null,
+    }));
   });
 
   it("creates a variable and enables it for the agent from a single proposal", async () => {
-    const create = vi.fn(async () => ({ id: "created-variable-2" }));
-    const { adapter, upsertEnablement } = await buildAdapter({ create });
+    const applyProposal = vi.fn(async () => ({ variableId: "created-variable-2" }));
+    const { adapter } = await buildAdapter({ applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: null };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, {
@@ -850,7 +883,11 @@ describe("context variable proposal adapter", () => {
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, await adapter.readVersionToken("workspace-1", targetRef));
 
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-2" } });
-    expect(upsertEnablement).toHaveBeenCalledWith(expect.objectContaining({ agentId: contextVariableAgentId, variableId: "created-variable-2", source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-3333-444444444999" }));
+    expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({
+      variableId: null,
+      definition: expect.objectContaining({ name: "loyalty_tier" }),
+      enablement: expect.objectContaining({ source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-3333-444444444999" }),
+    }));
   });
 
   it("refuses a proposal for an existing variable with neither a definition field nor an enablement", async () => {

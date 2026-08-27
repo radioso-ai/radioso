@@ -104,6 +104,9 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
     if (!existing || existing.workspaceId !== workspaceId || existing.agentId !== agentId) {
       return null;
     }
+    if (input.expectedUpdatedAt && existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+      return null;
+    }
     if (
       input.invocationMode === "default_answer"
       && existing.invocationMode !== "default_answer"

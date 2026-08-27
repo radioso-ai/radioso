@@ -1,7 +1,7 @@
 import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
 import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
@@ -99,11 +99,17 @@ export class AuthoredDirectiveService {
     return { directive: saved, coherence };
   }
 
-  async delete(workspaceId: string, agentId: string, directiveId: string): Promise<void> {
+  /**
+   * `options.expectedUpdatedAt`, when supplied, is enforced inside the repository's DELETE
+   * predicate (not read-then-compared here): a concurrent edit changes the directive's
+   * `updated_at` between when a caller read it and when it calls delete, and the WHERE clause
+   * must see that change atomically or the delete could destroy a directive the caller never saw.
+   */
+  async delete(workspaceId: string, agentId: string, directiveId: string, options?: AuthoredDirectiveVersionOptions): Promise<void> {
     await this.requireAgent(workspaceId, agentId);
-    const deleted = await this.options.repository.deleteDirective(agentId, workspaceId, directiveId);
+    const deleted = await this.options.repository.deleteDirective(agentId, workspaceId, directiveId, options);
     if (!deleted) {
-      throw notFound("Directive not found");
+      throw options?.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
     }
   }
 

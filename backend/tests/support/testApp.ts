@@ -178,10 +178,13 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import type {
   AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/db/repositories/contextVariableRepository.js";
+import { badRequest, conflict } from "../../src/shared/domain/errors.js";
 import type {
   AgentContextVariableEnablement,
   ContextVariable,
@@ -564,6 +567,67 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
 
   async resolveForAgent(): Promise<ResolvedVariableInput[]> {
     return [];
+  }
+
+  // In-memory analogue of the real repository's transaction: both version guards are checked
+  // before either write is applied, so a failing guard never leaves a partial write behind.
+  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+    let variableId = input.variableId;
+
+    if (input.definition && variableId) {
+      const current = this.variables.get(variableId);
+      if (!current || current.workspaceId !== input.workspaceId) {
+        throw conflict("Context variable was updated by another writer; reload before saving again");
+      }
+      if (input.expectedVariableUpdatedAt && current.updatedAt.getTime() !== input.expectedVariableUpdatedAt.getTime()) {
+        throw conflict("Context variable was updated by another writer; reload before saving again");
+      }
+    }
+
+    if (input.enablement) {
+      const enablementVariableId = variableId;
+      if (enablementVariableId) {
+        const existing = this.enablements.get(this.enablementKey(input.agentId, enablementVariableId));
+        if (input.expectedEnablementUpdatedAt === null) {
+          if (existing) {
+            throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+          }
+        } else if (!existing || existing.updatedAt.getTime() !== input.expectedEnablementUpdatedAt.getTime()) {
+          throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+        }
+      }
+    }
+
+    if (input.definition) {
+      if (variableId) {
+        const current = this.variables.get(variableId)!;
+        this.variables.set(variableId, {
+          ...current,
+          name: input.definition.name,
+          description: input.definition.description,
+          valueType: input.definition.valueType,
+          trustTier: input.definition.trustTier,
+          sensitivity: input.definition.sensitivity,
+          defaultSurfacing: input.definition.defaultSurfacing,
+          updatedAt: new Date(),
+        });
+      } else {
+        const created = await this.create({ workspaceId: input.workspaceId, ...input.definition });
+        variableId = created.id;
+      }
+    }
+
+    if (input.enablement) {
+      if (!variableId) {
+        throw badRequest("Cannot enable a context variable with no resolved id");
+      }
+      await this.upsertEnablement({ agentId: input.agentId, variableId, ...input.enablement });
+    }
+
+    if (!variableId) {
+      throw badRequest("A context variable proposal must include a definition or target an existing variable");
+    }
+    return { variableId };
   }
 
   private enablementKey(agentId: string, variableId: string): string {

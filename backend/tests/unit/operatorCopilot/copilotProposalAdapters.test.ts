@@ -8,10 +8,10 @@ import {
 } from "../../../src/app/composition/copilotProposalAdapters.js";
 import { AgentSkillsService } from "../../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../../src/modules/skills/public.js";
-import { notFound } from "../../../src/shared/domain/errors.js";
+import { badRequest, conflict, notFound } from "../../../src/shared/domain/errors.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
 import type { AgentContextVariableEnablement, ContextVariable } from "../../../src/modules/context-variables/public.js";
-import type { AgentContextVariableEnablementRecord } from "../../../src/db/repositories/contextVariableRepository.js";
+import type { AgentContextVariableEnablementRecord, ApplyContextVariableProposalInput, ApplyContextVariableProposalResult } from "../../../src/db/repositories/contextVariableRepository.js";
 
 // Minimal stand-in for AgentService.get: throws not-found for any agent id the caller never
 // registered as belonging to the given workspace, matching how the real service resolves an
@@ -29,36 +29,83 @@ const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) =>
   const variables = new Map(seedVariables.map((variable) => [variable.id, variable]));
   const enablements = new Map<string, AgentContextVariableEnablement>();
 
+  const upsertEnablement = (input: AgentContextVariableEnablementRecord): AgentContextVariableEnablement => {
+    const key = `${input.agentId}:${input.variableId}`;
+    const existing = enablements.get(key);
+    const now = new Date();
+    const enablement: AgentContextVariableEnablement = {
+      id: existing?.id ?? randomUUID(),
+      agentId: input.agentId,
+      variableId: input.variableId,
+      source: input.source,
+      resolverSkillId: input.resolverSkillId ?? null,
+      maxAgeSeconds: input.maxAgeSeconds ?? null,
+      resolverTimeoutMs: input.resolverTimeoutMs ?? null,
+      surfacing: input.surfacing,
+      enabled: input.enabled ?? true,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    enablements.set(key, enablement);
+    return enablement;
+  };
+
   return {
     get: vi.fn(async (workspaceId: string, id: string): Promise<ContextVariable | null> => {
       const variable = variables.get(id);
       return variable && variable.workspaceId === workspaceId ? variable : null;
     }),
-    create: vi.fn(async (): Promise<ContextVariable> => {
-      throw new Error("create() is not exercised by these tests");
-    }),
-    update: vi.fn(async (): Promise<ContextVariable | null> => {
-      throw new Error("update() is not exercised by these tests");
-    }),
     listByAgent: vi.fn(async (_workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]> =>
       [...enablements.values()].filter((enablement) => enablement.agentId === agentId)),
-    upsertEnablement: vi.fn(async (input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> => {
-      const now = new Date();
-      const enablement: AgentContextVariableEnablement = {
-        id: randomUUID(),
-        agentId: input.agentId,
-        variableId: input.variableId,
-        source: input.source,
-        resolverSkillId: input.resolverSkillId ?? null,
-        maxAgeSeconds: input.maxAgeSeconds ?? null,
-        resolverTimeoutMs: input.resolverTimeoutMs ?? null,
-        surfacing: input.surfacing,
-        enabled: input.enabled ?? true,
-        createdAt: now,
-        updatedAt: now,
-      };
-      enablements.set(`${input.agentId}:${input.variableId}`, enablement);
-      return enablement;
+    upsertEnablement: vi.fn(async (input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> => upsertEnablement(input)),
+    // In-memory analogue of the real repository's transaction: both version guards are checked
+    // before either write is applied, so a failing guard never leaves a partial write behind.
+    applyProposal: vi.fn(async (input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> => {
+      let variableId = input.variableId;
+
+      if (input.definition && variableId) {
+        const current = variables.get(variableId);
+        if (!current || current.workspaceId !== input.workspaceId) {
+          throw conflict("Context variable was updated by another writer; reload before saving again");
+        }
+        if (input.expectedVariableUpdatedAt && current.updatedAt.getTime() !== input.expectedVariableUpdatedAt.getTime()) {
+          throw conflict("Context variable was updated by another writer; reload before saving again");
+        }
+      }
+
+      if (input.enablement && variableId) {
+        const existing = enablements.get(`${input.agentId}:${variableId}`);
+        if (input.expectedEnablementUpdatedAt === null) {
+          if (existing) throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+        } else if (!existing || existing.updatedAt.getTime() !== input.expectedEnablementUpdatedAt.getTime()) {
+          throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+        }
+      }
+
+      if (input.definition) {
+        if (variableId) {
+          const current = variables.get(variableId)!;
+          variables.set(variableId, { ...current, ...input.definition, updatedAt: new Date() });
+        } else {
+          const created: ContextVariable = {
+            id: randomUUID(),
+            workspaceId: input.workspaceId,
+            ...input.definition,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+          variables.set(created.id, created);
+          variableId = created.id;
+        }
+      }
+
+      if (input.enablement) {
+        if (!variableId) throw badRequest("Cannot enable a context variable with no resolved id");
+        upsertEnablement({ agentId: input.agentId, variableId, ...input.enablement });
+      }
+
+      if (!variableId) throw badRequest("A context variable proposal must include a definition or target an existing variable");
+      return { variableId };
     }),
   };
 };
@@ -117,9 +164,10 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     const foreignAgentId = randomUUID();
     const targetRef = { agentId: foreignAgentId, variableId: variable.id };
-    // A token derived purely from the variable's own updatedAt - what the pre-fix adapter would
-    // have returned from readCurrentToken without ever looking at the agent.
-    const forgedToken = variable.updatedAt.toISOString();
+    // A token derived purely from the variable's own updatedAt (no enablement segment) - what
+    // the pre-fix adapter would have returned from readCurrentToken without ever looking at the
+    // agent.
+    const forgedToken = `${variable.updatedAt.toISOString()}|`;
 
     const outcome = await adapter.applyIfVersionMatches(workspaceId, targetRef, {
       name: variable.name,
@@ -128,7 +176,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     }, forgedToken);
 
     expect(outcome.outcome).not.toBe("applied");
-    expect(contextVariableRepository.upsertEnablement).not.toHaveBeenCalled();
+    expect(contextVariableRepository.applyProposal).not.toHaveBeenCalled();
   });
 });
 

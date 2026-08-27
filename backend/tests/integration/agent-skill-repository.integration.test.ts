@@ -135,6 +135,47 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
     expect(await repository.update(workspaceId, randomUUID(), created.id, { enabled: true })).toBeNull();
   });
 
+  it("refuses an update whose expectedUpdatedAt no longer matches, and leaves the row unchanged", async () => {
+    const created = await repository.create({
+      workspaceId,
+      agentId,
+      skillName: "epsilon",
+      kind: "notify",
+      targetType: "notify_delivery",
+      targetId: null,
+      config: { delivery: { recipientEmails: ["a@example.com"], webhook: null } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+    const draftedAt = created.updatedAt;
+
+    // A concurrent edit lands after the caller read draftedAt but before it calls update.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const edited = await repository.update(workspaceId, agentId, created.id, { enabled: false });
+    expect(edited?.updatedAt.getTime()).toBeGreaterThan(draftedAt.getTime());
+
+    // The version check lives in the UPDATE's own WHERE predicate: a stale expectedUpdatedAt
+    // must be a no-op (null), not a partial or unconditional write.
+    const stale = await repository.update(
+      workspaceId,
+      agentId,
+      created.id,
+      { config: { delivery: { recipientEmails: ["hijacked@example.com"], webhook: null } }, expectedUpdatedAt: draftedAt },
+    );
+    expect(stale).toBeNull();
+    expect((await repository.findById(workspaceId, agentId, created.id))?.config).not.toMatchObject({
+      delivery: { recipientEmails: ["hijacked@example.com"] },
+    });
+
+    // A fresh expectedUpdatedAt (matching the edit) succeeds.
+    const fresh = (await repository.findById(workspaceId, agentId, created.id))!;
+    const applied = await repository.update(workspaceId, agentId, created.id, {
+      enabled: true,
+      expectedUpdatedAt: fresh.updatedAt,
+    });
+    expect(applied?.enabled).toBe(true);
+  });
+
   it("removes only the matching row and reports whether a row was deleted", async () => {
     const created = await repository.create({
       workspaceId,

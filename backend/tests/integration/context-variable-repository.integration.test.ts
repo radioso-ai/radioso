@@ -4,6 +4,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { AppError } from "../../src/shared/domain/errors.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -252,5 +253,193 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
     expect((await repository.resolveForAgent(workspaceId, isolatedAgentId, scopes)).map((row) => row.name)).toEqual([
       active.name,
     ]);
+  });
+
+  it("applyProposal creates a variable and enables it for an agent in one transaction", async () => {
+    const proposalAgentId = randomUUID();
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1,$2,$3)`, [
+      proposalAgentId,
+      workspaceId,
+      "Proposal Agent",
+    ]);
+
+    const result = await repository.applyProposal({
+      workspaceId,
+      agentId: proposalAgentId,
+      variableId: null,
+      definition: {
+        name: `proposed_${randomUUID().replaceAll("-", "_")}`,
+        description: "Proposed by copilot",
+        valueType: "string",
+        trustTier: "unverified",
+        sensitivity: "normal",
+        defaultSurfacing: "on_reference",
+      },
+      expectedVariableUpdatedAt: null,
+      enablement: {
+        source: "pushed",
+        resolverSkillId: null,
+        maxAgeSeconds: null,
+        resolverTimeoutMs: null,
+        surfacing: "always",
+        enabled: true,
+      },
+      expectedEnablementUpdatedAt: null,
+    });
+
+    expect(result.variableId).toEqual(expect.any(String));
+    expect(await repository.get(workspaceId, result.variableId)).toMatchObject({ defaultSurfacing: "on_reference" });
+    const enablements = await repository.listByAgent(workspaceId, proposalAgentId);
+    expect(enablements.find((row) => row.variableId === result.variableId)).toMatchObject({ source: "pushed", enabled: true });
+  });
+
+  it("applyProposal rejects a stale definition update and changes nothing", async () => {
+    const variable = await repository.create({
+      workspaceId,
+      name: `stale_def_${randomUUID().replaceAll("-", "_")}`,
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+
+    await expect(
+      repository.applyProposal({
+        workspaceId,
+        agentId,
+        variableId: variable.id,
+        definition: {
+          name: variable.name,
+          description: "hijacked",
+          valueType: "string",
+          trustTier: "unverified",
+          sensitivity: "normal",
+          defaultSurfacing: "always",
+        },
+        expectedVariableUpdatedAt: new Date(variable.updatedAt.getTime() - 60_000),
+        enablement: null,
+        expectedEnablementUpdatedAt: null,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" } as Partial<AppError>);
+
+    expect(await repository.get(workspaceId, variable.id)).toMatchObject({ description: null });
+  });
+
+  it("applyProposal rolls back an already-applied definition change when the enablement write is stale (#atomic-context-variable-apply)", async () => {
+    const variable = await repository.create({
+      workspaceId,
+      name: `atomic_${randomUUID().replaceAll("-", "_")}`,
+      description: "Original description",
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+    const proposalAgentId = randomUUID();
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1,$2,$3)`, [
+      proposalAgentId,
+      workspaceId,
+      "Atomic Apply Agent",
+    ]);
+    // A concurrent enablement write lands after the proposal was drafted (drafted against "no
+    // enablement exists yet"), so expectedEnablementUpdatedAt: null in the call below no longer
+    // reflects reality.
+    const concurrentEnablement = await repository.upsertEnablement({
+      agentId: proposalAgentId,
+      variableId: variable.id,
+      source: "pushed",
+      surfacing: "always",
+      enabled: true,
+    });
+
+    await expect(
+      repository.applyProposal({
+        workspaceId,
+        agentId: proposalAgentId,
+        variableId: variable.id,
+        definition: {
+          name: variable.name,
+          description: "Changed by the proposal",
+          valueType: "string",
+          trustTier: "unverified",
+          sensitivity: "normal",
+          defaultSurfacing: "always",
+        },
+        expectedVariableUpdatedAt: variable.updatedAt,
+        enablement: {
+          source: "pushed",
+          resolverSkillId: null,
+          maxAgeSeconds: null,
+          resolverTimeoutMs: null,
+          surfacing: "operator_only",
+          enabled: false,
+        },
+        // Drafted before concurrentEnablement was created, so this expects absence.
+        expectedEnablementUpdatedAt: null,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" } as Partial<AppError>);
+
+    // The whole apply must roll back: the definition write that (taken alone) would have
+    // succeeded must not be committed once the enablement write is refused.
+    expect(await repository.get(workspaceId, variable.id)).toMatchObject({ description: "Original description" });
+    const enablements = await repository.listByAgent(workspaceId, proposalAgentId);
+    expect(enablements.find((row) => row.variableId === variable.id)).toMatchObject({
+      id: concurrentEnablement.id,
+      source: "pushed",
+      surfacing: "always",
+    });
+  });
+
+  it("applyProposal updates an existing variable's definition and enablement together when both versions match", async () => {
+    const variable = await repository.create({
+      workspaceId,
+      name: `both_${randomUUID().replaceAll("-", "_")}`,
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+    const proposalAgentId = randomUUID();
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1,$2,$3)`, [
+      proposalAgentId,
+      workspaceId,
+      "Both Apply Agent",
+    ]);
+    const enablement = await repository.upsertEnablement({
+      agentId: proposalAgentId,
+      variableId: variable.id,
+      source: "pushed",
+      surfacing: "always",
+      enabled: true,
+    });
+
+    const result = await repository.applyProposal({
+      workspaceId,
+      agentId: proposalAgentId,
+      variableId: variable.id,
+      definition: {
+        name: variable.name,
+        description: "Updated together",
+        valueType: "string",
+        trustTier: "unverified",
+        sensitivity: "sensitive",
+        defaultSurfacing: "always",
+      },
+      expectedVariableUpdatedAt: variable.updatedAt,
+      enablement: {
+        source: "pushed",
+        resolverSkillId: null,
+        maxAgeSeconds: null,
+        resolverTimeoutMs: null,
+        surfacing: "operator_only",
+        enabled: false,
+      },
+      expectedEnablementUpdatedAt: enablement.updatedAt,
+    });
+
+    expect(result.variableId).toBe(variable.id);
+    expect(await repository.get(workspaceId, variable.id)).toMatchObject({ description: "Updated together", sensitivity: "sensitive" });
+    const enablements = await repository.listByAgent(workspaceId, proposalAgentId);
+    expect(enablements.find((row) => row.variableId === variable.id)).toMatchObject({ surfacing: "operator_only", enabled: false });
   });
 });

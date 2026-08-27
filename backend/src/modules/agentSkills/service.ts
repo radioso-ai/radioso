@@ -44,6 +44,10 @@ export const agentSkillUpdateSchema = z.object({
 
 export type AgentSkillUpdateInput = z.infer<typeof agentSkillUpdateSchema>;
 
+export interface AgentSkillUpdateOptions {
+  expectedUpdatedAt?: Date;
+}
+
 /**
  * A caller-assembled candidate for validation-without-persisting via `dryRunValidate`. Looser than
  * `AgentSkillCreateInput` on purpose: a caller that already merged an existing skill's target/config
@@ -154,6 +158,7 @@ export class AgentSkillsService {
     agentId: string,
     id: string,
     rawInput: AgentSkillUpdateInput,
+    options: AgentSkillUpdateOptions = {},
   ): Promise<AgentSkillView> {
     const input = this.parseUpdate(rawInput);
     const existing = await this.options.repository.findById(workspaceId, agentId, id);
@@ -184,9 +189,14 @@ export class AgentSkillsService {
         replaceConfig: input.replaceConfig,
         invocationMode: input.invocationMode,
         enabled: input.enabled,
+        expectedUpdatedAt: options.expectedUpdatedAt,
       });
       if (!updated) {
-        throw notFound("Skill not found");
+        // The repository's own WHERE predicate is what enforces expectedUpdatedAt (not a
+        // read-then-compare here), so zero rows with a version supplied means a concurrent edit
+        // raced this update - report it as a conflict, matching AuthoredDirectiveService's
+        // equivalent distinction.
+        throw options.expectedUpdatedAt ? conflict("Skill was updated by another writer; reload before saving again") : notFound("Skill not found");
       }
       this.options.logger?.info({
         event: "agent_skill_updated",

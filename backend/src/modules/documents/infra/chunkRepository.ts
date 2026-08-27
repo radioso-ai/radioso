@@ -1,4 +1,3 @@
-import type { ChunkVectorStoragePort } from "../../retrieval/public.js";
 import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import { insertCanonicalChunkEmbeddingsForDocumentRevision } from "../../../db/repositories/chunkEmbeddingRepository.js";
 import { insertEmbeddingProfileJobsForDocumentRevision } from "../../../db/repositories/documentProcessingJobRepository.js";
@@ -17,22 +16,54 @@ import type {
 } from "../contracts/index.js";
 
 const CHUNK_CONTENT_PREVIEW_MAX_CHARS = 240;
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 interface QueryClient {
   query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
+// The chunk row carries text, offsets and metadata. Its vector is written separately
+// into chunk_embeddings, which is what search compares against.
+const CHUNK_INSERT_COLUMNS = 10;
+
+const insertChunks = async (client: QueryClient, chunks: ChunkRecord[]): Promise<void> => {
+  if (chunks.length === 0) {
+    return;
+  }
+
+  const values: unknown[] = [];
+  const placeholders = chunks.map((chunk, index) => {
+    const offset = index * CHUNK_INSERT_COLUMNS;
+    values.push(
+      chunk.id,
+      chunk.documentId,
+      chunk.workspaceId,
+      chunk.chunkIndex,
+      chunk.content,
+      chunk.searchText ?? chunk.content,
+      chunk.embeddingModel ?? DEFAULT_EMBEDDING_MODEL,
+      chunk.startOffset,
+      chunk.endOffset,
+      JSON.stringify(chunk.metadata ?? {}),
+    );
+
+    return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}::jsonb)`;
+  });
+  await client.query(
+    `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding_model, start_offset, end_offset, metadata)
+     VALUES ${placeholders.join(", ")}`,
+    values,
+  );
+};
+
 export class ChunkRepository implements ChunkRepositoryPort {
-  constructor(
-    private readonly database: Database,
-    private readonly vectorStorage: ChunkVectorStoragePort,
-  ) {}
+  constructor(private readonly database: Database) {}
 
   async replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void> {
     await this.database.withTransaction(async (client) => {
       const workspaceId = chunks[0]?.workspaceId ?? (await lookupWorkspaceIdForDocument(client, documentId));
       await client.query("DELETE FROM chunks WHERE document_id = $1 AND workspace_id = $2", [documentId, workspaceId]);
-      await this.vectorStorage.insertChunks(client, chunks);
+      await insertChunks(client, chunks);
     });
   }
 
@@ -68,7 +99,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
         input.documentId,
         input.workspaceId,
       ]);
-      await this.vectorStorage.insertChunks(client, input.chunks);
+      await insertChunks(client, input.chunks);
       await insertEmbeddingProfileJobsForDocumentRevision(client, {
         workspaceId: input.workspaceId,
         documentId: input.documentId,
@@ -231,9 +262,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
     }>(
       // The reported width comes from the canonical row for the workspace's active
       // embedding space, because that is the vector semantic search actually compares
-      // against. The legacy columns are the fallback for a chunk that has no canonical
-      // row yet, and they can disagree: `chunks.embedding` is fixed at 1536, so a
-      // workspace on a wider model would otherwise be told the wrong number.
+      // against. Chunks are only inspectable as embedded after their canonical vector
+      // projection has been written.
       `SELECT c.id,
               c.document_id,
               c.workspace_id,
@@ -244,19 +274,15 @@ export class ChunkRepository implements ChunkRepositoryPort {
               c.end_offset,
               c.metadata,
               c.created_at,
-              COALESCE(
-                (SELECT ce.dimensions
-                   FROM chunk_embeddings ce
-                   JOIN workspace_embedding_profiles p
-                     ON p.workspace_id = ce.workspace_id
-                    AND p.active_embedding_space_id = ce.embedding_space_id
-                  WHERE ce.workspace_id = c.workspace_id
-                    AND ce.chunk_id = c.id
-                    AND ce.document_revision = d.revision
-                  LIMIT 1),
-                vector_dims(c.embedding_unbounded),
-                vector_dims(c.embedding)
-              ) AS embedding_dimensions,
+              (SELECT ce.dimensions
+                 FROM chunk_embeddings ce
+                 JOIN workspace_embedding_profiles p
+                   ON p.workspace_id = ce.workspace_id
+                  AND p.active_embedding_space_id = ce.embedding_space_id
+                WHERE ce.workspace_id = c.workspace_id
+                  AND ce.chunk_id = c.id
+                  AND ce.document_revision = d.revision
+                LIMIT 1) AS embedding_dimensions,
               c.date_from,
               c.date_to
        FROM chunks c

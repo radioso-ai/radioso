@@ -131,6 +131,22 @@ const embeddingTargetSpacesSql = sql`
   ) spaces
 `;
 
+// Retrieval binds to the active space. Pending-space rows are intentionally part of
+// backfill scheduling above, but cannot make the active retrieval path searchable.
+//
+// So the two readers below deliberately disagree during a model transition:
+// listWorkspaceCanonicalEmbeddingGaps counts a pending-space gap as work to schedule,
+// while getWorkspaceCanonicalEmbeddingCoverage reports the workspace as covered
+// because search already answers from the active space. An operator therefore sees
+// complete coverage while the backfill script still exits non-zero, which is the
+// intended reading of two different questions and not drift. Changing one to match
+// the other would either hide unscheduled work or report an already-searchable
+// workspace as broken.
+const activeEmbeddingTargetSpaceSql = sql`
+  SELECT workspace_id, active_embedding_space_id AS embedding_space_id
+  FROM workspace_embedding_profiles
+`;
+
 const retrievableChunksSql = sql`
   SELECT c.workspace_id, c.id AS chunk_id, d.revision
   FROM chunks c
@@ -164,10 +180,23 @@ const canonicalRowExistsSql = sql`EXISTS (
 // The per-workspace read references this CTE twice, so PostgreSQL materializes it.
 // Put its tenant scope inside this shared definition rather than relying on either
 // consumer predicate to push through the materialization boundary.
-const currentEmbeddingProfileGapJobsSql = (workspaceId?: string) => {
-  const workspaceScope = workspaceId === undefined
+// `targetSpaces` follows whatever the caller counts as a gap. A response that pairs an
+// active-space chunk count with an active-and-pending job count cannot be acted on:
+// "nothing missing, one job failed" names work that its own numbers say does not exist,
+// and a reader that treats a zero gap as done never reaches the failure.
+const currentEmbeddingProfileGapJobsSql = (options: {
+  workspaceId?: string;
+  targetSpaces: "active" | "active_and_pending";
+}) => {
+  const workspaceScope = options.workspaceId === undefined
     ? sql``
-    : sql`AND j.workspace_id = ${workspaceId}`;
+    : sql`AND j.workspace_id = ${options.workspaceId}`;
+  const spaceScope = options.targetSpaces === "active"
+    ? sql`AND j.embedding_space_id = p.active_embedding_space_id`
+    : sql`AND j.embedding_space_id IN (
+       p.active_embedding_space_id,
+       p.pending_embedding_space_id
+     )`;
 
   return sql`
     SELECT j.workspace_id, j.status
@@ -179,10 +208,7 @@ const currentEmbeddingProfileGapJobsSql = (workspaceId?: string) => {
     JOIN workspace_embedding_profiles p
       ON p.workspace_id = j.workspace_id
      AND p.generation = j.workspace_profile_generation
-     AND j.embedding_space_id IN (
-       p.active_embedding_space_id,
-       p.pending_embedding_space_id
-     )
+     ${spaceScope}
     WHERE j.kind = 'embedding_profile'
       ${workspaceScope}
       AND j.status IN ('queued', 'processing', 'failed')
@@ -587,8 +613,8 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     return Number(result.numUpdatedRows);
   }
 
-  // Read-only view of the canonical projection backlog: chunks that carry a legacy
-  // embedding but have no chunk_embeddings row. Coverage reconciliation is enqueued
+  // Read-only view of the canonical projection backlog: retrievable chunks without
+  // a chunk_embeddings row for a targeted space. Coverage reconciliation is enqueued
   // per workspace, so this reports where that work is still outstanding — chiefly
   // for operators running the one-time backfill after upgrading.
   async listWorkspaceCanonicalEmbeddingGaps(): Promise<
@@ -614,7 +640,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     }>`
       WITH targets AS (${embeddingTargetSpacesSql}),
       eligible_chunks AS (${retrievableChunksSql}),
-      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql()})
+      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql({ targetSpaces: "active_and_pending" })})
       SELECT ec.workspace_id,
              COUNT(DISTINCT ec.chunk_id) AS missing_chunks,
              BOOL_OR(t.workspace_id IS NOT NULL) AS has_embedding_profile,
@@ -644,10 +670,12 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
   async getWorkspaceCanonicalEmbeddingCoverage(
     workspaceId: string,
   ): Promise<WorkspaceCanonicalEmbeddingCoverage> {
-    // The coverage rule is shared with listWorkspaceCanonicalEmbeddingGaps rather than
-    // restated, because the two numbers are read against each other — the dashboard's
-    // progress against the backfill script's backlog — and a drifted second copy would
-    // show a workspace as complete while the script still had work to enqueue.
+    // Backfill schedules both active and pending spaces, but this status answers a
+    // different question: whether the currently active retrieval path is covered.
+    // A pending row cannot stand in for an active row, because runtime only searches
+    // the active space. The job counts take the same scope as the chunk counts, so a
+    // caller can read the whole response as one answer; a pending-space failure is the
+    // gap report's to raise, and listWorkspaceCanonicalEmbeddingGaps still raises it.
     //
     // hasEmbeddingProfile is an independent EXISTS rather than an aggregate over the
     // join: a workspace with a profile and no chunks yet still has one, and the join
@@ -659,9 +687,9 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       queued_jobs: string;
       failed_jobs: string;
     }>`
-      WITH targets AS (${embeddingTargetSpacesSql}),
+      WITH targets AS (${activeEmbeddingTargetSpaceSql}),
       eligible_chunks AS (${retrievableChunksSql}),
-      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql(workspaceId)}),
+      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql({ workspaceId, targetSpaces: "active" })}),
       coverage AS (
         SELECT COUNT(DISTINCT ec.chunk_id) AS eligible_chunks,
                COUNT(DISTINCT ec.chunk_id)

@@ -21,11 +21,11 @@ export const ALLOWLIST = new Set([
   "db/repositories/chunkEmbeddingRepository.ts", // canonical vector batch shares document publication's existing pg transaction
   "db/repositories/documentProcessingJobRepository.ts", // profile jobs are inserted inside canonical publication's existing pg transaction
   "db/repositories/vectorIndexWorkRepository.ts", // projection work/tombstones share canonical mutation transactions
-  "modules/retrieval/infra/vectorSearch.ts", // pgvector `<=>` distance + hnsw.iterative_scan
+  "modules/retrieval/infra/hnswIterativeScan.ts", // `SET LOCAL hnsw.iterative_scan` needs a raw session
+  "modules/retrieval/infra/vectorSearch.ts", // legacy pgvector `<=>` distance, retired by issue #1063 step 3
   "modules/retrieval/infra/pgVectorAdapter.ts", // canonical pgvector exact candidate search
-  "modules/retrieval/infra/chunkVectorStorage.ts", // pgvector `::vector` chunk insert
   "modules/retrieval/infra/lexicalSearch.ts", // full-text `@@` / ts_rank
-  "modules/documents/infra/chunkRepository.ts", // pgvector chunk insert
+  "modules/documents/infra/chunkRepository.ts", // chunk rows share document publication's existing pg transaction
   // Bound to the published @radioso/connector-api `ConnectorDatabasePort` (query-only).
   // Tracked follow-up: migrate once that contract exposes Kysely (bridge: connectorKyselyDb.ts).
   "modules/connectors/services/connectorRegistry.ts",

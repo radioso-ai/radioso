@@ -1,7 +1,7 @@
 ---
 title: "Embedding Coverage"
-description: "How to read a workspace's embedding coverage, repair the chunks that are missing one, and verify that vector search returns the same results from the canonical table."
-last_updated: 2026-08-20
+description: "How to read a workspace's embedding coverage, repair the chunks that are missing one, and gather the evidence for retiring the second vector store."
+last_updated: 2026-08-27
 ---
 
 # Embedding Coverage
@@ -38,25 +38,54 @@ The work is idempotent: jobs target chunks that are missing an embedding, so a s
 
 The script also runs from a built image as `node ./dist/scripts/backfillEmbeddingCoverage.js`, which is how to reach a database that only accepts private-network connections.
 
-## Verify vector search agrees
+## Retiring the second vector store
 
-Two vector search paths exist over the same workspace, and a retrieval turn merges both. `backend/scripts/verifyCanonicalVectorParity.ts` measures whether the canonical one alone returns what the merge returns:
+Two vector stores hold rows while the backfill runs. `chunk_embeddings` is the
+canonical one, and it is where every chunk the backfill has reached lives — along with
+every chunk written from now on. `chunks.embedding` and `chunks.embedding_unbounded`
+hold the vectors for chunks the backfill has yet to reach, and retrieval merges a
+second search over them so those chunks stay findable meanwhile.
+
+Removing that second search, and dropping the columns behind it, depend on the same
+evidence. Coverage has to reach 100% first: parity measured over a partly indexed
+workspace describes the chunks that happen to be there rather than the workspace.
 
 ```bash
 cd backend
 pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts
 pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts --workspace <id> --probes 200
+pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts --index-recall --json
 ```
 
-It samples a workspace's stored vectors and uses each as a search query, so it needs no embedding provider and runs against a database clone. For every probe it compares the two result sets and reports mean recall, the worst single probe, top-result agreement, and how many distinct chunks the canonical path missed. That last number is the one that matters: it is the count of chunks that would stop being findable.
+The script samples a workspace's stored vectors and uses each as a search query, so it
+needs no embedding provider and runs against a database clone. For every probe it
+compares the two result sets and reports mean recall, the worst single probe,
+top-result agreement, and how many distinct chunks the canonical path missed. That last
+number is the one that matters: it is the count of chunks that would stop being
+findable.
 
-The gate fails when mean recall drops under 99%, when any single probe falls under 90%, when fewer than 30 probes could be sampled, or when the workspace still has missing chunks — parity measured over a partly indexed workspace describes the chunks that happen to be there rather than the workspace. Fix coverage first.
+The gate fails when mean recall drops under 99%, when any single probe falls under 90%,
+when fewer than 30 probes come back with a non-empty reference, or when the workspace
+still has missing chunks. Probes whose reference side is empty cannot pad that floor,
+because recall over an empty reference is 100% by arithmetic and counting them would let
+a run that compared nothing read as a clean pass. The output reports them either way,
+under "probe(s) with an empty reference".
 
-It also fails when every probe came back empty on the reference side. Recall over an empty reference is 100% by arithmetic, so that case would otherwise read as a clean pass on a run that compared nothing. The output reports the count either way, under "probe(s) with an empty reference".
+`--index-recall` measures the approximate vector index against an exhaustive scan of the
+same rows. It runs the identical query on a connection whose planner cannot use an
+index, so the comparison is against real ground truth rather than a benchmark. Run it
+where the index was actually built: an index that grew row by row as documents arrived
+gives a slightly worse graph than one built in bulk over a finished table, and a clone
+restored from a dump rebuilds it in bulk.
 
-Add `--index-recall` to measure the approximate vector index against an exhaustive scan of the same rows. It runs the identical query on a connection whose planner cannot use an index, so the comparison is against real ground truth rather than a benchmark. This is worth running where the index was actually built: an index that grew row by row as documents arrived gives a slightly worse graph than one built in bulk over a finished table.
+`--json` prints the per-workspace summaries as JSON — save that output with the
+deployment record. `--seed <text>` picks which vectors become probes, and the same seed
+always selects the same ones, so two runs compare like with like. `--workspace <id>`
+narrows the run to named workspaces, and `--probes` and `--top-k` set the sample size and
+the depth at which the two result sets are compared.
 
-`--json` prints the per-workspace summaries as JSON. `--seed <text>` picks which vectors become probes, and the same seed always selects the same ones, so two runs compare like with like.
+Chunk rows carry their vector in `chunk_embeddings` alone, so the column drop needs no
+worker coordination beyond the coverage and parity evidence above.
 
 ## Common failure modes
 
@@ -64,7 +93,11 @@ Add `--index-recall` to measure the approximate vector index against an exhausti
 
 **Coverage stops partway and the queue is empty.** Failed jobs are holding their keys. `failedJobs` in the coverage response is non-zero, and the backfill script names the workspaces in that state and exits non-zero rather than reporting a clean run.
 
-**Parity passes but a specific document is unfindable.** Coverage only counts chunks in documents retrieval would serve. A document that is disabled for retrieval, past its expiry, or not finished processing is excluded from both the numerator and the denominator, so it shows as complete coverage while staying out of results.
+**Coverage reads 100% but the backfill script still exits non-zero.** The two answer different questions. Coverage reports whether the workspace's *active* embedding space is covered, because that is the space retrieval searches. The backfill also schedules the *pending* space during a model transition, so it still has work to enqueue for a workspace whose active space is already complete. Both numbers are correct; finish the backfill before promoting the pending space.
+
+**A chunk's inspector panel shows no embedding width.** The width comes from the chunk's canonical row for the active space. A chunk still waiting on the backfill has none yet, so the panel shows a dash until its embedding job runs.
+
+**Coverage is complete but a specific document is unfindable.** Coverage only counts chunks in documents retrieval would serve. A document that is disabled for retrieval, past its expiry, or not finished processing is excluded from both the numerator and the denominator, so it shows as complete coverage while staying out of results.
 
 ## Read next
 

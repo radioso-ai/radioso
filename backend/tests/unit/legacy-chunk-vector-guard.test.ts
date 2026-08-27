@@ -66,14 +66,9 @@ describe("legacy chunk vector guard", () => {
   it("pins the files still reading the legacy columns, and why", () => {
     // This set may only ever shrink. Each entry names the step of #1063 that removes
     // it; when the set is empty the columns and this guard go together.
-    expect([...ALLOWLIST.keys()].sort()).toEqual(
-      [
-        "modules/documents/infra/chunkRepository.ts",
-        "modules/retrieval/infra/chunkVectorStorage.ts",
-        "modules/retrieval/infra/vectorSearch.ts",
-        "modules/retrieval/services/senseGroupingService.ts",
-      ].sort(),
-    );
+    expect([...ALLOWLIST.keys()].sort()).toEqual([
+      "modules/retrieval/infra/vectorSearch.ts",
+    ]);
     for (const reason of ALLOWLIST.values()) {
       expect(reason.trim().length).toBeGreaterThan(0);
     }

@@ -1,7 +1,7 @@
 ---
 title: "Vector Search Indexing"
 description: "Design for isolating vector storage behind adapters while keeping PostgreSQL as the canonical source, with a future backend evaluation path."
-last_updated: 2026-07-13
+last_updated: 2026-08-26
 ---
 
 # Vector Search Indexing
@@ -18,18 +18,24 @@ rewriting document ingestion or retrieval orchestration.
 
 ## Current State
 
-PostgreSQL stores the canonical document and chunk records. It also stores
-embedding vectors today through pgvector columns on `chunks`.
+PostgreSQL stores the canonical document and chunk records. Embedding vectors
+live in the `chunk_embeddings` table, keyed by workspace, chunk, and embedding
+space.
 
-The current retrieval read side has a `VectorSearchPort` implemented by
-`PgVectorSearch`. The write side delegates pgvector-specific chunk insert
-details through `ChunkVectorStoragePort`, implemented by
-`PgVectorChunkStorage`.
+The retrieval read side uses `VectorCandidateSearchPort`, implemented by
+`PgVectorAdapter`. It searches the active embedding space with a per-width HNSW
+index when one exists and otherwise uses an exact PostgreSQL scan.
+
+`VectorCandidateSearchRolloutAdapter` wraps that port and merges a second search over
+the `chunks.embedding` / `chunks.embedding_unbounded` columns, which hold the vectors
+for chunks the canonical backfill has yet to reach. Canonical results win a chunk both
+legs return, and the merge applies to the 1536- and 3072-wide spaces those columns can
+answer for.
 
 Canonical chunk persistence is owned by the Documents module in
-`backend/src/modules/documents/infra/chunkRepository.ts`. That repository writes
-the canonical chunk row and delegates vector storage details through the
-retrieval-owned adapter.
+`backend/src/modules/documents/infra/chunkRepository.ts`. It writes the chunk row
+and its canonical embedding projection together with the work that maintains the
+vector index.
 
 Chunk filtering for PostgreSQL retrieval is shared through `compilePgChunkFilter`
 so vector and lexical search use the same source and metadata filter semantics.
@@ -42,6 +48,7 @@ PostgreSQL remains authoritative for:
 - chunks
 - chunk text and search text
 - chunk metadata
+- canonical chunk embeddings and their embedding-space identity
 - workspace and source ownership
 - document processing state
 - embedding model settings and processing decisions
@@ -77,12 +84,13 @@ semantics as pgvector:
 
 ## Adapter Roles
 
-`ChunkVectorStoragePort` owns pgvector write details used during canonical chunk
-publication. It handles current storage choices such as bounded and unbounded
-vector columns and vector serialization.
+`VectorIndexWriterPort` owns canonical vector writes and index acknowledgements.
+`PgVectorAdapter` implements that port against `chunk_embeddings`, which is where a
+chunk's vector lives. The Documents module owns the chunk row itself and writes it
+directly.
 
-`VectorSearchPort` owns vector candidate retrieval. `PgVectorSearch` remains the
-default implementation.
+`VectorCandidateSearchPort` owns vector candidate retrieval. `PgVectorAdapter`
+is the default implementation.
 
 `compilePgChunkFilter` owns PostgreSQL filter SQL for chunk retrieval. It keeps
 source and metadata filter handling consistent between vector and lexical

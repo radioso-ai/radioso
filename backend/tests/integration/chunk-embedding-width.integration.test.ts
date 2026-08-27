@@ -6,28 +6,18 @@ import { AccountRepository } from "../../src/db/repositories/accountRepository.j
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
-import { PgVectorChunkStorage } from "../../src/modules/retrieval/infra/chunkVectorStorage.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-// The chunk inspector reports the embedding width of a chunk. `chunks.embedding` is
-// fixed at vector(1536), so reading it is a lie for any workspace on a wider model —
-// the canonical row carries the width semantic search actually compares against. This
-// covers the SQL against Postgres; the unit test only pins the shape.
+// The chunk inspector reports the active canonical embedding width. This covers the
+// SQL against Postgres; the unit test only pins the shape.
 
 const CANONICAL_DIMENSIONS = 3;
-const LEGACY_DIMENSIONS = 1536;
-
-const legacyVector = Array.from(
-  { length: LEGACY_DIMENSIONS },
-  (_, index) => (index === 0 ? 1 : 0),
-);
-
 describeIntegration("chunk detail embedding width (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
-  const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+  const chunkRepository = new ChunkRepository(database);
 
   let accountId: string;
   let workspaceId: string;
@@ -62,7 +52,7 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
       workspaceId,
       chunkIndex: 0,
       content: "The only chunk.",
-      embedding: legacyVector,
+      embedding: [0.1, 0.2, 0.3],
       embeddingModel: "text-embedding-3-small",
       startOffset: 0,
       endOffset: 15,
@@ -105,22 +95,21 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
     return detail?.embeddingDimensions ?? null;
   };
 
-  it("reports the canonical width rather than the legacy column's fixed 1536", async () => {
+  it("reports the active canonical width", async () => {
     await insertCanonical(activeSpaceId);
 
     expect(await readWidth()).toBe(CANONICAL_DIMENSIONS);
   });
 
-  it("falls back to the legacy width for a chunk with no canonical row", async () => {
-    // Mid-backfill, an uncovered chunk still reports something rather than a blank.
-    expect(await readWidth()).toBe(LEGACY_DIMENSIONS);
+  it("reports no width for a chunk with no canonical row", async () => {
+    expect(await readWidth()).toBeNull();
   });
 
   it("ignores a canonical row filed under a space the workspace has moved off", async () => {
     await insertCanonical(retiredSpaceId);
 
     // A leftover row from an earlier model is not what search compares against.
-    expect(await readWidth()).toBe(LEGACY_DIMENSIONS);
+    expect(await readWidth()).toBeNull();
   });
 
   it("ignores an active-space canonical row from an older document revision", async () => {
@@ -129,6 +118,6 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
 
     // Reprocessing advances the document before its replacement chunks are published.
     // Search rejects the old canonical row during that window, so the inspector must too.
-    expect(await readWidth()).toBe(LEGACY_DIMENSIONS);
+    expect(await readWidth()).toBeNull();
   });
 });

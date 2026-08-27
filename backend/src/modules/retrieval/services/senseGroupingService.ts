@@ -102,16 +102,11 @@ export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
     if (input.chunkIds.length === 0) {
       return new Map();
     }
-    // These vectors are compared against each other with cosine distance, which only
-    // means anything inside one embedding space. So the choice of source is all or
-    // nothing: canonical when it covers every chunk asked for, legacy otherwise. A
-    // per-chunk fallback would mix a re-embedded vector with a legacy one — different
-    // models, and potentially different widths — and yield confident nonsense.
+    // Cosine distance only has meaning inside one embedding space. The canonical
+    // query is pinned to the active space and current document revision, so an
+    // incomplete result deliberately disables grouping rather than mixing vectors.
     const canonical = await this.readCanonicalEmbeddings(input);
-    if (canonical.size === new Set(input.chunkIds).size) {
-      return canonical;
-    }
-    return this.readLegacyEmbeddings(input);
+    return canonical.size === new Set(input.chunkIds).size ? canonical : new Map();
   }
 
   /**
@@ -146,49 +141,7 @@ export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
       .execute();
     return toVectorMap(rows);
   }
-
-  // pgvector columns serialize to text for in-process distance math; the cast is a
-  // Postgres-specific fragment the builder can't express. `parsePgVector` maps the
-  // `[a,b,...]` literal back to numbers.
-  private async readLegacyEmbeddings(
-    input: { workspaceId: string; chunkIds: string[] },
-  ): Promise<Map<string, number[]>> {
-    const rows = await this.db
-      .selectFrom("chunks")
-      .select([
-        "id",
-        "embedding_model",
-        sql<string | null>`coalesce(embedding_unbounded::text, embedding::text)`.as("embedding_text"),
-      ])
-      .where("workspace_id", "=", input.workspaceId)
-      .where((eb) => anyOf(eb.ref("id"), input.chunkIds, "uuid[]"))
-      .execute();
-    return legacyRowsToSingleModelVectorMap(rows);
-  }
 }
-
-export const legacyRowsToSingleModelVectorMap = (
-  rows: ReadonlyArray<{
-    id: string;
-    embedding_text: string | null;
-    embedding_model: string | null;
-  }>,
-): Map<string, number[]> => {
-  const parsed = rows.flatMap((row) => {
-    const vector = parsePgVector(row.embedding_text);
-    return vector ? [{ id: row.id, vector, model: row.embedding_model?.trim() }] : [];
-  });
-  const models = new Set(parsed.map((row) => row.model));
-
-  // Legacy rows do not carry the canonical space identity. Model metadata is the
-  // strongest remaining compatibility boundary, so ambiguity must disable sense
-  // distance calculations instead of producing a confident cross-model comparison.
-  if (models.size !== 1 || models.has(undefined) || models.has("")) {
-    return new Map();
-  }
-
-  return new Map(parsed.map((row) => [row.id, row.vector]));
-};
 
 const toVectorMap = (
   rows: ReadonlyArray<{ id: string; embedding_text: string | null }>,

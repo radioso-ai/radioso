@@ -163,6 +163,8 @@ export const buildDocumentRetrievalGraph = (input: {
     embeddingBindingResolver,
   );
   const chunkHydrator = new PostgresChunkCandidateHydrator(infrastructure.database.kysely);
+  // Canonical candidates are authoritative, but legacy candidates remain a temporary
+  // safety net until production has recorded complete active-space coverage and parity.
   const vectorSearch = new VectorCandidateSearchRolloutAdapter({
     canonical: pgVectorAdapter.search,
     legacy: new LegacyVectorCandidateSearchAdapter({

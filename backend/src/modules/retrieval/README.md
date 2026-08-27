@@ -66,16 +66,21 @@ imports from `services/` or `infra/`.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
 - `domain/vectorAdapter.ts`: backend-neutral capability, writer,
   candidate-search, and administration ports.
-- `domain/vectorIndex.ts`: temporary compatibility contract for the existing
-  model-keyed pgvector implementation.
+- `domain/vectorIndex.ts`: the model-keyed port the `chunks.embedding` search leg
+  implements, kept until issue #1063 retires that leg.
 - `domain/vectorFilter.ts`: backend-neutral source and metadata filter contract
   shared by vector search, lexical search, and hydration.
-- `domain/vectorSearch.ts`: compatibility-only hydrated vector search contract
-  for older callers.
+- `domain/vectorSearch.ts`: hydrated retrieval candidate types shared by lexical,
+  temporal, and candidate-preparation adapters.
 - `domain/retrievalSourceFilter.ts`: shared source scoping values used by
   retrieval contracts and filter compilers.
-- `infra/vectorSearch.ts`, `infra/chunkCandidateHydrator.ts`, and
+- `infra/pgVectorAdapter.ts`, `infra/chunkCandidateHydrator.ts`, and
   `infra/lexicalSearch.ts`: concrete search and hydration adapters.
+- `infra/vectorSearch.ts`: the `chunks.embedding` search leg, merged into canonical
+  results for the widths those columns hold.
+- `infra/hnswIterativeScan.ts`: shared transaction wrapper that enables
+  `hnsw.iterative_scan` for a filtered vector query, with a probe-once fallback for
+  servers whose pgvector predates the setting.
 - `services/vectorIndexReconciler.ts`: backend-neutral durable projection drain,
   checkpoint advancement, and bounded retry loop.
 

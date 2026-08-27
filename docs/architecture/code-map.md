@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-21
+last_updated: 2026-08-26
 ---
 
 # Code Map
@@ -476,7 +476,8 @@ Primary internals:
 - `backend/src/modules/retrieval/services/agenticTools/`
 - `backend/src/modules/retrieval/services/retrievalSearchService.ts`
 - `backend/src/modules/retrieval/services/retrievalAnswerService.ts`
-- `backend/src/modules/retrieval/infra/vectorSearch.ts`
+- `backend/src/modules/retrieval/infra/vectorSearch.ts` (search over the
+  `chunks.embedding` columns, merged into canonical results)
 - `backend/src/modules/retrieval/infra/pgVectorAdapter.ts` (canonical
   `chunk_embeddings` candidate search)
 - `backend/src/modules/retrieval/infra/chunkEmbeddingVectorIndex.ts` (per-width
@@ -487,24 +488,31 @@ Operator scripts:
 
 - `backend/scripts/backfillEmbeddingCoverage.ts` queues embedding work for
   workspaces with missing chunks; `backend/scripts/verifyCanonicalVectorParity.ts`
-  compares the two vector search paths and measures index recall. Coverage counts
-  come from `getWorkspaceCanonicalEmbeddingCoverage` in
-  `backend/src/db/repositories/documentProcessingJobRepository.ts`, which shares
-  its definition of a covered chunk with the gap report the backfill reads. See
+  is the release gate that compares the canonical and legacy search paths and
+  measures index recall. Coverage counts come from
+  `getWorkspaceCanonicalEmbeddingCoverage` in
+  `backend/src/db/repositories/documentProcessingJobRepository.ts`, which scopes
+  coverage to the active embedding space while the gap report the backfill reads also
+  targets a pending one — during a model transition the two disagree on purpose. See
   [Embedding Coverage](../embedding-coverage.md).
 
-Two vector stores, one being retired:
+Canonical vector storage, with one legacy reader left:
 
-- Chunk vectors live in both `chunks.embedding` / `chunks.embedding_unbounded` and
-  `chunk_embeddings`. Canonical is the one that supports more than one embedding
-  width; the legacy pair is being removed. `pnpm run lint:legacy-chunk-vectors`
+- Chunk vectors are written to `chunk_embeddings` alone, keyed by workspace, chunk,
+  and embedding space. The table supports multiple embedding widths, and
+  `PgVectorAdapter` uses its per-width HNSW indexes when available.
+- `chunks.embedding` / `chunks.embedding_unbounded` hold the vectors for chunks the
+  canonical backfill has yet to reach. `VectorCandidateSearchRolloutAdapter` merges a
+  second search over them into every 1536- and 3072-wide turn, so those chunks stay
+  findable meanwhile.
+  `pnpm run lint:legacy-chunk-vectors`
   (`backend/scripts/checkLegacyChunkVectorReaders.mjs`) holds the allowlist of files
-  still reading the legacy columns, each naming the step that removes it. Read new
-  code against `chunk_embeddings`. When the allowlist is empty the columns can be
-  dropped, and the guard goes with them.
-- Vectors only compare within one embedding space, so a reader that falls back from
-  canonical to legacy must do it for a whole batch, never per chunk —
-  `PostgresSenseEmbeddingReader` is the worked example.
+  still reading them, each naming the step of #1063 that removes it. Read new code
+  against `chunk_embeddings`. When the allowlist is empty the columns can be dropped,
+  and the guard goes with them.
+- Vectors only compare within one embedding space. `PostgresSenseEmbeddingReader`
+  reads the active space and current document revision, returning only vectors that
+  meet both conditions, and disables grouping rather than mixing spaces.
 
 Useful searches:
 

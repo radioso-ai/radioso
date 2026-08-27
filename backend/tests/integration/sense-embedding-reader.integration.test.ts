@@ -7,7 +7,6 @@ import { DocumentRepository } from "../../src/db/repositories/documentRepository
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
 import { PostgresSenseEmbeddingReader } from "../../src/modules/retrieval/services/senseGroupingService.js";
-import { PgVectorChunkStorage } from "../../src/modules/retrieval/infra/chunkVectorStorage.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
@@ -61,12 +60,12 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
 
   // Characterizes the vector-as-text read: the pgvector column serializes to the
   // `[a,b,...]` literal and `parsePgVector` maps it back to numbers, scoped to the
-  // workspace. This is the behaviour the Kysely + `sql` fragment must preserve.
-  it("reads stored chunk embeddings scoped to the workspace", async () => {
+  // workspace and its active embedding space.
+  it("reads active canonical embeddings scoped to the workspace", async () => {
     const accountRepository = new AccountRepository(database.kysely);
     const workspaceRepository = new WorkspaceRepository(database.kysely);
     const documentRepository = new DocumentRepository(database.kysely);
-    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+    const chunkRepository = new ChunkRepository(database);
 
     const account = await accountRepository.create({
       name: "Sense Reader Org",
@@ -84,7 +83,6 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
     });
 
     const matchedChunkId = randomUUID();
-    const otherChunkId = randomUUID();
     await chunkRepository.replaceForDocument(document.id, [
       {
         id: matchedChunkId,
@@ -99,12 +97,30 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
         createdAt: new Date(),
       },
     ]);
+    const activeSpaceId = randomUUID();
+    await database.query(
+      `INSERT INTO embedding_spaces
+         (id, identity_fingerprint, endpoint_scope_fingerprint, provider, model, dimensions, distance_metric, normalization, status)
+       VALUES ($1, $2, $3, 'openai', 'text-embedding-3-small', 3, 'cosine', 'none', 'active')`,
+      [activeSpaceId, `sense-reader-fp-${activeSpaceId}`, `sense-reader-scope-${activeSpaceId}`],
+    );
+    await database.query(
+      `INSERT INTO workspace_embedding_profiles (workspace_id, active_embedding_space_id)
+       VALUES ($1, $2)`,
+      [workspace.id, activeSpaceId],
+    );
+    await database.query(
+      `INSERT INTO chunk_embeddings
+         (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
+       VALUES ($1, $2, $3, 1, 1, 3, '[1,0,0]'::vector, 'hash')`,
+      [workspace.id, matchedChunkId, activeSpaceId],
+    );
 
     const reader = new PostgresSenseEmbeddingReader(database.kysely);
 
     const result = await reader.readChunkEmbeddings({
       workspaceId: workspace.id,
-      chunkIds: [matchedChunkId, otherChunkId],
+      chunkIds: [matchedChunkId],
     });
 
     expect(result.size).toBe(1);
@@ -117,24 +133,26 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
     });
     expect(scoped.size).toBe(0);
 
+    await database.query("DELETE FROM chunk_embeddings WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspace.id, otherWorkspace.id]);
+    await database.query("DELETE FROM embedding_spaces WHERE id = $1", [activeSpaceId]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
   // The vectors this reader returns are compared against each other with cosine
   // distance, which is only meaningful inside one embedding space. That constraint is
-  // what shapes the canonical read below: it pins to the workspace's active space, and
-  // when canonical coverage is incomplete it falls back for the whole batch rather than
-  // per chunk. A per-chunk fallback would mix two spaces — of different widths, in the
-  // case that matters — and produce confident nonsense.
+  // what shapes the canonical read below: it pins to the workspace's active space and
+  // requires coverage for the whole batch. A partial vector set could produce a
+  // centroid from only some retrieved chunks and lead to a false clarification.
   describe("canonical embeddings", () => {
     const seed = async () => {
       const accountRepository = new AccountRepository(database.kysely);
       const workspaceRepository = new WorkspaceRepository(database.kysely);
       const documentRepository = new DocumentRepository(database.kysely);
-      const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+      const chunkRepository = new ChunkRepository(database);
 
       const account = await accountRepository.create({
         name: "Canonical Sense Org",
@@ -222,9 +240,8 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
       await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
     };
 
-    it("prefers the canonical vector over the legacy column when coverage is complete", async () => {
+    it("returns canonical vectors when coverage is complete", async () => {
       const s = await seed();
-      // Deliberately different from the legacy values so the source is unambiguous.
       await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.activeSpaceId, vector: [0, 0, 1] });
       await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.secondChunkId, spaceId: s.activeSpaceId, vector: [0, 0, -1] });
 
@@ -240,7 +257,7 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
       await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
     });
 
-    it("falls back for the whole batch, never mixing spaces, when one chunk is uncovered", async () => {
+    it("disables grouping when one requested chunk is uncovered", async () => {
       const s = await seed();
       await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.activeSpaceId, vector: [0, 0, 1] });
 
@@ -250,44 +267,22 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
         chunkIds: [s.firstChunkId, s.secondChunkId],
       });
 
-      // Both legacy, not one canonical and one legacy. This is the assertion that stops
-      // a mid-backfill workspace producing distances between two different models.
-      expect(result.get(s.firstChunkId)).toEqual([1, 0, 0]);
-      expect(result.get(s.secondChunkId)).toEqual([0, 1, 0]);
+      expect(result).toEqual(new Map());
 
       await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
     });
 
-    it("returns no legacy vectors when the fallback batch contains different models", async () => {
+    it("counts duplicate chunk ids once when checking coverage", async () => {
       const s = await seed();
       await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.activeSpaceId, vector: [0, 0, 1] });
-      await database.query(
-        "UPDATE chunks SET embedding_model = 'text-embedding-3-small' WHERE id = $1",
-        [s.secondChunkId],
-      );
 
       const reader = new PostgresSenseEmbeddingReader(database.kysely);
       const result = await reader.readChunkEmbeddings({
         workspaceId: s.workspace.id,
-        chunkIds: [s.firstChunkId, s.secondChunkId],
+        chunkIds: [s.firstChunkId, s.firstChunkId],
       });
 
-      expect(result.size).toBe(0);
-
-      await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
-    });
-
-    it("returns no legacy vectors when fallback model metadata is unresolved", async () => {
-      const s = await seed();
-      await database.query("UPDATE chunks SET embedding_model = '' WHERE id = $1", [s.secondChunkId]);
-
-      const reader = new PostgresSenseEmbeddingReader(database.kysely);
-      const result = await reader.readChunkEmbeddings({
-        workspaceId: s.workspace.id,
-        chunkIds: [s.firstChunkId, s.secondChunkId],
-      });
-
-      expect(result.size).toBe(0);
+      expect(result).toEqual(new Map([[s.firstChunkId, [0, 0, 1]]]));
 
       await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
     });
@@ -303,9 +298,7 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
         chunkIds: [s.firstChunkId, s.secondChunkId],
       });
 
-      // A leftover space from an earlier model is not coverage; the legacy column is.
-      expect(result.get(s.firstChunkId)).toEqual([1, 0, 0]);
-      expect(result.get(s.secondChunkId)).toEqual([0, 1, 0]);
+      expect(result).toEqual(new Map());
 
       await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
     });

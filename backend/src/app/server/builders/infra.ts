@@ -35,7 +35,6 @@ import { WorkspaceTokenRepository } from "../../../db/repositories/workspaceToke
 import { AuditService } from "../../../modules/audit/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { ChunkRepository } from "../../../modules/documents/composition.js";
-import { PgVectorChunkStorage } from "../../../modules/retrieval/composition.js";
 import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
 import {
   WorkspaceProviderCredentialsRepository,
@@ -159,7 +158,7 @@ export const buildRepositories = (
   accessGrantRepository: new AccessGrantRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
-  chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
+  chunkRepository: new ChunkRepository(database),
   conversationRepository: new ConversationRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),

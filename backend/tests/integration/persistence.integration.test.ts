@@ -16,8 +16,6 @@ import { DocumentProcessingWorker } from "../../src/modules/documents/services/d
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
 import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
-import { PgVectorChunkStorage } from "../../src/modules/retrieval/infra/chunkVectorStorage.js";
-import { PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { HistoryItemsRepository } from "../../src/db/repositories/historyItemsRepository.js";
 import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAnalyticsSink.js";
@@ -112,146 +110,6 @@ describeIfDatabase("persistence integration", () => {
     embedding[axis] = 1;
     return embedding;
   };
-
-  it("persists records and returns workspace-scoped vector matches", async () => {
-    const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
-    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
-    const vectorSearch = new PgVectorSearch(database);
-
-    const accountA = await accountRepository.create({
-      name: "Persist A Organization",
-      email: `persist-a-${randomUUID()}@example.com`,
-      passwordHash: "hash-a",
-    });
-    const accountB = await accountRepository.create({
-      name: "Persist B Organization",
-      email: `persist-b-${randomUUID()}@example.com`,
-      passwordHash: "hash-b",
-    });
-    const workspaceA = await workspaceRepository.create(accountA.id, "Workspace A");
-    const workspaceB = await workspaceRepository.create(accountB.id, "Workspace B");
-
-    const documentA = await documentRepository.create({
-      workspaceId: workspaceA.id,
-      title: "Guide A",
-      sourceContent: "The test page explains ingestion.",
-      markdownContent: "The test page explains ingestion.",
-      status: "ready",
-    });
-    const documentB = await documentRepository.create({
-      workspaceId: workspaceB.id,
-      title: "Guide B",
-      sourceContent: "Other workspace content.",
-      markdownContent: "Other workspace content.",
-      status: "ready",
-    });
-
-    await chunkRepository.replaceForDocument(documentA.id, [
-      {
-        id: randomUUID(),
-        documentId: documentA.id,
-        workspaceId: workspaceA.id,
-        chunkIndex: 0,
-        content: "The test page explains ingestion and parsing.",
-        embedding: embeddingOf(0),
-        startOffset: 0,
-        endOffset: 43,
-        createdAt: new Date(),
-      },
-    ]);
-    await chunkRepository.replaceForDocument(documentB.id, [
-      {
-        id: randomUUID(),
-        documentId: documentB.id,
-        workspaceId: workspaceB.id,
-        chunkIndex: 0,
-        content: "This belongs to another workspace.",
-        embedding: embeddingOf(1),
-        startOffset: 0,
-        endOffset: 31,
-        createdAt: new Date(),
-      },
-    ]);
-
-    const matches = await vectorSearch.search({
-      workspaceId: workspaceA.id,
-      queryEmbedding: embeddingOf(0),
-      topK: 5,
-      similarityThreshold: 0.1,
-    });
-
-    expect(matches).toHaveLength(1);
-    expect(matches[0].documentId).toBe(documentA.id);
-
-    await database.query("DELETE FROM chunks WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
-    await database.query("DELETE FROM documents WHERE workspace_id = $1 OR workspace_id = $2", [workspaceA.id, workspaceB.id]);
-    await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspaceA.id, workspaceB.id]);
-    await database.query("DELETE FROM accounts WHERE id = $1 OR id = $2", [accountA.id, accountB.id]);
-  });
-
-  it("persists and searches workspace chunks with non-1536-dimensional embeddings", async () => {
-    const accountRepository = new AccountRepository(database.kysely);
-    const documentRepository = new DocumentRepository(database.kysely);
-    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
-    const vectorSearch = new PgVectorSearch(database);
-
-    const account = await accountRepository.create({
-      name: "Variable Dimension Organization",
-      email: `variable-dimension-${randomUUID()}@example.com`,
-      passwordHash: "hash-variable-dimension",
-    });
-    const workspace = await workspaceRepository.create(account.id, "Variable Dimension Workspace");
-    const document = await documentRepository.create({
-      workspaceId: workspace.id,
-      title: "Three Dimensional Guide",
-      sourceContent: "The test page uses a three dimensional embedding.",
-      markdownContent: "The test page uses a three dimensional embedding.",
-      status: "ready",
-    });
-
-    await chunkRepository.replaceForDocument(document.id, [
-      {
-        id: randomUUID(),
-        documentId: document.id,
-        workspaceId: workspace.id,
-        chunkIndex: 0,
-        content: "The matching chunk.",
-        embedding: [1, 0, 0],
-        embeddingModel: "gemini-embedding-001",
-        startOffset: 0,
-        endOffset: 19,
-        createdAt: new Date(),
-      },
-      {
-        id: randomUUID(),
-        documentId: document.id,
-        workspaceId: workspace.id,
-        chunkIndex: 1,
-        content: "The non-matching chunk.",
-        embedding: [0, 1, 0],
-        embeddingModel: "gemini-embedding-001",
-        startOffset: 20,
-        endOffset: 43,
-        createdAt: new Date(),
-      },
-    ]);
-
-    const matches = await vectorSearch.search({
-      workspaceId: workspace.id,
-      queryEmbedding: [1, 0, 0],
-      topK: 5,
-      similarityThreshold: 0.1,
-      embeddingModel: "gemini-embedding-001",
-    });
-
-    expect(matches[0]?.content).toBe("The matching chunk.");
-
-    await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspace.id]);
-    await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspace.id]);
-    await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
-    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
-  });
 
   it("does not create duplicate default workspaces when migrations rerun", async () => {
     const accountRepository = new AccountRepository(database.kysely);
@@ -533,9 +391,8 @@ describeIfDatabase("persistence integration", () => {
   it("stores raw chunk content while generating title-aware retrieval embeddings", async () => {
     const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database.kysely);
-    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+    const chunkRepository = new ChunkRepository(database);
     const jobRepository = new DocumentProcessingJobRepository(database.kysely);
-    const vectorSearch = new PgVectorSearch(database);
 
     const capturedTexts: string[] = [];
     const embeddingGateway: EmbeddingGenerationGateway = {
@@ -636,16 +493,6 @@ describeIfDatabase("persistence integration", () => {
     expect(storedChunks[0]?.content).toContain("Used for account registration");
     expect(storedChunks[0]?.content).not.toContain("Title:");
 
-    const matches = await vectorSearch.search({
-      workspaceId: workspace.id,
-      queryEmbedding: embeddingOf(0),
-      topK: 5,
-      similarityThreshold: 0.1,
-    });
-
-    expect(matches[0]?.title).toBe("Session Cookie");
-    expect(matches[0]?.content).toContain("Used for account registration");
-
     await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM vector_index_work WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM vector_index_checkpoints WHERE workspace_id = $1", [workspace.id]);
@@ -659,7 +506,7 @@ describeIfDatabase("persistence integration", () => {
   it("deletes documents only within the matching workspace scope and cascades chunks", async () => {
     const accountRepository = new AccountRepository(database.kysely);
     const documentRepository = new DocumentRepository(database.kysely);
-    const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+    const chunkRepository = new ChunkRepository(database);
 
     const ownerAccount = await accountRepository.create({
       name: "Delete Owner Organization",

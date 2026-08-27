@@ -1,24 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { ChunkRepository } from "../../src/modules/documents/infra/chunkRepository.js";
-import {
-  PgVectorChunkStorage,
-  type ChunkVectorStoragePort,
-} from "../../src/modules/retrieval/infra/chunkVectorStorage.js";
 
-const noopVectorStorage: ChunkVectorStoragePort = {
-  async insertChunks() {
-    return;
-  },
-};
-
-const createRepository = (database: ConstructorParameters<typeof ChunkRepository>[0], vectorStorage = noopVectorStorage) =>
-  new ChunkRepository(database, vectorStorage);
+const createRepository = (database: ConstructorParameters<typeof ChunkRepository>[0]) =>
+  new ChunkRepository(database);
 
 const chunkInsertRows = (params: unknown[] | undefined) => {
   expect(params).toBeDefined();
   const values = params!;
-  const columnsPerChunk = 12;
+  const columnsPerChunk = 10;
   return Array.from({ length: values.length / columnsPerChunk }, (_, index) => {
     const offset = index * columnsPerChunk;
     return {
@@ -28,19 +18,17 @@ const chunkInsertRows = (params: unknown[] | undefined) => {
       chunkIndex: values[offset + 3],
       content: values[offset + 4],
       searchText: values[offset + 5],
-      boundedEmbedding: values[offset + 6],
-      unboundedEmbedding: values[offset + 7],
-      embeddingModel: values[offset + 8],
-      startOffset: values[offset + 9],
-      endOffset: values[offset + 10],
-      metadata: values[offset + 11],
+      embeddingModel: values[offset + 6],
+      startOffset: values[offset + 7],
+      endOffset: values[offset + 8],
+      metadata: values[offset + 9],
     };
   });
 };
 
 describe("chunk repository", () => {
-  it("delegates chunk inserts to vector storage when replacing chunks", async () => {
-    const insertedChunks: unknown[] = [];
+  it("persists chunk rows directly when replacing chunks", async () => {
+    const statements: string[] = [];
     const repository = createRepository(
       {
         async query() {
@@ -48,7 +36,8 @@ describe("chunk repository", () => {
         },
         async withTransaction(callback: (client: { query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
           const client = {
-            async query() {
+            async query(sql: string) {
+              statements.push(sql);
               return { rows: [] };
             },
           };
@@ -56,11 +45,6 @@ describe("chunk repository", () => {
           return callback(client as never);
         },
       } as never,
-      {
-        async insertChunks(_client, chunks) {
-          insertedChunks.push(...chunks);
-        },
-      },
     );
 
     const chunk = {
@@ -79,19 +63,28 @@ describe("chunk repository", () => {
 
     await repository.replaceForDocument("doc-1", [chunk]);
 
-    expect(insertedChunks).toEqual([chunk]);
+    expect(statements.some((sql) => sql.includes("INSERT INTO chunks"))).toBe(true);
   });
 
-  it("serializes pgvector chunk inserts without exposing vector columns to the repository", async () => {
+  it("serializes chunk inserts without persisting legacy vector columns", async () => {
     const calls: Array<{ sql: string; params: unknown[] | undefined }> = [];
-    const storage = new PgVectorChunkStorage();
-
-    await storage.insertChunks({
-      async query(sql: string, params?: unknown[]) {
-        calls.push({ sql, params });
-        return { rows: [] };
+    const repository = createRepository({
+      async query() {
+        throw new Error("unused");
       },
-    }, [
+      async withTransaction(callback: (client: { query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }> }) => Promise<unknown>) {
+        const client = {
+          async query(sql: string, params?: unknown[]) {
+            calls.push({ sql, params });
+            return { rows: [] };
+          },
+        };
+
+        return callback(client as never);
+      },
+    } as never);
+
+    await repository.replaceForDocument("doc-1", [
       {
         id: "chunk-1536",
         documentId: "doc-1",
@@ -122,19 +115,20 @@ describe("chunk repository", () => {
       },
     ]);
 
-    expect(calls[0]?.sql).toContain("embedding_unbounded");
-    expect(calls[0]?.sql).toContain("::vector");
-    expect(chunkInsertRows(calls[0]?.params)).toMatchObject([
+    const insert = calls.find((call) => call.sql.includes("INSERT INTO chunks"));
+    expect(insert).toBeDefined();
+    // Issue #1063 step 4: the vector belongs to chunk_embeddings alone. A chunk row
+    // that still carried one would keep the retired projection alive.
+    expect(insert?.sql).not.toContain("embedding_unbounded");
+    expect(insert?.sql).not.toContain("embedding,");
+    expect(insert?.sql).not.toContain("::vector");
+    expect(chunkInsertRows(insert?.params)).toMatchObject([
       {
         id: "chunk-1536",
-        boundedEmbedding: `[${new Array(1536).fill(0.1).join(",")}]`,
-        unboundedEmbedding: null,
         embeddingModel: "text-embedding-3-small",
       },
       {
         id: "chunk-custom",
-        boundedEmbedding: null,
-        unboundedEmbedding: "[0.2,0.3]",
         embeddingModel: "custom-model",
       },
     ]);
@@ -342,14 +336,13 @@ describe("chunk repository", () => {
     });
 
     // The width shown is the one semantic search compares against: the canonical row
-    // for the workspace's active embedding space, with the legacy columns only as a
-    // fallback. `chunks.embedding` is fixed at 1536, so reading it first would report
-    // the wrong number for a workspace on a wider model.
+    // for the workspace's active embedding space.
     const sql = calls[0]?.sql ?? "";
     expect(sql).toContain("FROM chunk_embeddings ce");
     expect(sql).toContain("p.active_embedding_space_id = ce.embedding_space_id");
     expect(sql).toContain("ce.document_revision = d.revision");
-    expect(sql.indexOf("ce.dimensions")).toBeLessThan(sql.indexOf("vector_dims(c.embedding_unbounded)"));
+    expect(sql).not.toContain("embedding_unbounded");
+    expect(sql).not.toContain("vector_dims(c.embedding)");
   });
 
   it("deletes by document and workspace when publishing a document revision", async () => {
@@ -450,11 +443,6 @@ describe("chunk repository", () => {
           return callback(client as never);
         },
       } as never,
-      {
-        async insertChunks() {
-          return;
-        },
-      },
     );
 
     await repository.publishForDocumentRevision({
@@ -543,7 +531,6 @@ describe("chunk repository", () => {
           return callback(client as never);
         },
       } as never,
-      new PgVectorChunkStorage(),
     );
 
     await repository.publishForDocumentRevision({
@@ -573,12 +560,9 @@ describe("chunk repository", () => {
       ],
     });
 
-    const legacyInsert = calls.find((call) => call.sql.includes("INSERT INTO chunks"));
-    const legacyRows = chunkInsertRows(legacyInsert?.params);
-    expect(legacyRows[0]).toMatchObject({
-      boundedEmbedding: null,
-      unboundedEmbedding: `[${embedding.join(",")}]`,
-    });
+    const chunkInsert = calls.find((call) => call.sql.includes("INSERT INTO chunks"));
+    expect(chunkInsert?.sql).not.toContain("embedding_unbounded");
+    expect(chunkInsert?.sql).not.toContain("embedding,");
     expect(calls.some((call) => call.sql.includes("INSERT INTO chunk_embeddings"))).toBe(true);
   });
 });

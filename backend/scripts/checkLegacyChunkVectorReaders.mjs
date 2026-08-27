@@ -22,22 +22,6 @@ export const ALLOWLIST = new Map([
     "The legacy search leg itself (PgVectorIndex) plus the unwired PgVectorSearch. "
     + "Removed by #1063 step 3, once canonical coverage is verified.",
   ],
-  [
-    "modules/retrieval/infra/chunkVectorStorage.ts",
-    "Writes both columns on every ingest. Removed by #1063 step 4.",
-  ],
-  [
-    "modules/documents/infra/chunkRepository.ts",
-    "Falls back to the legacy width when a chunk has no canonical row, so the chunk "
-    + "inspector still reports a dimension mid-backfill. The fallback goes with the "
-    + "columns in #1063 step 5.",
-  ],
-  [
-    "modules/retrieval/services/senseGroupingService.ts",
-    "Falls back to the legacy column for the whole batch when canonical coverage is "
-    + "incomplete, rejecting the batch unless every vector has one known model. Cosine "
-    + "distances cannot compare across embedding models. Removed in #1063 step 5.",
-  ],
 ]);
 
 // Generated from the live database schema, so it names the columns as long as they

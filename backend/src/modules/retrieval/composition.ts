@@ -12,7 +12,6 @@ import { CandidatePreparationService } from "./services/candidatePreparationServ
 import { ConversationContextService } from "./services/conversationContextService.js";
 import { PgLexicalSearch } from "./infra/lexicalSearch.js";
 import { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
-import { PgVectorIndex, PgVectorSearch } from "./infra/vectorSearch.js";
 import {
   PostgresChunkCandidateHydrator,
   type ChunkCandidateHydratorPort,
@@ -48,18 +47,12 @@ export {
   type ChunkCandidateHydratorPort,
 } from "./infra/chunkCandidateHydrator.js";
 export {
-  PgVectorChunkStorage,
-} from "./infra/chunkVectorStorage.js";
-export {
   PgLexicalSearch,
   type LexicalSearchPort,
 } from "./infra/lexicalSearch.js";
 export { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
-export {
-  PgVectorSearch,
-  PgVectorIndex,
-} from "./infra/vectorSearch.js";
 export { PgVectorAdapter } from "./infra/pgVectorAdapter.js";
+export { PgVectorIndex } from "./infra/vectorSearch.js";
 export { VectorIndexReconciler } from "./services/vectorIndexReconciler.js";
 export { CandidatePreparationService } from "./services/candidatePreparationService.js";
 export { ConversationContextService } from "./services/conversationContextService.js";

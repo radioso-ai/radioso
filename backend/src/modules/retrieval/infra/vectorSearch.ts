@@ -3,6 +3,7 @@ import type { VectorIndexCandidate, VectorIndexSearchInput, VectorIndexPort } fr
 import type { RetrievedChunk, VectorSearchInput, VectorSearchPort } from "../domain/vectorSearch.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
 import { retrievableDocumentPredicateSql } from "./documentRetrievalEligibility.js";
+import { HnswIterativeScanRunner } from "./hnswIterativeScan.js";
 
 interface VectorSearchRow {
   chunk_id: string;
@@ -26,7 +27,11 @@ interface VectorIndexRow {
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 export class PgVectorIndex implements VectorIndexPort {
-  constructor(private readonly database: Database) {}
+  private readonly iterativeScan: HnswIterativeScanRunner;
+
+  constructor(database: Database) {
+    this.iterativeScan = new HnswIterativeScanRunner(database);
+  }
 
   async search(input: VectorIndexSearchInput): Promise<VectorIndexCandidate[]> {
     const maxDistance = 1 - input.similarityThreshold;
@@ -72,7 +77,7 @@ export class PgVectorIndex implements VectorIndexPort {
     WHERE distance <= $4
     ORDER BY distance ASC`;
 
-    const rows = await this.queryWithIterativeScan(sql, params);
+    const rows = await this.iterativeScan.run<VectorIndexRow>(sql, params);
 
     return rows.map((row) => ({
       chunkId: row.chunk_id,
@@ -81,25 +86,14 @@ export class PgVectorIndex implements VectorIndexPort {
     }));
   }
 
-  private async queryWithIterativeScan(sql: string, params: unknown[]): Promise<VectorIndexRow[]> {
-    try {
-      return await this.database.withTransaction(async (client) => {
-        await client.query("SET LOCAL hnsw.iterative_scan = strict_order");
-        const result = await client.query<VectorIndexRow>(sql, params);
-        return result.rows;
-      });
-    } catch (error) {
-      if (!isIterativeScanUnsupported(error)) {
-        throw error;
-      }
-
-      return this.database.query<VectorIndexRow>(sql, params);
-    }
-  }
 }
 
 export class PgVectorSearch implements VectorSearchPort {
-  constructor(private readonly database: Database) {}
+  private readonly iterativeScan: HnswIterativeScanRunner;
+
+  constructor(database: Database) {
+    this.iterativeScan = new HnswIterativeScanRunner(database);
+  }
 
   async search(input: VectorSearchInput): Promise<RetrievedChunk[]> {
     const maxDistance = 1 - input.similarityThreshold;
@@ -156,7 +150,7 @@ export class PgVectorSearch implements VectorSearchPort {
     WHERE distance <= $4
     ORDER BY distance ASC`;
 
-    const rows = await this.queryWithIterativeScan(sql, params);
+    const rows = await this.iterativeScan.run<VectorSearchRow>(sql, params);
 
     return rows.map((row) => ({
       chunkId: row.chunk_id,
@@ -172,27 +166,4 @@ export class PgVectorSearch implements VectorSearchPort {
     }));
   }
 
-  private async queryWithIterativeScan(sql: string, params: unknown[]): Promise<VectorSearchRow[]> {
-    try {
-      return await this.database.withTransaction(async (client) => {
-        await client.query("SET LOCAL hnsw.iterative_scan = strict_order");
-        const result = await client.query<VectorSearchRow>(sql, params);
-        return result.rows;
-      });
-    } catch (error) {
-      if (!isIterativeScanUnsupported(error)) {
-        throw error;
-      }
-
-      return this.database.query<VectorSearchRow>(sql, params);
-    }
-  }
 }
-
-const isIterativeScanUnsupported = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  return error.message.includes("unrecognized configuration parameter \"hnsw.iterative_scan\"");
-};

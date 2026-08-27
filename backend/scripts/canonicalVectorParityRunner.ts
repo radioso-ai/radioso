@@ -1,13 +1,9 @@
 import { sql } from "kysely";
 
 import { Database } from "../src/shared/infra/database.js";
-import { LegacyVectorCandidateSearchAdapter } from "../src/app/composition/legacyVectorCandidateSearchAdapter.js";
 import { PgVectorAdapter } from "../src/modules/retrieval/infra/pgVectorAdapter.js";
-import { PgVectorIndex } from "../src/modules/retrieval/infra/vectorSearch.js";
+import { HnswIterativeScanRunner } from "../src/modules/retrieval/infra/hnswIterativeScan.js";
 import { retrievableDocumentPredicateSql } from "../src/modules/retrieval/infra/documentRetrievalEligibility.js";
-import type {
-  EmbeddingSpaceRecord,
-} from "../src/modules/embeddingProfiles/contracts/repositories.js";
 import type {
   VectorCandidate,
   VectorCandidateSearchInput,
@@ -232,23 +228,18 @@ export const measureWorkspaceParity = async (input: {
   const exact = input.exactDatabase
     ? new PgVectorAdapter(input.exactDatabase)
     : null;
-  const legacy = new LegacyVectorCandidateSearchAdapter({
-    legacy: new PgVectorIndex(input.database),
-    // The space is already resolved, so the legacy model lookup is answered from it
-    // rather than re-reading the same row once per probe.
-    profiles: {
-      findEmbeddingSpaceById: async () =>
-        ({ model: input.target.model } as EmbeddingSpaceRecord),
-    },
-  });
-
+  // The legacy leg runs under the same scan mode production gives it. Without
+  // iterative scanning the HNSW index post-filters its candidates by workspace, so
+  // the reference ranking comes back short and every chunk it failed to return is a
+  // loss this gate never counts.
+  const legacyScan = new HnswIterativeScanRunner(input.database);
   const legacyComparisons: RankingComparison[] = [];
   const exactComparisons: RankingComparison[] = [];
   for (const queryVector of input.probeVectors) {
     const searchInput = searchInputFor(input.target, [...queryVector], input.topK);
     const [canonicalHits, legacyHits] = await Promise.all([
       canonical.search.search(searchInput),
-      legacy.search(searchInput),
+      searchLegacyChunkVectors(legacyScan, input.target, queryVector, input.topK),
     ]);
     legacyComparisons.push(compareRankings({
       reference: toRanked(legacyHits),
@@ -295,6 +286,57 @@ const searchInputFor = (
   // filter compares the legs rather than the filter compiler.
   filter: {},
 });
+
+// This release gate deliberately reads the legacy projection directly rather than
+// through the retrieval graph, so it keeps measuring the same rows after issue #1063
+// step 3 unwires the legacy search leg. The column-drop migration (step 5) is written
+// only once this gate's evidence passes, and it is what finally deletes this function.
+const searchLegacyChunkVectors = async (
+  scan: HnswIterativeScanRunner,
+  target: ParityTarget,
+  queryVector: readonly number[],
+  topK: number,
+): Promise<VectorCandidate[]> => {
+  // The original 1536-dimensional projection used `embedding`; larger models used
+  // `embedding_unbounded` with a compatibility fallback while the rollout was in
+  // progress. This gate must reproduce that read shape or its reference ranking is
+  // empty precisely for the workspaces whose migration risk is highest.
+  const legacyEmbedding = legacyEmbeddingExpressionForDimensions(target.space.dimensions);
+  const rows = await scan.run<{
+    chunk_id: string;
+    document_id: string;
+    score: number;
+  }>(
+    `SELECT c.id AS chunk_id,
+            c.document_id,
+            GREATEST(-1.0, LEAST(1.0, 1.0 - (${legacyEmbedding} <=> $2::vector))) AS score
+       FROM chunks c
+       JOIN documents d
+         ON d.workspace_id = c.workspace_id
+        AND d.id = c.document_id
+      WHERE c.workspace_id = $1
+        AND ${legacyEmbedding} IS NOT NULL
+        AND c.embedding_model = $3
+        AND vector_dims(${legacyEmbedding}) = $4
+        AND ${retrievableDocumentPredicateSql("d")}
+      ORDER BY ${legacyEmbedding} <=> $2::vector
+      LIMIT $5`,
+    [target.workspaceId, `[${queryVector.join(",")}]`, target.model, target.space.dimensions, topK],
+  );
+  return rows.map((row) => ({
+    chunkId: row.chunk_id,
+    documentId: row.document_id,
+    embeddingSpaceId: target.space.id,
+    version: "0",
+    score: Number(row.score),
+  }));
+};
+
+export const legacyEmbeddingExpressionForDimensions = (
+  dimensions: number,
+): string => dimensions === 1536
+  ? "c.embedding"
+  : "COALESCE(c.embedding_unbounded, c.embedding)";
 
 const parseVector = (serialized: string): number[] =>
   serialized.slice(1, -1).split(",").map(Number);

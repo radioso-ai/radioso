@@ -30,7 +30,7 @@ describe("no-raw-sql guard", () => {
         "modules/connectors/plugins/whatsapp/whatsappPlugin.ts",
         "modules/connectors/services/connectorRegistry.ts",
         "modules/documents/infra/chunkRepository.ts",
-        "modules/retrieval/infra/chunkVectorStorage.ts",
+        "modules/retrieval/infra/hnswIterativeScan.ts",
         "modules/retrieval/infra/lexicalSearch.ts",
         "modules/retrieval/infra/pgVectorAdapter.ts",
         "modules/retrieval/infra/vectorSearch.ts",

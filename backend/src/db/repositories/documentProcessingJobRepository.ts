@@ -180,10 +180,23 @@ const canonicalRowExistsSql = sql`EXISTS (
 // The per-workspace read references this CTE twice, so PostgreSQL materializes it.
 // Put its tenant scope inside this shared definition rather than relying on either
 // consumer predicate to push through the materialization boundary.
-const currentEmbeddingProfileGapJobsSql = (workspaceId?: string) => {
-  const workspaceScope = workspaceId === undefined
+// `targetSpaces` follows whatever the caller counts as a gap. A response that pairs an
+// active-space chunk count with an active-and-pending job count cannot be acted on:
+// "nothing missing, one job failed" names work that its own numbers say does not exist,
+// and a reader that treats a zero gap as done never reaches the failure.
+const currentEmbeddingProfileGapJobsSql = (options: {
+  workspaceId?: string;
+  targetSpaces: "active" | "active_and_pending";
+}) => {
+  const workspaceScope = options.workspaceId === undefined
     ? sql``
-    : sql`AND j.workspace_id = ${workspaceId}`;
+    : sql`AND j.workspace_id = ${options.workspaceId}`;
+  const spaceScope = options.targetSpaces === "active"
+    ? sql`AND j.embedding_space_id = p.active_embedding_space_id`
+    : sql`AND j.embedding_space_id IN (
+       p.active_embedding_space_id,
+       p.pending_embedding_space_id
+     )`;
 
   return sql`
     SELECT j.workspace_id, j.status
@@ -195,10 +208,7 @@ const currentEmbeddingProfileGapJobsSql = (workspaceId?: string) => {
     JOIN workspace_embedding_profiles p
       ON p.workspace_id = j.workspace_id
      AND p.generation = j.workspace_profile_generation
-     AND j.embedding_space_id IN (
-       p.active_embedding_space_id,
-       p.pending_embedding_space_id
-     )
+     ${spaceScope}
     WHERE j.kind = 'embedding_profile'
       ${workspaceScope}
       AND j.status IN ('queued', 'processing', 'failed')
@@ -630,7 +640,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     }>`
       WITH targets AS (${embeddingTargetSpacesSql}),
       eligible_chunks AS (${retrievableChunksSql}),
-      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql()})
+      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql({ targetSpaces: "active_and_pending" })})
       SELECT ec.workspace_id,
              COUNT(DISTINCT ec.chunk_id) AS missing_chunks,
              BOOL_OR(t.workspace_id IS NOT NULL) AS has_embedding_profile,
@@ -663,7 +673,9 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     // Backfill schedules both active and pending spaces, but this status answers a
     // different question: whether the currently active retrieval path is covered.
     // A pending row cannot stand in for an active row, because runtime only searches
-    // the active space.
+    // the active space. The job counts take the same scope as the chunk counts, so a
+    // caller can read the whole response as one answer; a pending-space failure is the
+    // gap report's to raise, and listWorkspaceCanonicalEmbeddingGaps still raises it.
     //
     // hasEmbeddingProfile is an independent EXISTS rather than an aggregate over the
     // join: a workspace with a profile and no chunks yet still has one, and the join
@@ -677,7 +689,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     }>`
       WITH targets AS (${activeEmbeddingTargetSpaceSql}),
       eligible_chunks AS (${retrievableChunksSql}),
-      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql(workspaceId)}),
+      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql({ workspaceId, targetSpaces: "active" })}),
       coverage AS (
         SELECT COUNT(DISTINCT ec.chunk_id) AS eligible_chunks,
                COUNT(DISTINCT ec.chunk_id)

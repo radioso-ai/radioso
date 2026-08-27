@@ -175,6 +175,31 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
     await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
   });
 
+  // Everything in one coverage response has to answer the same question. The chunk
+  // counts describe the active space, so the job counts beside them must too: a
+  // response reading "nothing missing, one job failed" cannot be acted on, and the
+  // dashboard reads it as complete before it ever looks at the failure.
+  it("counts jobs for the active space alone, matching what it counts as missing", async () => {
+    const chunkId = await insertChunk(0);
+    await bindProfile(staleSpaceId);
+    await insertCanonical(chunkId, { spaceId: spaceId });
+    await database.query(
+      `INSERT INTO document_processing_jobs
+         (id, document_id, workspace_id, document_revision, kind, status, embedding_space_id, workspace_profile_generation)
+       VALUES ($1, $2, $3, 1, 'embedding_profile', 'failed', $4, 1)`,
+      [randomUUID(), documentId, workspaceId, staleSpaceId],
+    );
+
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+
+    expect(coverage).toMatchObject({ missingChunks: 0, failedJobs: 0, queuedJobs: 0 });
+    // The backfill still owns the pending-space gap and reports it.
+    expect(await gapFor()).toBe(1);
+
+    await database.query("DELETE FROM document_processing_jobs WHERE workspace_id = $1", [workspaceId]);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
   it("still counts a chunk whose canonical row is for an older document revision", async () => {
     const chunkId = await insertChunk(0);
     await bindProfile();

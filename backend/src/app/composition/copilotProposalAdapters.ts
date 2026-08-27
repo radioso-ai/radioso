@@ -7,6 +7,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   type AgentInput,
+  type AuthoredDirective,
   type AuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
 import {
@@ -51,7 +52,7 @@ const skillConfigStoredPayloadSchema = z.object({
 
 /** Composition adapter: drafts through the existing coach and writes only through authored-directive management. */
 export const createDirectiveCopilotProposalAdapter = (deps: {
-  readonly authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "update">;
+  readonly authoredDirectiveService: Pick<AuthoredDirectiveService, "list" | "create" | "update" | "delete">;
   readonly directiveAuthorService: Pick<DirectiveAuthorService, "draft">;
   readonly agentService: Pick<AgentService, "get">;
 }): CopilotDirectiveProposalAdapter => ({
@@ -59,20 +60,36 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
   async readVersionToken(workspaceId, rawTargetRef) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
     if (!targetRef.directiveId) return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
-    const directive = (await deps.authoredDirectiveService.list(workspaceId, targetRef.agentId)).find((item) => item.id === targetRef.directiveId);
+    const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
     if (!directive) throw new Error("Directive no longer exists");
     return versionToken(directive.updatedAt);
   },
   async preview(workspaceId, rawTargetRef, payload) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    const current = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId).catch(() => null);
+    if (isDirectiveRemoval(payload)) {
+      return { targetLabel: payload.name ?? current?.name ?? "Directive", current, proposed: DIRECTIVE_REMOVAL_NOTICE };
+    }
     const proposed = directivePayload(payload);
-    const current = targetRef.directiveId
-      ? await deps.authoredDirectiveService.list(workspaceId, targetRef.agentId).then((directives) => directives.find((item) => item.id === targetRef.directiveId) ?? null).catch(() => null)
-      : null;
     return { targetLabel: proposed.name, current, proposed };
   },
   async applyIfVersionMatches(workspaceId, rawTargetRef, payload, token) {
     const targetRef = directiveTargetRefSchema.parse(rawTargetRef);
+    if (isDirectiveRemoval(payload)) {
+      if (!targetRef.directiveId) return { outcome: "failed" as const, reason: "Directive removal requires an existing directive" };
+      try {
+        const directive = await findDirectiveById(deps.authoredDirectiveService, workspaceId, targetRef.agentId, targetRef.directiveId);
+        // Checked before the delete call rather than passed into it: AuthoredDirectiveService.delete
+        // has no version-gated form, so a stale token must short-circuit here instead of letting a
+        // delete run regardless of what changed underneath the proposal.
+        if (!directive || versionToken(directive.updatedAt) !== token) return { outcome: "stale" as const };
+        await deps.authoredDirectiveService.delete(workspaceId, targetRef.agentId, targetRef.directiveId);
+        return { outcome: "applied" as const, appliedRef: { directiveId: targetRef.directiveId } };
+      } catch (error) {
+        if (isStale(error)) return { outcome: "stale" as const };
+        return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive removal failed" };
+      }
+    }
     try {
       const directive = targetRef.directiveId
         ? (await deps.authoredDirectiveService.update(workspaceId, targetRef.agentId, targetRef.directiveId, directivePayload(payload), { expectedUpdatedAt: versionDate(token) })).directive
@@ -289,6 +306,36 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary };
   },
 });
+
+const findDirectiveById = async (
+  service: Pick<AuthoredDirectiveService, "list">,
+  workspaceId: string,
+  agentId: string,
+  directiveId: string | null,
+): Promise<AuthoredDirective | null> => {
+  if (!directiveId) return null;
+  const directives = await service.list(workspaceId, agentId);
+  return directives.find((item) => item.id === directiveId) ?? null;
+};
+
+interface DirectiveRemovalPayload {
+  readonly op: "remove";
+  /** Presentation-only, mirrors how a save payload's own `name`/`rationale` re-derive the card on reload. */
+  readonly name?: string;
+  readonly rationale?: string;
+}
+
+// A payload missing `op` is the save shape every proposal used before removal existed, so it must
+// keep reading as a save. Only an explicit `op: "remove"` selects the removal branch.
+const isDirectiveRemoval = (payload: unknown): payload is DirectiveRemovalPayload =>
+  typeof payload === "object" && payload !== null && (payload as { op?: unknown }).op === "remove";
+
+/**
+ * Shown as the "proposed" side of a removal's preview. A plain notice reads far more clearly than
+ * the generic diff algorithm's default for a record `current` next to a null/undefined `proposed`:
+ * recursing into every field of the directive and marking each one individually removed.
+ */
+const DIRECTIVE_REMOVAL_NOTICE = "This directive will be permanently removed.";
 
 // Maps a stored proposal payload onto the management input. The draft keeps
 // presentation extras (e.g. the coach's rationale) that the .strict()

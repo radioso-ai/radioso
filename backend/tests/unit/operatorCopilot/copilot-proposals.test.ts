@@ -129,6 +129,7 @@ describe("US3 copilot proposals", () => {
 
     expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "propose_directive", shape: "propose" },
+      { name: "propose_directive_removal", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
       { name: "propose_agent_setting", shape: "propose" },
     ]);
@@ -139,6 +140,63 @@ describe("US3 copilot proposals", () => {
     expect(createProposal).toHaveBeenCalledTimes(2);
     expect(createProposal.mock.calls[0]?.[0]).toMatchObject({ targetType: "directive", targetRef: { agentId, directiveId }, versionToken: "directive-version" });
     expect(createProposal.mock.calls[1]?.[0]).toMatchObject({ targetType: "agent_setting", targetRef: { agentId, settingKey: "retrievalEnabled" }, versionToken: "agent-version" });
+  });
+
+  it("creates a pending removal proposal for an existing directive, drafting nothing", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
+      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+    }));
+    const draft = vi.fn();
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [
+        {
+          targetType: "directive",
+          readVersionToken: vi.fn(async () => "directive-version"),
+          preview: vi.fn(async () => ({ targetLabel: "Avoid competitors", current: { id: directiveId, name: "Avoid competitors" }, proposed: "This directive will be permanently removed." })),
+          applyIfVersionMatches: vi.fn(),
+          draft,
+        },
+      ],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+    const result = await descriptors.find((descriptor) => descriptor.name === "propose_directive_removal")?.createTool(context).invoke({ directiveId, agentId }, {} as never);
+
+    expect(draft).not.toHaveBeenCalled();
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetType: "directive",
+      targetRef: { agentId, directiveId },
+      versionToken: "directive-version",
+      payload: expect.objectContaining({ op: "remove" }),
+    }));
+    expect(result).toMatchObject({ targetType: "directive", targetLabel: "Avoid competitors" });
+    expect((result as { summary: string }).summary).toMatch(/permanently|cannot be undone/i);
+  });
+
+  it("fails clearly when asked to remove a directive that does not exist for the resolved agent", async () => {
+    const createProposal = vi.fn();
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [
+        {
+          targetType: "directive",
+          readVersionToken: vi.fn(async () => { throw new Error("Directive no longer exists"); }),
+          preview: vi.fn(),
+          applyIfVersionMatches: vi.fn(),
+          draft: vi.fn(),
+        },
+      ],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+    await expect(descriptors.find((descriptor) => descriptor.name === "propose_directive_removal")?.createTool(context).invoke({ directiveId, agentId }, {} as never))
+      .rejects.toThrow(/no longer exists/i);
+    expect(createProposal).not.toHaveBeenCalled();
   });
 
   it("creates a pending routine proposal from the authored assist draft", async () => {
@@ -324,6 +382,75 @@ describe("directive proposal adapter payload mapping", () => {
     const [, , input] = create.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
     expect(input.rationale).toBeUndefined();
     expect(input.name).toBe("shipping-damage-remediation");
+  });
+
+  it("treats a payload with no operation discriminator as a save, even when it targets an existing directive", async () => {
+    // Every proposal persisted before removal support carries a bare directive payload with no
+    // `op` field. This is the regression that matters: a live workspace's pending proposals must
+    // keep applying as saves, not start being misread as removals.
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Old name", condition: { kind: "always" }, action: "Old action", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
+    const update = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" }, coherence: null }));
+    const deleteDirective = vi.fn();
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: deleteDirective } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
+    });
+
+    const result = await adapter.applyIfVersionMatches(
+      "workspace-1",
+      { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" },
+      { name: "New name", condition: { kind: "always" }, action: "New action", tags: [] },
+      new Date(0).toISOString(),
+    );
+
+    expect(result).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
+    expect(update).toHaveBeenCalledOnce();
+    expect(deleteDirective).not.toHaveBeenCalled();
+  });
+
+  it("removes a directive when the version token matches, and never deletes when it is stale", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(5) };
+    const list = vi.fn(async () => [existing]);
+    const deleteDirective = vi.fn(async () => undefined);
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list, create: vi.fn(), update: vi.fn(), delete: deleteDirective } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date(5) })) } as never,
+    });
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
+
+    // A stale token races an edit made after the proposal drafted. Deleting here would discard
+    // whatever changed the directive between drafting and apply, so it must be refused outright.
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale" });
+    expect(deleteDirective).not.toHaveBeenCalled();
+
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(5).toISOString())).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
+    expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-3333-444444444445");
+  });
+
+  it("previews a removal as the directive in place today, next to a plain removal notice", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn() } as never,
+    });
+
+    const preview = await adapter.preview("workspace-1", { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" }, { op: "remove" });
+
+    expect(preview.targetLabel).toBe("Avoid competitors");
+    expect(preview.current).toEqual(existing);
+    // A record-shaped current next to an undefined/null proposed would make the generic diff
+    // renderer expand every field of the directive as individually "removed" rather than stating
+    // the removal once, legibly.
+    expect(preview.proposed).not.toBeNull();
+    expect(preview.proposed).not.toBeUndefined();
+    expect(typeof preview.proposed).toBe("string");
+    expect(preview.proposed as string).toMatch(/remov/i);
   });
 });
 

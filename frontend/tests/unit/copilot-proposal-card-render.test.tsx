@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
+import { buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
 import type { CopilotProposalDetail, CopilotProposalSummary } from '@/lib/api-copilot'
 
 beforeAll(() => {
@@ -97,5 +97,24 @@ describe('CopilotProposalCard', () => {
       entity: { type: 'agent_skill', id: 'skill-applied' },
       agentId: 'agent-9',
     })
+  })
+
+  it('renders a directive removal preview as one legible row instead of every field marked blank', () => {
+    // Without a fix, a record-shaped `current` next to a null/undefined `proposed` recurses through
+    // the generic diff algorithm and expands into one row per field, each showing "current value"
+    // next to "—". A single sentinel string on the proposed side keeps the removal to one row.
+    const current = {
+      id: 'directive-1',
+      name: 'Avoid competitors',
+      condition: { kind: 'always' },
+      action: 'Say nothing about rivals.',
+      tags: ['sales'],
+    }
+
+    const rows = buildCopilotProposalDiff({ current, proposed: 'This directive will be permanently removed.' })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.current).toEqual(current)
+    expect(rows[0]?.proposed).toBe('This directive will be permanently removed.')
   })
 })

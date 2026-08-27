@@ -114,6 +114,11 @@ inspect the field-level diff.
 Applying a routine proposal creates a draft routine. Review and publish it in
 the routine editor.
 
+A directive removal proposal targets an existing directive by id and drafts
+nothing else. The card shows the directive as it stands on the current side
+and a notice that it will be permanently removed on the proposed side.
+Applying it deletes the directive, and that cannot be undone.
+
 A skill config proposal creates a new skill or updates an existing one by the
 same rules the Skills editor enforces: a setting that depends on another stays
 refused while its parent is off, and a notify skill needs at least a recipient
@@ -224,6 +229,12 @@ change it was measured on: a replay of one change cannot be attached to a
 proposal for a different one. A setting proposal has to cite a replay that put
 that exact value under test, and a directive proposal has to cite one that ran
 with directives in place.
+
+A directive removal proposal cites replay evidence the opposite way: the
+replay must have measured a configuration where the directive was already
+gone. Cite a replay that still included the directive and Ray refuses it,
+because that replay measured a turn with the directive still in force — not
+the removal being proposed.
 
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed

@@ -105,6 +105,33 @@ describe("cited evidence must be about the change being proposed", () => {
     )).rejects.toThrow(/did not measure/i);
   });
 
+  it("accepts a directive removal proposal measured with the directive absent from the replay's directive set", async () => {
+    // The honest evidence for removing a directive is a replay that ran without it, not one with
+    // "some directives" in place — the inverse of what a save proposal needs to show.
+    const evidence = await resolve(
+      { agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] } },
+      { targetType: "directive", directiveId: "removed-directive" },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
+  it("refuses a directive removal proposal measured with the directive still present in the replay's directive set", async () => {
+    await expect(resolve(
+      { agentConfigOverride: { authoredDirectives: [{ id: "removed-directive", action: "State the refund window" }] } },
+      { targetType: "directive", directiveId: "removed-directive" },
+    )).rejects.toThrow(/still includes/i);
+  });
+
+  it("refuses a directive removal proposal measured without a deliberate directive-set override at all", async () => {
+    // No authoredDirectives override at all means the replay ran against the live directive set,
+    // which still includes the one being removed.
+    await expect(resolve(
+      { retrievalSettingsOverride: { vectorTopK: 20 } },
+      { targetType: "directive", directiveId: "removed-directive" },
+    )).rejects.toThrow(/did not measure/i);
+  });
+
   it("refuses to attach replay evidence to a routine proposal at all", async () => {
     // No replay override installs a routine, so a passing replay says nothing about a proposed
     // one. test_agent_turn runs a real turn against an unpublished draft instead.

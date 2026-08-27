@@ -24,7 +24,8 @@ describe("operator copilot catalog coverage", () => {
   //               boundary and would have let Wave 4 skip the serving controls it exists to give
   //               a runtime safety model.
   //   132 -> 130  createAgentSkill/updateAgentSkill moved to propose_skill_config.
-  const maxDeferredCatalogExclusions = 130;
+  //   130 -> 129  deleteAgentDirective moved to propose_directive_removal.
+  const maxDeferredCatalogExclusions = 129;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

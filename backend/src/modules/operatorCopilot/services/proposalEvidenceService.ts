@@ -24,7 +24,10 @@ export interface ProposalEvidenceRequest {
 }
 
 export type ProposalChange =
-  | { targetType: "directive" }
+  // `directiveId` is set only for a removal proposal, where it is the honest thing a replay can
+  // put under test: a configuration measured without that directive in place. A save proposal
+  // (create or update) omits it, because a drafted directive never matches an override's shape.
+  | { targetType: "directive"; directiveId?: string }
   | { targetType: "routine" }
   | { targetType: "agent_setting"; settingKey: string; value: unknown }
   | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown };
@@ -78,7 +81,17 @@ const assertMeasuredTheProposedChange = (
   }
   if (change.targetType === "directive") {
     const directives = asRecord(overrides.agentConfigOverride).authoredDirectives;
-    if (!Array.isArray(directives) || directives.length === 0) {
+    if (!Array.isArray(directives)) {
+      throw badRequest("Replay evidence did not measure a configuration with directives in place");
+    }
+    if (change.directiveId) {
+      const stillPresent = directives.some((directive) => asRecord(directive).id === change.directiveId);
+      if (stillPresent) {
+        throw badRequest("Replay evidence measured a configuration that still includes the directive being removed");
+      }
+      return;
+    }
+    if (directives.length === 0) {
       throw badRequest("Replay evidence did not measure a configuration with directives in place");
     }
     return;

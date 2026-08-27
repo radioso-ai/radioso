@@ -42,6 +42,36 @@ describe("copilot routine readers", () => {
     expect(ports.listRoutines).not.toHaveBeenCalled();
   });
 
+  it("names the stable ids an edit addresses, which the portable prose does not carry", async () => {
+    // The portable document is what a routine says, not what to call its parts. A reader that
+    // describes a step perfectly and cannot name it leaves guessing the id as the only move.
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_order", key: "order_number", type: "text", required: true, description: "The order", ordinal: 0 }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: unknown } };
+
+    expect(result.routine.editable).toEqual({
+      steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help." }],
+      endings: [{ stableStepId: "done", kind: "complete", instruction: null }],
+      fields: [{ key: "order_number", type: "text", required: true, description: "The order" }],
+    });
+  });
+
+  it("keeps the addressable list short when an element's wording is long", async () => {
+    const ports = dependencies([routine({
+      steps: [{ stableStepId: "collect_topic", kind: "chat", instruction: "x".repeat(400), toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { steps: Array<{ instruction: string }> } } };
+
+    expect(result.routine.editable.steps[0]!.instruction).toHaveLength(161);
+  });
+
   it("reports nonportable routines without failing discovery or detail", async () => {
     const unsupported = routine({
       id: "44444444-4444-4444-8444-444444444444",
@@ -93,7 +123,10 @@ describe("copilot routine readers", () => {
     expect(result).toMatchObject({
       routine: { portable: { ok: true, content: null, omittedReason: "content_too_large" } },
     });
-    expect(JSON.stringify(result)).not.toContain("xxx");
+    // The addressable list still names the step, because an oversized routine is exactly one an
+    // operator wants edited — but it carries a locator, not the wording.
+    expect(JSON.stringify(result).length).toBeLessThan(1_000);
+    expect((result as { routine: { editable: { steps: Array<{ instruction: string }> } } }).routine.editable.steps[0]!.instruction).toHaveLength(161);
   });
 });
 

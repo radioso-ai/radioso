@@ -87,7 +87,7 @@ export interface RoutineDefinitionCopilotToolDependencies {
 export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
-    description: "List an agent's routines or read one routine in portable Markdown form.",
+    description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address.",
     inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
       name: "routine_definition",
@@ -196,15 +196,36 @@ const projectRoutineSummary = (routine: RoutineDefinition): Record<string, unkno
   };
 };
 
+const copilotRoutineLocatorCharLimit = 160;
+
+const locator = (text: string | null): string | null =>
+  text === null ? null : text.length > copilotRoutineLocatorCharLimit ? `${text.slice(0, copilotRoutineLocatorCharLimit)}…` : text;
+
+/**
+ * The elements an edit can address, by the stable id it has to name.
+ *
+ * The portable document is prose: it carries what a routine says, not the ids proposing a change
+ * addresses. Without this a reader can describe a step perfectly and still have no way to name it,
+ * which leaves guessing an id as the only move. Each entry carries enough text to tell the elements
+ * apart; the wording itself is in `portable.content`.
+ */
+const projectRoutineEditableElements = (routine: RoutineDefinition) => ({
+  steps: routine.steps.map((step) => ({ stableStepId: step.stableStepId, kind: step.kind, instruction: locator(step.instruction) })),
+  endings: routine.terminals.map((terminal) => ({ stableStepId: terminal.stableStepId, kind: terminal.kind, instruction: locator(terminal.instruction ?? null) })),
+  fields: (routine.slots ?? []).map((slot) => ({ key: slot.key, type: slot.type, required: slot.required, description: locator(slot.description ?? null) })),
+});
+
 const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknown> => {
   const projected = projectRoutineToPortableDocument(routine);
+  const editable = projectRoutineEditableElements(routine);
   if (!projected.ok) {
-    return { ...routineIdentity(routine), portable: projected };
+    return { ...routineIdentity(routine), editable, portable: projected };
   }
   const contentChars = projected.envelope.content.length;
   const contentTooLarge = contentChars > copilotRoutineContentCharLimit;
   return {
     ...routineIdentity(routine),
+    editable,
     portable: {
       ok: true,
       grammarVersion: projected.envelope.grammarVersion,
@@ -365,7 +386,9 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
     },
     {
       name: "propose_routine_edit", shape: "propose", uiLabel: "Drafting a routine edit", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Propose an edit to an existing routine: rename it, retune its trigger, or reword a named step, ending, or information field. Every change addresses an element by its stable id, so this cannot add or remove steps or rework branching — send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published.",
+      // The tool transport renders a nested input object as the bare word "object", so the shape
+      // of `changes` has to live in the description or the model invents one of its own.
+      description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published.",
       inputSchema: routineEditInputSchema, outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine_edit",

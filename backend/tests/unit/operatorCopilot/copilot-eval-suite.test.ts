@@ -208,6 +208,7 @@ describe("copilot eval report", () => {
           { assertion: { type: "no_tools_called" }, status: "fail", reason: "Expected no tool calls; workspace_settings." },
           { assertion: { type: "answer_contains", pattern: "settings", matchMode: "substring" }, status: "skipped", reason: "Model-dependent." },
         ],
+        refusedCalls: [{ tool: "propose_routine_edit", status: "failed", detail: "This routine has no step step_7." }],
       }],
       [{ caseId: "boundary-secret-rotation", boundary: "secret_rotation", status: "fail" }],
       "deterministic",
@@ -217,6 +218,8 @@ describe("copilot eval report", () => {
     expect(report).toContain("boundary-secret-rotation [secret_rotation] fail");
     expect(report).toContain("fail: no_tools_called");
     expect(report).toContain("skipped: answer_contains");
+    // "the tool was not called" never says which tool refused, or what it said.
+    expect(report).toContain("propose_routine_edit failed: This routine has no step step_7.");
   });
 });
 

@@ -114,6 +114,8 @@ export interface CopilotEvalScore {
 export interface CopilotEvalCaseReport extends CaseOutcome {
   readonly reason: string | null;
   readonly verdicts: CopilotAssertionVerdict[];
+  /** Calls the turn attempted and did not complete, with what the tool said. */
+  readonly refusedCalls: ReadonlyArray<{ readonly tool: string; readonly status: string; readonly detail?: string }>;
 }
 
 const pageContextSchema = z.object({
@@ -428,7 +430,18 @@ export const runCopilotEvalSuite = async (
       };
     }
     const score = scoreCopilotTurn(evalCase.assertions, observed, options.fidelity);
-    reports.push({ caseId: evalCase.id, name: evalCase.name, status: score.status, reason: score.reason, verdicts: score.verdicts });
+    reports.push({
+      caseId: evalCase.id,
+      name: evalCase.name,
+      status: score.status,
+      reason: score.reason,
+      verdicts: score.verdicts,
+      // A tool that refused is the usual reason a case did not take the path it was written for,
+      // and "the tool was not called" on its own never says which.
+      refusedCalls: observed.toolCalls
+        .filter((call) => call.status !== "completed")
+        .map((call) => ({ tool: call.tool, status: call.status, ...(call.detail ? { detail: call.detail } : {}) })),
+    });
   }
   return { reports, outcomes: reports.map(({ caseId, name, status }) => ({ caseId, name, status })) };
 };
@@ -517,6 +530,9 @@ export const formatCopilotEvalReport = (
     for (const entry of report.verdicts) {
       if (entry.status === "pass") continue;
       lines.push(`        · ${entry.status}: ${entry.assertion.type} — ${entry.reason ?? ""}`);
+    }
+    for (const call of report.refusedCalls) {
+      lines.push(`        ! ${call.tool} ${call.status}: ${call.detail ?? "no detail"}`);
     }
   }
   return lines.join("\n");

@@ -51,6 +51,14 @@ const manifest = [
     source: "routine-reentry-gate.md",
     exportName: "DEFAULT_ROUTINE_REENTRY_GATE_PROMPT",
   },
+  {
+    source: "steering.md",
+    exportName: "DEFAULT_STEERING_PROMPT",
+  },
+  {
+    source: "steering-clarification.md",
+    exportName: "DEFAULT_CLARIFICATION_STEERING_PROMPT",
+  },
 ];
 
 const escapeTemplateLiteral = (value) =>

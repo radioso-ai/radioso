@@ -138,6 +138,30 @@ describe("DefaultClarifier", () => {
     expect(systemPrompt).toContain("the user seems rushed")
   });
 
+  it("orders clarification guidance by priority so a conflict has a tiebreak", async () => {
+    const modelGateway = gateway("¿Facturacion o soporte?");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    await clarifier.phraseQuestion({
+      candidates,
+      turn: {
+        ...turn("Necesito ayuda"),
+        steering: [
+          { action: "Lower priority phrasing.", priority: 10, source: "directive", lifespan: "response" },
+          { action: "Higher priority phrasing.", priority: 90, source: "directive", lifespan: "response" },
+        ],
+      },
+    });
+
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt;
+    expect(systemPrompt.indexOf("Higher priority phrasing.")).toBeLessThan(
+      systemPrompt.indexOf("Lower priority phrasing."),
+    );
+  });
+
   it("leaves the question prompt unchanged when there is no steering", async () => {
     const modelGateway = gateway("¿Facturacion o soporte?");
     const clarifier = new DefaultClarifier(modelGateway, {

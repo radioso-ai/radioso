@@ -5,11 +5,15 @@ import type {
   ConversationMessage,
   ConversationModelGateway,
   ClarificationReplyMapInput,
-  SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
 
 import { renderPromptTemplate } from "./promptTemplate.js";
+import {
+  appendSteeringRules,
+  clarificationSteeringOptions,
+  type RenderSteeringRulesOptions,
+} from "./steeringPrompt.js";
 
 export const DEFAULT_CLARIFICATION_QUESTION_PROMPT = `Write one short clarifying lead-in line in {{conversationLanguage}}.
 
@@ -78,23 +82,6 @@ const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
   { role: "user", content: turn.inputEvent.content },
 ];
-
-/**
- * Appends co-composed steering (matched directives) as guidance the clarifying
- * question must follow, so a routine-activation clarification is shaped by the
- * agent's directives (tone, format, language) the same way a routine step reply
- * is. Empty when no steering applies, leaving the prompt — and every non-routine
- * clarifier caller — unchanged.
- */
-const appendGuidance = (prompt: string, steering: SteeringRule[] = []): string => {
-  if (steering.length === 0) {
-    return prompt;
-  }
-  const lines = steering
-    .map((rule) => (rule.condition ? `- ${rule.action} (when: ${rule.condition})` : `- ${rule.action}`))
-    .join("\n");
-  return `${prompt}\n\nAlso follow this guidance when phrasing the question:\n${lines}`;
-};
 
 const optionsBlock = (candidates: ClarificationCandidate[]): string =>
   candidates
@@ -254,14 +241,18 @@ export class DefaultClarifier implements ConversationClarifier {
   private readonly replyMapPromptTemplate: string;
   private readonly offerReplyMapPromptTemplate: string;
 
+  private readonly steeringOptions: RenderSteeringRulesOptions;
+
   constructor(
     private readonly modelGateway: ConversationModelGateway,
     options: {
       questionPromptTemplate?: string;
       replyMapPromptTemplate?: string;
       offerReplyMapPromptTemplate?: string;
+      steeringPromptTemplate?: string;
     } = {},
   ) {
+    this.steeringOptions = clarificationSteeringOptions(options.steeringPromptTemplate);
     this.questionPromptTemplate = options.questionPromptTemplate ?? DEFAULT_CLARIFICATION_QUESTION_PROMPT;
     this.replyMapPromptTemplate = options.replyMapPromptTemplate ?? DEFAULT_CLARIFICATION_REPLY_MAP_PROMPT;
     this.offerReplyMapPromptTemplate = options.offerReplyMapPromptTemplate ?? DEFAULT_CLARIFICATION_OFFER_REPLY_MAP_PROMPT;
@@ -274,7 +265,7 @@ export class DefaultClarifier implements ConversationClarifier {
     });
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),
-      systemPrompt: appendGuidance(systemPrompt, input.turn.steering),
+      systemPrompt: appendSteeringRules(systemPrompt, input.turn.steering, this.steeringOptions),
     });
     // The model authors only the localized lead-in; the options are appended in
     // code. This makes the failure mode where the model collapses the question to a

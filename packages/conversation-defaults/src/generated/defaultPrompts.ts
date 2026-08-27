@@ -188,3 +188,10 @@ The finished task:
 
 What was collected when it finished:
 {{variables}}`;
+
+export const DEFAULT_STEERING_PROMPT = `The following behavioral directives apply to this turn. Follow them when forming your response, alongside your other instructions. They are listed in priority order; if two of them genuinely conflict, follow the one listed earlier:
+
+{{steering_rules}}`;
+
+export const DEFAULT_CLARIFICATION_STEERING_PROMPT = `Also follow this guidance when phrasing the question:
+{{steering_rules}}`;

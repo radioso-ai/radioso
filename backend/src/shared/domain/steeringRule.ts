@@ -3,4 +3,9 @@ export type {
   SteeringRule,
   SteeringSource,
 } from "@radioso/conversation-contract";
-export { orderSteeringRules } from "@radioso/conversation-defaults";
+export {
+  appendSteeringRules,
+  orderSteeringRules,
+  renderSteeringRules,
+  type RenderSteeringRulesOptions,
+} from "@radioso/conversation-defaults";

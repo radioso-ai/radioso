@@ -10,6 +10,14 @@ export {
   type DirectiveSelectionMode,
   type SteeringRule,
 } from "./domain.js";
+export {
+  DEFAULT_CLARIFICATION_STEERING_PROMPT,
+  DEFAULT_STEERING_PROMPT,
+  appendSteeringRules,
+  clarificationSteeringOptions,
+  renderSteeringRules,
+  type RenderSteeringRulesOptions,
+} from "./steeringPrompt.js";
 export { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
 export {
   DEFAULT_DIRECTIVE_PRIORITY,

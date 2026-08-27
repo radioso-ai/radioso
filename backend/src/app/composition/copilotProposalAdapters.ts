@@ -17,8 +17,6 @@ import {
 } from "../../modules/routines/public.js";
 import {
   AgentSkillsService,
-  agentSkillCreateSchema,
-  agentSkillUpdateSchema,
   type AgentSkillInvocationMode,
   type AgentSkillView,
 } from "../../modules/agentSkills/public.js";
@@ -217,7 +215,7 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
  */
 export const createAgentSkillCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
-  readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update">;
+  readonly agentSkillsService: Pick<AgentSkillsService, "list" | "create" | "update" | "dryRunValidate">;
   readonly skillCapabilityRegistry: SkillCapabilityRegistry;
 }): CopilotAgentSkillProposalAdapter => {
   const findExisting = async (workspaceId: string, agentId: string, skillId: string | null): Promise<AgentSkillView | null> => {
@@ -255,40 +253,33 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     const config = mergeSkillConfig(existing?.config, payload.config);
     assertDependentSettingsAreGated(descriptor.settingsFields, payload.config ?? {}, config);
     assertNotifyDeliveryIsReachable(descriptor.id, config);
-    const validatedConfig = descriptor.validateConfig(config);
-    if (!validatedConfig.success) {
-      throw badRequest(`Invalid configuration for the "${descriptor.id}" skill capability`, validatedConfig.error.flatten());
-    }
 
+    // Deliberately not re-validated here: capability config schema, target-kind match,
+    // invocation-mode support, and default-answer uniqueness are AgentSkillsService's own rules.
+    // dryRunValidate runs exactly the same validation create/update do - including the schema
+    // shape a previous fix used to re-check locally with agentSkillCreateSchema/agentSkillUpdateSchema
+    // - without persisting, so a configuration the service would reject on Apply (wrong target
+    // kind, a second default-answer skill, ...) is refused here instead of becoming a pending
+    // proposal card that can only fail once applied.
     const invocationMode = payload.invocationMode ?? existing?.invocationMode ?? descriptor.defaultInvocationMode ?? descriptor.supportedInvocationModes[0];
-    if (!invocationMode || !descriptor.supportedInvocationModes.includes(invocationMode as AgentSkillInvocationMode)) {
-      throw badRequest(`The "${descriptor.id}" skill capability does not support invocation mode "${invocationMode}"`);
-    }
     const target = payload.target ?? existing?.target ?? { kind: descriptor.targetKind, id: null };
-    const normalized = {
-      name,
-      capability: descriptor.id,
-      target,
-      config: validatedConfig.data as Record<string, unknown>,
-      invocationMode,
-      enabled: payload.enabled ?? existing?.enabled ?? true,
-    };
-
-    // Validated here against the same exported schemas AgentSkillsService.create/update parse
-    // internally, so a name or shape the service would reject on Apply (e.g. "FAQ Search" failing
-    // the create schema's lowercase-snake-case rule) is caught before the proposal is ever
-    // persisted, not only after the operator clicks Apply.
-    const schemaResult = existing
-      ? agentSkillUpdateSchema.safeParse({ target: normalized.target, replaceConfig: normalized.config, invocationMode: normalized.invocationMode, enabled: normalized.enabled })
-      : agentSkillCreateSchema.safeParse(normalized);
-    if (!schemaResult.success) {
-      throw badRequest(`This skill configuration would be rejected by the agent skills service: ${describeSchemaIssues(normalized, schemaResult.error)}`);
-    }
+    const enabled = payload.enabled ?? existing?.enabled ?? true;
+    const validatedConfig = await deps.agentSkillsService.dryRunValidate(
+      workspaceId,
+      targetRef.agentId,
+      { name, capability: descriptor.id, target, config, invocationMode: invocationMode as string, enabled },
+      existing?.id,
+    );
 
     return {
       existing,
       normalized: {
-        ...normalized,
+        name,
+        capability: descriptor.id,
+        target,
+        config: validatedConfig,
+        invocationMode: invocationMode as AgentSkillInvocationMode,
+        enabled,
         ...(payload.rationale ? { rationale: payload.rationale } : {}),
       },
     };
@@ -465,29 +456,38 @@ const isSkillCapabilityId = (value: string): value is SkillCapabilityId => (skil
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
-// Mirrors AgentSkillsService.update's own shallow, top-level merge, so the config validated here
-// is the config that will actually be persisted.
-const mergeSkillConfig = (existing: Record<string, unknown> | undefined, proposed: Record<string, unknown> | undefined): Record<string, unknown> => ({
-  ...(existing ?? {}),
-  ...(proposed ?? {}),
-});
+const isPlainConfigObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/**
+ * Applies always end up as a full `replaceConfig` (see the comment on `dryRunValidate`'s call
+ * site), so whatever this produces IS the config that gets persisted - there is no service-side
+ * partial merge left to fall back on. A top-level-only spread would let a patch that names one
+ * nested settings-field path (e.g. `delivery.recipientEmails`) silently wipe a sibling path under
+ * the same key (`delivery.webhook`) that the proposal never mentioned, because the whole `delivery`
+ * object would be replaced wholesale. Recursing into plain objects on both sides keeps every
+ * untouched leaf from the stored config; arrays and scalars are still replaced outright wherever
+ * the proposed patch supplies them, since "append to this array" is not a merge rule this adapter
+ * can safely infer.
+ */
+const mergeSkillConfig = (existing: Record<string, unknown> | undefined, proposed: Record<string, unknown> | undefined): Record<string, unknown> => {
+  const base = existing ?? {};
+  const patch = proposed ?? {};
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    const current = base[key];
+    merged[key] = isPlainConfigObject(value) && isPlainConfigObject(current)
+      ? mergeSkillConfig(current, value)
+      : value;
+  }
+  return merged;
+};
 
 const readByPath = (source: Record<string, unknown>, path: string): unknown =>
   path.split(".").reduce<unknown>(
     (value, segment) => value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>)[segment] : undefined,
     source,
   );
-
-/**
- * Turns a rejection from the service's own schema into a message Ray can act on: which field,
- * what it was, and why it failed - without restating the rule the schema already enforces.
- */
-const describeSchemaIssues = (input: Record<string, unknown>, error: z.ZodError): string =>
-  error.issues.map((issue) => {
-    const path = issue.path.length ? issue.path.map(String).join(".") : "value";
-    const received = issue.path.length ? readByPath(input, path) : input;
-    return `${path} (received ${JSON.stringify(received)}): ${issue.message}`;
-  }).join("; ");
 
 /**
  * A settings field with `dependsOnKey` only takes effect while its parent is on. Ray proposing a
@@ -596,9 +596,15 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
   // A proposal can touch the definition, the enablement, or both, so the version token guards
   // whichever of the two was most recently changed — the one a stale apply would otherwise clobber.
+  //
+  // agent_context_variables.agent_id carries no foreign key (see migration 112), so resolving the
+  // agent through the workspace here - on every call, not only when there is no variableId - is
+  // the only thing standing between a hallucinated or cross-workspace agent id and an orphan
+  // enablement row. Matches the requireAgent check contextVariableRoutes.ts runs on every write.
   const readCurrentToken = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }): Promise<string> => {
+    const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
     if (!targetRef.variableId) {
-      return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+      return versionToken(agent.updatedAt);
     }
     const variable = await deps.contextVariableRepository.get(workspaceId, targetRef.variableId);
     if (!variable) throw notFound("Context variable no longer exists");
@@ -609,6 +615,10 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
   const resolveProposal = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }, rawPayload: unknown) => {
     const payload = contextVariableProposalPayloadSchema.parse(rawPayload);
+    // Resolved for its own sake, not only for its return value: a proposal always scopes to an
+    // agent (even a definition-only one), so an unresolvable agent id must fail here rather than
+    // only surfacing once the enablement write is attempted.
+    await deps.agentService.get(workspaceId, targetRef.agentId);
     const existing = targetRef.variableId ? await deps.contextVariableRepository.get(workspaceId, targetRef.variableId) : null;
     if (targetRef.variableId && !existing) throw notFound("Context variable not found");
 

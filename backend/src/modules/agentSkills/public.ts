@@ -10,6 +10,7 @@ export {
   AgentSkillsService,
   agentSkillCreateSchema,
   agentSkillUpdateSchema,
+  type AgentSkillConfigurationCandidate,
   type AgentSkillCreateInput,
   type AgentSkillUpdateInput,
   type AgentSkillView,

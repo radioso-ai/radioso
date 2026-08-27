@@ -564,14 +564,24 @@ describe("agent skill config proposal adapter", () => {
   } = {}) => {
     const { createAgentSkillCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
     const { createDefaultSkillCapabilityRegistry } = await import("../../../src/modules/skills/public.js");
+    const { AgentSkillsService } = await import("../../../src/modules/agentSkills/public.js");
     const list = vi.fn(async () => overrides.agentSkills ?? []);
     const create = overrides.create ?? vi.fn(async () => ({ id: "created-skill-1" }));
     const update = overrides.update ?? vi.fn(async () => ({ id: existingSkillId }));
     const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
+    const capabilities = createDefaultSkillCapabilityRegistry();
+    // dryRunValidate is the real module-owned validation (target-kind match, invocation-mode
+    // support, capability config schema, name/shape) - these tests exercise it for real rather
+    // than re-stating its rules as a mock. It only needs the async default-answer-uniqueness
+    // check answered; none of these tests seed a conflicting default-answer skill.
+    const validationService = new AgentSkillsService({
+      repository: { findDefaultAnswer: vi.fn(async () => null) } as never,
+      capabilities,
+    });
     const adapter = createAgentSkillCopilotProposalAdapter({
       agentService: agentService as never,
-      agentSkillsService: { list, create, update } as never,
-      skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
+      agentSkillsService: { list, create, update, dryRunValidate: validationService.dryRunValidate.bind(validationService) } as never,
+      skillCapabilityRegistry: capabilities,
     });
     return { adapter, list, create, update, agentService };
   };
@@ -717,15 +727,19 @@ describe("agent skill config proposal adapter", () => {
   // agentSkillCreateSchema requires name to match /^[a-z][a-z0-9_]*$/u. The copilot's own
   // skillConfigPayloadSchema only checks non-empty, so a proposal like "FAQ Search" previously
   // passed validatePayload, created a pending card, and failed only when the operator clicked
-  // Apply. The proposal must be validated against the service's real create schema before it is
-  // ever persisted.
+  // Apply. AgentSkillsService.dryRunValidate now runs that same create schema before the proposal
+  // is ever persisted, so the rejection carries the service's own generic message plus the
+  // flattened field error rather than a copilot-authored one.
   it("refuses a new skill name the create schema's own format rule will reject, before persisting the proposal", async () => {
     const { adapter, create } = await buildAdapter();
     await expect(adapter.validatePayload("workspace-1", { agentId: agentSkillAgentId, skillId: null }, {
       name: "FAQ Search",
       capability: "retrieve",
       config: {},
-    })).rejects.toThrow(/name/i);
+    })).rejects.toMatchObject({
+      statusCode: 400,
+      details: { fieldErrors: { name: [expect.stringMatching(/lowercase/i)] } },
+    });
     expect(create).not.toHaveBeenCalled();
   });
 });

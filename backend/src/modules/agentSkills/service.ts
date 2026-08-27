@@ -44,6 +44,22 @@ export const agentSkillUpdateSchema = z.object({
 
 export type AgentSkillUpdateInput = z.infer<typeof agentSkillUpdateSchema>;
 
+/**
+ * A caller-assembled candidate for validation-without-persisting via `dryRunValidate`. Looser than
+ * `AgentSkillCreateInput` on purpose: a caller that already merged an existing skill's target/config
+ * with a proposed patch (the operator-copilot proposal adapter) may be holding a `target.kind` of
+ * `null` (a stored no-target skill's view) or an unvalidated `config`/`invocationMode`, and
+ * `dryRunValidate` re-validates all of it through the same schema `create`/`update` do.
+ */
+export interface AgentSkillConfigurationCandidate {
+  readonly name: string;
+  readonly capability: SkillCapabilityId;
+  readonly target: { readonly kind: string | null; readonly id: string | null };
+  readonly config: unknown;
+  readonly invocationMode: string;
+  readonly enabled: boolean;
+}
+
 export interface AgentSkillView {
   id: string;
   workspaceId: string;
@@ -233,7 +249,9 @@ export class AgentSkillsService {
     return descriptor;
   }
 
-  private parseCreate(rawInput: AgentSkillCreateInput): AgentSkillCreateInput {
+  // Accepts unknown rather than AgentSkillCreateInput: it is the runtime gate that produces that
+  // type, so a caller (dryRunValidate included) must be able to hand it an unvalidated candidate.
+  private parseCreate(rawInput: unknown): AgentSkillCreateInput {
     const parsed = agentSkillCreateSchema.safeParse(rawInput);
     if (!parsed.success) {
       throw badRequest("Invalid skill definition", parsed.error.flatten());
@@ -249,13 +267,39 @@ export class AgentSkillsService {
     return parsed.data;
   }
 
+  /**
+   * Runs exactly the validation `create`/`update` perform - capability resolution, target-kind
+   * match, invocation-mode support, capability config schema, and the async default-answer
+   * uniqueness check - without persisting anything, and returns the config coerced by the
+   * capability's own schema (nested defaults filled in). `existingId` marks the candidate as a
+   * full replacement for that skill, matching `update`'s own exclusion of itself from the
+   * default-answer conflict check.
+   *
+   * This is the single validation path `create`/`update` and the operator-copilot proposal
+   * adapter now share: a caller that assembles its own full candidate (the adapter always applies
+   * through a full `replaceConfig`, since it can't express `AgentSkillsService.update`'s partial
+   * merge without re-losing the sibling-field guarantee `dryRunValidate`'s caller already
+   * enforced) can validate it the same way `create`/`update` would, instead of finding out only
+   * when an operator clicks Apply.
+   */
+  async dryRunValidate(
+    workspaceId: string,
+    agentId: string,
+    candidate: AgentSkillConfigurationCandidate,
+    existingId?: string,
+  ): Promise<Record<string, unknown>> {
+    const input = this.parseCreate(candidate);
+    const descriptor = this.requireCapability(input.capability);
+    return this.validateCreateOrUpdate(workspaceId, agentId, descriptor, input, existingId);
+  }
+
   private async validateCreateOrUpdate(
     workspaceId: string,
     agentId: string,
     descriptor: SkillCapabilityDescriptor,
     input: AgentSkillCreateInput,
     existingId?: string,
-  ): Promise<void> {
+  ): Promise<Record<string, unknown>> {
     if (input.target.kind !== descriptor.targetKind) {
       throw badRequest(`Capability ${descriptor.id} must target ${descriptor.targetKind}`);
     }
@@ -272,6 +316,7 @@ export class AgentSkillsService {
         throw conflict("A default-answer skill already exists for this agent");
       }
     }
+    return config.data as Record<string, unknown>;
   }
 
   private toView(record: AgentSkillSpine): AgentSkillView {

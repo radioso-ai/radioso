@@ -617,6 +617,8 @@ Public surfaces and contracts:
 - `backend/src/modules/directives/README.md`
 - `backend/src/modules/directives/public.ts`
 - `backend/src/shared/domain/steeringRule.ts` (shared steering value type, also used by skills)
+- `backend/src/shared/domain/generationSurface.ts` (which generator a rule addresses)
+- `backend/src/shared/infra/prompts/steeringPromptRenderer.ts` (per-surface steering block)
 
 Primary internals:
 

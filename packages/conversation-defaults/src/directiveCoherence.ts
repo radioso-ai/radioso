@@ -10,6 +10,7 @@ import type {
   DirectiveCoherenceMode,
   DirectiveCoherenceVerdict,
 } from "@radioso/conversation-contract";
+import { effectiveSurfaces } from "./domain.js";
 export type {
   DirectiveCoherenceCheckInput,
   DirectiveCoherenceChecker,
@@ -72,6 +73,7 @@ const directivePayload = (directive: Directive): Record<string, unknown> => ({
   excludes: directive.excludes,
   description: directive.description,
   metadata: directive.metadata,
+  surfaces: effectiveSurfaces(directive.surfaces),
 });
 
 const buildCoherenceMessages = (input: DirectiveCoherenceCheckInput): ConversationMessage[] => [{

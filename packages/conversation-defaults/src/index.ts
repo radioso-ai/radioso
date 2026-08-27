@@ -1,13 +1,18 @@
 export {
   directiveToSteeringRule,
+  addressesSurface,
+  effectiveSurfaces,
   orderSteeringRules,
+  resolveRenderSurfaces,
   resolveDirectiveRelationships,
+  steeringForSurface,
   type Directive,
   type DirectiveCondition,
   type DirectiveLifecycle,
   type DirectiveMatch,
   type DirectiveOmission,
   type DirectiveSelectionMode,
+  type GenerationSurface,
   type SteeringRule,
 } from "./domain.js";
 export {

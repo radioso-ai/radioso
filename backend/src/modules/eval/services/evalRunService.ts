@@ -405,6 +405,7 @@ export class EvalRunService {
         answer: result.answer,
         citations: result.citations,
         answerSegments: result.answerSegments,
+        suggestions: result.suggestions,
         ...toObservedGrounding(result.groundingSummary),
         turnTrace: result.turnTrace,
       };

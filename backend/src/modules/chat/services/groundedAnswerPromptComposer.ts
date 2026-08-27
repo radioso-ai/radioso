@@ -5,6 +5,8 @@ import {
   type ConversationIntentSnapshot,
 } from "./conversationIntentSnapshot.js";
 import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
+import { steeringForSurface } from "../../../shared/domain/steeringRule.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 
 export interface GroundedAnswerSystemPromptInput {
@@ -41,6 +43,17 @@ const formatOfferAlternatives = (
     })
     .join("\n");
 
+/**
+ * The rules the answer prompt renders with bracketed ids, and therefore the only ones
+ * a model can attest to. The suggestion block renders its rules without ids, and
+ * renders nothing at all when suggestions are off or no context was retrieved, so a
+ * rule addressed only to that generator is never attestable. Callers that build an
+ * answer side channel narrow through this rather than restating the rule, so the
+ * attested set cannot drift from the rendered one.
+ */
+export const attestableSteering = (steering: SteeringRule[] = []): SteeringRule[] =>
+  steeringForSurface(steering, GENERATION_SURFACE.ANSWER);
+
 export const composeGroundedAnswerSystemPrompt = (
   input: GroundedAnswerSystemPromptInput,
 ): GroundedAnswerSystemPromptResult => {
@@ -65,11 +78,17 @@ export const composeGroundedAnswerSystemPrompt = (
     return { systemPrompt: withEnvelope, suggestionsExpected: false };
   }
 
+  // Rules addressed to the follow-up question generator render inside its own block,
+  // where its standing rules are, rather than in the answer steering above it.
+  const suggestionSteering = renderSteeringBlock(input.steering ?? [], {
+    surface: GENERATION_SURFACE.SUGGESTED_QUESTIONS,
+  });
   const suggestionBlock = renderPromptTemplate("chat/answer-suggestions.md", {
     max_suggestions: String(input.suggestedQuestionsCount),
     recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
     active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
     active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
+    steering_block: suggestionSteering ? `${suggestionSteering}\n\n` : "",
   });
 
   return {

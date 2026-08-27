@@ -7,6 +7,7 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
+import { effectiveSurfaces, resolveRenderSurfaces } from "./generationSurface.js";
 import { timedStage } from "./traceStages.js";
 import { summarizeDirectiveMatch } from "./traceSummaries.js";
 
@@ -20,6 +21,7 @@ export const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule =>
   description: match.directive.description,
   source: "directive",
   lifespan: "response",
+  ...(resolveRenderSurfaces(match) ? { surfaces: resolveRenderSurfaces(match) } : {}),
 });
 
 export const isDirectiveEligibleForTurn = (directive: Directive, turnContext: TurnContext): boolean => {
@@ -66,7 +68,12 @@ export class DefaultSteeringResolver implements SteeringResolver {
     const seen = new Set<string>();
     const resolved: SteeringRule[] = [];
     for (const { rule } of [...base, ...directives]) {
-      const key = `${rule.action}\u0000${rule.condition ?? ""}`;
+      // Scope is part of a rule's identity: the same action addressed to two
+      // generators is two rules, and collapsing them would leave one generator
+      // unsteered. Normalized so an absent scope and an explicit ["answer"] are
+      // one key rather than a duplicate render.
+      const scope = [...effectiveSurfaces(rule.surfaces)].sort().join(",");
+      const key = `${rule.action}\u0000${rule.condition ?? ""}\u0000${scope}`;
       if (seen.has(key)) {
         continue;
       }
@@ -113,7 +120,12 @@ export const buildResolvedSteering = async (input: {
   const directiveMatches = input.directiveMatcher
     ? await input.directiveMatcher.match({ turn: input.turn, directives: eligibleDirectives })
     : [];
-  const directiveSteering = directiveMatches.map(directiveMatchToSteering);
+  // A host may retain a match for trace and directive-to-skill binding after its
+  // steering bound withheld it from every generator. Never rebuild those retained
+  // diagnostics into an engine-owned routine or clarification prompt.
+  const directiveSteering = directiveMatches
+    .filter((match) => match.renderInSteering !== false)
+    .map(directiveMatchToSteering);
   const combined = [...(input.baseSteering ?? []), ...directiveSteering];
   const steering = (input.steeringResolver ?? defaultSteeringResolver).resolve(combined, {
     turnContext: input.turn,

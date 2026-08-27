@@ -9,6 +9,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { renderPromptTemplate } from "./promptTemplate.js";
+import { steeringForSurface } from "./domain.js";
 import {
   appendSteeringRules,
   clarificationSteeringOptions,
@@ -265,7 +266,13 @@ export class DefaultClarifier implements ConversationClarifier {
     });
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),
-      systemPrompt: appendSteeringRules(systemPrompt, input.turn.steering, this.steeringOptions),
+      // The clarifying question speaks in the agent's answering voice, so it takes the
+      // rules addressed to that voice — never one aimed at another generator.
+      systemPrompt: appendSteeringRules(
+        systemPrompt,
+        steeringForSurface(input.turn.steering ?? [], "answer"),
+        this.steeringOptions,
+      ),
     });
     // The model authors only the localized lead-in; the options are appended in
     // code. This makes the failure mode where the model collapses the question to a

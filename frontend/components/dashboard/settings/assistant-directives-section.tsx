@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
-import { Pencil, Plus, ScrollText, Trash2 } from 'lucide-react'
+import { Check, Pencil, Plus, ScrollText, Trash2 } from 'lucide-react'
 
 import { DirectiveReplacesField } from '@/components/dashboard/settings/directive-replaces-field'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
@@ -20,6 +20,15 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  DIRECTIVE_SURFACE_CHOICES,
+  directiveSurfacesOverlap,
+  directiveSurfaceLabel,
+  directiveSurfacesToForm,
+  formSurfacesToPayload,
+  toggleDirectiveSurface,
+  type DirectiveSurface,
+} from '@/lib/directive-surfaces'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -55,6 +64,9 @@ type DirectiveFormState = {
   actionSkillNames: string[]
   priority: string
   replaces: string[]
+  // Which generators the directive addresses. Always holds at least one; the reply
+  // alone normalizes back to an empty stored scope on save.
+  surfaces: DirectiveSurface[]
 }
 
 // `default` mirrors AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY in
@@ -125,6 +137,7 @@ const emptyForm: DirectiveFormState = {
   conditionDescription: '',
   action: '',
   actionSkillNames: [],
+  surfaces: ['answer'],
   priority: '',
   replaces: [],
 }
@@ -155,6 +168,7 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   actionSkillNames: recognizedMentions(directive),
   priority: directive.priority == null ? '' : String(directive.priority),
   replaces: directive.excludes ?? [],
+  surfaces: directiveSurfacesToForm(directive.surfaces),
 })
 
 const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
@@ -181,9 +195,14 @@ const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
     // Explicitly null when the chip is gone: an omitted binding keeps the stored one.
     binding: bindingSkillName ? { kind: 'skill', skillName: bindingSkillName } : null,
     priority: parsePriority(form.priority),
-  }
-  if (replaces.length > 0) {
-    payload.excludes = replaces
+    // Always sent, never conditional: an omitted scope keeps the stored one, so a
+    // directive narrowed to one generator could never be widened back.
+    surfaces: formSurfacesToPayload(form.surfaces),
+    // Always sent, never conditional: the update service reads an omitted field as
+    // "keep what is stored", so an emptied list — including one this form pruned
+    // because a surface change made the replacement impossible — would survive in
+    // storage and come back the moment the surfaces overlapped again.
+    excludes: replaces,
   }
   return payload
 }
@@ -197,6 +216,7 @@ const directiveToPayload = (
   action: directive.action,
   binding: directive.binding,
   priority: directive.priority,
+  surfaces: directive.surfaces,
   requiredCapabilities: directive.requiredCapabilities,
   dependsOn: directive.dependsOn,
   excludes: options.excludes ?? directive.excludes,
@@ -246,7 +266,10 @@ function CoherenceResolver({
             const existing = directives.find((directive) =>
               conflict.directiveId ? directive.id === conflict.directiveId : directive.name === conflict.directiveName
             )
-            const canResolve = subject && existing && subject.id !== existing.id
+            const canResolve = subject
+              && existing
+              && subject.id !== existing.id
+              && directiveSurfacesOverlap(subject.surfaces, existing.surfaces)
             return (
               <div key={`${conflict.directiveName}-${conflict.reason}`} className="space-y-2">
                 <p className="text-sm text-muted-foreground">
@@ -369,6 +392,12 @@ function DirectiveRow({
                 Priority {directive.priority}
               </span>
             ) : null}
+            {/* Built-ins carry no scope of their own and always address the reply. */}
+            {'surfaces' in directive && directiveSurfaceLabel(directive.surfaces) ? (
+              <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                {directiveSurfaceLabel(directive.surfaces)}
+              </span>
+            ) : null}
             {replaces?.map((name) => (
               <span key={name} className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                 {directive.condition.kind === 'contextual' ? `Replaces ${name} when active` : `Replaces: ${name}`}
@@ -484,9 +513,44 @@ export function AssistantDirectivesSection({
     ),
     [agentId, skillCapabilities],
   )
+  const eligibleReplacementNames = useCallback((
+    surfaces: readonly DirectiveSurface[],
+    subjectId: string | undefined,
+  ): Set<string> => new Set([
+    ...directives
+      .filter((directive) =>
+        directive.id !== subjectId
+        && directiveSurfacesOverlap(surfaces, directive.surfaces)
+      )
+      .map((directive) => directive.name),
+    ...(directiveSurfacesOverlap(surfaces, undefined)
+      ? builtIns.map((directive) => directive.name)
+      : []),
+  ]), [builtIns, directives])
+  const effectiveReplacements = useMemo(() => {
+    const targetSurfaces = new Map<string, readonly DirectiveSurface[] | undefined>()
+    for (const directive of builtIns) targetSurfaces.set(directive.name, undefined)
+    for (const directive of directives) targetSurfaces.set(directive.name, directive.surfaces)
+
+    const replacements = new Map<string, string[]>()
+    for (const directive of directives) {
+      replacements.set(
+        directive.id,
+        (directive.excludes ?? []).filter((name) =>
+          targetSurfaces.has(name)
+          && directiveSurfacesOverlap(directive.surfaces, targetSurfaces.get(name))
+        ),
+      )
+    }
+    return replacements
+  }, [builtIns, directives])
   const supersededBuiltIns = useMemo(() => {
     const replacements = new Map<string, Directive>()
     for (const directive of directives) {
+      // Built-ins govern the reply. An exclusion authored through an older API client may name
+      // one from a suggestion-only directive, but those rules never meet on a generator and the
+      // UI must not retire the built-in as though they did.
+      if (!directiveSurfacesOverlap(directive.surfaces, undefined)) continue
       for (const builtInName of directive.excludes ?? []) {
         if (!replacements.has(builtInName)) {
           replacements.set(builtInName, directive)
@@ -497,12 +561,15 @@ export function AssistantDirectivesSection({
   }, [directives])
 
   const replaceCandidates = useMemo(() => {
+    const eligibleNames = eligibleReplacementNames(form.surfaces, editingDirective?.id)
     const authored = directives
-      .filter((directive) => directive.id !== editingDirective?.id)
+      .filter((directive) => eligibleNames.has(directive.name))
       .map((directive) => ({ name: directive.name, description: directive.description ?? null }))
-    const builtInTargets = builtIns.map((directive) => ({ name: directive.name, description: directive.description ?? null }))
+    const builtInTargets = builtIns
+      .filter((directive) => eligibleNames.has(directive.name))
+      .map((directive) => ({ name: directive.name, description: directive.description ?? null }))
     return { builtIns: builtInTargets, authored }
-  }, [builtIns, directives, editingDirective])
+  }, [builtIns, directives, editingDirective, eligibleReplacementNames, form.surfaces])
 
   const formError = useMemo<DirectiveFormError | null>(() => {
     if (!form.name.trim()) return { field: 'name', message: 'Name is required.' }
@@ -519,6 +586,12 @@ export function AssistantDirectivesSection({
       return {
         field: 'instruction',
         message: `A directive can draw on one skill. This instruction names ${mentioned.join(', ')}. Remove the chips for all but one.`,
+      }
+    }
+    if (mentioned.length > 0 && !form.surfaces.includes('answer')) {
+      return {
+        field: 'instruction',
+        message: 'A skill can only hand off the agent\'s reply. Remove the skill, or apply this directive to the reply.',
       }
     }
     // A bound skill can be disabled, renamed, or moved out of agent-selectable after the
@@ -692,8 +765,14 @@ export function AssistantDirectivesSection({
   }
 
   const openDialogWith = (nextForm: DirectiveFormState, directive: Directive | null) => {
+    const eligibleNames = eligibleReplacementNames(nextForm.surfaces, directive?.id)
     setEditingDirective(directive)
-    setForm(nextForm)
+    setForm({
+      ...nextForm,
+      // Old API clients could store a cross-surface exclusion the runtime correctly ignores.
+      // Do not preserve that no-op as a selected chip or send it back on the next edit.
+      replaces: nextForm.replaces.filter((name) => eligibleNames.has(name)),
+    })
     setError(null)
     setTouchedFields({})
     setHasAttemptedSave(false)
@@ -722,6 +801,22 @@ export function AssistantDirectivesSection({
     }))
   }
 
+  const toggleSurface = (surface: DirectiveSurface) => {
+    setForm((current) => {
+      const surfaces = toggleDirectiveSurface(current.surfaces, surface, {
+        answerRequired: current.actionSkillNames.length > 0,
+      })
+      const eligibleReplacements = eligibleReplacementNames(surfaces, editingDirective?.id)
+      return {
+        ...current,
+        surfaces,
+        // Surface changes can invalidate an existing selection. Drop it at the same state
+        // boundary so a now-hidden chip cannot still be submitted to the API.
+        replaces: current.replaces.filter((name) => eligibleReplacements.has(name)),
+      }
+    })
+  }
+
   const focusDirective = (directiveId: string) => {
     const element = document.getElementById(`directive-${directiveId}`)
     element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -748,6 +843,7 @@ export function AssistantDirectivesSection({
   }
 
   const handleSupersede = async (winner: Directive, loser: Directive) => {
+    if (!directiveSurfacesOverlap(winner.surfaces, loser.surfaces)) return
     const saveId = beginSave()
     setIsSaving(true)
     setError(null)
@@ -881,7 +977,7 @@ export function AssistantDirectivesSection({
                   key={directive.id}
                   id={`directive-${directive.id}`}
                   directive={directive}
-                  replaces={directive.excludes ?? []}
+                  replaces={effectiveReplacements.get(directive.id) ?? []}
                   onEdit={() => openEditDialog(directive)}
                   onDelete={() => setDeletingDirective(directive)}
                 />
@@ -1016,6 +1112,54 @@ export function AssistantDirectivesSection({
                 onCreateSkill={bindableCapabilities.length > 0 ? requestSkillCreation : undefined}
               />
               {skillLoadError ? <p className="text-xs text-destructive">{skillLoadError}</p> : null}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Applies to</Label>
+              <p className="text-xs text-muted-foreground">
+                A turn writes more than one piece of text. This directive only shapes — and only
+                competes with, replaces, or hands off for — the ones you pick.
+              </p>
+              {/* Deliberately lighter than the condition cards above: a modifier on the
+                  instruction, not a second either/or decision of equal weight. */}
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                {DIRECTIVE_SURFACE_CHOICES.map((choice) => {
+                  const isSelected = form.surfaces.includes(choice.surface)
+                  const isLockedBySkill = choice.surface === 'answer'
+                    && isSelected
+                    && form.actionSkillNames.length > 0
+                  return (
+                    <button
+                      key={choice.surface}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={isSelected}
+                      aria-label={choice.title}
+                      title={choice.description}
+                      aria-describedby={isLockedBySkill ? 'directive-answer-surface-requirement' : undefined}
+                      disabled={isLockedBySkill}
+                      onClick={() => toggleSurface(choice.surface)}
+                      className={cn(
+                        'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                        isSelected
+                          ? 'border-primary bg-muted/40 text-foreground'
+                          : 'border-border text-muted-foreground hover:border-primary/60 hover:bg-muted/30',
+                        isLockedBySkill ? 'cursor-not-allowed opacity-60' : null,
+                      )}
+                    >
+                      <Check
+                        aria-hidden
+                        className={cn('h-3.5 w-3.5 shrink-0', isSelected ? 'opacity-100' : 'opacity-25')}
+                      />
+                      {choice.title}
+                    </button>
+                  )
+                })}
+              </div>
+              {form.actionSkillNames.length > 0 ? (
+                <p id="directive-answer-surface-requirement" className="text-xs text-muted-foreground">
+                  Remove the skill from the instruction before deselecting the reply.
+                </p>
+              ) : null}
             </div>
             <DirectiveReplacesField
               builtIns={replaceCandidates.builtIns}

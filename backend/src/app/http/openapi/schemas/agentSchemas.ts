@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
-import { agentSurfacePositions } from "../../../../modules/agents/public.js";
+import { agentSurfacePositions, authoredDirectiveSurfaceValues } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
   routineDraftAssistRequestSchema,
@@ -312,6 +312,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ]),
   );
 
+  const GenerationSurfaceSchema = registry.register(
+    "GenerationSurface",
+    z.enum(authoredDirectiveSurfaceValues).openapi({
+      description:
+        "Generator a directive addresses. Omitted or empty means the answer body only.",
+    }),
+  );
+
   const AuthoredDirectiveRequestBaseSchema = z.object({
     name: z.string().min(1).max(200),
     condition: AuthoredDirectiveConditionSchema,
@@ -320,6 +328,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     requiredCapabilities: z.array(z.string().min(1).max(200)).optional(),
     dependsOn: z.array(z.string().min(1).max(200)).optional(),
     excludes: z.array(z.string().min(1).max(200)).optional(),
+    surfaces: z.array(GenerationSurfaceSchema).optional(),
     tags: z.array(z.string().min(1).max(200)).optional(),
     description: z.string().min(1).max(1000).nullable().optional(),
     binding: z.union([AuthoredDirectiveBindingSchema, z.null()]).optional(),
@@ -357,6 +366,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       condition: AuthoredDirectiveConditionSchema,
       action: z.string().min(1).max(4000),
       tags: z.array(z.string().min(1).max(200)),
+      surfaces: z.array(GenerationSurfaceSchema).optional(),
     }),
   );
 
@@ -382,6 +392,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       dependsOn: z.array(z.string()),
       excludes: z.array(z.string()),
       routes: z.array(z.string()),
+      surfaces: z.array(GenerationSurfaceSchema),
       tags: z.array(z.string()),
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),

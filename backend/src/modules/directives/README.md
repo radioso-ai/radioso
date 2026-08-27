@@ -38,8 +38,15 @@ suppressed split) rather than composing the eligibility primitives inline. See
 `directiveLifecycle.ts` (pure eligibility + firing-state helpers + partition),
 `directiveStateStore.ts` (the `DirectiveStateStore` port), the host wiring in
 `../chat/services/conversationProcessTurnInput.ts` +
-`../chat/services/directives/deferredDirectiveStateStore.ts`, and the
+`../chat/services/directives/deferredDirectiveStateStore.ts` +
+`../chat/services/directives/directiveSurfaceRendering.ts` (records that a later
+generator ran, and spends any lifecycle budget it owed), and the
 `directive_states` table (persistence in `db/repositories/directiveStateRepository.ts`).
+Before matching, the state-store port reserves the conversation's lifecycle turn;
+the repository renews that short lease while generation runs and atomically writes
+the next state while releasing it. The reservation is separate from firing, so a
+failed or non-rendered turn releases it without consuming a once/cooldown budget,
+while concurrent application instances cannot render from the same baseline.
 
 ## Public Surfaces
 
@@ -50,6 +57,15 @@ suppressed split) rather than composing the eligibility primitives inline. See
 `SteeringRule` itself is a shared value type in
 `shared/domain/steeringRule.ts` — it unifies authored Directives with
 skill-emitted `SkillTransientGuidance` so the composer reads one steering set.
+
+A rule carries the generators it addresses (`surfaces`, vocabulary in
+`shared/domain/generationSurface.ts`). Rendering narrows the set to one surface
+and frames it for that generator, so the follow-up question generator reads the
+rules aimed at it inside its own prompt block while the answer body reads its
+own. An empty scope means the answering voice. Ordering and line format live in
+`@radioso/conversation-defaults`, shared with the clarifier;
+`shared/infra/prompts/steeringPromptRenderer.ts` is the host adapter that
+supplies each surface's framing from `backend/prompts/`.
 
 ## Read First
 

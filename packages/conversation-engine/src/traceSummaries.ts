@@ -8,6 +8,7 @@ import type {
   SteeringRule,
   TurnOutcome,
 } from "@radioso/conversation-contract";
+import { effectiveSurfaces, resolveRenderSurfaces } from "./generationSurface.js";
 import { createTrace, stage } from "./traceStages.js";
 
 export const summarizeDirectiveMatch = (match: DirectiveMatch): Record<string, unknown> => ({
@@ -24,6 +25,10 @@ export const summarizeDirectiveMatch = (match: DirectiveMatch): Record<string, u
   selectionMode: match.selectionMode,
   selectionReason: match.selectionReason,
   selectionConfidence: match.selectionConfidence,
+  // The generators this rule was addressed to. Without it the primary trace shows a
+  // reply rule and a follow-up-question rule identically, which is the distinction
+  // the scope exists to make.
+  surfaces: [...effectiveSurfaces(resolveRenderSurfaces(match))],
 });
 
 /** Keep conversational text out of audit/debug traces; expose structural facts only. */

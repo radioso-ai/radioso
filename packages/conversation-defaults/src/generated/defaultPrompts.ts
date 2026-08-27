@@ -189,7 +189,9 @@ The finished task:
 What was collected when it finished:
 {{variables}}`;
 
-export const DEFAULT_STEERING_PROMPT = `The following behavioral directives apply to this turn. Follow them when forming your response, alongside your other instructions. They are listed in priority order; if two of them genuinely conflict, follow the one listed earlier:
+export const DEFAULT_STEERING_PROMPT = `The following behavioral directives govern the visible answer you write. Follow them when forming that answer, alongside your other instructions. They are listed in priority order; if two of them genuinely conflict, follow the one listed earlier.
+
+Their reach is the answer text. Follow-up questions, when this turn offers them, are governed by their own directives stated with the suggestion rules.
 
 {{steering_rules}}`;
 

@@ -162,6 +162,34 @@ describe("DefaultClarifier", () => {
     );
   });
 
+  it("ignores rules addressed to another generator", async () => {
+    const modelGateway = gateway("¿Facturacion o soporte?");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    await clarifier.phraseQuestion({
+      candidates,
+      turn: {
+        ...turn("Necesito ayuda"),
+        steering: [
+          { action: "Use a warm tone.", source: "directive", lifespan: "response" },
+          {
+            action: "Never suggest a question about price.",
+            source: "directive",
+            lifespan: "response",
+            surfaces: ["suggested_questions"],
+          },
+        ],
+      },
+    });
+
+    const systemPrompt = vi.mocked(modelGateway.complete).mock.calls[0]![0].systemPrompt;
+    expect(systemPrompt).toContain("Use a warm tone.");
+    expect(systemPrompt).not.toContain("Never suggest a question about price.");
+  });
+
   it("leaves the question prompt unchanged when there is no steering", async () => {
     const modelGateway = gateway("¿Facturacion o soporte?");
     const clarifier = new DefaultClarifier(modelGateway, {

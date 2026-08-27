@@ -1,3 +1,4 @@
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import type {
   AttemptRoutineInput,
   ConversationEvent,
@@ -191,6 +192,9 @@ const buildDirectiveTurnWiring = (options: {
         // so the routine attempt and process turn share one instance, committed once
         // at turn completion.
         const store = attachDirectiveStateStore(session, options.directiveStateStore);
+        // Taking ownership before matching makes a lifecycle baseline stable across
+        // app instances. This remains all-turn state: cooldown age advances even
+        // on a route whose current scope contains no lifecycle directive.
         const firingState = store ? await store.load() : undefined;
         const { eligible: currentRouteDirectives, trackedNames, suppressed } =
           partitionDirectivesByLifecycle(scopeEligible, firingState);
@@ -205,9 +209,31 @@ const buildDirectiveTurnWiring = (options: {
         const steering = plannedClassifications
           ? await runtime.matchAndResolveWithClassifications(steerInput, currentRouteDirectives, plannedClassifications)
           : await runtime.matchAndResolve(steerInput, currentRouteDirectives);
+        // Every turn that reaches an answer renders the answering voice. The
+        // follow-up question generator is added later, and only if one shows.
+        steering.renderedSurfaces = [GENERATION_SURFACE.ANSWER];
         if (store && firingState) {
           if (trackedNames.size > 0) {
-            store.capture(renderedDirectiveNames(steering).filter((name) => trackedNames.has(name)));
+            // The answer steering block renders as part of this turn's reply, so a
+            // directive addressed to the answering voice has fired by now.
+            const answerFired = renderedDirectiveNames(steering, GENERATION_SURFACE.ANSWER)
+              .filter((name) => trackedNames.has(name));
+            store.capture(answerFired);
+            // A directive addressed only to a later generator has matched, not fired.
+            // The follow-up question block renders only when suggestions are actually
+            // generated, so consuming a once/cooldown budget here would spend it on a
+            // turn that never showed the rule. The rendering host captures these
+            // only after final filtering leaves visitor-visible output.
+            const alreadyFired = new Set(answerFired);
+            const pendingSuggestions = renderedDirectiveNames(
+              steering,
+              GENERATION_SURFACE.SUGGESTED_QUESTIONS,
+            ).filter((name) => trackedNames.has(name) && !alreadyFired.has(name));
+            if (pendingSuggestions.length > 0) {
+              steering.pendingSurfaceFirings = {
+                [GENERATION_SURFACE.SUGGESTED_QUESTIONS]: pendingSuggestions,
+              };
+            }
           }
           if (suppressed.length > 0) {
             steering.lifecycleSuppressed = suppressed;

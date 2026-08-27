@@ -200,6 +200,67 @@ test.describe("Audience Pulse dashboard", () => {
     expect(mocks.state.postCount).toBe(1);
   });
 
+  test("background facet work does not start an Audience Pulse refresh on page load", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    const mocks = await installAudiencePulseMocks(page, { read: "completed" });
+
+    await page.route("**/backend/api/v1/quality/audience-pulse/refresh-status", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ pending: true }),
+      });
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicsSection = page.locator('section[aria-labelledby="audience-pulse-topics"]');
+    await expect(topicsSection.getByText("Refund timing", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Preparing your report from all pending visitor questions/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
+    expect(mocks.state.postCount).toBe(0);
+  });
+
+  test("an explicit refresh waits for facet preparation and completes automatically", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installAudiencePulseMocks(page, { read: "completed" });
+
+    let postCount = 0;
+    let statusCount = 0;
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.fallback();
+        return;
+      }
+      postCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(postCount === 1
+          ? { kind: "preparing" }
+          : { kind: "completed", report: completedReport }),
+      });
+    });
+    await page.route("**/backend/api/v1/quality/audience-pulse/refresh-status", async (route) => {
+      statusCount += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ pending: statusCount === 1 }),
+      });
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+    await page.getByRole("button", { name: "Refresh" }).click();
+
+    await expect(page.getByText(/Preparing your report from all pending visitor questions/i)).toBeVisible();
+    await expect.poll(() => postCount).toBe(2);
+    await expect(page.getByText(/Preparing your report from all pending visitor questions/i)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
+  });
+
   test("both Analyze controls are disabled while the first refresh is running", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);

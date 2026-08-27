@@ -8,6 +8,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionPublishOptions,
+  type RoutineDefinitionDeleteDraftResult,
   type RoutineApprovalOption,
   type RoutineFieldGuardOp,
   type RoutineFieldGuardUnit,
@@ -17,7 +18,7 @@ import {
   type RoutineStepKind,
   type RoutineTerminalKind,
 } from "../../modules/routines/public.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface RoutineDefinitionRow {
@@ -72,6 +73,17 @@ const lockLineage = async (trx: Db, lineageId: string): Promise<void> => {
 
 const matchesExpectedUpdatedAt = (expectedUpdatedAt: Date) =>
   sql<boolean>`date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${expectedUpdatedAt}::timestamptz)`;
+
+/**
+ * Advances an authored-write token at the precision JavaScript Date preserves.
+ *
+ * Postgres timestamps carry microseconds while the service boundary carries milliseconds. Plain
+ * `now()` can therefore produce two distinct database values that collapse to one client token,
+ * allowing a stale guard to match. The previous value plus one millisecond is the lower bound;
+ * `now()` keeps the timestamp aligned with wall time when the database clock is ahead.
+ */
+const nextAuthoredUpdatedAt = () =>
+  sql<Date>`greatest(now(), updated_at + interval '1 millisecond')`;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -493,7 +505,7 @@ export class RoutineDefinitionRepository {
           activation_gate_ref: draft.activation.gateRef,
           activation_priority: draft.activation.priority,
           activation_reentry_mode: draft.activation.reentryMode,
-          updated_at: currentTimestamp(),
+          updated_at: nextAuthoredUpdatedAt(),
         })
         .where("agent_id", "=", agentId)
         .where("id", "=", id)
@@ -529,14 +541,14 @@ export class RoutineDefinitionRepository {
       await lockLineage(trx, draft.lineageId);
       const superseded = await trx
         .updateTable("routine_definition")
-        .set({ status: "superseded", updated_at: currentTimestamp() })
+        .set({ status: "superseded", updated_at: nextAuthoredUpdatedAt() })
         .where("lineage_id", "=", draft.lineageId)
         .where("status", "=", "published")
         .returning("id")
         .execute();
       const published = await trx
         .updateTable("routine_definition")
-        .set({ status: "published", updated_at: currentTimestamp() })
+        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
         .where("agent_id", "=", agentId)
         .where("id", "=", draftId)
         .where("status", "=", "draft")
@@ -651,7 +663,7 @@ export class RoutineDefinitionRepository {
       await lockLineage(trx, target.lineage_id);
       const row = await trx
         .updateTable("routine_definition")
-        .set({ status: "archived", updated_at: currentTimestamp() })
+        .set({ status: "archived", updated_at: nextAuthoredUpdatedAt() })
         .where("agent_id", "=", agentId)
         .where("id", "=", id)
         .where("status", "=", "published")
@@ -714,7 +726,7 @@ export class RoutineDefinitionRepository {
       // no-op if another version of this lineage is already published.
       const row = await trx
         .updateTable("routine_definition as target")
-        .set({ status: "published", updated_at: currentTimestamp() })
+        .set({ status: "published", updated_at: nextAuthoredUpdatedAt() })
         .where("target.agent_id", "=", agentId)
         .where("target.id", "=", id)
         .where("target.status", "=", "archived")
@@ -740,18 +752,39 @@ export class RoutineDefinitionRepository {
     });
   }
 
-  async deleteDraft(agentId: string, id: string, options: { expectedUpdatedAt?: Date } = {}): Promise<boolean> {
-    const row = await this.db
-      .deleteFrom("routine_definition")
-      .where("agent_id", "=", agentId)
-      .where("id", "=", id)
-      .where("status", "=", "draft")
-      // A caller undoing a draft it just created states the version it created, so a save that
-      // landed in between keeps the draft rather than losing that author's work.
-      .$if(options.expectedUpdatedAt !== undefined, (query) => query.where(matchesExpectedUpdatedAt(options.expectedUpdatedAt!)))
-      .returning("id")
-      .executeTakeFirst();
-    return Boolean(row);
+  async deleteDraft(
+    agentId: string,
+    id: string,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinitionDeleteDraftResult> {
+    return this.db.transaction().execute(async (trx) => {
+      const current = await trx
+        .selectFrom("routine_definition")
+        .select(["status", "updated_at"])
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!current || current.status !== "draft") {
+        return { outcome: "not_found" };
+      }
+      // The row lock makes this classification and the delete one decision: a draft that moved
+      // since the caller read it is a conflict, while absence or a lifecycle transition remains
+      // the existing not-found behavior.
+      if (
+        options.expectedUpdatedAt !== undefined &&
+        current.updated_at.getTime() !== options.expectedUpdatedAt.getTime()
+      ) {
+        return { outcome: "conflict" };
+      }
+      await trx
+        .deleteFrom("routine_definition")
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .where("status", "=", "draft")
+        .execute();
+      return { outcome: "deleted" };
+    });
   }
 
   async listPublishedRoutineNamesReferencingDestination(workspaceId: string, destinationId: string): Promise<string[]> {

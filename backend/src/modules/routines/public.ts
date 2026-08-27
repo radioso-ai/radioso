@@ -75,12 +75,16 @@ export {
 } from "./validator.js";
 export {
   RoutineDefinitionService,
+  RoutineDefinitionLifecycleCommittedError,
+  type RoutineDefinitionCommittedLifecycleAction,
+  type RoutineDefinitionDeleteDraftResult,
   type RoutineDirectiveScopeOrphan,
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionPublishLifecycleInput,
   type RoutineDefinitionPublishOptions,
   type RoutineDefinitionPublishRejection,
   type RoutineDefinitionPublishResult,
+  type RoutineDefinitionRestoreResult,
   type RoutineDefinitionWriteGuard,
   type RoutineDefinitionArchiveGuard,
   type RoutineDefinitionSaveResult,

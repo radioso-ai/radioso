@@ -368,6 +368,37 @@ describe("routine proposal adapter", () => {
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, new Date(0).toISOString())).toEqual({ outcome: "stale" });
     expect(createDraft).toHaveBeenCalledOnce();
   });
+
+  it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const payload = routineDraftPayload();
+    const duplicated = {
+      ...payload,
+      slots: [...payload.slots, { ...payload.slots[0]!, stableSlotId: "slot_reason_copy", ordinal: 1 }],
+      steps: [...payload.steps, { ...payload.steps[0]!, instruction: "Ask a second time.", ordinal: 1 }],
+      terminals: [...payload.terminals, { ...payload.terminals[0]!, instruction: "A second ending.", ordinal: 2 }],
+    };
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: {} as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: {} as never,
+    });
+
+    const preview = await adapter.preview("workspace-1", {
+      agentId: "6a6a6a6a-1111-2222-3333-444444444444",
+      routineId: null,
+    }, duplicated) as {
+      proposed: {
+        slots: Record<string, unknown>;
+        steps: Record<string, unknown>;
+        terminals: Record<string, unknown>;
+      };
+    };
+
+    expect(Object.keys(preview.proposed.slots)).toEqual(["reason", "reason #1"]);
+    expect(Object.keys(preview.proposed.steps)).toEqual(["step_collect_reason", "step_collect_reason #1"]);
+    expect(Object.keys(preview.proposed.terminals)).toEqual(["terminal_complete", "terminal_complete #2"]);
+  });
 });
 
 describe("proposal card presentation", () => {
@@ -552,17 +583,24 @@ const routineAdapterPorts = (routine = storedRoutine(), siblings: Array<ReturnTy
       ?? { ...current.value, id: "revision-1", status: "draft", version: 2 }),
     publish: vi.fn(async () => ({ routine: { ...current.value, id: "published-1", status: "published" }, validation: { ok: true, diagnostics: [] }, directiveScopeOrphans: [] })),
     archive: vi.fn(async () => ({ ...current.value, status: "archived" })),
-    restore: vi.fn(async () => ({ ...current.value, status: "published" })),
+    restore: vi.fn(async () => ({
+      routine: { ...current.value, status: "published" },
+      validation: { ok: true, diagnostics: [] },
+    })),
     validate: vi.fn(async () => ({ ok: true, diagnostics: [] as Array<{ code: string; location: string; message: string }> })),
   };
 };
 
-const routineAdapter = async (ports: ReturnType<typeof routineAdapterPorts>) => {
+const routineAdapter = async (
+  ports: ReturnType<typeof routineAdapterPorts>,
+  logger = { warn: vi.fn() },
+) => {
   const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
   return createRoutineCopilotProposalAdapter({
     agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-01T10:00:00.000Z") })) } as never,
     routineDraftAssistService: { draft: vi.fn() } as never,
     routineDefinitionService: ports as never,
+    logger,
   });
 };
 
@@ -780,9 +818,10 @@ describe("routine proposal adapter edits", () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [untouched]);
     const adapter = await routineAdapter(ports);
 
+    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
     const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
 
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({
       outcome: "applied",
       appliedRef: { agentId, routineId: pendingRevisionId },
     });
@@ -840,6 +879,51 @@ describe("routine lifecycle proposal adapter", () => {
   const targetRef = { agentId, routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
   const token = new Date("2026-08-02T10:00:00.000Z").toISOString();
 
+  it("marks an archive proposal stale when the draft revision it disclosed changes, is replaced, or disappears", async () => {
+    const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
+    const adapter = await routineAdapter(ports);
+    const versionToken = await adapter.readVersionToken(workspaceId, targetRef);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId: "conversation-1",
+      targetType: "routine",
+      targetRef,
+      payload: draft.payload,
+      versionToken,
+      evidence: null,
+    });
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      proposalAdapters: [adapter],
+    });
+
+    ports.lineage.siblings = [{
+      ...disclosed,
+      updatedAt: new Date("2026-08-04T10:00:00.000Z"),
+    }];
+
+    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
+      .toBe(false);
+
+    ports.lineage.siblings = [{ ...disclosed, id: randomUUID() }];
+    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
+      .toBe(false);
+
+    ports.lineage.siblings = [];
+    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
+      .toBe(false);
+  });
+
   it("publishes the draft and points the card at the version that went live", async () => {
     const ports = routineAdapterPorts();
     const adapter = await routineAdapter(ports);
@@ -884,32 +968,28 @@ describe("routine lifecycle proposal adapter", () => {
     });
   });
 
-  it("refuses to archive when the disclosed draft has been worked on since", async () => {
+  it("marks the proposal stale when the disclosed draft has been worked on since", async () => {
     // The id stays the same while an operator edits the draft, so an id-only guard would archive
     // on the strength of a description that no longer matches what would be thrown away.
     const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
     const adapter = await routineAdapter(ports);
+    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
     const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
     ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3, updatedAt: new Date("2026-08-04T10:00:00.000Z") })];
 
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: expect.stringContaining("not the one this card described"),
-    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
     expect(ports.archive).not.toHaveBeenCalled();
   });
 
-  it("refuses to archive when a draft appeared that the card never disclosed", async () => {
+  it("marks the proposal stale when a draft appeared that the card never disclosed", async () => {
     const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
     const adapter = await routineAdapter(ports);
+    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
     const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
     ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 })];
 
-    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
-      outcome: "failed",
-      reason: expect.stringContaining("draft revision"),
-    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
     expect(ports.archive).not.toHaveBeenCalled();
   });
 
@@ -961,9 +1041,15 @@ describe("routine lifecycle proposal adapter", () => {
     // audit event, and re-validates. A throw from that tail would mark the card failed for a
     // routine that is already live, and re-applying it fails the status precondition.
     const ports = routineAdapterPorts();
-    const adapter = await routineAdapter(ports);
+    const logger = { warn: vi.fn() };
+    const adapter = await routineAdapter(ports, logger);
     const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
-    ports.publish.mockRejectedValueOnce(new Error("trigger embedding provider is down"));
+    const { RoutineDefinitionLifecycleCommittedError } = await import("../../../src/modules/routines/public.js");
+    ports.publish.mockRejectedValueOnce(new RoutineDefinitionLifecycleCommittedError(
+      "publish",
+      targetRef.routineId,
+      new Error("trigger embedding provider is down"),
+    ));
     // Publishing flips this row in place, so the row the card names is the one that went live.
     ports.current.value = storedRoutine({ status: "published" });
 
@@ -971,6 +1057,16 @@ describe("routine lifecycle proposal adapter", () => {
       outcome: "applied",
       appliedRef: { agentId, routineId: targetRef.routineId },
     });
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        err: expect.objectContaining({ message: "trigger embedding provider is down" }),
+        workspaceId,
+        agentId,
+        routineId: targetRef.routineId,
+        action: "publish",
+      },
+      "Routine lifecycle committed but follow-up work failed",
+    );
   });
 
   it("reports a write that refused before it committed as stale, not as somebody else's publish", async () => {
@@ -984,6 +1080,34 @@ describe("routine lifecycle proposal adapter", () => {
     ports.current.value = storedRoutine({ status: "published" });
 
     expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+  });
+
+  it("does not credit another writer when publish loses the status-precondition race", async () => {
+    const { badRequest } = await import("../../../src/shared/domain/errors.js");
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(badRequest("Only draft routine definitions can be published"));
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "Only draft routine definitions can be published",
+    });
+  });
+
+  it("does not credit another writer when restore loses the status-precondition race", async () => {
+    const { badRequest } = await import("../../../src/shared/domain/errors.js");
+    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    ports.restore.mockRejectedValueOnce(badRequest("Only archived routine definitions can be restored"));
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "Only archived routine definitions can be restored",
+    });
   });
 
   it("does not read the version already live as this proposal having landed", async () => {

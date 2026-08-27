@@ -73,6 +73,23 @@ const unknownIds = (element: string, missing: ReadonlyArray<string>, known: Read
     `This routine has no ${element} ${missing.join(", ")}. Its ${element}s are: ${known.join(", ")}.`,
   );
 
+const requireExactlyOneAddress = <T>(
+  element: string,
+  addresses: ReadonlyArray<string>,
+  items: ReadonlyArray<T>,
+  identify: (item: T) => string,
+): void => {
+  const known = items.map(identify);
+  const missing = addresses.filter((address) => !known.includes(address));
+  if (missing.length > 0) throw unknownIds(element, missing, known);
+  const duplicated = addresses.filter((address) => known.filter((candidate) => candidate === address).length > 1);
+  if (duplicated.length > 0) {
+    throw new RoutineFieldPatchError(
+      `This routine has more than one ${element} named ${duplicated.join(", ")}. Fix the duplicate identity before editing it here.`,
+    );
+  }
+};
+
 /** Strips persistence identity so a stored routine re-enters the authoring schema. */
 export const draftInputFromRoutine = (routine: RoutineDefinition): RoutineDefinitionDraftAuthoringInput => {
   const { id: _id, agentId: _agentId, lineageId: _lineageId, version: _version, status: _status, createdAt: _createdAt, updatedAt: _updatedAt, ...draft } = routine;
@@ -88,12 +105,9 @@ export const applyRoutineFieldPatch = (
   const terminalEdits = new Map((patch.terminals ?? []).map((terminal) => [terminal.stableStepId, terminal]));
   const slotEdits = new Map((patch.slots ?? []).map((slot) => [slot.key, slot]));
 
-  const missingSteps = [...stepEdits.keys()].filter((id) => !routine.steps.some((step) => step.stableStepId === id));
-  if (missingSteps.length > 0) throw unknownIds("step", missingSteps, routine.steps.map((step) => step.stableStepId));
-  const missingTerminals = [...terminalEdits.keys()].filter((id) => !routine.terminals.some((terminal) => terminal.stableStepId === id));
-  if (missingTerminals.length > 0) throw unknownIds("ending", missingTerminals, routine.terminals.map((terminal) => terminal.stableStepId));
-  const missingSlots = [...slotEdits.keys()].filter((key) => !routine.slots.some((slot) => slot.key === key));
-  if (missingSlots.length > 0) throw unknownIds("information field", missingSlots, routine.slots.map((slot) => slot.key));
+  requireExactlyOneAddress("step", [...stepEdits.keys()], routine.steps, (step) => step.stableStepId);
+  requireExactlyOneAddress("ending", [...terminalEdits.keys()], routine.terminals, (terminal) => terminal.stableStepId);
+  requireExactlyOneAddress("information field", [...slotEdits.keys()], routine.slots, (slot) => slot.key);
 
   return {
     ...draft,
@@ -149,14 +163,14 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     priority: routine.activation.priority,
     reentryMode: routine.activation.reentryMode ?? "once_per_conversation",
   },
-  slots: Object.fromEntries((routine.slots ?? []).map((slot) => [slot.key, {
+  slots: Object.fromEntries(uniquelyKeyed((routine.slots ?? []).map((slot) => [slot.key, {
     type: slot.type,
     required: slot.required,
     description: slot.description ?? null,
     mutable: slot.mutable ?? null,
     ordinal: slot.ordinal,
-  }])),
-  steps: Object.fromEntries(routine.steps.map((step) => [step.stableStepId, {
+  }]))),
+  steps: Object.fromEntries(uniquelyKeyed(routine.steps.map((step) => [step.stableStepId, {
     kind: step.kind,
     instruction: step.instruction,
     toolRef: step.toolRef ?? null,
@@ -165,7 +179,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     options: step.options ?? null,
     ordinal: step.ordinal,
     metadata: step.metadata ?? {},
-  }])),
+  }]))),
   transitions: Object.fromEntries(uniquelyKeyed((routine.transitions ?? []).map((transition) => [
     `${transition.fromStep} → ${transition.toRef}`,
     {
@@ -181,18 +195,18 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
       ordinal: transition.ordinal,
     },
   ], ))),
-  terminals: Object.fromEntries(routine.terminals.map((terminal) => [terminal.stableStepId, {
+  terminals: Object.fromEntries(uniquelyKeyed(routine.terminals.map((terminal) => [terminal.stableStepId, {
     kind: terminal.kind,
     instruction: terminal.instruction ?? null,
     ordinal: terminal.ordinal,
-  }])),
+  }]))),
   completionExport: routine.completionExport ?? null,
 });
 
 // Two transitions may share a from/to pair with different guards; the ordinal disambiguates
 // without making every single-transition pair read as "#0". Colliding again keeps counting rather
 // than reusing a key, because a collision here would drop a changed transition out of the diff.
-const uniquelyKeyed = (entries: ReadonlyArray<readonly [string, { ordinal: number }]>): Array<[string, unknown]> => {
+const uniquelyKeyed = <TValue extends { ordinal: number }>(entries: ReadonlyArray<readonly [string, TValue]>): Array<[string, TValue]> => {
   const used = new Set<string>();
   return entries.map(([key, value]) => {
     let candidate = key;

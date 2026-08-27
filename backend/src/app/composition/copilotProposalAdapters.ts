@@ -13,6 +13,7 @@ import {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
   projectRoutineForReview,
+  RoutineDefinitionLifecycleCommittedError,
   routineDefinitionDraftInputSchema,
   routineFieldPatchSchema,
   type RoutineDefinition,
@@ -172,15 +173,15 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
 });
 
 /**
- * Composition adapter for routines: drafts new ones through the coach, edits existing ones by
- * stable id, and moves them through their lifecycle. It is the only place that knows both the
- * copilot proposal contract and routine lifecycle rules — a draft is edited in place, a published
- * routine is revised into a draft first, and what is serving changes only through a publish.
+ * Composition adapter for routines: translates Copilot proposals into the routine module's
+ * authoring and lifecycle operations. It owns proposal-specific preview and stale-card behavior;
+ * the routine service remains authoritative for which lifecycle transitions may go live.
  */
 export const createRoutineCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
   readonly routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
   readonly routineDefinitionService: Pick<RoutineDefinitionService, "createDraft" | "deleteDraft" | "get" | "list" | "updateDraft" | "revise" | "publish" | "archive" | "restore" | "validate">;
+  readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
 }): CopilotRoutineProposalAdapter => {
   const routineFor = async (workspaceId: string, targetRef: { agentId: string; routineId: string | null }) =>
     deps.routineDefinitionService.get(workspaceId, targetRef.agentId, requiredRoutineId(targetRef));
@@ -196,13 +197,39 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     (await deps.routineDefinitionService.list(workspaceId, agentId))
       .find((candidate) => candidate.lineageId === routine.lineageId && candidate.status === "draft" && candidate.id !== routine.id) ?? null;
 
+  /**
+   * Existing-routine proposals are stale when either the addressed row or unpublished work that
+   * their decision depends on moves. A published routine can have a draft sibling: edits must not
+   * overwrite it, and archives must disclose exactly what they discard. Keep the legacy single-row
+   * token when there is no sibling so already-persisted proposals without that dependency remain
+   * comparable after deployment.
+   */
+  const proposalVersionToken = async (
+    workspaceId: string,
+    targetRef: { agentId: string; routineId: string | null },
+    routine: RoutineDefinition,
+  ): Promise<string> => {
+    const draftRevision = routine.status === "published"
+      ? await draftRevisionOf(workspaceId, targetRef.agentId, routine)
+      : null;
+    if (!draftRevision) return versionToken(routine.updatedAt);
+    return JSON.stringify({
+      routineUpdatedAt: versionToken(routine.updatedAt),
+      draftRevision: {
+        id: draftRevision.id,
+        updatedAt: versionToken(draftRevision.updatedAt),
+      },
+    });
+  };
+
   return {
     targetType: "routine",
     async readVersionToken(workspaceId, rawTargetRef) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
       // A new routine is guarded by the agent it will belong to; an existing one guards itself.
       if (!targetRef.routineId) return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
-      return versionToken((await routineFor(workspaceId, targetRef)).updatedAt);
+      const routine = await routineFor(workspaceId, targetRef);
+      return proposalVersionToken(workspaceId, targetRef, routine);
     },
     async preview(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
@@ -253,7 +280,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
           return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: result.routine.id } };
         }
         const routine = await routineFor(workspaceId, targetRef);
-        if (versionToken(routine.updatedAt) !== token) return { outcome: "stale" as const };
+        if (await proposalVersionToken(workspaceId, targetRef, routine) !== token) return { outcome: "stale" as const };
         if (kind === "lifecycle") {
           const payload = routineLifecyclePayloadSchema.parse(rawPayload);
           if (payload.action === "restore") {
@@ -374,9 +401,8 @@ export const createRoutineCopilotProposalAdapter = (deps: {
           ? `Routine ${routine.name} is already published. Its draft revision (version ${pending.version}) is what there is to publish.`
           : `Routine ${routine.name} is ${routine.status}; only a routine that is ${required} can be ${action}ed.`);
       }
-      // Publish and restore both put a routine in front of customers, so both run the validation
-      // publish runs. Restore skips it in the service — a routine can be archived while valid and
-      // lose a skill or an action capability before anyone restores it — so the check lives here.
+      // Publish and restore both put a routine in front of customers. The service owns the
+      // authoritative gate; this earlier check keeps an invalid proposal from reaching the card.
       const diagnostics = goesLive(action)
         ? (await deps.routineDefinitionService.validate(workspaceId, targetRef.agentId, { id: routine.id })).diagnostics
         : [];
@@ -420,7 +446,10 @@ const sameAuthoredContent = (left: RoutineDefinition, right: RoutineDefinition):
   JSON.stringify(projectRoutineForReview(left)) === JSON.stringify(projectRoutineForReview(right));
 
 const applyRoutineLifecycle = async (
-  deps: { readonly routineDefinitionService: Pick<RoutineDefinitionService, "publish" | "archive" | "restore" | "list"> },
+  deps: {
+    readonly routineDefinitionService: Pick<RoutineDefinitionService, "publish" | "archive" | "restore" | "list">;
+    readonly logger?: { warn(fields: Record<string, unknown>, message: string): void };
+  },
   workspaceId: string,
   agentId: string,
   routine: RoutineDefinition,
@@ -437,42 +466,39 @@ const applyRoutineLifecycle = async (
       }
       return { outcome: "applied", appliedRef: { agentId, routineId: result.routine.id } };
     }
-    const moved = action === "archive"
+    if (action === "archive") {
       // Stating the disclosed draft here puts the precondition inside the archive transaction, where
       // a revision created a moment ago cannot slip past it and be deleted unannounced.
-      ? await deps.routineDefinitionService.archive(workspaceId, agentId, routine.id, { expectedDraftRevision: discardsDraftRevision })
-      : await deps.routineDefinitionService.restore(workspaceId, agentId, routine.id);
-    return { outcome: "applied", appliedRef: { agentId, routineId: moved.id } };
+      const moved = await deps.routineDefinitionService.archive(workspaceId, agentId, routine.id, { expectedDraftRevision: discardsDraftRevision });
+      return { outcome: "applied", appliedRef: { agentId, routineId: moved.id } };
+    }
+    const result = await deps.routineDefinitionService.restore(workspaceId, agentId, routine.id);
+    if ("rejected" in result) {
+      return { outcome: "failed", reason: `${routine.name} could not be restored: ${diagnosticSummary(result.validation.diagnostics)}` };
+    }
+    return { outcome: "applied", appliedRef: { agentId, routineId: result.routine.id } };
   } catch (error) {
     // A conflict is the write refusing before it committed — the version moved, or the draft this
     // archive described did. Nothing happened, so say so rather than looking at the routine: by
     // then another writer may have made the same transition, and this proposal would take credit
     // for content its own write never put live.
     if (isStale(error)) throw error;
-    // Everything else may have committed the status change and then failed in the tail that
-    // follows it — trigger embeddings, a lifecycle audit event, a re-validation of the saved row.
-    // Marking the card failed for a routine that is already live strands it: re-applying fails on
-    // the status precondition. Ask the routine what happened instead of guessing.
-    const settled = await landedLifecycleChange(deps, workspaceId, agentId, routine, action);
-    if (!settled) throw error;
-    return settled;
+    if (
+      error instanceof RoutineDefinitionLifecycleCommittedError &&
+      error.action === action &&
+      error.routineId === routine.id
+    ) {
+      deps.logger?.warn({
+        err: error.cause,
+        workspaceId,
+        agentId,
+        routineId: routine.id,
+        action,
+      }, "Routine lifecycle committed but follow-up work failed");
+      return { outcome: "applied", appliedRef: { agentId, routineId: routine.id } };
+    }
+    throw error;
   }
-};
-
-const landedLifecycleChange = async (
-  deps: { readonly routineDefinitionService: Pick<RoutineDefinitionService, "list"> },
-  workspaceId: string,
-  agentId: string,
-  routine: RoutineDefinition,
-  action: CopilotRoutineLifecycleAction,
-): Promise<{ outcome: "applied"; appliedRef: unknown } | null> => {
-  // Every lifecycle write moves this row in place — publishing flips the draft row itself — so the
-  // question is only whether this row reached the status the action was for. Accepting any
-  // published member of the lineage would read the *previous* live version, which is still
-  // published until the flip commits, as this proposal having landed.
-  const landed = (await deps.routineDefinitionService.list(workspaceId, agentId).catch(() => []))
-    .find((candidate) => candidate.id === routine.id && candidate.status === routineStatusAfterAction[action]);
-  return landed ? { outcome: "applied", appliedRef: { agentId, routineId: landed.id } } : null;
 };
 
 // Maps a stored proposal payload onto the management input. The draft keeps

@@ -140,6 +140,30 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(published.status).toBe("published");
   });
 
+  it("advances an authored write token even when the database clock is behind the stored value", async () => {
+    // A JS Date cannot carry Postgres microseconds, so every authored write must advance by at
+    // least one whole millisecond. Moving the stored value into the future makes the regression
+    // deterministic: assigning plain now() would move the token backwards, while a monotonic
+    // assignment preserves the stale-write invariant regardless of clock precision or skew.
+    const created = await repository.createDraft(agentId, baseDraft());
+    await database.query(
+      `UPDATE routine_definition
+       SET updated_at = date_trunc('milliseconds', now()) + interval '1 hour'
+       WHERE id = $1`,
+      [created.id],
+    );
+    const before = await repository.findById(agentId, created.id);
+
+    const updated = await repository.updateDraft(
+      agentId,
+      created.id,
+      baseDraft({ name: "Monotonic token" }),
+      { expectedUpdatedAt: before!.updatedAt },
+    );
+
+    expect(updated.updatedAt.getTime()).toBeGreaterThan(before!.updatedAt.getTime());
+  });
+
   it("searches persisted trigger embeddings and identifies candidates without a usable vector", async () => {
     const first = await repository.createDraft(agentId, baseDraft({ name: "Refund search one" }));
     const second = await repository.createDraft(agentId, baseDraft({ name: "Refund search two" }));
@@ -326,9 +350,9 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     const created = await repository.createDraft(agentId, baseDraft());
     const moved = await repository.updateDraft(agentId, created.id, baseDraft({ name: "Saved by someone else" }));
 
-    expect(await repository.deleteDraft(agentId, created.id, { expectedUpdatedAt: created.updatedAt })).toBe(false);
+    expect(await repository.deleteDraft(agentId, created.id, { expectedUpdatedAt: created.updatedAt })).toEqual({ outcome: "conflict" });
     expect(await repository.findById(agentId, created.id)).not.toBeNull();
-    expect(await repository.deleteDraft(agentId, created.id, { expectedUpdatedAt: moved.updatedAt })).toBe(true);
+    expect(await repository.deleteDraft(agentId, created.id, { expectedUpdatedAt: moved.updatedAt })).toEqual({ outcome: "deleted" });
   });
 
   it("refuses to revise a lineage that was archived under it", async () => {
@@ -341,12 +365,12 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
 
   it("deleteDraft removes only drafts", async () => {
     const draft = await repository.createDraft(agentId, baseDraft());
-    expect(await repository.deleteDraft(agentId, draft.id)).toBe(true);
+    expect(await repository.deleteDraft(agentId, draft.id)).toEqual({ outcome: "deleted" });
     expect(await repository.findById(agentId, draft.id)).toBeNull();
 
     const published = await repository.createDraft(agentId, baseDraft());
     await repository.publish(agentId, published.id);
-    expect(await repository.deleteDraft(agentId, published.id)).toBe(false);
+    expect(await repository.deleteDraft(agentId, published.id)).toEqual({ outcome: "not_found" });
   });
 
   it("list/find methods scope by agent and status", async () => {

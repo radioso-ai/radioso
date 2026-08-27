@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   compileRoutineDefinition,
   RoutineDefinitionService,
+  RoutineDefinitionLifecycleCommittedError,
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
@@ -60,10 +61,19 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     return routine;
   }
 
-  async updateDraft(inputAgentId: string, id: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+  async updateDraft(
+    inputAgentId: string,
+    id: string,
+    input: RoutineDefinitionDraftInput,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): Promise<RoutineDefinition> {
     const existing = await this.findById(inputAgentId, id);
-    if (!existing || existing.status !== "draft") {
-      throw new Error("not_found");
+    if (
+      !existing ||
+      existing.status !== "draft" ||
+      (options.expectedUpdatedAt !== undefined && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime())
+    ) {
+      throw new Error(`routine_definition_update_conflict:${id}`);
     }
     const routine = {
       ...existing,
@@ -84,7 +94,13 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     }
     const draft = await this.findById(inputAgentId, id);
     if (!draft) {
-      throw new Error("not_found");
+      throw new Error(`routine_definition_not_found:${id}`);
+    }
+    if (
+      draft.status !== "draft" ||
+      (options?.expectedUpdatedAt !== undefined && draft.updatedAt.getTime() !== options.expectedUpdatedAt.getTime())
+    ) {
+      throw new Error(`routine_definition_publish_conflict:${id}`);
     }
     const now = new Date();
     const previousPublished = [...this.items.values()].find((definition) =>
@@ -144,10 +160,31 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     return draft;
   }
 
-  async archive(inputAgentId: string, id: string): Promise<boolean> {
+  async archive(
+    inputAgentId: string,
+    id: string,
+    options: { expectedDraftRevision?: { id: string; updatedAt: Date } | null } = {},
+  ): Promise<boolean> {
     const existing = await this.findById(inputAgentId, id);
     if (!existing || existing.status !== "published") {
       return false;
+    }
+    const drafts = [...this.items.values()].filter((definition) =>
+      definition.agentId === inputAgentId &&
+      definition.lineageId === existing.lineageId &&
+      definition.status === "draft"
+    );
+    if (options.expectedDraftRevision === null && drafts.length > 0) {
+      throw new Error(`routine_definition_archive_conflict:${id}`);
+    }
+    if (options.expectedDraftRevision) {
+      const discarded = drafts.find((definition) =>
+        definition.id === options.expectedDraftRevision!.id &&
+        definition.updatedAt.getTime() === options.expectedDraftRevision!.updatedAt.getTime()
+      );
+      if (!discarded) {
+        throw new Error(`routine_definition_archive_conflict:${id}`);
+      }
     }
     // Archiving retires the routine: discard any in-progress revision draft in the lineage.
     for (const definition of [...this.items.values()]) {
@@ -183,9 +220,18 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
     return true;
   }
 
-  async deleteDraft(inputAgentId: string, id: string): Promise<boolean> {
+  async deleteDraft(
+    inputAgentId: string,
+    id: string,
+    options: { expectedUpdatedAt?: Date } = {},
+  ): ReturnType<RoutineDefinitionRepositoryPort["deleteDraft"]> {
     const existing = await this.findById(inputAgentId, id);
-    return existing?.status === "draft" ? this.items.delete(id) : false;
+    if (!existing || existing.status !== "draft") return { outcome: "not_found" };
+    if (options.expectedUpdatedAt && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+      return { outcome: "conflict" };
+    }
+    this.items.delete(id);
+    return { outcome: "deleted" };
   }
 }
 
@@ -1105,7 +1151,7 @@ describe("RoutineDefinitionService", () => {
     expect(lineageStatuses).not.toContain("draft");
   });
 
-  it("turns a missing completion export destination during restore into a bad request", async () => {
+  it("turns a concurrent completion-export destination delete during restore into a validation rejection", async () => {
     const { repository, service } = createService();
     const draft = await service.createDraft(workspaceId, agentId, {
       ...validDraft(),
@@ -1128,11 +1174,121 @@ describe("RoutineDefinitionService", () => {
       },
     );
 
-    await expect(service.restore(workspaceId, agentId, archived.id))
-      .rejects.toMatchObject({
-        statusCode: 400,
-        message: expect.stringContaining(missingDestinationId),
-      });
+    expect(await service.restore(workspaceId, agentId, archived.id)).toMatchObject({
+      rejected: true,
+      validation: {
+        diagnostics: [expect.objectContaining({
+          code: "unknown_webhook_destination",
+          message: expect.stringContaining(missingDestinationId),
+        })],
+      },
+    });
+    expect(repository.items.get(archived.id)?.status).toBe("archived");
+  });
+
+  it("rejects restore when a routine lost an available skill while archived", async () => {
+    const catalog = {
+      listForAgent: vi.fn(async () => []),
+      getForAgent: vi.fn(),
+    };
+    const { repository, service } = createService({ skillAuthoringCatalog: catalog });
+    const draft = await service.createDraft(workspaceId, agentId, toolDraft());
+    const archived = { ...draft.routine, status: "archived" as const };
+    repository.items.set(archived.id, archived);
+    const restore = vi.spyOn(repository, "restore");
+
+    const result = await service.restore(workspaceId, agentId, archived.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        diagnostics: [expect.objectContaining({ code: "unknown_skill", location: "step:step_lookup" })],
+      },
+    });
+    expect(restore).not.toHaveBeenCalled();
+    expect(repository.items.get(archived.id)?.status).toBe("archived");
+  });
+
+  it("rejects restore when an action capability was revoked while the routine was archived", async () => {
+    const { repository, service } = createService({
+      actionCapabilities: new FakeActionCapabilityMap(new Map([
+        ["contact.send", [capabilityNames.humanContact.request]],
+      ])),
+      capabilityPolicy: new FakeCapabilityPolicy(new Set([capabilityNames.humanContact.request])),
+    });
+    const draft = await service.createDraft(workspaceId, agentId, actionDraft("contact.send"));
+    const archived = { ...draft.routine, status: "archived" as const };
+    repository.items.set(archived.id, archived);
+    const restore = vi.spyOn(repository, "restore");
+
+    const result = await service.restore(workspaceId, agentId, archived.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        diagnostics: [expect.objectContaining({
+          code: "action_capability_denied",
+          location: "step:step_send",
+        })],
+      },
+    });
+    expect(restore).not.toHaveBeenCalled();
+    expect(repository.items.get(archived.id)?.status).toBe("archived");
+  });
+
+  it("rejects restore when its completion-export destination disappeared while archived", async () => {
+    const { repository, service } = createService({ knownWebhookDestinations: new Set() });
+    const draft = await service.createDraft(workspaceId, agentId, {
+      ...validDraft(),
+      completionExport: {
+        enabled: true,
+        triggerKinds: ["complete"],
+        destinationRef: missingDestinationId,
+      },
+    });
+    const archived = { ...draft.routine, status: "archived" as const };
+    repository.items.set(archived.id, archived);
+    const restore = vi.spyOn(repository, "restore");
+
+    const result = await service.restore(workspaceId, agentId, archived.id);
+
+    expect(result).toMatchObject({
+      rejected: true,
+      validation: {
+        diagnostics: [expect.objectContaining({
+          code: "unknown_webhook_destination",
+          location: "completionExport.destinationRef",
+        })],
+      },
+    });
+    expect(restore).not.toHaveBeenCalled();
+    expect(repository.items.get(archived.id)?.status).toBe("archived");
+  });
+
+  it("reports a stale guarded draft delete as a conflict instead of not found", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    repository.deleteDraft = async () => ({ outcome: "conflict" });
+
+    await expect(service.deleteDraft(workspaceId, agentId, draft.routine.id, {
+      expectedUpdatedAt: draft.routine.updatedAt,
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+    });
+  });
+
+  it("marks only post-commit lifecycle tail failures with a domain-owned signal", async () => {
+    const { auditService, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    auditService.record.mockRejectedValueOnce(new Error("audit sink is unavailable"));
+
+    await expect(service.publish(workspaceId, agentId, draft.routine.id)).rejects.toMatchObject({
+      name: "RoutineDefinitionLifecycleCommittedError",
+      action: "publish",
+      routineId: draft.routine.id,
+      cause: expect.objectContaining({ message: "audit sink is unavailable" }),
+    } satisfies Partial<RoutineDefinitionLifecycleCommittedError>);
   });
 
   it("maps a draft save the repository refused to an author-facing conflict", async () => {
@@ -1165,6 +1321,25 @@ describe("RoutineDefinitionService", () => {
     expect(updateDraft).toHaveBeenCalledWith(agentId, draft.routine.id, expect.anything(), { expectedUpdatedAt });
   });
 
+  it("rejects a stale guarded draft save without overwriting the newer fake-repository state", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    repository.items.set(draft.routine.id, {
+      ...draft.routine,
+      name: "Saved by another author",
+      updatedAt: new Date(draft.routine.updatedAt.getTime() + 1),
+    });
+
+    await expect(service.updateDraft(workspaceId, agentId, draft.routine.id, validDraft(), {
+      expectedUpdatedAt: draft.routine.updatedAt,
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: expect.stringContaining("changed while it was being edited"),
+    });
+    expect((await repository.findById(agentId, draft.routine.id))?.name).toBe("Saved by another author");
+  });
+
   it("publishes only the version an operator reviewed", async () => {
     const { repository, service } = createService();
     const draft = await service.createDraft(workspaceId, agentId, validDraft());
@@ -1175,6 +1350,66 @@ describe("RoutineDefinitionService", () => {
     await service.publish(workspaceId, agentId, draft.routine.id, { expectedUpdatedAt });
 
     expect(publish).toHaveBeenCalledWith(agentId, draft.routine.id, expect.objectContaining({ expectedUpdatedAt }));
+  });
+
+  it("rejects a stale guarded publish before the fake repository runs its lifecycle callback", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const onPublished = vi.fn();
+    repository.items.set(draft.routine.id, {
+      ...draft.routine,
+      updatedAt: new Date(draft.routine.updatedAt.getTime() + 1),
+    });
+
+    await expect(repository.publish(agentId, draft.routine.id, {
+      expectedUpdatedAt: draft.routine.updatedAt,
+      onPublished,
+    })).rejects.toThrow(`routine_definition_publish_conflict:${draft.routine.id}`);
+    expect(onPublished).not.toHaveBeenCalled();
+
+    await expect(service.publish(workspaceId, agentId, draft.routine.id, {
+      expectedUpdatedAt: draft.routine.updatedAt,
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: expect.stringContaining("changed while it was being published"),
+    });
+  });
+
+  it("rejects an archive when a revision appeared after the fake repository disclosed none", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const published = await service.publish(workspaceId, agentId, draft.routine.id);
+    const revision = await repository.createRevisionDraft(agentId, published.routine.id);
+
+    await expect(service.archive(workspaceId, agentId, published.routine.id, {
+      expectedDraftRevision: null,
+    })).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: expect.stringContaining("draft revision this would discard changed"),
+    });
+    expect((await repository.findById(agentId, published.routine.id))?.status).toBe("published");
+    expect(revision && await repository.findById(agentId, revision.id)).not.toBeNull();
+  });
+
+  it("rejects an archive when the disclosed fake revision was edited", async () => {
+    const { repository, service } = createService();
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+    const published = await service.publish(workspaceId, agentId, draft.routine.id);
+    const revision = await repository.createRevisionDraft(agentId, published.routine.id);
+    if (!revision) throw new Error("Expected revision draft");
+    repository.items.set(revision.id, {
+      ...revision,
+      name: "Edited after disclosure",
+      updatedAt: new Date(revision.updatedAt.getTime() + 1),
+    });
+
+    await expect(service.archive(workspaceId, agentId, published.routine.id, {
+      expectedDraftRevision: { id: revision.id, updatedAt: revision.updatedAt },
+    })).rejects.toMatchObject({ statusCode: 409, code: "conflict" });
+    expect((await repository.findById(agentId, published.routine.id))?.status).toBe("published");
+    expect((await repository.findById(agentId, revision.id))?.name).toBe("Edited after disclosure");
   });
 
   it("maps a publish the repository refused to an author-facing conflict", async () => {

@@ -113,6 +113,24 @@ describe("routine authoring edits", () => {
       .toThrow(/nowhere/);
   });
 
+  it("refuses to apply one addressed edit to duplicate stable ids or keys in an invalid draft", () => {
+    const duplicated = routine({
+      steps: [routine().steps[0]!, { ...routine().steps[0]!, instruction: "A second instruction.", ordinal: 1 }],
+      terminals: [routine().terminals[0]!, { ...routine().terminals[0]!, instruction: "A second ending.", ordinal: 1 }],
+      slots: [routine().slots[0]!, { ...routine().slots[0]!, stableSlotId: "slot_order_copy", ordinal: 1 }],
+    });
+
+    expect(() => applyRoutineFieldPatch(duplicated, routineFieldPatchSchema.parse({
+      steps: [{ stableStepId: "collect_topic", instruction: "Changed once." }],
+    }))).toThrow(/more than one step/i);
+    expect(() => applyRoutineFieldPatch(duplicated, routineFieldPatchSchema.parse({
+      terminals: [{ stableStepId: "done", instruction: "Changed once." }],
+    }))).toThrow(/more than one ending/i);
+    expect(() => applyRoutineFieldPatch(duplicated, routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", required: false }],
+    }))).toThrow(/more than one information field/i);
+  });
+
   it("rejects an empty patch rather than proposing a change that changes nothing", () => {
     expect(routineFieldPatchSchema.safeParse({}).success).toBe(false);
     // Naming an information field without saying what about it changes still produces a card to
@@ -185,6 +203,24 @@ describe("routine authoring edits", () => {
     })) as { transitions: Record<string, unknown> };
 
     expect(Object.keys(projected.transitions)).toHaveLength(3);
+  });
+
+  it("keeps duplicate step, ending, and information-field identities visible in review projections", () => {
+    const source = routine({
+      steps: [routine().steps[0]!, { ...routine().steps[0]!, instruction: "A second instruction.", ordinal: 1 }],
+      terminals: [routine().terminals[0]!, { ...routine().terminals[0]!, instruction: "A second ending.", ordinal: 1 }],
+      slots: [routine().slots[0]!, { ...routine().slots[0]!, stableSlotId: "slot_order_copy", ordinal: 1 }],
+    });
+
+    const projected = projectRoutineForReview(draftInputFromRoutine(source)) as {
+      slots: Record<string, unknown>;
+      steps: Record<string, unknown>;
+      terminals: Record<string, unknown>;
+    };
+
+    expect(Object.keys(projected.slots)).toEqual(["order_number", "order_number #1"]);
+    expect(Object.keys(projected.steps)).toEqual(["collect_topic", "collect_topic #1"]);
+    expect(Object.keys(projected.terminals)).toEqual(["done", "done #1"]);
   });
 });
 

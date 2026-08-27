@@ -107,18 +107,12 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
 
   useEffect(() => {
     mountedRef.current = true
-    const statusController = new AbortController()
     const load = async () => {
       await handleRead()
-      const status = await audiencePulseApi.getRefreshStatus({ signal: statusController.signal }).catch(() => null)
-      if (!statusController.signal.aborted && mountedRef.current && status?.pending) {
-        setRefresh({ kind: 'preparing' })
-      }
     }
     void load()
     return () => {
       mountedRef.current = false
-      statusController.abort()
       readControllerRef.current?.abort()
       refreshControllerRef.current?.abort()
     }

@@ -14,6 +14,7 @@ import {
 } from "../domain/vectorAdapter.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
 import { retrievableDocumentPredicateSql } from "./documentRetrievalEligibility.js";
+import { HnswIterativeScanRunner } from "./hnswIterativeScan.js";
 import {
   buildChunkEmbeddingDistanceExpression,
   buildChunkEmbeddingIndexDropSql,
@@ -212,7 +213,11 @@ implements VectorAdapter {
     },
   };
 
-  constructor(private readonly database: Database) {}
+  private readonly iterativeScan: HnswIterativeScanRunner;
+
+  constructor(private readonly database: Database) {
+    this.iterativeScan = new HnswIterativeScanRunner(database);
+  }
 
   /**
    * Serializes index lifecycle for one embedding width. Creation and the emptiness
@@ -284,7 +289,7 @@ implements VectorAdapter {
     // is the price of those widths being indexable at all. Ties at the LIMIT
     // boundary are therefore resolved arbitrarily — the outer sort orders only the
     // rows the inner query kept.
-    const rows = await this.database.query<CandidateRow>(
+    const rows = await this.iterativeScan.run<CandidateRow>(
       `WITH nearest AS (
          SELECT
            ce.chunk_id,

@@ -185,4 +185,52 @@ describe("LegacyVectorCandidateSearchAdapter", () => {
     ]);
     expect(legacyCalls).toEqual([1536]);
   });
+
+  // The merge decides which candidates reach the answer, so its three rules are
+  // load-bearing: canonical wins a chunk both legs found (a stale legacy score must
+  // not shadow the current one), ties break deterministically, and the result is cut
+  // to topK rather than returning both legs' worth of candidates.
+  it("prefers canonical on a collision, breaks ties by chunk id, and truncates to topK", async () => {
+    const candidate = (chunkId: string, score: number, version: string) => ({
+      chunkId,
+      documentId: `document-${chunkId}`,
+      embeddingSpaceId: "space-1536",
+      version,
+      score,
+    });
+    const adapter = new VectorCandidateSearchRolloutAdapter({
+      canonical: {
+        async search() {
+          return [candidate("shared", 0.5, "3"), candidate("tie-b", 0.4, "3")];
+        },
+      },
+      legacy: {
+        async search() {
+          return [
+            candidate("shared", 0.9, "0"),
+            candidate("tie-a", 0.4, "0"),
+            candidate("weakest", 0.1, "0"),
+          ];
+        },
+      },
+      legacyDimensions: [1536],
+    });
+
+    const results = await adapter.search({
+      workspaceId: "workspace-1",
+      space: { id: "space-1536", dimensions: 1536, distanceMetric: "cosine" },
+      queryVector: [1],
+      topK: 3,
+      minimumScore: 0,
+      filter: {},
+    });
+
+    expect(results).toEqual([
+      // Canonical's 0.5 replaces legacy's higher 0.9 for the same chunk.
+      expect.objectContaining({ chunkId: "shared", score: 0.5, version: "3" }),
+      expect.objectContaining({ chunkId: "tie-a" }),
+      expect.objectContaining({ chunkId: "tie-b" }),
+    ]);
+    expect(results.map((result) => result.chunkId)).not.toContain("weakest");
+  });
 });

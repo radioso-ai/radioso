@@ -197,4 +197,20 @@ describe("SkillCapabilityRegistry", () => {
     expect(byKey.get("lexicalRewriteInstructions")?.dependsOnKey).toBe("queryRewriteEnabled");
     expect(byKey.get("suggestedQuestionsCount")?.dependsOnKey).toBe("suggestedQuestionsEnabled");
   });
+
+  it("opts retrieve's source scope and metadata rules into copilot value visibility, without widening notify's hidden fields", () => {
+    const registry = createDefaultSkillCapabilityRegistry();
+    const retrieveByKey = new Map(
+      (registry.get("retrieve")?.settingsFields ?? []).map((field) => [field.key, field]),
+    );
+
+    expect(retrieveByKey.get("sourceScope")?.showValueToCopilot).toBe(true);
+    expect(retrieveByKey.get("metadataRules")?.showValueToCopilot).toBe(true);
+
+    const notifyByKey = new Map(
+      (registry.get("notify")?.settingsFields ?? []).map((field) => [field.key, field]),
+    );
+    expect(notifyByKey.get("delivery.recipientEmails")?.showValueToCopilot).not.toBe(true);
+    expect(notifyByKey.get("delivery.webhook.url")?.showValueToCopilot).not.toBe(true);
+  });
 });

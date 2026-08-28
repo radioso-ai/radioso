@@ -10,7 +10,7 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
 import {
   createFacetExtractionWorker,
@@ -66,7 +66,7 @@ import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -414,6 +414,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
+    createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
+    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService }),
   ] as const;
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(repositories.conversationRepository),
@@ -465,9 +467,40 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
+  // Shared by the replay service (dates a run's baseline) and proposal-evidence resolution (reads
+  // an agent_skill proposal's captured baseline skill config) — both need the case's frozen
+  // snapshot, never the live agent.
+  const copilotEvalCaseReader = {
+    findCase: (workspaceId: string, caseId: string) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId),
+  };
+  // The live counterpart copilotEvalCaseReader's captured snapshot is compared against: an
+  // agent_skill proposal's evidence is stale when this drifts from what a cited case captured.
+  // A skill edit persists through agent_skills, a table agents.updated_at never reflects, so this
+  // reads the skill directly rather than leaning on copilotAgentVersion.
+  const copilotAgentSkillConfig = {
+    getDefaultAnswerSkill: async (workspaceId: string, agentId: string) => {
+      const skill = await agentSkillRepository.findDefaultAnswer(workspaceId, agentId);
+      return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
+    },
+  };
+  // Directive removal evidence needs a directive's real id and content from the live agent, never
+  // from a model-supplied replay override, so this reads through the same resolver the agent's
+  // own config serialization uses rather than trusting anything the copilot sends.
+  const copilotAgentDirectives = {
+    listDirectives: async (workspaceId: string, agentId: string) => {
+      const agent = await agentService.resolve(workspaceId, agentId);
+      // The port takes an opaque record — Ray's replay tool schema does too — so the widening from
+      // the agents module's typed config to that shape belongs at this composition boundary.
+      return serializeAuthoredDirectivesWithIds(agent).map((directive) => ({
+        id: directive.id,
+        config: directive.config as unknown as Record<string, unknown>,
+      }));
+    },
+  };
   const evalCaseReplayService = new EvalCaseReplayService({
-    cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+    cases: copilotEvalCaseReader,
     evidence: copilotReplayEvidenceRepository,
+    agentDirectives: copilotAgentDirectives,
     runs: {
       // Ray offers a narrowed, behavior-only view of the eval override set, so widening it back to
       // the module's own type belongs here — the same widening the eval route performs on a
@@ -512,13 +545,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalCaseCapture: evalCaseCaptureService,
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
-    proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
+    proposalEvidence: {
+      evidence: copilotReplayEvidenceRepository,
+      agentVersion: copilotAgentVersion,
+      agentSkillConfig: copilotAgentSkillConfig,
+      cases: copilotEvalCaseReader,
+    },
     qualitySignalsService,
     audiencePulseService,
     documentStatusService: documents.documentIngestionService,
     documentSourceStatusService: documents.documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
+    contextVariables: contextVariableRepository,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {

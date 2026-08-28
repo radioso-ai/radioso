@@ -4,7 +4,9 @@ import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
+  CopilotAgentSkillProposalAdapter,
   CopilotAuditPort,
+  CopilotContextVariableProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotProposal,
   CopilotRoutineProposalAdapter,
@@ -277,7 +279,7 @@ const projectDirectiveDetail = (
 export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }
 
@@ -301,7 +303,12 @@ export const createAgentSettingProposalCopilotTools = (
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const validated = await settingAdapter.validatePayload(context.workspaceId, targetRef, { value, ...(rationale ? { rationale } : {}) });
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const versionToken = await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
+          // validatePayload is the version-token source (see its doc comment): the persisted
+          // proposal below still uses validated.versionToken, not this read's return value, or a
+          // later read could pair a payload expansion built from this state with a fresher token
+          // and let a concurrent edit slip past the apply-time version check undetected. The call
+          // stays only as a revocation-recheck boundary matching every other proposal tool's shape.
+          await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "agent_setting", settingKey, value: validated.payload && typeof validated.payload === "object" ? (validated.payload as { value?: unknown }).value : value });
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
@@ -312,7 +319,7 @@ export const createAgentSettingProposalCopilotTools = (
             targetType: "agent_setting",
             targetRef: validated.targetRef,
             payload: validated.payload,
-            versionToken,
+            versionToken: validated.versionToken,
             evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);
@@ -330,7 +337,7 @@ export const createAgentSettingProposalCopilotTools = (
 };
 
 const proposalAdapter = (
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>,
+  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>,
 ): CopilotAgentSettingProposalAdapter => {
   const adapter = adapters.find((candidate) => candidate.targetType === "agent_setting");
   if (!adapter) throw new Error("No copilot proposal adapter registered for agent_setting");

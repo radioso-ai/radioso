@@ -10,6 +10,7 @@ export const copilotRayOwnedPrimitiveIds = [
 ] as const;
 
 export const copilotApplicationPrimitiveRegistry = {
+  "agentSkills.config.propose": { owningModule: "agentSkills", exportedPort: "AgentSkillsService" },
   "agents.configuration.read": { owningModule: "agents", exportedPort: "AgentService" },
   "agents.directive.propose": { owningModule: "agents", exportedPort: "AuthoredDirectiveService" },
   "agents.setting.propose": { owningModule: "agents", exportedPort: "AgentService" },

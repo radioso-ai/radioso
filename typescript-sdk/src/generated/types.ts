@@ -18535,7 +18535,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent_setting" | "routine";
+                                targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -18668,11 +18668,11 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent_setting" | "routine";
+                        targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent_setting" | "routine";
+                            type: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
                             ref?: unknown;
                         };
                         targetLabel: string;

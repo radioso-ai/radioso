@@ -22698,6 +22698,8 @@ paths:
                                       - directive
                                       - agent_setting
                                       - routine
+                                      - agent_skill
+                                      - context_variable
                                   targetLabel:
                                     type: string
                                   summary:

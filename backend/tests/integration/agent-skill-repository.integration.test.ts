@@ -100,7 +100,7 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
     expect(await repository.findById(workspaceId, randomUUID(), created.id)).toBeNull();
   });
 
-  it("shallow-merges config and honors explicit-null vs absent target_id on update", async () => {
+  it("deep-merges config and honors explicit-null vs absent target_id on update", async () => {
     // `retrieve`/`source_scope` targets are not UUID-validated by the target-reference
     // trigger, so an arbitrary text target_id keeps this a pure repository-mechanics test.
     const created = await repository.create({
@@ -133,6 +133,125 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
 
     // Update against a foreign agent is a no-op (returns null).
     expect(await repository.update(workspaceId, randomUUID(), created.id, { enabled: true })).toBeNull();
+  });
+
+  it("preserves a stored notify webhook URL when a PATCH supplies only the recipient list", async () => {
+    // The defect this guards: notifyDeliverySchema's `.default(null)` on `webhook` means a
+    // shallow top-level `config` merge that replaces the whole `delivery` object silently resets
+    // a webhook URL the caller never touched.
+    const created = await repository.create({
+      workspaceId,
+      agentId,
+      skillName: "notify-webhook-survives",
+      kind: "notify",
+      targetType: "notify_delivery",
+      targetId: null,
+      config: {
+        delivery: {
+          recipientEmails: ["ops@example.com"],
+          webhook: { url: "https://hooks.example.com/abc" },
+        },
+        exposedInputs: { message: true },
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const updated = await repository.update(workspaceId, agentId, created.id, {
+      config: { delivery: { recipientEmails: ["ops2@example.com"] } },
+    });
+
+    expect(updated?.config).toEqual({
+      delivery: {
+        recipientEmails: ["ops2@example.com"],
+        webhook: { url: "https://hooks.example.com/abc" },
+      },
+      exposedInputs: { message: true },
+    });
+  });
+
+  it("serializes two concurrent partial-config PATCHes to sibling nested keys instead of losing one", async () => {
+    // Two concurrent PATCHes each touch a different nested key under the same top-level
+    // `delivery` object and never see each other's payload. Without a real lock around the
+    // read-modify-write, whichever write commits last would read a stale base and clobber the
+    // other's change. The repository's `FOR UPDATE` read inside one transaction must serialize
+    // these instead, so both edits land.
+    const created = await repository.create({
+      workspaceId,
+      agentId,
+      skillName: "notify-concurrent-patch",
+      kind: "notify",
+      targetType: "notify_delivery",
+      targetId: null,
+      config: {
+        delivery: {
+          recipientEmails: ["ops@example.com"],
+          webhook: { url: "https://hooks.example.com/original" },
+        },
+        exposedInputs: { message: true },
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    await Promise.all([
+      repository.update(workspaceId, agentId, created.id, {
+        config: { delivery: { recipientEmails: ["ops2@example.com"] } },
+      }),
+      repository.update(workspaceId, agentId, created.id, {
+        config: { delivery: { webhook: { url: "https://hooks.example.com/updated" } } },
+      }),
+    ]);
+
+    const final = await repository.findById(workspaceId, agentId, created.id);
+    expect(final?.config).toEqual({
+      delivery: {
+        recipientEmails: ["ops2@example.com"],
+        webhook: { url: "https://hooks.example.com/updated" },
+      },
+      exposedInputs: { message: true },
+    });
+  });
+
+  it("refuses an update whose expectedUpdatedAt no longer matches, and leaves the row unchanged", async () => {
+    const created = await repository.create({
+      workspaceId,
+      agentId,
+      skillName: "epsilon",
+      kind: "notify",
+      targetType: "notify_delivery",
+      targetId: null,
+      config: { delivery: { recipientEmails: ["a@example.com"], webhook: null } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+    const draftedAt = created.updatedAt;
+
+    // A concurrent edit lands after the caller read draftedAt but before it calls update.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const edited = await repository.update(workspaceId, agentId, created.id, { enabled: false });
+    expect(edited?.updatedAt.getTime()).toBeGreaterThan(draftedAt.getTime());
+
+    // The version check lives in the UPDATE's own WHERE predicate: a stale expectedUpdatedAt
+    // must be a no-op (null), not a partial or unconditional write.
+    const stale = await repository.update(
+      workspaceId,
+      agentId,
+      created.id,
+      { config: { delivery: { recipientEmails: ["hijacked@example.com"], webhook: null } }, expectedUpdatedAt: draftedAt },
+    );
+    expect(stale).toBeNull();
+    expect((await repository.findById(workspaceId, agentId, created.id))?.config).not.toMatchObject({
+      delivery: { recipientEmails: ["hijacked@example.com"] },
+    });
+
+    // A fresh expectedUpdatedAt (matching the edit) succeeds.
+    const fresh = (await repository.findById(workspaceId, agentId, created.id))!;
+    const applied = await repository.update(workspaceId, agentId, created.id, {
+      enabled: true,
+      expectedUpdatedAt: fresh.updatedAt,
+    });
+    expect(applied?.enabled).toBe(true);
   });
 
   it("removes only the matching row and reports whether a row was deleted", async () => {

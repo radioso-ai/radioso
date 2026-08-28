@@ -6,6 +6,7 @@ import type {
   AgentSkillUpdateRecord,
 } from "../../src/modules/agentSkills/repository.js";
 import type { AgentSkillSpine } from "../../src/modules/agentSkills/domain.js";
+import { mergeSkillConfig } from "../../src/modules/agentSkills/configMerge.js";
 
 const cloneConfig = (config: Record<string, unknown> = {}): Record<string, unknown> =>
   JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
@@ -104,6 +105,9 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
     if (!existing || existing.workspaceId !== workspaceId || existing.agentId !== agentId) {
       return null;
     }
+    if (input.expectedUpdatedAt && existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
+      return null;
+    }
     if (
       input.invocationMode === "default_answer"
       && existing.invocationMode !== "default_answer"
@@ -121,7 +125,7 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
       targetId: "targetId" in input ? input.targetId ?? null : existing.targetId,
       config: input.replaceConfig !== undefined
         ? cloneConfig(input.replaceConfig)
-        : { ...cloneConfig(existing.config), ...cloneConfig(input.config) },
+        : mergeSkillConfig(cloneConfig(existing.config), cloneConfig(input.config ?? {})),
       invocationMode: input.invocationMode ?? existing.invocationMode,
       enabled: "enabled" in input ? input.enabled ?? existing.enabled : existing.enabled,
       updatedAt: new Date(),

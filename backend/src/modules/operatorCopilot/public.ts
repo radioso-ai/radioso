@@ -6,6 +6,8 @@ export type {
   CopilotAgentTurnProbeResult,
 } from "./contracts/agentTurnProbe.js";
 export type {
+  CopilotAgentDirectivesPort,
+  CopilotAgentSkillConfigPort,
   CopilotAgentVersionPort,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReaderPort,
@@ -19,6 +21,7 @@ export type {
   CopilotEvalSuiteRunnerPort,
   CopilotReplayEvidenceRecord,
   CopilotReplayEvidenceRepositoryPort,
+  CopilotSkillConfigEnvelope,
 } from "./contracts/evalCases.js";
 export { MAX_COPILOT_EVAL_SUITE_CASES } from "./contracts/evalCases.js";
 export * from "./neverList.js";

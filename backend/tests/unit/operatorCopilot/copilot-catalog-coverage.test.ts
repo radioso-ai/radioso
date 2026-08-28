@@ -23,15 +23,25 @@ describe("operator copilot catalog coverage", () => {
   //               filed as an end-user surface alongside the public chat routes, which read as a
   //               boundary and would have let Wave 4 skip the serving controls it exists to give
   //               a runtime safety model.
-  //   132 -> 126  the routine authoring and lifecycle operations, covered by propose_routine_edit,
-  //               propose_routine_lifecycle, and validate_routine. deleteAgentRoutine stays
-  //               deferred on its own ground: edits address stable ids and cannot remove anything.
-  // 126 -> 133 when the complete live Eval route family was registered in the
-  // public contract. These are pre-existing dashboard operations, not new Ray
-  // backlog: only listEvalCases is represented by eval_results; the remaining
-  // creation, direct-edit, snapshot, and per-case-run surfaces stay explicitly
-  // deferred until their bounded Ray workflows exist.
-  const maxDeferredCatalogExclusions = 133;
+  //   132 -> 133  when the complete live Eval route family was registered in the public contract.
+  //               These are pre-existing dashboard operations, not new Ray backlog: only
+  //               listEvalCases is represented by eval_results; the remaining creation,
+  //               direct-edit, snapshot, and per-case-run surfaces stay explicitly deferred until
+  //               their bounded Ray workflows exist. (The routine authoring and lifecycle
+  //               operations landed covered, by propose_routine_edit, propose_routine_lifecycle,
+  //               and validate_routine, in this same window, so 133 already reflects them.
+  //               deleteAgentRoutine stays deferred on its own ground: edits address stable ids
+  //               and cannot remove anything.)
+  //   133 -> 130  createAgentSkill/updateAgentSkill moved to propose_skill_config; deleteAgentSkill
+  //               keeps its own deferred entry for the destructive removal propose_skill_config
+  //               does not reach. deleteAgentDirective moved to propose_directive_removal.
+  //   130 -> 121  createContextVariable/updateContextVariable/upsertAgentContextVariable moved to
+  //               propose_context_variable; listContextVariables/getContextVariable/
+  //               listAgentContextVariables moved to the new context_variables reader; the
+  //               per-scope value operations (upsertContextVariableValue/getContextVariableValue/
+  //               deleteContextVariableValue) turned out to be a permanent exclusion rather than
+  //               deferred scope, since they carry visitor runtime data rather than configuration.
+  const maxDeferredCatalogExclusions = 121;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -46,6 +56,13 @@ describe("operator copilot catalog coverage", () => {
     expect(reasonFor("switchAccount")).toContain("does not administer identity");
     expect(reasonFor("listAccountUsers")).toContain("account-scoped");
     expect(reasonFor("getWorkspaceMcpContext")).toContain("workspace-token integration clients");
+    // The signing key derives the secret an embed uses to sign visitor identity; it must never
+    // become readable, and the context_variables reader and propose_context_variable must never
+    // grow a path to it.
+    expect(catalogCoverage.getAgentContextVariableSigningKey).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("carries secret material"),
+    });
 
     // Grant metadata carries no token material and its siblings are already readable, so it is
     // planned work rather than a boundary. Issuing and revoking grants stay never-list.

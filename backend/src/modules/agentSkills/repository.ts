@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
-import { currentTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { mergeSkillConfig } from "./configMerge.js";
 import type { AgentSkillInvocationMode, AgentSkillKind, AgentSkillSpine } from "./domain.js";
 
 export interface AgentSkillCreateRecord {
@@ -23,6 +24,27 @@ export interface AgentSkillUpdateRecord {
   replaceConfig?: Record<string, unknown>;
   invocationMode?: AgentSkillInvocationMode;
   enabled?: boolean;
+  /**
+   * Optional optimistic-concurrency guard, enforced in the UPDATE's own WHERE predicate: when
+   * supplied, the update is a no-op (returns null) unless the row's current `updated_at` matches.
+   * Omitted entirely by callers that do not need version gating (the pre-existing default).
+   */
+  expectedUpdatedAt?: Date;
+  /**
+   * Optional post-lock revalidation hook for the config-merge path (`updateWithConfigMerge`
+   * only - a `replaceConfig` write already persists exactly the object the caller validated, so
+   * there is no later merge to recheck). Called with the config actually about to be written -
+   * the deep merge computed *after* the row's FOR UPDATE lock is held, against whatever the row
+   * currently holds, not the caller's earlier pre-lock read - so it can veto a write by throwing.
+   * A thrown error aborts the transaction (nothing is persisted) and propagates out of `update`.
+   *
+   * This exists because the caller (AgentSkillsService) validates one candidate before this
+   * method ever runs, but this method recomputes the merge itself once it actually holds the
+   * lock: two individually-valid concurrent partial patches can compose, under the lock, into a
+   * config nobody validated. The repository owns the lock and the merge; it does not know
+   * capability validation rules, so it accepts them as a callback instead of duplicating them.
+   */
+  validateMergedConfig?: (mergedConfig: Record<string, unknown>) => void;
 }
 
 export interface AgentSkillRepositoryPort {
@@ -164,25 +186,74 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
     id: string,
     input: AgentSkillUpdateRecord,
   ): Promise<AgentSkillSpine | null> {
-    const row = await this.db
+    return input.config !== undefined && input.replaceConfig === undefined
+      ? this.updateWithConfigMerge(workspaceId, agentId, id, input)
+      : this.applyUpdate(this.db, workspaceId, agentId, id, input, input.replaceConfig);
+  }
+
+  /**
+   * A partial `config` patch deep-merges into the row's *current* stored config (recurses into
+   * plain objects, replaces arrays/scalars outright the patch supplies - see `mergeSkillConfig`),
+   * which a single UPDATE statement's jsonb `||` can only do shallowly. Computing that merge in
+   * application code makes this a read-modify-write, so the read and the write share one
+   * transaction, and the read takes `FOR UPDATE`: the row lock blocks a concurrent writer from
+   * reading a base until this transaction commits, so two concurrent partial patches to different
+   * nested keys (e.g. notify's `delivery.recipientEmails` and `delivery.webhook`) serialize and
+   * compose instead of one silently clobbering the other. `expectedUpdatedAt`, when supplied, is
+   * still enforced in the final UPDATE's own WHERE predicate underneath that lock. `input.
+   * validateMergedConfig`, when supplied, runs against this merge - the actual config about to
+   * be written, not the caller's pre-lock candidate - and can veto the write by throwing, so a
+   * second concurrent patch that composes into an invalid config is refused instead of persisted.
+   */
+  private async updateWithConfigMerge(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: AgentSkillUpdateRecord,
+  ): Promise<AgentSkillSpine | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom("agent_skills")
+        .select("config")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!existing) {
+        return null;
+      }
+      const mergedConfig = mergeSkillConfig((existing.config as Record<string, unknown> | null) ?? {}, input.config);
+      input.validateMergedConfig?.(mergedConfig);
+      return this.applyUpdate(trx, workspaceId, agentId, id, input, mergedConfig);
+    });
+  }
+
+  private async applyUpdate(
+    executor: Db,
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: AgentSkillUpdateRecord,
+    config: Record<string, unknown> | undefined,
+  ): Promise<AgentSkillSpine | null> {
+    const row = await executor
       .updateTable("agent_skills")
-      .set((eb) => ({
+      .set({
         updated_at: currentTimestamp(),
         // Mirror the prior COALESCE/CASE semantics: target_type updates only when a
         // value is supplied; target_id distinguishes an explicit null (key present)
-        // from "leave unchanged" (key absent); config remains a shallow jsonb merge
-        // unless a full replacement is explicitly requested.
+        // from "leave unchanged" (key absent).
         ...(input.targetType != null ? { target_type: input.targetType } : {}),
         ...("targetId" in input ? { target_id: input.targetId ?? null } : {}),
-        ...(input.replaceConfig !== undefined
-          ? { config: toJsonb(input.replaceConfig) }
-          : input.config ? { config: jsonbConcat(eb.ref("config"), toJsonb(input.config)) } : {}),
+        ...(config !== undefined ? { config: toJsonb(config) } : {}),
         ...(input.invocationMode != null ? { invocation_mode: input.invocationMode } : {}),
         ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-      }))
+      })
       .where("workspace_id", "=", workspaceId)
       .where("agent_id", "=", agentId)
       .where("id", "=", id)
+      .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedUpdatedAt))
       .returningAll()
       .executeTakeFirst();
     return row ? mapRow(row as AgentSkillRow) : null;

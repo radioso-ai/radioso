@@ -359,6 +359,57 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
   await expect(page.getByRole("button", { name: `Open ${targetLabel}`, exact: true })).toBeVisible();
 });
 
+test("states plainly that applying a directive removal proposal deletes it permanently, without requiring the diff to be expanded first", async ({ page }) => {
+  const copilotConversationId = "copilot-proposal-removal-apply";
+  const proposalId = "proposal-removal-apply-1";
+  const targetLabel = "Avoid competitors";
+  const summary = `Permanently remove the directive "${targetLabel}". This cannot be undone.`;
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Remove the competitor directive", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Remove the competitor directive", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { directiveId: "directive-competitors-1" } } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string };
+      messages = [
+        { id: "operator-proposal-removal-apply", role: "operator", content: body.message, createdAt: nowIso },
+        { id: "answer-proposal-removal-apply", role: "copilot", content: "I drafted a removal for review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "directive", targetLabel, summary, status: "pending", removal: true }] },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-proposal-removal-apply" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "directive", targetLabel, summary, removal: true })}`,
+          "event: chunk\ndata: {\"text\":\"I drafted a removal for review.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Remove the competitor directive");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await expect(page.getByText(targetLabel, { exact: true })).toBeVisible();
+  // Clicked directly, without ever expanding "Show changes" first - the exact gap Finding 1
+  // (issue triage, next-ray-epic-issue) describes: an operator must see the deletion warning
+  // from here, not only after expanding the diff.
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByText(`Delete ${targetLabel} permanently?`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`This permanently deletes ${targetLabel}. This cannot be undone.`, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
+  await expect(page.getByText("Applied", { exact: true })).toBeVisible();
+});
+
 test("applies a routine proposal and opens the routine editor", async ({ page }) => {
   const copilotConversationId = "copilot-routine-proposal-apply";
   const proposalId = "proposal-routine-apply-1";

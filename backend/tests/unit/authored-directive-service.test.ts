@@ -121,7 +121,17 @@ class StubAgentRepository implements StubAgentRepositoryPort {
     return { ...merged, id: directiveId };
   }
 
-  async deleteDirective(): Promise<boolean> {
+  // Mirrors the real repository's version-gated DELETE: a directiveId that no longer exists, or
+  // whose updated_at no longer matches an expectedUpdatedAt the caller passed, deletes nothing.
+  async deleteDirective(_agentId: string, _workspaceId: string, directiveId: string, options?: { expectedUpdatedAt?: Date }): Promise<boolean> {
+    const existing = this.directives.find((directive) => directive.id === directiveId);
+    if (!existing) {
+      return false;
+    }
+    if (options?.expectedUpdatedAt && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+      return false;
+    }
+    this.directives.splice(this.directives.indexOf(existing), 1);
     return true;
   }
 }
@@ -533,6 +543,58 @@ describe("AuthoredDirectiveService", () => {
     await service.update(workspaceId, agentId, created.directive.id, { surfaces: [] });
 
     expect(repository.updated.at(-1)?.input.surfaces).toEqual([]);
+  });
+
+  it("deletes when expectedUpdatedAt matches the directive's current version", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "sunset-me" }));
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.delete(workspaceId, agentId, existing.id, { expectedUpdatedAt: existing.updatedAt });
+
+    expect(repository.directives.find((directive) => directive.id === existing.id)).toBeUndefined();
+  });
+
+  it("raises a conflict and keeps the directive intact when expectedUpdatedAt no longer matches (concurrent edit)", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "edited-after-draft" }));
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    // Simulates an edit made after the caller read the directive's version token but before it
+    // called delete: the version passed to delete() no longer matches what is stored.
+    const staleExpectedUpdatedAt = new Date(existing.updatedAt.getTime() - 1_000);
+
+    await expect(
+      service.delete(workspaceId, agentId, existing.id, { expectedUpdatedAt: staleExpectedUpdatedAt }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" } as Partial<AppError>);
+
+    // The directive must survive a stale delete attempt - the same guarantee update() already has.
+    expect(repository.directives.find((directive) => directive.id === existing.id)).toEqual(existing);
+  });
+
+  it("deletes without gating when no expectedUpdatedAt is supplied, matching pre-existing non-copilot callers", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "ungated-delete" }));
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.delete(workspaceId, agentId, existing.id);
+
+    expect(repository.directives.find((directive) => directive.id === existing.id)).toBeUndefined();
   });
 });
 

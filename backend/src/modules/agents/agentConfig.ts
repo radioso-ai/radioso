@@ -13,6 +13,7 @@ import type {
   AuthoredDirectiveCondition,
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
+import type { RetrieveSkillConfig } from "../retrieval/public.js";
 import {
   refPlaceholder,
   secretPlaceholder,
@@ -370,6 +371,184 @@ const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSettingsC
   };
 };
 
+/** What {@link effectiveRetrieveAnswerSkillSettings} and {@link canonicalRetrieveAnswerSkillConfig}
+ * compare: the retrieve default-answer skill's `sourceScope` in its mode-based agent form, plus
+ * every other configurable field of `RetrieveSkillConfig` projected onto one flat settings record,
+ * keyed by canonical name (`instruction` renamed to `customInstruction`; every other kept field by
+ * its own name). */
+export interface RetrieveAnswerSkillEffectiveSettings {
+  sourceScope: InternalAgentSourceScopeConfig;
+  settings: Record<string, unknown>;
+}
+
+/**
+ * `retrieveSkillConfigSchema`'s `sourceScope` (modules/retrieval) is `"all" | { sourceIds }`, not
+ * this file's mode-based `AgentSourceScopeConfig` — parsed structurally rather than by importing
+ * that schema, the same way `agentRepository.ts`'s `sourceScopeFromRetrieveConfig` (the live
+ * apply path's equivalent conversion) does.
+ */
+const sourceScopeFromProposedConfig = (sourceScope: unknown): InternalAgentSourceScopeConfig => {
+  if (sourceScope === undefined || sourceScope === "all") {
+    return { mode: "all" };
+  }
+  if (isRecord(sourceScope) && Array.isArray(sourceScope.sourceIds) && sourceScope.sourceIds.every((id) => typeof id === "string")) {
+    return { mode: "selected", sourceIds: [...sourceScope.sourceIds] as string[] };
+  }
+  return { mode: "all" };
+};
+
+/**
+ * Where a single `retrieveSkillConfigSchema` field lands once `materializeAgentFromConfig` has
+ * run. {@link canonicalRetrieveAnswerSkillConfig} and {@link effectiveRetrieveAnswerSkillSettings}
+ * both project through this one table instead of each hand-deciding a field's placement, so the
+ * two cannot drift the way they did for `sourceScope`/`instruction` (fixed once already) and then
+ * `suggestedQuestionsEnabled` (the defect this table replaces: it passed through as a flat tuning
+ * key on the proposal side while `effectiveRetrieveAnswerSkillSettings` never surfaced it at all,
+ * since `splitRetrievalAnswerEnvelope` only ever reads it nested under
+ * `settings.__agentRetrievalDefaults` — so no replay override could ever match an ordinary
+ * proposal for the default retrieve skill). Typing this `Record<keyof RetrieveSkillConfig, ...>`
+ * makes a field the schema gains with no entry here a compile error rather than a silent drop;
+ * `copilot-proposal-evidence-change-match.test.ts` and this file's
+ * "retrieve answer skill config canonicalization" suite additionally assert the *runtime*
+ * placement is correct and exhaustive.
+ *
+ * - `sourceScope`: converted to/from the mode-based `AgentSourceScopeConfig`; compared in its own
+ *   slot, never folded into `settings`.
+ * - `exposedInputs`: configures the skill invocation, not anything `materializeAgentFromConfig`
+ *   reads; dropped on both sides.
+ * - `suggestedQuestionsEnabled`: `agentRepository.ts`'s `toDefaultRetrieveSkillConfig` always
+ *   writes this field from the *agent's* `suggestedQuestionsEnabled` column, and `mapAgent` always
+ *   reads it back into that same column — for the default retrieve-answer skill (the only skill a
+ *   replay override can speak to at all), this proposal field means the agent-level default, not a
+ *   skill-local tuning value. It therefore round-trips through the same
+ *   `settings.__agentRetrievalDefaults` slot as `sourceScope`, not as a flat tuning key.
+ * - `instruction`: renamed to `customInstruction`, the flat skill-tuning key materialization reads.
+ * - everything else: an ordinary skill-tuning key, flat under its own name on both sides.
+ */
+type RetrieveAnswerFieldLocation =
+  | { readonly kind: "sourceScope" }
+  | { readonly kind: "dropped" }
+  | { readonly kind: "settings"; readonly canonicalKey: string; readonly nestedUnderAgentDefaults?: true };
+
+const RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS: {
+  readonly [Field in keyof RetrieveSkillConfig]: RetrieveAnswerFieldLocation;
+} = {
+  sourceScope: { kind: "sourceScope" },
+  exposedInputs: { kind: "dropped" },
+  instruction: { kind: "settings", canonicalKey: "customInstruction" },
+  suggestedQuestionsEnabled: { kind: "settings", canonicalKey: "suggestedQuestionsEnabled", nestedUnderAgentDefaults: true },
+  suggestedQuestionsCount: { kind: "settings", canonicalKey: "suggestedQuestionsCount" },
+  retrievalStrategy: { kind: "settings", canonicalKey: "retrievalStrategy" },
+  vectorTopK: { kind: "settings", canonicalKey: "vectorTopK" },
+  rerankEnabled: { kind: "settings", canonicalKey: "rerankEnabled" },
+  rerankTopK: { kind: "settings", canonicalKey: "rerankTopK" },
+  queryRewriteEnabled: { kind: "settings", canonicalKey: "queryRewriteEnabled" },
+  temporalStructuredLookupEnabled: { kind: "settings", canonicalKey: "temporalStructuredLookupEnabled" },
+  temporalBoostUpcomingEnabled: { kind: "settings", canonicalKey: "temporalBoostUpcomingEnabled" },
+  temporalDeterministicSortEnabled: { kind: "settings", canonicalKey: "temporalDeterministicSortEnabled" },
+  semanticRewriteInstructions: { kind: "settings", canonicalKey: "semanticRewriteInstructions" },
+  lexicalRewriteInstructions: { kind: "settings", canonicalKey: "lexicalRewriteInstructions" },
+  metadataRules: { kind: "settings", canonicalKey: "metadataRules" },
+};
+
+/**
+ * Canonicalizes a `propose_skill_config` proposal's `config` for the retrieve default-answer
+ * skill by projecting each field through {@link RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS} —
+ * the same table {@link effectiveRetrieveAnswerSkillSettings} projects a replay's recorded
+ * envelope through — so the two sides are comparable by construction, not by two hand-written
+ * mappings kept in agreement by inspection.
+ */
+export const canonicalRetrieveAnswerSkillConfig = (
+  config: Record<string, unknown>,
+): RetrieveAnswerSkillEffectiveSettings => {
+  const settings: Record<string, unknown> = {};
+  let sourceScope: InternalAgentSourceScopeConfig = { mode: "all" };
+  for (const [field, location] of Object.entries(RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS)) {
+    if (location.kind === "sourceScope") {
+      sourceScope = sourceScopeFromProposedConfig(config[field]);
+      continue;
+    }
+    if (location.kind === "dropped") {
+      continue;
+    }
+    const value = config[field];
+    if (value !== undefined) {
+      settings[location.canonicalKey] = value;
+    }
+  }
+  return { sourceScope, settings };
+};
+
+/**
+ * The canonical counterpart of {@link canonicalRetrieveAnswerSkillConfig}: what a replay
+ * override's recorded `{ enabled, settings }` envelope for the retrieve default-answer skill
+ * actually materializes to. Runs the envelope through the same `splitRetrievalAnswerEnvelope`
+ * extraction `materializeAgentFromConfig` uses, then projects the result through
+ * {@link RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS} — never a second hand-written mapping. A
+ * `.settings` blob shaped after the proposal's own field names (flat `sourceScope`/`instruction`,
+ * or a flat `suggestedQuestionsEnabled` instead of nested under `__agentRetrievalDefaults`) leaves
+ * the corresponding canonical field absent, surfacing the mismatch instead of byte-matching a
+ * configuration the replay never actually ran. See proposalEvidenceService's `agent_skill`
+ * evidence check.
+ */
+export const effectiveRetrieveAnswerSkillSettings = (
+  settings: unknown,
+): RetrieveAnswerSkillEffectiveSettings => {
+  const settingsRecord = isRecord(settings) ? settings : {};
+  const wrapped = {
+    [RETRIEVAL_ANSWER_SKILL_KEY]: {
+      enabled: true,
+      settings: settingsRecord,
+    },
+  } as InternalAgentSkillSettingsConfig;
+  const split = splitRetrievalAnswerEnvelope(wrapped);
+  const flatSkillSettings = split.skillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
+  const flatSettings = isRecord(flatSkillSettings) ? flatSkillSettings : {};
+  // Read the raw nested defaults directly rather than splitRetrievalAnswerEnvelope's own
+  // suggestedQuestionsEnabled output, which defaults a missing value to `true` for
+  // materialization's purposes (an agent always has *some* effective suggested-questions
+  // behavior). A canonical comparison must stay symmetric with the proposal side, which leaves a
+  // field absent from `.settings` entirely when the proposal never set it; defaulting it here
+  // would manufacture a match, or a mismatch, that no override actually earned.
+  const agentDefaultsSource = settingsRecord[AGENT_RETRIEVAL_DEFAULTS_KEY];
+  const agentDefaultsSettings = isRecord(agentDefaultsSource) ? agentDefaultsSource : {};
+
+  const result: Record<string, unknown> = {};
+  for (const location of Object.values(RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS)) {
+    if (location.kind !== "settings") {
+      continue;
+    }
+    const source = location.nestedUnderAgentDefaults ? agentDefaultsSettings : flatSettings;
+    const value = source[location.canonicalKey];
+    if (value !== undefined) {
+      result[location.canonicalKey] = value;
+    }
+  }
+
+  return { sourceScope: split.sourceScope, settings: result };
+};
+
+/**
+ * A replay override's `skillSettings[key]` entry as `applyAgentConfigOverride` actually resolves
+ * it at replay time: deep-merged onto the case's captured baseline envelope, field by field —
+ * never onto a schema default. An override field the operator's replay never touched (an
+ * untouched `enabled`, a `.settings` field such as `sourceScope` it never set) means the replay
+ * ran with whatever the captured baseline had, so a caller reconstructing what a cited replay
+ * actually measured must merge here first and only then canonicalize the result through
+ * {@link effectiveRetrieveAnswerSkillSettings} — canonicalizing the override in isolation cannot
+ * tell "the replay left this unchanged" apart from "the replay set this to the schema default",
+ * which is exactly the gap that let a proposal's stated `sourceScope: "all"` byte-match a replay
+ * that never touched `sourceScope` at all, even when the captured baseline was `selected`.
+ * Reuses `mergeConfigValue`, the same field-by-field deep merge {@link applyAgentConfigOverride}
+ * performs for every other `InternalAgentConfig` field, rather than a second hand-rolled merge
+ * that could drift from what a real replay's materialization does.
+ */
+export const mergeRetrieveAnswerSkillEnvelope = (
+  baseline: { enabled: unknown; settings: Record<string, unknown> },
+  override: { enabled?: unknown; settings?: Record<string, unknown> },
+): { enabled: unknown; settings: Record<string, unknown> } =>
+  mergeConfigValue(baseline, override) as { enabled: unknown; settings: Record<string, unknown> };
+
 const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): WebsiteEmbedSurfaceConfig => ({
   enabled: websiteEmbed.enabled,
   token: websiteEmbed.token ? secretPlaceholder() : null,
@@ -431,6 +610,21 @@ const serializeAuthoredDirectives = (
     lifecycle: directive.lifecycle,
     metadata: cloneJson(directive.metadata),
   }));
+
+/**
+ * Pairs each of an agent's authored directives with its stable id and canonical serialized
+ * content. Canonical serialization (`serializeAuthoredDirectives`, and every replay override an
+ * operator or model can author) never carries a directive's real id, so a caller that must
+ * resolve directive identity against something the model cannot author — e.g. a replay asked to
+ * exclude a specific directive — reads it from here instead of trusting an override's own claim.
+ */
+export const serializeAuthoredDirectivesWithIds = (
+  agent: Pick<ConversationAgent, "authoredDirectives">,
+): ReadonlyArray<{ id: string; config: AuthoredDirectiveConfig }> => {
+  const directives = agent.authoredDirectives ?? [];
+  const serialized = serializeAuthoredDirectives(directives);
+  return directives.map((directive, index) => ({ id: directive.id, config: serialized[index]! }));
+};
 
 const descriptor = <FieldName extends AgentConfigFieldName>(
   field: AgentConfigFieldDescriptor<FieldName>,

@@ -4,6 +4,8 @@ import { projectRoutineToPortableDocument, routineFieldPatchSchema, type Routine
 import type {
   CopilotAuditPort,
   CopilotAgentSettingProposalAdapter,
+  CopilotAgentSkillProposalAdapter,
+  CopilotContextVariableProposalAdapter,
   CopilotRoutineProposalDraft,
   CopilotEntityDescription,
   CopilotProposal,
@@ -343,7 +345,7 @@ export interface RoutineProposalCopilotToolDependencies extends CopilotProposalE
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly routineDefinitionService?: Pick<CopilotRoutineDefinitionPort, "list">;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }
 export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => {
@@ -364,7 +366,10 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await routineAdapter.draft(context.workspaceId, targetRef, intent);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
-          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          // A create names no row of its own to read a version from - the adapter needs the
+          // drafted name to check the one thing that actually determines whether Apply would
+          // still succeed (see the comment on createRoutineVersionToken).
+          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef, draft.payload);
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "routine" });
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
@@ -442,7 +447,6 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
 
   ];
 };
-
 const lifecyclePreference: Record<"publish" | "archive" | "restore", RoutineVersionPreference> = {
   publish: draftFirst,
   archive: liveFirst,
@@ -482,7 +486,7 @@ const proposeRoutineChange = async (
     ...proposalEvidenceOutput(evidence),
   };
 };
-const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>): CopilotRoutineProposalAdapter => {
+const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>): CopilotRoutineProposalAdapter => {
   const adapter = adapters.find((candidate) => candidate.targetType === "routine");
   if (!adapter) throw new Error("No copilot proposal adapter registered for routine");
   return adapter as CopilotRoutineProposalAdapter;

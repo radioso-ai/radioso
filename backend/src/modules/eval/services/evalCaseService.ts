@@ -139,23 +139,44 @@ export class EvalCaseService {
   }
 
   /**
-   * The case plus the agent whose captured configuration a replay of it runs against, and when
-   * that configuration was frozen. Both live on the snapshot, so a caller that needs to attribute
-   * a replay or date its baseline would otherwise have to read it separately.
+   * The case plus the agent whose captured configuration a replay of it runs against, when that
+   * configuration was frozen, the authored directives it captured, and the default-answer skill
+   * config it captured. All four live on the snapshot, so a caller that needs to attribute a
+   * replay, date its baseline, vary the captured directive set, or check an `agent_skill`
+   * proposal's evidence for staleness (rather than the agent's current state — see the copilot
+   * replay and proposal-evidence services) would otherwise have to read the snapshot separately.
    */
   async findCaseWithSourceAgent(
     workspaceId: string,
     caseId: string,
-  ): Promise<(EvalCase & { sourceAgentId: string | null; snapshotCapturedAt: Date | null }) | null> {
+  ): Promise<(EvalCase & {
+    sourceAgentId: string | null;
+    snapshotCapturedAt: Date | null;
+    snapshotAuthoredDirectives: ReadonlyArray<Record<string, unknown>>;
+    snapshotDefaultAnswerSkill: { enabled: unknown; settings: Record<string, unknown> } | null;
+  }) | null> {
     const evalCase = await this.findCase(workspaceId, caseId);
     if (!evalCase) {
       return null;
     }
     const snapshot = await this.repository.findSnapshot(workspaceId, evalCase.snapshotId);
+    // Widened to an opaque envelope here, the same boundary the copilot composition uses for the
+    // live directive port below: the copilot module reads a skill's enabled/settings envelope,
+    // never the agents module's typed InternalAgentSkillSettingsConfig shape.
+    const defaultAnswerSkill = (
+      snapshot?.originalAgentConfig?.skillSettings as
+        | Record<string, { enabled: unknown; settings: unknown }>
+        | undefined
+    )?.["retrieval.answer"];
     return {
       ...evalCase,
       sourceAgentId: snapshot?.sourceAgentId ?? null,
       snapshotCapturedAt: snapshot ? new Date(snapshot.capturedAt) : null,
+      snapshotAuthoredDirectives:
+        (snapshot?.originalAgentConfig?.authoredDirectives ?? []) as unknown as ReadonlyArray<Record<string, unknown>>,
+      snapshotDefaultAnswerSkill: defaultAnswerSkill
+        ? { enabled: defaultAnswerSkill.enabled, settings: (defaultAnswerSkill.settings ?? {}) as Record<string, unknown> }
+        : null,
     };
   }
 

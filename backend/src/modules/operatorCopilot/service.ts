@@ -2,20 +2,21 @@ import { randomUUID } from "node:crypto";
 
 import { AGENT_BUDGET_DEFAULTS, type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import type {
-  CopilotPageContext,
-  CopilotEntityReference,
-  CopilotCurrentAuthorizationPort,
-  CopilotAuditPort,
-  CopilotProposal,
-  CopilotProposalAdapter,
-  CopilotProposalCard,
-  CopilotProposalEvidenceSummary,
-  CopilotProposalStatus,
-  CopilotSseEvent,
-  CopilotToolDescriptor,
-  CopilotTurnOutcome,
-  CopilotWorkspaceRouteKeyResolver,
+import {
+  copilotProposalTargetTypes,
+  type CopilotPageContext,
+  type CopilotEntityReference,
+  type CopilotCurrentAuthorizationPort,
+  type CopilotAuditPort,
+  type CopilotProposal,
+  type CopilotProposalAdapter,
+  type CopilotProposalCard,
+  type CopilotProposalEvidenceSummary,
+  type CopilotProposalStatus,
+  type CopilotSseEvent,
+  type CopilotToolDescriptor,
+  type CopilotTurnOutcome,
+  type CopilotWorkspaceRouteKeyResolver,
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
@@ -27,6 +28,16 @@ const TITLE_MAX_LENGTH = 120;
 // conversations grow the model context unboundedly (spec 104 edge case).
 const HISTORY_MESSAGE_LIMIT = 12;
 const HISTORY_MESSAGE_CHARS = 2_000;
+/**
+ * How long an apply claim may sit unresolved before it counts as abandoned rather than active.
+ * A process that crashes between claiming and recording the outcome otherwise wedges the
+ * proposal forever: not applyable (already claimed) and not dismissable (a held claim blocks
+ * dismiss too, so nothing an operator does moves it). 5 minutes comfortably exceeds any single
+ * adapter's apply call within one request/response cycle — it matches the action outbox's own
+ * lease default (actionDispatcher.ts's `leaseSeconds: 300`), which sizes the same kind of
+ * "how long before a claim is presumed dead" judgment for a comparable class of work.
+ */
+const APPLY_CLAIM_TTL_SECONDS = 300;
 
 export interface CopilotConversation {
   readonly id: string;
@@ -49,6 +60,30 @@ export interface CopilotMessage {
   readonly createdAt: Date;
 }
 
+/**
+ * Guards the transition off `pending` against a concurrent or superseded apply claim.
+ *
+ * - `held` finalizes the outcome of the *exact* claim `claimProposalApply` returned. A claim
+ *   this one has since been superseded by (its own TTL elapsed and something reclaimed it) no
+ *   longer matches, so a crashed writer's late-arriving finalize is a safe no-op rather than a
+ *   write on behalf of whichever attempt is now current.
+ * - `free` is dismiss's guard: it must not race an apply that is still active, but a claim old
+ *   enough to count as abandoned (the same TTL judgment claiming itself uses) must not block it
+ *   either — the operator is never left with no action available.
+ */
+export type CopilotProposalApplyClaimGuard =
+  | { readonly state: "held"; readonly claimedAt: Date }
+  | { readonly state: "free"; readonly claimTtlSeconds: number };
+
+/**
+ * What claiming a proposal for apply returns: the proposal, and the exact claim timestamp to
+ * thread back into `updateProposalOutcome` as its `held` guard.
+ */
+export interface CopilotProposalClaim {
+  readonly proposal: CopilotProposal;
+  readonly claimedAt: Date;
+}
+
 export interface CopilotRepositoryPort {
   createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation>;
   findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null>;
@@ -61,10 +96,10 @@ export interface CopilotRepositoryPort {
   createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
-  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null>;
-  claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
-  /** Clears only a still-pending claim held by this apply attempt after a pre-mutation denial. */
-  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean>;
+  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;
+  claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null>;
+  /** Clears only the exact claim this attempt was handed, after a pre-mutation denial. A claim already superseded by a later reclaim is left alone. */
+  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean>;
 }
 
 export interface OperatorCopilotServiceDeps {
@@ -106,7 +141,7 @@ export class OperatorCopilotService {
     if (!proposal) return null;
     const adapter = this.adapterFor(proposal.targetType);
     const preview = await adapter.preview(input.workspaceId, proposal.targetRef, proposal.payload);
-    const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef)
+    const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef, proposal.payload)
       .then((currentVersion) => currentVersion === proposal.versionToken)
       .catch(() => false);
     return { proposal, preview, currentVersionMatches };
@@ -114,12 +149,14 @@ export class OperatorCopilotService {
 
   async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
     await this.requireProposalAuthorization(input);
-    const proposal = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
-    if (!proposal) {
+    const claim = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
+    if (!claim) {
       const existing = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
       if (!existing) throw new CopilotNotFoundError();
       throw new CopilotConflictError();
     }
+    const { proposal, claimedAt } = claim;
+    const claimGuard: CopilotProposalApplyClaimGuard = { state: "held", claimedAt };
     let result: Awaited<ReturnType<CopilotProposalAdapter["applyIfVersionMatches"]>>;
     try {
       // Claiming is Ray bookkeeping, not authority. Reauthorize immediately
@@ -134,24 +171,25 @@ export class OperatorCopilotService {
           id: proposal.id,
           workspaceId: input.workspaceId,
           operatorUserId: input.operatorUserId,
+          claimedAt,
         });
         throw error;
       }
-      await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", true);
+      await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", claimGuard);
       return { status: "failed" };
     }
     if (result.outcome === "applied") {
-      await this.updateProposalAndAudit(input, proposal, "applied", result.appliedRef, "copilot.proposal.applied", "success", "applied", true);
+      await this.updateProposalAndAudit(input, proposal, "applied", result.appliedRef, "copilot.proposal.applied", "success", "applied", claimGuard);
       return { status: "applied", appliedRef: result.appliedRef };
     }
     const status = result.outcome === "stale" ? "stale" : "failed";
-    await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, true, result.outcome === "failed" ? result.reason : null);
+    await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, claimGuard, result.outcome === "failed" ? result.reason : null);
     return result.outcome === "failed" ? { status, reason: result.reason } : { status };
   }
 
   async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: "dismissed" }> {
     const proposal = await this.requirePendingProposal(input);
-    await this.updateProposalAndAudit(input, proposal, "dismissed", null, "copilot.proposal.dismissed", "success", "dismissed");
+    await this.updateProposalAndAudit(input, proposal, "dismissed", null, "copilot.proposal.dismissed", "success", "dismissed", { state: "free", claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
     return { status: "dismissed" };
   }
 
@@ -213,7 +251,7 @@ export class OperatorCopilotService {
         const proposal = proposalFromTrace(trace);
         if (proposal) {
           proposals.push(proposal);
-          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}) } };
+          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}), ...(proposal.removal ? { removal: true as const } : {}) } };
         }
       }
       const result = await stream.result;
@@ -349,8 +387,8 @@ export class OperatorCopilotService {
     return proposal;
   }
 
-  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, requiresApplyClaim = false, reason: string | null = null): Promise<void> {
-    const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, requiresApplyClaim });
+  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {
+    const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, applyClaimGuard });
     if (!updated) throw new CopilotConflictError();
     await this.deps.auditService.record({ accountId: input.accountId, workspaceId: input.workspaceId, eventType, eventStatus, metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome } });
   }
@@ -360,14 +398,20 @@ const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null =
   if (trace.kind !== "tool_call_completed" || !isProposalOutput(trace.output)) return null;
   const card = { id: trace.output.proposalId, targetType: trace.output.targetType, targetLabel: trace.output.targetLabel, summary: trace.output.summary, status: "pending" as const };
   // The draft tool already summarized what it measured, so the card states it on the turn that
-  // drafted it rather than only after a reload.
-  return trace.output.evidence ? { ...card, evidence: trace.output.evidence } : card;
+  // drafted it rather than only after a reload. Same reasoning for removal (Finding 1, issue
+  // triage next-ray-epic-issue): the tool already knows it drafted a deletion, so the card
+  // carries that structural signal from the turn that drafted it, not only after a reload.
+  return {
+    ...card,
+    ...(trace.output.evidence ? { evidence: trace.output.evidence } : {}),
+    ...(trace.output.removal ? { removal: true as const } : {}),
+  };
 };
 
-const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } => {
+const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
-  return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting" || output.targetType === "routine") && typeof output.targetLabel === "string" && typeof output.summary === "string";
+  return typeof output.proposalId === "string" && (copilotProposalTargetTypes as ReadonlyArray<unknown>).includes(output.targetType) && typeof output.targetLabel === "string" && typeof output.summary === "string";
 };
 
 const trackActivity = (trace: AgentTraceEvent, labels: ReadonlyMap<string, string>, entitiesByToolCall: ReadonlyMap<string, CopilotEntityReference>, activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>): void => {

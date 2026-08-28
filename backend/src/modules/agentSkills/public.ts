@@ -10,6 +10,7 @@ export {
   AgentSkillsService,
   agentSkillCreateSchema,
   agentSkillUpdateSchema,
+  type AgentSkillConfigurationCandidate,
   type AgentSkillCreateInput,
   type AgentSkillUpdateInput,
   type AgentSkillView,
@@ -20,3 +21,5 @@ export {
   type AgentSkillCreateRecord,
   type AgentSkillUpdateRecord,
 } from "./repository.js";
+export { mergeSkillConfig } from "./configMerge.js";
+export * from "./copilotPrimitiveRegistry.js";

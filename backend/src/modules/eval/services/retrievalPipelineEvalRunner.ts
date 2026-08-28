@@ -8,6 +8,7 @@ import {
   composeGroundedAnswerSystemPrompt,
   computeGroundingSummary,
   BlankChatAnswerError,
+  buildConversationIntentSnapshot,
   GROUNDED_ANSWER_RESPONSE_FORMAT,
   parseGroundedAnswerEnvelope,
 } from "../../chat/retrievalSupport.js";
@@ -178,14 +179,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       suggestedQuestionsCount: 0,
       hasRetrievedContexts: pipelineResult.contexts.length > 0,
       conversationSummary: input.conversationSummary,
-      conversationIntentSnapshot: {
-        recentTurns: input.history
-          .filter((message) => message.role !== "system")
-          .slice(-6)
-          .map((message) => ({ role: message.role, content: message.content })),
-        activeSubject: input.query,
-        activeGoal: input.query,
-      },
+      conversationIntentSnapshot: buildConversationIntentSnapshot({
+        history: input.history,
+        latestQuery: input.query,
+      }),
     });
     const answerPrompt = composedPrompt.conversationContextPrompt
       ? `${pipelineResult.prompt}\n\n${composedPrompt.conversationContextPrompt}`

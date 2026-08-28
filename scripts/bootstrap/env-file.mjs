@@ -78,7 +78,14 @@ export const renderEnvFile = (values, contract = getEnvContract()) => {
 };
 
 export const enforceEnvFilePermissions = async (filePath) => {
-  await fs.chmod(filePath, 0o600);
+  try {
+    await fs.chmod(filePath, 0o600);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
 };
 
 export const writeEnvFileAtomic = async (filePath, source) => {

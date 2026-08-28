@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { Server as TlsServer } from "node:tls";
 
 type TestServer = ReturnType<typeof import("node:http").createServer>;
 
@@ -8,7 +9,7 @@ type SupertestTest = {
 };
 
 type SupertestTestPrototype = SupertestTest & {
-  __radiosoIpv6Loopback?: boolean;
+  __radiosoListenerAddress?: boolean;
   serverAddress: (app: TestServer, path: string) => string;
 };
 
@@ -17,8 +18,8 @@ const { Test } = require("supertest") as {
   Test: { prototype: SupertestTestPrototype };
 };
 
-const installIpv6SupertestLoopback = (): void => {
-  if (Test.prototype.__radiosoIpv6Loopback) {
+const installSupertestListenerAddress = (): void => {
+  if (Test.prototype.__radiosoListenerAddress) {
     return;
   }
 
@@ -32,14 +33,19 @@ const installIpv6SupertestLoopback = (): void => {
       return originalServerAddress.call(this, app, path);
     }
 
-    // Node binds Supertest's ephemeral server on IPv6 by default. Sending the
-    // request to ::1 avoids local IPv4 loopback routing interference.
-    return `http://[::1]:${address.port}${path}`;
+    const listenerHost = address.address === "::"
+      ? "::1"
+      : address.address === "0.0.0.0"
+        ? "127.0.0.1"
+        : address.address;
+    const urlHost = listenerHost.includes(":") ? `[${listenerHost}]` : listenerHost;
+    const protocol = app instanceof TlsServer ? "https" : "http";
+    return `${protocol}://${urlHost}:${address.port}${path}`;
   };
-  Test.prototype.__radiosoIpv6Loopback = true;
+  Test.prototype.__radiosoListenerAddress = true;
 };
 
-installIpv6SupertestLoopback();
+installSupertestListenerAddress();
 
 if (existsSync(".env")) {
   process.loadEnvFile(".env");

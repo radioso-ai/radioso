@@ -139,6 +139,17 @@ test("enforceEnvFilePermissions corrects a valid existing env file without rewri
   assert.equal(await fs.readFile(filePath, "utf8"), source);
 });
 
+test("enforceEnvFilePermissions tolerates a missing first-boot env file", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-"));
+  const filePath = path.join(tempDir, ".env");
+
+  try {
+    await assert.doesNotReject(enforceEnvFilePermissions(filePath));
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("renderEnvFile omits blank optional values", () => {
   const content = renderEnvFile({
     PORT: "8080",

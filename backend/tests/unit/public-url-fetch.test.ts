@@ -51,4 +51,43 @@ describe("connection-bound public URL fetch policy", () => {
     expect(() => assertPublicHttpUrl("http://127.0.0.1")).toThrow("publicly routable");
     expect(() => assertPublicHttpUrl("http://[::1]")).toThrow("publicly routable");
   });
+
+  it("rejects reserved and transition IPv6 ranges for literals and DNS answers", async () => {
+    const nonPublicAddresses = [
+      "fec0::1",
+      "fe00::1",
+      "5f00::1",
+      "3fff::1",
+      "2002:7f00:1::1",
+    ];
+
+    for (const address of nonPublicAddresses) {
+      expect(() => assertPublicHttpUrl(`http://[${address}]`)).toThrow("publicly routable");
+      const lookup = createConnectionBoundPublicLookup(async () => [{ address, family: 6 }]);
+      await expect(runLookup(lookup, "non-public.example")).rejects.toThrow("publicly routable");
+    }
+  });
+
+  it("rejects the deprecated IPv4 6to4 relay range", async () => {
+    expect(() => assertPublicHttpUrl("http://192.88.99.1")).toThrow("publicly routable");
+    const lookup = createConnectionBoundPublicLookup(async () => [{ address: "192.88.99.1", family: 4 }]);
+    await expect(runLookup(lookup, "6to4-relay.example")).rejects.toThrow("publicly routable");
+  });
+
+  it("allows conventional IPv6 addresses from allocated global-unicast ranges", async () => {
+    const publicAddresses = [
+      "2001:4860:4860::8888",
+      "2400::1",
+      "2606:4700:4700::1111",
+      "2800::1",
+      "2a00::1",
+      "2c00::1",
+    ];
+
+    for (const address of publicAddresses) {
+      expect(() => assertPublicHttpUrl(`https://[${address}]`)).not.toThrow();
+      const lookup = createConnectionBoundPublicLookup(async () => [{ address, family: 6 }]);
+      await expect(runLookup(lookup, "public.example")).resolves.toEqual({ address, family: 6 });
+    }
+  });
 });

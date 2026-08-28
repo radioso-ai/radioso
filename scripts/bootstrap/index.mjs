@@ -155,14 +155,17 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   out.write(`${renderHeader(ansi)}\n\n`);
   out.write(`${formatMessage("helper", "Checking local prerequisites...\n", ansi)}`);
 
+  await enforceEnvPermissions(targetEnvPath);
+  const envState = await detectEnv(targetEnvPath, contract);
+
   const preflightResults = await preflight();
   printPreflightResults(preflightResults, ansi, out);
   if (preflightResults.some((result) => result.isBlocking)) {
     return 1;
   }
 
-  const envState = await detectEnv(targetEnvPath, contract);
   let values = envState.values ?? {};
+  let wroteEnvFile = false;
 
   if (reconfigure || envState.state !== "valid") {
     const generated = resolveGeneratedValues(values);
@@ -171,6 +174,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
       values = buildEnvValues(values, generated, contract);
       validateProviderConfig(values, contract);
       await writeEnv(targetEnvPath, renderEnvFile(values, contract));
+      wroteEnvFile = true;
       out.write(`${formatMessage("helper", "Auto-completed .env for non-interactive startup\n", ansi)}`);
     } else {
       out.write(`\n${formatMessage("helper", "Collecting local configuration...\n", ansi)}`);
@@ -181,13 +185,16 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
         ...answers,
       }, contract);
       await writeEnv(targetEnvPath, renderEnvFile(values, contract));
+      wroteEnvFile = true;
       out.write(`${formatMessage("success", "Updated .env\n", ansi)}`);
     }
   } else {
     out.write(`${formatMessage("helper", "Using existing .env\n", ansi)}`);
   }
 
-  await enforceEnvPermissions(targetEnvPath);
+  if (wroteEnvFile) {
+    await enforceEnvPermissions(targetEnvPath);
+  }
 
   validateProviderConfig(values, contract);
   printConfigurationSummary(values, ansi, out);

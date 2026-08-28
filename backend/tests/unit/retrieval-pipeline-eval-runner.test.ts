@@ -78,6 +78,30 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
     expect(captured.prompt).toContain(SUMMARY);
   });
 
+  it("bounds recent history repeated alongside a frozen summary", async () => {
+    const { runner, captured } = buildRunner();
+    const unboundedTurn = `history-marker-${"x".repeat(250_000)}`;
+
+    await runner.answer({
+      workspaceId: "ws-1",
+      runId: "run-1",
+      query: "How long do refunds take?",
+      history: [{
+        id: "message-1",
+        conversationId: "conversation-1",
+        workspaceId: "ws-1",
+        role: "user",
+        content: unboundedTurn,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      }],
+      conversationSummary: SUMMARY,
+    });
+
+    expect(captured.prompt).toContain("history-marker-");
+    expect(captured.prompt).not.toContain(unboundedTurn);
+    expect(captured.prompt?.length).toBeLessThan(5_000);
+  });
+
   it("adds no summary section when the run carries none", async () => {
     const { runner, captured } = buildRunner();
 

@@ -6,9 +6,9 @@ import {
   OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
 } from "../../../src/modules/operatorCopilot/services/agentTurnProbeService.js";
 import type {
-  AgentTurnProbeRoutineReader,
   AgentTurnProbeRunnerPort,
 } from "../../../src/modules/operatorCopilot/contracts/agentTurnProbe.js";
+import type { ProbeRoutineReadPort } from "../../../src/modules/routines/public.js";
 
 const ids = {
   workspace: "00000000-0000-4000-8000-000000000001",
@@ -42,19 +42,19 @@ const conversation = (overrides: Partial<ConversationRecord> = {}): Conversation
 const harness = (options: { existingConversation?: ConversationRecord | null } = {}) => {
   const calls: string[] = [];
   const conversationReader = {
-    findByIdAndWorkspaceId: vi.fn(async () => {
+    findProbeConversation: vi.fn(async () => {
       calls.push("conversation");
       return options.existingConversation ?? null;
     }),
   };
   const agentReader = {
-    findByIdAndWorkspaceId: vi.fn(async () => {
+    findAgentForProbe: vi.fn(async () => {
       calls.push("agent");
       return { id: ids.agent };
     }),
   };
   const routineReader = {
-    findById: vi.fn<AgentTurnProbeRoutineReader["findById"]>(async () => {
+    findPreviewRoutine: vi.fn<ProbeRoutineReadPort["findPreviewRoutine"]>(async () => {
       calls.push("routine");
       return { status: "draft" as const };
     }),
@@ -164,7 +164,7 @@ describe("AgentTurnProbeService", () => {
 
   it("fails closed before effects when a preview routine is not eligible", async () => {
     const { service, routineReader, abuseControl, turnRunner } = harness();
-    routineReader.findById.mockResolvedValue({ status: "archived" });
+    routineReader.findPreviewRoutine.mockResolvedValue({ status: "archived" });
 
     await expect(service.testTurn(input()))
       .rejects.toMatchObject({ statusCode: 404, message: "Preview routine not found" });

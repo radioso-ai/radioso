@@ -30,6 +30,16 @@ import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
 import { enrichCopilotToolCatalog } from "../../modules/operatorCopilot/catalog.js";
+import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceRegistry } from "../../modules/operatorCopilot/capabilityProvenance.js";
+import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
+import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
+import { agentCopilotPrimitives } from "../../modules/agents/public.js";
+import { chatCopilotPrimitives } from "../../modules/chat/public.js";
+import { documentCopilotPrimitives } from "../../modules/documents/public.js";
+import { embeddingProfileCopilotPrimitives } from "../../modules/embeddingProfiles/public.js";
+import { evalCopilotPrimitives } from "../../modules/eval/public.js";
+import { routineCopilotPrimitives } from "../../modules/routines/public.js";
+import { settingsCopilotPrimitives } from "../../modules/settings/public.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
@@ -67,4 +77,23 @@ export const createCopilotToolCatalog = (deps: {
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;
-}): ReadonlyArray<CopilotToolDescriptor> => enrichCopilotToolCatalog(createCopilotToolDescriptors(deps), deps.workspaceRouteKeyResolver);
+}): ReadonlyArray<CopilotToolDescriptor> => {
+  const descriptors = createCopilotToolDescriptors(deps);
+  const publicOperationIds = new Set(Object.values(createOpenApiDocument().paths ?? {})
+    .flatMap((path) => Object.values(path ?? {}))
+    .flatMap((operation) => operation && typeof operation === "object" && "operationId" in operation && typeof operation.operationId === "string"
+      ? [operation.operationId]
+      : []));
+  const ownerExportedPrimitiveIds = new Set([
+    ...agentCopilotPrimitives,
+    ...chatCopilotPrimitives,
+    ...documentCopilotPrimitives,
+    ...embeddingProfileCopilotPrimitives,
+    ...evalCopilotPrimitives,
+    ...routineCopilotPrimitives,
+    ...settingsCopilotPrimitives,
+  ]);
+  assertCopilotCapabilityProvenanceRegistry(descriptors);
+  assertCopilotCapabilityProvenance(descriptors, publicOperationIds, operationPermissionRequirements, ownerExportedPrimitiveIds);
+  return enrichCopilotToolCatalog(descriptors, deps.workspaceRouteKeyResolver);
+};

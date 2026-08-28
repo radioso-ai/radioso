@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit and publish routines, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 ---
 
 # Ray
@@ -11,6 +11,12 @@ conversation received a particular answer, why retrieval did not run, which
 trace stage produced a refusal, which documents failed to process, or which
 skills an agent can reach. Ray reads the workspace data available to
 your operator session and streams its findings as it works.
+
+Ray checks your current workspace permissions again when it is about to read a
+protected record or draft, run, or apply a change. If access changes while a
+turn is in progress, that step stops without exposing its result. A pending
+proposal never carries permission to apply itself: the operator applying it
+needs the required permission at that moment.
 
 When you ask about configuration, Ray can discover the workspace's agents and
 read the selected agent's settings, authored directives, and built-in answer

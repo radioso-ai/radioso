@@ -97,6 +97,28 @@ describe("AccountAccessService", () => {
     }
   });
 
+  it("evaluates an all-of workspace permission vector from one effective principal", async () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const principal = { type: "workspace_api_token" as const, role: "member" as const };
+
+    await expect(service.hasAllWorkspacePermissions({
+      principal,
+      permissions: ["workspace.agents.read", "workspace.chat.use"],
+    })).resolves.toBe(true);
+    await expect(service.hasAllWorkspacePermissions({
+      principal,
+      permissions: ["workspace.agents.read", "workspace.quality.read"],
+    })).resolves.toBe(false);
+  });
+
+  it("derives role permission vectors from the same authority used for authorization", () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+
+    expect(service.permissionsForWorkspaceRole("member", ["workspace.agents.read", "workspace.agents.manage", "workspace.quality.read"])).toEqual(
+      new Set(["workspace.agents.read", "workspace.agents.manage"]),
+    );
+  });
+
   it("never grants public chat permissions to session users or workspace API tokens", async () => {
     const userRepository = new InMemoryUserRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();

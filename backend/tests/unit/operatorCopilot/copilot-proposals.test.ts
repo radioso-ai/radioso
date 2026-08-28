@@ -10,6 +10,7 @@ vi.mock("../../../src/modules/routines/public.js", async (importOriginal) => ({
 
 import {
   OperatorCopilotService,
+  CopilotAuthorizationError,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -25,6 +26,7 @@ const operatorUserId = randomUUID();
 const agentId = randomUUID();
 const directiveId = randomUUID();
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
+const currentAuthorization = { hasAllPermissions: async () => true };
 
 type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilotTools>[0]
   & Parameters<typeof createRoutineProposalCopilotTools>[0]
@@ -56,6 +58,7 @@ describe("US3 copilot proposals", () => {
       versionToken: "version-1",
       evidence: null,
     });
+    const audit = auditService();
     const service = new OperatorCopilotService({
       repository,
       capabilityRunner: {
@@ -77,9 +80,10 @@ describe("US3 copilot proposals", () => {
         }),
       },
       usageLimitPolicy: noLimitPolicy(),
-      auditService: auditService(),
+      auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [tool("propose_directive", "workspace.agents.manage")],
     });
 
@@ -125,7 +129,7 @@ describe("US3 copilot proposals", () => {
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "propose_directive", shape: "propose" },
@@ -159,7 +163,7 @@ describe("US3 copilot proposals", () => {
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     const routineTool = descriptors.find((descriptor) => descriptor.name === "propose_routine");
     const result = await routineTool?.createTool(context).invoke({ intent: "Draft a return-intake flow" }, {} as never);
@@ -174,6 +178,106 @@ describe("US3 copilot proposals", () => {
     }));
   });
 
+  it("does not persist a drafted proposal after manage authority is revoked", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
+      id: randomUUID(),
+      ...input,
+      messageId: null,
+      status: "pending" as const,
+      appliedRef: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    const draft = vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive" }));
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft }],
+      auditService: auditService(),
+    });
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const context = {
+      workspaceId,
+      accountId,
+      operatorUserId,
+      copilotConversationId: "conversation-1",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
+    };
+
+    await expect(descriptor!.createTool(context).invoke({ intent: "Do not recommend competitors" }, {} as never))
+      .rejects.toThrow(/authorization/i);
+
+    expect(draft).toHaveBeenCalledOnce();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("does not persist an agent setting proposal after manage authority is revoked", async () => {
+    const createProposal = vi.fn();
+    const validatePayload = vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload }));
+    const [descriptor] = createAgentSettingProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "agent_setting", validatePayload, readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    await expect(descriptor!.createTool({
+      workspaceId,
+      accountId,
+      operatorUserId,
+      copilotConversationId: "conversation-1",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
+    }).invoke({ settingKey: "retrievalEnabled", value: false }, {} as never)).rejects.toThrow(/authorization/i);
+
+    expect(validatePayload).toHaveBeenCalledOnce();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a routine edit after the shared proposal tail sees a revocation", async () => {
+    const createProposal = vi.fn();
+    const draftEdit = vi.fn(async () => ({
+      payload: { kind: "edit", name: "Support intake", changes: {} },
+      targetLabel: "Support intake",
+      summary: "Edit the intake.",
+      diagnostics: [],
+    }));
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(async () => "routine-version"), draftEdit, draftLifecycle: vi.fn(), draft: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const routineEdit = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    await expect(routineEdit.createTool({
+      workspaceId,
+      accountId,
+      operatorUserId,
+      copilotConversationId: "conversation-1",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
+    }).invoke({ routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", changes: { name: "Returns intake" } }, {} as never)).rejects.toThrow(/authorization/i);
+
+    expect(draftEdit).toHaveBeenCalledOnce();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
   it("applies only pending proposals through their adapter, recording a stale result without a write", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "outdated", evidence: null });
@@ -186,6 +290,7 @@ describe("US3 copilot proposals", () => {
       auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "new"), preview: vi.fn(), applyIfVersionMatches }],
     });
@@ -194,6 +299,57 @@ describe("US3 copilot proposals", () => {
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("stale");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "stale" }) }));
+  });
+
+  it("does not claim or mutate a pending proposal after current manage authority is revoked", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const audit = auditService();
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: audit,
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.apply_denied",
+      metadata: { proposalId: proposal.id, outcome: "authorization_denied" },
+    }));
+  });
+
+  it("releases the apply claim when authority is revoked after it is claimed", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(repository.hasApplyClaim(proposal.id)).toBe(false);
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
+    expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
@@ -207,6 +363,7 @@ describe("US3 copilot proposals", () => {
       auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => { throw new Error("target unavailable"); }) }],
     });
@@ -228,6 +385,7 @@ describe("US3 copilot proposals", () => {
       auditService: auditService(),
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
     });
@@ -251,7 +409,7 @@ describe("US3 copilot proposals", () => {
           result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "I drafted it.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
         }),
       },
-      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [tool("propose_routine", "workspace.agents.manage")],
+      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [tool("propose_routine", "workspace.agents.manage")],
     });
 
     const events = [];
@@ -281,6 +439,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
+  private readonly claimedProposalIds = new Set<string>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const createdAt = new Date(); const conversation = { id: randomUUID(), ...input, status: "idle" as const, createdAt, updatedAt: createdAt }; this.conversations.push(conversation); return conversation; }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { return this.conversations.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
@@ -293,15 +452,17 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal) return null; const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; return next; }
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); return proposal?.status === "pending" ? proposal : null; }
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal || (input.requiresApplyClaim === true && !this.claimedProposalIds.has(proposal.id)) || (input.requiresApplyClaim !== true && this.claimedProposalIds.has(proposal.id))) return null; const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; this.claimedProposalIds.delete(proposal.id); return next; }
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (proposal?.status !== "pending" || this.claimedProposalIds.has(proposal.id)) return null; this.claimedProposalIds.add(proposal.id); return proposal; }
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> { const proposal = await this.findProposal(input); if (!proposal || !this.claimedProposalIds.delete(proposal.id)) return false; return true; }
+  hasApplyClaim(id: string): boolean { return this.claimedProposalIds.has(id); }
 }
 
 const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" || proposal.targetType === "routine" ? String((proposal.payload as { name?: unknown }).name ?? "Routine") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : proposal.targetType === "routine" ? "Draft routine" : "Draft setting change", status: proposal.status, reason: proposal.reason ?? null });
 
 describe("directive proposal adapter payload mapping", () => {
   it("strips draft-only presentation fields before calling directive management", async () => {
-    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
@@ -331,7 +492,7 @@ describe("directive proposal adapter payload mapping", () => {
 
 describe("routine proposal adapter", () => {
   it("keeps authored assist payload intact, creates a draft, and guards it against agent changes", async () => {
-    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const payload = routineDraftPayload();
     const draft = vi.fn(async () => ({ draft: payload, validation: { ok: false, diagnostics: [{ code: "missing_transition" }] } }));
     const createDraft = vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } }));
@@ -370,7 +531,7 @@ describe("routine proposal adapter", () => {
   });
 
   it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
-    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const payload = routineDraftPayload();
     const duplicated = {
       ...payload,
@@ -498,7 +659,7 @@ describe("proposals carrying replay evidence", () => {
     return { descriptor, createProposal };
   };
 
-  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
+  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
   it("stores the measurement on the proposal and reports it to the operator", async () => {
     const { descriptor, createProposal } = harness();
@@ -595,7 +756,7 @@ const routineAdapter = async (
   ports: ReturnType<typeof routineAdapterPorts>,
   logger = { warn: vi.fn() },
 ) => {
-  const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+  const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
   return createRoutineCopilotProposalAdapter({
     agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-01T10:00:00.000Z") })) } as never,
     routineDraftAssistService: { draft: vi.fn() } as never,
@@ -619,6 +780,7 @@ describe("routine edit and lifecycle proposal tools", () => {
 
   const toolContext = {
     workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1",
+    currentAuthorization,
     pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
   };
   const routineId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
@@ -903,6 +1065,7 @@ describe("routine lifecycle proposal adapter", () => {
       auditService: auditService(),
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [adapter],
     });

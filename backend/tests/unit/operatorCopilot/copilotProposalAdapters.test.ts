@@ -61,6 +61,8 @@ const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) =>
       const variable = variables.get(id);
       return variable && variable.workspaceId === workspaceId ? variable : null;
     }),
+    listByWorkspace: vi.fn(async (workspaceId: string): Promise<ContextVariable[]> =>
+      [...variables.values()].filter((variable) => variable.workspaceId === workspaceId)),
     listByAgent: vi.fn(async (_workspaceId: string, agentId: string): Promise<AgentContextVariableEnablement[]> =>
       [...enablements.values()].filter((enablement) => enablement.agentId === agentId)),
     upsertEnablement: vi.fn(async (input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> => upsertEnablement(input)),
@@ -287,21 +289,55 @@ describe("createContextVariableCopilotProposalAdapter", () => {
       enablement: { source: "resolver", resolverSkillId: foreignSkillId, surfacing: "operator_only" },
     })).rejects.toMatchObject({ statusCode: 400 });
   });
+
+  it("does not report a create proposal stale after an unrelated agent edit, but does once a same-named variable now exists", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository([]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    const targetRef = { agentId, variableId: null };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, {
+      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+    });
+
+    // applyProposal's create branch never gates on the agent's updatedAt - only the
+    // workspace+name uniqueness constraint decides whether Apply would still succeed - so an
+    // unrelated agent edit landing between draft and this GET-time recompute must not flip a
+    // legitimate create stale.
+    agentService.get.mockResolvedValueOnce({ id: agentId, updatedAt: new Date("2030-01-01T00:00:00.000Z") } as never);
+    expect(await adapter.readVersionToken(workspaceId, validated.targetRef, validated.payload)).toBe(validated.versionToken);
+
+    // Someone else creates a variable with the exact name this proposal would take - the one
+    // thing that would actually make Apply's own insert reject it.
+    await contextVariableRepository.applyProposal({
+      workspaceId,
+      agentId,
+      variableId: null,
+      definition: { name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      expectedVariableUpdatedAt: null,
+      enablement: null,
+      expectedEnablementUpdatedAt: null,
+    });
+
+    expect(await adapter.readVersionToken(workspaceId, validated.targetRef, validated.payload)).not.toBe(validated.versionToken);
+  });
 });
 
-const makeSkillsHarness = () => {
+const makeSkillsHarness = (agentsByWorkspace: Record<string, string[]> = {}) => {
   const repository = new InMemoryAgentSkillRepository();
   const agentSkillsService = new AgentSkillsService({
     repository,
     capabilities: createDefaultSkillCapabilityRegistry(),
   });
-  const agentService = makeAgentService();
+  const agentService = makeAgentService(agentsByWorkspace);
   const adapter = createAgentSkillCopilotProposalAdapter({
     agentService,
     agentSkillsService,
     skillCapabilityRegistry: createDefaultSkillCapabilityRegistry(),
   });
-  return { agentSkillsService, adapter };
+  return { agentSkillsService, adapter, agentService };
 };
 
 describe("createAgentSkillCopilotProposalAdapter", () => {
@@ -441,5 +477,38 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
     expect(preview.current).not.toHaveProperty("updatedAt");
     expect(preview.current).not.toHaveProperty("storedKind");
     expect(preview.current).toMatchObject({ name: "notify_ops", capability: "notify", enabled: true });
+  });
+
+  it("does not report a create proposal stale after an unrelated agent edit, but does once a same-named skill now exists", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const { adapter, agentSkillsService, agentService } = makeSkillsHarness({ [workspaceId]: [agentId] });
+
+    const targetRef = { agentId, skillId: null };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, {
+      name: "faq_search",
+      capability: "retrieve",
+      config: {},
+    });
+
+    // create() never touches the agent row - only its own name/default-answer uniqueness checks
+    // determine whether Apply would still succeed - so an unrelated agent edit (a directive
+    // proposal, a setting change, ...) landing between draft and this GET-time recompute must not
+    // flip a legitimate create stale.
+    agentService.get.mockResolvedValueOnce({ id: agentId, updatedAt: new Date("2030-01-01T00:00:00.000Z") } as never);
+    expect(await adapter.readVersionToken(workspaceId, validated.targetRef, validated.payload)).toBe(validated.versionToken);
+
+    // Someone else creates a skill with the exact name this proposal would take - the one thing
+    // that would actually make Apply's own create() reject it.
+    await agentSkillsService.create(workspaceId, agentId, {
+      name: "faq_search",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: {},
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    expect(await adapter.readVersionToken(workspaceId, validated.targetRef, validated.payload)).not.toBe(validated.versionToken);
   });
 });

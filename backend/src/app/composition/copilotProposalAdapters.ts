@@ -298,6 +298,33 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     return skills.find((skill) => skill.id === skillId) ?? null;
   };
 
+  /**
+   * Whichever existing skill would make `create()`'s own uniqueness checks - a name collision, or
+   * (only when the proposal is itself default_answer) the one-default-answer-skill-per-agent
+   * constraint - reject the create this proposal describes, or null when none would.
+   */
+  const blockingSkillForCreate = (
+    skills: ReadonlyArray<AgentSkillView>,
+    name: string,
+    invocationMode: string,
+  ): AgentSkillView | null =>
+    skills.find((skill) => skill.name === name)
+      ?? (invocationMode === "default_answer" ? skills.find((skill) => skill.invocationMode === "default_answer") ?? null : null);
+
+  /**
+   * A create proposal's version token: which existing skill (if any) already blocks it, read
+   * fresh both when the proposal is drafted (to seed its stored token) and again at GET time (to
+   * recompute it), so the two only diverge when that specific conflict changes - never from an
+   * unrelated agent edit. The agent is still resolved for its own sake (an unresolvable id must
+   * fail here, not only once Apply's write is attempted), just no longer used for the token.
+   */
+  const createSkillVersionToken = async (workspaceId: string, agentId: string, name: string, invocationMode: string): Promise<string> => {
+    await deps.agentService.get(workspaceId, agentId);
+    const skills = await deps.agentSkillsService.list(workspaceId, agentId);
+    const blocking = blockingSkillForCreate(skills, name, invocationMode);
+    return blocking ? `blocked:${blocking.id}:${versionToken(new Date(blocking.updatedAt))}` : "open";
+  };
+
   /** Normalizes and fully validates a proposed skill against its resolved capability, without persisting. */
   const resolveProposal = async (workspaceId: string, targetRef: { agentId: string; skillId: string | null }, rawPayload: unknown) => {
     const payload = skillConfigPayloadSchema.parse(rawPayload);
@@ -345,15 +372,15 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       existing?.id,
     );
 
-    // Derived from `existing` (an update) or the agent fetched below (a create) - the same read
-    // this function already used to expand the partial patch above - rather than a follow-up
-    // readVersionToken call. A second, separate read would leave a window where a concurrent edit
-    // lands between the two: the payload above would still reflect the first (now stale) read,
-    // but the token would reflect the second, so Apply's version check would pass and overwrite
-    // whatever changed in between.
+    // For an update, derived from `existing` - the same read this function already used to expand
+    // the partial patch above - rather than a follow-up readVersionToken call. A second, separate
+    // read would leave a window where a concurrent edit lands between the two: the payload above
+    // would still reflect the first (now stale) read, but the token would reflect the second, so
+    // Apply's version check would pass and overwrite whatever changed in between. For a create,
+    // see the comment on createSkillVersionToken for why this isn't the agent's updatedAt either.
     const proposalVersionToken = existing
       ? versionToken(new Date(existing.updatedAt))
-      : versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+      : await createSkillVersionToken(workspaceId, targetRef.agentId, name, invocationMode as string);
 
     return {
       existing,
@@ -385,14 +412,15 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "agent_skill",
-    async readVersionToken(workspaceId, rawTargetRef) {
+    async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       if (targetRef.skillId) {
         const existing = await findExisting(workspaceId, targetRef.agentId, targetRef.skillId);
         if (!existing) throw notFound("Skill no longer exists");
         return versionToken(new Date(existing.updatedAt));
       }
-      return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+      const payload = skillConfigStoredPayloadSchema.parse(rawPayload);
+      return createSkillVersionToken(workspaceId, targetRef.agentId, payload.name, payload.invocationMode);
     },
     async preview(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
@@ -460,6 +488,22 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     deps.routineDefinitionService.get(workspaceId, targetRef.agentId, requiredRoutineId(targetRef));
 
   /**
+   * A create proposal's version token: whichever routine already occupies the (name, version 1)
+   * identity a fresh createDraft would take - the routine_definition_agent_id_name_version_key
+   * constraint createDraft's own catch translates into a conflict - or null when none does. Read
+   * fresh both when the proposal is drafted (to seed its stored token) and again at GET time (to
+   * recompute it), so the two only diverge when that specific conflict changes - never from an
+   * unrelated agent edit. The agent is still resolved for its own sake (an unresolvable id must
+   * fail here, not only once Apply's write is attempted), just no longer used for the token.
+   */
+  const createRoutineVersionToken = async (workspaceId: string, agentId: string, name: string): Promise<string> => {
+    await deps.agentService.get(workspaceId, agentId);
+    const routines = await deps.routineDefinitionService.list(workspaceId, agentId);
+    const blocking = routines.find((routine) => routine.name === name && routine.version === 1) ?? null;
+    return blocking ? `blocked:${blocking.id}:${versionToken(blocking.updatedAt)}` : "open";
+  };
+
+  /**
    * The draft revision of a published routine's lineage, if one exists.
    *
    * Two writes turn on this: revising a published routine hands back an existing draft rather than
@@ -497,10 +541,11 @@ export const createRoutineCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "routine",
-    async readVersionToken(workspaceId, rawTargetRef) {
+    async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
-      // A new routine is guarded by the agent it will belong to; an existing one guards itself.
-      if (!targetRef.routineId) return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+      // See the comment on createRoutineVersionToken for why a new routine's token is not the
+      // agent's updatedAt; an existing one still guards itself.
+      if (!targetRef.routineId) return createRoutineVersionToken(workspaceId, targetRef.agentId, routinePayload(rawPayload).name);
       const routine = await routineFor(workspaceId, targetRef);
       return proposalVersionToken(workspaceId, targetRef, routine);
     },
@@ -863,9 +908,28 @@ const isStale = (error: unknown): boolean => error instanceof AppError && (error
  * needs to omit that same half to agree with Apply about what "stale" means - otherwise a
  * definition-only proposal drafted after an unrelated enablement edit would report stale here
  * while still applying successfully.
+ *
+ * The variable half is not always a Date: a create names no row of its own to read one from, so
+ * its half is instead the opaque string contextVariableCreateToken produces. That's safe to mix
+ * in here because applyIfVersionMatches never decodes this half back into a Date for a create -
+ * expectedVariableUpdatedAt is unconditionally null there (variableId is null; there is no prior
+ * row to version-gate against) - so decodeContextVariableVersionToken only ever needs to split
+ * this half out, never parse it.
  */
-const encodeContextVariableVersionToken = (variableUpdatedAt: Date | null, enablementUpdatedAt: Date | null): string =>
-  `${variableUpdatedAt ? variableUpdatedAt.toISOString() : ""}|${enablementUpdatedAt ? enablementUpdatedAt.toISOString() : ""}`;
+const encodeContextVariableVersionToken = (variablePart: Date | string | null, enablementUpdatedAt: Date | null): string =>
+  `${typeof variablePart === "string" ? variablePart : variablePart ? variablePart.toISOString() : ""}|${enablementUpdatedAt ? enablementUpdatedAt.toISOString() : ""}`;
+
+/**
+ * The definition half of a create proposal's token: which existing variable (if any) already
+ * occupies the workspace+name identity a fresh insert would take - the
+ * context_variables_workspace_id_name_key constraint applyProposal's own catch translates into a
+ * conflict (see isContextVariableNameConflict in contextVariableRepository.ts) - or "open" when
+ * none does. Read fresh both when a create proposal is drafted (to seed its stored token) and
+ * again at GET time (to recompute it), so the two only diverge when that specific conflict
+ * changes - never from an unrelated agent edit.
+ */
+const contextVariableCreateToken = (blocking: ContextVariable | null): string =>
+  blocking ? `blocked:${blocking.id}:${blocking.updatedAt.toISOString()}` : "open";
 
 const decodeContextVariableVersionToken = (token: string): { variableUpdatedAt: Date | null; enablementUpdatedAt: Date | null } => {
   const [variablePart, enablementPart] = token.split("|");
@@ -991,11 +1055,16 @@ const assertEnablementIsWellFormed = (enablement: z.infer<typeof contextVariable
  */
 export const createContextVariableCopilotProposalAdapter = (deps: {
   readonly agentService: Pick<AgentService, "get">;
-  readonly contextVariableRepository: Pick<ContextVariableRepositoryPort, "get" | "listByAgent" | "applyProposal">;
+  readonly contextVariableRepository: Pick<ContextVariableRepositoryPort, "get" | "listByAgent" | "listByWorkspace" | "applyProposal">;
   readonly agentSkillsService: Pick<AgentSkillsService, "list">;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
     findAgentContextVariableEnablement(deps.contextVariableRepository, workspaceId, agentId, variableId);
+
+  const findBlockingVariable = async (workspaceId: string, name: string): Promise<ContextVariable | null> => {
+    const variables = await deps.contextVariableRepository.listByWorkspace(workspaceId);
+    return variables.find((variable) => variable.name === name) ?? null;
+  };
 
   /** Projects a stored definition/enablement down to the same editable shape a proposal's
    * payload carries, so a preview diff shows only fields a proposal can actually change - not
@@ -1023,20 +1092,16 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
   // into two per-row expectations (whichever side did NOT change would still fail its own
   // WHERE-clause guard when the token derives from the other side's later timestamp), so the
   // token carries both timestamps explicitly instead.
+  /** For an existing variable only; a create has no row of its own to read from - see readVersionToken's create branch. */
   const readCurrentVersionParts = async (
     workspaceId: string,
-    targetRef: { agentId: string; variableId: string | null },
+    targetRef: { agentId: string; variableId: string },
   ): Promise<{ variableUpdatedAt: Date; enablementUpdatedAt: Date | null }> => {
     // agent_context_variables.agent_id carries no foreign key (see migration 112), so resolving
-    // the agent through the workspace here - on every call, not only when there is no
-    // variableId - is the only thing standing between a hallucinated or cross-workspace agent id
-    // and an orphan enablement row. Matches the requireAgent check contextVariableRoutes.ts runs
-    // on every write. It also anchors the "new variable" branch below, which has no row of its
-    // own yet to gate against.
-    const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
-    if (!targetRef.variableId) {
-      return { variableUpdatedAt: agent.updatedAt, enablementUpdatedAt: null };
-    }
+    // the agent through the workspace here is the only thing standing between a hallucinated or
+    // cross-workspace agent id and an orphan enablement row. Matches the requireAgent check
+    // contextVariableRoutes.ts runs on every write.
+    await deps.agentService.get(workspaceId, targetRef.agentId);
     const variable = await deps.contextVariableRepository.get(workspaceId, targetRef.variableId);
     if (!variable) throw notFound("Context variable no longer exists");
     const enablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
@@ -1045,12 +1110,11 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
   const resolveProposal = async (workspaceId: string, targetRef: { agentId: string; variableId: string | null }, rawPayload: unknown) => {
     const payload = contextVariableProposalPayloadSchema.parse(rawPayload);
-    // Resolved for its own sake, not only for its return value: a proposal always scopes to an
-    // agent (even a definition-only one), so an unresolvable agent id must fail here rather than
-    // only surfacing once the enablement write is attempted. Also the version-token anchor for a
-    // brand-new variable (see below), read once here rather than a second time by a later,
-    // separate readVersionToken call.
-    const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
+    // Resolved for its own sake: a proposal always scopes to an agent (even a definition-only
+    // one), so an unresolvable agent id must fail here rather than only surfacing once the
+    // enablement write is attempted. Not used for the version token below - see the comment on
+    // contextVariableCreateToken for what a create's half is derived from instead.
+    await deps.agentService.get(workspaceId, targetRef.agentId);
     const existing = targetRef.variableId ? await deps.contextVariableRepository.get(workspaceId, targetRef.variableId) : null;
     if (targetRef.variableId && !existing) throw notFound("Context variable not found");
     // Read in the same pass as `existing`, both to close the same stale-read window Finding 1
@@ -1119,11 +1183,12 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
     // comment on encodeContextVariableVersionToken), computed from the exact reads above rather
     // than a follow-up readVersionToken call, so a concurrent edit landing between two separate
     // reads can't pair an expansion built from the first (stale) read with a token from the
-    // second, fresher one.
+    // second, fresher one. For a create, see the comment on contextVariableCreateToken for why
+    // this isn't the agent's updatedAt either.
     const includesDefinition = definition !== null;
     const includesEnablement = enablement !== null;
     const proposalVersionToken = encodeContextVariableVersionToken(
-      includesDefinition ? (existing ? existing.updatedAt : agent.updatedAt) : null,
+      includesDefinition ? (existing ? existing.updatedAt : contextVariableCreateToken(await findBlockingVariable(workspaceId, definition!.name))) : null,
       includesEnablement ? (existingEnablement?.updatedAt ?? null) : null,
     );
 
@@ -1143,9 +1208,21 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
   return {
     targetType: "context_variable",
-    async readVersionToken(workspaceId, rawTargetRef) {
+    async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
-      const parts = await readCurrentVersionParts(workspaceId, targetRef);
+      if (!targetRef.variableId) {
+        // A create names no row of its own to read a version from; see the comment on
+        // contextVariableCreateToken for what determines staleness instead. The agent is still
+        // resolved for its own sake (an unresolvable id must fail here, not only once Apply's
+        // write is attempted). A create's enablement half is always null - see resolveProposal's
+        // token computation for why.
+        await deps.agentService.get(workspaceId, targetRef.agentId);
+        const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
+        if (!payload.definition) throw new Error("A new context variable proposal has no definition to check for a conflict against");
+        const blocking = await findBlockingVariable(workspaceId, payload.definition.name);
+        return encodeContextVariableVersionToken(contextVariableCreateToken(blocking), null);
+      }
+      const parts = await readCurrentVersionParts(workspaceId, { agentId: targetRef.agentId, variableId: targetRef.variableId });
       // Called with only a targetRef (see getProposal), never the proposal's own payload, so the
       // targetRef itself is what has to say which half of the composite token this particular
       // proposal cares about - see the comment on contextVariableTargetRefSchema and on

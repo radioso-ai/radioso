@@ -128,7 +128,16 @@ export interface CopilotProposalCard {
 
 export interface CopilotProposalAdapter {
   readonly targetType: CopilotProposalTargetType;
-  readVersionToken(workspaceId: string, targetRef: unknown): Promise<string>;
+  /**
+   * `payload` is the proposal's stored payload where the caller has one (getProposal always
+   * does; a tool minting the very first token for a fresh create does too, once it has drafted
+   * one). A create target ref names no row of its own to read a version from, so a create
+   * adapter's own implementation uses this to check the one thing that actually determines
+   * whether Apply would still succeed — whether the resource it would create already exists —
+   * instead of falling back to an unrelated row's timestamp. Adapters whose target always
+   * addresses an existing row ignore it.
+   */
+  readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
   preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown | null; proposed: unknown }>;
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string): Promise<
     | { outcome: "applied"; appliedRef: unknown }

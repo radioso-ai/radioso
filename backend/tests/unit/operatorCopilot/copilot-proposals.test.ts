@@ -617,6 +617,34 @@ describe("routine proposal adapter", () => {
     expect(createDraft).toHaveBeenCalledTimes(2);
   });
 
+  it("does not report a create proposal stale after an unrelated agent edit, but does once a routine of that name now exists", async () => {
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const payload = routineDraftPayload();
+    const agentService = { get: vi.fn(async () => ({ updatedAt: new Date(0) })) };
+    let existingRoutines: Array<{ id: string; name: string; version: number; status: string; updatedAt: Date }> = [];
+    const list = vi.fn(async () => existingRoutines);
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: agentService as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { list } as never,
+    });
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+
+    const token = await adapter.readVersionToken("workspace-1", targetRef, payload);
+
+    // createDraft never touches the agent row - only the routine_definition_agent_id_name_version_key
+    // constraint decides whether Apply would still succeed - so an unrelated agent edit (a
+    // directive proposal, a setting change, ...) landing between draft and this GET-time recompute
+    // must not flip a legitimate create stale.
+    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(999) });
+    expect(await adapter.readVersionToken("workspace-1", targetRef, payload)).toBe(token);
+
+    // Someone else creates a routine with the exact name (and starting version) this proposal
+    // would take - the one thing that would actually make Apply's own createDraft reject it.
+    existingRoutines = [{ id: "routine-collider", name: payload.name, version: 1, status: "draft", updatedAt: new Date(1) }];
+    expect(await adapter.readVersionToken("workspace-1", targetRef, payload)).not.toBe(token);
+  });
+
   it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
     const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
     const payload = routineDraftPayload();
@@ -693,11 +721,12 @@ describe("agent skill config proposal adapter", () => {
       config: { vectorTopK: 40 },
     });
     expect(validated.payload).toMatchObject({ name: "faq_search", capability: "retrieve", invocationMode: "default_answer", enabled: true, config: expect.objectContaining({ vectorTopK: 40 }) });
-    expect(validated.versionToken).toBe(new Date(0).toISOString());
+    // No existing skill blocks this name (or invocation mode) yet, so the token says "open" -
+    // not the agent's updatedAt, which create() never touches.
+    expect(validated.versionToken).toBe("open");
 
-    // The token was minted against the agent's updatedAt at draft time, and something unrelated
-    // to this skill has since touched the agent row - create never touches it, so this must not
-    // block a legitimate first-time create.
+    // Something unrelated to this skill has since touched the agent row - create never touches
+    // it, so this must not block a legitimate first-time create.
     agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: agentSkillAgentId, skillId: "created-skill-1" } });
@@ -880,6 +909,10 @@ describe("context variable proposal adapter", () => {
 
   const buildAdapter = async (overrides: {
     variable?: { id: string; workspaceId: string; name: string; description: string | null; valueType: string; trustTier: string; sensitivity: string; defaultSurfacing: string; updatedAt: Date } | null;
+    // Every workspace variable a create's own name-collision check should see - defaults to just
+    // `variable` (an existing-variable test's usual single row), but a create-collision test can
+    // seed one under a different id than the variable (if any) the target ref addresses.
+    workspaceVariables?: Array<{ id: string; workspaceId: string; name: string; description: string | null; valueType: string; trustTier: string; sensitivity: string; defaultSurfacing: string; updatedAt: Date }>;
     enablements?: Array<{ id: string; agentId: string; variableId: string; source: string; resolverSkillId: string | null; maxAgeSeconds: number | null; resolverTimeoutMs: number | null; surfacing: string; enabled: boolean; updatedAt: Date }>;
     agentUpdatedAt?: Date;
     applyProposal?: ReturnType<typeof vi.fn>;
@@ -887,16 +920,17 @@ describe("context variable proposal adapter", () => {
   } = {}) => {
     const { createContextVariableCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
     const get = vi.fn(async () => overrides.variable ?? null);
+    const listByWorkspace = vi.fn(async () => overrides.workspaceVariables ?? (overrides.variable ? [overrides.variable] : []));
     const listByAgent = vi.fn(async () => overrides.enablements ?? []);
     const applyProposal = overrides.applyProposal ?? vi.fn(async () => ({ variableId: overrides.variable?.id ?? "created-variable-1" }));
     const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
     const agentSkillsService = { list: vi.fn(async () => (overrides.agentSkillIds ?? []).map((id) => ({ id }))) };
     const adapter = createContextVariableCopilotProposalAdapter({
       agentService: agentService as never,
-      contextVariableRepository: { get, listByAgent, applyProposal } as never,
+      contextVariableRepository: { get, listByWorkspace, listByAgent, applyProposal } as never,
       agentSkillsService: agentSkillsService as never,
     });
-    return { adapter, get, listByAgent, applyProposal, agentService, agentSkillsService };
+    return { adapter, get, listByWorkspace, listByAgent, applyProposal, agentService, agentSkillsService };
   };
 
   it("validates a brand-new variable definition and creates it even when an unrelated agent edit lands first", async () => {
@@ -917,13 +951,14 @@ describe("context variable proposal adapter", () => {
       enablement: null,
     });
 
-    // A brand-new variable has no row of its own to gate against, so the token instead anchors
-    // the agent's own updatedAt - hence the trailing "|" with an empty enablement segment.
-    expect(validated.versionToken).toBe(`${new Date(0).toISOString()}|`);
+    // A brand-new variable has no row of its own to gate against; no existing workspace variable
+    // blocks this name yet, so the token says "open" - not the agent's updatedAt, which
+    // applyProposal's create branch never touches - with a trailing "|" for the empty enablement
+    // segment.
+    expect(validated.versionToken).toBe("open|");
 
-    // The token was minted against the agent's updatedAt at draft time, and something unrelated
-    // to this variable has since touched the agent row - applyProposal's create branch never
-    // touches it, so this must not block a legitimate first-time create.
+    // Something unrelated to this variable has since touched the agent row - applyProposal's
+    // create branch never touches it, so this must not block a legitimate first-time create.
     agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-1" } });
@@ -1023,7 +1058,7 @@ describe("context variable proposal adapter", () => {
       defaultSurfacing: "on_reference",
       enablement: { source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-3333-444444444999", surfacing: "operator_only" },
     });
-    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, await adapter.readVersionToken("workspace-1", targetRef));
+    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, await adapter.readVersionToken("workspace-1", targetRef, validated.payload));
 
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-2" } });
     expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({

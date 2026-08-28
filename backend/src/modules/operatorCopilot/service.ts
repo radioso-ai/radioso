@@ -136,7 +136,7 @@ export class OperatorCopilotService {
     if (!proposal) return null;
     const adapter = this.adapterFor(proposal.targetType);
     const preview = await adapter.preview(input.workspaceId, proposal.targetRef, proposal.payload);
-    const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef)
+    const currentVersionMatches = await adapter.readVersionToken(input.workspaceId, proposal.targetRef, proposal.payload)
       .then((currentVersion) => currentVersion === proposal.versionToken)
       .catch(() => false);
     return { proposal, preview, currentVersionMatches };

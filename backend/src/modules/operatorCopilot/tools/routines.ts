@@ -363,7 +363,10 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
         invoke: async ({ agentId, intent, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: null };
           const draft = await routineAdapter.draft(context.workspaceId, targetRef, intent);
-          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          // A create names no row of its own to read a version from - the adapter needs the
+          // drafted name to check the one thing that actually determines whether Apply would
+          // still succeed (see the comment on createRoutineVersionToken).
+          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef, draft.payload);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "routine" });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,

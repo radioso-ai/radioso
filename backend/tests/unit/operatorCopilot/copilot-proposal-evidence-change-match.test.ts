@@ -150,6 +150,25 @@ describe("cited evidence must be about the change being proposed", () => {
     )).rejects.toThrow(/did not exclude/i);
   });
 
+  it("refuses a directive removal proposal whose replay excluded the proposed directive plus another one", async () => {
+    // The exact hole this closes: a replay that measured "A and B both removed" is not evidence
+    // for "remove A alone" — removing both together can improve a metric that removing A alone
+    // would regress. Membership is not enough; the excluded set must equal the proposed removal.
+    await expect(resolve(
+      { agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] } },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive", "another-directive"],
+    )).rejects.toThrow(/did not exclude/i);
+  });
+
+  it("refuses a directive removal proposal whose replay excluded a different single directive", async () => {
+    await expect(resolve(
+      { agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] } },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["another-directive"],
+    )).rejects.toThrow(/did not exclude/i);
+  });
+
   it("refuses to attach replay evidence to a routine proposal at all", async () => {
     // No replay override installs a routine, so a passing replay says nothing about a proposed
     // one. test_agent_turn runs a real turn against an unpublished draft instead.

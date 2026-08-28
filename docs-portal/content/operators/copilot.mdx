@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit and publish routines, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-27
+last_updated: 2026-08-28
 ---
 
 # Ray
@@ -300,6 +300,16 @@ fake by handing back a directive list that merely looks like it left the
 directive out. Cite a replay that did not explicitly exclude the directive —
 including one built by hand-editing the directive list — and Ray refuses it,
 because nothing proves that replay ran without the directive in force.
+
+A replay can exclude several directives at once — a fine way to try "what if I
+dropped both of these" — but the evidence it produces only backs a proposal to
+remove that same combination. A proposal to remove one directive by itself
+needs a replay that excluded only that directive: a replay that dropped it
+alongside another one measured a configuration where both were gone, and
+removing two directives together can move a case's verdict in a way that
+removing either one alone would not. Ray refuses to cite that replay for a
+single-directive removal and asks for one that excludes just the directive
+being proposed.
 
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed

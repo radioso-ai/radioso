@@ -75,7 +75,12 @@ const sameValue = (left: unknown, right: unknown): boolean => {
  *   carries an id, and an override that simply omits an id reads as "absent" to a naive scan even
  *   when the directive's content is still right there. `directivesExcluded` is checked instead: a
  *   list the replay service computed itself by resolving ids against the source agent's real
- *   directives, so it cannot be manufactured by an override the model wrote.
+ *   directives, so it cannot be manufactured by an override the model wrote. Membership alone is
+ *   not enough, because `excludedDirectiveIds` legitimately accepts several ids at once (an
+ *   operator exploring "what if I dropped both of these") and a replay that removed A and B
+ *   together measured a configuration that never existed as "remove A alone" describes — removing
+ *   both can improve a metric that removing A by itself would regress. The recorded set must equal
+ *   exactly the one directive being proposed for removal, not merely contain it.
  * - No override installs a routine, so no replay can support a routine proposal.
  * - No override installs visitor context either, so the same is true of a context variable
  *   proposal: nothing in CopilotEvalCaseReplayOverrides can put a pushed, browser, or resolver
@@ -94,8 +99,14 @@ const assertMeasuredTheProposedChange = (
   }
   if (change.targetType === "directive") {
     if (change.directiveId) {
-      if (!record.directivesExcluded.includes(change.directiveId)) {
-        throw badRequest("Replay evidence did not exclude the directive being removed; replay with excludedDirectiveIds set to measure its absence");
+      // Membership is not enough: a replay that excluded A and B together measured a
+      // configuration that never existed as "remove A alone" describes, and removing both can
+      // improve a metric that removing A by itself would regress. The excluded set must equal
+      // exactly `{ directiveId }` — no other directive along for the ride, nothing missing.
+      const excludedSet = new Set(record.directivesExcluded);
+      const excludedExactlyThisDirective = excludedSet.size === 1 && excludedSet.has(change.directiveId);
+      if (!excludedExactlyThisDirective) {
+        throw badRequest("Replay evidence did not exclude exactly the directive being removed; replay again with excludedDirectiveIds set to only this directive's id, with no other directives excluded");
       }
       return;
     }

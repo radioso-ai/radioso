@@ -127,6 +127,45 @@ describe("TextRoutedToolCallingGateway.request", () => {
     expect(sp).toContain("(query: string)");
   });
 
+  it("spells out a structured input instead of calling it an object", async () => {
+    // A tool whose input renders as the bare word "object" cannot be called: the model has nothing
+    // to go on, invents a shape, and every attempt comes back as a rejected call. This is what
+    // stopped the routine edit tool from ever being usable.
+    const client = stubTextClient(() => '{"text":"ok","tool_calls":[]}');
+    const gateway = new TextRoutedToolCallingGateway(client);
+    await gateway.request(buildRequest({
+      toolSchemas: [{
+        name: "propose_edit",
+        description: "Propose an edit",
+        inputSchema: z.object({
+          routineId: z.string(),
+          changes: z.object({
+            name: z.string().optional(),
+            steps: z.array(z.object({ stableStepId: z.string(), instruction: z.string() })).optional(),
+          }).strict().refine((value) => Object.keys(value).length > 0, { message: "at least one" }),
+        }),
+      }],
+    }));
+
+    const signature = (client.calls[0].systemPrompt ?? "").split("\n").find((line) => line.includes("propose_edit(")) ?? "";
+    expect(signature).toContain("changes: {name?: string, steps?: array of {stableStepId: string, instruction: string}}");
+  });
+
+  it("stops spelling out shapes past one level of nesting", async () => {
+    const client = stubTextClient(() => '{"text":"ok","tool_calls":[]}');
+    const gateway = new TextRoutedToolCallingGateway(client);
+    await gateway.request(buildRequest({
+      toolSchemas: [{
+        name: "deep",
+        description: "Deep input",
+        inputSchema: z.object({ a: z.object({ b: z.object({ c: z.object({ d: z.string() }) }) }) }),
+      }],
+    }));
+
+    const signature = (client.calls[0].systemPrompt ?? "").split("\n").find((line) => line.includes("deep(")) ?? "";
+    expect(signature).toContain("a: {b: {c: object}}");
+  });
+
   it("renders the transcript into the prompt, including tool-call payloads and tool results", async () => {
     const client = stubTextClient(() => '{"text":"done","tool_calls":[]}');
     const gateway = new TextRoutedToolCallingGateway(client);

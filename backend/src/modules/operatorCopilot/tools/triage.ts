@@ -171,11 +171,29 @@ const readSource = async (
   source: CopilotTriageSourceId,
   read: () => Promise<SourceResult>,
 ): Promise<{ report: Omit<CopilotTriageSourceReport, "included">; items: ReadonlyArray<CopilotTriageItem> }> => {
-  if (context.permissions?.has(copilotTriageSourcePermissions[source]) !== true) {
+  const permission = copilotTriageSourcePermissions[source];
+  const authorized = await context.currentAuthorization.hasAllPermissions({
+    workspaceId: context.workspaceId,
+    accountId: context.accountId,
+    operatorUserId: context.operatorUserId,
+    requiredPermissions: [permission],
+  });
+  if (!authorized) {
     return { report: { source, status: "unauthorized", total: null }, items: [] };
   }
   try {
     const result = await read();
+    // Each source may take a different amount of time. Recheck its own permission before the
+    // rows become part of the aggregate, so a revocation during this read cannot leak a line.
+    const stillAuthorized = await context.currentAuthorization.hasAllPermissions({
+      workspaceId: context.workspaceId,
+      accountId: context.accountId,
+      operatorUserId: context.operatorUserId,
+      requiredPermissions: [permission],
+    });
+    if (!stillAuthorized) {
+      return { report: { source, status: "unauthorized", total: null }, items: [] };
+    }
     return { report: { source, status: "ok", total: result.total }, items: result.items };
   } catch (error) {
     deps.logger?.warn(
@@ -394,7 +412,7 @@ const readDocumentSources = async (
   deps: WorkspaceTriageCopilotToolDependencies,
   workspaceId: string,
 ): Promise<SourceResult> => {
-  const failing = (await deps.documentSourceStatusService.listByWorkspaceIdWithDocumentCounts(workspaceId))
+  const failing = (await deps.documentSourceStatusService.summarizeSourcesForWorkspace(workspaceId)).sources
     .filter((source) => source.lastSyncStatus !== null && source.lastSyncStatus !== SUCCESSFUL_SYNC_STATUS);
 
   return {

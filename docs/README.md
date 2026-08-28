@@ -1,7 +1,7 @@
 ---
 title: "Docs"
 description: "Guide to documentation sources for operators, SDK users, and contributors with links to key starting points and architecture materials."
-last_updated: 2026-08-05
+last_updated: 2026-08-21
 ---
 
 # Docs

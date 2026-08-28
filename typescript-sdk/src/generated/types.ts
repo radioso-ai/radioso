@@ -2746,8 +2746,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Start a streaming read-only copilot turn
-         * @description Returns the fixed copilot SSE event stream. Dashboard session only; bearer API tokens are rejected.
+         * Start a streaming operator copilot turn
+         * @description Returns the fixed copilot SSE event stream. A turn may persist Ray-owned evaluation records and pending proposals; applying a proposal remains a separately authorized operation. Dashboard session only; bearer API tokens are rejected.
          */
         post: operations["createCopilotTurn"];
         delete?: never;
@@ -2807,6 +2807,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Capture an Eval snapshot */
+        post: operations["createEvalSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/snapshots/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get an Eval snapshot */
+        get: operations["getEvalSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Eval cases and latest results */
+        get: operations["listEvalCases"];
+        put?: never;
+        /** Create an Eval case */
+        post: operations["createEvalCase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
         parameters: {
             query?: never;
@@ -2838,11 +2890,47 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get an Eval case and its run history */
+        get: operations["getEvalCase"];
         put?: never;
         post?: never;
         /** Delete an eval case */
         delete: operations["deleteEvalCase"];
+        options?: never;
+        head?: never;
+        /** Rename an Eval case */
+        patch: operations["renameEvalCase"];
+        trace?: never;
+    };
+    "/api/v1/evals/cases/{id}/assertions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace an Eval case's assertions */
+        put: operations["replaceEvalCaseAssertions"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an Eval case */
+        post: operations["createEvalCaseRun"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -6817,6 +6905,59 @@ export interface components {
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
         };
+        EvalAssertion: {
+            /** @enum {string} */
+            type: "retrieval_includes_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_excludes_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_top_k_includes_document";
+            /** Format: uuid */
+            documentId: string;
+            k: number;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_document_order";
+            documentIds: string[];
+        } | {
+            /** @enum {string} */
+            type: "retrieval_chunk_metadata";
+            /** Format: uuid */
+            documentId: string;
+            metadata: {
+                [key: string]: string | number | boolean | null;
+            };
+        } | {
+            /** @enum {string} */
+            type: "answer_cites_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "answer_contains";
+            pattern: string;
+            /** @enum {string} */
+            matchMode: "substring" | "regex";
+            caseSensitive?: boolean;
+        } | {
+            /** @enum {string} */
+            type: "answer_does_not_contain";
+            pattern: string;
+            /** @enum {string} */
+            matchMode: "substring" | "regex";
+            caseSensitive?: boolean;
+        } | {
+            /** @enum {string} */
+            type: "llm_judge";
+            expectedAnswer: string;
+            criteria?: string;
+        };
         EvalMessageCaseLookup: {
             /** Format: uuid */
             assistantMessageId: string;
@@ -6828,7 +6969,59 @@ export interface components {
                 /** Format: uuid */
                 snapshotId: string;
                 name: string;
-                assertions: unknown[];
+                assertions: ({
+                    /** @enum {string} */
+                    type: "retrieval_includes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_excludes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_top_k_includes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                    k: number;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_document_order";
+                    documentIds: string[];
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_chunk_metadata";
+                    /** Format: uuid */
+                    documentId: string;
+                    metadata: {
+                        [key: string]: string | number | boolean | null;
+                    };
+                } | {
+                    /** @enum {string} */
+                    type: "answer_cites_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "answer_contains";
+                    pattern: string;
+                    /** @enum {string} */
+                    matchMode: "substring" | "regex";
+                    caseSensitive?: boolean;
+                } | {
+                    /** @enum {string} */
+                    type: "answer_does_not_contain";
+                    pattern: string;
+                    /** @enum {string} */
+                    matchMode: "substring" | "regex";
+                    caseSensitive?: boolean;
+                } | {
+                    /** @enum {string} */
+                    type: "llm_judge";
+                    expectedAnswer: string;
+                    criteria?: string;
+                })[];
                 /** @enum {string} */
                 status: "pending" | "passing" | "failing" | "error";
                 /** Format: uuid */
@@ -6898,6 +7091,93 @@ export interface components {
         EvalMessageCaseMutationResult: components["schemas"]["EvalMessageCaseLookup"] & {
             /** @description True only when this request created the association. */
             created: boolean;
+        };
+        EvalCase: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            snapshotId: string;
+            name: string;
+            assertions: components["schemas"]["EvalAssertion"][];
+            /** @enum {string} */
+            status: "pending" | "passing" | "failing" | "error";
+            /** Format: uuid */
+            lastRunId: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            agent?: {
+                /** Format: uuid */
+                agentId: string | null;
+                name: string | null;
+                internalName: string | null;
+                deleted: boolean;
+            };
+        };
+        EvalSnapshot: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            sourceConversationId: string;
+            /** Format: uuid */
+            sourceMessageId: string | null;
+            replayTarget: {
+                /** Format: uuid */
+                userMessageId: string;
+                /** Format: uuid */
+                assistantMessageId: string | null;
+            } | null;
+            /** @enum {string} */
+            fidelity: "full" | "messages_only";
+            messages: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                role: "user" | "assistant" | "system";
+                content: string;
+                /** Format: date-time */
+                createdAt: string;
+                citations?: unknown[];
+                answerSegments?: unknown[];
+                groundingSummary?: unknown;
+                directiveFirings?: string[];
+            }[];
+            originalInstructionBlock: string | null;
+            originalModelId: string | null;
+            originalRetrievalSettings?: unknown;
+            originalAgent?: unknown;
+            originalAgentConfig?: unknown;
+            /** Format: uuid */
+            sourceAgentId: string | null;
+            originalRoutineState?: unknown;
+            originalRetrievalResult: unknown[] | null;
+            conversationSummary?: string;
+            /** Format: date-time */
+            capturedAt: string;
+            /** Format: uuid */
+            capturedBy: string | null;
+        };
+        EvalCaseWithRuns: components["schemas"]["EvalCase"] & {
+            runs: unknown[];
+        };
+        EvalCaseList: {
+            cases: (components["schemas"]["EvalCase"] & {
+                latestRun?: unknown;
+            })[];
+            summary: {
+                total: number;
+                scored: number;
+                passing: number;
+                failing: number;
+                error: number;
+                pending: number;
+                unscored: number;
+            };
         };
         /**
          * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
@@ -10604,6 +10884,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine definition is invalid */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
                 };
             };
         };
@@ -18508,6 +18797,285 @@ export interface operations {
             };
         };
     };
+    createEvalSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    conversationId: string;
+                    /** Format: uuid */
+                    messageId?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Immutable conversation snapshot captured */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSnapshot"];
+                };
+            };
+            /** @description Invalid capture request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation or message not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEvalSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalSnapshot"];
+                };
+            };
+            /** @description Invalid snapshot id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Snapshot not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listEvalCases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval cases with each case's latest result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCaseList"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    snapshotId: string;
+                    name: string;
+                    /** @default [] */
+                    assertions?: ({
+                        /** @enum {string} */
+                        type: "retrieval_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_excludes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_top_k_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                        k: number;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_document_order";
+                        documentIds: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_chunk_metadata";
+                        /** Format: uuid */
+                        documentId: string;
+                        metadata: {
+                            [key: string]: string | number | boolean | null;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_cites_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_contains";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_does_not_contain";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "llm_judge";
+                        expectedAnswer: string;
+                        criteria?: string;
+                    })[];
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case payload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Snapshot not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getEvalCaseBySourceMessage: {
         parameters: {
             query?: never;
@@ -18633,6 +19201,64 @@ export interface operations {
             };
         };
     };
+    getEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Eval case with recorded runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCaseWithRuns"];
+                };
+            };
+            /** @description Invalid case id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     deleteEvalCase: {
         parameters: {
             query?: never;
@@ -18660,8 +19286,336 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Eval case not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    renameEvalCase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Renamed Eval case */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case id or name */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    replaceEvalCaseAssertions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    assertions: ({
+                        /** @enum {string} */
+                        type: "retrieval_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_excludes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_top_k_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                        k: number;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_document_order";
+                        documentIds: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_chunk_metadata";
+                        /** Format: uuid */
+                        documentId: string;
+                        metadata: {
+                            [key: string]: string | number | boolean | null;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_cites_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_contains";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_does_not_contain";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "llm_judge";
+                        expectedAnswer: string;
+                        criteria?: string;
+                    })[];
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case with replacement assertions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case id or assertions */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createEvalCaseRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default full_assistant
+                     * @enum {string}
+                     */
+                    mode?: "retrieval_only" | "full_assistant";
+                    overrides?: {
+                        modelOverride?: {
+                            /** @enum {string} */
+                            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                            model: string;
+                        };
+                        assistantInstructionsOverride?: {
+                            customInstruction?: string;
+                        };
+                        retrievalSettingsOverride?: {
+                            [key: string]: unknown;
+                        };
+                        agentConfigOverride?: {
+                            name?: string;
+                            customInstruction?: string;
+                            contactRequestsEnabled?: boolean;
+                            webhookExportsEnabled?: boolean;
+                            contactRequestDelivery?: unknown;
+                            logo?: unknown;
+                            theme?: {
+                                [key: string]: unknown;
+                            };
+                            branding?: {
+                                [key: string]: unknown;
+                            };
+                            greetingInstruction?: string;
+                            assistantDefaultLocale?: string | null;
+                            proactiveGreetingEnabled?: boolean;
+                            surfaceSettings?: {
+                                [key: string]: unknown;
+                            };
+                            skillSettings?: {
+                                [key: string]: unknown;
+                            };
+                            chatModelOverride?: {
+                                /** @enum {string} */
+                                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                                model: string;
+                            } | null;
+                            authoredDirectives?: {
+                                [key: string]: unknown;
+                            }[];
+                        };
+                        routineStartState?: {
+                            routineId: string;
+                            path: string[];
+                            variables: {
+                                [key: string]: unknown;
+                            };
+                            attempts?: {
+                                [key: string]: number;
+                            };
+                            /** @enum {string} */
+                            status: "active" | "suspended" | "completed" | "expired";
+                            metadata?: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case replay recorded */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        run?: unknown;
+                        case?: unknown;
+                    };
+                };
+            };
+            /** @description Invalid replay request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case or snapshot not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workbench replay rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -18743,6 +19697,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     createEvalRun: {
@@ -18758,7 +19721,7 @@ export interface operations {
                     /** Format: uuid */
                     snapshotId: string;
                     /**
-                     * @default retrieval_only
+                     * @default full_assistant
                      * @enum {string}
                      */
                     mode?: "retrieval_only" | "full_assistant";
@@ -18897,6 +19860,15 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

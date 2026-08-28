@@ -9,6 +9,7 @@ import { InMemoryCopilotRepository as MemoryCopilotRepository } from "../../supp
 
 const now = new Date("2026-08-11T00:00:00.000Z");
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
+const currentAuthorization = { hasAllPermissions: async () => true };
 
 describe("OperatorCopilotService", () => {
   it("persists a budget exhausted terminal turn, commits one reservation, and filters tools", async () => {
@@ -30,6 +31,7 @@ describe("OperatorCopilotService", () => {
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [
         tool("visible", "workspace.agents.read", invoke),
         tool("hidden", "workspace.history.read", vi.fn(async () => ({ value: "hidden" }))),
@@ -71,6 +73,7 @@ describe("OperatorCopilotService", () => {
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       now: () => now,
     });
@@ -106,6 +109,7 @@ describe("OperatorCopilotService", () => {
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       workspaceRouteKeyResolver: { resolveWorkspaceKey },
+      currentAuthorization,
       tools: [],
       now: () => now,
     });
@@ -136,6 +140,7 @@ describe("OperatorCopilotService", () => {
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [{
         ...tool("reader", "workspace.agents.read", vi.fn(async () => ({}))),
         uiLabel: "Reading conversation",
@@ -173,6 +178,39 @@ describe("OperatorCopilotService", () => {
     });
   });
 
+  it("omits an activity entity when authorization changes during its protected lookup", async () => {
+    const repository = new MemoryCopilotRepository();
+    const authorization = vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const runStreaming = vi.fn(() => ({
+      events: (async function* () {
+        yield { kind: "tool_call_validated" as const, stepIndex: 0, toolName: "reader", callId: "call", input: { conversationId: "conversation-1" }, at: 1 };
+        yield { kind: "tool_call_completed" as const, stepIndex: 0, toolName: "reader", callId: "call", output: {}, resultTokens: 1, latencyMs: 1, at: 2 };
+      })(),
+      result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+    }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming },
+      usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      currentAuthorization: { hasAllPermissions: authorization },
+      tools: [{
+        ...tool("reader", "workspace.agents.read", vi.fn(async () => ({}))),
+        uiLabel: "Reading conversation",
+        describeEntity: async () => ({ type: "conversation", id: "conversation-1", label: "Sensitive conversation" }),
+      }],
+      now: () => now,
+    });
+
+    const events = [];
+    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Explain this", pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+
+    expect(events.filter((event) => event.event === "activity").every((event) => !("entity" in (event.data as Record<string, unknown>)))).toBe(true);
+    expect(authorization).toHaveBeenCalledTimes(2);
+  });
+
   it("completes the turn when entity labeling fails", async () => {
     // describeEntity resolves names through DB-backed ports and runs in this service's own stream
     // loop, outside the runtime's tool-invocation handling. An escaping error would reach the
@@ -195,6 +233,7 @@ describe("OperatorCopilotService", () => {
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [{
         ...tool("reader", "workspace.agents.read", invoke),
         uiLabel: "Reading agent",

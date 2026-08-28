@@ -35,9 +35,25 @@ export interface CopilotToolInvocationContext {
   readonly operatorUserId: string;
   /** Present for transport-facing catalog calls so entity lookup cannot bypass tool permissions. */
   readonly permissions?: ReadonlySet<string>;
+  /**
+   * Resolves the operator's entitlement at the instant a descriptor is about to
+   * read or act. The turn-start permission set remains useful for catalog
+   * discovery, but is never sufficient for a protected descriptor hook.
+   */
+  readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   /** Internal copilot thread identity; distinct from pageContext.conversationId. */
   readonly copilotConversationId?: string;
   readonly pageContext: CopilotPageContext;
+}
+
+/** Narrow authorization port: it answers entitlement only and returns no role or customer data. */
+export interface CopilotCurrentAuthorizationPort {
+  hasAllPermissions(input: {
+    readonly workspaceId: string;
+    readonly accountId: string;
+    readonly operatorUserId: string;
+    readonly requiredPermissions: readonly AccountPermission[];
+  }): Promise<boolean>;
 }
 
 /** Resolves the public workspace key required for dashboard-safe copilot handoffs. */
@@ -122,9 +138,27 @@ export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter 
   draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
 }
 
+/** Whether a routine goes live, comes out of service, or comes back. */
+export type CopilotRoutineLifecycleAction = "publish" | "archive" | "restore";
+
+export interface CopilotRoutineProposalDraft {
+  readonly payload: unknown;
+  readonly targetLabel: string;
+  readonly summary: string;
+  /** Structural problems the proposed routine still carries. Empty when it validates cleanly. */
+  readonly diagnostics: ReadonlyArray<{ readonly code: string; readonly location: string; readonly message: string }>;
+}
+
 export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "routine";
-  draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
+  draft(workspaceId: string, targetRef: unknown, intent: string): Promise<CopilotRoutineProposalDraft>;
+  /**
+   * Field edits addressed by stable id. Rejects an edit the routine cannot take — an id it does
+   * not have, a status it cannot be edited in, or a change that would introduce a validation
+   * diagnostic it does not already carry — so an unusable draft never reaches an operator.
+   */
+  draftEdit(workspaceId: string, targetRef: unknown, changes: unknown, rationale?: string): Promise<CopilotRoutineProposalDraft>;
+  draftLifecycle(workspaceId: string, targetRef: unknown, action: CopilotRoutineLifecycleAction, rationale?: string): Promise<CopilotRoutineProposalDraft>;
 }
 
 export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapter {
@@ -141,6 +175,11 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly outputSchema: ZodType<TOutput>;
   /** Every permission is required; descriptors use all-of semantics. */
   readonly requiredPermissions: readonly [AccountPermission, ...AccountPermission[]];
+  /**
+   * Production catalog assembly attaches a reviewed declaration here. Factories
+   * intentionally stay unaware of the HTTP registry and owner-port registry.
+   */
+  readonly capabilityProvenance?: CopilotCapabilityProvenance;
   readonly contributingModule: string;
   /** Default dashboard handoff for this tool's collection or owning subject. */
   readonly dashboardSubject: CopilotEntityReference;
@@ -150,6 +189,21 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   describeOutputEntity?(output: TOutput): CopilotEntityReference | null;
   /** Optional last-mile sanitizer for the successful result after its dashboard link is attached. */
   finalizeEnrichedOutput?(output: Record<string, unknown>): Record<string, unknown>;
+}
+
+export interface CopilotRayOnlyDisposition {
+  readonly reason: string;
+}
+
+/**
+ * A descriptor represents ordinary public operations, a registered owning
+ * application primitive, or reviewed Ray-only orchestration. Compositions may
+ * name both their ordinary backing and the additional Ray-specific behavior.
+ */
+export interface CopilotCapabilityProvenance {
+  readonly backingOperationIds?: readonly [string, ...string[]];
+  readonly applicationPrimitiveIds?: readonly [string, ...string[]];
+  readonly rayOnly?: CopilotRayOnlyDisposition;
 }
 
 /**

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+import { evalAssertionSchema } from "../../../../modules/eval/domain/assertionSchema.js";
 
 const AgentConfigOverrideSchema = z
   .object({
@@ -61,7 +62,7 @@ const EvalRunOverridesSchema = z
 const EvalOneOffRunRequestSchema = z
   .object({
     snapshotId: z.string().uuid(),
-    mode: z.enum(["retrieval_only", "full_assistant"]).default("retrieval_only"),
+    mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
     overrides: EvalRunOverridesSchema.optional(),
     agentConfigOverride: AgentConfigOverrideSchema.optional(),
   });
@@ -94,6 +95,11 @@ const EvalWorkbenchReplayRunResponseSchema = z
     turnTrace: z.unknown().optional(),
     resolvedConfig: z.unknown(),
   });
+
+const EvalCaseRunResponseSchema = z.object({
+  run: z.unknown(),
+  case: z.unknown().nullable(),
+});
 
 const EvalSuiteRunRequestSchema = z
   .object({
@@ -131,6 +137,34 @@ const EvalCaseParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
+const EvalSnapshotParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+const EvalSnapshotCaptureRequestSchema = z.object({
+  conversationId: z.string().uuid(),
+  messageId: z.string().uuid().optional(),
+});
+
+const CreateEvalCaseRequestSchema = z.object({
+  snapshotId: z.string().uuid(),
+  name: z.string().min(1).max(200),
+  assertions: z.array(evalAssertionSchema).max(20).optional().default([]),
+});
+
+const RenameEvalCaseRequestSchema = z.object({
+  name: z.string().min(1).max(200),
+});
+
+const ReplaceEvalCaseAssertionsRequestSchema = z.object({
+  assertions: z.array(evalAssertionSchema).max(20),
+});
+
+const EvalCaseRunRequestSchema = z.object({
+  mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
+  overrides: EvalRunOverridesSchema.optional(),
+});
+
 const EvalSourceMessageParamsSchema = z.object({
   assistantMessageId: z.string().uuid(),
 });
@@ -140,7 +174,7 @@ const EvalCaseSchema = z.object({
   workspaceId: z.string().uuid(),
   snapshotId: z.string().uuid(),
   name: z.string(),
-  assertions: z.array(z.unknown()),
+  assertions: z.array(evalAssertionSchema).max(20),
   status: z.enum(["pending", "passing", "failing", "error"]),
   lastRunId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
@@ -201,6 +235,7 @@ export const registerEvalPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const RegisteredEvalAssertionSchema = registry.register("EvalAssertion", evalAssertionSchema);
   const RegisteredEvalMessageCaseLookupSchema = registry.register(
     "EvalMessageCaseLookup",
     EvalMessageCaseLookupSchema,
@@ -211,6 +246,99 @@ export const registerEvalPaths = (
       created: z.boolean().describe("True only when this request created the association."),
     })),
   );
+  const RegisteredEvalCaseSchema = registry.register(
+    "EvalCase",
+    EvalCaseSchema.extend({ assertions: z.array(RegisteredEvalAssertionSchema).max(20) }),
+  );
+  const RegisteredEvalSnapshotSchema = registry.register("EvalSnapshot", EvalSnapshotSchema);
+  const RegisteredEvalCaseWithRunsSchema = registry.register(
+    "EvalCaseWithRuns",
+    RegisteredEvalCaseSchema.and(z.object({ runs: z.array(z.unknown()) })),
+  );
+  const RegisteredEvalCaseListSchema = registry.register(
+    "EvalCaseList",
+    z.object({
+      cases: z.array(RegisteredEvalCaseSchema.and(z.object({ latestRun: z.unknown().nullable() }))),
+      summary: EvalSuiteSummarySchema,
+    }),
+  );
+
+  const workspaceEvalSecurity = [
+    { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
+    { [security.bearerAuthScheme.name]: [] },
+  ];
+
+  const workspaceEvalErrorResponses = {
+    401: {
+      description: "Authentication required",
+      content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+    },
+    403: {
+      description: "Caller lacks workspace retrieval-query permission",
+      content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+    },
+  };
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/evals/snapshots",
+    tags: ["Evals"],
+    summary: "Capture an Eval snapshot",
+    operationId: "createEvalSnapshot",
+    security: workspaceEvalSecurity,
+    request: { body: { required: true, content: { "application/json": { schema: EvalSnapshotCaptureRequestSchema } } } },
+    responses: {
+      201: { description: "Immutable conversation snapshot captured", content: { "application/json": { schema: RegisteredEvalSnapshotSchema } } },
+      400: { description: "Invalid capture request", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Conversation or message not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/evals/snapshots/{id}",
+    tags: ["Evals"],
+    summary: "Get an Eval snapshot",
+    operationId: "getEvalSnapshot",
+    security: workspaceEvalSecurity,
+    request: { params: EvalSnapshotParamsSchema },
+    responses: {
+      200: { description: "Eval snapshot", content: { "application/json": { schema: RegisteredEvalSnapshotSchema } } },
+      400: { description: "Invalid snapshot id", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Snapshot not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/evals/cases",
+    tags: ["Evals"],
+    summary: "Create an Eval case",
+    operationId: "createEvalCase",
+    security: workspaceEvalSecurity,
+    request: { body: { required: true, content: { "application/json": { schema: CreateEvalCaseRequestSchema } } } },
+    responses: {
+      201: { description: "Eval case created", content: { "application/json": { schema: RegisteredEvalCaseSchema } } },
+      400: { description: "Invalid case payload", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Snapshot not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/evals/cases",
+    tags: ["Evals"],
+    summary: "List Eval cases and latest results",
+    operationId: "listEvalCases",
+    security: workspaceEvalSecurity,
+    responses: {
+      200: { description: "Eval cases with each case's latest result", content: { "application/json": { schema: RegisteredEvalCaseListSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
 
   registry.registerPath({
     method: "get",
@@ -363,6 +491,14 @@ export const registerEvalPaths = (
           },
         },
       },
+      403: {
+        description: "Caller lacks workspace retrieval-query permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
       404: {
         description: "Eval case not found",
         content: {
@@ -371,6 +507,80 @@ export const registerEvalPaths = (
           },
         },
       },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/evals/cases/{id}",
+    tags: ["Evals"],
+    summary: "Get an Eval case and its run history",
+    operationId: "getEvalCase",
+    security: workspaceEvalSecurity,
+    request: { params: EvalCaseParamsSchema },
+    responses: {
+      200: { description: "Eval case with recorded runs", content: { "application/json": { schema: RegisteredEvalCaseWithRunsSchema } } },
+      400: { description: "Invalid case id", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Eval case not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/evals/cases/{id}",
+    tags: ["Evals"],
+    summary: "Rename an Eval case",
+    operationId: "renameEvalCase",
+    security: workspaceEvalSecurity,
+    request: {
+      params: EvalCaseParamsSchema,
+      body: { required: true, content: { "application/json": { schema: RenameEvalCaseRequestSchema } } },
+    },
+    responses: {
+      200: { description: "Renamed Eval case", content: { "application/json": { schema: RegisteredEvalCaseSchema } } },
+      400: { description: "Invalid case id or name", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Eval case not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/evals/cases/{id}/assertions",
+    tags: ["Evals"],
+    summary: "Replace an Eval case's assertions",
+    operationId: "replaceEvalCaseAssertions",
+    security: workspaceEvalSecurity,
+    request: {
+      params: EvalCaseParamsSchema,
+      body: { required: true, content: { "application/json": { schema: ReplaceEvalCaseAssertionsRequestSchema } } },
+    },
+    responses: {
+      200: { description: "Eval case with replacement assertions", content: { "application/json": { schema: RegisteredEvalCaseSchema } } },
+      400: { description: "Invalid case id or assertions", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Eval case not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/evals/cases/{id}/runs",
+    tags: ["Evals"],
+    summary: "Run an Eval case",
+    operationId: "createEvalCaseRun",
+    security: workspaceEvalSecurity,
+    request: {
+      params: EvalCaseParamsSchema,
+      body: { required: true, content: { "application/json": { schema: EvalCaseRunRequestSchema } } },
+    },
+    responses: {
+      201: { description: "Eval case replay recorded", content: { "application/json": { schema: EvalCaseRunResponseSchema } } },
+      400: { description: "Invalid replay request", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Eval case or snapshot not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Workbench replay rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
     },
   });
 
@@ -419,6 +629,14 @@ export const registerEvalPaths = (
           },
         },
       },
+      403: {
+        description: "Caller lacks workspace retrieval-query permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
     },
   });
 
@@ -460,6 +678,14 @@ export const registerEvalPaths = (
       },
       401: {
         description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks workspace retrieval-query permission",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

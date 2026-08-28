@@ -64,7 +64,10 @@ import {
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
+import { ProbeConversationReader } from "../../modules/chat/composition.js";
+import { ProbeRoutineReader } from "../../modules/routines/public.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
@@ -410,14 +413,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
-    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
   ] as const;
   const agentTurnProbeService = new AgentTurnProbeService({
-    conversationReader: repositories.conversationRepository,
+    conversationReader: new ProbeConversationReader(repositories.conversationRepository),
     agentReader: {
-      findByIdAndWorkspaceId: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
+      findAgentForProbe: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
     },
-    routineReader: repositories.routineDefinitionRepository,
+    routineReader: new ProbeRoutineReader(routineDefinitionService),
     abuseControl: chat.abuseControlService,
     audit: infrastructure.auditService,
     abusePolicy: {
@@ -482,6 +485,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   });
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository: repositories.workspaceRepository });
+  // One embedding-profiles-owned read port is shared by REST and Ray; neither surface reaches
+  // into the job repository through an ad-hoc query shape.
+  const embeddingCoverageReport: EmbeddingCoverageReadPort = repositories.documentProcessingJobRepository;
   const copilotCapabilityRunner = new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) });
   const copilotPrompt = loadPromptTemplate("copilot/system.md");
   // Named rather than inlined so the copilot's behavioural eval suite can drive a real turn through
@@ -496,6 +502,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService: {
       get: routineDefinitionService.get.bind(routineDefinitionService),
       list: routineDefinitionService.list.bind(routineDefinitionService),
+      validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService: chat.chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
@@ -509,7 +516,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     qualitySignalsService,
     audiencePulseService,
     documentStatusService: documents.documentIngestionService,
-    documentSourceStatusService: repositories.documentSourceRepository,
+    documentSourceStatusService: documents.documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
@@ -521,8 +528,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         return settings.ingestionSettingsService.getForWorkspace(workspaceId);
       },
       async getEmbeddingCoverage(workspaceId) {
-        return repositories.documentProcessingJobRepository
-          .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+        return embeddingCoverageReport.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
       },
       async listLlmModels(workspaceId) {
         return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
@@ -557,6 +563,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     proposalAdapters: copilotProposalAdapters,
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
+    currentAuthorization: {
+      hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>
+        access.accountAccessService.hasAllWorkspacePermissions({
+          accountId,
+          userId: operatorUserId,
+          principal: { type: "session_user", userId: operatorUserId },
+          workspaceId,
+          permissions: requiredPermissions,
+        }),
+    },
   });
   return {
     env,
@@ -610,7 +626,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metadataRuleFieldReferenceProvider,
     // Coverage counts share the job repository's definition of a projected chunk,
     // because the number is read against the backlog that repository enqueues.
-    embeddingCoverageReport: repositories.documentProcessingJobRepository,
+    embeddingCoverageReport,
     chunkRepository: repositories.chunkRepository,
     documentRepository: repositories.documentRepository,
     documentIngestionService: documents.documentIngestionService,

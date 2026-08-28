@@ -97,6 +97,10 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
       state,
       http: { mount: () => {} },
       ingestion,
+      publicHttp: {
+        assertPublicUrl: async () => undefined,
+        fetch: (input, init) => fetch(input, init),
+      },
     };
     const connector = new WordpressConnector();
     await connector.initialize(context);

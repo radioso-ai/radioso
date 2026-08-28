@@ -352,7 +352,8 @@ describe("retrieval sense clarification", () => {
       question: "tell me about yoga",
     }));
     expect(answerInputs).toHaveLength(1);
-    expect(answerInputs[0]?.systemPrompt).toContain("Raja yoga");
+    expect(answerInputs[0]?.systemPrompt).not.toContain("Raja yoga");
+    expect(answerInputs[0]?.prompt).toContain("Raja yoga");
     expect(answerInputs[0]?.systemPrompt).toMatch(/offer/i);
     expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
       .toEqual(["tell me about yoga", "tell me about yoga"]);
@@ -889,8 +890,9 @@ describe("retrieval sense clarification", () => {
       .toEqual([originalQuery, originalQuery]);
     expect(answerInputs).toHaveLength(1);
     expect(answerInputs[0]?.query).toBe(originalQuery);
-    expect(answerInputs[0]?.systemPrompt).toContain(originalQuery);
-    expect(answerInputs[0]?.systemPrompt).not.toContain(selectorReply);
+    expect(answerInputs[0]?.systemPrompt).not.toContain(originalQuery);
+    expect(answerInputs[0]?.prompt).toContain(originalQuery);
+    expect(answerInputs[0]?.prompt).not.toContain(selectorReply);
     expect(directiveInputs.length).toBeGreaterThan(0);
     expect(directiveInputs.map((input) => input.turnContext?.query)).not.toContain(selectorReply);
     expect(directiveInputs.map((input) => input.turnContext?.query)).toContain(originalQuery);
@@ -1072,8 +1074,9 @@ describe("retrieval sense clarification", () => {
       .toEqual([originalQuery, originalQuery]);
     expect(streamInputs).toHaveLength(1);
     expect(streamInputs[0]?.query).toBe(originalQuery);
-    expect(streamInputs[0]?.systemPrompt).toContain(originalQuery);
-    expect(streamInputs[0]?.systemPrompt).not.toContain(selectorReply);
+    expect(streamInputs[0]?.systemPrompt).not.toContain(originalQuery);
+    expect(streamInputs[0]?.prompt).toContain(originalQuery);
+    expect(streamInputs[0]?.prompt).not.toContain(selectorReply);
     const persistedUserMessages = [...messageRepository.items.values()].flat().filter((message) => message.role === "user");
     expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
   });

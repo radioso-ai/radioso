@@ -8,6 +8,7 @@ import type {
   CopilotToolDescriptor,
 } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
+import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   describeNamedAgent,
   entity,
@@ -47,9 +48,13 @@ export const createDirectiveProposalCopilotTools = (
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, intent, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId: directiveId ?? null };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await directiveAdapter.draft(context.workspaceId, targetRef, intent);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const versionToken = await directiveAdapter.readVersionToken(context.workspaceId, targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "directive" });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

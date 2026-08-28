@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import {
   filterCopilotToolCatalog,
+  enrichCopilotToolCatalog,
   type CopilotToolDescriptor,
 } from "../../../src/modules/operatorCopilot/public.js";
+import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceRegistry } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
 
 const descriptor = (...permissions: CopilotToolDescriptor["requiredPermissions"]): CopilotToolDescriptor => ({
   name: `tool_${permissions.join("_").replaceAll(".", "_")}`,
@@ -66,5 +68,151 @@ describe("filterCopilotToolCatalog", () => {
       ["workspace.retrieval.query"],
       ["workspace.quality.read"],
     ]);
+  });
+});
+
+describe("enrichCopilotToolCatalog current authorization", () => {
+  it("reauthorizes before entity resolution and again before invocation", async () => {
+    const describeEntity = vi.fn(async () => ({
+      kind: "ambiguous" as const,
+      candidates: [{ type: "agent", id: "agent-1", label: "Sensitive agent" }],
+    }));
+    const invoke = vi.fn(async () => ({ value: "safe" }));
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const [enriched] = enrichCopilotToolCatalog([{
+      ...descriptor("workspace.agents.read"),
+      outputSchema: z.object({ value: z.string() }),
+      describeEntity,
+      createTool: () => ({
+        name: "current_reader",
+        description: "current reader",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ value: z.string() }),
+        invoke,
+      }),
+    }], { resolveWorkspaceKey: async () => "workspace" });
+    const tool = enriched?.createTool({
+      workspaceId: "workspace",
+      accountId: "account",
+      operatorUserId: "operator",
+      permissions: new Set(["workspace.agents.read"]),
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+    await expect(tool?.invoke({}, {} as never)).resolves.toMatchObject({ resolution: { status: "not_found" } });
+    expect(describeEntity).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+
+    await expect(tool?.invoke({}, {} as never)).resolves.toMatchObject({ resolution: { status: "not_found" } });
+    expect(describeEntity).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(authorization).toHaveBeenCalledTimes(3);
+  });
+
+  it("withholds a protected tool result when authority is revoked while it reads", async () => {
+    const invoke = vi.fn(async () => ({ value: "sensitive result" }));
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const [enriched] = enrichCopilotToolCatalog([{
+      ...descriptor("workspace.agents.read"),
+      outputSchema: z.object({ value: z.string() }),
+      createTool: () => ({
+        name: "current_reader",
+        description: "current reader",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ value: z.string() }),
+        invoke,
+      }),
+    }], { resolveWorkspaceKey: async () => "workspace" });
+    const tool = enriched?.createTool({
+      workspaceId: "workspace",
+      accountId: "account",
+      operatorUserId: "operator",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+    await expect(tool?.invoke({}, {} as never)).resolves.toMatchObject({ resolution: { status: "not_found" } });
+    expect(invoke).toHaveBeenCalledOnce();
+  });
+});
+
+describe("copilot capability governance", () => {
+  it("rejects provenance entries for descriptors that are no longer assembled", () => {
+    const assembled = {
+      ...descriptor("workspace.agents.read"),
+      name: "assembled_descriptor",
+      capabilityProvenance: { rayOnly: { reason: "A focused test descriptor." } },
+    };
+
+    expect(() => assertCopilotCapabilityProvenanceRegistry([assembled], {
+      assembled_descriptor: assembled.capabilityProvenance!,
+      removed_descriptor: { rayOnly: { reason: "This descriptor was removed." } },
+    })).toThrow("Stale copilot capability provenance");
+    expect(() => assertCopilotCapabilityProvenanceRegistry([assembled], {}))
+      .toThrow("Missing copilot capability provenance");
+  });
+
+  it("rejects a fabricated owner primitive and an empty Ray-only disposition", () => {
+    const invalidPrimitive = {
+      ...descriptor("workspace.agents.read"),
+      capabilityProvenance: { applicationPrimitiveIds: ["invented.primitive"] },
+    };
+    const emptyDisposition = {
+      ...descriptor("workspace.agents.read"),
+      capabilityProvenance: { rayOnly: { reason: "  " } },
+    };
+
+    expect(() => assertCopilotCapabilityProvenance([invalidPrimitive], new Set())).toThrow("Unknown application primitive identity");
+    expect(() => assertCopilotCapabilityProvenance([emptyDisposition], new Set())).toThrow("empty Ray-only reason");
+  });
+
+  it("requires a primitive identity to be exported by its owning module", () => {
+    const ownerPrimitive = {
+      ...descriptor("workspace.agents.read"),
+      capabilityProvenance: { applicationPrimitiveIds: ["agents.configuration.read"] },
+    };
+
+    expect(() => assertCopilotCapabilityProvenance([ownerPrimitive], new Set())).toThrow("not exported by its owning module");
+    expect(() => assertCopilotCapabilityProvenance(
+      [ownerPrimitive], new Set(), {}, new Set(["agents.configuration.read"]),
+    )).not.toThrow();
+  });
+
+  it("rejects a one-to-one descriptor whose permissions are weaker than its HTTP operation", () => {
+    const weakened = {
+      ...descriptor("workspace.agents.read"),
+      capabilityProvenance: { backingOperationIds: ["validateAgentRoutine"] },
+    };
+
+    expect(() => assertCopilotCapabilityProvenance(
+      [weakened],
+      new Set(["validateAgentRoutine"]),
+      { validateAgentRoutine: ["workspace.agents.manage"] },
+    )).toThrow("weakens permission parity");
+  });
+
+  it("keeps one-to-one parity when a descriptor adds a primitive or Ray-only safety", () => {
+    const composed = {
+      ...descriptor("workspace.agents.read"),
+      capabilityProvenance: {
+        backingOperationIds: ["validateAgentRoutine"],
+        applicationPrimitiveIds: ["routines.validation"],
+        rayOnly: { reason: "Ray returns bounded diagnostics alongside validation." },
+      },
+    };
+
+    expect(() => assertCopilotCapabilityProvenance(
+      [composed],
+      new Set(["validateAgentRoutine"]),
+      { validateAgentRoutine: ["workspace.agents.manage"] },
+      new Set(["routines.validation"]),
+    )).toThrow("weakens permission parity");
   });
 });

@@ -15315,6 +15315,244 @@
           "decisions"
         ]
       },
+      "EvalAssertion": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "retrieval_includes_document"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "documentId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "retrieval_excludes_document"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "documentId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "retrieval_top_k_includes_document"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "k": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "type",
+              "documentId",
+              "k"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "retrieval_document_order"
+                ]
+              },
+              "documentIds": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "minItems": 1,
+                "maxItems": 100
+              }
+            },
+            "required": [
+              "type",
+              "documentIds"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "retrieval_chunk_metadata"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "type",
+              "documentId",
+              "metadata"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "answer_cites_document"
+                ]
+              },
+              "documentId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "type",
+              "documentId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "answer_contains"
+                ]
+              },
+              "pattern": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "matchMode": {
+                "type": "string",
+                "enum": [
+                  "substring",
+                  "regex"
+                ]
+              },
+              "caseSensitive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "pattern",
+              "matchMode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "answer_does_not_contain"
+                ]
+              },
+              "pattern": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "matchMode": {
+                "type": "string",
+                "enum": [
+                  "substring",
+                  "regex"
+                ]
+              },
+              "caseSensitive": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type",
+              "pattern",
+              "matchMode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "llm_judge"
+                ]
+              },
+              "expectedAnswer": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8000
+              },
+              "criteria": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            },
+            "required": [
+              "type",
+              "expectedAnswer"
+            ]
+          }
+        ]
+      },
       "EvalMessageCaseLookup": {
         "type": "object",
         "properties": {
@@ -15342,7 +15580,245 @@
               },
               "assertions": {
                 "type": "array",
-                "items": {}
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "retrieval_includes_document"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "documentId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "retrieval_excludes_document"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "documentId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "retrieval_top_k_includes_document"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "k": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "documentId",
+                        "k"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "retrieval_document_order"
+                          ]
+                        },
+                        "documentIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "minItems": 1,
+                          "maxItems": 100
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "documentIds"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "retrieval_chunk_metadata"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "metadata": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "boolean"
+                              },
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "documentId",
+                        "metadata"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "answer_cites_document"
+                          ]
+                        },
+                        "documentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "documentId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "answer_contains"
+                          ]
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000
+                        },
+                        "matchMode": {
+                          "type": "string",
+                          "enum": [
+                            "substring",
+                            "regex"
+                          ]
+                        },
+                        "caseSensitive": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "pattern",
+                        "matchMode"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "answer_does_not_contain"
+                          ]
+                        },
+                        "pattern": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 4000
+                        },
+                        "matchMode": {
+                          "type": "string",
+                          "enum": [
+                            "substring",
+                            "regex"
+                          ]
+                        },
+                        "caseSensitive": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "pattern",
+                        "matchMode"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "llm_judge"
+                          ]
+                        },
+                        "expectedAnswer": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 8000
+                        },
+                        "criteria": {
+                          "type": "string",
+                          "maxLength": 2000
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "expectedAnswer"
+                      ]
+                    }
+                  ]
+                },
+                "maxItems": 20
               },
               "status": {
                 "type": "string",
@@ -15612,6 +16088,341 @@
               "created"
             ]
           }
+        ]
+      },
+      "EvalCase": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "snapshotId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvalAssertion"
+            },
+            "maxItems": 20
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "passing",
+              "failing",
+              "error"
+            ]
+          },
+          "lastRunId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agent": {
+            "type": "object",
+            "properties": {
+              "agentId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "internalName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "deleted": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "agentId",
+              "name",
+              "internalName",
+              "deleted"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "snapshotId",
+          "name",
+          "assertions",
+          "status",
+          "lastRunId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "EvalSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceConversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceMessageId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "replayTarget": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "userMessageId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "assistantMessageId": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "userMessageId",
+              "assistantMessageId"
+            ]
+          },
+          "fidelity": {
+            "type": "string",
+            "enum": [
+              "full",
+              "messages_only"
+            ]
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant",
+                    "system"
+                  ]
+                },
+                "content": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "citations": {
+                  "type": "array",
+                  "items": {}
+                },
+                "answerSegments": {
+                  "type": "array",
+                  "items": {}
+                },
+                "groundingSummary": {},
+                "directiveFirings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "role",
+                "content",
+                "createdAt"
+              ]
+            }
+          },
+          "originalInstructionBlock": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "originalModelId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "originalRetrievalSettings": {},
+          "originalAgent": {},
+          "originalAgentConfig": {},
+          "sourceAgentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "originalRoutineState": {},
+          "originalRetrievalResult": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {}
+          },
+          "conversationSummary": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "capturedBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "workspaceId",
+          "sourceConversationId",
+          "sourceMessageId",
+          "replayTarget",
+          "fidelity",
+          "messages",
+          "originalInstructionBlock",
+          "originalModelId",
+          "sourceAgentId",
+          "originalRetrievalResult",
+          "capturedAt",
+          "capturedBy"
+        ]
+      },
+      "EvalCaseWithRuns": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EvalCase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "runs": {
+                "type": "array",
+                "items": {}
+              }
+            },
+            "required": [
+              "runs"
+            ]
+          }
+        ]
+      },
+      "EvalCaseList": {
+        "type": "object",
+        "properties": {
+          "cases": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/EvalCase"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "latestRun": {}
+                  }
+                }
+              ]
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "scored": {
+                "type": "integer"
+              },
+              "passing": {
+                "type": "integer"
+              },
+              "failing": {
+                "type": "integer"
+              },
+              "error": {
+                "type": "integer"
+              },
+              "pending": {
+                "type": "integer"
+              },
+              "unscored": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "total",
+              "scored",
+              "passing",
+              "failing",
+              "error",
+              "pending",
+              "unscored"
+            ]
+          }
+        },
+        "required": [
+          "cases",
+          "summary"
         ]
       },
       "AssistantChatSseStream": {
@@ -20734,6 +21545,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Routine definition is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
                 }
               }
             }
@@ -34661,8 +35482,8 @@
         "tags": [
           "Copilot"
         ],
-        "summary": "Start a streaming read-only copilot turn",
-        "description": "Returns the fixed copilot SSE event stream. Dashboard session only; bearer API tokens are rejected.",
+        "summary": "Start a streaming operator copilot turn",
+        "description": "Returns the fixed copilot SSE event stream. A turn may persist Ray-owned evaluation records and pending proposals; applying a proposal remains a separately authorized operation. Dashboard session only; bearer API tokens are rejected.",
         "operationId": "createCopilotTurn",
         "security": [
           {
@@ -35118,6 +35939,566 @@
         }
       }
     },
+    "/api/v1/evals/snapshots": {
+      "post": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Capture an Eval snapshot",
+        "operationId": "createEvalSnapshot",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "conversationId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "messageId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "conversationId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Immutable conversation snapshot captured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid capture request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Conversation or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evals/snapshots/{id}": {
+      "get": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Get an Eval snapshot",
+        "operationId": "getEvalSnapshot",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eval snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid snapshot id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Snapshot not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evals/cases": {
+      "post": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Create an Eval case",
+        "operationId": "createEvalCase",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshotId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "assertions": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_includes_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_excludes_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_top_k_includes_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "k": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId",
+                            "k"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_document_order"
+                              ]
+                            },
+                            "documentIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "minItems": 1,
+                              "maxItems": 100
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentIds"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_chunk_metadata"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "metadata": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  },
+                                  {
+                                    "type": "null"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId",
+                            "metadata"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "answer_cites_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "answer_contains"
+                              ]
+                            },
+                            "pattern": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4000
+                            },
+                            "matchMode": {
+                              "type": "string",
+                              "enum": [
+                                "substring",
+                                "regex"
+                              ]
+                            },
+                            "caseSensitive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "pattern",
+                            "matchMode"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "answer_does_not_contain"
+                              ]
+                            },
+                            "pattern": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4000
+                            },
+                            "matchMode": {
+                              "type": "string",
+                              "enum": [
+                                "substring",
+                                "regex"
+                              ]
+                            },
+                            "caseSensitive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "pattern",
+                            "matchMode"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "llm_judge"
+                              ]
+                            },
+                            "expectedAnswer": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 8000
+                            },
+                            "criteria": {
+                              "type": "string",
+                              "maxLength": 2000
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "expectedAnswer"
+                          ]
+                        }
+                      ]
+                    },
+                    "maxItems": 20,
+                    "default": []
+                  }
+                },
+                "required": [
+                  "snapshotId",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Eval case created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCase"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid case payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Snapshot not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "List Eval cases and latest results",
+        "operationId": "listEvalCases",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eval cases with each case's latest result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCaseList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
       "get": {
         "tags": [
@@ -35331,8 +36712,812 @@
               }
             }
           },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Eval case not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Get an Eval case and its run history",
+        "operationId": "getEvalCase",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Eval case with recorded runs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCaseWithRuns"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid case id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Eval case not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Rename an Eval case",
+        "operationId": "renameEvalCase",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Renamed Eval case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCase"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid case id or name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Eval case not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evals/cases/{id}/assertions": {
+      "put": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Replace an Eval case's assertions",
+        "operationId": "replaceEvalCaseAssertions",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "assertions": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_includes_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_excludes_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_top_k_includes_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "k": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 100
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId",
+                            "k"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_document_order"
+                              ]
+                            },
+                            "documentIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "minItems": 1,
+                              "maxItems": 100
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentIds"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "retrieval_chunk_metadata"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "metadata": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  },
+                                  {
+                                    "type": "null"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId",
+                            "metadata"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "answer_cites_document"
+                              ]
+                            },
+                            "documentId": {
+                              "type": "string",
+                              "format": "uuid"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "documentId"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "answer_contains"
+                              ]
+                            },
+                            "pattern": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4000
+                            },
+                            "matchMode": {
+                              "type": "string",
+                              "enum": [
+                                "substring",
+                                "regex"
+                              ]
+                            },
+                            "caseSensitive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "pattern",
+                            "matchMode"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "answer_does_not_contain"
+                              ]
+                            },
+                            "pattern": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 4000
+                            },
+                            "matchMode": {
+                              "type": "string",
+                              "enum": [
+                                "substring",
+                                "regex"
+                              ]
+                            },
+                            "caseSensitive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "pattern",
+                            "matchMode"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "llm_judge"
+                              ]
+                            },
+                            "expectedAnswer": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 8000
+                            },
+                            "criteria": {
+                              "type": "string",
+                              "maxLength": 2000
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "expectedAnswer"
+                          ]
+                        }
+                      ]
+                    },
+                    "maxItems": 20
+                  }
+                },
+                "required": [
+                  "assertions"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Eval case with replacement assertions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCase"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid case id or assertions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Eval case not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/evals/cases/{id}/runs": {
+      "post": {
+        "tags": [
+          "Evals"
+        ],
+        "summary": "Run an Eval case",
+        "operationId": "createEvalCaseRun",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "retrieval_only",
+                      "full_assistant"
+                    ],
+                    "default": "full_assistant"
+                  },
+                  "overrides": {
+                    "type": "object",
+                    "properties": {
+                      "modelOverride": {
+                        "type": "object",
+                        "properties": {
+                          "provider": {
+                            "type": "string",
+                            "enum": [
+                              "openai",
+                              "openai-compatible",
+                              "gemini",
+                              "claude"
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "provider",
+                          "model"
+                        ]
+                      },
+                      "assistantInstructionsOverride": {
+                        "type": "object",
+                        "properties": {
+                          "customInstruction": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "retrievalSettingsOverride": {
+                        "type": "object",
+                        "additionalProperties": {}
+                      },
+                      "agentConfigOverride": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "customInstruction": {
+                            "type": "string"
+                          },
+                          "contactRequestsEnabled": {
+                            "type": "boolean"
+                          },
+                          "webhookExportsEnabled": {
+                            "type": "boolean"
+                          },
+                          "contactRequestDelivery": {},
+                          "logo": {},
+                          "theme": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "branding": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "greetingInstruction": {
+                            "type": "string"
+                          },
+                          "assistantDefaultLocale": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "proactiveGreetingEnabled": {
+                            "type": "boolean"
+                          },
+                          "surfaceSettings": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "skillSettings": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "chatModelOverride": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "provider": {
+                                "type": "string",
+                                "enum": [
+                                  "openai",
+                                  "openai-compatible",
+                                  "gemini",
+                                  "claude"
+                                ]
+                              },
+                              "model": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "provider",
+                              "model"
+                            ]
+                          },
+                          "authoredDirectives": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": {}
+                            }
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "routineStartState": {
+                        "type": "object",
+                        "properties": {
+                          "routineId": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "minItems": 1
+                          },
+                          "variables": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          },
+                          "attempts": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "integer"
+                            }
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "suspended",
+                              "completed",
+                              "expired"
+                            ]
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "additionalProperties": {}
+                          }
+                        },
+                        "required": [
+                          "routineId",
+                          "path",
+                          "variables",
+                          "status"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Eval case replay recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "run": {},
+                    "case": {}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid replay request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Eval case or snapshot not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Workbench replay rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
@@ -35502,6 +37687,16 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -35538,7 +37733,7 @@
                       "retrieval_only",
                       "full_assistant"
                     ],
-                    "default": "retrieval_only"
+                    "default": "full_assistant"
                   },
                   "overrides": {
                     "type": "object",
@@ -35903,6 +38098,16 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace retrieval-query permission",
             "content": {
               "application/json": {
                 "schema": {

@@ -1,5 +1,5 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../src/modules/documents/contracts/index.js";
@@ -7,6 +7,7 @@ import { defaultAnswerDirectives } from "../../src/modules/directives/public.js"
 import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/public.js";
 import { REWRITE_TURN_KIND } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
+import { forbidden } from "../../src/shared/domain/errors.js";
 import { textResult } from "../support/llmStubs.js";
 
 const parseSseData = (body: string, eventName: string): unknown[] =>
@@ -94,6 +95,40 @@ const invalidRoutineDraft = (): RoutineDefinitionDraftInput =>
   });
 
 describe("agents contract", () => {
+  it("allows a read-only operator to validate a routine but not mutate it", async () => {
+    const { app, dependencies } = createTestApp();
+    const { token } = await issueTestToken(app, "agents-routine-validation-read-only@example.com");
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set(headers)
+      .send({ name: "Member validation" })
+      .expect(201);
+    const draft = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines`)
+      .set(headers)
+      .send(validRoutineDraft())
+      .expect(201);
+    const requirePermission = vi.spyOn(dependencies.accountAccessService, "requirePermission")
+      .mockImplementation(async ({ permission }) => {
+        if (permission === "workspace.agents.read") return;
+        throw forbidden("You do not have permission to perform this action");
+      });
+
+    await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/routines/${draft.body.routine.id}/validate`)
+      .set(headers)
+      .expect(200);
+    await request(app)
+      .patch(`/api/v1/agents/${agent.body.id}/routines/${draft.body.routine.id}`)
+      .set(headers)
+      .send(validRoutineDraft({ name: "forbidden-member-update" }))
+      .expect(403);
+    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({ permission: "workspace.agents.read" }));
+    expect(requirePermission).toHaveBeenCalledWith(expect.objectContaining({ permission: "workspace.agents.manage" }));
+  });
+
   it("creates a default agent and preserves omitted agentId chat compatibility", async () => {
     const chatGateway: ChatGateway = {
       async answer({ query }) {

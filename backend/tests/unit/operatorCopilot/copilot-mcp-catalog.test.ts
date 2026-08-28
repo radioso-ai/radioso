@@ -11,6 +11,10 @@ const context = (permissions: ReadonlySet<string>) => ({
   accountId: "account-1",
   operatorUserId: "operator-1",
   permissions,
+  currentAuthorization: {
+    hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => permissions.has(permission)),
+  },
   pageContext: { view: "other" as const, agentId: null, conversationId: null, selection: null, entities: [] },
 });
 

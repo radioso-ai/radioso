@@ -10,6 +10,7 @@ vi.mock("../../../src/modules/routines/public.js", async (importOriginal) => ({
 
 import {
   OperatorCopilotService,
+  CopilotAuthorizationError,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -25,6 +26,7 @@ const operatorUserId = randomUUID();
 const agentId = randomUUID();
 const directiveId = randomUUID();
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
+const currentAuthorization = { hasAllPermissions: async () => true };
 
 type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilotTools>[0]
   & Parameters<typeof createRoutineProposalCopilotTools>[0]
@@ -56,6 +58,7 @@ describe("US3 copilot proposals", () => {
       versionToken: "version-1",
       evidence: null,
     });
+    const audit = auditService();
     const service = new OperatorCopilotService({
       repository,
       capabilityRunner: {
@@ -77,9 +80,10 @@ describe("US3 copilot proposals", () => {
         }),
       },
       usageLimitPolicy: noLimitPolicy(),
-      auditService: auditService(),
+      auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [tool("propose_directive", "workspace.agents.manage")],
     });
 
@@ -121,15 +125,17 @@ describe("US3 copilot proposals", () => {
           applyIfVersionMatches: vi.fn(),
           validatePayload: vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload })),
         },
-        { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
+        { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn(), draftLifecycle: vi.fn() },
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "propose_directive", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
+      { name: "propose_routine_edit", shape: "propose" },
+      { name: "propose_routine_lifecycle", shape: "propose" },
       { name: "propose_agent_setting", shape: "propose" },
     ]);
 
@@ -146,18 +152,18 @@ describe("US3 copilot proposals", () => {
       id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const payload = { name: "Return intake", steps: [] };
-    const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics." }));
+    const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics.", diagnostics: [] }));
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
       proposalAdapters: [
         { targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
         { targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), validatePayload: vi.fn() },
-        { targetType: "routine", readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: routineDraft },
+        { targetType: "routine", readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: routineDraft, draftEdit: vi.fn(), draftLifecycle: vi.fn() },
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     const routineTool = descriptors.find((descriptor) => descriptor.name === "propose_routine");
     const result = await routineTool?.createTool(context).invoke({ intent: "Draft a return-intake flow" }, {} as never);
@@ -172,6 +178,106 @@ describe("US3 copilot proposals", () => {
     }));
   });
 
+  it("does not persist a drafted proposal after manage authority is revoked", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
+      id: randomUUID(),
+      ...input,
+      messageId: null,
+      status: "pending" as const,
+      appliedRef: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }));
+    const draft = vi.fn(async () => ({ payload: { name: "Avoid competitors" }, targetLabel: "Avoid competitors", summary: "Draft directive" }));
+    const [descriptor] = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft }],
+      auditService: auditService(),
+    });
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const context = {
+      workspaceId,
+      accountId,
+      operatorUserId,
+      copilotConversationId: "conversation-1",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
+    };
+
+    await expect(descriptor!.createTool(context).invoke({ intent: "Do not recommend competitors" }, {} as never))
+      .rejects.toThrow(/authorization/i);
+
+    expect(draft).toHaveBeenCalledOnce();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("does not persist an agent setting proposal after manage authority is revoked", async () => {
+    const createProposal = vi.fn();
+    const validatePayload = vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload }));
+    const [descriptor] = createAgentSettingProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "agent_setting", validatePayload, readVersionToken: vi.fn(async () => "agent-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    await expect(descriptor!.createTool({
+      workspaceId,
+      accountId,
+      operatorUserId,
+      copilotConversationId: "conversation-1",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
+    }).invoke({ settingKey: "retrievalEnabled", value: false }, {} as never)).rejects.toThrow(/authorization/i);
+
+    expect(validatePayload).toHaveBeenCalledOnce();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("does not persist a routine edit after the shared proposal tail sees a revocation", async () => {
+    const createProposal = vi.fn();
+    const draftEdit = vi.fn(async () => ({
+      payload: { kind: "edit", name: "Support intake", changes: {} },
+      targetLabel: "Support intake",
+      summary: "Edit the intake.",
+      diagnostics: [],
+    }));
+    const descriptors = createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", readVersionToken: vi.fn(async () => "routine-version"), draftEdit, draftLifecycle: vi.fn(), draft: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn() }],
+      auditService: auditService(),
+    });
+    const authorization = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const routineEdit = descriptors.find((candidate) => candidate.name === "propose_routine_edit")!;
+
+    await expect(routineEdit.createTool({
+      workspaceId,
+      accountId,
+      operatorUserId,
+      copilotConversationId: "conversation-1",
+      currentAuthorization: { hasAllPermissions: authorization },
+      pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
+    }).invoke({ routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", changes: { name: "Returns intake" } }, {} as never)).rejects.toThrow(/authorization/i);
+
+    expect(draftEdit).toHaveBeenCalledOnce();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
   it("applies only pending proposals through their adapter, recording a stale result without a write", async () => {
     const repository = new MemoryProposalRepository();
     const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "outdated", evidence: null });
@@ -184,6 +290,7 @@ describe("US3 copilot proposals", () => {
       auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "new"), preview: vi.fn(), applyIfVersionMatches }],
     });
@@ -192,6 +299,57 @@ describe("US3 copilot proposals", () => {
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("stale");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "stale" }) }));
+  });
+
+  it("does not claim or mutate a pending proposal after current manage authority is revoked", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const audit = auditService();
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: audit,
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.apply_denied",
+      metadata: { proposalId: proposal.id, outcome: "authorization_denied" },
+    }));
+  });
+
+  it("releases the apply claim when authority is revoked after it is claimed", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false).mockResolvedValue(true) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(repository.hasApplyClaim(proposal.id)).toBe(false);
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+      .resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
+    expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
@@ -205,6 +363,7 @@ describe("US3 copilot proposals", () => {
       auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => { throw new Error("target unavailable"); }) }],
     });
@@ -226,6 +385,7 @@ describe("US3 copilot proposals", () => {
       auditService: auditService(),
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
     });
@@ -249,7 +409,7 @@ describe("US3 copilot proposals", () => {
           result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "I drafted it.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
         }),
       },
-      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [tool("propose_routine", "workspace.agents.manage")],
+      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [tool("propose_routine", "workspace.agents.manage")],
     });
 
     const events = [];
@@ -279,6 +439,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
+  private readonly claimedProposalIds = new Set<string>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const createdAt = new Date(); const conversation = { id: randomUUID(), ...input, status: "idle" as const, createdAt, updatedAt: createdAt }; this.conversations.push(conversation); return conversation; }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { return this.conversations.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
@@ -291,15 +452,17 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal) return null; const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; return next; }
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); return proposal?.status === "pending" ? proposal : null; }
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal || (input.requiresApplyClaim === true && !this.claimedProposalIds.has(proposal.id)) || (input.requiresApplyClaim !== true && this.claimedProposalIds.has(proposal.id))) return null; const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; this.claimedProposalIds.delete(proposal.id); return next; }
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (proposal?.status !== "pending" || this.claimedProposalIds.has(proposal.id)) return null; this.claimedProposalIds.add(proposal.id); return proposal; }
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> { const proposal = await this.findProposal(input); if (!proposal || !this.claimedProposalIds.delete(proposal.id)) return false; return true; }
+  hasApplyClaim(id: string): boolean { return this.claimedProposalIds.has(id); }
 }
 
 const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" || proposal.targetType === "routine" ? String((proposal.payload as { name?: unknown }).name ?? "Routine") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : proposal.targetType === "routine" ? "Draft routine" : "Draft setting change", status: proposal.status, reason: proposal.reason ?? null });
 
 describe("directive proposal adapter payload mapping", () => {
   it("strips draft-only presentation fields before calling directive management", async () => {
-    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
@@ -329,7 +492,7 @@ describe("directive proposal adapter payload mapping", () => {
 
 describe("routine proposal adapter", () => {
   it("keeps authored assist payload intact, creates a draft, and guards it against agent changes", async () => {
-    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const payload = routineDraftPayload();
     const draft = vi.fn(async () => ({ draft: payload, validation: { ok: false, diagnostics: [{ code: "missing_transition" }] } }));
     const createDraft = vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } }));
@@ -348,8 +511,14 @@ describe("routine proposal adapter", () => {
       payload: storedPayload,
       targetLabel: "Return intake",
       summary,
+      diagnostics: [{ code: "missing_transition" }],
     });
-    expect(await adapter.preview("workspace-1", targetRef, storedPayload)).toEqual({ targetLabel: "Return intake", current: null, proposed: payload });
+    const preview = await adapter.preview("workspace-1", targetRef, storedPayload) as { targetLabel: string; current: unknown; proposed: { steps: Record<string, { instruction: string }> } };
+    expect(preview.targetLabel).toBe("Return intake");
+    expect(preview.current).toBeNull();
+    // A new routine previews element by element too, so the card shows one row per step rather
+    // than one row holding the whole graph.
+    expect(preview.proposed.steps.step_collect_reason!.instruction).toBe("Ask for {{slot.reason}}.");
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, updatedAt.toISOString())).toEqual({
       outcome: "applied",
       appliedRef: { agentId: targetRef.agentId, routineId: "routine-1" },
@@ -359,6 +528,37 @@ describe("routine proposal adapter", () => {
     updatedAt.setTime(updatedAt.getTime() + 1);
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, new Date(0).toISOString())).toEqual({ outcome: "stale" });
     expect(createDraft).toHaveBeenCalledOnce();
+  });
+
+  it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const payload = routineDraftPayload();
+    const duplicated = {
+      ...payload,
+      slots: [...payload.slots, { ...payload.slots[0]!, stableSlotId: "slot_reason_copy", ordinal: 1 }],
+      steps: [...payload.steps, { ...payload.steps[0]!, instruction: "Ask a second time.", ordinal: 1 }],
+      terminals: [...payload.terminals, { ...payload.terminals[0]!, instruction: "A second ending.", ordinal: 2 }],
+    };
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: {} as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: {} as never,
+    });
+
+    const preview = await adapter.preview("workspace-1", {
+      agentId: "6a6a6a6a-1111-2222-3333-444444444444",
+      routineId: null,
+    }, duplicated) as {
+      proposed: {
+        slots: Record<string, unknown>;
+        steps: Record<string, unknown>;
+        terminals: Record<string, unknown>;
+      };
+    };
+
+    expect(Object.keys(preview.proposed.slots)).toEqual(["reason", "reason #1"]);
+    expect(Object.keys(preview.proposed.steps)).toEqual(["step_collect_reason", "step_collect_reason #1"]);
+    expect(Object.keys(preview.proposed.terminals)).toEqual(["terminal_complete", "terminal_complete #2"]);
   });
 });
 
@@ -459,7 +659,7 @@ describe("proposals carrying replay evidence", () => {
     return { descriptor, createProposal };
   };
 
-  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
+  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
   it("stores the measurement on the proposal and reports it to the operator", async () => {
     const { descriptor, createProposal } = harness();
@@ -498,5 +698,634 @@ describe("proposals carrying replay evidence", () => {
     await expect(descriptor.createTool(context).invoke({ intent: "State it", evidenceIds: [evidenceId] }, {} as never))
       .rejects.toThrow(/different agent/i);
     expect(createProposal).not.toHaveBeenCalled();
+  });
+});
+
+const storedRoutine = (overrides: Record<string, unknown> = {}) => ({
+  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  agentId,
+  lineageId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+  version: 1,
+  status: "draft",
+  name: "support-intake",
+  activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
+  slots: [],
+  steps: [
+    { stableStepId: "collect_topic", kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+    { stableStepId: "confirm", kind: "chat", instruction: "Confirm it.", toolRef: null, actionType: null, ordinal: 1, metadata: {} },
+  ],
+  transitions: [
+    { fromStep: "collect_topic", toRef: "confirm", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 },
+    { fromStep: "confirm", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 },
+  ],
+  terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thank them.", ordinal: 0 }],
+  createdAt: new Date("2026-08-01T10:00:00.000Z"),
+  updatedAt: new Date("2026-08-02T10:00:00.000Z"),
+  ...overrides,
+});
+
+/** A draft revision of the same lineage; a real one carries a routine id, so the fixture does too. */
+const pendingRevisionId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+const routineAdapterPorts = (routine = storedRoutine(), siblings: Array<ReturnType<typeof storedRoutine>> = []) => {
+  const current = { value: routine };
+  const lineage = { siblings };
+  return {
+    current,
+    lineage,
+    list: vi.fn(async () => [current.value, ...lineage.siblings]),
+    get: vi.fn(async () => current.value),
+    createDraft: vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } })),
+    deleteDraft: vi.fn(async () => {}),
+    updateDraft: vi.fn(async (_workspaceId: string, _agentId: string, _routineId: string, _input: unknown) => ({ routine: current.value, validation: { ok: true, diagnostics: [] } })),
+    // The real repository returns the lineage's existing draft when there is one, rather than a
+    // fresh copy of the published routine.
+    revise: vi.fn(async () => lineage.siblings.find((sibling) => sibling.status === "draft")
+      ?? { ...current.value, id: "revision-1", status: "draft", version: 2 }),
+    publish: vi.fn(async () => ({ routine: { ...current.value, id: "published-1", status: "published" }, validation: { ok: true, diagnostics: [] }, directiveScopeOrphans: [] })),
+    archive: vi.fn(async () => ({ ...current.value, status: "archived" })),
+    restore: vi.fn(async () => ({
+      routine: { ...current.value, status: "published" },
+      validation: { ok: true, diagnostics: [] },
+    })),
+    validate: vi.fn(async () => ({ ok: true, diagnostics: [] as Array<{ code: string; location: string; message: string }> })),
+  };
+};
+
+const routineAdapter = async (
+  ports: ReturnType<typeof routineAdapterPorts>,
+  logger = { warn: vi.fn() },
+) => {
+  const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+  return createRoutineCopilotProposalAdapter({
+    agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-01T10:00:00.000Z") })) } as never,
+    routineDraftAssistService: { draft: vi.fn() } as never,
+    routineDefinitionService: ports as never,
+    logger,
+  });
+};
+
+describe("routine edit and lifecycle proposal tools", () => {
+  const proposalTools = (adapter: Record<string, unknown>, createProposal = vi.fn(async (input: Record<string, unknown>) => ({
+    id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+  }))) => ({
+    createProposal,
+    descriptors: createRoutineProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "routine", ...adapter }],
+      auditService: auditService(),
+    } as never),
+  });
+
+  const toolContext = {
+    workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1",
+    currentAuthorization,
+    pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
+  };
+  const routineId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  it("targets the routine it edits and guards the edit against the routine it was drafted from", async () => {
+    const order: string[] = [];
+    const readVersionToken = vi.fn(async () => { order.push("token"); return "routine-version"; });
+    const draftEdit = vi.fn(async () => {
+      order.push("draft");
+      return { payload: { kind: "edit", name: "support-intake", changes: {} }, targetLabel: "support-intake", summary: "Edit routine support-intake: step confirm.", diagnostics: [] };
+    });
+    const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftLifecycle: vi.fn() });
+
+    const result = await descriptors.find((descriptor) => descriptor.name === "propose_routine_edit")!
+      .createTool(toolContext)
+      .invoke({ routineId, changes: { steps: [{ stableStepId: "confirm", instruction: "Read the order number back." }] } }, {} as never);
+
+    // The token must be read before the draft: a token taken afterwards could match a routine
+    // revised in between, and the edit would then be applied to content Ray never saw.
+    expect(order).toEqual(["token", "draft"]);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetType: "routine",
+      targetRef: { agentId, routineId },
+      versionToken: "routine-version",
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      targetType: "routine",
+      targetLabel: "support-intake",
+      validation: { ok: true, diagnostics: [] },
+    }));
+  });
+
+  it("refuses to draft an edit for a routine nobody named", async () => {
+    const draftEdit = vi.fn();
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(), draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftLifecycle: vi.fn() });
+
+    await expect(descriptors.find((descriptor) => descriptor.name === "propose_routine_edit")!
+      .createTool(toolContext)
+      .invoke({ changes: { name: "renamed" } }, {} as never)).rejects.toThrow(/routine/i);
+    expect(draftEdit).not.toHaveBeenCalled();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("proposes going live as its own card rather than folding it into a content edit", async () => {
+    const draftLifecycle = vi.fn(async () => ({ payload: { kind: "lifecycle", action: "publish", name: "support-intake" }, targetLabel: "support-intake", summary: "Publish routine support-intake.", diagnostics: [] }));
+    const { createProposal, descriptors } = proposalTools({ readVersionToken: vi.fn(async () => "routine-version"), draftLifecycle, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn() });
+
+    const tool = descriptors.find((descriptor) => descriptor.name === "propose_routine_lifecycle")!;
+    await tool.createTool(toolContext).invoke({ routineId, action: "publish" }, {} as never);
+
+    expect(tool.shape).toBe("propose");
+    expect(draftLifecycle).toHaveBeenCalledWith(workspaceId, { agentId, routineId }, "publish", undefined);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetRef: { agentId, routineId },
+      payload: { kind: "lifecycle", action: "publish", name: "support-intake" },
+    }));
+  });
+});
+
+describe("routine proposal adapter edits", () => {
+  const targetRef = { agentId, routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
+  const token = new Date("2026-08-02T10:00:00.000Z").toISOString();
+
+  it("guards an edit with the routine's own version, not the agent's", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+
+    expect(await adapter.readVersionToken(workspaceId, targetRef)).toBe(token);
+  });
+
+  it("edits a draft routine in place, changing only the step it names", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read the order number back." }] });
+
+    expect(draft.summary).toContain("step confirm");
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    const [, , updatedId, input] = ports.updateDraft.mock.calls[0] as unknown as [string, string, string, { steps: Array<{ stableStepId: string; instruction: string }> }];
+    expect(updatedId).toBe(targetRef.routineId);
+    expect(input.steps).toEqual([
+      expect.objectContaining({ stableStepId: "collect_topic", instruction: "Ask how we can help." }),
+      expect.objectContaining({ stableStepId: "confirm", instruction: "Read the order number back." }),
+    ]);
+    expect(ports.revise).not.toHaveBeenCalled();
+  });
+
+  it("revises a published routine into a draft and edits that, leaving the live version serving", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: "revision-1" },
+    });
+    expect(ports.revise).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
+    expect(ports.updateDraft.mock.calls[0]?.[2]).toBe("revision-1");
+  });
+
+  it("declines to write when the routine moved under the proposal", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    ports.current.value = storedRoutine({ updatedAt: new Date("2026-08-03T10:00:00.000Z") });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+    expect(ports.updateDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses an edit that would break the routine, and names what it would break", async () => {
+    const ports = routineAdapterPorts();
+    ports.validate
+      .mockResolvedValueOnce({ ok: true, diagnostics: [] })
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_slot_reference", location: "steps.confirm", message: "No such information field: order_number." }] });
+    const adapter = await routineAdapter(ports);
+
+    await expect(adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Confirm {{slot.order_number}}." }] }))
+      .rejects.toThrow(/order_number/);
+  });
+
+  it("lets a rename through when the routine already had a routine-level diagnostic", async () => {
+    // Routine-level diagnostics carry the routine's name in their location, so a rename moves them.
+    // Comparing raw locations read that as newly introduced and blocked the one edit that renames.
+    const ports = routineAdapterPorts();
+    ports.validate
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "routine:support-intake", message: "No ending is reachable." }] })
+      .mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "routine:support-intake-v2", message: "No ending is reachable." }] });
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    expect(draft.summary).toContain("name");
+  });
+
+  it("keeps an edit that leaves an existing diagnostic exactly as it found it", async () => {
+    const ports = routineAdapterPorts();
+    const existing = { ok: false, diagnostics: [{ code: "unreachable_step", location: "steps.confirm", message: "Nothing reaches confirm." }] };
+    ports.validate.mockResolvedValueOnce(existing).mockResolvedValueOnce(existing);
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    expect(draft.diagnostics).toEqual(existing.diagnostics);
+  });
+
+  it("previews an edit element by element so a reviewer sees the changed step", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+
+    const preview = await adapter.preview(workspaceId, targetRef, draft.payload) as {
+      targetLabel: string;
+      current: { steps: Record<string, { instruction: string }> };
+      proposed: { steps: Record<string, { instruction: string }> };
+    };
+
+    expect(preview.targetLabel).toBe("support-intake");
+    expect(preview.current.steps.confirm!.instruction).toBe("Confirm it.");
+    expect(preview.proposed.steps.confirm!.instruction).toBe("Read it back.");
+    expect(preview.proposed.steps.collect_topic).toEqual(preview.current.steps.collect_topic);
+  });
+
+  it("says so on the card when an edit no longer applies to the routine", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    ports.current.value = storedRoutine({ steps: [storedRoutine().steps[0]] });
+
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
+      targetLabel: "support-intake",
+      current: null,
+      proposed: { editNoLongerApplies: expect.stringContaining("confirm") },
+    });
+  });
+
+  it("sends the operator to the draft revision instead of editing the published version behind it", async () => {
+    // revise() hands back the lineage's existing draft rather than a fresh copy, so an edit
+    // computed against the published content would overwrite whatever that draft already changed.
+    const pending = storedRoutine({
+      id: pendingRevisionId, status: "draft", version: 2, name: "support-intake",
+      steps: [storedRoutine().steps[0]!, { ...storedRoutine().steps[1]!, instruction: "Half-finished wording." }],
+    });
+    const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "published" }), [pending]));
+
+    await expect(adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] }))
+      .rejects.toThrow(/draft revision/i);
+  });
+
+  it("edits through a revision nobody has touched rather than treating it as work in progress", async () => {
+    // Revising copies the published routine verbatim. A revision created and abandoned — including
+    // one left behind by a failed apply — is that copy, so refusing on its existence alone would
+    // strand the routine for every later edit.
+    const untouched = storedRoutine({ id: pendingRevisionId, status: "draft", version: 2 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [untouched]);
+    const adapter = await routineAdapter(ports);
+
+    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: pendingRevisionId },
+    });
+  });
+
+  it("declines to write when a draft revision appeared after the card was drafted", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { steps: [{ stableStepId: "confirm", instruction: "Read it back." }] });
+    ports.lineage.siblings = [storedRoutine({
+      id: pendingRevisionId, status: "draft", version: 2,
+      steps: [storedRoutine().steps[0]!, { ...storedRoutine().steps[1]!, instruction: "Someone else's wording." }],
+    })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+    expect(ports.updateDraft).not.toHaveBeenCalled();
+  });
+
+  it("states the version it decided against when it writes", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
+
+    expect(ports.updateDraft).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, expect.anything(), {
+      expectedUpdatedAt: ports.current.value.updatedAt,
+    });
+  });
+
+  it("leaves the revision alone when the edit it was created for fails", async () => {
+    // The revision is a verbatim copy of the published routine, so a failed edit leaves the same
+    // thing an author leaves by revising and walking away — and the next edit reuses it. Racing
+    // whoever else may hold that draft to clean it up costs more than the copy does.
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" });
+    ports.updateDraft.mockRejectedValueOnce(new Error("name already taken"));
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "name already taken",
+    });
+    expect(ports.deleteDraft).not.toHaveBeenCalled();
+  });
+
+  it("refuses to edit an archived routine instead of quietly failing at apply time", async () => {
+    const adapter = await routineAdapter(routineAdapterPorts(storedRoutine({ status: "archived" })));
+
+    await expect(adapter.draftEdit!(workspaceId, targetRef, { name: "support-intake-v2" })).rejects.toThrow(/archived/i);
+  });
+});
+
+describe("routine lifecycle proposal adapter", () => {
+  const targetRef = { agentId, routineId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" };
+  const token = new Date("2026-08-02T10:00:00.000Z").toISOString();
+
+  it("marks an archive proposal stale when the draft revision it disclosed changes, is replaced, or disappears", async () => {
+    const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
+    const adapter = await routineAdapter(ports);
+    const versionToken = await adapter.readVersionToken(workspaceId, targetRef);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId: "conversation-1",
+      targetType: "routine",
+      targetRef,
+      payload: draft.payload,
+      versionToken,
+      evidence: null,
+    });
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      currentAuthorization,
+      tools: [],
+      proposalAdapters: [adapter],
+    });
+
+    ports.lineage.siblings = [{
+      ...disclosed,
+      updatedAt: new Date("2026-08-04T10:00:00.000Z"),
+    }];
+
+    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
+      .toBe(false);
+
+    ports.lineage.siblings = [{ ...disclosed, id: randomUUID() }];
+    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
+      .toBe(false);
+
+    ports.lineage.siblings = [];
+    expect((await service.getProposal({ workspaceId, operatorUserId, proposalId: proposal.id }))?.currentVersionMatches)
+      .toBe(false);
+  });
+
+  it("publishes the draft and points the card at the version that went live", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+
+    expect(draft.summary).toContain("Publish");
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toEqual({
+      targetLabel: "support-intake",
+      current: { status: "draft" },
+      proposed: { status: "published" },
+    });
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: "published-1" },
+    });
+  });
+
+  it("publishes only the version the operator reviewed", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+
+    await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token);
+
+    expect(ports.publish).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, {
+      expectedUpdatedAt: ports.current.value.updatedAt,
+    });
+  });
+
+  it("says what archiving throws away, on the card and in the summary", async () => {
+    // Archiving deletes the lineage's in-progress draft. A card that previews only the status
+    // change would destroy unpublished work the operator never saw mentioned.
+    const pending = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [pending]);
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+
+    expect(draft.summary).toContain("draft revision");
+    expect(await adapter.preview(workspaceId, targetRef, draft.payload)).toMatchObject({
+      proposed: { status: "archived", discardsDraftRevision: expect.stringContaining("3") },
+    });
+  });
+
+  it("marks the proposal stale when the disclosed draft has been worked on since", async () => {
+    // The id stays the same while an operator edits the draft, so an id-only guard would archive
+    // on the strength of a description that no longer matches what would be thrown away.
+    const disclosed = storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 });
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }), [disclosed]);
+    const adapter = await routineAdapter(ports);
+    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3, updatedAt: new Date("2026-08-04T10:00:00.000Z") })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
+    expect(ports.archive).not.toHaveBeenCalled();
+  });
+
+  it("marks the proposal stale when a draft appeared that the card never disclosed", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const adapter = await routineAdapter(ports);
+    const proposalToken = await adapter.readVersionToken(workspaceId, targetRef);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "archive");
+    ports.lineage.siblings = [storedRoutine({ id: pendingRevisionId, status: "draft", version: 3 })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, proposalToken)).toEqual({ outcome: "stale" });
+    expect(ports.archive).not.toHaveBeenCalled();
+  });
+
+  it("will not draft a publish for a routine that would be rejected on publish", async () => {
+    const ports = routineAdapterPorts();
+    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] });
+    const adapter = await routineAdapter(ports);
+
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "publish")).rejects.toThrow(/No ending/);
+  });
+
+  it("reports a publish the service rejects as a failure carrying its diagnostics", async () => {
+    const ports = routineAdapterPorts();
+    ports.publish.mockResolvedValueOnce({ rejected: true, validation: { ok: false, diagnostics: [{ code: "missing_terminal", location: "terminals", message: "No ending." }] } } as never);
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: expect.stringContaining("No ending"),
+    });
+  });
+
+  it("will not restore a routine that has gone invalid while it was archived", async () => {
+    // Restore puts a routine back in front of customers without publish's gates, so a skill removed
+    // or a capability revoked during the archive would otherwise go live unchecked.
+    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
+    const adapter = await routineAdapter(ports);
+
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "restore")).rejects.toThrow(/billing\.lookup/);
+  });
+
+  it("stops a restore that went invalid between the card and the click", async () => {
+    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    ports.validate.mockResolvedValueOnce({ ok: false, diagnostics: [{ code: "unknown_skill", location: "step:confirm", message: "billing.lookup is not available to this agent." }] });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: expect.stringContaining("billing.lookup"),
+    });
+    expect(ports.restore).not.toHaveBeenCalled();
+  });
+
+  it("reports a lifecycle change that committed before its bookkeeping failed as applied", async () => {
+    // publish() commits the status change, then persists trigger embeddings, writes a lifecycle
+    // audit event, and re-validates. A throw from that tail would mark the card failed for a
+    // routine that is already live, and re-applying it fails the status precondition.
+    const ports = routineAdapterPorts();
+    const logger = { warn: vi.fn() };
+    const adapter = await routineAdapter(ports, logger);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    const { RoutineDefinitionLifecycleCommittedError } = await import("../../../src/modules/routines/public.js");
+    ports.publish.mockRejectedValueOnce(new RoutineDefinitionLifecycleCommittedError(
+      "publish",
+      targetRef.routineId,
+      new Error("trigger embedding provider is down"),
+    ));
+    // Publishing flips this row in place, so the row the card names is the one that went live.
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        err: expect.objectContaining({ message: "trigger embedding provider is down" }),
+        workspaceId,
+        agentId,
+        routineId: targetRef.routineId,
+        action: "publish",
+      },
+      "Routine lifecycle committed but follow-up work failed",
+    );
+  });
+
+  it("reports a write that refused before it committed as stale, not as somebody else's publish", async () => {
+    // A conflict means nothing happened. Reconciling it against the routine would let a publish
+    // another writer performed in the same moment be reported as this proposal's.
+    const { conflict } = await import("../../../src/shared/domain/errors.js");
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(conflict("Routine changed while it was being published"));
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({ outcome: "stale" });
+  });
+
+  it("does not credit another writer when publish loses the status-precondition race", async () => {
+    const { badRequest } = await import("../../../src/shared/domain/errors.js");
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(badRequest("Only draft routine definitions can be published"));
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "Only draft routine definitions can be published",
+    });
+  });
+
+  it("does not credit another writer when restore loses the status-precondition race", async () => {
+    const { badRequest } = await import("../../../src/shared/domain/errors.js");
+    const ports = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "restore");
+    ports.restore.mockRejectedValueOnce(badRequest("Only archived routine definitions can be restored"));
+    ports.current.value = storedRoutine({ status: "published" });
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "Only archived routine definitions can be restored",
+    });
+  });
+
+  it("does not read the version already live as this proposal having landed", async () => {
+    // Publishing a revision leaves the previous version published until the flip commits. Accepting
+    // any published member of the lineage would mark a failed publish applied and link the old one.
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(new Error("routine changed while it was being published"));
+    ports.lineage.siblings = [storedRoutine({ id: "previous-version", status: "published", version: 1 })];
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "routine changed while it was being published",
+    });
+  });
+
+  it("still fails when the lifecycle change never landed", async () => {
+    const ports = routineAdapterPorts();
+    const adapter = await routineAdapter(ports);
+    const draft = await adapter.draftLifecycle!(workspaceId, targetRef, "publish");
+    ports.publish.mockRejectedValueOnce(new Error("connection reset"));
+
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "failed",
+      reason: "connection reset",
+    });
+  });
+
+  it("refuses a lifecycle move the routine's status cannot take", async () => {
+    const adapter = await routineAdapter(routineAdapterPorts());
+
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "restore")).rejects.toThrow(/archived/i);
+    await expect(adapter.draftLifecycle!(workspaceId, targetRef, "archive")).rejects.toThrow(/published/i);
+  });
+
+  it("archives and restores through the service, keeping the card on the same routine", async () => {
+    const archivedPorts = routineAdapterPorts(storedRoutine({ status: "published" }));
+    const archiveAdapter = await routineAdapter(archivedPorts);
+    const archiveDraft = await archiveAdapter.draftLifecycle!(workspaceId, targetRef, "archive");
+
+    expect(await archiveAdapter.applyIfVersionMatches(workspaceId, targetRef, archiveDraft.payload, token)).toEqual({
+      outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    // The disclosed draft (none here) travels into the archive transaction, where a revision
+    // created since the card was drafted cannot slip past and be deleted unannounced.
+    expect(archivedPorts.archive).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId, { expectedDraftRevision: null });
+
+    const restorePorts = routineAdapterPorts(storedRoutine({ status: "archived" }));
+    const restoreAdapter = await routineAdapter(restorePorts);
+    const restoreDraft = await restoreAdapter.draftLifecycle!(workspaceId, targetRef, "restore");
+
+    expect(await restoreAdapter.applyIfVersionMatches(workspaceId, targetRef, restoreDraft.payload, token)).toEqual({
+      outcome: "applied", appliedRef: { agentId, routineId: targetRef.routineId },
+    });
+    expect(restorePorts.restore).toHaveBeenCalledWith(workspaceId, agentId, targetRef.routineId);
   });
 });

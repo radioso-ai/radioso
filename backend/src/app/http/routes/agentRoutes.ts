@@ -498,7 +498,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     },
   );
 
-  router.post("/:agentId/routines/:routineId/validate", workspaceSession, agentManage, async (req, res, next) => {
+  router.post("/:agentId/routines/:routineId/validate", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentRoutineParamsSchema.parse(req.params);
@@ -557,8 +557,15 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentRoutineParamsSchema.parse(req.params);
-      const routine = await dependencies.routineDefinitionService.restore(workspaceId, parsed.agentId, parsed.routineId);
-      res.status(200).json({ routine });
+      const result = await dependencies.routineDefinitionService.restore(workspaceId, parsed.agentId, parsed.routineId);
+      if ("rejected" in result) {
+        res.status(422).json({
+          error: "Routine definition is invalid",
+          validation: result.validation,
+        });
+        return;
+      }
+      res.status(200).json({ routine: result.routine });
     } catch (error) {
       next(error);
     }

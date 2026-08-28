@@ -16,6 +16,7 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
+  private readonly claimedProposalIds = new Set<string>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
     const timestamp = new Date();
@@ -104,17 +105,25 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
   }
 
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> {
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
-    if (!proposal || proposal.status !== "pending") return null;
+    if (!proposal || proposal.status !== "pending" || (input.requiresApplyClaim === true && !this.claimedProposalIds.has(proposal.id)) || (input.requiresApplyClaim !== true && this.claimedProposalIds.has(proposal.id))) return null;
     const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
+    this.claimedProposalIds.delete(proposal.id);
     return updated;
   }
 
   async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
-    return proposal?.status === "pending" ? proposal : null;
+    if (proposal?.status !== "pending" || this.claimedProposalIds.has(proposal.id)) return null;
+    this.claimedProposalIds.add(proposal.id);
+    return proposal;
+  }
+
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> {
+    const proposal = await this.findProposal(input);
+    return proposal?.status === "pending" ? this.claimedProposalIds.delete(proposal.id) : false;
   }
 
   private replaceStatus(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation {

@@ -6815,13 +6815,13 @@ describe("chat service streaming", () => {
       },
     } as const;
     const chatGateway: ChatGateway = {
-      async answer({ systemPrompt, query }) {
+      async answer({ systemPrompt, prompt, query }) {
         const answerText =
           query === "What about facilitator support?"
             ? "Facilitators should balance logistics and attendee care[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
-          if (systemPrompt.includes("Active subject:\nFacilitator support")) {
+          if (prompt.includes("Active subject:\nFacilitator support")) {
             return envelope(answerText, [
               { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
               { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },

@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
@@ -40,12 +41,16 @@ import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
 import { TurnFlowOverlay } from '@/components/dashboard/turn-flow-overlay'
 import { TestSessionsView } from '@/components/dashboard/workbench/test-sessions-view'
-import { cn } from '@/lib/utils'
 import {
   CompactIdField,
   TurnDiagnosticsPanel,
   type TurnDiagnosticsInput,
 } from '@/components/dashboard/turn-inspector/turn-diagnostics-panel'
+
+const MODE_OPTIONS: readonly SegmentedControlOption<'chat' | 'history'>[] = [
+  { value: 'chat', label: 'Chat' },
+  { value: 'history', label: 'History' },
+]
 
 export interface ChatWorkbenchProps {
   accountId: string
@@ -416,32 +421,20 @@ export function ChatWorkbench({
       {mode === 'chat' && conversationId ? (
         <CompactIdField label="Conversation" value={conversationId} />
       ) : null}
-      <div className="inline-flex items-center rounded-lg border border-input bg-input/30 p-0.5">
-        {(['chat', 'history'] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => {
-              if (value === 'history') {
-                closeInspector()
-              }
-              setMode(value)
-            }}
-            className={cn(
-              'rounded-md px-3 py-1 text-sm font-medium capitalize transition',
-              mode === value
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground',
-            )}
-          >
-            {value === 'chat' ? 'Chat' : 'History'}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        value={mode}
+        onValueChange={(value) => {
+          if (value === 'history') {
+            closeInspector()
+          }
+          setMode(value)
+        }}
+        options={MODE_OPTIONS}
+      />
       {mode === 'chat' ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" size="icon" variant="outline" aria-label="Chat options">
+            <Button type="button" size="icon" variant="ghost" aria-label="Chat options">
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -477,7 +470,7 @@ export function ChatWorkbench({
         </div>
       ) : null}
       <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
-        <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
+        <div className="flex items-end gap-1 rounded-2xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -485,7 +478,7 @@ export function ChatWorkbench({
             placeholder="Ask a question..."
             className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
           />
-          <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
+          <Button type="submit" size="icon" className="shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
             <Send className="w-4 h-4" />
             <span className="sr-only">Send message</span>
           </Button>

@@ -23,7 +23,15 @@ describe("operator copilot catalog coverage", () => {
   //               filed as an end-user surface alongside the public chat routes, which read as a
   //               boundary and would have let Wave 4 skip the serving controls it exists to give
   //               a runtime safety model.
-  const maxDeferredCatalogExclusions = 132;
+  //   132 -> 126  the routine authoring and lifecycle operations, covered by propose_routine_edit,
+  //               propose_routine_lifecycle, and validate_routine. deleteAgentRoutine stays
+  //               deferred on its own ground: edits address stable ids and cannot remove anything.
+  // 126 -> 133 when the complete live Eval route family was registered in the
+  // public contract. These are pre-existing dashboard operations, not new Ray
+  // backlog: only listEvalCases is represented by eval_results; the remaining
+  // creation, direct-edit, snapshot, and per-case-run surfaces stay explicitly
+  // deferred until their bounded Ray workflows exist.
+  const maxDeferredCatalogExclusions = 133;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -53,6 +61,23 @@ describe("operator copilot catalog coverage", () => {
       listAgents: "agent_configuration",
       listAgentDirectives: "agent_configuration",
       listAgentRoutines: "routine_definition",
+    });
+  });
+
+  it("maps routine authoring and lifecycle operations to the tools that reach them", () => {
+    expect(catalogCoverage).toMatchObject({
+      validateAgentRoutine: "validate_routine",
+      updateAgentRoutine: "propose_routine_edit",
+      publishAgentRoutine: "propose_routine_lifecycle",
+      reviseAgentRoutine: "propose_routine_edit",
+      archiveAgentRoutine: "propose_routine_lifecycle",
+      restoreAgentRoutine: "propose_routine_lifecycle",
+    });
+    // Editing addresses elements by stable id, so nothing Ray proposes can remove a routine or
+    // rework its graph. That is a scope boundary of the edit tool, not a Wave 2 backlog item.
+    expect(catalogCoverage.deleteAgentRoutine).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("stable id"),
     });
   });
 

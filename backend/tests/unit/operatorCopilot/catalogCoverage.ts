@@ -40,6 +40,7 @@ const catalogToolCoverage = {
   getEvalCaseBySourceMessage: "eval_results",
   getOrCreateEvalCaseBySourceMessage: "create_eval_case_from_turn",
   runEvalCases: "run_eval_suite",
+  listEvalCases: "eval_results",
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
   getAudiencePulse: "audience_topics",
@@ -54,6 +55,9 @@ const catalogToolCoverage = {
   createAssistantChatResponse: "test_agent_turn",
 } as const;
 
+const routineStructuralEditing = deferred(
+  "Deferred: Ray edits routines by stable id, which cannot add or remove a step, so deleting a routine and reworking its graph stay in the routine editor.",
+);
 const wave2BehaviorAuthoring = deferred("Deferred to Wave 2 behavior authoring: Ray will create operator-confirmed proposals, not edit live behavior directly.");
 const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document and source changes need their own bounded proposal flows.");
 // Ingestion settings become proposable in Wave 3. Only the embedding-model switch inside such a
@@ -198,6 +202,16 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "disableConnector",
     "syncConnector",
   ], wave5WorkspaceConfig),
+  ...coverage(["deleteAgentRoutine"], routineStructuralEditing),
+  ...coverage([
+    "createEvalSnapshot",
+    "getEvalSnapshot",
+    "createEvalCase",
+    "getEvalCase",
+    "renameEvalCase",
+    "replaceEvalCaseAssertions",
+    "createEvalCaseRun",
+  ], wave2BehaviorAuthoring),
   ...coverage([
     "createAgent",
     "updateAgent",
@@ -207,15 +221,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateAgentDirective",
     "deleteAgentDirective",
     "listAgentRoutineSkillCatalog",
-    "createAgentRoutine",
-    "updateAgentRoutine",
-    "deleteAgentRoutine",
     "draftAgentRoutineFromProcedure",
-    "validateAgentRoutine",
-    "publishAgentRoutine",
-    "reviseAgentRoutine",
-    "archiveAgentRoutine",
-    "restoreAgentRoutine",
     "uploadAgentAssistantLogo",
     "deleteAgentAssistantLogo",
     "setDefaultAgent",
@@ -321,13 +327,15 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentDirective: "propose_directive",
   updateAgent: "propose_agent_setting",
   createAgentRoutine: "propose_routine",
-  updateAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: routine proposals create drafts only; editing remains in the routine editor."),
-  draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: routine proposals create drafts only; drafting remains in the routine editor."),
-  validateAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: routine validation remains in the routine editor."),
-  publishAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: publishing remains in the routine editor."),
-  reviseAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: revision remains in the routine editor."),
-  archiveAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: lifecycle changes remain in the routine editor."),
-  restoreAgentRoutine: deferred("Deferred to Wave 2 behavior authoring: lifecycle changes remain in the routine editor."),
+  updateAgentRoutine: "propose_routine_edit",
+  draftAgentRoutineFromProcedure: deferred("Deferred to Wave 2 behavior authoring: Ray drafts new routines through propose_routine, which reaches this drafting pass through the service rather than the route."),
+  validateAgentRoutine: "validate_routine",
+  publishAgentRoutine: "propose_routine_lifecycle",
+  // Revision is how an edit to a published routine is applied: propose_routine_edit revises it
+  // into a draft rather than editing what is serving.
+  reviseAgentRoutine: "propose_routine_edit",
+  archiveAgentRoutine: "propose_routine_lifecycle",
+  restoreAgentRoutine: "propose_routine_lifecycle",
   getCopilotAvailability: copilotUiOnly,
   listCopilotConversations: copilotUiOnly,
   getCopilotConversation: copilotUiOnly,

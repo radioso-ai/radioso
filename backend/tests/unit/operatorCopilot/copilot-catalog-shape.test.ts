@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../src/modules/routines/public.js", () => ({
+vi.mock("../../../src/modules/routines/public.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../../src/modules/routines/public.js")>(),
   routineToPortableDocument: vi.fn(),
 }));
 
@@ -9,9 +10,22 @@ import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/too
 import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { createCopilotToolDescriptors } from "../../../src/modules/operatorCopilot/tools/index.js";
+import { assertCopilotCapabilityProvenance } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
+import { createOpenApiDocument } from "../../../src/app/http/openapi/openApiDocument.js";
+import { operationPermissionRequirements } from "../../../src/app/http/openapi/operationPermissionRequirements.js";
+import { agentCopilotPrimitives } from "../../../src/modules/agents/public.js";
+import { chatCopilotPrimitives } from "../../../src/modules/chat/public.js";
+import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
+import { embeddingProfileCopilotPrimitives } from "../../../src/modules/embeddingProfiles/public.js";
+import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
+import { routineCopilotPrimitives } from "../../../src/modules/routines/public.js";
+import { settingsCopilotPrimitives } from "../../../src/modules/settings/public.js";
 import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
+import { filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
+import { AccountAccessService } from "../../../src/modules/account/services/accountAccessService.js";
 import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/triage.js";
 import { buildDescriptors, dependencies } from "./copilot-tools-test-helpers.js";
+import { createAuditService, InMemoryAccountMembershipRepository } from "../../support/fakes.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -19,6 +33,16 @@ const context = {
   operatorUserId: "operator-1",
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
+
+const ownerExportedPrimitiveIds = new Set([
+  ...agentCopilotPrimitives,
+  ...chatCopilotPrimitives,
+  ...documentCopilotPrimitives,
+  ...embeddingProfileCopilotPrimitives,
+  ...evalCopilotPrimitives,
+  ...routineCopilotPrimitives,
+  ...settingsCopilotPrimitives,
+]);
 
 // These two exercise the REAL composition barrel rather than re-wiring the factories by hand.
 // The other suites build descriptors factory-by-factory, which means they wire dependencies
@@ -33,7 +57,7 @@ const realCatalog = () => {
   };
   return createCopilotToolDescriptors({
     agentService,
-    routineDefinitionService: { list: stub(), get: stub() },
+    routineDefinitionService: { list: stub(), get: stub(), validate: stub() },
     chatHistoryService: { getConversation: stub(), getConversationTurn: stub(), listConversations: stub() },
     documentSearchService: { search: stub() },
     documentStatusService: { summarize: stub() },
@@ -55,6 +79,39 @@ const realCatalog = () => {
 };
 
 describe("copilot catalog wiring", () => {
+  it("evaluates every production descriptor for every supported workspace role and each missing permission vector", () => {
+    const catalog = realCatalog();
+    const candidatePermissions = [...new Set(catalog.flatMap((descriptor) => descriptor.requiredPermissions))];
+    const access = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const rolePermissions = (['member', 'admin', 'owner'] as const)
+      .map((role) => access.permissionsForWorkspaceRole(role, candidatePermissions));
+
+    for (const permissions of Object.values(rolePermissions)) {
+      const visible = new Set(filterCopilotToolCatalog(catalog, permissions).map((descriptor) => descriptor.name));
+      for (const descriptor of catalog) {
+        expect(visible.has(descriptor.name)).toBe(descriptor.requiredPermissions.every((permission) => permissions.has(permission)));
+      }
+    }
+    for (const descriptor of catalog) {
+      for (const removed of descriptor.requiredPermissions) {
+        const grant = new Set(descriptor.requiredPermissions.filter((permission) => permission !== removed));
+        expect(filterCopilotToolCatalog([descriptor], grant)).toEqual([]);
+      }
+    }
+  });
+
+  it("gives every assembled production descriptor validated backing or reviewed Ray-only provenance", () => {
+    const operationIds = new Set(Object.values(createOpenApiDocument().paths ?? {})
+      .flatMap((path) => Object.values(path ?? {}))
+      .flatMap((operation) => operation && typeof operation === "object" && "operationId" in operation && typeof operation.operationId === "string"
+        ? [operation.operationId]
+        : []));
+
+    expect(() => assertCopilotCapabilityProvenance(
+      realCatalog(), operationIds, operationPermissionRequirements, ownerExportedPrimitiveIds,
+    )).not.toThrow();
+    expect(realCatalog().every((descriptor) => descriptor.capabilityProvenance)).toBe(true);
+  });
   it("contributes the agent-turn probe through the real composition barrel", () => {
     expect(realCatalog().find((descriptor) => descriptor.name === "test_agent_turn")).toMatchObject({
       shape: "probe",
@@ -121,6 +178,8 @@ describe("copilot catalog shape", () => {
     expect(dependencies().descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "agent_configuration", shape: "read" },
       { name: "routine_definition", shape: "read" },
+      // Validation is structural: no model budget, nothing persisted, safe to retry.
+      { name: "validate_routine", shape: "read" },
       { name: "conversation_transcript", shape: "read" },
       { name: "turn_trace", shape: "read" },
       { name: "conversation_history_search", shape: "read" },
@@ -132,7 +191,7 @@ describe("copilot catalog shape", () => {
     const agentService = { listExisting: vi.fn(), resolve: vi.fn() };
     const descriptors = [
       ...createAgentConfigurationCopilotTools({ agentService }),
-      ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn() } }),
+      ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn(), validate: vi.fn() } }),
       ...createChatCopilotTools({ chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() } }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ];

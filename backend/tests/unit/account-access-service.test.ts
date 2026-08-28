@@ -114,10 +114,53 @@ describe("AccountAccessService", () => {
 
       await expect(service.hasPermission({
         accountId: "account-1",
-        principal: { type: "workspace_api_token", role: "admin" },
+        principal: { type: "workspace_api_token", role: "admin", workspaceId: "workspace-1" },
         permission,
       })).resolves.toBe(false);
     }
+  });
+
+  it("binds workspace API tokens to their authenticated workspace", async () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const principal = {
+      type: "workspace_api_token" as const,
+      role: "admin" as const,
+      workspaceId: "workspace-a",
+      tokenId: "token-a",
+    };
+
+    await expect(service.requirePermission({
+      accountId: "account-1",
+      principal,
+      permission: "workspace.documents.manage",
+      workspaceId: "workspace-b",
+    })).rejects.toMatchObject({
+      statusCode: 403,
+      code: "forbidden",
+    });
+
+    await expect(service.requirePermission({
+      accountId: "account-1",
+      principal,
+      permission: "workspace.documents.manage",
+      workspaceId: "workspace-a",
+    })).resolves.toBeUndefined();
+  });
+
+  it("continues to authorize session users for another workspace in their account", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const service = new AccountAccessService(membershipRepository, createAuditService());
+    const user = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: user.id, role: "owner" });
+
+    await expect(service.requirePermission({
+      accountId: "account-1",
+      principal: { type: "session_user", userId: user.id },
+      permission: "workspace.documents.manage",
+      workspaceId: "workspace-b",
+    })).resolves.toBeUndefined();
   });
 
   it("resolves the preferred account membership for login", async () => {

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-26
+last_updated: 2026-08-28
 ---
 
 # Code Map
@@ -281,6 +281,22 @@ identity.
 Ray tools stay within the dashboard session surface; the standalone MCP server
 does not expose this catalog.
 
+Ray receives no authority of its own. The catalog uses the operator's current
+workspace permissions to decide what it may show, then checks those permissions
+again before an entity lookup, dynamic label, source read, proposal draft, tool
+invocation, or proposal application can produce protected data or a mutation.
+The triage digest checks each contributing source separately, so an unavailable
+source is marked `unauthorized` rather than being presented as empty.
+
+The assembled catalog carries a capability declaration for every descriptor.
+It names the public operation or owning-module application primitive behind the
+tool; a Ray-only composition also records why its bounded orchestration belongs
+to Ray. Catalog construction verifies those identities against the generated
+public contract and the owning-port registry. Proposal-specific optimistic
+guards remain Ray safety measures, while routine and other domain services keep
+their lifecycle and mutation authority. Reusing an internal service does not
+establish parity for the standalone MCP surface.
+
 Ray's behaviour is covered by its own eval suite, separate from the per-descriptor
 unit tests: one committed dataset scored at two fidelities. The deterministic
 fidelity replays each case's authored tool plan against the real catalog with a
@@ -327,7 +343,7 @@ Useful searches:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/operatorCopilot tests/unit/agent-turn-test-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/operatorCopilot`
 - `cd backend && pnpm run evals:copilot` — live Ray behaviour run (needs Postgres and
   `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`

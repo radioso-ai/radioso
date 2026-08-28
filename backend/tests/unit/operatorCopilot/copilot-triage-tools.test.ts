@@ -16,6 +16,10 @@ const context = (permissions: ReadonlySet<string> = ALL_PERMISSIONS, agentId: st
   accountId: "account-1",
   operatorUserId: "operator-1",
   permissions,
+  currentAuthorization: {
+    hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => permissions.has(permission)),
+  },
   pageContext: { view: "activity" as const, agentId, conversationId: null, selection: null, entities: [] },
 });
 
@@ -70,7 +74,7 @@ const dependencies = (overrides: Partial<WorkspaceTriageCopilotToolDependencies>
     summarizeWorkspace: vi.fn(async () => ({ documentCount: 0, readyDocumentCount: 0, pendingDocumentCount: 0, failedDocumentCount: 0 })),
     listByStatuses: vi.fn(async () => []),
   },
-  documentSourceStatusService: { listByWorkspaceIdWithDocumentCounts: vi.fn(async () => []) },
+  documentSourceStatusService: { summarizeSourcesForWorkspace: vi.fn(async () => ({ sources: [], documentsWithoutSourceCount: 0 })) },
   evalResultsService: { listWithLatestRun: vi.fn(async () => []) },
   workspaceRouteKeyResolver: { resolveWorkspaceKey: vi.fn(async () => "acme") },
   ...overrides,
@@ -187,6 +191,51 @@ describe("workspace_triage", () => {
     ]);
   });
 
+  it("reauthorizes each source instead of trusting the turn-start permission snapshot", async () => {
+    const listPending = vi.fn(async () => []);
+    const result = await digest(
+      dependencies({ pendingApprovals: { listPending } }),
+      {
+        ...context(ALL_PERMISSIONS),
+        currentAuthorization: {
+          hasAllPermissions: vi.fn(async ({ requiredPermissions }: { requiredPermissions: ReadonlyArray<string> }) =>
+            requiredPermissions[0] !== "workspace.conversation.takeover"),
+        },
+      },
+    );
+
+    expect(listPending).not.toHaveBeenCalled();
+    expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
+    expect(result.sources).toContainEqual({ source: "handoffs", status: "ok", total: 0, included: 0 });
+  });
+
+  it("drops a source read when its permission is revoked before the rows are emitted", async () => {
+    const listPending = vi.fn(async () => [{
+      conversationId: "conversation-approval",
+      agentId: "agent-1",
+      reason: "Refund over limit",
+      createdAt: new Date("2026-08-26T06:00:00.000Z"),
+    }]);
+    let approvalChecks = 0;
+    const result = await digest(
+      dependencies({ pendingApprovals: { listPending } }),
+      {
+        ...context(ALL_PERMISSIONS),
+        currentAuthorization: {
+          hasAllPermissions: vi.fn(async ({ requiredPermissions }: { requiredPermissions: ReadonlyArray<string> }) => {
+            if (requiredPermissions[0] !== "workspace.conversation.takeover") return false;
+            approvalChecks += 1;
+            return approvalChecks === 1;
+          }),
+        },
+      },
+    );
+
+    expect(listPending).toHaveBeenCalledOnce();
+    expect(result.items).toHaveLength(0);
+    expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
+  });
+
   it("drops a review line for a conversation an operator is already being asked to act on", async () => {
     const result = await digest(dependencies({
       pendingApprovals: {
@@ -253,10 +302,10 @@ describe("workspace_triage", () => {
         ]),
       },
       documentSourceStatusService: {
-        listByWorkspaceIdWithDocumentCounts: vi.fn(async () => [
+        summarizeSourcesForWorkspace: vi.fn(async () => ({ sources: [
           { id: "source-1", kind: "website", name: "Help centre", lastSyncStatus: "failure", lastSyncedAt: new Date("2026-08-26T03:00:00.000Z"), documentCount: 12 },
           { id: "source-2", kind: "website", name: "Blog", lastSyncStatus: "success", lastSyncedAt: new Date("2026-08-26T03:00:00.000Z"), documentCount: 4 },
-        ]),
+        ], documentsWithoutSourceCount: 0 })),
       },
     }));
 
@@ -323,14 +372,14 @@ describe("workspace_triage", () => {
         }))),
       },
       documentSourceStatusService: {
-        listByWorkspaceIdWithDocumentCounts: vi.fn(async () => overflowing((index) => ({
+        summarizeSourcesForWorkspace: vi.fn(async () => ({ sources: overflowing((index) => ({
           id: `source-${index}`,
           kind: "website",
           name: `Source ${index}`,
           lastSyncStatus: "failure",
           lastSyncedAt: new Date(`2026-08-26T03:${String(index).padStart(2, "0")}:00.000Z`),
           documentCount: 1,
-        }))),
+        })), documentsWithoutSourceCount: 0 })),
       },
     }));
 

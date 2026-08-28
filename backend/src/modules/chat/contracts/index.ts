@@ -30,6 +30,7 @@ export { appendConversationSummaryStage } from "../services/conversationSummaryT
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 export type { GroundingSummary, GroundingVerdict } from "../services/groundingAssertions.js";
 export type { ChatConversationDetail, ChatConversationTail } from "../services/chatHistoryService.js";
+export type { ProbeConversationReadPort } from "../services/probeConversationReader.js";
 export type { ChatActionSuggestionProvider } from "../services/actionSuggestions/chatActionSuggestionProvider.js";
 // The MCP converse HTTP surface holds these instances; composition builds them.
 export type { AgentConverseAudit } from "../services/agentConverseAudit.js";

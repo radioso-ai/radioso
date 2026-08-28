@@ -155,6 +155,10 @@ export const observeCopilotTurn = async (
     workspaceRouteKeyResolver: deps.workspaceRouteKeyResolver,
     prompt: deps.prompt,
     tools: deps.tools,
+    currentAuthorization: {
+      hasAllPermissions: async ({ requiredPermissions }) =>
+        requiredPermissions.every((permission) => evalCase.permissions.includes(permission)),
+    },
   });
 
   // History is seeded through the repository rather than passed to runTurn, because the bounded
@@ -367,7 +371,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       listByStatuses: async () => [{ id: "99999999-9999-4999-8999-999999999999", title: "Shipping rates", status: "failed", failureReason: "parser_timeout", updatedAt: evalDate("2026-08-25T12:00:00.000Z"), sourceId: null }],
     },
     documentSourceStatusService: {
-      listByWorkspaceIdWithDocumentCounts: async () => [{ id: "aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "website", name: "sunny.example", lastSyncStatus: "failed", lastSyncedAt: evalDate("2026-08-25T06:00:00.000Z"), documentCount: 8 }],
+      summarizeSourcesForWorkspace: async () => ({ sources: [{ id: "aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "website", name: "sunny.example", lastSyncStatus: "failed", lastSyncedAt: evalDate("2026-08-25T06:00:00.000Z"), documentCount: 8 }], documentsWithoutSourceCount: 0 }),
     },
     evalResultsService: {
       listWithLatestRun: async () => [{

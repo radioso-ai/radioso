@@ -23,7 +23,10 @@ export interface CopilotDocumentStatusPort {
   listByStatuses(workspaceId: string, statuses: ReadonlyArray<string>, input: { limit: number }): Promise<ReadonlyArray<{ id: string; title: string; status: string; failureReason?: string | null; updatedAt: Date; sourceId?: string | null }>>;
 }
 export interface CopilotDocumentSourceStatusPort {
-  listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<ReadonlyArray<{ id: string; kind: string; name: string; lastSyncStatus: string | null; lastSyncedAt: Date | null; documentCount: number }>>;
+  summarizeSourcesForWorkspace(workspaceId: string): Promise<{
+    sources: ReadonlyArray<{ id: string; kind: string; name: string; lastSyncStatus: string | null; lastSyncedAt: Date | null; documentCount: number }>;
+    documentsWithoutSourceCount: number;
+  }>;
 }
 export interface DocumentSearchCopilotToolDependencies { readonly documentSearchService: CopilotDocumentSearchPort; }
 export interface DocumentStatusCopilotToolDependencies { readonly documentStatusService: CopilotDocumentStatusPort; readonly documentSourceStatusService: CopilotDocumentSourceStatusPort; }
@@ -51,12 +54,12 @@ export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotTool
         const [summary, attention, sources] = await Promise.all([
           deps.documentStatusService.summarizeWorkspace(context.workspaceId),
           deps.documentStatusService.listByStatuses(context.workspaceId, documentAttentionStatuses, { limit: documentAttentionLimit }),
-          deps.documentSourceStatusService.listByWorkspaceIdWithDocumentCounts(context.workspaceId),
+          deps.documentSourceStatusService.summarizeSourcesForWorkspace(context.workspaceId),
         ]);
         return boundPayload({
           counts: { total: summary.documentCount, ready: summary.readyDocumentCount, pending: summary.pendingDocumentCount, failed: summary.failedDocumentCount },
           attention: attention.map((document) => ({ id: document.id, title: document.title, status: document.status, failureReason: document.failureReason ?? null, updatedAt: document.updatedAt.toISOString(), sourceId: document.sourceId ?? null })),
-          sources: sources.map((source) => ({ id: source.id, kind: source.kind, label: source.name, lastSyncStatus: source.lastSyncStatus, lastSyncedAt: source.lastSyncedAt ? source.lastSyncedAt.toISOString() : null, documentCount: source.documentCount })),
+          sources: sources.sources.map((source) => ({ id: source.id, kind: source.kind, label: source.name, lastSyncStatus: source.lastSyncStatus, lastSyncedAt: source.lastSyncedAt ? source.lastSyncedAt.toISOString() : null, documentCount: source.documentCount })),
         }) as z.infer<typeof documentStatusOutputSchema>;
       },
     }),

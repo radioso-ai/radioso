@@ -203,7 +203,7 @@ module.exports = {
       to: {
         path: "^src/modules/documents/[^/]+\\.ts$",
         pathNot: [
-          "^src/modules/documents/(composition|historySupport)\\.ts$",
+          "^src/modules/documents/(composition|historySupport|public)\\.ts$",
         ],
       },
     },
@@ -271,7 +271,7 @@ module.exports = {
       to: {
         path: "^src/modules/chat/[^/]+\\.ts$",
         pathNot: [
-          "^src/modules/chat/(composition|llmAdapters|retrievalSupport)\\.ts$",
+          "^src/modules/chat/(composition|llmAdapters|retrievalSupport|public)\\.ts$",
         ],
       },
     },
@@ -435,7 +435,7 @@ module.exports = {
       to: {
         path: "^src/modules/settings/[^/]+\\.ts$",
         pathNot: [
-          "^src/modules/settings/composition\\.ts$",
+          "^src/modules/settings/(composition|public)\\.ts$",
         ],
       },
     },

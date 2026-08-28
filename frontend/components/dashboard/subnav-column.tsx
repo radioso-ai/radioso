@@ -20,7 +20,6 @@ export type SubNavEntry = {
   active?: boolean
   /** On/off status dot (omit for entries without a toggle). */
   status?: boolean
-  danger?: boolean
   href?: string
   onClick?: () => void
 }
@@ -44,14 +43,14 @@ export function SectionNavBody({
   footer?: ReactNode
 }) {
   return (
-    <div className="ml-3.5 mt-0.5 space-y-1 border-l border-sidebar-border pl-2">
+    <div className="ml-5 mt-0.5 space-y-0.5">
       {header ? <div className="relative px-1 pb-1">{header}</div> : null}
 
       {groups.map((group, index) => (
         <SubNavGroupBlock key={group.label ?? `group-${index}`} group={group} isFirst={index === 0} />
       ))}
 
-      {footer ? <div className="pt-2">{footer}</div> : null}
+      {footer ? <div className="pt-1.5">{footer}</div> : null}
     </div>
   )
 }
@@ -72,7 +71,7 @@ function SubNavGroupBlock({ group, isFirst }: { group: SubNavGroup; isFirst: boo
 
   if (group.collapsible && group.label) {
     return (
-      <div className={cn(!isFirst && 'pt-2')}>
+      <div className={cn(!isFirst && 'pt-1.5')}>
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -88,7 +87,7 @@ function SubNavGroupBlock({ group, isFirst }: { group: SubNavGroup; isFirst: boo
   }
 
   return (
-    <div className={cn(!isFirst && 'pt-2')}>
+    <div className={cn(!isFirst && 'pt-1.5')}>
       {group.label ? (
         <p className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-sidebar-foreground/45">
           {group.label}
@@ -104,16 +103,14 @@ export function SubNavRow({ entry }: { entry: SubNavEntry }) {
     'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
     entry.active
       ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-      : entry.danger
-        ? 'text-destructive/80 hover:bg-destructive/10 hover:text-destructive'
-        : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+      : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
   )
   const inner = (
     <>
       <entry.icon
         className={cn(
           'h-4 w-4 shrink-0',
-          entry.active ? 'text-secondary' : entry.danger ? 'text-destructive/70' : 'text-sidebar-foreground/60',
+          entry.active ? 'text-secondary' : 'text-sidebar-foreground/60',
         )}
       />
       <span className="min-w-0 flex-1 truncate text-left">{entry.label}</span>

@@ -9,6 +9,7 @@ import {
   applySurface,
   applySurfaceMode,
   getSurfaceMode,
+  type SurfaceMode,
 } from '@/components/dashboard/settings/assistant-theme-form-helpers'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import {
@@ -24,9 +25,15 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
 import { Spinner } from '@/components/ui/spinner'
 import type { WebsiteEmbedThemeSettings } from '@/lib/api'
-import { cn } from '@/lib/utils'
+
+const SURFACE_MODE_OPTIONS: readonly SegmentedControlOption<SurfaceMode>[] = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'custom', label: 'Custom' },
+]
 
 export interface ChatLookCardProps {
   theme: WebsiteEmbedThemeSettings
@@ -89,32 +96,19 @@ export function ChatLookCard({
 
         <div className="space-y-2">
           <Label className="text-foreground">Surface style</Label>
-          <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
-            {(['light', 'dark', 'custom'] as const).map((surfaceOption) => {
-              const isActive = surfaceMode === surfaceOption
-              return (
-                <button
-                  key={surfaceOption}
-                  type="button"
-                  className={cn(
-                    'rounded-sm px-3 py-1 text-xs font-medium capitalize transition-colors',
-                    isActive ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                  )}
-                  onClick={() => {
-                    if (surfaceOption === 'custom') {
-                      if (surfaceMode !== 'custom') {
-                        onThemeChange((current) => applySurface(current, '#f6f7f9'))
-                      }
-                      return
-                    }
-                    onThemeChange((current) => applySurfaceMode(current, surfaceOption))
-                  }}
-                >
-                  {surfaceOption}
-                </button>
-              )
-            })}
-          </div>
+          <SegmentedControl
+            value={surfaceMode}
+            onValueChange={(surfaceOption) => {
+              if (surfaceOption === 'custom') {
+                if (surfaceMode !== 'custom') {
+                  onThemeChange((current) => applySurface(current, '#f6f7f9'))
+                }
+                return
+              }
+              onThemeChange((current) => applySurfaceMode(current, surfaceOption))
+            }}
+            options={SURFACE_MODE_OPTIONS}
+          />
           <p className="text-xs text-muted-foreground">
             Background of the message area. Pick Light or Dark for a sensible neutral, or Custom to choose any color.
           </p>

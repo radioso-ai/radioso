@@ -702,7 +702,7 @@ export function ChatMessageThread({
                       ) : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
-                        className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md border border-border bg-card px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${
+                        className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md bg-muted/60 px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${
                           selectedMessageId === message.id ? 'ring-1 ring-primary/60' : ''
                         } ${onMessageSelect ? 'cursor-pointer transition' : ''}`}
                         style={

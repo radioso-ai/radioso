@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Sparkles, X } from 'lucide-react'
 
 import { AssistantAvatar } from '@/components/chat/public-chat-bubble-view'
@@ -11,36 +11,25 @@ import type { DashboardRouteState } from '@/lib/dashboard-routes'
 import { RAY_AVATAR_URL, RAY_NAME } from '@/lib/ray'
 import { CopilotChatSurface } from './copilot-chat-surface'
 
-// The primary Ray affordance: a search-styled input at the top of the sidebar.
-// Submitting opens the panel and sends the question immediately (see askRay).
-export function AskRayInput() {
-  const { askRay } = useCopilotContext()
-  const [value, setValue] = useState('')
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    const question = value.trim()
-    if (!question) return
-    askRay(question)
-    setValue('')
-  }
+// The primary Ray affordance: a tab flush against the bottom-right viewport edge.
+// It is unmounted (not hidden) while the panel is open, so it never sits over the
+// panel or swallows clicks — the open panel carries its own close affordance.
+export function AskRayTag() {
+  const { panelOpen, openPanel } = useCopilotContext()
+  if (panelOpen) return null
   return (
-    <form
-      role="search"
-      onSubmit={submit}
-      className="flex h-9 items-center gap-2 rounded-md border border-border bg-background px-2.5 shadow-sm focus-within:ring-1 focus-within:ring-ring"
+    <button
+      type="button"
+      data-testid="ask-ray-tag"
+      aria-label="Ask Ray"
+      onClick={() => openPanel()}
+      className="fixed bottom-0 right-5 z-40 flex items-center gap-1.5 rounded-t-lg border border-b-0 border-border bg-sidebar px-3 py-1.5 text-sm text-foreground shadow-sm transition-[transform,background-color] hover:-translate-y-0.5 hover:bg-sidebar-accent"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={RAY_AVATAR_URL} alt="" aria-hidden="true" className="size-5 shrink-0 rounded-sm" />
-      <input
-        type="text"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Ask Ray"
-        aria-label="Ask a question for Ray"
-        className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-      />
+      <img src={RAY_AVATAR_URL} alt="" aria-hidden="true" className="size-4 shrink-0 rounded-sm" />
+      {RAY_NAME}
       <kbd className="hidden shrink-0 rounded border border-border px-1 py-0.5 text-[10px] text-muted-foreground sm:inline">⌘J</kbd>
-    </form>
+    </button>
   )
 }
 
@@ -96,7 +85,7 @@ export function CopilotPanel({
       aria-label={RAY_NAME}
       className="flex h-svh w-full min-w-0 shrink-0 flex-col overflow-hidden border-l border-border bg-background md:w-[min(32rem,40vw)]"
     >
-      <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border px-4 py-3">
+      <div className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border px-4">
         {/* Avatar is decorative here — the visible "Ray" text names the heading. */}
         <h2 className="flex items-center gap-2 text-sm font-semibold"><AssistantAvatar avatarUrl={RAY_AVATAR_URL} label="" className="size-6" />{RAY_NAME}</h2>
         <div className="flex items-center gap-1">

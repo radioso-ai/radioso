@@ -51,7 +51,7 @@
 */
 
 :root {
-  --background: #f9f9f7;
+  --background: #ffffff;
   --foreground: #142317;
   --card: #ffffff;
   --card-foreground: #142317;
@@ -78,13 +78,13 @@
   --chart-4: #142317;
   --chart-5: #f9f9f7;
   --radius: 0.5rem;
-  --sidebar: #ffffff;
+  --sidebar: #f9f9f7;
   --sidebar-foreground: #142317;
   --sidebar-primary: #5096e7;
   --sidebar-primary-foreground: #f9f9f7;
-  --sidebar-accent: #eef0f4;
+  --sidebar-accent: #e8eae8;
   --sidebar-accent-foreground: #142317;
-  --sidebar-border: #e8eae8;
+  --sidebar-border: #d4d8d4;
   --sidebar-ring: #5096e7;
 }
 
@@ -155,6 +155,7 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);

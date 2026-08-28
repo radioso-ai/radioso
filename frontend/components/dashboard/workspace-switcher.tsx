@@ -161,7 +161,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
           {/* The header brand doubles as the org/workspace picker — selection arrows on the title. */}
           <button
             type="button"
-            className="flex h-14 w-full items-center gap-2 px-4 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent"
+            className="flex h-full w-full items-center gap-2 px-4 text-left outline-none transition-colors hover:bg-sidebar-accent focus-visible:bg-sidebar-accent"
           >
             <Image
               src="/radioso-icon.svg"

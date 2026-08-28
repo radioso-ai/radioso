@@ -6,8 +6,14 @@ import { Database, Search } from 'lucide-react'
 import { retrievalSettingDocs } from '@/components/dashboard/settings/settings-docs'
 import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
 import { Input } from '@/components/ui/input'
+import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
 import { Spinner } from '@/components/ui/spinner'
 import type { AgentSourceScope, DocumentSourceListItem } from '@/lib/api'
+
+const SOURCE_SCOPE_OPTIONS: readonly SegmentedControlOption<AgentSourceScope['mode']>[] = [
+  { value: 'all', label: 'All sources' },
+  { value: 'selected', label: 'Selected sources' },
+]
 
 export function AssistantSourceScopeSelector({
   sourceScope,
@@ -51,31 +57,20 @@ export function AssistantSourceScopeSelector({
           tooltip={retrievalSettingDocs.sourceScope.details}
           className="max-w-xl"
         />
-        <div className="inline-flex rounded-md border border-border bg-muted/40 p-0.5" role="group">
-          <button
-            type="button"
-            className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-              sourceScope.mode === 'all' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() => onChange({ mode: 'all' })}
-          >
-            All sources
-          </button>
-          <button
-            type="button"
-            className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
-              sourceScope.mode === 'selected' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-            }`}
-            onClick={() =>
-              onChange({
-                mode: 'selected',
-                sourceIds: sourceScope.mode === 'selected' ? sourceScope.sourceIds : [],
-              })
+        <SegmentedControl
+          value={sourceScope.mode}
+          onValueChange={(mode) => {
+            if (mode === 'all') {
+              onChange({ mode: 'all' })
+              return
             }
-          >
-            Selected sources
-          </button>
-        </div>
+            onChange({
+              mode: 'selected',
+              sourceIds: sourceScope.mode === 'selected' ? sourceScope.sourceIds : [],
+            })
+          }}
+          options={SOURCE_SCOPE_OPTIONS}
+        />
       </div>
 
       {sourceScope.mode === 'selected' ? (

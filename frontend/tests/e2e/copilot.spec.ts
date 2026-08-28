@@ -203,15 +203,15 @@ test("summons Ray from Activity with ambient conversation context and links acti
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await expect(page.getByText("Why did this conversation route to retrieval?").first()).toBeVisible();
-  // Ask Ray straight from the sidebar input; one Enter opens the panel and sends.
-  const askRay = page.getByRole("textbox", { name: "Ask a question for Ray" });
-  await askRay.fill("Explain this conversation");
-  await askRay.press("Enter");
+  // The bottom-right tag is the entry point; the panel's own composer sends the question.
+  await page.getByTestId("ask-ray-tag").click();
   await expect(page.getByRole("heading", { name: "Ray", exact: true })).toBeVisible();
-  await expect(page.getByText("The conversation used retrieval.")).toBeVisible();
-  // The panel docks beside the activity list (non-modal), so both surfaces show this
-  // label — scope the answer's activity link to the Ray panel.
+  // The panel docks beside the activity list (non-modal), so both surfaces show the
+  // conversation label — scope the composer and the answer's activity link to the panel.
   const rayPanel = page.getByRole("complementary", { name: "Ray" });
+  await rayPanel.getByRole("textbox", { name: "Ask Ray" }).fill("Explain this conversation");
+  await rayPanel.getByRole("button", { name: "Send question" }).click();
+  await expect(page.getByText("The conversation used retrieval.")).toBeVisible();
   await expect(rayPanel.getByRole("button", { name: "Why did this conversation route to retrieval?" })).toBeVisible();
 });
 
@@ -246,7 +246,8 @@ test("asks Ray about selected dashboard text", async ({ page }) => {
   });
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByText(selectedText).first().selectText();
-  await page.getByRole("button", { name: "Ask Ray" }).click();
+  // The bottom-right tag exposes the same accessible name, so pick the popover's button.
+  await page.getByRole("button", { name: "Ask Ray" }).and(page.locator('button:not([data-testid="ask-ray-tag"])')).click();
   await expect(page.getByRole("textbox", { name: "Ask Ray" })).toHaveValue(new RegExp(selectedText));
   await page.getByRole("button", { name: "Send question" }).click();
   await expect.poll(() => selectionReceived).toBe(selectedText);

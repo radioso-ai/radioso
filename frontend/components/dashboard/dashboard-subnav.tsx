@@ -96,7 +96,6 @@ export function DashboardSubNav({
             icon: AGENT_FOOTER.icon,
             href: hrefFor(AGENT_FOOTER.id),
             active: activeSection === AGENT_FOOTER.id,
-            danger: true,
           }}
         />
       }
@@ -127,8 +126,8 @@ export function AgentSwitcher({
         type="button"
         onClick={() => onOpenChange(!open)}
         // The agents section's row IS the agent picker — styled like the active nav row
-        // (accent background + left bar) so it reads as "you are in Agents", not a box.
-        className="relative flex w-full items-center gap-2 rounded-md bg-sidebar-accent px-2 py-2 text-left text-sm font-medium text-sidebar-accent-foreground transition-colors before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-secondary before:content-['']"
+        // (accent background) so it reads as "you are in Agents", not a box.
+        className="relative flex w-full items-center gap-2 rounded-md bg-sidebar-accent px-2 py-1.5 text-left text-sm font-medium text-sidebar-accent-foreground transition-colors"
       >
         <Bot className="h-4 w-4 shrink-0 text-secondary" />
         <span className="min-w-0 flex-1 truncate">{agentName}</span>

@@ -128,3 +128,4 @@ export {
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
 } from "./authoredDirectives.js";
+export * from "./copilotPrimitiveRegistry.js";

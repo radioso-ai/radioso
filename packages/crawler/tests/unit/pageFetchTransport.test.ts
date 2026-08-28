@@ -15,6 +15,26 @@ afterEach(() => {
 });
 
 describe("page fetch transport", () => {
+  it("uses the caller-provided connection-bound fetch implementation", async () => {
+    const globalFetch = vi.fn();
+    const fetchImpl = vi.fn(async () => new Response("User-agent: *", {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    }));
+    vi.stubGlobal("fetch", globalFetch);
+
+    await expect(fetchText("https://example.com/robots.txt", { fetchImpl }))
+      .resolves.toEqual({
+        ok: true,
+        status: 200,
+        contentType: "text/plain",
+        body: "User-agent: *",
+      });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+
   it("retries an apex HTTPS URL on www when the presented certificate proves that host", async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(certificateHostnameError("DNS:www.example.com"))

@@ -21,6 +21,7 @@ const context = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
 

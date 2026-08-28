@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createAgentSkillCopilotProposalAdapter,
   createContextVariableCopilotProposalAdapter,
-} from "../../../src/app/composition/copilotProposalAdapters.js";
+} from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { AgentSkillsService } from "../../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../../src/modules/skills/public.js";
 import { badRequest, conflict, notFound } from "../../../src/shared/domain/errors.js";

@@ -9,7 +9,7 @@ import {
   type AgentInput,
   type AuthoredDirective,
   type AuthoredDirectiveInput,
-} from "../../modules/agents/public.js";
+} from "../agents/public.js";
 import {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
@@ -21,14 +21,14 @@ import {
   type RoutineDefinitionService,
   type RoutineDraftAssistService,
   type RoutineValidationDiagnostic,
-} from "../../modules/routines/public.js";
+} from "../routines/public.js";
 import {
   AgentSkillsService,
   mergeSkillConfig,
   type AgentSkillInvocationMode,
   type AgentSkillView,
-} from "../../modules/agentSkills/public.js";
-import { skillCapabilityIds, type SkillCapabilityDescriptor, type SkillCapabilityId, type SkillCapabilityRegistry } from "../../modules/skills/public.js";
+} from "../agentSkills/public.js";
+import { skillCapabilityIds, type SkillCapabilityDescriptor, type SkillCapabilityId, type SkillCapabilityRegistry } from "../skills/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
@@ -36,8 +36,8 @@ import type {
   CopilotDirectiveProposalAdapter,
   CopilotRoutineLifecycleAction,
   CopilotRoutineProposalAdapter,
-} from "../../modules/operatorCopilot/public.js";
-import type { ContextVariable, AgentContextVariableEnablement } from "../../modules/context-variables/public.js";
+} from "./contracts.js";
+import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
 import { badRequest, conflict, notFound, AppError } from "../../shared/domain/errors.js";
 

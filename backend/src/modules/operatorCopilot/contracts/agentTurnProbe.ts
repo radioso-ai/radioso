@@ -5,6 +5,8 @@ import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
 } from "../../chat/contracts/index.js";
+import type { ProbeConversationReadPort } from "../../chat/contracts/index.js";
+import type { ProbeRoutineReadPort } from "../../routines/public.js";
 
 export interface CopilotAgentTurnProbeInput {
   workspaceId: string;
@@ -59,28 +61,13 @@ export interface AgentTurnProbeRunnerPort {
   run(input: AgentTurnProbeRunnerInput): Promise<CopilotAgentTurnProbeResult>;
 }
 
-export interface AgentTurnProbeConversationReader {
-  findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{
-    workspaceId: string;
-    agentId: string | null;
-    sourceChannel: string | null;
-    sourceOrigin: string | null;
-  } | null>;
-}
-
 export interface AgentTurnProbeAgentReader {
-  findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<unknown | null>;
-}
-
-export interface AgentTurnProbeRoutineReader {
-  findById(agentId: string, routineId: string): Promise<{
-    status: "draft" | "published" | "superseded" | "archived";
-  } | null>;
+  findAgentForProbe(agentId: string, workspaceId: string): Promise<unknown | null>;
 }
 
 export interface AgentTurnProbeServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
-  conversationReader: AgentTurnProbeConversationReader;
+  conversationReader: ProbeConversationReadPort;
   agentReader: AgentTurnProbeAgentReader;
-  routineReader: AgentTurnProbeRoutineReader;
+  routineReader: ProbeRoutineReadPort;
   turnRunner: AgentTurnProbeRunnerPort;
 }

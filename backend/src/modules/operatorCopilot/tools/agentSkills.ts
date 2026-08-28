@@ -11,6 +11,7 @@ import type {
 } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
 import { boundPayload } from "../payloadCompaction.js";
+import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   citedEvidenceSchema,
   citedProposalEvidence,
@@ -180,8 +181,12 @@ export const createAgentSkillConfigProposalCopilotTools = (
         invoke: async ({ agentId, skillId, name, capability, target, config, invocationMode, enabled, rationale, evidenceIds }) => {
           const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
           const targetRef = { agentId: resolvedAgentId, skillId: skillId ?? null };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const validated = await skillAdapter.validatePayload(context.workspaceId, targetRef, { name, capability, target, config, invocationMode, enabled, rationale });
           const validatedPayload = validated.payload as { name: string; capability: string; invocationMode: string; config: unknown; enabled: boolean; rationale?: string };
+          // validatePayload is the version-token source (see CopilotAgentSkillProposalAdapter's doc
+          // comment): no follow-up readVersionToken call here.
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, resolvedAgentId, evidenceIds, {
             targetType: "agent_skill",
             skillSettingsKey: skillSettingsEvidenceKey(validatedPayload.capability, validatedPayload.invocationMode),
@@ -190,6 +195,7 @@ export const createAgentSkillConfigProposalCopilotTools = (
             // enablement lives outside `settings` in the replay envelope, so config alone never sees it.
             enabled: validatedPayload.enabled,
           });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

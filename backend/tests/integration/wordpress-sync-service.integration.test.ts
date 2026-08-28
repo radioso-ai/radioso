@@ -53,6 +53,10 @@ describeIntegration("wordpressSyncService (Postgres)", () => {
     db: database.kysely,
     state,
     ingestion,
+    publicHttp: {
+      assertPublicUrl: async () => undefined,
+      fetch: vi.fn<typeof fetch>(),
+    },
     // No HTTP: backfill is exercised via the skip path and the lock helpers directly.
     buildClient: () => {
       throw new Error("buildClient should not be called in these tests");

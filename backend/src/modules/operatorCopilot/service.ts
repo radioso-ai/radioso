@@ -6,6 +6,7 @@ import {
   copilotProposalTargetTypes,
   type CopilotPageContext,
   type CopilotEntityReference,
+  type CopilotCurrentAuthorizationPort,
   type CopilotAuditPort,
   type CopilotProposal,
   type CopilotProposalAdapter,
@@ -18,7 +19,7 @@ import {
   type CopilotWorkspaceRouteKeyResolver,
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
-import { hasAllCopilotToolPermissions } from "./catalog.js";
+import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
 import { buildCopilotNeverListContext } from "./neverList.js";
 
 const COPILOT_BUDGETS = AGENT_BUDGET_DEFAULTS;
@@ -97,6 +98,8 @@ export interface CopilotRepositoryPort {
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
   updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;
   claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null>;
+  /** Clears only the exact claim this attempt was handed, after a pre-mutation denial. A claim already superseded by a later reclaim is left alone. */
+  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean>;
 }
 
 export interface OperatorCopilotServiceDeps {
@@ -107,6 +110,8 @@ export interface OperatorCopilotServiceDeps {
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly prompt: string;
   readonly tools: ReadonlyArray<CopilotToolDescriptor>;
+  /** Existing workspace authorization is mandatory for every protected Ray hook. */
+  readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   readonly proposalAdapters?: ReadonlyArray<CopilotProposalAdapter>;
   readonly now?: () => Date;
 }
@@ -143,6 +148,7 @@ export class OperatorCopilotService {
   }
 
   async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
+    await this.requireProposalAuthorization(input);
     const claim = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
     if (!claim) {
       const existing = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -153,8 +159,22 @@ export class OperatorCopilotService {
     const claimGuard: CopilotProposalApplyClaimGuard = { state: "held", claimedAt };
     let result: Awaited<ReturnType<CopilotProposalAdapter["applyIfVersionMatches"]>>;
     try {
+      // Claiming is Ray bookkeeping, not authority. Reauthorize immediately
+      // before the owning service receives the domain mutation.
+      await this.requireProposalAuthorization(input);
       result = await this.adapterFor(proposal.targetType).applyIfVersionMatches(input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken);
-    } catch {
+    } catch (error) {
+      if (error instanceof CopilotAuthorizationError) {
+        // The authorization check is intentionally after the claim. Leaving that bookkeeping
+        // claim set would make an otherwise pending proposal impossible to apply or dismiss.
+        await this.deps.repository.releaseProposalApplyClaim({
+          id: proposal.id,
+          workspaceId: input.workspaceId,
+          operatorUserId: input.operatorUserId,
+          claimedAt,
+        });
+        throw error;
+      }
       await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", claimGuard);
       return { status: "failed" };
     }
@@ -269,13 +289,20 @@ export class OperatorCopilotService {
     input: { workspaceId: string; accountId: string; operatorUserId: string; permissions?: ReadonlySet<string>; pageContext: CopilotPageContext },
   ): Promise<CopilotEntityReference | null> {
     try {
-      const described = await descriptor?.describeEntity?.(toolInput, {
+      if (!descriptor) return null;
+      const context = {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         operatorUserId: input.operatorUserId,
         permissions: input.permissions,
+        currentAuthorization: this.deps.currentAuthorization,
         pageContext: input.pageContext,
-      });
+      };
+      if (!(await hasCurrentCopilotToolPermissions(descriptor, context))) return null;
+      const described = await descriptor.describeEntity?.(toolInput, context);
+      // Activity labels are descriptor-derived protected data just like a tool resolution.
+      // A revoked entitlement must degrade to no label rather than emitting a stale name/id.
+      if (descriptor.describeEntity && !(await hasCurrentCopilotToolPermissions(descriptor, context))) return null;
       if (!described) return null;
       if (!("kind" in described)) return described;
       return described.kind === "resolved" ? described.entity : null;
@@ -300,7 +327,7 @@ export class OperatorCopilotService {
   private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, labels: ReadonlyMap<string, string>): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
-      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, pageContext: input.pageContext }) as AgentTool);
+      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool);
   }
 
   private async buildPriorTranscript(conversationId: string): Promise<string | null> {
@@ -335,6 +362,22 @@ export class OperatorCopilotService {
     const adapter = this.deps.proposalAdapters?.find((candidate) => candidate.targetType === targetType);
     if (!adapter) throw new Error(`No copilot proposal adapter registered for ${targetType}`);
     return adapter;
+  }
+
+  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string }): Promise<boolean> {
+    return this.deps.currentAuthorization.hasAllPermissions({ ...input, requiredPermissions: ["workspace.agents.manage"] });
+  }
+
+  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<void> {
+    if (await this.canManageProposal(input)) return;
+    await this.deps.auditService.record({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "copilot.proposal.apply_denied",
+      eventStatus: "failure",
+      metadata: { proposalId: input.proposalId, outcome: "authorization_denied" },
+    });
+    throw new CopilotAuthorizationError();
   }
 
   private async requirePendingProposal(input: { workspaceId: string; operatorUserId: string; proposalId: string }): Promise<CopilotProposal> {
@@ -399,3 +442,4 @@ const titleFor = (message: string): string => message.slice(0, TITLE_MAX_LENGTH)
 
 export class CopilotConflictError extends Error {}
 export class CopilotNotFoundError extends Error {}
+export class CopilotAuthorizationError extends Error {}

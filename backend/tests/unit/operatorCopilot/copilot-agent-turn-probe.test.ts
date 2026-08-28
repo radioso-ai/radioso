@@ -20,6 +20,10 @@ const invocationContext = (permissions: ReadonlySet<string>) => ({
   operatorUserId: "operator-1",
   copilotConversationId: "copilot-conversation-1",
   permissions,
+  currentAuthorization: {
+    hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>
+      requiredPermissions.every((permission) => permissions.has(permission)),
+  },
   pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
 });
 

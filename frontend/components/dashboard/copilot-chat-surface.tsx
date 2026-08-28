@@ -517,7 +517,7 @@ export function CopilotChatSurface({
     }
   }
 
-  // Auto-send questions queued from the sidebar "Ask Ray" input. Only the panel
+  // Auto-send questions queued on the copilot context via askRay. Only the panel
   // surface consumes them, and consumePendingQuestion clears the queue atomically,
   // so exactly one turn is sent even if the effect re-runs. The ref keeps the
   // latest handleSubmit closure without retriggering the effect.

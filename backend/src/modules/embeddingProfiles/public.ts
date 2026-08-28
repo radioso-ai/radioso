@@ -131,3 +131,4 @@ export {
   type EmbeddingProfileVectorCapabilities,
   type EmbeddingProfileVectorCapabilitiesPort,
 } from "./services/embeddingProfileReadinessService.js";
+export * from "./copilotPrimitiveRegistry.js";

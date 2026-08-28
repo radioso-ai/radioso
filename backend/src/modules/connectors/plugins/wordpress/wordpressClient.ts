@@ -5,6 +5,8 @@
  * standard X-WP-TotalPages response header.
  */
 
+import { fetchPublicUrl } from "../../../../shared/infra/http/publicUrlFetch.js";
+
 /**
  * Maps a WordPress post-type slug to its REST API base (`rest_base`).
  *
@@ -31,8 +33,10 @@ export interface WordpressClientConfig {
   siteUrl: string;
   username?: string;
   applicationPassword?: string;
-  /** Override for testing. Defaults to global fetch. */
+  /** Override for testing. Defaults to the connection-bound public HTTP transport. */
   fetchImpl?: typeof fetch;
+  assertPublicUrl?: (url: string) => Promise<void>;
+  maxRedirects?: number;
 }
 
 export interface WordpressRestPost {
@@ -75,10 +79,14 @@ export class WordpressClient {
   private readonly baseUrl: string;
   private readonly authHeader: string | null;
   private readonly fetchImpl: typeof fetch;
+  private readonly assertPublicUrl?: (url: string) => Promise<void>;
+  private readonly maxRedirects: number;
 
   constructor(config: WordpressClientConfig) {
     this.baseUrl = config.siteUrl.replace(/\/+$/, "");
-    this.fetchImpl = config.fetchImpl ?? fetch;
+    this.fetchImpl = config.fetchImpl ?? fetchPublicUrl;
+    this.assertPublicUrl = config.assertPublicUrl;
+    this.maxRedirects = config.maxRedirects ?? 3;
     this.authHeader =
       config.username && config.applicationPassword
         ? `Basic ${Buffer.from(`${config.username}:${config.applicationPassword}`).toString("base64")}`
@@ -103,9 +111,7 @@ export class WordpressClient {
 
   async fetchPostsPage(options: FetchPostsOptions): Promise<FetchPostsResult> {
     const url = this.buildPostsUrl(options);
-    const response = await this.fetchImpl(url, {
-      headers: this.authHeader ? { Authorization: this.authHeader, Accept: "application/json" } : { Accept: "application/json" },
-    });
+    const { response, finalUrl } = await this.request(url);
 
     if (response.status === 400 && options.page > 1) {
       // WP returns 400 "rest_post_invalid_page_number" past last page.
@@ -118,7 +124,7 @@ export class WordpressClient {
       return { posts: [], totalPages: 0 };
     }
     if (!response.ok) {
-      throw new Error(`WordPress REST returned ${response.status} ${response.statusText} for ${url}`);
+      throw new Error(`WordPress REST returned ${response.status} ${response.statusText} for ${finalUrl}`);
     }
 
     const posts = (await response.json()) as WordpressRestPost[];
@@ -129,13 +135,38 @@ export class WordpressClient {
 
   async fetchPostById(type: string, postId: number): Promise<WordpressRestPost | null> {
     const url = `${this.baseUrl}/wp-json/wp/v2/${encodeURIComponent(restBaseFor(type))}/${postId}?_fields=${encodeURIComponent(POST_FIELDS)}&_embed=author`;
-    const response = await this.fetchImpl(url, {
-      headers: this.authHeader ? { Authorization: this.authHeader, Accept: "application/json" } : { Accept: "application/json" },
-    });
+    const { response, finalUrl } = await this.request(url);
     if (response.status === 404) return null;
     if (!response.ok) {
-      throw new Error(`WordPress REST returned ${response.status} ${response.statusText} for ${url}`);
+      throw new Error(`WordPress REST returned ${response.status} ${response.statusText} for ${finalUrl}`);
     }
     return (await response.json()) as WordpressRestPost;
+  }
+
+  private async request(url: string): Promise<{ response: Response; finalUrl: string }> {
+    const credentialOrigin = new URL(this.baseUrl).origin;
+    let currentUrl = url;
+
+    for (let hop = 0; hop <= this.maxRedirects; hop += 1) {
+      await this.assertPublicUrl?.(currentUrl);
+      const headers: Record<string, string> = { Accept: "application/json" };
+      if (this.authHeader && new URL(currentUrl).origin === credentialOrigin) {
+        headers.Authorization = this.authHeader;
+      }
+      const response = await this.fetchImpl(currentUrl, { headers, redirect: "manual" });
+      if (response.status < 300 || response.status >= 400) {
+        return { response, finalUrl: currentUrl };
+      }
+      const location = response.headers.get("location");
+      if (!location) {
+        throw new Error(`WordPress redirect (${response.status}) had no location`);
+      }
+      if (hop === this.maxRedirects) {
+        break;
+      }
+      currentUrl = new URL(location, currentUrl).toString();
+    }
+
+    throw new Error(`WordPress REST exceeded ${this.maxRedirects} redirects`);
   }
 }

@@ -14,6 +14,7 @@ import type {
   CopilotToolDescriptor,
 } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
+import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   describeNamedAgent,
   entity,
@@ -362,12 +363,16 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, intent, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: null };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await routineAdapter.draft(context.workspaceId, targetRef, intent);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           // A create names no row of its own to read a version from - the adapter needs the
           // drafted name to check the one thing that actually determines whether Apply would
           // still succeed (see the comment on createRoutineVersionToken).
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef, draft.payload);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "routine" });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
@@ -404,7 +409,9 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: requiredRoutine(routineId) };
           // The guard token is read before the draft: a token read afterwards could describe a
           // routine revised in between, and the edit would then apply to content Ray never saw.
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await routineAdapter.draftEdit(context.workspaceId, targetRef, changes, rationale);
           return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
         },
@@ -423,7 +430,9 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, routineId, action, rationale, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: requiredRoutine(routineId) };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const draft = await routineAdapter.draftLifecycle(context.workspaceId, targetRef, action, rationale);
           return proposeRoutineChange(deps, routineAdapter, context, targetRef, draft, versionToken, evidenceIds);
         },
@@ -454,7 +463,9 @@ const proposeRoutineChange = async (
   versionToken: string,
   evidenceIds: ReadonlyArray<string> | undefined,
 ) => {
+  await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
   const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "routine" });
+  await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
   const proposal = await deps.proposalRepository.createProposal({
     workspaceId: context.workspaceId,
     operatorUserId: context.operatorUserId,

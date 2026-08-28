@@ -1,6 +1,7 @@
 import type { ApplicationModule, ApplicationRouteMount } from "../applicationModule.js";
 import { createAgentWizardRoutes } from "../../../modules/agentWizard/routes.js";
 import { AgentWizardService } from "../../../modules/agentWizard/service.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 export const createAgentWizardApplicationModule = (): ApplicationModule => ({
   id: "radioso-agent-wizard",
@@ -21,6 +22,7 @@ export const createAgentWizardApplicationModule = (): ApplicationModule => ({
         assertPublicWebsiteUrl: dependencies.assertPublicWebsiteUrl,
         crawlerLimits: dependencies.websiteCrawlerLimits,
         auditService: dependencies.auditService,
+        fetchImpl: fetchPublicUrl,
       });
 
       return createAgentWizardRoutes(dependencies, service);

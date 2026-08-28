@@ -11,6 +11,7 @@ import type {
 } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
 import { boundPayload } from "../payloadCompaction.js";
+import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   citedEvidenceSchema,
   citedProposalEvidence,
@@ -184,11 +185,16 @@ export const createContextVariableProposalCopilotTools = (
         invoke: async ({ agentId, variableId, name, description: variableDescription, valueType, trustTier, sensitivity, defaultSurfacing, enablement, rationale, evidenceIds }) => {
           const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
           const targetRef = { agentId: resolvedAgentId, variableId: variableId ?? null };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const validated = await adapter.validatePayload(context.workspaceId, targetRef, {
             name, description: variableDescription, valueType, trustTier, sensitivity, defaultSurfacing, enablement, rationale,
           });
           const validatedPayload = validated.payload as { name: string; rationale?: string };
+          // validatePayload is the version-token source (see CopilotContextVariableProposalAdapter's
+          // doc comment): no follow-up readVersionToken call here.
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, resolvedAgentId, evidenceIds, { targetType: "context_variable" });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

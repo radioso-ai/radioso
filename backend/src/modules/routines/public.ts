@@ -45,6 +45,7 @@ export {
   type RoutineFieldPatch,
 } from "./authoringEdit.js";
 export { RoutineTriggerEmbeddingService, type RoutineTriggerEmbeddingStore } from "./routineTriggerEmbeddingService.js";
+export { ProbeRoutineReader, type ProbeRoutineReadPort } from "./probeRoutineReader.js";
 export {
   createRoutineActivationPrefilter,
   type RoutineActivationPrefilterDependencies,
@@ -108,3 +109,4 @@ export {
   type RoutineDraftAssistServiceOptions,
   type RoutineDraftAssistTextGenerationPort,
 } from "./assist.js";
+export * from "./copilotPrimitiveRegistry.js";

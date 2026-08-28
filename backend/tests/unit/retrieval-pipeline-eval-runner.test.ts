@@ -32,12 +32,13 @@ const pipelineResult = () => {
 };
 
 const buildRunner = () => {
-  const captured: { systemPrompt?: string } = {};
+  const captured: { prompt?: string; systemPrompt?: string } = {};
   const pipeline = { run: async () => pipelineResult() } as unknown as ConstructorParameters<
     typeof RetrievalPipelineEvalRunner
   >[0];
   const chatGateway = {
-    answer: async (input: { systemPrompt: string }) => {
+    answer: async (input: { prompt: string; systemPrompt: string }) => {
+      captured.prompt = input.prompt;
       captured.systemPrompt = input.systemPrompt;
       return "Refunds are processed within five business days.";
     },
@@ -62,7 +63,7 @@ const buildRunner = () => {
 };
 
 describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
-  it("injects the frozen conversation summary into the composed grounded system prompt", async () => {
+  it("injects the frozen conversation summary as untrusted conversation data", async () => {
     const { runner, captured } = buildRunner();
 
     await runner.answer({
@@ -73,7 +74,32 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
       conversationSummary: SUMMARY,
     });
 
-    expect(captured.systemPrompt).toContain(SUMMARY);
+    expect(captured.systemPrompt).not.toContain(SUMMARY);
+    expect(captured.prompt).toContain(SUMMARY);
+  });
+
+  it("bounds recent history repeated alongside a frozen summary", async () => {
+    const { runner, captured } = buildRunner();
+    const unboundedTurn = `history-marker-${"x".repeat(250_000)}`;
+
+    await runner.answer({
+      workspaceId: "ws-1",
+      runId: "run-1",
+      query: "How long do refunds take?",
+      history: [{
+        id: "message-1",
+        conversationId: "conversation-1",
+        workspaceId: "ws-1",
+        role: "user",
+        content: unboundedTurn,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      }],
+      conversationSummary: SUMMARY,
+    });
+
+    expect(captured.prompt).toContain("history-marker-");
+    expect(captured.prompt).not.toContain(unboundedTurn);
+    expect(captured.prompt?.length).toBeLessThan(5_000);
   });
 
   it("adds no summary section when the run carries none", async () => {

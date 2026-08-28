@@ -42,6 +42,68 @@ describe("openapi contract", () => {
     });
   });
 
+  it("publishes the complete discriminated Eval assertion contract", () => {
+    const schemas = createOpenApiDocument().components?.schemas ?? {};
+    const assertions = schemas.EvalAssertion as {
+      oneOf?: Array<{
+        properties?: Record<string, unknown>;
+        required?: string[];
+      }>;
+    } | undefined;
+
+    expect(assertions?.oneOf).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          type: { type: "string", enum: ["retrieval_top_k_includes_document"] },
+          documentId: { type: "string", format: "uuid" },
+          k: { type: "integer", minimum: 1, maximum: 100 },
+        }),
+        required: expect.arrayContaining(["type", "documentId", "k"]),
+      }),
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          type: { type: "string", enum: ["llm_judge"] },
+          expectedAnswer: { type: "string", minLength: 1, maxLength: 8000 },
+        }),
+        required: expect.arrayContaining(["type", "expectedAnswer"]),
+      }),
+    ]));
+  });
+
+  it("documents every live workspace Eval route with a distinct operation", () => {
+    const paths = createOpenApiDocument().paths ?? {};
+    const expectedOperations = {
+      "/api/v1/evals/snapshots": { post: "createEvalSnapshot" },
+      "/api/v1/evals/snapshots/{id}": { get: "getEvalSnapshot" },
+      "/api/v1/evals/cases": { post: "createEvalCase", get: "listEvalCases" },
+      "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
+        get: "getEvalCaseBySourceMessage",
+        put: "getOrCreateEvalCaseBySourceMessage",
+      },
+      "/api/v1/evals/cases/{id}": {
+        get: "getEvalCase",
+        patch: "renameEvalCase",
+        delete: "deleteEvalCase",
+      },
+      "/api/v1/evals/cases/{id}/assertions": { put: "replaceEvalCaseAssertions" },
+      "/api/v1/evals/cases/{id}/runs": { post: "createEvalCaseRun" },
+      "/api/v1/evals/cases/run": { post: "runEvalCases" },
+      "/api/v1/evals/runs": { post: "createEvalRun" },
+    } as const;
+
+    for (const [path, methods] of Object.entries(expectedOperations)) {
+      for (const [method, operationId] of Object.entries(methods)) {
+        const operation = paths[path]?.[method as keyof typeof paths[string]];
+        expect(operation).toMatchObject({
+          operationId,
+          security: expect.arrayContaining([{ bearerAuth: [] }]),
+        });
+        expect(operation?.responses).toHaveProperty("401");
+        expect(operation?.responses).toHaveProperty("403");
+      }
+    }
+  });
+
   it("documents structured Quality closure and message-scoped Eval convenience", () => {
     const document = createOpenApiDocument();
     const paths = document.paths ?? {};

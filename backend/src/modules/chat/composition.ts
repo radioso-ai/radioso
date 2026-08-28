@@ -174,6 +174,7 @@ export {
 } from "./services/actions/drainTriggeringActionOutbox.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
+export { ProbeConversationReader } from "./services/probeConversationReader.js";
 // Audience Pulse receives conversation history only through this Chat-owned read port.
 export { PostgresAudiencePulseHistorySource } from "./audiencePulseHistorySource.js";
 export { ConversationForkService } from "./services/conversationForkService.js";

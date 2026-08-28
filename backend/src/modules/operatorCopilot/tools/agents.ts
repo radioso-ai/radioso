@@ -13,6 +13,7 @@ import type {
   CopilotToolDescriptor,
 } from "../contracts.js";
 import type { CopilotRepositoryPort } from "../service.js";
+import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { boundPayload } from "../payloadCompaction.js";
 import {
   describeNamedAgent,
@@ -299,8 +300,18 @@ export const createAgentSettingProposalCopilotTools = (
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, settingKey, value, rationale, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const validated = await settingAdapter.validatePayload(context.workspaceId, targetRef, { value, ...(rationale ? { rationale } : {}) });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          // validatePayload is the version-token source (see its doc comment): the persisted
+          // proposal below still uses validated.versionToken, not this read's return value, or a
+          // later read could pair a payload expansion built from this state with a fresher token
+          // and let a concurrent edit slip past the apply-time version check undetected. The call
+          // stays only as a revocation-recheck boundary matching every other proposal tool's shape.
+          await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "agent_setting", settingKey, value: validated.payload && typeof validated.payload === "object" ? (validated.payload as { value?: unknown }).value : value });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,

@@ -22,3 +22,4 @@ export {
   type AgentSkillUpdateRecord,
 } from "./repository.js";
 export { mergeSkillConfig } from "./configMerge.js";
+export * from "./copilotPrimitiveRegistry.js";

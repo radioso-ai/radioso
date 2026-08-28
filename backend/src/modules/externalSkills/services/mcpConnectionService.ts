@@ -1,5 +1,6 @@
 import { AppError, badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import {
   buildAuthorizationUrl,
@@ -85,7 +86,7 @@ export interface McpConnectionServiceOptions {
 
 /** Adapt Node's global fetch to the narrow {@link FetchLike} the OAuth client expects. */
 const globalFetchAdapter: FetchLike = async (url, init) => {
-  const response = await fetch(url, {
+  const response = await fetchPublicUrl(url, {
     method: init.method,
     headers: init.headers,
     body: init.body,

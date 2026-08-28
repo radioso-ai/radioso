@@ -132,6 +132,16 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     return { proposal, claimedAt };
   }
 
+  /** Clears only the exact claim `claimProposalApply` handed to this attempt, mirroring the real repository's fencing. */
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending") return false;
+    const claimedAt = this.applyClaims.get(proposal.id);
+    if (!claimedAt || claimedAt.getTime() !== input.claimedAt.getTime()) return false;
+    this.applyClaims.delete(proposal.id);
+    return true;
+  }
+
   private isClaimFree(proposalId: string, claimTtlSeconds: number): boolean {
     const claimedAt = this.applyClaims.get(proposalId);
     return !claimedAt || Date.now() - claimedAt.getTime() >= claimTtlSeconds * 1000;

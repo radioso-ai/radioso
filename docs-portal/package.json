@@ -39,6 +39,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.1",
     "eslint-config-next": "16.2.6",
+    "firebase-tools": "15.28.2",
     "postcss": "^8.5.18",
     "serve": "^14.2.4",
     "tailwindcss": "^4.1.16",

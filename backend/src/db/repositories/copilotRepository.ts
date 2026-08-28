@@ -97,4 +97,23 @@ export class CopilotRepository implements CopilotRepositoryPort {
       .executeTakeFirst();
     return row ? { proposal: mapProposal(row), claimedAt } : null;
   }
+
+  /**
+   * Clears only the exact claim `claimProposalApply` handed to this attempt, after a
+   * pre-mutation authorization denial. Fenced the same way `updateProposalOutcome`'s `held`
+   * guard is: a claim already superseded by a later TTL reclaim no longer matches, so a
+   * crashed writer's late release cannot clear an unrelated, currently active claim.
+   */
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+    const row = await this.db.updateTable("copilot_proposals")
+      .set({ apply_started_at: null, updated_at: new Date() })
+      .where("id", "=", input.id)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("operator_user_id", "=", input.operatorUserId)
+      .where("status", "=", "pending")
+      .where("apply_started_at", "=", input.claimedAt)
+      .returning("id")
+      .executeTakeFirst();
+    return Boolean(row);
+  }
 }

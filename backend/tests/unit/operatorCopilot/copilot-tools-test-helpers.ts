@@ -16,10 +16,15 @@ export const pageContext = (agentId: string | null) => ({
   entities: [],
 });
 
+/** Always-authorized stand-in for CopilotCurrentAuthorizationPort; tests exercising a denial
+ * build their own context rather than override this shared fixture. */
+export const alwaysAuthorized = () => ({ hasAllPermissions: vi.fn(async () => true) });
+
 export const context = (agentId: string | null) => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  currentAuthorization: alwaysAuthorized(),
   pageContext: pageContext(agentId),
 });
 
@@ -143,6 +148,7 @@ export const documentSkillsContext = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  currentAuthorization: alwaysAuthorized(),
   pageContext: { view: "documents" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
 
@@ -269,7 +275,10 @@ export const buildDescriptors = (
       listByStatuses: documents.listByStatuses,
     },
     documentSourceStatusService: {
-      listByWorkspaceIdWithDocumentCounts: documents.listByWorkspaceIdWithDocumentCounts,
+      summarizeSourcesForWorkspace: async () => ({
+        sources: await documents.listByWorkspaceIdWithDocumentCounts(),
+        documentsWithoutSourceCount: 0,
+      }),
     },
   }),
   ...createAgentSkillsCopilotTools({

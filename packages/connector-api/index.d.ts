@@ -16,6 +16,7 @@ export type {
   ConnectorIngestionPort,
   ConnectorLogger,
   ConnectorPlugin,
+  ConnectorPublicHttpPort,
   ConnectorSourceDescriptor,
   ConnectorStatePort,
   ConnectorSummary,

@@ -26,6 +26,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       type: "source_scope",
       help: "Choose whether this retrieve skill can search all sources or only selected sources.",
       group: "Scope",
+      showValueToCopilot: true,
     },
     {
       key: "instruction",
@@ -92,6 +93,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "Always boost or filter results by document metadata — for example, only keep documents whose language is English.",
       group: "Retrieval tuning",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "queryRewriteEnabled",

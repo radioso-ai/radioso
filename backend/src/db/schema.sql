@@ -396,33 +396,6 @@ END;
 $$;
 
 
---
--- Name: touch_agent_skills_watermark_on_delete(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.touch_agent_skills_watermark_on_delete() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-  -- Skip when the owning agent is already gone within this same transaction (an agent delete
-  -- cascading into its skills): agent_skills_watermarks has the same ON DELETE CASCADE FK to
-  -- agents, so the watermark row is being removed right along with it, and inserting here would
-  -- both be pointless and risk a foreign key violation against an agents row this transaction
-  -- already deleted.
-  IF NOT EXISTS (SELECT 1 FROM agents WHERE id = OLD.agent_id) THEN
-    RETURN OLD;
-  END IF;
-
-  INSERT INTO agent_skills_watermarks (agent_id, workspace_id, updated_at)
-  VALUES (OLD.agent_id, OLD.workspace_id, clock_timestamp())
-  ON CONFLICT (agent_id) DO UPDATE
-    SET updated_at = GREATEST(agent_skills_watermarks.updated_at, EXCLUDED.updated_at);
-
-  RETURN OLD;
-END;
-$$;
-
-
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -603,17 +576,6 @@ CREATE TABLE public.agent_skills (
     CONSTRAINT agent_skills_config_target_check CHECK (((jsonb_typeof(config) = 'object'::text) AND ((target_type IS NULL) OR (NULLIF(btrim(target_type), ''::text) IS NOT NULL)) AND ((target_id IS NULL) OR (NULLIF(btrim(target_id), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_skills_invocation_mode_check CHECK ((invocation_mode = ANY (ARRAY['default_answer'::text, 'routine_named'::text, 'agent_selectable'::text]))),
     CONSTRAINT agent_skills_kind_check CHECK ((kind = ANY (ARRAY['external_mcp'::text, 'customer_email'::text, 'webhook'::text, 'slack'::text, 'retrieve'::text, 'notify'::text])))
-);
-
-
---
--- Name: agent_skills_watermarks; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.agent_skills_watermarks (
-    agent_id uuid NOT NULL,
-    workspace_id uuid NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -3305,14 +3267,6 @@ ALTER TABLE ONLY public.agent_skills
 
 
 --
--- Name: agent_skills_watermarks agent_skills_watermarks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_skills_watermarks
-    ADD CONSTRAINT agent_skills_watermarks_pkey PRIMARY KEY (agent_id);
-
-
---
 -- Name: agents agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5635,13 +5589,6 @@ CREATE INDEX idx_agent_skills_target ON public.agent_skills USING btree (workspa
 
 
 --
--- Name: idx_agent_skills_watermarks_workspace; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_agent_skills_watermarks_workspace ON public.agent_skills_watermarks USING btree (workspace_id);
-
-
---
 -- Name: idx_agent_skills_workspace; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7637,13 +7584,6 @@ CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind
 
 
 --
--- Name: agent_skills trg_agent_skills_watermark_on_delete; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_agent_skills_watermark_on_delete AFTER DELETE ON public.agent_skills FOR EACH ROW EXECUTE FUNCTION public.touch_agent_skills_watermark_on_delete();
-
-
---
 -- Name: chunks trg_chunks_temporal_dates; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7779,22 +7719,6 @@ ALTER TABLE ONLY public.agent_document_sources
 
 ALTER TABLE ONLY public.agent_skills
     ADD CONSTRAINT agent_skills_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
-
-
---
--- Name: agent_skills_watermarks agent_skills_watermarks_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_skills_watermarks
-    ADD CONSTRAINT agent_skills_watermarks_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
-
-
---
--- Name: agent_skills_watermarks agent_skills_watermarks_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.agent_skills_watermarks
-    ADD CONSTRAINT agent_skills_watermarks_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

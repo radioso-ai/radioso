@@ -173,49 +173,119 @@ describe("proposal evidence staleness window", () => {
     expect(evidence?.cases[0]).toMatchObject({ stale: false });
   });
 
-  it("marks a measurement stale when a skill changed after the capture even though the agents row did not", async () => {
+  it("marks an agent_skill measurement stale when the live skill's config has drifted from what the case's snapshot captured", async () => {
     // agents.updated_at never moves when a skill is created, edited, or removed (agent_skills is a
     // sibling table), so the agent row alone under-reports how current the captured configuration
-    // is — a skill edited right after capture must still date the measurement.
+    // is — an agent_skill proposal instead compares the live skill directly against what the
+    // cited case's snapshot captured.
     const captured = new Date("2026-08-20T10:00:00.000Z");
-    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const skillOverride = { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } };
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured, overrides: skillOverride })]);
     const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
-    const latestUpdatedAt = vi.fn(async () => new Date("2026-08-21T09:00:00.000Z"));
+    const getDefaultAnswerSkill = vi.fn(async () => ({ enabled: true, config: { vectorTopK: 999 } }));
+    const findCase = vi.fn(async () => ({ snapshotDefaultAnswerSkill: { enabled: true, settings: { vectorTopK: 20 } } }));
 
     const evidence = await resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get }, agentSkillsVersion: { latestUpdatedAt } } as never,
-      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
+      {
+        evidence: { record: vi.fn(), findMany },
+        agentVersion: { get },
+        agentSkillConfig: { getDefaultAnswerSkill },
+        cases: { findCase },
+      } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+        change: { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+      },
     );
 
-    expect(latestUpdatedAt).toHaveBeenCalledWith(ids.workspace, ids.agent);
+    expect(getDefaultAnswerSkill).toHaveBeenCalledWith(ids.workspace, ids.agent);
+    expect(findCase).toHaveBeenCalledWith(ids.workspace, ids.case);
     expect(evidence?.cases[0]).toMatchObject({ stale: true });
   });
 
-  it("keeps a measurement fresh when no skill has changed since the capture either", async () => {
+  it("keeps an agent_skill measurement fresh when the live skill still matches what the case's snapshot captured", async () => {
     const captured = new Date("2026-08-20T10:00:00.000Z");
-    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const skillOverride = { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } };
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured, overrides: skillOverride })]);
     const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
-    const latestUpdatedAt = vi.fn(async () => new Date("2026-08-19T08:00:00.000Z"));
+    const getDefaultAnswerSkill = vi.fn(async () => ({ enabled: true, config: { vectorTopK: 20 } }));
+    const findCase = vi.fn(async () => ({ snapshotDefaultAnswerSkill: { enabled: true, settings: { vectorTopK: 20 } } }));
 
     const evidence = await resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get }, agentSkillsVersion: { latestUpdatedAt } } as never,
-      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
+      {
+        evidence: { record: vi.fn(), findMany },
+        agentVersion: { get },
+        agentSkillConfig: { getDefaultAnswerSkill },
+        cases: { findCase },
+      } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+        change: { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+      },
     );
 
     expect(evidence?.cases[0]).toMatchObject({ stale: false });
   });
 
-  it("keeps a measurement fresh when the agent has no skills at all", async () => {
+  it("marks an agent_skill measurement stale when the skill has been deleted since the case's snapshot was captured", async () => {
+    // A missing skill has nothing left to vouch for the measurement with, regardless of what the
+    // snapshot captured.
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const skillOverride = { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } };
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured, overrides: skillOverride })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
+    const getDefaultAnswerSkill = vi.fn(async () => null);
+    const findCase = vi.fn(async () => ({ snapshotDefaultAnswerSkill: { enabled: true, settings: { vectorTopK: 40 } } }));
+
+    const evidence = await resolveProposalEvidence(
+      {
+        evidence: { record: vi.fn(), findMany },
+        agentVersion: { get },
+        agentSkillConfig: { getDefaultAnswerSkill },
+        cases: { findCase },
+      } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+        change: { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+      },
+    );
+
+    expect(evidence?.cases[0]).toMatchObject({ stale: true });
+  });
+
+  it("does not consult the skill dependencies for a non-agent_skill proposal even when both are wired", async () => {
+    // The direct skill-config comparison only applies to agent_skill proposals; every other
+    // proposal type's staleness stays purely agents.updated_at-vs-baselineCapturedAt.
     const captured = new Date("2026-08-20T10:00:00.000Z");
     const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
     const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
-    const latestUpdatedAt = vi.fn(async () => null);
+    const getDefaultAnswerSkill = vi.fn(async () => null); // would force stale if it were consulted
+    const findCase = vi.fn();
 
     const evidence = await resolveProposalEvidence(
-      { evidence: { record: vi.fn(), findMany }, agentVersion: { get }, agentSkillsVersion: { latestUpdatedAt } } as never,
+      {
+        evidence: { record: vi.fn(), findMany },
+        agentVersion: { get },
+        agentSkillConfig: { getDefaultAnswerSkill },
+        cases: { findCase },
+      } as never,
       { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
     );
 
+    expect(getDefaultAnswerSkill).not.toHaveBeenCalled();
+    expect(findCase).not.toHaveBeenCalled();
     expect(evidence?.cases[0]).toMatchObject({ stale: false });
   });
 });

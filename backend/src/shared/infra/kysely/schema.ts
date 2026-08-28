@@ -162,12 +162,6 @@ export interface AgentSkills {
   workspace_id: string;
 }
 
-export interface AgentSkillsWatermarks {
-  agent_id: string;
-  updated_at: Generated<Timestamp>;
-  workspace_id: string;
-}
-
 export interface AssistantAnswerFeedback {
   account_id: string | null;
   actor_id: string;
@@ -1237,7 +1231,6 @@ export interface DB {
   agent_directives: AgentDirectives;
   agent_document_sources: AgentDocumentSources;
   agent_skills: AgentSkills;
-  agent_skills_watermarks: AgentSkillsWatermarks;
   agents: Agents;
   assistant_answer_feedback: AssistantAnswerFeedback;
   assistant_answer_triage: AssistantAnswerTriage;

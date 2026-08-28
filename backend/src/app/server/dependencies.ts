@@ -464,10 +464,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
-  // A skill edit persists through agent_skills, a table agents.updated_at never reflects, so
-  // evidence freshness needs this as a second signal alongside copilotAgentVersion.
-  const copilotAgentSkillsVersion = {
-    latestUpdatedAt: (workspaceId: string, agentId: string) => agentSkillRepository.latestUpdatedAt(workspaceId, agentId),
+  // Shared by the replay service (dates a run's baseline) and proposal-evidence resolution (reads
+  // an agent_skill proposal's captured baseline skill config) — both need the case's frozen
+  // snapshot, never the live agent.
+  const copilotEvalCaseReader = {
+    findCase: (workspaceId: string, caseId: string) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId),
+  };
+  // The live counterpart copilotEvalCaseReader's captured snapshot is compared against: an
+  // agent_skill proposal's evidence is stale when this drifts from what a cited case captured.
+  // A skill edit persists through agent_skills, a table agents.updated_at never reflects, so this
+  // reads the skill directly rather than leaning on copilotAgentVersion.
+  const copilotAgentSkillConfig = {
+    getDefaultAnswerSkill: async (workspaceId: string, agentId: string) => {
+      const skill = await agentSkillRepository.findDefaultAnswer(workspaceId, agentId);
+      return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
+    },
   };
   // Directive removal evidence needs a directive's real id and content from the live agent, never
   // from a model-supplied replay override, so this reads through the same resolver the agent's
@@ -484,7 +495,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   };
   const evalCaseReplayService = new EvalCaseReplayService({
-    cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+    cases: copilotEvalCaseReader,
     evidence: copilotReplayEvidenceRepository,
     agentDirectives: copilotAgentDirectives,
     runs: {
@@ -531,7 +542,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,
       agentVersion: copilotAgentVersion,
-      agentSkillsVersion: copilotAgentSkillsVersion,
+      agentSkillConfig: copilotAgentSkillConfig,
+      cases: copilotEvalCaseReader,
     },
     qualitySignalsService,
     audiencePulseService,

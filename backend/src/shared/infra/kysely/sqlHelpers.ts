@@ -80,14 +80,6 @@ export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
  */
 export const clockTimestamp = (): RawBuilder<Date> => sql`clock_timestamp()`;
 
-/**
- * `GREATEST(a, b)` — the later of two timestamp expressions. Used to keep a watermark/version
- * column's `ON CONFLICT DO UPDATE` monotonic: the stored value can only advance, regardless of
- * which of two concurrent writers' statements happens to apply last.
- */
-export const laterTimestamp = (a: Expression<unknown>, b: Expression<unknown>): RawBuilder<Date> =>
-  sql`GREATEST(${a}, ${b})`;
-
 /** `now() - make_interval(secs => <seconds>)` — a timestamp `seconds` in the past (DB clock). */
 export const nowMinusSeconds = (seconds: number): RawBuilder<Date> =>
   sql`now() - make_interval(secs => ${seconds})`;

@@ -2,22 +2,26 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { canonicalRetrieveAnswerSkillConfig, effectiveRetrieveAnswerSkillSettings } from "../../agents/public.js";
 import type { CopilotProposalEvidence } from "../contracts.js";
 import type {
-  CopilotAgentSkillsVersionPort,
+  CopilotAgentSkillConfigPort,
   CopilotAgentVersionPort,
+  CopilotEvalCaseReaderPort,
   CopilotReplayEvidenceRecord,
   CopilotReplayEvidenceRepositoryPort,
+  CopilotSkillConfigEnvelope,
 } from "../contracts/evalCases.js";
 
 export interface ProposalEvidenceDependencies {
   evidence: CopilotReplayEvidenceRepositoryPort;
   agentVersion: CopilotAgentVersionPort;
   /**
-   * Optional so a caller that only exercises agent-level settings need not wire it. Production
-   * composition always supplies it: a skill edit persists through `agent_skills`, a table
-   * `agentVersion` never reads, so without this an agent whose skill changed after a case's
-   * capture would still report its evidence as fresh.
+   * Both optional so a caller that never exercises an `agent_skill` proposal need not wire them.
+   * Production composition always supplies both: an `agent_skill` proposal's staleness is decided
+   * by comparing the skill's *live* stored config (`agentSkillConfig`) against what the cited
+   * case's snapshot captured (`cases`) — not by `agentVersion`, since a skill edit persists through
+   * `agent_skills`, a table that port never reads. See `resolveAgentSkillDrift` below.
    */
-  agentSkillsVersion?: CopilotAgentSkillsVersionPort;
+  agentSkillConfig?: CopilotAgentSkillConfigPort;
+  cases?: CopilotEvalCaseReaderPort;
 }
 
 export interface ProposalEvidenceRequest {
@@ -84,7 +88,7 @@ const sameValue = (left: unknown, right: unknown): boolean => {
 const skillEnvelopeOverride = (
   overrides: Record<string, unknown>,
   skillSettingsKey: string,
-): { enabled: unknown; settings: Record<string, unknown> } => {
+): CopilotSkillConfigEnvelope => {
   const skillSettings = asRecord(asRecord(overrides.agentConfigOverride).skillSettings);
   const envelope = asRecord(skillSettings[skillSettingsKey]);
   return { enabled: envelope.enabled, settings: asRecord(envelope.settings) };
@@ -269,41 +273,87 @@ export const resolveProposalEvidence = async (
     assertMeasuredTheProposedChange(record, request.change);
   }
 
-  const agentUpdatedAt = await resolveEffectiveAgentUpdatedAt(dependencies, request);
+  const agent = await dependencies.agentVersion.get(request.workspaceId, request.agentId);
+  const skillDriftByEvidenceId = request.change.targetType === "agent_skill"
+    ? await resolveAgentSkillDrift(dependencies, request, records)
+    : null;
 
   return {
-    cases: evidenceIds.map((id) => projectMeasurement(byId.get(id)!, agentUpdatedAt)),
+    cases: evidenceIds.map((id) => {
+      const record = byId.get(id)!;
+      // The replay ran against the configuration the case captured, never the live one, so the
+      // measurement is dated by any edit after that capture — before the replay or after it.
+      // Comparing against the agent's version at replay time would miss an agent that had
+      // already moved on.
+      const stale = agent.updatedAt.getTime() > record.baselineCapturedAt.getTime()
+        || (skillDriftByEvidenceId?.get(id) ?? false);
+      return projectMeasurement(record, stale);
+    }),
   };
 };
 
 /**
- * The freshest of an agent's own edit and any of its skills' edits. `agents.updated_at` never
- * moves when a skill is created, edited, or removed (agent_skills is a sibling table), so relying
- * on it alone would report a skill changed after a case's capture as still fresh.
- * `agentSkillsVersion` is optional (see {@link ProposalEvidenceDependencies}), so its absence
- * simply contributes no additional signal rather than failing the whole resolution.
+ * Whether the retrieve default-answer skill's *live* configuration has moved since the config a
+ * cited case's snapshot captured — the direct check an `agent_skill` proposal's evidence needs,
+ * since `agents.updated_at` never moves when a skill is created, edited, or removed (agent_skills
+ * is a sibling table) and so cannot answer this on its own. Both dependencies are optional (see
+ * {@link ProposalEvidenceDependencies}); their absence contributes no additional signal rather
+ * than failing the whole resolution, the same fallback the deleted per-agent version signal used.
+ * Fetches the live skill once (constant across every cited case in one request) and each cited
+ * case's snapshot once per distinct `caseId`, since different cases can capture the agent at
+ * different times.
  */
-const resolveEffectiveAgentUpdatedAt = async (
+const resolveAgentSkillDrift = async (
   dependencies: ProposalEvidenceDependencies,
   request: ProposalEvidenceRequest,
-): Promise<Date> => {
-  const [agent, skillsUpdatedAt] = await Promise.all([
-    dependencies.agentVersion.get(request.workspaceId, request.agentId),
-    dependencies.agentSkillsVersion?.latestUpdatedAt(request.workspaceId, request.agentId) ?? Promise.resolve(null),
-  ]);
-  return skillsUpdatedAt && skillsUpdatedAt.getTime() > agent.updatedAt.getTime()
-    ? skillsUpdatedAt
-    : agent.updatedAt;
+  records: ReadonlyArray<CopilotReplayEvidenceRecord>,
+): Promise<Map<string, boolean> | null> => {
+  if (!dependencies.agentSkillConfig || !dependencies.cases) {
+    return null;
+  }
+  const { agentSkillConfig, cases } = dependencies;
+  const currentSkill = await agentSkillConfig.getDefaultAnswerSkill(request.workspaceId, request.agentId);
+  const caseIds = [...new Set(records.map((record) => record.caseId))];
+  const snapshotSkillByCaseId = new Map(
+    await Promise.all(caseIds.map(async (caseId) => {
+      const evalCase = await cases.findCase(request.workspaceId, caseId);
+      return [caseId, evalCase?.snapshotDefaultAnswerSkill ?? null] as const;
+    })),
+  );
+  return new Map(records.map((record) => [
+    record.id,
+    skillConfigDriftedSinceCapture(currentSkill, snapshotSkillByCaseId.get(record.caseId) ?? null),
+  ]));
 };
 
-const projectMeasurement = (record: CopilotReplayEvidenceRecord, agentUpdatedAt: Date) => ({
+/**
+ * A missing live skill (deleted since the case was captured) always reads as drifted: there is
+ * nothing left to vouch for the measurement with. Otherwise both sides run through the same
+ * canonicalization `assertMeasuredTheProposedChange` uses for the proposal-match check
+ * (`canonicalRetrieveAnswerSkillConfig` for the live config, `effectiveRetrieveAnswerSkillSettings`
+ * for the captured envelope's settings), so a difference in either `enabled` or the canonical
+ * `sourceScope`/`settings` counts as drift.
+ */
+const skillConfigDriftedSinceCapture = (
+  current: { enabled: boolean; config: Record<string, unknown> } | null,
+  captured: CopilotSkillConfigEnvelope | null,
+): boolean => {
+  if (!current) {
+    return true;
+  }
+  const baseline = captured ?? { enabled: undefined, settings: {} };
+  const currentCanonical = canonicalRetrieveAnswerSkillConfig(current.config);
+  const baselineCanonical = effectiveRetrieveAnswerSkillSettings(baseline.settings);
+  return current.enabled !== baseline.enabled
+    || !sameValue(currentCanonical.sourceScope, baselineCanonical.sourceScope)
+    || !sameValue(currentCanonical.settings, baselineCanonical.settings);
+};
+
+const projectMeasurement = (record: CopilotReplayEvidenceRecord, stale: boolean) => ({
   caseId: record.caseId,
   caseName: record.caseName,
   runId: record.runId,
   before: record.recordedStatus,
   after: record.verdict,
-  // The replay ran against the configuration the case captured, never the live one, so the
-  // measurement is dated by any edit after that capture — before the replay or after it. Comparing
-  // against the agent's version at replay time would miss an agent that had already moved on.
-  stale: agentUpdatedAt.getTime() > record.baselineCapturedAt.getTime(),
+  stale,
 });

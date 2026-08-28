@@ -236,6 +236,13 @@ export interface CopilotEvalCaseReaderPort {
      * case captured no agent.
      */
     snapshotAuthoredDirectives: ReadonlyArray<Record<string, unknown>>;
+    /**
+     * The retrieve default-answer skill's config exactly as this case's snapshot captured it, or
+     * `null` when the snapshot captured no agent or that agent had no default-answer skill at
+     * capture time. What an `agent_skill` proposal's evidence compares the *live* skill against
+     * (see {@link CopilotAgentSkillConfigPort}) to decide whether the measurement is stale.
+     */
+    snapshotDefaultAnswerSkill: CopilotSkillConfigEnvelope | null;
   } | null>;
 }
 
@@ -315,13 +322,31 @@ export interface CopilotAgentVersionPort {
 }
 
 /**
- * Reads the freshest write to any of an agent's skills. A skill edit persists through
- * `agent_skills`, a table `agents.updated_at` never reflects, so {@link CopilotAgentVersionPort}
- * alone under-reports how current the agent's effective configuration is. `null` when the agent
- * has no skills.
+ * The retrieve default-answer skill's `{ enabled, settings }` envelope — the shape both a case
+ * snapshot's captured skill config ({@link CopilotEvalCaseReaderPort.findCase}'s
+ * `snapshotDefaultAnswerSkill`) and a replay override's `skillSettings[key]` take. `settings` is
+ * the raw tuning blob; run it through `effectiveRetrieveAnswerSkillSettings` (agentConfig.ts) to
+ * canonicalize before comparing against anything.
  */
-export interface CopilotAgentSkillsVersionPort {
-  latestUpdatedAt(workspaceId: string, agentId: string): Promise<Date | null>;
+export interface CopilotSkillConfigEnvelope {
+  enabled: unknown;
+  settings: Record<string, unknown>;
+}
+
+/**
+ * Reads the retrieve default-answer skill's *live* stored configuration. A skill edit persists
+ * through `agent_skills`, a table {@link CopilotAgentVersionPort} never reads, so an `agent_skill`
+ * proposal's evidence cannot lean on an agent-wide version signal — it instead compares this
+ * directly against what the cited case's snapshot captured (see proposalEvidenceService's
+ * `resolveAgentSkillDrift`). `null` when the agent has no default-answer skill right now (never
+ * configured, or deleted since the case was captured) — with nothing left to compare a
+ * measurement against, that always reads stale.
+ */
+export interface CopilotAgentSkillConfigPort {
+  getDefaultAnswerSkill(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<{ enabled: boolean; config: Record<string, unknown> } | null>;
 }
 
 /**

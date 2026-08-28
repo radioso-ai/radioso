@@ -1791,8 +1791,14 @@ export const createTestDependencies = (overrides: {
   const copilotRepository = new InMemoryCopilotRepository();
   const copilotReplayEvidenceRepository = new InMemoryCopilotReplayEvidenceRepository();
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
-  const copilotAgentSkillsVersion = {
-    latestUpdatedAt: (workspaceId: string, agentId: string) => agentSkillRepository.latestUpdatedAt(workspaceId, agentId),
+  const copilotEvalCaseReader = {
+    findCase: (workspaceId: string, caseId: string) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId),
+  };
+  const copilotAgentSkillConfig = {
+    getDefaultAnswerSkill: async (workspaceId: string, agentId: string) => {
+      const skill = await agentSkillRepository.findDefaultAnswer(workspaceId, agentId);
+      return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
+    },
   };
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
@@ -1835,7 +1841,7 @@ export const createTestDependencies = (overrides: {
       },
     }),
     evalCaseReplay: new EvalCaseReplayService({
-      cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+      cases: copilotEvalCaseReader,
       evidence: copilotReplayEvidenceRepository,
       agentDirectives: {
         listDirectives: async (workspaceId, agentId) => {
@@ -1862,7 +1868,8 @@ export const createTestDependencies = (overrides: {
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,
       agentVersion: copilotAgentVersion,
-      agentSkillsVersion: copilotAgentSkillsVersion,
+      agentSkillConfig: copilotAgentSkillConfig,
+      cases: copilotEvalCaseReader,
     },
     pendingApprovals: approvalDecisionService,
     qualitySignalsService,

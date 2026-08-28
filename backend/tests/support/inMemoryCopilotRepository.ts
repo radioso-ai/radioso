@@ -4,6 +4,8 @@ import type {
   CopilotConversation,
   CopilotMessage,
   CopilotProposal,
+  CopilotProposalApplyClaimGuard,
+  CopilotProposalClaim,
   CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 
@@ -16,6 +18,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
+  // Mirrors copilot_proposals.apply_started_at: kept out of the public CopilotProposal shape
+  // (only claiming/finalizing needs it), the same narrowing the real repository does by not
+  // including the column in `proposalColumns`.
+  private readonly applyClaims = new Map<string, Date>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
     const timestamp = new Date();
@@ -107,17 +113,34 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
   }
 
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> {
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return null;
+    if (!this.satisfiesClaimGuard(proposal.id, input.applyClaimGuard)) return null;
     const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
+    this.applyClaims.delete(proposal.id);
     return updated;
   }
 
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null> {
     const proposal = await this.findProposal(input);
-    return proposal?.status === "pending" ? proposal : null;
+    if (!proposal || proposal.status !== "pending") return null;
+    if (!this.isClaimFree(proposal.id, input.claimTtlSeconds)) return null;
+    const claimedAt = new Date();
+    this.applyClaims.set(proposal.id, claimedAt);
+    return { proposal, claimedAt };
+  }
+
+  private isClaimFree(proposalId: string, claimTtlSeconds: number): boolean {
+    const claimedAt = this.applyClaims.get(proposalId);
+    return !claimedAt || Date.now() - claimedAt.getTime() >= claimTtlSeconds * 1000;
+  }
+
+  private satisfiesClaimGuard(proposalId: string, guard: CopilotProposalApplyClaimGuard): boolean {
+    if (guard.state === "free") return this.isClaimFree(proposalId, guard.claimTtlSeconds);
+    const claimedAt = this.applyClaims.get(proposalId);
+    return claimedAt !== undefined && claimedAt.getTime() === guard.claimedAt.getTime();
   }
 
   private replaceStatus(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation {

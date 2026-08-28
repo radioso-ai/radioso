@@ -27,6 +27,16 @@ const TITLE_MAX_LENGTH = 120;
 // conversations grow the model context unboundedly (spec 104 edge case).
 const HISTORY_MESSAGE_LIMIT = 12;
 const HISTORY_MESSAGE_CHARS = 2_000;
+/**
+ * How long an apply claim may sit unresolved before it counts as abandoned rather than active.
+ * A process that crashes between claiming and recording the outcome otherwise wedges the
+ * proposal forever: not applyable (already claimed) and not dismissable (a held claim blocks
+ * dismiss too, so nothing an operator does moves it). 5 minutes comfortably exceeds any single
+ * adapter's apply call within one request/response cycle — it matches the action outbox's own
+ * lease default (actionDispatcher.ts's `leaseSeconds: 300`), which sizes the same kind of
+ * "how long before a claim is presumed dead" judgment for a comparable class of work.
+ */
+const APPLY_CLAIM_TTL_SECONDS = 300;
 
 export interface CopilotConversation {
   readonly id: string;
@@ -49,6 +59,30 @@ export interface CopilotMessage {
   readonly createdAt: Date;
 }
 
+/**
+ * Guards the transition off `pending` against a concurrent or superseded apply claim.
+ *
+ * - `held` finalizes the outcome of the *exact* claim `claimProposalApply` returned. A claim
+ *   this one has since been superseded by (its own TTL elapsed and something reclaimed it) no
+ *   longer matches, so a crashed writer's late-arriving finalize is a safe no-op rather than a
+ *   write on behalf of whichever attempt is now current.
+ * - `free` is dismiss's guard: it must not race an apply that is still active, but a claim old
+ *   enough to count as abandoned (the same TTL judgment claiming itself uses) must not block it
+ *   either — the operator is never left with no action available.
+ */
+export type CopilotProposalApplyClaimGuard =
+  | { readonly state: "held"; readonly claimedAt: Date }
+  | { readonly state: "free"; readonly claimTtlSeconds: number };
+
+/**
+ * What claiming a proposal for apply returns: the proposal, and the exact claim timestamp to
+ * thread back into `updateProposalOutcome` as its `held` guard.
+ */
+export interface CopilotProposalClaim {
+  readonly proposal: CopilotProposal;
+  readonly claimedAt: Date;
+}
+
 export interface CopilotRepositoryPort {
   createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation>;
   findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null>;
@@ -61,8 +95,8 @@ export interface CopilotRepositoryPort {
   createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
-  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null>;
-  claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
+  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;
+  claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null>;
 }
 
 export interface OperatorCopilotServiceDeps {
@@ -109,31 +143,33 @@ export class OperatorCopilotService {
   }
 
   async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
-    const proposal = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
-    if (!proposal) {
+    const claim = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
+    if (!claim) {
       const existing = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
       if (!existing) throw new CopilotNotFoundError();
       throw new CopilotConflictError();
     }
+    const { proposal, claimedAt } = claim;
+    const claimGuard: CopilotProposalApplyClaimGuard = { state: "held", claimedAt };
     let result: Awaited<ReturnType<CopilotProposalAdapter["applyIfVersionMatches"]>>;
     try {
       result = await this.adapterFor(proposal.targetType).applyIfVersionMatches(input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken);
     } catch {
-      await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", true);
+      await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", claimGuard);
       return { status: "failed" };
     }
     if (result.outcome === "applied") {
-      await this.updateProposalAndAudit(input, proposal, "applied", result.appliedRef, "copilot.proposal.applied", "success", "applied", true);
+      await this.updateProposalAndAudit(input, proposal, "applied", result.appliedRef, "copilot.proposal.applied", "success", "applied", claimGuard);
       return { status: "applied", appliedRef: result.appliedRef };
     }
     const status = result.outcome === "stale" ? "stale" : "failed";
-    await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, true, result.outcome === "failed" ? result.reason : null);
+    await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, claimGuard, result.outcome === "failed" ? result.reason : null);
     return result.outcome === "failed" ? { status, reason: result.reason } : { status };
   }
 
   async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: "dismissed" }> {
     const proposal = await this.requirePendingProposal(input);
-    await this.updateProposalAndAudit(input, proposal, "dismissed", null, "copilot.proposal.dismissed", "success", "dismissed");
+    await this.updateProposalAndAudit(input, proposal, "dismissed", null, "copilot.proposal.dismissed", "success", "dismissed", { state: "free", claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
     return { status: "dismissed" };
   }
 
@@ -308,8 +344,8 @@ export class OperatorCopilotService {
     return proposal;
   }
 
-  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, requiresApplyClaim = false, reason: string | null = null): Promise<void> {
-    const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, requiresApplyClaim });
+  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {
+    const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, applyClaimGuard });
     if (!updated) throw new CopilotConflictError();
     await this.deps.auditService.record({ accountId: input.accountId, workspaceId: input.workspaceId, eventType, eventStatus, metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome } });
   }

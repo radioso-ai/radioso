@@ -386,6 +386,10 @@ setup state with a link to **Settings → Providers**.
   affected turn honestly. The answer identifies the data it could not access.
 - **A proposal is stale** — the target changed after Ray drafted it. Ask Ray
   to prepare the change again and review the updated diff.
+- **Apply or Dismiss says conflict** — another apply on that proposal is
+  already running, or one never finished. Wait a few minutes and try again;
+  an apply that never finished releases its hold on its own, after which the
+  proposal can be applied or dismissed.
 - **Agent-turn testing is unavailable** — your session is missing one of
   `workspace.chat.use`, `workspace.history.read`, or
   `workspace.agents.manage` in addition to Ray's agent-read permission.

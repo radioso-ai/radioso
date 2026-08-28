@@ -14,6 +14,8 @@ import {
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotProposalApplyClaimGuard,
+  type CopilotProposalClaim,
   type CopilotProposalTargetType,
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
@@ -403,6 +405,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
+  private readonly applyClaims = new Map<string, Date>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const createdAt = new Date(); const conversation = { id: randomUUID(), ...input, status: "idle" as const, createdAt, updatedAt: createdAt }; this.conversations.push(conversation); return conversation; }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { return this.conversations.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
@@ -415,8 +418,32 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal) return null; const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; return next; }
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); return proposal?.status === "pending" ? proposal : null; }
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending") return null;
+    if (!this.satisfiesClaimGuard(proposal.id, input.applyClaimGuard)) return null;
+    const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
+    this.proposals[this.proposals.indexOf(proposal)] = next;
+    this.applyClaims.delete(proposal.id);
+    return next;
+  }
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending") return null;
+    if (!this.isClaimFree(proposal.id, input.claimTtlSeconds)) return null;
+    const claimedAt = new Date();
+    this.applyClaims.set(proposal.id, claimedAt);
+    return { proposal, claimedAt };
+  }
+  private isClaimFree(proposalId: string, claimTtlSeconds: number): boolean {
+    const claimedAt = this.applyClaims.get(proposalId);
+    return !claimedAt || Date.now() - claimedAt.getTime() >= claimTtlSeconds * 1000;
+  }
+  private satisfiesClaimGuard(proposalId: string, guard: CopilotProposalApplyClaimGuard): boolean {
+    if (guard.state === "free") return this.isClaimFree(proposalId, guard.claimTtlSeconds);
+    const claimedAt = this.applyClaims.get(proposalId);
+    return claimedAt !== undefined && claimedAt.getTime() === guard.claimedAt.getTime();
+  }
 }
 
 const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" || proposal.targetType === "routine" ? String((proposal.payload as { name?: unknown }).name ?? "Routine") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : proposal.targetType === "routine" ? "Draft routine" : "Draft setting change", status: proposal.status, reason: proposal.reason ?? null });

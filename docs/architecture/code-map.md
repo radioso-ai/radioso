@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-26
+last_updated: 2026-08-28
 ---
 
 # Code Map
@@ -343,7 +343,7 @@ Useful searches:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/operatorCopilot tests/unit/agent-turn-test-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/operatorCopilot`
 - `cd backend && pnpm run evals:copilot` — live Ray behaviour run (needs Postgres and
   `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`

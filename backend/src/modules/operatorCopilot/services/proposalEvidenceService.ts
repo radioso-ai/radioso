@@ -1,4 +1,5 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { canonicalRetrieveAnswerSkillConfig, effectiveRetrieveAnswerSkillSettings } from "../../agents/public.js";
 import type { CopilotProposalEvidence } from "../contracts.js";
 import type {
   CopilotAgentSkillsVersionPort,
@@ -144,11 +145,20 @@ const hasConfoundingOverride = (overrides: Record<string, unknown>): boolean => 
  *   match is not enough on its own: a replay that excluded exactly this directive but *also*
  *   swapped the model or the instructions measured a confounded configuration, so
  *   {@link hasConfoundingOverride} must find nothing else in play too.
- * - A skill's configuration is compared against the envelope a `skillSettings` override actually
- *   merges onto (`{ enabled, settings }`, mirroring agentConfig.ts's serialization), not against
- *   the raw override value: a key set outside `.settings` never reaches the tuning fields
- *   materializeAgentFromConfig reads and is silently ignored at runtime, so it must not read as
- *   measured here. `enabled` is checked the same way whenever the proposal states one.
+ * - A skill's configuration is compared against the *canonical* configuration the envelope a
+ *   `skillSettings` override actually merges onto (`{ enabled, settings }`, mirroring
+ *   agentConfig.ts's serialization) materializes to — not against the raw override value, and not
+ *   against the proposal's raw `config` either. Byte-comparing the two raw shapes is not sound: a
+ *   `.settings` blob that mirrors the proposal's own field names (flat `sourceScope`/`instruction`)
+ *   used to byte-match and read as measured, even though `materializeAgentFromConfig` only reads
+ *   `sourceScope` from nested under `__agentRetrievalDefaults` and the skill's own instruction
+ *   field is `customInstruction`, not `instruction` — the replay actually ran with the baseline's
+ *   values for both, unchanged. `effectiveRetrieveAnswerSkillSettings` and
+ *   `canonicalRetrieveAnswerSkillConfig` (agentConfig.ts) project both sides onto the same
+ *   canonical shape via the real materialization path, rather than duplicating that mapping here.
+ *   A key set outside `.settings` entirely never reaches the tuning fields
+ *   materializeAgentFromConfig reads at all and is silently ignored at runtime, so it must not
+ *   read as measured either. `enabled` is checked the same way whenever the proposal states one.
  * - No override installs a routine, so no replay can support a routine proposal.
  * - No override installs visitor context either, so the same is true of a context variable
  *   proposal: nothing in CopilotEvalCaseReplayOverrides can put a pushed, browser, or resolver
@@ -197,7 +207,12 @@ const assertMeasuredTheProposedChange = (
       throw badRequest("This skill's configuration cannot be measured by a replay, so evidence cannot support it");
     }
     const envelope = skillEnvelopeOverride(overrides, change.skillSettingsKey);
-    if (!sameValue(envelope.settings, change.config)) {
+    const effective = effectiveRetrieveAnswerSkillSettings(envelope.settings);
+    const canonicalProposed = canonicalRetrieveAnswerSkillConfig(asRecord(change.config));
+    if (
+      !sameValue(effective.sourceScope, canonicalProposed.sourceScope)
+      || !sameValue(effective.settings, canonicalProposed.settings)
+    ) {
       throw badRequest("Replay evidence did not measure the proposed skill configuration");
     }
     if (change.enabled !== undefined && envelope.enabled !== change.enabled) {

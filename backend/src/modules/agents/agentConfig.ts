@@ -368,6 +368,80 @@ const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSettingsC
   };
 };
 
+/** What {@link effectiveRetrieveAnswerSkillSettings} and {@link canonicalRetrieveAnswerSkillConfig}
+ * compare: the retrieve default-answer skill's `sourceScope` in its mode-based agent form, plus
+ * every other configurable field flattened onto one settings record (skill-tuning keys, with the
+ * retrieve skill's own `instruction` already renamed to `customInstruction`). */
+export interface RetrieveAnswerSkillEffectiveSettings {
+  sourceScope: InternalAgentSourceScopeConfig;
+  settings: Record<string, unknown>;
+}
+
+/**
+ * `retrieveSkillConfigSchema`'s `sourceScope` (modules/retrieval) is `"all" | { sourceIds }`, not
+ * this file's mode-based `AgentSourceScopeConfig` — parsed structurally rather than by importing
+ * that schema, the same way `agentRepository.ts`'s `sourceScopeFromRetrieveConfig` (the live
+ * apply path's equivalent conversion) does.
+ */
+const sourceScopeFromProposedConfig = (sourceScope: unknown): InternalAgentSourceScopeConfig => {
+  if (sourceScope === undefined || sourceScope === "all") {
+    return { mode: "all" };
+  }
+  if (isRecord(sourceScope) && Array.isArray(sourceScope.sourceIds) && sourceScope.sourceIds.every((id) => typeof id === "string")) {
+    return { mode: "selected", sourceIds: [...sourceScope.sourceIds] as string[] };
+  }
+  return { mode: "all" };
+};
+
+/**
+ * Canonicalizes a `propose_skill_config` proposal's `config` for the retrieve default-answer
+ * skill into the same shape {@link effectiveRetrieveAnswerSkillSettings} derives from a replay's
+ * recorded override, so the two are comparable: `sourceScope`'s `"all" | { sourceIds }` shape
+ * becomes the mode-based form materialization reads out of `__agentRetrievalDefaults`,
+ * `instruction` becomes the skill-tuning `customInstruction` key, `exposedInputs` is dropped (it
+ * configures the skill invocation, not anything `materializeAgentFromConfig` reads), and every
+ * other field passes through unchanged, by the same name, as a flat skill-tuning setting.
+ */
+export const canonicalRetrieveAnswerSkillConfig = (
+  config: Record<string, unknown>,
+): RetrieveAnswerSkillEffectiveSettings => {
+  const { sourceScope, instruction, exposedInputs: _exposedInputs, ...rest } = config;
+  return {
+    sourceScope: sourceScopeFromProposedConfig(sourceScope),
+    settings: {
+      ...rest,
+      ...(typeof instruction === "string" ? { customInstruction: instruction } : {}),
+    },
+  };
+};
+
+/**
+ * The canonical counterpart of {@link canonicalRetrieveAnswerSkillConfig}: what a replay
+ * override's recorded `{ enabled, settings }` envelope for the retrieve default-answer skill
+ * actually materializes to, derived by running it through the same `splitRetrievalAnswerEnvelope`
+ * extraction `materializeAgentFromConfig` uses — not a second hand-written mapping. A `.settings`
+ * blob shaped after the proposal's own field names (flat `sourceScope`/`instruction`, instead of
+ * the envelope shape materialization reads) canonicalizes to the *default* source scope and no
+ * `customInstruction`, surfacing the mismatch instead of byte-matching a configuration the replay
+ * never actually ran. See proposalEvidenceService's `agent_skill` evidence check.
+ */
+export const effectiveRetrieveAnswerSkillSettings = (
+  settings: unknown,
+): RetrieveAnswerSkillEffectiveSettings => {
+  const wrapped = {
+    [RETRIEVAL_ANSWER_SKILL_KEY]: {
+      enabled: true,
+      settings: isRecord(settings) ? settings : {},
+    },
+  } as InternalAgentSkillSettingsConfig;
+  const split = splitRetrievalAnswerEnvelope(wrapped);
+  const skillSettings = split.skillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
+  return {
+    sourceScope: split.sourceScope,
+    settings: isRecord(skillSettings) ? skillSettings : {},
+  };
+};
+
 const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): WebsiteEmbedSurfaceConfig => ({
   enabled: websiteEmbed.enabled,
   token: websiteEmbed.token ? secretPlaceholder() : null,

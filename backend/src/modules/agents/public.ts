@@ -77,6 +77,8 @@ export {
   AGENT_CONFIG_FIELD_DESCRIPTORS,
   AGENT_CONFIG_SCHEMA_VERSION,
   applyAgentConfigOverride,
+  canonicalRetrieveAnswerSkillConfig,
+  effectiveRetrieveAnswerSkillSettings,
   materializeAgentFromConfig,
   projectInternalAgentConfig,
   serializeAgentConfig,
@@ -93,6 +95,7 @@ export {
   type InternalAgentSourceScopeConfig,
   type InternalAgentSurfaceConfig,
   type InternalWebsiteEmbedSurfaceConfig,
+  type RetrieveAnswerSkillEffectiveSettings,
 } from "./agentConfig.js";
 export {
   resolveExternalSkillRefs,

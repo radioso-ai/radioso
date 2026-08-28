@@ -329,4 +329,78 @@ describe("cited evidence must be about the change being proposed", () => {
 
     expect(evidence?.cases).toHaveLength(1);
   });
+
+  it("refuses a skill config proposal that changed sourceScope when the replay's override set it flat instead of nested under the agent-level retrieval defaults", async () => {
+    // The exact hole this closes: agentConfig.ts's materialization only reads sourceScope from
+    // settings.__agentRetrievalDefaults.sourceScope. A flat settings.sourceScope sibling — the
+    // proposal's own field name and shape — used to byte-match change.config.sourceScope and be
+    // accepted, even though the replay actually ran with the baseline's source scope, unchanged.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { sourceScope: { sourceIds: ["source-1"] } } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { sourceScope: { sourceIds: ["source-1"] } } },
+    )).rejects.toThrow(/did not measure/i);
+  });
+
+  it("accepts a skill config proposal that changed sourceScope when the replay nested it under the agent-level retrieval defaults", async () => {
+    const evidence = await resolve(
+      {
+        agentConfigOverride: {
+          skillSettings: {
+            "retrieval.answer": { settings: { __agentRetrievalDefaults: { sourceScope: { mode: "selected", sourceIds: ["source-1"] } } } },
+          },
+        },
+      },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { sourceScope: { sourceIds: ["source-1"] } } },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
+  it("refuses a skill config proposal that changed the retrieval instruction when the replay's override used the proposal's own field name instead of customInstruction", async () => {
+    // The exact hole this closes: the retrieve skill's `instruction` field is stored as
+    // `customInstruction` in the tuning settings materialization reads; a flat
+    // settings.instruction key — again the proposal's own field name — used to byte-match and be
+    // accepted, even though nothing reads a key named "instruction" there.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { instruction: "Always cite the source document." } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { instruction: "Always cite the source document." } },
+    )).rejects.toThrow(/did not measure/i);
+  });
+
+  it("accepts a skill config proposal that changed the retrieval instruction when the replay set it as customInstruction", async () => {
+    const evidence = await resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { customInstruction: "Always cite the source document." } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { instruction: "Always cite the source document." } },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
+  it("accepts a skill config proposal that changed sourceScope, the retrieval instruction, and a tuning field together when the replay measured all three correctly", async () => {
+    // Exercises the full propose_skill_config mapping in one case: sourceScope nests under the
+    // agent-level retrieval defaults, instruction renames to customInstruction, and an ordinary
+    // tuning field (rerankEnabled) passes through by the same name on both sides.
+    const evidence = await resolve(
+      {
+        agentConfigOverride: {
+          skillSettings: {
+            "retrieval.answer": {
+              settings: {
+                __agentRetrievalDefaults: { sourceScope: { mode: "selected", sourceIds: ["source-1"] } },
+                customInstruction: "Always cite the source document.",
+                rerankEnabled: true,
+              },
+            },
+          },
+        },
+      },
+      {
+        targetType: "agent_skill",
+        skillSettingsKey: "retrieval.answer",
+        config: { sourceScope: { sourceIds: ["source-1"] }, instruction: "Always cite the source document.", rerankEnabled: true },
+      },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
 });

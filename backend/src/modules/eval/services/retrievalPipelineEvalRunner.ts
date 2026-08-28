@@ -132,7 +132,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
-    // Frozen rolling summary (#866) injected into the grounded system prompt so the
+    // Frozen rolling summary (#866) supplied as untrusted conversation data so the
     // eval'd answer sees the same pre-window context a live turn would.
     conversationSummary?: string;
     modelOverride?: EvalRunModelOverride;
@@ -172,7 +172,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       }),
     );
 
-    const composedSystemPrompt = composeGroundedAnswerSystemPrompt({
+    const composedPrompt = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: pipelineResult.systemPrompt,
       suggestedQuestionsEnabled: false,
       suggestedQuestionsCount: 0,
@@ -186,15 +186,18 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         activeSubject: input.query,
         activeGoal: input.query,
       },
-    }).systemPrompt;
+    });
+    const answerPrompt = composedPrompt.conversationContextPrompt
+      ? `${pipelineResult.prompt}\n\n${composedPrompt.conversationContextPrompt}`
+      : pipelineResult.prompt;
     let generated = "";
     let callError: unknown = null;
     try {
       generated = await this.chatGateway.answer({
         query: input.query,
         history: input.history,
-        prompt: pipelineResult.prompt,
-        systemPrompt: composedSystemPrompt,
+        prompt: answerPrompt,
+        systemPrompt: composedPrompt.systemPrompt,
         workspaceContext: {
           workspaceId: input.workspaceId,
           capabilityOverride: input.modelOverride ?? null,
@@ -249,7 +252,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       citations: presented.citations,
       answerSegments: presented.answerSegments,
       groundingSummary,
-      composedInstructions: composedSystemPrompt,
+      composedInstructions: composedPrompt.systemPrompt,
       resolvedSettings: await this.resolveSettingsSnapshot(
         input.workspaceId,
         input.context?.agent?.skillSettings,

@@ -32,12 +32,13 @@ const pipelineResult = () => {
 };
 
 const buildRunner = () => {
-  const captured: { systemPrompt?: string } = {};
+  const captured: { prompt?: string; systemPrompt?: string } = {};
   const pipeline = { run: async () => pipelineResult() } as unknown as ConstructorParameters<
     typeof RetrievalPipelineEvalRunner
   >[0];
   const chatGateway = {
-    answer: async (input: { systemPrompt: string }) => {
+    answer: async (input: { prompt: string; systemPrompt: string }) => {
+      captured.prompt = input.prompt;
       captured.systemPrompt = input.systemPrompt;
       return "Refunds are processed within five business days.";
     },
@@ -62,7 +63,7 @@ const buildRunner = () => {
 };
 
 describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
-  it("injects the frozen conversation summary into the composed grounded system prompt", async () => {
+  it("injects the frozen conversation summary as untrusted conversation data", async () => {
     const { runner, captured } = buildRunner();
 
     await runner.answer({
@@ -73,7 +74,8 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
       conversationSummary: SUMMARY,
     });
 
-    expect(captured.systemPrompt).toContain(SUMMARY);
+    expect(captured.systemPrompt).not.toContain(SUMMARY);
+    expect(captured.prompt).toContain(SUMMARY);
   });
 
   it("adds no summary section when the run carries none", async () => {

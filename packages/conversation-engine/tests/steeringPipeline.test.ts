@@ -134,6 +134,37 @@ describe("one steering-list pipeline", () => {
     });
   });
 
+  it("does not restore a directive withheld by host steering bounds in a routine prompt", async () => {
+    const render = vi.fn(async ({ steering }) => ({
+      answer: steering.map((rule: SteeringRule) => rule.action).join(" | "),
+    }));
+    const input = createRoutineInput({
+      directives: [testDirective({ name: "bounded", action: "Do not reintroduce this rule." })],
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => [{
+          directive: directives[0]!,
+          selectionMode: "deterministic" as const,
+          selectionReason: "matched before host bound",
+          renderInSteering: false,
+        }]),
+      },
+    }, { render });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    // The match remains visible to the trace/binding path, but the routine's
+    // generator must never rebuild it into prompt steering after the host bounded it.
+    expect(result.trace.stages.at(-1)?.outputs).toMatchObject({
+      directives: [expect.objectContaining({ name: "bounded" })],
+    });
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({
+      steering: [expect.objectContaining({ source: "routine" })],
+    }));
+    expect(render.mock.calls[0]?.[0].steering).not.toContainEqual(
+      expect.objectContaining({ action: "Do not reintroduce this rule." }),
+    );
+  });
+
   it("passes active routine and rendered step ids to the directive matcher on routine turns", async () => {
     let capturedTurn: TurnContext | null = null;
     const input = createRoutineInput({

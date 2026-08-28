@@ -61,6 +61,17 @@ export type SteeringSource = "directive" | "skill" | "routine";
 
 export type SteeringLifespan = "response" | "session";
 
+/**
+ * The generator a standing rule is addressed to. A turn produces visitor-facing text
+ * from more than one model call, and a rule that governs one of them does not
+ * necessarily govern another: "never suggest a question about price" belongs to the
+ * follow-up question generator, not to the answer body.
+ *
+ * An empty or absent scope means `answer` — the historical behavior, where every rule
+ * addressed the answer body and nothing else.
+ */
+export type GenerationSurface = "answer" | "suggested_questions";
+
 export interface SteeringRule {
   /** Stable per-turn identity when the rule originates from an authored directive. */
   id?: string;
@@ -72,6 +83,11 @@ export interface SteeringRule {
   description?: string;
   source: SteeringSource;
   lifespan: SteeringLifespan;
+  /**
+   * Generators this rule is addressed to. Empty/absent means `answer` only, so a rule
+   * authored before surfaces existed keeps its exact meaning.
+   */
+  surfaces?: GenerationSurface[];
 }
 
 export type SkillTransientGuidance = Omit<SteeringRule, "source" | "lifespan">;
@@ -103,6 +119,12 @@ export interface Directive {
    * scope eligibility and may carry other meaning.
    */
   tags?: string[];
+  /**
+   * Optional authored generator scope. Empty means the answer body only. Orthogonal to
+   * route scope: `routes` picks which turn path a directive applies on, `surfaces`
+   * picks which generator inside that turn it addresses.
+   */
+  surfaces?: GenerationSurface[];
   priority?: number;
   /**
    * Optional cross-turn firing policy. Absent means `repeatable` (the historical
@@ -141,6 +163,21 @@ export interface DirectiveMatch {
   selectionMode: DirectiveSelectionMode;
   selectionReason: string;
   selectionConfidence?: number;
+  /**
+   * Whether this match may be turned back into prompt steering by an engine host.
+   * A host-side resolution pass can retain a match for its trace and directive
+   * binding while withholding it from every generation surface after applying a
+   * steering bound. Absent means renderable for backwards compatibility.
+   */
+  renderInSteering?: boolean;
+  /**
+   * Surfaces this match still renders on after a host applied its steering bound,
+   * when that is narrower than the directive's authored scope. Absent means the
+   * directive's own scope. Kept beside the directive rather than written into it so a
+   * bound stays a prompt-size decision: skill binding and the trace continue to read
+   * the authored scope, and only prompt rendering narrows.
+   */
+  renderSurfaces?: GenerationSurface[];
 }
 
 export interface DirectiveMatchInput {

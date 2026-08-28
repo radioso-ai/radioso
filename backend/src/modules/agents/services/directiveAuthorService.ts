@@ -5,6 +5,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { AppError, notFound } from "../../../shared/domain/errors.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { authoredDirectiveSurfaceValues } from "../authoredDirectives.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
@@ -50,6 +51,7 @@ export const directiveAuthorDraftSchema = z.object({
     ]),
     action: z.string().trim().min(1).max(4_000),
     tags: z.array(z.string().trim().min(1).max(200)).optional(),
+    surfaces: z.array(z.enum(authoredDirectiveSurfaceValues)).optional(),
   }).strict(),
   diagnosis: z.enum(["directive_recommended", "knowledge_recommended_deferred"]),
   rationale: z.string().trim().min(1).max(1_000).optional(),

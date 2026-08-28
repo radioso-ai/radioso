@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
+import { GENERATION_SURFACE, type GenerationSurface } from "../../shared/domain/generationSurface.js";
 import { defaultAnswerDirectives } from "../directives/public.js";
 
 export const AUTHORED_DIRECTIVE_LIMITS = {
@@ -24,6 +25,17 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
 export const AUTHORED_DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const;
 
 export const authoredDirectiveRouteValues = Object.values(CHAT_TURN_ROUTE) as [ChatTurnRoute, ...ChatTurnRoute[]];
+
+/**
+ * Generators a directive may address. Orthogonal to `routes`: a route picks which turn
+ * path the directive applies on, a surface picks which generator inside that turn it
+ * speaks to. Empty means the answering voice, which is what an unscoped directive has
+ * always meant.
+ */
+export const authoredDirectiveSurfaceValues = Object.values(GENERATION_SURFACE) as [
+  GenerationSurface,
+  ...GenerationSurface[],
+];
 
 const builtInDirectiveNames = new Set(defaultAnswerDirectives.map((directive) => directive.name));
 
@@ -95,6 +107,7 @@ export const authoredDirectiveInputSchema = z.object({
   dependsOn: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),
   excludes: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.relationshipName),
   routes: z.array(z.enum(authoredDirectiveRouteValues)).optional().default([]).transform((values) => [...new Set(values)]),
+  surfaces: z.array(z.enum(authoredDirectiveSurfaceValues)).optional().default([]).transform((values) => [...new Set(values)]),
   tags: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.tag),
   description: optionalTrimmedText(AUTHORED_DIRECTIVE_LIMITS.description),
   binding: authoredDirectiveBindingSchema.nullable().optional().transform((value) => value ?? null),
@@ -123,6 +136,7 @@ export interface AuthoredDirective {
   dependsOn: string[];
   excludes: string[];
   routes: ChatTurnRoute[];
+  surfaces: GenerationSurface[];
   tags: string[];
   description: string | null;
   binding: AuthoredDirectiveBinding;

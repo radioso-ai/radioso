@@ -51,6 +51,7 @@ const existingDirective: Directive = {
   requiredCapabilities: ['retrieval.answer'],
   dependsOn: ['represent-organization'],
   excludes: ['too-casual'],
+  surfaces: [],
   routes: ['retrieval'],
   tags: ['saved'],
   description: 'Existing saved behavior.',
@@ -149,6 +150,7 @@ describe('coach state', () => {
         requiredCapabilities: [],
         dependsOn: [],
         excludes: [],
+        surfaces: [],
         routes: [],
         tags: ['step:onboarding:answer'],
         description: null,
@@ -168,6 +170,7 @@ describe('coach state', () => {
           requiredCapabilities: ['retrieval.answer'],
           dependsOn: ['represent-organization'],
           excludes: ['too-casual'],
+          surfaces: [],
           routes: ['retrieval'],
           tags: ['saved'],
           description: 'Existing saved behavior.',
@@ -181,6 +184,7 @@ describe('coach state', () => {
           requiredCapabilities: [],
           dependsOn: [],
           excludes: [],
+          surfaces: [],
           routes: [],
           tags: ['step:onboarding:answer'],
           description: null,
@@ -228,12 +232,35 @@ describe('coach state', () => {
       condition: { kind: 'always' },
       action: 'Answer with concrete release note details.',
       tags: ['step:onboarding:answer'],
+      surfaces: [],
       metadata: {
         diagnosis: 'directive_recommended',
         rationale: 'The coaching is behavioral.',
       },
     })
     expect(hook.current.status).toBe('done')
+  })
+
+  it('saves a drafted directive with the scope it previewed', async () => {
+    const deps = createDeps()
+    deps.draftDirective = vi.fn().mockResolvedValue({
+      ...draft,
+      directive: { ...draft.directive, surfaces: ['suggested_questions'] },
+    })
+    const hook = renderCoachHook({ deps })
+    roots.push(hook)
+
+    await act(async () => {
+      await hook.current.submitCoaching('Do not invite price questions.')
+    })
+    await act(async () => {
+      await hook.current.validate()
+    })
+
+    expect(deps.createDirective).toHaveBeenCalledWith(
+      'agent-1',
+      expect.objectContaining({ surfaces: ['suggested_questions'] }),
+    )
   })
 
   it('blocks coaching while existing directives are loading', async () => {

@@ -188,3 +188,12 @@ The finished task:
 
 What was collected when it finished:
 {{variables}}`;
+
+export const DEFAULT_STEERING_PROMPT = `The following behavioral directives govern the visible answer you write. Follow them when forming that answer, alongside your other instructions. They are listed in priority order; if two of them genuinely conflict, follow the one listed earlier.
+
+Their reach is the answer text. Follow-up questions, when this turn offers them, are governed by their own directives stated with the suggestion rules.
+
+{{steering_rules}}`;
+
+export const DEFAULT_CLARIFICATION_STEERING_PROMPT = `Also follow this guidance when phrasing the question:
+{{steering_rules}}`;

@@ -89,6 +89,13 @@ describe("eval Workbench replay contract", () => {
                 citationIndices: [0],
               },
             ],
+            suggestions: [
+              {
+                text: "What happens after I request a refund?",
+                kind: "deeper",
+                action: { kind: "ask_followup" },
+              },
+            ],
             turnTrace: {
               version: 1,
               spine: {
@@ -149,6 +156,13 @@ describe("eval Workbench replay contract", () => {
       answer: "Use the Workbench override. vectorTopK=7",
       citations: [{ documentId: "doc-refund", chunkId: "chunk-refund", title: "Refund Policy" }],
       answerSegments: [{ text: "Replay answer", citationIndices: [0] }],
+      suggestions: [
+        {
+          text: "What happens after I request a refund?",
+          kind: "deeper",
+          action: { kind: "ask_followup" },
+        },
+      ],
       turnTrace: {
         version: 1,
         spine: { traceId: "trace-workbench-replay" },
@@ -164,6 +178,13 @@ describe("eval Workbench replay contract", () => {
       run: {
         observedOutput: {
           answer: "Use the Workbench override. vectorTopK=7",
+          suggestions: [
+            {
+              text: "What happens after I request a refund?",
+              kind: "deeper",
+              action: { kind: "ask_followup" },
+            },
+          ],
           turnTrace: {
             version: 1,
             spine: { traceId: "trace-workbench-replay" },

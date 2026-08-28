@@ -36,7 +36,13 @@ describe("appendDirectiveSteeringStage", () => {
     const stage = traced.stages.at(-1)!;
     expect(stage.stageId).toBe("directive_steering");
     expect(stage.outputs?.matched).toEqual([
-      { name: "be-concise", selectionMode: "deterministic", selectionReason: "always", selectionConfidence: undefined },
+      {
+        name: "be-concise",
+        selectionMode: "deterministic",
+        selectionReason: "always",
+        selectionConfidence: undefined,
+        surfaces: ["answer"],
+      },
     ]);
     expect(stage.outputs?.omitted).toEqual([{ directiveName: "gated", reason: "capability_denied" }]);
     expect(stage.outputs?.bounded).toEqual([]);
@@ -70,5 +76,92 @@ describe("appendDirectiveSteeringStage", () => {
     };
     const traced = appendDirectiveSteeringStage(baseTrace(), steering);
     expect(traced.stages.at(-1)?.stageId).toBe("directive_steering");
+  });
+});
+
+describe("directive steering trace — generation surface", () => {
+  it("reports the generator a rule reached, so an operator can tell reply from suggestion", () => {
+    const steering: DirectiveSteeringResult = {
+      rules: [],
+      matches: [
+        {
+          directive: {
+            name: "no-price-suggestions",
+            condition: { kind: "always" },
+            action: "Never suggest a follow-up question about price.",
+            surfaces: ["suggested_questions"],
+          },
+          selectionMode: "deterministic",
+          selectionReason: "always",
+        },
+      ],
+      omissions: [],
+      pendingSurfaceFirings: { suggested_questions: ["no-price-suggestions"] },
+    };
+
+    const stage = appendDirectiveSteeringStage(baseTrace(), steering).stages.at(-1)!;
+
+    expect(stage.outputs?.matched).toEqual([
+      expect.objectContaining({ surfaces: ["suggested_questions"] }),
+    ]);
+    // Matched, but the generator it addresses had not rendered when the stage closed.
+    expect(stage.outputs?.pendingSurfaces).toEqual({
+      suggested_questions: ["no-price-suggestions"],
+    });
+  });
+
+  it("reports which generators ran, for a repeatable rule that carries no lifecycle budget", () => {
+    const steering: DirectiveSteeringResult = {
+      rules: [],
+      matches: [
+        {
+          directive: {
+            name: "no-price-suggestions",
+            condition: { kind: "always" },
+            action: "Never suggest a follow-up question about price.",
+            surfaces: ["suggested_questions"],
+          },
+          selectionMode: "deterministic",
+          selectionReason: "always",
+        },
+      ],
+      omissions: [],
+      // No lifecycle policy, so nothing is ever pending — the render status has to
+      // come from somewhere else or the rule reads as applied when it never showed.
+      renderedSurfaces: ["answer"],
+    };
+
+    const stage = appendDirectiveSteeringStage(baseTrace(), steering).stages.at(-1)!;
+
+    expect(stage.outputs?.renderedSurfaces).toEqual(["answer"]);
+    expect(stage.outputs?.pendingSurfaces).toBeUndefined();
+    // The suggestion generator never ran, so this rule reached nobody.
+    expect(stage.outputs?.matched).toEqual([
+      expect.objectContaining({ surfaces: ["suggested_questions"] }),
+    ]);
+  });
+
+  it("reports both generators when a follow-up question reached the visitor", () => {
+    const steering: DirectiveSteeringResult = {
+      rules: [],
+      matches: [
+        {
+          directive: {
+            name: "no-price-suggestions",
+            condition: { kind: "always" },
+            action: "Never suggest a follow-up question about price.",
+            surfaces: ["suggested_questions"],
+          },
+          selectionMode: "deterministic",
+          selectionReason: "always",
+        },
+      ],
+      omissions: [],
+      renderedSurfaces: ["answer", "suggested_questions"],
+    };
+
+    const stage = appendDirectiveSteeringStage(baseTrace(), steering).stages.at(-1)!;
+
+    expect(stage.outputs?.renderedSurfaces).toEqual(["answer", "suggested_questions"]);
   });
 });

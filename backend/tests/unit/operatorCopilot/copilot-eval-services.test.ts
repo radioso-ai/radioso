@@ -394,6 +394,7 @@ describe("copilot eval case replay evidence", () => {
   const harness = (options: {
     sourceAgentId?: string | null;
     directives?: ReadonlyArray<{ id: string; config: Record<string, unknown> }>;
+    snapshotAuthoredDirectives?: ReadonlyArray<Record<string, unknown>>;
   } = {}) => {
     const findCase = vi.fn(async () => ({
       id: ids.case,
@@ -403,6 +404,7 @@ describe("copilot eval case replay evidence", () => {
       assertions: [{ type: "answer_contains" }],
       sourceAgentId: options.sourceAgentId === undefined ? ids.agent : options.sourceAgentId,
       snapshotCapturedAt: capturedAt,
+      snapshotAuthoredDirectives: options.snapshotAuthoredDirectives ?? [],
     }));
     const execute = vi.fn(async () => ({
       run: {
@@ -476,7 +478,10 @@ describe("copilot eval case replay evidence", () => {
     // authoredDirectives array the run and the evidence row actually see is server-computed.
     const kept = { id: "directive-kept", config: { name: "Keep answering refunds" } };
     const removed = { id: "directive-removed", config: { name: "State the refund window" } };
-    const { service, execute, record, listDirectives } = harness({ directives: [kept, removed] });
+    const { service, execute, record, listDirectives } = harness({
+      directives: [kept, removed],
+      snapshotAuthoredDirectives: [kept.config, removed.config],
+    });
     const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
 
     await service.replayCase({
@@ -494,6 +499,75 @@ describe("copilot eval case replay evidence", () => {
       overrides: { agentConfigOverride: { authoredDirectives: [kept.config] } },
       directivesExcluded: ["directive-removed"],
     }));
+  });
+
+  it("replays the snapshot's own directive content, not the agent's current directives, so unrelated live edits since capture cannot leak into the measurement", async () => {
+    // `kept` differs between live and the snapshot — an edit an operator made to an unrelated
+    // directive sometime after this case was captured. The replay must reflect what the snapshot
+    // saw (`keptAtCapture`), never the live edit, or an improvement could get credited to the
+    // directive removal when it was really caused by this unrelated change.
+    const keptLive = { id: "directive-kept", config: { name: "Keep answering refunds", action: "Edited after capture" } };
+    const keptAtCapture = { name: "Keep answering refunds", action: "Original action at capture" };
+    const removed = { id: "directive-removed", config: { name: "State the refund window", action: "Say 30 days" } };
+    const { service, execute, record } = harness({
+      directives: [keptLive, removed],
+      snapshotAuthoredDirectives: [keptAtCapture, removed.config],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    });
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { agentConfigOverride: { authoredDirectives: [keptAtCapture] } },
+    }));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { agentConfigOverride: { authoredDirectives: [keptAtCapture] } },
+    }));
+  });
+
+  it("refuses excludedDirectiveIds when the named directive is not present in the case's captured snapshot", async () => {
+    // The directive exists on the live agent but was created after this case's snapshot was
+    // captured, so there is nothing in the snapshot to remove — silently ignoring the exclusion
+    // would credit the removal for a directive the captured "before" verdict never saw.
+    const addedSinceCapture = { id: "directive-new", config: { name: "New directive since capture" } };
+    const { service, execute } = harness({
+      directives: [addedSinceCapture],
+      snapshotAuthoredDirectives: [],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-new"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/not present in this case's captured snapshot/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses excludedDirectiveIds when the live directive no longer matches what the snapshot captured", async () => {
+    // Same name, live id still resolves — but the content was edited since capture. A rename or
+    // edit that reuses the name must not slip through as "the same directive" the case measured.
+    const editedLive = { id: "directive-removed", config: { name: "State the refund window", action: "Say 45 days" } };
+    const capturedVersion = { name: "State the refund window", action: "Say 30 days" };
+    const { service, execute } = harness({
+      directives: [editedLive],
+      snapshotAuthoredDirectives: [capturedVersion],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/changed since this case's snapshot was captured/i);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it("refuses an excludedDirectiveIds entry that is not one of the source agent's real directives", async () => {

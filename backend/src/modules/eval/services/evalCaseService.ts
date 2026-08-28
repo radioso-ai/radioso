@@ -139,14 +139,20 @@ export class EvalCaseService {
   }
 
   /**
-   * The case plus the agent whose captured configuration a replay of it runs against, and when
-   * that configuration was frozen. Both live on the snapshot, so a caller that needs to attribute
-   * a replay or date its baseline would otherwise have to read it separately.
+   * The case plus the agent whose captured configuration a replay of it runs against, when that
+   * configuration was frozen, and the authored directives it captured. All three live on the
+   * snapshot, so a caller that needs to attribute a replay, date its baseline, or vary the
+   * captured directive set (rather than the agent's current one — see the copilot replay service)
+   * would otherwise have to read the snapshot separately.
    */
   async findCaseWithSourceAgent(
     workspaceId: string,
     caseId: string,
-  ): Promise<(EvalCase & { sourceAgentId: string | null; snapshotCapturedAt: Date | null }) | null> {
+  ): Promise<(EvalCase & {
+    sourceAgentId: string | null;
+    snapshotCapturedAt: Date | null;
+    snapshotAuthoredDirectives: ReadonlyArray<Record<string, unknown>>;
+  }) | null> {
     const evalCase = await this.findCase(workspaceId, caseId);
     if (!evalCase) {
       return null;
@@ -156,6 +162,11 @@ export class EvalCaseService {
       ...evalCase,
       sourceAgentId: snapshot?.sourceAgentId ?? null,
       snapshotCapturedAt: snapshot ? new Date(snapshot.capturedAt) : null,
+      // Widened to an opaque record here, the same boundary the copilot composition uses for the
+      // live directive port: the copilot module reads directive identity, never the agents
+      // module's typed shape.
+      snapshotAuthoredDirectives:
+        (snapshot?.originalAgentConfig?.authoredDirectives ?? []) as unknown as ReadonlyArray<Record<string, unknown>>,
     };
   }
 

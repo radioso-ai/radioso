@@ -159,11 +159,15 @@ export interface CopilotEvalCaseReplayOverrides {
     skillSettings?: Record<string, unknown>;
     authoredDirectives?: ReadonlyArray<Record<string, unknown>>;
     /**
-     * Directive ids to drop from the replayed configuration. The replay service resolves and
-     * applies these itself against the case's source agent's real directives — never against a
-     * model-supplied `authoredDirectives` array, which carries no id a caller can trust — so this
-     * is the only seam that can honestly back `propose_directive_removal` evidence. Mutually
-     * exclusive with `authoredDirectives` in the same call.
+     * Directive ids to drop from the replayed configuration. The replay service resolves each id
+     * against the case's source agent's *live* directives only to learn which directive is meant
+     * (a model-supplied `authoredDirectives` array carries no id a caller can trust), then removes
+     * the matching entry from the case's *captured snapshot* directive set — never from the live
+     * set — so a directive added or edited elsewhere on the agent since the snapshot was taken
+     * cannot leak into the replay and get credited to this removal. A live directive that no
+     * longer matches its snapshot counterpart (renamed, edited, or absent from the snapshot)
+     * refuses the replay rather than guess. Mutually exclusive with `authoredDirectives` in the
+     * same call.
      */
     excludedDirectiveIds?: ReadonlyArray<string>;
   };
@@ -223,6 +227,15 @@ export interface CopilotEvalCaseReaderPort {
     sourceAgentId: string | null;
     /** When that configuration was captured. */
     snapshotCapturedAt: Date | null;
+    /**
+     * The source agent's authored directives exactly as this case's snapshot captured them
+     * (serialized, no ids — same shape a directive's live config serializes to). This is the set
+     * `excludedDirectiveIds` actually varies: the case's recorded verdict describes this snapshot,
+     * never the agent's directives as they stand today, so a replay that wants to measure "this
+     * case without directive X" must start here rather than from the live agent. Empty when the
+     * case captured no agent.
+     */
+    snapshotAuthoredDirectives: ReadonlyArray<Record<string, unknown>>;
   } | null>;
 }
 
@@ -313,9 +326,10 @@ export interface CopilotAgentSkillsVersionPort {
 
 /**
  * Reads the real identity behind an agent's authored directives — id paired with canonical
- * content — so a replay's `excludedDirectiveIds` can be validated and applied against something
- * the model cannot author. No replay override carries a directive's real id, so this is the only
- * source of truth for "does this id exist, and what does it serialize to."
+ * content — so a replay's `excludedDirectiveIds` can be validated against something the model
+ * cannot author. No replay override carries a directive's real id, so this is the only source of
+ * truth for "does this id exist, and what does it serialize to" — the replay then matches that
+ * identity into the case's captured snapshot by name rather than applying this live content.
  */
 export interface CopilotAgentDirectivesPort {
   listDirectives(

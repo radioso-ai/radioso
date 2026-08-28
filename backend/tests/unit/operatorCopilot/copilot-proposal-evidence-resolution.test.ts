@@ -172,6 +172,52 @@ describe("proposal evidence staleness window", () => {
 
     expect(evidence?.cases[0]).toMatchObject({ stale: false });
   });
+
+  it("marks a measurement stale when a skill changed after the capture even though the agents row did not", async () => {
+    // agents.updated_at never moves when a skill is created, edited, or removed (agent_skills is a
+    // sibling table), so the agent row alone under-reports how current the captured configuration
+    // is — a skill edited right after capture must still date the measurement.
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
+    const latestUpdatedAt = vi.fn(async () => new Date("2026-08-21T09:00:00.000Z"));
+
+    const evidence = await resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get }, agentSkillsVersion: { latestUpdatedAt } } as never,
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
+    );
+
+    expect(latestUpdatedAt).toHaveBeenCalledWith(ids.workspace, ids.agent);
+    expect(evidence?.cases[0]).toMatchObject({ stale: true });
+  });
+
+  it("keeps a measurement fresh when no skill has changed since the capture either", async () => {
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
+    const latestUpdatedAt = vi.fn(async () => new Date("2026-08-19T08:00:00.000Z"));
+
+    const evidence = await resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get }, agentSkillsVersion: { latestUpdatedAt } } as never,
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
+    );
+
+    expect(evidence?.cases[0]).toMatchObject({ stale: false });
+  });
+
+  it("keeps a measurement fresh when the agent has no skills at all", async () => {
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
+    const latestUpdatedAt = vi.fn(async () => null);
+
+    const evidence = await resolveProposalEvidence(
+      { evidence: { record: vi.fn(), findMany }, agentVersion: { get }, agentSkillsVersion: { latestUpdatedAt } } as never,
+      { workspaceId: ids.workspace, operatorUserId: ids.operator, copilotConversationId: "conversation-1", agentId: ids.agent, evidenceIds: [ids.evidence], change: { targetType: "directive" } },
+    );
+
+    expect(evidence?.cases[0]).toMatchObject({ stale: false });
+  });
 });
 
 describe("proposal evidence thread scope", () => {

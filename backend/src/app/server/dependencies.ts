@@ -464,6 +464,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const copilotReplayEvidenceRepository = new CopilotReplayEvidenceRepository(infrastructure.database.kysely);
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
+  // A skill edit persists through agent_skills, a table agents.updated_at never reflects, so
+  // evidence freshness needs this as a second signal alongside copilotAgentVersion.
+  const copilotAgentSkillsVersion = {
+    latestUpdatedAt: (workspaceId: string, agentId: string) => agentSkillRepository.latestUpdatedAt(workspaceId, agentId),
+  };
   // Directive removal evidence needs a directive's real id and content from the live agent, never
   // from a model-supplied replay override, so this reads through the same resolver the agent's
   // own config serialization uses rather than trusting anything the copilot sends.
@@ -523,7 +528,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalCaseCapture: evalCaseCaptureService,
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
-    proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
+    proposalEvidence: {
+      evidence: copilotReplayEvidenceRepository,
+      agentVersion: copilotAgentVersion,
+      agentSkillsVersion: copilotAgentSkillsVersion,
+    },
     qualitySignalsService,
     audiencePulseService,
     documentStatusService: documents.documentIngestionService,

@@ -302,6 +302,16 @@ export interface CopilotAgentVersionPort {
 }
 
 /**
+ * Reads the freshest write to any of an agent's skills. A skill edit persists through
+ * `agent_skills`, a table `agents.updated_at` never reflects, so {@link CopilotAgentVersionPort}
+ * alone under-reports how current the agent's effective configuration is. `null` when the agent
+ * has no skills.
+ */
+export interface CopilotAgentSkillsVersionPort {
+  latestUpdatedAt(workspaceId: string, agentId: string): Promise<Date | null>;
+}
+
+/**
  * Reads the real identity behind an agent's authored directives — id paired with canonical
  * content — so a replay's `excludedDirectiveIds` can be validated and applied against something
  * the model cannot author. No replay override carries a directive's real id, so this is the only

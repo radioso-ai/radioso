@@ -272,4 +272,32 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
     expect(await repository.remove(workspaceId, agentId, created.id)).toBe(true);
     expect(await repository.findById(workspaceId, agentId, created.id)).toBeNull();
   });
+
+  it("reports the freshest skill write, isolated per agent, and null when an agent has no skills", async () => {
+    const agentRepository = new AgentRepository(database.kysely);
+    const otherAgent = await agentRepository.create(workspaceId, { name: "Skill Repo Freshness Agent" });
+    expect(await repository.latestUpdatedAt(workspaceId, otherAgent.id)).toBeNull();
+
+    const created = await repository.create({
+      workspaceId,
+      agentId: otherAgent.id,
+      skillName: "epsilon",
+      kind: "notify",
+      targetType: "notify_delivery",
+      targetId: null,
+      config: {},
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+    expect((await repository.latestUpdatedAt(workspaceId, otherAgent.id))?.getTime())
+      .toBe(created.updatedAt.getTime());
+
+    const updated = await repository.update(workspaceId, otherAgent.id, created.id, { enabled: false });
+    const latest = await repository.latestUpdatedAt(workspaceId, otherAgent.id);
+    expect(latest?.getTime()).toBe(updated!.updatedAt.getTime());
+    expect(latest!.getTime()).toBeGreaterThanOrEqual(created.updatedAt.getTime());
+
+    // Isolated per agent: a sibling agent's skill write never moves this agent's watermark.
+    expect(await repository.latestUpdatedAt(workspaceId, randomUUID())).toBeNull();
+  });
 });

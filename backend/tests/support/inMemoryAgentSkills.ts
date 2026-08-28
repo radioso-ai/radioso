@@ -142,4 +142,11 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
     this.records.delete(id);
     return true;
   }
+
+  async latestUpdatedAt(workspaceId: string, agentId: string): Promise<Date | null> {
+    const timestamps = [...this.records.values()]
+      .filter((record) => record.workspaceId === workspaceId && record.agentId === agentId)
+      .map((record) => record.updatedAt.getTime());
+    return timestamps.length > 0 ? new Date(Math.max(...timestamps)) : null;
+  }
 }

@@ -1791,6 +1791,9 @@ export const createTestDependencies = (overrides: {
   const copilotRepository = new InMemoryCopilotRepository();
   const copilotReplayEvidenceRepository = new InMemoryCopilotReplayEvidenceRepository();
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
+  const copilotAgentSkillsVersion = {
+    latestUpdatedAt: (workspaceId: string, agentId: string) => agentSkillRepository.latestUpdatedAt(workspaceId, agentId),
+  };
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -1856,7 +1859,11 @@ export const createTestDependencies = (overrides: {
         windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
       },
     }),
-    proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
+    proposalEvidence: {
+      evidence: copilotReplayEvidenceRepository,
+      agentVersion: copilotAgentVersion,
+      agentSkillsVersion: copilotAgentSkillsVersion,
+    },
     pendingApprovals: approvalDecisionService,
     qualitySignalsService,
     audiencePulseService,

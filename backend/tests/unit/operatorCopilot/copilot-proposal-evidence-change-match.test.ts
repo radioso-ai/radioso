@@ -169,6 +169,79 @@ describe("cited evidence must be about the change being proposed", () => {
     )).rejects.toThrow(/did not exclude/i);
   });
 
+  it("refuses a directive removal proposal whose replay also swapped the chat model", async () => {
+    // The exact hole this closes: a replay that improved because it also used a different model
+    // could be cited as proof that removing the directive helped, even though the exact-set
+    // directivesExcluded check passed.
+    await expect(resolve(
+      {
+        agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] },
+        modelOverride: { provider: "openai", model: "gpt-test-2" },
+      },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
+    )).rejects.toThrow(/isolate/i);
+  });
+
+  it("refuses a directive removal proposal whose replay also changed the instructions", async () => {
+    await expect(resolve(
+      {
+        agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] },
+        assistantInstructionsOverride: { customInstruction: "Be terse." },
+      },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
+    )).rejects.toThrow(/isolate/i);
+  });
+
+  it("refuses a directive removal proposal whose replay also changed retrieval settings", async () => {
+    await expect(resolve(
+      {
+        agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] },
+        retrievalSettingsOverride: { vectorTopK: 20 },
+      },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
+    )).rejects.toThrow(/isolate/i);
+  });
+
+  it("refuses a directive removal proposal whose replay also seeded a routine start state", async () => {
+    await expect(resolve(
+      {
+        agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] },
+        routineStartState: { routineId: "refund-routine", path: [], variables: {}, status: "active" },
+      },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
+    )).rejects.toThrow(/isolate/i);
+  });
+
+  it("refuses a directive removal proposal whose replay also changed the custom instruction", async () => {
+    await expect(resolve(
+      {
+        agentConfigOverride: {
+          authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }],
+          customInstruction: "Always mention the refund window.",
+        },
+      },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
+    )).rejects.toThrow(/isolate/i);
+  });
+
+  it("refuses a directive removal proposal whose replay also changed a skill's settings", async () => {
+    await expect(resolve(
+      {
+        agentConfigOverride: {
+          authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }],
+          skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } },
+        },
+      },
+      { targetType: "directive", directiveId: "removed-directive" },
+      ["removed-directive"],
+    )).rejects.toThrow(/isolate/i);
+  });
+
   it("refuses to attach replay evidence to a routine proposal at all", async () => {
     // No replay override installs a routine, so a passing replay says nothing about a proposed
     // one. test_agent_turn runs a real turn against an unpublished draft instead.
@@ -189,17 +262,32 @@ describe("cited evidence must be about the change being proposed", () => {
   });
 
   it("accepts a skill config proposal whose configuration is the one the replay measured", async () => {
+    // agentConfig.ts's replay materialization merges skillSettings[key] onto the baseline's
+    // { enabled, settings } envelope, so the override must nest its tuning fields under `settings`
+    // for materializeAgentFromConfig to ever read them.
     const evidence = await resolve(
-      { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 40 } } } },
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } },
       { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
     );
 
     expect(evidence?.cases).toHaveLength(1);
   });
 
+  it("refuses evidence whose override set the config outside the envelope's settings key, since materialization ignores it there", async () => {
+    // The exact hole this closes: a flat `skillSettings["retrieval.answer"]: { vectorTopK: 40 }`
+    // override used to byte-match a proposal's plain `config`, even though applyAgentConfigOverride
+    // merges it onto the sibling of `settings` in the real envelope and materializeAgentFromConfig
+    // never reads it from there — the replay measured the *baseline* configuration, unchanged, and
+    // evidence still reported it as proof of the proposed values.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 40 } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+    )).rejects.toThrow(/did not measure/i);
+  });
+
   it("refuses evidence that measured a different skill configuration than the one proposed", async () => {
     await expect(resolve(
-      { agentConfigOverride: { skillSettings: { "retrieval.answer": { vectorTopK: 20 } } } },
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 20 } } } } },
       { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
     )).rejects.toThrow(/did not measure/i);
   });
@@ -208,8 +296,37 @@ describe("cited evidence must be about the change being proposed", () => {
     // Only the retrieve capability's default-answer skill is synced onto a legacy skillSettings
     // slot a replay can override; every other capability/invocation-mode combination has no seam.
     await expect(resolve(
-      { agentConfigOverride: { skillSettings: { "retrieval.answer": {} } } },
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: {} } } } },
       { targetType: "agent_skill", skillSettingsKey: null, config: { delivery: { recipientEmails: ["ops@example.com"] } } },
     )).rejects.toThrow(/cannot be measured/i);
+  });
+
+  it("accepts a skill config proposal whose enabled state is the one the replay measured", async () => {
+    const evidence = await resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { enabled: false, settings: { vectorTopK: 40 } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 }, enabled: false },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
+  it("refuses a skill config proposal whose enabled state the replay did not measure", async () => {
+    // The exact hole this closes: a proposal that disables retrieval used to cite a replay whose
+    // override never touched enablement at all, so the replay actually ran with retrieval on.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 }, enabled: false },
+    )).rejects.toThrow(/enabled state/i);
+  });
+
+  it("does not require enablement evidence when the proposal does not state one", async () => {
+    // Not every caller can express a target enabled value (see ProposalChange's agent_skill
+    // variant); when the proposal is silent on it, only the configuration is checked.
+    const evidence = await resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { enabled: false, settings: { vectorTopK: 40 } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 } },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
   });
 });

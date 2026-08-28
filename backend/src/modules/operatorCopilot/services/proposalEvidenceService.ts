@@ -1,6 +1,7 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { CopilotProposalEvidence } from "../contracts.js";
 import type {
+  CopilotAgentSkillsVersionPort,
   CopilotAgentVersionPort,
   CopilotReplayEvidenceRecord,
   CopilotReplayEvidenceRepositoryPort,
@@ -9,6 +10,13 @@ import type {
 export interface ProposalEvidenceDependencies {
   evidence: CopilotReplayEvidenceRepositoryPort;
   agentVersion: CopilotAgentVersionPort;
+  /**
+   * Optional so a caller that only exercises agent-level settings need not wire it. Production
+   * composition always supplies it: a skill edit persists through `agent_skills`, a table
+   * `agentVersion` never reads, so without this an agent whose skill changed after a case's
+   * capture would still report its evidence as fresh.
+   */
+  agentSkillsVersion?: CopilotAgentSkillsVersionPort;
 }
 
 export interface ProposalEvidenceRequest {
@@ -30,7 +38,10 @@ export type ProposalChange =
   | { targetType: "directive"; directiveId?: string }
   | { targetType: "routine" }
   | { targetType: "agent_setting"; settingKey: string; value: unknown }
-  | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown }
+  // `enabled` is optional because not every caller can state a target enabled value (see
+  // assertMeasuredTheProposedChange's agent_skill handling) — when present it must match what the
+  // replay measured, exactly like `config`.
+  | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown; enabled?: boolean }
   | { targetType: "context_variable" };
 
 /**
@@ -62,6 +73,55 @@ const sameValue = (left: unknown, right: unknown): boolean => {
 };
 
 /**
+ * The envelope a `skillSettings[key]` override actually merges onto (agentConfig.ts's
+ * `{ enabled, settings }` shape), read directly from the override the operator recorded — never
+ * from a reconstructed merge with the baseline, for the same reason the other checks in this file
+ * stay one-sided: the point is what the override *claimed* to test, not what a full replay of the
+ * merge would produce. A key the override sets outside `.settings` (the pre-fix shape) never
+ * reaches `.settings` here, so it correctly reads as unmeasured rather than as a match.
+ */
+const skillEnvelopeOverride = (
+  overrides: Record<string, unknown>,
+  skillSettingsKey: string,
+): { enabled: unknown; settings: Record<string, unknown> } => {
+  const skillSettings = asRecord(asRecord(overrides.agentConfigOverride).skillSettings);
+  const envelope = asRecord(skillSettings[skillSettingsKey]);
+  return { enabled: envelope.enabled, settings: asRecord(envelope.settings) };
+};
+
+/**
+ * `agentConfigOverride` keys `resolveDirectiveExclusion` (evalCaseReplayService.ts) populates
+ * itself when asked to exclude a directive — the mechanism of the removal, not a confound.
+ */
+const DIRECTIVE_EXCLUSION_OVERRIDE_KEYS = new Set(["authoredDirectives", "excludedDirectiveIds"]);
+
+/** Top-level override categories a directive-removal replay has no honest reason to also set. */
+const CONFOUNDING_TOP_LEVEL_OVERRIDE_KEYS = [
+  "modelOverride",
+  "assistantInstructionsOverride",
+  "retrievalSettingsOverride",
+  "routineStartState",
+] as const;
+
+/**
+ * Whether the recorded run measured anything besides the directive exclusion itself. A replay
+ * that also swapped the model, the instructions, the retrieval settings, or a routine start state
+ * measured a different configuration than "this agent with one directive removed" — a real
+ * verdict, but not evidence isolating the removal's effect. `overrides` is what the replay
+ * service actually ran (evalCaseReplayService.ts records it, not the model), so this cannot be
+ * defeated by a caller simply not mentioning a confound.
+ */
+const hasConfoundingOverride = (overrides: Record<string, unknown>): boolean => {
+  if (CONFOUNDING_TOP_LEVEL_OVERRIDE_KEYS.some((key) => overrides[key] !== undefined)) {
+    return true;
+  }
+  const agentConfigOverride = asRecord(overrides.agentConfigOverride);
+  return Object.keys(agentConfigOverride).some(
+    (key) => !DIRECTIVE_EXCLUSION_OVERRIDE_KEYS.has(key) && agentConfigOverride[key] !== undefined,
+  );
+};
+
+/**
  * Rejects a measurement that is real but about something else. How exactly it can be checked
  * differs by target, because the two sides are not equally comparable:
  *
@@ -80,7 +140,15 @@ const sameValue = (left: unknown, right: unknown): boolean => {
  *   operator exploring "what if I dropped both of these") and a replay that removed A and B
  *   together measured a configuration that never existed as "remove A alone" describes — removing
  *   both can improve a metric that removing A by itself would regress. The recorded set must equal
- *   exactly the one directive being proposed for removal, not merely contain it.
+ *   exactly the one directive being proposed for removal, not merely contain it. Even an exact-set
+ *   match is not enough on its own: a replay that excluded exactly this directive but *also*
+ *   swapped the model or the instructions measured a confounded configuration, so
+ *   {@link hasConfoundingOverride} must find nothing else in play too.
+ * - A skill's configuration is compared against the envelope a `skillSettings` override actually
+ *   merges onto (`{ enabled, settings }`, mirroring agentConfig.ts's serialization), not against
+ *   the raw override value: a key set outside `.settings` never reaches the tuning fields
+ *   materializeAgentFromConfig reads and is silently ignored at runtime, so it must not read as
+ *   measured here. `enabled` is checked the same way whenever the proposal states one.
  * - No override installs a routine, so no replay can support a routine proposal.
  * - No override installs visitor context either, so the same is true of a context variable
  *   proposal: nothing in CopilotEvalCaseReplayOverrides can put a pushed, browser, or resolver
@@ -108,6 +176,9 @@ const assertMeasuredTheProposedChange = (
       if (!excludedExactlyThisDirective) {
         throw badRequest("Replay evidence did not exclude exactly the directive being removed; replay again with excludedDirectiveIds set to only this directive's id, with no other directives excluded");
       }
+      if (hasConfoundingOverride(overrides)) {
+        throw badRequest("Replay evidence also measured other configuration changes alongside the directive exclusion, so it cannot isolate the removal's effect; replay again with excludedDirectiveIds as the only override");
+      }
       return;
     }
     const directives = asRecord(overrides.agentConfigOverride).authoredDirectives;
@@ -125,9 +196,12 @@ const assertMeasuredTheProposedChange = (
     if (!change.skillSettingsKey) {
       throw badRequest("This skill's configuration cannot be measured by a replay, so evidence cannot support it");
     }
-    const skillSettings = asRecord(asRecord(overrides.agentConfigOverride).skillSettings);
-    if (!sameValue(skillSettings[change.skillSettingsKey], change.config)) {
+    const envelope = skillEnvelopeOverride(overrides, change.skillSettingsKey);
+    if (!sameValue(envelope.settings, change.config)) {
       throw badRequest("Replay evidence did not measure the proposed skill configuration");
+    }
+    if (change.enabled !== undefined && envelope.enabled !== change.enabled) {
+      throw badRequest("Replay evidence did not measure the proposed skill's enabled state");
     }
     return;
   }
@@ -180,11 +254,31 @@ export const resolveProposalEvidence = async (
     assertMeasuredTheProposedChange(record, request.change);
   }
 
-  const agentUpdatedAt = (await dependencies.agentVersion.get(request.workspaceId, request.agentId)).updatedAt;
+  const agentUpdatedAt = await resolveEffectiveAgentUpdatedAt(dependencies, request);
 
   return {
     cases: evidenceIds.map((id) => projectMeasurement(byId.get(id)!, agentUpdatedAt)),
   };
+};
+
+/**
+ * The freshest of an agent's own edit and any of its skills' edits. `agents.updated_at` never
+ * moves when a skill is created, edited, or removed (agent_skills is a sibling table), so relying
+ * on it alone would report a skill changed after a case's capture as still fresh.
+ * `agentSkillsVersion` is optional (see {@link ProposalEvidenceDependencies}), so its absence
+ * simply contributes no additional signal rather than failing the whole resolution.
+ */
+const resolveEffectiveAgentUpdatedAt = async (
+  dependencies: ProposalEvidenceDependencies,
+  request: ProposalEvidenceRequest,
+): Promise<Date> => {
+  const [agent, skillsUpdatedAt] = await Promise.all([
+    dependencies.agentVersion.get(request.workspaceId, request.agentId),
+    dependencies.agentSkillsVersion?.latestUpdatedAt(request.workspaceId, request.agentId) ?? Promise.resolve(null),
+  ]);
+  return skillsUpdatedAt && skillsUpdatedAt.getTime() > agent.updatedAt.getTime()
+    ? skillsUpdatedAt
+    : agent.updatedAt;
 };
 
 const projectMeasurement = (record: CopilotReplayEvidenceRecord, agentUpdatedAt: Date) => ({

@@ -43,6 +43,13 @@ export interface AgentSkillRepositoryPort {
   listByWorkspace(workspaceId: string): Promise<AgentSkillSpine[]>;
   update(workspaceId: string, agentId: string, id: string, input: AgentSkillUpdateRecord): Promise<AgentSkillSpine | null>;
   remove(workspaceId: string, agentId: string, id: string): Promise<boolean>;
+  /**
+   * The most recent write to any of an agent's skills, `null` when it has none. `agents.updated_at`
+   * never moves when a skill is created, edited, or removed — this table is the only place that
+   * recency lives — so a caller that needs to know whether "this agent's effective configuration"
+   * changed cannot answer that from the `agents` row alone.
+   */
+  latestUpdatedAt(workspaceId: string, agentId: string): Promise<Date | null>;
 }
 
 // Loosely typed so the Kysely `selectAll()`/`returningAll()` row (jsonb → JsonValue,
@@ -249,5 +256,15 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
       .where("id", "=", id)
       .executeTakeFirst();
     return (result?.numDeletedRows ?? 0n) > 0n;
+  }
+
+  async latestUpdatedAt(workspaceId: string, agentId: string): Promise<Date | null> {
+    const row = await this.db
+      .selectFrom("agent_skills")
+      .select((eb) => eb.fn.max<Date | string | null>("updated_at").as("latest"))
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .executeTakeFirst();
+    return row?.latest ? new Date(row.latest) : null;
   }
 }

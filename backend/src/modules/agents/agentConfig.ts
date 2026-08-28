@@ -12,6 +12,7 @@ import type {
   AuthoredDirectiveCondition,
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
+import type { RetrieveSkillConfig } from "../retrieval/public.js";
 import {
   refPlaceholder,
   secretPlaceholder,
@@ -370,8 +371,9 @@ const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSettingsC
 
 /** What {@link effectiveRetrieveAnswerSkillSettings} and {@link canonicalRetrieveAnswerSkillConfig}
  * compare: the retrieve default-answer skill's `sourceScope` in its mode-based agent form, plus
- * every other configurable field flattened onto one settings record (skill-tuning keys, with the
- * retrieve skill's own `instruction` already renamed to `customInstruction`). */
+ * every other configurable field of `RetrieveSkillConfig` projected onto one flat settings record,
+ * keyed by canonical name (`instruction` renamed to `customInstruction`; every other kept field by
+ * its own name). */
 export interface RetrieveAnswerSkillEffectiveSettings {
   sourceScope: InternalAgentSourceScopeConfig;
   settings: Record<string, unknown>;
@@ -394,52 +396,134 @@ const sourceScopeFromProposedConfig = (sourceScope: unknown): InternalAgentSourc
 };
 
 /**
+ * Where a single `retrieveSkillConfigSchema` field lands once `materializeAgentFromConfig` has
+ * run. {@link canonicalRetrieveAnswerSkillConfig} and {@link effectiveRetrieveAnswerSkillSettings}
+ * both project through this one table instead of each hand-deciding a field's placement, so the
+ * two cannot drift the way they did for `sourceScope`/`instruction` (fixed once already) and then
+ * `suggestedQuestionsEnabled` (the defect this table replaces: it passed through as a flat tuning
+ * key on the proposal side while `effectiveRetrieveAnswerSkillSettings` never surfaced it at all,
+ * since `splitRetrievalAnswerEnvelope` only ever reads it nested under
+ * `settings.__agentRetrievalDefaults` — so no replay override could ever match an ordinary
+ * proposal for the default retrieve skill). Typing this `Record<keyof RetrieveSkillConfig, ...>`
+ * makes a field the schema gains with no entry here a compile error rather than a silent drop;
+ * `copilot-proposal-evidence-change-match.test.ts` and this file's
+ * "retrieve answer skill config canonicalization" suite additionally assert the *runtime*
+ * placement is correct and exhaustive.
+ *
+ * - `sourceScope`: converted to/from the mode-based `AgentSourceScopeConfig`; compared in its own
+ *   slot, never folded into `settings`.
+ * - `exposedInputs`: configures the skill invocation, not anything `materializeAgentFromConfig`
+ *   reads; dropped on both sides.
+ * - `suggestedQuestionsEnabled`: `agentRepository.ts`'s `toDefaultRetrieveSkillConfig` always
+ *   writes this field from the *agent's* `suggestedQuestionsEnabled` column, and `mapAgent` always
+ *   reads it back into that same column — for the default retrieve-answer skill (the only skill a
+ *   replay override can speak to at all), this proposal field means the agent-level default, not a
+ *   skill-local tuning value. It therefore round-trips through the same
+ *   `settings.__agentRetrievalDefaults` slot as `sourceScope`, not as a flat tuning key.
+ * - `instruction`: renamed to `customInstruction`, the flat skill-tuning key materialization reads.
+ * - everything else: an ordinary skill-tuning key, flat under its own name on both sides.
+ */
+type RetrieveAnswerFieldLocation =
+  | { readonly kind: "sourceScope" }
+  | { readonly kind: "dropped" }
+  | { readonly kind: "settings"; readonly canonicalKey: string; readonly nestedUnderAgentDefaults?: true };
+
+const RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS: {
+  readonly [Field in keyof RetrieveSkillConfig]: RetrieveAnswerFieldLocation;
+} = {
+  sourceScope: { kind: "sourceScope" },
+  exposedInputs: { kind: "dropped" },
+  instruction: { kind: "settings", canonicalKey: "customInstruction" },
+  suggestedQuestionsEnabled: { kind: "settings", canonicalKey: "suggestedQuestionsEnabled", nestedUnderAgentDefaults: true },
+  suggestedQuestionsCount: { kind: "settings", canonicalKey: "suggestedQuestionsCount" },
+  retrievalStrategy: { kind: "settings", canonicalKey: "retrievalStrategy" },
+  vectorTopK: { kind: "settings", canonicalKey: "vectorTopK" },
+  rerankEnabled: { kind: "settings", canonicalKey: "rerankEnabled" },
+  rerankTopK: { kind: "settings", canonicalKey: "rerankTopK" },
+  queryRewriteEnabled: { kind: "settings", canonicalKey: "queryRewriteEnabled" },
+  temporalStructuredLookupEnabled: { kind: "settings", canonicalKey: "temporalStructuredLookupEnabled" },
+  temporalBoostUpcomingEnabled: { kind: "settings", canonicalKey: "temporalBoostUpcomingEnabled" },
+  temporalDeterministicSortEnabled: { kind: "settings", canonicalKey: "temporalDeterministicSortEnabled" },
+  semanticRewriteInstructions: { kind: "settings", canonicalKey: "semanticRewriteInstructions" },
+  lexicalRewriteInstructions: { kind: "settings", canonicalKey: "lexicalRewriteInstructions" },
+  metadataRules: { kind: "settings", canonicalKey: "metadataRules" },
+};
+
+/**
  * Canonicalizes a `propose_skill_config` proposal's `config` for the retrieve default-answer
- * skill into the same shape {@link effectiveRetrieveAnswerSkillSettings} derives from a replay's
- * recorded override, so the two are comparable: `sourceScope`'s `"all" | { sourceIds }` shape
- * becomes the mode-based form materialization reads out of `__agentRetrievalDefaults`,
- * `instruction` becomes the skill-tuning `customInstruction` key, `exposedInputs` is dropped (it
- * configures the skill invocation, not anything `materializeAgentFromConfig` reads), and every
- * other field passes through unchanged, by the same name, as a flat skill-tuning setting.
+ * skill by projecting each field through {@link RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS} —
+ * the same table {@link effectiveRetrieveAnswerSkillSettings} projects a replay's recorded
+ * envelope through — so the two sides are comparable by construction, not by two hand-written
+ * mappings kept in agreement by inspection.
  */
 export const canonicalRetrieveAnswerSkillConfig = (
   config: Record<string, unknown>,
 ): RetrieveAnswerSkillEffectiveSettings => {
-  const { sourceScope, instruction, exposedInputs: _exposedInputs, ...rest } = config;
-  return {
-    sourceScope: sourceScopeFromProposedConfig(sourceScope),
-    settings: {
-      ...rest,
-      ...(typeof instruction === "string" ? { customInstruction: instruction } : {}),
-    },
-  };
+  const settings: Record<string, unknown> = {};
+  let sourceScope: InternalAgentSourceScopeConfig = { mode: "all" };
+  for (const [field, location] of Object.entries(RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS)) {
+    if (location.kind === "sourceScope") {
+      sourceScope = sourceScopeFromProposedConfig(config[field]);
+      continue;
+    }
+    if (location.kind === "dropped") {
+      continue;
+    }
+    const value = config[field];
+    if (value !== undefined) {
+      settings[location.canonicalKey] = value;
+    }
+  }
+  return { sourceScope, settings };
 };
 
 /**
  * The canonical counterpart of {@link canonicalRetrieveAnswerSkillConfig}: what a replay
  * override's recorded `{ enabled, settings }` envelope for the retrieve default-answer skill
- * actually materializes to, derived by running it through the same `splitRetrievalAnswerEnvelope`
- * extraction `materializeAgentFromConfig` uses — not a second hand-written mapping. A `.settings`
- * blob shaped after the proposal's own field names (flat `sourceScope`/`instruction`, instead of
- * the envelope shape materialization reads) canonicalizes to the *default* source scope and no
- * `customInstruction`, surfacing the mismatch instead of byte-matching a configuration the replay
- * never actually ran. See proposalEvidenceService's `agent_skill` evidence check.
+ * actually materializes to. Runs the envelope through the same `splitRetrievalAnswerEnvelope`
+ * extraction `materializeAgentFromConfig` uses, then projects the result through
+ * {@link RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS} — never a second hand-written mapping. A
+ * `.settings` blob shaped after the proposal's own field names (flat `sourceScope`/`instruction`,
+ * or a flat `suggestedQuestionsEnabled` instead of nested under `__agentRetrievalDefaults`) leaves
+ * the corresponding canonical field absent, surfacing the mismatch instead of byte-matching a
+ * configuration the replay never actually ran. See proposalEvidenceService's `agent_skill`
+ * evidence check.
  */
 export const effectiveRetrieveAnswerSkillSettings = (
   settings: unknown,
 ): RetrieveAnswerSkillEffectiveSettings => {
+  const settingsRecord = isRecord(settings) ? settings : {};
   const wrapped = {
     [RETRIEVAL_ANSWER_SKILL_KEY]: {
       enabled: true,
-      settings: isRecord(settings) ? settings : {},
+      settings: settingsRecord,
     },
   } as InternalAgentSkillSettingsConfig;
   const split = splitRetrievalAnswerEnvelope(wrapped);
-  const skillSettings = split.skillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
-  return {
-    sourceScope: split.sourceScope,
-    settings: isRecord(skillSettings) ? skillSettings : {},
-  };
+  const flatSkillSettings = split.skillSettings[RETRIEVAL_ANSWER_SKILL_KEY];
+  const flatSettings = isRecord(flatSkillSettings) ? flatSkillSettings : {};
+  // Read the raw nested defaults directly rather than splitRetrievalAnswerEnvelope's own
+  // suggestedQuestionsEnabled output, which defaults a missing value to `true` for
+  // materialization's purposes (an agent always has *some* effective suggested-questions
+  // behavior). A canonical comparison must stay symmetric with the proposal side, which leaves a
+  // field absent from `.settings` entirely when the proposal never set it; defaulting it here
+  // would manufacture a match, or a mismatch, that no override actually earned.
+  const agentDefaultsSource = settingsRecord[AGENT_RETRIEVAL_DEFAULTS_KEY];
+  const agentDefaultsSettings = isRecord(agentDefaultsSource) ? agentDefaultsSource : {};
+
+  const result: Record<string, unknown> = {};
+  for (const location of Object.values(RETRIEVE_ANSWER_SKILL_CONFIG_FIELD_LOCATIONS)) {
+    if (location.kind !== "settings") {
+      continue;
+    }
+    const source = location.nestedUnderAgentDefaults ? agentDefaultsSettings : flatSettings;
+    const value = source[location.canonicalKey];
+    if (value !== undefined) {
+      result[location.canonicalKey] = value;
+    }
+  }
+
+  return { sourceScope: split.sourceScope, settings: result };
 };
 
 const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): WebsiteEmbedSurfaceConfig => ({

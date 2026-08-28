@@ -5,10 +5,13 @@ import {
   AGENT_CONFIG_FIELD_DESCRIPTORS,
   AGENT_CONFIG_SCHEMA_VERSION,
   applyAgentConfigOverride,
+  canonicalRetrieveAnswerSkillConfig,
+  effectiveRetrieveAnswerSkillSettings,
   materializeAgentFromConfig,
   projectInternalAgentConfig,
   serializeAgentConfig,
 } from "../../src/modules/agents/agentConfig.js";
+import { retrieveSkillConfigSchema, type RetrieveSkillConfig } from "../../src/modules/retrieval/public.js";
 
 const fullyConfiguredAgent = (): ConversationAgent => ({
   id: "agent-1",
@@ -529,5 +532,136 @@ describe("serializeAgentConfig", () => {
       createdAt: new Date(0),
       updatedAt: new Date(0),
     }]);
+  });
+});
+
+describe("retrieve answer skill config canonicalization", () => {
+  // Where materializeAgentFromConfig / splitRetrievalAnswerEnvelope actually reads each
+  // retrieveSkillConfigSchema field from in a replay override's recorded `.settings` envelope —
+  // verified directly against that extraction, not against canonicalRetrieveAnswerSkillConfig's or
+  // effectiveRetrieveAnswerSkillSettings's own doc comments. `sourceScope` is covered by its own
+  // test below because its proposal-side and replay-side shapes both differ structurally from a
+  // plain value, not just in location.
+  const FIELD_REPLAY_FIXTURES: {
+    [Field in Exclude<keyof RetrieveSkillConfig, "sourceScope">]: {
+      proposalValue: unknown;
+      canonicalKey: string | null;
+      replaySettings: Record<string, unknown>;
+    };
+  } = {
+    instruction: {
+      proposalValue: "Always cite the source document.",
+      canonicalKey: "customInstruction",
+      replaySettings: { customInstruction: "Always cite the source document." },
+    },
+    // Configures the skill invocation, not anything materialization reads: dropped on both sides.
+    exposedInputs: {
+      proposalValue: { query: true },
+      canonicalKey: null,
+      replaySettings: {},
+    },
+    // agentRepository.ts's toDefaultRetrieveSkillConfig always writes this from the agent's own
+    // suggestedQuestionsEnabled column, and mapAgent always reads it back into that same column —
+    // for the default retrieve-answer skill, this proposal field means the agent-level default, so
+    // it lives in the same __agentRetrievalDefaults slot sourceScope does, not a flat tuning key.
+    suggestedQuestionsEnabled: {
+      proposalValue: false,
+      canonicalKey: "suggestedQuestionsEnabled",
+      replaySettings: { __agentRetrievalDefaults: { suggestedQuestionsEnabled: false } },
+    },
+    suggestedQuestionsCount: {
+      proposalValue: 2,
+      canonicalKey: "suggestedQuestionsCount",
+      replaySettings: { suggestedQuestionsCount: 2 },
+    },
+    retrievalStrategy: {
+      proposalValue: "reasoning",
+      canonicalKey: "retrievalStrategy",
+      replaySettings: { retrievalStrategy: "reasoning" },
+    },
+    vectorTopK: {
+      proposalValue: 40,
+      canonicalKey: "vectorTopK",
+      replaySettings: { vectorTopK: 40 },
+    },
+    rerankEnabled: {
+      proposalValue: true,
+      canonicalKey: "rerankEnabled",
+      replaySettings: { rerankEnabled: true },
+    },
+    rerankTopK: {
+      proposalValue: 12,
+      canonicalKey: "rerankTopK",
+      replaySettings: { rerankTopK: 12 },
+    },
+    queryRewriteEnabled: {
+      proposalValue: true,
+      canonicalKey: "queryRewriteEnabled",
+      replaySettings: { queryRewriteEnabled: true },
+    },
+    temporalStructuredLookupEnabled: {
+      proposalValue: true,
+      canonicalKey: "temporalStructuredLookupEnabled",
+      replaySettings: { temporalStructuredLookupEnabled: true },
+    },
+    temporalBoostUpcomingEnabled: {
+      proposalValue: true,
+      canonicalKey: "temporalBoostUpcomingEnabled",
+      replaySettings: { temporalBoostUpcomingEnabled: true },
+    },
+    temporalDeterministicSortEnabled: {
+      proposalValue: true,
+      canonicalKey: "temporalDeterministicSortEnabled",
+      replaySettings: { temporalDeterministicSortEnabled: true },
+    },
+    semanticRewriteInstructions: {
+      proposalValue: "Expand acronyms before searching.",
+      canonicalKey: "semanticRewriteInstructions",
+      replaySettings: { semanticRewriteInstructions: "Expand acronyms before searching." },
+    },
+    lexicalRewriteInstructions: {
+      proposalValue: "Keep product codes verbatim.",
+      canonicalKey: "lexicalRewriteInstructions",
+      replaySettings: { lexicalRewriteInstructions: "Keep product codes verbatim." },
+    },
+    metadataRules: {
+      proposalValue: [{ id: "rule-1", effect: "boost", enabled: true }],
+      canonicalKey: "metadataRules",
+      replaySettings: { metadataRules: [{ id: "rule-1", effect: "boost", enabled: true }] },
+    },
+  };
+
+  it("covers every field retrieveSkillConfigSchema accepts, so a field added later cannot go unmatched silently", () => {
+    // This is the completeness guarantee the fix promises: a future retrieveSkillConfigSchema
+    // field with no entry in FIELD_REPLAY_FIXTURES fails this assertion instead of quietly
+    // becoming a proposal field that can never be matched to replay evidence.
+    const schemaFields = Object.keys(retrieveSkillConfigSchema.shape).filter((field) => field !== "sourceScope").sort();
+
+    expect(Object.keys(FIELD_REPLAY_FIXTURES).sort()).toEqual(schemaFields);
+  });
+
+  it.each(Object.entries(FIELD_REPLAY_FIXTURES))(
+    "round-trips %s between a propose_skill_config proposal and the replay override that actually put it under test",
+    (field, fixture) => {
+      const proposed = canonicalRetrieveAnswerSkillConfig({ [field]: fixture.proposalValue });
+      const effective = effectiveRetrieveAnswerSkillSettings(fixture.replaySettings);
+
+      expect(proposed).toEqual(effective);
+      if (fixture.canonicalKey) {
+        expect(proposed.settings[fixture.canonicalKey]).toEqual(fixture.proposalValue);
+      } else {
+        expect(proposed.settings).toEqual({});
+      }
+    },
+  );
+
+  it("round-trips sourceScope between a propose_skill_config proposal and the replay override that actually put it under test", () => {
+    const proposed = canonicalRetrieveAnswerSkillConfig({ sourceScope: { sourceIds: ["source-1"] } });
+    const effective = effectiveRetrieveAnswerSkillSettings({
+      __agentRetrievalDefaults: { sourceScope: { mode: "selected", sourceIds: ["source-1"] } },
+    });
+
+    expect(proposed).toEqual(effective);
+    expect(proposed.sourceScope).toEqual({ mode: "selected", sourceIds: ["source-1"] });
   });
 });

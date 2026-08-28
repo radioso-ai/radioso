@@ -376,6 +376,35 @@ describe("cited evidence must be about the change being proposed", () => {
     expect(evidence?.cases).toHaveLength(1);
   });
 
+  it("refuses a skill config proposal that changed suggestedQuestionsEnabled when the replay's override set it flat instead of nested under the agent-level retrieval defaults", async () => {
+    // The exact hole this closes: agentConfig.ts's materialization only reads
+    // suggestedQuestionsEnabled from settings.__agentRetrievalDefaults.suggestedQuestionsEnabled —
+    // the same legacy slot sourceScope nests under. A flat settings.suggestedQuestionsEnabled
+    // sibling — the proposal's own field name and shape — used to byte-match change.config's flat
+    // suggestedQuestionsEnabled and be accepted, even though the replay actually ran with the
+    // baseline's value, unchanged. This is the normal shape of an ordinary default-retrieve-skill
+    // proposal, so this hole made replay evidence unattachable for the common case.
+    await expect(resolve(
+      { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { suggestedQuestionsEnabled: false } } } } },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { suggestedQuestionsEnabled: false } },
+    )).rejects.toThrow(/did not measure/i);
+  });
+
+  it("accepts a skill config proposal that changed suggestedQuestionsEnabled when the replay nested it under the agent-level retrieval defaults", async () => {
+    const evidence = await resolve(
+      {
+        agentConfigOverride: {
+          skillSettings: {
+            "retrieval.answer": { settings: { __agentRetrievalDefaults: { suggestedQuestionsEnabled: false } } },
+          },
+        },
+      },
+      { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { suggestedQuestionsEnabled: false } },
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
   it("accepts a skill config proposal that changed sourceScope, the retrieval instruction, and a tuning field together when the replay measured all three correctly", async () => {
     // Exercises the full propose_skill_config mapping in one case: sourceScope nests under the
     // agent-level retrieval defaults, instruction renames to customInstruction, and an ordinary

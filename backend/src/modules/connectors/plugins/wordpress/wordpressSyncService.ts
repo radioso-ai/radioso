@@ -13,6 +13,7 @@
 import type {
   ConnectorIngestionPort,
   ConnectorLogger,
+  ConnectorPublicHttpPort,
   ConnectorStatePort,
 } from "@radioso/connector-api";
 import { sql } from "kysely";
@@ -36,15 +37,21 @@ export interface WordpressSyncDeps {
   db: Db;
   state: ConnectorStatePort;
   ingestion: ConnectorIngestionPort;
+  publicHttp: ConnectorPublicHttpPort;
   /** Override for tests. Defaults to constructing a real client per workspace. */
   buildClient?: (config: Record<string, string>) => WordpressClient;
 }
 
-const defaultBuildClient = (config: Record<string, string>): WordpressClient =>
+const defaultBuildClient = (
+  config: Record<string, string>,
+  publicHttp: ConnectorPublicHttpPort,
+): WordpressClient =>
   new WordpressClient({
     siteUrl: config["site_url"] ?? "",
     username: config["wp_username"] || undefined,
     applicationPassword: config["wp_application_password"] || undefined,
+    assertPublicUrl: publicHttp.assertPublicUrl,
+    fetchImpl: publicHttp.fetch as typeof fetch,
   });
 
 const postTypesFromConfig = (config: Record<string, string>): string[] =>
@@ -164,7 +171,7 @@ export const runBackfill = async (
       return { ingested: 0, alreadyRunning: true };
     }
 
-    const client = (deps.buildClient ?? defaultBuildClient)(config.config);
+  const client = deps.buildClient?.(config.config) ?? defaultBuildClient(config.config, deps.publicHttp);
     const types = postTypesFromConfig(config.config);
     let ingested = 0;
     let highWaterMark: string | null = null;
@@ -450,7 +457,7 @@ export const runPoll = async (
     .executeTakeFirst();
   const cursor = cursorRow?.last_modified_at ?? null;
 
-  const client = (deps.buildClient ?? defaultBuildClient)(config.config);
+    const client = deps.buildClient?.(config.config) ?? defaultBuildClient(config.config, deps.publicHttp);
   const types = postTypesFromConfig(config.config);
   let ingested = 0;
   let newCursor = cursor;

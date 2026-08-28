@@ -8,6 +8,7 @@ import {
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../../modules/chat/composition.js";
 import type { ApplicationModule } from "../applicationModule.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 export const createWebhookSendApplicationModule = (): ApplicationModule => ({
   id: "radioso-webhook-send",
@@ -28,7 +29,7 @@ export const createWebhookSendApplicationModule = (): ApplicationModule => ({
             new AgentRepository(database.kysely),
             new AgentSkillRepository(database.kysely),
           ),
-          httpClient: new FetchWebhookHttpClient(assertPublicWebsiteUrl),
+          httpClient: new FetchWebhookHttpClient(assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
           telemetryService,
           logger,
         });

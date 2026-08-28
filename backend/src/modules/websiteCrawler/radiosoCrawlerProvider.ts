@@ -1,5 +1,6 @@
 import type { CrawledPageResult } from "@radioso/crawler";
 
+import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import { resolveWebsiteCrawlerConfig } from "./config.js";
 import type { WebsiteCrawlPage, WebsiteCrawlRequest, WebsiteCrawlResult, WebsiteCrawlerProvider } from "./provider.js";
 import { assertPublicWebsiteUrl } from "./urlPolicy.js";
@@ -23,6 +24,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
       excludeUrlPatterns: request.policy?.excludeUrlPatterns,
       preserveContentLinks: request.policy?.preserveContentLinks,
       validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
+      fetchImpl: fetchPublicUrl,
       seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
       seedPendingUrls,
       includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
@@ -69,6 +71,7 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
         excludeUrlPatterns: request.policy?.excludeUrlPatterns,
         preserveContentLinks: request.policy?.preserveContentLinks,
         validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
+        fetchImpl: fetchPublicUrl,
         seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
         seedPendingUrls,
         includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
@@ -175,8 +178,9 @@ export const createRadiosoCrawlerUtilityProvider = () => ({
     validateNavigationUrl?: (url: string) => Promise<void> | void;
     [key: string]: unknown;
   }) {
-    const { fetchPageWithScreenshot } = await import("@radioso/crawler");
-    return fetchPageWithScreenshot(url, options);
+    void url;
+    void options;
+    throw new Error("Browser transport is disabled until it has connection-bound egress");
   },
   async crawlSite(params: {
     baseUrl: string;
@@ -189,11 +193,11 @@ export const createRadiosoCrawlerUtilityProvider = () => ({
     return crawlSite({
       ...params,
       validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
+      fetchImpl: fetchPublicUrl,
     });
   },
   async isBrowserTransportAvailable() {
-    const { isPlaywrightAvailable } = await import("@radioso/crawler");
-    return isPlaywrightAvailable();
+    return false;
   },
   /**
    * Convert a fragment or full HTML document into clean, paragraph-structured

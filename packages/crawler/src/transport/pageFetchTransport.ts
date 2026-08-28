@@ -52,16 +52,17 @@ const fetchWithCertificateHostnameFallback = async (
   url: string,
   init: RequestInit,
   validateFallbackUrl?: (url: string) => Promise<void> | void,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<{ response: Response; requestUrl: string }> => {
   try {
-    return { response: await fetch(url, init), requestUrl: url };
+    return { response: await fetchImpl(url, init), requestUrl: url };
   } catch (error) {
     const fallbackUrl = resolveCertificateHostnameFallbackUrl(url, error);
     if (!fallbackUrl) {
       throw error;
     }
     await validateFallbackUrl?.(fallbackUrl);
-    return { response: await fetch(fallbackUrl, init), requestUrl: fallbackUrl };
+    return { response: await fetchImpl(fallbackUrl, init), requestUrl: fallbackUrl };
   }
 };
 
@@ -217,7 +218,12 @@ export const parseSitemapUrls = (content: string, contentType: string | null): s
 
 export const fetchText = async (
   url: string,
-  options?: { signal?: AbortSignal; userAgent?: string; validateNavigationUrl?: ValidateNavigationUrl },
+  options?: {
+    signal?: AbortSignal;
+    userAgent?: string;
+    validateNavigationUrl?: ValidateNavigationUrl;
+    fetchImpl?: typeof fetch;
+  },
 ): Promise<{ ok: boolean; status: number; contentType: string | null; body: string }> => {
   const timeoutSignal = AbortSignal.timeout(15_000);
   const fetchSignal = options?.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
@@ -229,7 +235,7 @@ export const fetchText = async (
       redirect: "manual",
       signal: fetchSignal,
       ...(options?.userAgent ? { headers: { "User-Agent": options.userAgent } } : {}),
-    }, options?.validateNavigationUrl);
+    }, options?.validateNavigationUrl, options?.fetchImpl);
     currentUrl = fetched.requestUrl;
     response = fetched.response;
     if (response.status < 300 || response.status >= 400) {
@@ -313,6 +319,7 @@ const assertPlainFetchAllowedByRobots = async (
     signal: options?.signal,
     userAgent: options?.userAgent,
     validateNavigationUrl: options?.validateNavigationUrl,
+    fetchImpl: options?.fetchImpl,
   });
   if (robots.status === 404 || !robots.ok) {
     return;
@@ -347,7 +354,7 @@ const fetchPageWithPlainFetch = async (
     }, async (fallbackUrl) => {
       assertInScope(fallbackUrl);
       await options?.validateNavigationUrl?.(fallbackUrl);
-    });
+    }, options?.fetchImpl);
     currentUrl = fetched.requestUrl;
     response = fetched.response;
     if (response.status < 300 || response.status >= 400) {
@@ -383,13 +390,16 @@ const fetchPageWithPlainFetch = async (
 
 export const fetchPageWithCrawlee: FetchPage = async (url, options) => {
   ensureSystemBinaryPaths();
-  let result: FetchedPage | null = null;
-  let failure: unknown = null;
   const assertInScope = (candidateUrl: string) => {
     if (options?.scopeBaseUrl && !canonicalizeUrlIdentity(candidateUrl, { scopeBaseUrl: options.scopeBaseUrl })) {
       throw new Error(`Fetched URL out of crawl scope: ${candidateUrl}`);
     }
   };
+  if (options?.fetchImpl) {
+    return fetchPageWithPlainFetch(url, options, assertInScope);
+  }
+  let result: FetchedPage | null = null;
+  let failure: unknown = null;
   const crawler = new CheerioCrawler(
     {
       maxRequestsPerCrawl: 1,

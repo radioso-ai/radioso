@@ -85,6 +85,48 @@ describe("WordpressClient", () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
+  it("validates every redirect hop and never forwards credentials across origins", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "https://www.example.com/wp-json/wp/v2/pages" },
+      }))
+      .mockResolvedValueOnce(okJsonResponse([], { "x-wp-totalpages": "1" }));
+    const assertPublicUrl = vi.fn(async () => undefined);
+    const client = new WordpressClient({
+      siteUrl: "https://example.com",
+      username: "alice",
+      applicationPassword: "secret",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      assertPublicUrl,
+    });
+
+    await client.fetchPostsPage({ type: "page", page: 1, perPage: 10 });
+
+    expect(assertPublicUrl).toHaveBeenCalledTimes(2);
+    expect(assertPublicUrl).toHaveBeenNthCalledWith(2, "https://www.example.com/wp-json/wp/v2/pages");
+    const firstInit = fetchImpl.mock.calls[0]?.[1] as RequestInit;
+    const secondInit = fetchImpl.mock.calls[1]?.[1] as RequestInit;
+    expect(firstInit.redirect).toBe("manual");
+    expect((firstInit.headers as Record<string, string>).Authorization).toBeDefined();
+    expect((secondInit.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it("rejects a blocked destination before issuing a request", async () => {
+    const fetchImpl = vi.fn();
+    const client = new WordpressClient({
+      siteUrl: "http://127.0.0.1",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      assertPublicUrl: async () => {
+        throw new Error("publicly routable host required");
+      },
+    });
+
+    await expect(client.fetchPostsPage({ type: "page", page: 1, perPage: 10 }))
+      .rejects.toThrow("publicly routable");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("parses X-WP-TotalPages header into the result", async () => {
     const fetchImpl = vi.fn(async () =>
       okJsonResponse([{ id: 1 }], { "x-wp-totalpages": "5" }),

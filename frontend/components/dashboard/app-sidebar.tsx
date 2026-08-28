@@ -40,8 +40,6 @@ interface AppSidebarProps {
   routeState: DashboardRouteState
   /** The active section's nested sub-navigation, rendered under its rail row. */
   areaSubNav?: ReactNode
-  /** The "Ask Ray" input, rendered at the top of the sidebar above the nav. */
-  askRaySlot?: ReactNode
 }
 
 // Activity sits first and is visually separated from the build/config sections below —
@@ -54,7 +52,7 @@ const navItems = [
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
-export function AppSidebar({ accountId, currentView, routeState, areaSubNav, askRaySlot }: AppSidebarProps) {
+export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const railQueries = useAttentionRailQueries(activeWorkspaceId ?? '')
@@ -66,12 +64,11 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav, ask
 
   return (
     <Sidebar collapsible="offcanvas">
-      <SidebarHeader className="border-b border-sidebar-border p-0">
+      <SidebarHeader className="h-16 border-b border-sidebar-border p-0">
         <WorkspaceSwitcher accountId={accountId} currentView={currentView} routeState={routeState} />
       </SidebarHeader>
 
       <SidebarContent>
-        {askRaySlot ? <div className="px-2 pt-2">{askRaySlot}</div> : null}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -94,7 +91,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav, ask
                 return (
                   <SidebarMenuItem
                     key={item.id}
-                    className={item.id === 'activity' ? 'mb-1 border-b border-sidebar-border pb-1' : undefined}
+                    className={item.id === 'activity' ? 'mb-1' : undefined}
                   >
                     {isAgentsPicker ? null : (
                         <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>

@@ -17,7 +17,7 @@ import { QualityView } from './quality-view'
 import { AudiencePulseView } from './audience-pulse-view'
 import { EvalView } from './eval-view'
 import { CopilotView } from './copilot-view'
-import { AskRayInput, CopilotPanel, CopilotSelectionAffordance } from './copilot-panel'
+import { AskRayTag, CopilotPanel, CopilotSelectionAffordance } from './copilot-panel'
 import { FirstRunExperience } from './first-run-experience'
 import {
   buildDashboardHref,
@@ -176,12 +176,11 @@ export function DashboardShell({
             accountId={accountId}
             currentView={currentView}
             routeState={routeState}
-            askRaySlot={copilotPermissionDenied ? null : <AskRayInput />}
           />
           <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
             {/* Mobile-only chrome: the desktop sidebar is pinned open (single nav
                 surface), so this top strip only exists on mobile, where the nav is
-                offcanvas and needs a trigger to open it. Ask Ray lives in the sidebar. */}
+                offcanvas and needs a trigger to open it. */}
             <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
               <SidebarTrigger />
             </header>
@@ -234,12 +233,11 @@ export function DashboardShell({
           currentView={currentView}
           routeState={routeState}
           areaSubNav={subNav}
-          askRaySlot={copilotPermissionDenied ? null : <AskRayInput />}
         />
         <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
           {/* Mobile-only chrome: the desktop sidebar is pinned open (single nav
               surface), so this top strip only exists on mobile, where the nav is
-              offcanvas and needs a trigger to open it. Ask Ray lives in the sidebar. */}
+              offcanvas and needs a trigger to open it. */}
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
             <SidebarTrigger />
           </header>
@@ -273,6 +271,7 @@ export function DashboardShell({
           </div>
         </SidebarInset>
         {!copilotPermissionDenied ? <CopilotPanel accountId={accountId} routeState={routeState} availability={copilotAvailability} /> : null}
+        {!copilotPermissionDenied ? <AskRayTag /> : null}
         {!copilotPermissionDenied ? <CopilotSelectionAffordance /> : null}
       </SidebarProvider>
     </CopilotContextProvider>

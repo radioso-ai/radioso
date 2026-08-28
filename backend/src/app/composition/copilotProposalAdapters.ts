@@ -24,6 +24,7 @@ import {
 } from "../../modules/routines/public.js";
 import {
   AgentSkillsService,
+  mergeSkillConfig,
   type AgentSkillInvocationMode,
   type AgentSkillView,
 } from "../../modules/agentSkills/public.js";
@@ -821,32 +822,10 @@ const isSkillCapabilityId = (value: string): value is SkillCapabilityId => (skil
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
-const isPlainConfigObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-/**
- * Applies always end up as a full `replaceConfig` (see the comment on `dryRunValidate`'s call
- * site), so whatever this produces IS the config that gets persisted - there is no service-side
- * partial merge left to fall back on. A top-level-only spread would let a patch that names one
- * nested settings-field path (e.g. `delivery.recipientEmails`) silently wipe a sibling path under
- * the same key (`delivery.webhook`) that the proposal never mentioned, because the whole `delivery`
- * object would be replaced wholesale. Recursing into plain objects on both sides keeps every
- * untouched leaf from the stored config; arrays and scalars are still replaced outright wherever
- * the proposed patch supplies them, since "append to this array" is not a merge rule this adapter
- * can safely infer.
- */
-const mergeSkillConfig = (existing: Record<string, unknown> | undefined, proposed: Record<string, unknown> | undefined): Record<string, unknown> => {
-  const base = existing ?? {};
-  const patch = proposed ?? {};
-  const merged: Record<string, unknown> = { ...base };
-  for (const [key, value] of Object.entries(patch)) {
-    const current = base[key];
-    merged[key] = isPlainConfigObject(value) && isPlainConfigObject(current)
-      ? mergeSkillConfig(current, value)
-      : value;
-  }
-  return merged;
-};
+// Applies always end up as a full `replaceConfig` (see the comment on `dryRunValidate`'s call
+// site), so whatever `mergeSkillConfig` (shared with the direct HTTP PATCH path in
+// AgentSkillRepository - see backend/src/modules/agentSkills/configMerge.ts) produces here IS the
+// config that gets persisted - there is no service-side partial merge left to fall back on.
 
 const readByPath = (source: Record<string, unknown>, path: string): unknown =>
   path.split(".").reduce<unknown>(

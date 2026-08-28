@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
-import { currentTimestamp, jsonbConcat, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { mergeSkillConfig } from "./configMerge.js";
 import type { AgentSkillInvocationMode, AgentSkillKind, AgentSkillSpine } from "./domain.js";
 
 export interface AgentSkillCreateRecord {
@@ -170,22 +171,67 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
     id: string,
     input: AgentSkillUpdateRecord,
   ): Promise<AgentSkillSpine | null> {
-    const row = await this.db
+    if (input.config !== undefined && input.replaceConfig === undefined) {
+      return this.updateWithConfigMerge(workspaceId, agentId, id, input);
+    }
+    return this.applyUpdate(this.db, workspaceId, agentId, id, input, input.replaceConfig);
+  }
+
+  /**
+   * A partial `config` patch deep-merges into the row's *current* stored config (recurses into
+   * plain objects, replaces arrays/scalars outright the patch supplies - see `mergeSkillConfig`),
+   * which a single UPDATE statement's jsonb `||` can only do shallowly. Computing that merge in
+   * application code makes this a read-modify-write, so the read and the write share one
+   * transaction, and the read takes `FOR UPDATE`: the row lock blocks a concurrent writer from
+   * reading a base until this transaction commits, so two concurrent partial patches to different
+   * nested keys (e.g. notify's `delivery.recipientEmails` and `delivery.webhook`) serialize and
+   * compose instead of one silently clobbering the other. `expectedUpdatedAt`, when supplied, is
+   * still enforced in the final UPDATE's own WHERE predicate underneath that lock.
+   */
+  private async updateWithConfigMerge(
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: AgentSkillUpdateRecord,
+  ): Promise<AgentSkillSpine | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const existing = await trx
+        .selectFrom("agent_skills")
+        .select("config")
+        .where("workspace_id", "=", workspaceId)
+        .where("agent_id", "=", agentId)
+        .where("id", "=", id)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!existing) {
+        return null;
+      }
+      const mergedConfig = mergeSkillConfig((existing.config as Record<string, unknown> | null) ?? {}, input.config);
+      return this.applyUpdate(trx, workspaceId, agentId, id, input, mergedConfig);
+    });
+  }
+
+  private async applyUpdate(
+    executor: Db,
+    workspaceId: string,
+    agentId: string,
+    id: string,
+    input: AgentSkillUpdateRecord,
+    config: Record<string, unknown> | undefined,
+  ): Promise<AgentSkillSpine | null> {
+    const row = await executor
       .updateTable("agent_skills")
-      .set((eb) => ({
+      .set({
         updated_at: currentTimestamp(),
         // Mirror the prior COALESCE/CASE semantics: target_type updates only when a
         // value is supplied; target_id distinguishes an explicit null (key present)
-        // from "leave unchanged" (key absent); config remains a shallow jsonb merge
-        // unless a full replacement is explicitly requested.
+        // from "leave unchanged" (key absent).
         ...(input.targetType != null ? { target_type: input.targetType } : {}),
         ...("targetId" in input ? { target_id: input.targetId ?? null } : {}),
-        ...(input.replaceConfig !== undefined
-          ? { config: toJsonb(input.replaceConfig) }
-          : input.config ? { config: jsonbConcat(eb.ref("config"), toJsonb(input.config)) } : {}),
+        ...(config !== undefined ? { config: toJsonb(config) } : {}),
         ...(input.invocationMode != null ? { invocation_mode: input.invocationMode } : {}),
         ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-      }))
+      })
       .where("workspace_id", "=", workspaceId)
       .where("agent_id", "=", agentId)
       .where("id", "=", id)

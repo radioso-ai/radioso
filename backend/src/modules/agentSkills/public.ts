@@ -21,3 +21,4 @@ export {
   type AgentSkillCreateRecord,
   type AgentSkillUpdateRecord,
 } from "./repository.js";
+export { mergeSkillConfig } from "./configMerge.js";

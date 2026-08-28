@@ -227,6 +227,45 @@ describe("AgentSkillsService", () => {
     });
   });
 
+  it("deep-merges a partial config patch so an untouched sibling field survives", async () => {
+    // A notify skill's `delivery` carries both a webhook URL and recipient emails. A PATCH that
+    // only supplies `delivery.recipientEmails` must not disturb `delivery.webhook` - a shallow
+    // top-level merge would replace the whole `delivery` object and, via notifyDeliverySchema's
+    // `.default(null)` on `webhook`, silently reset the stored webhook URL to null.
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "contact_human",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: {
+        delivery: {
+          recipientEmails: ["sales@example.com"],
+          webhook: { url: "https://hooks.example.com/contact" },
+        },
+        exposedInputs: { message: true, email: true },
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, {
+      config: {
+        delivery: { recipientEmails: ["sales@example.com", "ops@example.com"] },
+      },
+    });
+
+    expect(updated.config).toEqual({
+      delivery: {
+        recipientEmails: ["sales@example.com", "ops@example.com"],
+        webhook: { url: "https://hooks.example.com/contact" },
+      },
+      exposedInputs: { message: true, email: true },
+    });
+  });
+
   it("raises a conflict and leaves a concurrent edit intact when expectedUpdatedAt no longer matches", async () => {
     const { service } = makeService();
     const workspaceId = randomUUID();

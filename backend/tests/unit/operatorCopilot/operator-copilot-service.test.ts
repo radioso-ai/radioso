@@ -8,6 +8,7 @@ import {
   type CopilotProposalTargetType,
 } from "../../../src/modules/operatorCopilot/public.js";
 import { copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
+import type { CopilotProposalAdapter } from "../../../src/modules/operatorCopilot/contracts.js";
 import { InMemoryCopilotRepository as MemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
 
 const now = new Date("2026-08-11T00:00:00.000Z");
@@ -231,7 +232,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     vi.useRealTimers();
   });
 
-  const buildService = (repository: MemoryCopilotRepository, applyIfVersionMatches: ReturnType<typeof vi.fn>) =>
+  const buildService = (repository: MemoryCopilotRepository, applyIfVersionMatches: CopilotProposalAdapter["applyIfVersionMatches"]) =>
     new OperatorCopilotService({
       repository,
       capabilityRunner: { runStreaming: vi.fn() },

@@ -181,11 +181,14 @@ export const createAgentSkillConfigProposalCopilotTools = (
           const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
           const targetRef = { agentId: resolvedAgentId, skillId: skillId ?? null };
           const validated = await skillAdapter.validatePayload(context.workspaceId, targetRef, { name, capability, target, config, invocationMode, enabled, rationale });
-          const validatedPayload = validated.payload as { name: string; capability: string; invocationMode: string; config: unknown; rationale?: string };
+          const validatedPayload = validated.payload as { name: string; capability: string; invocationMode: string; config: unknown; enabled: boolean; rationale?: string };
           const evidence = await citedProposalEvidence(deps, context, resolvedAgentId, evidenceIds, {
             targetType: "agent_skill",
             skillSettingsKey: skillSettingsEvidenceKey(validatedPayload.capability, validatedPayload.invocationMode),
             config: validatedPayload.config,
+            // Forwarded so a proposal that turns the skill off cannot cite a replay that left it on:
+            // enablement lives outside `settings` in the replay envelope, so config alone never sees it.
+            enabled: validatedPayload.enabled,
           });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,

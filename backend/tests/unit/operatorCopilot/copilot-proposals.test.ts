@@ -20,6 +20,7 @@ import {
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
 import { createAgentSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
+import { createAgentSkillConfigProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentSkills.js";
 import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
 import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { conflict } from "../../../src/shared/domain/errors.js";
@@ -1216,6 +1217,90 @@ describe("proposals carrying replay evidence", () => {
 
     await expect(descriptor.createTool(context).invoke({ intent: "State it", evidenceIds: [evidenceId] }, {} as never))
       .rejects.toThrow(/different agent/i);
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+});
+
+describe("propose_skill_config replay evidence", () => {
+  // Only the retrieve capability's default-answer skill round-trips through a replay override
+  // (see skillSettingsEvidenceKey in agentSkills.ts), so that is the pair this suite measures.
+  const evidenceId = randomUUID();
+  const caseId = randomUUID();
+  const runId = randomUUID();
+  const capturedAt = new Date("2026-08-25T10:00:00.000Z");
+  const agentUpdatedAt = new Date("2026-08-25T09:00:00.000Z");
+
+  // The replay measured the skill switched ON, at the config the proposal below also states.
+  const measuredEnabled = () => ({
+    id: evidenceId,
+    workspaceId,
+    operatorUserId,
+    conversationId: "conversation-1",
+    agentId,
+    caseId,
+    caseName: "Refund window",
+    runId,
+    baselineCapturedAt: capturedAt,
+    recordedStatus: "failing" as const,
+    verdict: "pass" as const,
+    overrides: { agentConfigOverride: { skillSettings: { "retrieval.answer": { enabled: true, settings: { vectorTopK: 40 } } } } },
+    directivesExcluded: [],
+    createdAt: new Date(),
+  });
+
+  const harness = () => {
+    const createProposal = vi.fn(async (input: Record<string, unknown>) => ({
+      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+    }));
+    // A stand-in for the real skill adapter: it just echoes back what the tool validated, the
+    // same way the directive-adapter mock above stands in for drafting.
+    const validatePayload = vi.fn(async (_workspaceId: string, targetRef: unknown, payload: unknown) => {
+      const input = payload as { capability?: string; invocationMode?: string; config?: unknown; enabled?: boolean; rationale?: string };
+      return {
+        targetRef,
+        payload: {
+          name: "Default answer",
+          capability: input.capability,
+          invocationMode: input.invocationMode,
+          config: input.config ?? {},
+          enabled: input.enabled,
+          rationale: input.rationale,
+        },
+        versionToken: "skill-version",
+      };
+    });
+    const descriptors = createAgentSkillConfigProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: {
+        evidence: { record: vi.fn(), findMany: vi.fn(async () => [measuredEnabled()]) },
+        agentVersion: { get: vi.fn(async () => ({ updatedAt: agentUpdatedAt })) },
+      },
+      proposalAdapters: [
+        { targetType: "agent_skill" as const, readVersionToken: vi.fn(async () => "skill-version"), preview: vi.fn(), applyIfVersionMatches: vi.fn(), validatePayload },
+      ],
+      auditService: auditService(),
+    } as never);
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_skill_config")!;
+    return { descriptor, createProposal };
+  };
+
+  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+  it("refuses a proposal that turns the default-answer skill off, citing a replay that measured it on", async () => {
+    // Regression coverage for propose_skill_config actually forwarding `enabled` into the cited
+    // change: before that wiring existed, this exact call created the proposal instead of
+    // rejecting it, silently dropping the enabled-state check the evidence service enforces.
+    const { descriptor, createProposal } = harness();
+
+    await expect(descriptor.createTool(context).invoke({
+      agentId,
+      capability: "retrieve",
+      invocationMode: "default_answer",
+      config: { vectorTopK: 40 },
+      enabled: false,
+      evidenceIds: [evidenceId],
+    }, {} as never)).rejects.toThrow(/enabled state/i);
+
     expect(createProposal).not.toHaveBeenCalled();
   });
 });

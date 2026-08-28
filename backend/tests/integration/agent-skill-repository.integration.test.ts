@@ -289,12 +289,15 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
       invocationMode: "routine_named",
       enabled: true,
     });
+    // The watermark is touched via clock_timestamp() in a statement separate from the row's own
+    // now()-stamped updated_at, so it trails it by a hair rather than matching to the millisecond
+    // - "at least as fresh as", not "identical to", is the real invariant.
     expect((await repository.latestUpdatedAt(workspaceId, otherAgent.id))?.getTime())
-      .toBe(created.updatedAt.getTime());
+      .toBeGreaterThanOrEqual(created.updatedAt.getTime());
 
     const updated = await repository.update(workspaceId, otherAgent.id, created.id, { enabled: false });
     const latest = await repository.latestUpdatedAt(workspaceId, otherAgent.id);
-    expect(latest?.getTime()).toBe(updated!.updatedAt.getTime());
+    expect(latest!.getTime()).toBeGreaterThanOrEqual(updated!.updatedAt.getTime());
     expect(latest!.getTime()).toBeGreaterThanOrEqual(created.updatedAt.getTime());
 
     // Isolated per agent: a sibling agent's skill write never moves this agent's watermark.
@@ -333,8 +336,9 @@ describeIfDatabase("AgentSkillRepository (Kysely) against Postgres", () => {
       invocationMode: "routine_named",
       enabled: true,
     });
+    // Same clock_timestamp()-vs-now() trailing gap as above: "at least as fresh as", not exact.
     expect((await repository.latestUpdatedAt(workspaceId, deletionAgent.id))?.getTime())
-      .toBe(newer.updatedAt.getTime());
+      .toBeGreaterThanOrEqual(newer.updatedAt.getTime());
 
     // Delete the freshest skill: a surviving-rows MAX would fall back to `older`'s timestamp,
     // moving the watermark backwards relative to what it reported a moment ago.

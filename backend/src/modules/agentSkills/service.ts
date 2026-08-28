@@ -8,6 +8,7 @@ import {
   type SkillCapabilityId,
   type SkillCapabilityRegistry,
 } from "../skills/public.js";
+import { mergeSkillConfig } from "./configMerge.js";
 import { agentSkillInvocationModes, type AgentSkillInvocationMode, type AgentSkillSpine } from "./domain.js";
 import type { AgentSkillRepositoryPort } from "./repository.js";
 
@@ -169,7 +170,12 @@ export class AgentSkillsService {
     if (!descriptor) {
       throw badRequest(`Unsupported skill kind "${existing.kind}"`);
     }
-    const nextConfig = input.replaceConfig ?? { ...(existing.config ?? {}), ...(input.config ?? {}) };
+    // Validate against the same deep merge AgentSkillRepository.update actually persists
+    // (mergeSkillConfig), not a shallow top-level spread: a shallow candidate replaces a whole
+    // nested key (e.g. email's boundInputs) wholesale when the patch only touches one of its
+    // siblings, so it can fail a capability's required-field check the repository's real,
+    // sibling-preserving merge would have satisfied.
+    const nextConfig = input.replaceConfig ?? mergeSkillConfig(existing.config, input.config);
     const invocationMode = input.invocationMode ?? existing.invocationMode;
     const target = input.target ?? { kind: existing.targetType ?? descriptor.targetKind, id: existing.targetId ?? null };
     await this.validateCreateOrUpdate(workspaceId, agentId, descriptor, {

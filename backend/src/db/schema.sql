@@ -396,6 +396,33 @@ END;
 $$;
 
 
+--
+-- Name: touch_agent_skills_watermark_on_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.touch_agent_skills_watermark_on_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  -- Skip when the owning agent is already gone within this same transaction (an agent delete
+  -- cascading into its skills): agent_skills_watermarks has the same ON DELETE CASCADE FK to
+  -- agents, so the watermark row is being removed right along with it, and inserting here would
+  -- both be pointless and risk a foreign key violation against an agents row this transaction
+  -- already deleted.
+  IF NOT EXISTS (SELECT 1 FROM agents WHERE id = OLD.agent_id) THEN
+    RETURN OLD;
+  END IF;
+
+  INSERT INTO agent_skills_watermarks (agent_id, workspace_id, updated_at)
+  VALUES (OLD.agent_id, OLD.workspace_id, clock_timestamp())
+  ON CONFLICT (agent_id) DO UPDATE
+    SET updated_at = GREATEST(agent_skills_watermarks.updated_at, EXCLUDED.updated_at);
+
+  RETURN OLD;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -7607,6 +7634,13 @@ CREATE TRIGGER embedding_spaces_identity_immutable BEFORE UPDATE ON public.embed
 --
 
 CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind, agent_id, workspace_id, target_type, target_id ON public.agent_skills FOR EACH ROW EXECUTE FUNCTION public.enforce_agent_skill_target_reference();
+
+
+--
+-- Name: agent_skills trg_agent_skills_watermark_on_delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_agent_skills_watermark_on_delete AFTER DELETE ON public.agent_skills FOR EACH ROW EXECUTE FUNCTION public.touch_agent_skills_watermark_on_delete();
 
 
 --

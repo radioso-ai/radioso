@@ -266,6 +266,43 @@ describe("AgentSkillsService", () => {
     });
   });
 
+  it("validates a partial config patch against the same deep merge the repository persists, not a shallow one", async () => {
+    // An email skill's config requires `to` and a body to be bound or exposed. A PATCH that only
+    // supplies `boundInputs.subject` must validate against boundInputs with the existing `to` and
+    // `bodyText` still present (what the repository's deep merge actually persists) - not a
+    // shallow top-level spread, which replaces the whole `boundInputs` object with just
+    // `{ subject }` and would wrongly reject a patch the repository would happily apply.
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const targetId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "send_email",
+      capability: "email",
+      target: { kind: "customer_email_connection", id: targetId },
+      config: {
+        mode: "draft",
+        boundInputs: { to: "customer@example.com", subject: "Welcome", bodyText: "Hi there" },
+        exposedInputs: {},
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, {
+      config: {
+        boundInputs: { subject: "Welcome, updated" },
+      },
+    });
+
+    expect(updated.config).toEqual({
+      mode: "draft",
+      boundInputs: { to: "customer@example.com", subject: "Welcome, updated", bodyText: "Hi there" },
+      exposedInputs: {},
+    });
+  });
+
   it("raises a conflict and leaves a concurrent edit intact when expectedUpdatedAt no longer matches", async () => {
     const { service } = makeService();
     const workspaceId = randomUUID();

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import { mergeSkillConfig } from "./configMerge.js";
+import { touchAgentSkillsWatermark } from "./skillsWatermark.js";
 import type { AgentSkillInvocationMode, AgentSkillKind, AgentSkillSpine } from "./domain.js";
 
 export interface AgentSkillCreateRecord {
@@ -106,26 +107,9 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
         })
         .returningAll()
         .executeTakeFirstOrThrow();
-      await this.touchSkillsWatermark(trx, input.workspaceId, input.agentId);
+      await touchAgentSkillsWatermark(trx, input.workspaceId, input.agentId);
       return mapRow(row as AgentSkillRow);
     });
-  }
-
-  /**
-   * Advances the durable per-agent skills freshness watermark `latestUpdatedAt` reads — touched
-   * in the same transaction as the write it accompanies, so it shares that write's `now()`
-   * (Postgres fixes `now()` for the whole transaction) and therefore reports the identical
-   * instant a create/update's own `updated_at` does. Kept off `agents.updated_at` itself: that
-   * column also backs optimistic-concurrency version tokens for unrelated proposal types
-   * (directive, agent_setting, routine) on the same agent, so bumping it here would make those go
-   * spuriously stale on every skill edit.
-   */
-  private async touchSkillsWatermark(executor: Db, workspaceId: string, agentId: string): Promise<void> {
-    await executor
-      .insertInto("agent_skills_watermarks")
-      .values({ agent_id: agentId, workspace_id: workspaceId, updated_at: currentTimestamp() })
-      .onConflict((oc) => oc.column("agent_id").doUpdateSet({ updated_at: currentTimestamp() }))
-      .execute();
   }
 
   async findById(workspaceId: string, agentId: string, id: string): Promise<AgentSkillSpine | null> {
@@ -203,7 +187,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
         ? await this.updateWithConfigMerge(trx, workspaceId, agentId, id, input)
         : await this.applyUpdate(trx, workspaceId, agentId, id, input, input.replaceConfig);
       if (row) {
-        await this.touchSkillsWatermark(trx, workspaceId, agentId);
+        await touchAgentSkillsWatermark(trx, workspaceId, agentId);
       }
       return row;
     });
@@ -273,34 +257,33 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
   }
 
   async remove(workspaceId: string, agentId: string, id: string): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
-      const result = await trx
-        .deleteFrom("agent_skills")
-        .where("workspace_id", "=", workspaceId)
-        .where("agent_id", "=", agentId)
-        .where("id", "=", id)
-        .executeTakeFirst();
-      const removed = (result?.numDeletedRows ?? 0n) > 0n;
-      // A delete must advance the watermark too, not just a create/update: MAX(updated_at) over
-      // surviving agent_skills rows leaves this unchanged (or lower) after a delete, so evidence
-      // captured before the delete would still read as fresh — see latestUpdatedAt below.
-      if (removed) {
-        await this.touchSkillsWatermark(trx, workspaceId, agentId);
-      }
-      return removed;
-    });
+    // A DELETE's watermark advance is *not* touched here (unlike create/update): a database
+    // trigger on `agent_skills` (migration 154) touches it for every deleted row, in the same
+    // transaction as the DELETE, regardless of which repository issued it — this class's own, or
+    // one of the webhook/customer_email/external_mcp/slack skill-definition repositories that
+    // share this table without knowing about this watermark at all. A trigger, rather than a
+    // second manual call here, is what makes that guarantee hold for a future repository too: it
+    // fires on the DELETE statement itself, not on a call site someone has to remember to add.
+    const result = await this.db
+      .deleteFrom("agent_skills")
+      .where("workspace_id", "=", workspaceId)
+      .where("agent_id", "=", agentId)
+      .where("id", "=", id)
+      .executeTakeFirst();
+    return (result?.numDeletedRows ?? 0n) > 0n;
   }
 
   /**
    * The most recent write to any of an agent's skills — create, update, *or delete*. `MAX(watermark,
    * MAX(agent_skills.updated_at))`, not either alone: `MAX(agent_skills.updated_at)` over surviving
    * rows leaves a deletion unreported (the max is unchanged or lower) and reads as `null`, not
-   * "recently changed", once the agent's last skill is removed — the watermark this class's own
-   * `create`/`update`/`remove` touch closes that gap. But a handful of per-capability skill kinds
+   * "recently changed", once the agent's last skill is removed — the `agent_skills_watermarks`
+   * trigger (every delete, from any writer) and this class's own `create`/`update` calls to
+   * `touchAgentSkillsWatermark` close that gap. But a handful of per-capability skill kinds
    * (webhook, customer_email, external_mcp, slack) are still written through their own dedicated
-   * repositories that share the `agent_skills` table without touching this watermark, so the
-   * surviving-rows max stays in the comparison too: dropping it would stop reporting *their*
-   * creates and edits, not just fail to report their deletes.
+   * repositories that share the `agent_skills` table without calling `touchAgentSkillsWatermark`
+   * on create/update, so the surviving-rows max stays in the comparison too: dropping it would
+   * stop reporting *their* creates and edits, not just their (now trigger-covered) deletes.
    */
   async latestUpdatedAt(workspaceId: string, agentId: string): Promise<Date | null> {
     const [watermark, rows] = await Promise.all([

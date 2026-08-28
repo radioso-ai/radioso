@@ -23,7 +23,14 @@ export interface CopilotPageContext {
   entities: CopilotPageEntity[]
 }
 
-export type CopilotPageEntityType = 'agent' | 'conversation' | 'routine' | 'directive' | 'document' | 'evalCase'
+// Mirrors backend/src/modules/operatorCopilot/contracts.ts's copilotPageEntityTypes, the runtime
+// list the copilot turn schema accepts for pageContext.entities. There is no shared package
+// between the two runtimes, so backend/tests/unit/operatorCopilot/copilot-contracts.test.ts
+// parses this file's source to keep the two declarations from drifting apart again — do not
+// widen this without adding the value on the backend side (and vice versa).
+export const COPILOT_PAGE_ENTITY_TYPES = ['agent', 'conversation', 'routine', 'directive', 'document', 'evalCase'] as const
+
+export type CopilotPageEntityType = (typeof COPILOT_PAGE_ENTITY_TYPES)[number]
 
 export interface CopilotPageEntity {
   type: CopilotPageEntityType
@@ -41,7 +48,7 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
@@ -70,6 +77,14 @@ export interface CopilotProposalSummary {
   status: CopilotProposalStatus
   reason?: string | null
   evidence?: CopilotProposalEvidenceSummary
+  /**
+   * True only for a proposal that permanently deletes its target rather than updating it (e.g.
+   * a directive removal). Absent, not false, for an ordinary update. Read this instead of
+   * parsing `summary`'s prose for irreversibility - the backend already distinguishes a removal
+   * structurally (proposalAdapters.ts's `op: "remove"` discriminator) and carries that signal
+   * through the card itself.
+   */
+  removal?: boolean
 }
 
 export interface CopilotProposalPreview {
@@ -81,6 +96,8 @@ export interface CopilotProposalTargetReference {
   agentId?: string | null
   directiveId?: string | null
   routineId?: string | null
+  skillId?: string | null
+  variableId?: string | null
   settingKey?: string | null
   id?: string | null
 }
@@ -118,7 +135,16 @@ export interface CopilotActivitySummary {
 }
 
 export interface CopilotEntityReference {
-  type: CopilotPageEntityType
+  /**
+   * A dashboard-link hint attached by the server (a tool's dashboardSubject/describeEntity) or
+   * built locally from a proposal's targetType (e.g. "proposal", "workspace_settings",
+   * "agent_skill"). Unlike CopilotPageEntity.type above, this is never sent back to the backend
+   * as part of pageContext.entities and is not validated against a closed enum there either — the
+   * backend's own CopilotEntityReference types this field as a plain string for the same reason.
+   * Keep it a string, not CopilotPageEntityType, or a new value here would reintroduce the
+   * client/runtime enum drift the comment on COPILOT_PAGE_ENTITY_TYPES warns about.
+   */
+  type: string
   id: string
 }
 
@@ -171,6 +197,7 @@ export interface CopilotProposalEvent {
   targetLabel: string
   summary: string
   evidence?: CopilotProposalEvidenceSummary
+  removal?: boolean
 }
 
 export interface CopilotChunkEvent {

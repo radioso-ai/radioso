@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
-import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalCard, CopilotProposalEvidence, CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
-import { summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
+import { nowMinusSeconds } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalEvidence, CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
+import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
@@ -16,7 +17,7 @@ const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | unde
 const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: narrowStatus(row.status), createdAt: row.created_at, updatedAt: row.updated_at });
 const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role === "copilot" ? "copilot" : "operator", content: row.content, ...(narrowOutcome(row.outcome) ? { outcome: narrowOutcome(row.outcome) } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
 const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => {
-  if (targetType === "directive" || targetType === "agent_setting" || targetType === "routine") return targetType;
+  if ((copilotProposalTargetTypes as ReadonlyArray<string>).includes(targetType)) return targetType as CopilotProposal["targetType"];
   throw new Error(`Unknown copilot proposal target type: ${targetType}`);
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
@@ -29,8 +30,17 @@ const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
 export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
   const targetRef = asRecord(proposal.targetRef);
   const payload = asRecord(proposal.payload);
-  const targetLabel = proposal.targetType === "directive" || proposal.targetType === "routine" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
-  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null };
+  // agent_setting is the only target type with no drafted name of its own - it targets an existing
+  // setting key instead. Every other target type (present or future) proposes a named thing, so
+  // this reads as "not agent_setting" rather than an OR-chain a new target type could miss.
+  const targetLabel = proposal.targetType !== "agent_setting" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
+  // Same discriminator proposalAdapters.ts's own isDirectiveRemoval uses to pick the removal
+  // branch at preview/apply time: a payload missing `op` is the save shape every proposal used
+  // before removal existed, so only an explicit `op: "remove"` reads as one (Finding 1, issue
+  // triage next-ray-epic-issue). This lets a reloaded card state plainly that Apply deletes the
+  // target, not just an ordinary card whose summary happens to mention it.
+  const removal = proposal.targetType === "directive" && payload.op === "remove";
+  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}) };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -49,7 +59,67 @@ export class CopilotRepository implements CopilotRepositoryPort {
   async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const row = await this.db.insertInto("copilot_proposals").values({ id: randomUUID(), workspace_id: input.workspaceId, operator_user_id: input.operatorUserId, conversation_id: input.conversationId, target_type: input.targetType, target_ref: JSON.stringify(input.targetRef), payload: JSON.stringify(input.payload), version_token: input.versionToken, evidence: input.evidence ? JSON.stringify(input.evidence) : null }).returning(proposalColumns).executeTakeFirstOrThrow(); return mapProposal(row); }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapProposal(row) : null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { if (input.proposalIds.length === 0) return; await this.db.updateTable("copilot_proposals").set({ message_id: input.messageId, updated_at: new Date() }).where("id", "in", input.proposalIds).where("conversation_id", "=", input.conversationId).execute(); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null> { let query = this.db.updateTable("copilot_proposals").set({ status: input.status, failure_reason: input.reason ?? null, applied_ref: input.appliedRef === undefined ? null : JSON.stringify(input.appliedRef), updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).where("status", "=", "pending"); query = input.requiresApplyClaim ? query.where("apply_started_at", "is not", null) : query.where("apply_started_at", "is", null); const row = await query.returning(proposalColumns).executeTakeFirst(); return row ? mapProposal(row) : null; }
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.updateTable("copilot_proposals").set({ apply_started_at: new Date(), updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).where("status", "=", "pending").where("apply_started_at", "is", null).returning(proposalColumns).executeTakeFirst(); return row ? mapProposal(row) : null; }
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> { const row = await this.db.updateTable("copilot_proposals").set({ apply_started_at: null, updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).where("status", "=", "pending").where("apply_started_at", "is not", null).returning("id").executeTakeFirst(); return Boolean(row); }
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
+    let query = this.db.updateTable("copilot_proposals")
+      .set({ status: input.status, failure_reason: input.reason ?? null, applied_ref: input.appliedRef === undefined ? null : JSON.stringify(input.appliedRef), updated_at: new Date() })
+      .where("id", "=", input.id)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("operator_user_id", "=", input.operatorUserId)
+      .where("status", "=", "pending");
+    // `held` finalizes only the exact claim it was handed — a claim superseded by a later
+    // recovery reclaim no longer matches, so a crashed writer's late finalize is a no-op rather
+    // than a write on behalf of whichever attempt now holds the row. `free` (dismiss) must not
+    // race an active apply, but a claim old enough to count as abandoned must not block it either.
+    const applyClaimGuard = input.applyClaimGuard;
+    query = applyClaimGuard.state === "held"
+      ? query.where("apply_started_at", "=", applyClaimGuard.claimedAt)
+      : query.where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(applyClaimGuard.claimTtlSeconds))]));
+    const row = await query.returning(proposalColumns).executeTakeFirst();
+    return row ? mapProposal(row) : null;
+  }
+
+  /**
+   * Claims a pending proposal for apply, refusing a concurrent claim while the current one is
+   * still fresh. Also reclaims a claim older than `claimTtlSeconds` — a process that crashed
+   * after claiming (before its write, or after it but before the outcome was recorded) leaves
+   * exactly that: a claim timestamp nothing ever moves again. Recovery is the same relaxed
+   * predicate for both crash windows; what makes a blind re-apply of an already-applied proposal
+   * safe is the adapter's own version gate on the *target* row, not anything tracked here.
+   *
+   * `claimedAt` is a JS `Date` written as-is (not SQL `now()`), so it round-trips through
+   * Postgres at the millisecond precision it started at — the exact value `updateProposalOutcome`
+   * can later match against as a fencing token, with no truncation to reconcile.
+   */
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null> {
+    const claimedAt = new Date();
+    const row = await this.db.updateTable("copilot_proposals")
+      .set({ apply_started_at: claimedAt, updated_at: claimedAt })
+      .where("id", "=", input.id)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("operator_user_id", "=", input.operatorUserId)
+      .where("status", "=", "pending")
+      .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
+      .returning(proposalColumns)
+      .executeTakeFirst();
+    return row ? { proposal: mapProposal(row), claimedAt } : null;
+  }
+
+  /**
+   * Clears only the exact claim `claimProposalApply` handed to this attempt, after a
+   * pre-mutation authorization denial. Fenced the same way `updateProposalOutcome`'s `held`
+   * guard is: a claim already superseded by a later TTL reclaim no longer matches, so a
+   * crashed writer's late release cannot clear an unrelated, currently active claim.
+   */
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
+    const row = await this.db.updateTable("copilot_proposals")
+      .set({ apply_started_at: null, updated_at: new Date() })
+      .where("id", "=", input.id)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("operator_user_id", "=", input.operatorUserId)
+      .where("status", "=", "pending")
+      .where("apply_started_at", "=", input.claimedAt)
+      .returning("id")
+      .executeTakeFirst();
+    return Boolean(row);
+  }
 }

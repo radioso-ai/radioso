@@ -36,7 +36,7 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService, serializeAuthoredDirectivesWithIds } from "../../src/modules/agents/public.js";
 import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
 import {
   type ComposedDecline,
@@ -170,7 +170,7 @@ import {
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -178,10 +178,13 @@ import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import type {
   AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../src/db/repositories/contextVariableRepository.js";
+import { badRequest, conflict } from "../../src/shared/domain/errors.js";
 import type {
   AgentContextVariableEnablement,
   ContextVariable,
@@ -564,6 +567,67 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
 
   async resolveForAgent(): Promise<ResolvedVariableInput[]> {
     return [];
+  }
+
+  // In-memory analogue of the real repository's transaction: both version guards are checked
+  // before either write is applied, so a failing guard never leaves a partial write behind.
+  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+    let variableId = input.variableId;
+
+    if (input.definition && variableId) {
+      const current = this.variables.get(variableId);
+      if (!current || current.workspaceId !== input.workspaceId) {
+        throw conflict("Context variable was updated by another writer; reload before saving again");
+      }
+      if (input.expectedVariableUpdatedAt && current.updatedAt.getTime() !== input.expectedVariableUpdatedAt.getTime()) {
+        throw conflict("Context variable was updated by another writer; reload before saving again");
+      }
+    }
+
+    if (input.enablement) {
+      const enablementVariableId = variableId;
+      if (enablementVariableId) {
+        const existing = this.enablements.get(this.enablementKey(input.agentId, enablementVariableId));
+        if (input.expectedEnablementUpdatedAt === null) {
+          if (existing) {
+            throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+          }
+        } else if (!existing || existing.updatedAt.getTime() !== input.expectedEnablementUpdatedAt.getTime()) {
+          throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+        }
+      }
+    }
+
+    if (input.definition) {
+      if (variableId) {
+        const current = this.variables.get(variableId)!;
+        this.variables.set(variableId, {
+          ...current,
+          name: input.definition.name,
+          description: input.definition.description,
+          valueType: input.definition.valueType,
+          trustTier: input.definition.trustTier,
+          sensitivity: input.definition.sensitivity,
+          defaultSurfacing: input.definition.defaultSurfacing,
+          updatedAt: new Date(),
+        });
+      } else {
+        const created = await this.create({ workspaceId: input.workspaceId, ...input.definition });
+        variableId = created.id;
+      }
+    }
+
+    if (input.enablement) {
+      if (!variableId) {
+        throw badRequest("Cannot enable a context variable with no resolved id");
+      }
+      await this.upsertEnablement({ agentId: input.agentId, variableId, ...input.enablement });
+    }
+
+    if (!variableId) {
+      throw badRequest("A context variable proposal must include a definition or target an existing variable");
+    }
+    return { variableId };
   }
 
   private enablementKey(agentId: string, variableId: string): string {
@@ -1727,10 +1791,21 @@ export const createTestDependencies = (overrides: {
   const copilotRepository = new InMemoryCopilotRepository();
   const copilotReplayEvidenceRepository = new InMemoryCopilotReplayEvidenceRepository();
   const copilotAgentVersion = { get: (workspaceId: string, agentId: string) => agentService.get(workspaceId, agentId) };
+  const copilotEvalCaseReader = {
+    findCase: (workspaceId: string, caseId: string) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId),
+  };
+  const copilotAgentSkillConfig = {
+    getDefaultAnswerSkill: async (workspaceId: string, agentId: string) => {
+      const skill = await agentSkillRepository.findDefaultAnswer(workspaceId, agentId);
+      return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
+    },
+  };
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
+    createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
+    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService }),
   ] as const;
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const copilotCapabilityRunner = new AgenticCapabilityRunner({
@@ -1766,8 +1841,17 @@ export const createTestDependencies = (overrides: {
       },
     }),
     evalCaseReplay: new EvalCaseReplayService({
-      cases: { findCase: (workspaceId, caseId) => evalCaseService.findCaseWithSourceAgent(workspaceId, caseId) },
+      cases: copilotEvalCaseReader,
       evidence: copilotReplayEvidenceRepository,
+      agentDirectives: {
+        listDirectives: async (workspaceId, agentId) => {
+          const agent = await agentService.resolve(workspaceId, agentId);
+          return serializeAuthoredDirectivesWithIds(agent).map((directive) => ({
+            id: directive.id,
+            config: directive.config as unknown as Record<string, unknown>,
+          }));
+        },
+      },
       runs: {
         execute: (input) => evalRunService.execute({
           ...input,
@@ -1781,7 +1865,12 @@ export const createTestDependencies = (overrides: {
         windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
       },
     }),
-    proposalEvidence: { evidence: copilotReplayEvidenceRepository, agentVersion: copilotAgentVersion },
+    proposalEvidence: {
+      evidence: copilotReplayEvidenceRepository,
+      agentVersion: copilotAgentVersion,
+      agentSkillConfig: copilotAgentSkillConfig,
+      cases: copilotEvalCaseReader,
+    },
     pendingApprovals: approvalDecisionService,
     qualitySignalsService,
     audiencePulseService,
@@ -1789,6 +1878,7 @@ export const createTestDependencies = (overrides: {
     documentSourceStatusService: documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
+    contextVariables: contextVariableRepository,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
         return retrievalDefaultsProvider.getDefaults(workspaceId);

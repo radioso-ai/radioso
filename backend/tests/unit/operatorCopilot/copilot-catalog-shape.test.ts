@@ -14,6 +14,7 @@ import { assertCopilotCapabilityProvenance } from "../../../src/modules/operator
 import { createOpenApiDocument } from "../../../src/app/http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../../../src/app/http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../../src/modules/agents/public.js";
+import { agentSkillsCopilotPrimitives } from "../../../src/modules/agentSkills/public.js";
 import { chatCopilotPrimitives } from "../../../src/modules/chat/public.js";
 import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../../src/modules/embeddingProfiles/public.js";
@@ -31,11 +32,13 @@ const context = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
 
 const ownerExportedPrimitiveIds = new Set([
   ...agentCopilotPrimitives,
+  ...agentSkillsCopilotPrimitives,
   ...chatCopilotPrimitives,
   ...documentCopilotPrimitives,
   ...embeddingProfileCopilotPrimitives,
@@ -66,13 +69,14 @@ const realCatalog = () => {
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
     skillCapabilityTargets: { list: stub() },
+    contextVariables: { listByWorkspace: stub(), listByAgent: stub() },
     workspaceSettings: {
       getRetrievalDefaults: stub(), getIngestionSettings: stub(), listLlmModels: stub(),
       getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },
-    proposalAdapters: (["directive", "agent_setting", "routine"] as const).map((targetType) => ({
-      targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(),
+    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
+      targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(), validatePayload: stub(),
     })),
     auditService: { record: stub() },
   } as unknown as Parameters<typeof createCopilotToolDescriptors>[0]);

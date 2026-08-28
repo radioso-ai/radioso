@@ -14,10 +14,13 @@ import {
   type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
   type CopilotAudiencePulsePort,
+  type CopilotContextVariablesPort,
   type CopilotWorkspaceSettingsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type {
   CopilotAgentSettingProposalAdapter,
+  CopilotAgentSkillProposalAdapter,
+  CopilotContextVariableProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
@@ -34,6 +37,7 @@ import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceReg
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../modules/agents/public.js";
+import { agentSkillsCopilotPrimitives } from "../../modules/agentSkills/public.js";
 import { chatCopilotPrimitives } from "../../modules/chat/public.js";
 import { documentCopilotPrimitives } from "../../modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../modules/embeddingProfiles/public.js";
@@ -71,9 +75,10 @@ export const createCopilotToolCatalog = (deps: {
   readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
   readonly agentSkillsService: CopilotAgentSkillsPort;
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
+  readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;
@@ -86,6 +91,7 @@ export const createCopilotToolCatalog = (deps: {
       : []));
   const ownerExportedPrimitiveIds = new Set([
     ...agentCopilotPrimitives,
+    ...agentSkillsCopilotPrimitives,
     ...chatCopilotPrimitives,
     ...documentCopilotPrimitives,
     ...embeddingProfileCopilotPrimitives,

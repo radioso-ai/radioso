@@ -1766,7 +1766,7 @@ CREATE TABLE public.copilot_proposals (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     evidence jsonb,
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent_setting'::text, 'routine'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text])))
 );
 
 
@@ -1788,6 +1788,7 @@ CREATE TABLE public.copilot_replay_evidence (
     verdict text NOT NULL,
     overrides jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    directives_excluded jsonb DEFAULT '[]'::jsonb NOT NULL,
     CONSTRAINT copilot_replay_evidence_recorded_status_check CHECK ((recorded_status = ANY (ARRAY['pending'::text, 'passing'::text, 'failing'::text, 'error'::text]))),
     CONSTRAINT copilot_replay_evidence_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'error'::text, 'recorded'::text])))
 );

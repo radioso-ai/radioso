@@ -2,10 +2,13 @@ import type { CopilotCapabilityProvenance, CopilotToolDescriptor } from "./contr
 import { copilotApplicationPrimitiveRegistry, copilotRayOwnedPrimitiveIds } from "./applicationPrimitiveRegistry.js";
 
 type ProductionDescriptorName =
-  | "agent_configuration" | "agent_skills" | "audience_topics" | "conversation_history_search"
+  | "agent_configuration" | "agent_skills" | "audience_topics" | "context_variables"
+  | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "document_search" | "document_status"
-  | "eval_results" | "propose_agent_setting" | "propose_directive" | "propose_routine"
-  | "propose_routine_edit" | "propose_routine_lifecycle" | "quality_signals" | "replay_eval_case"
+  | "eval_results" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
+  | "propose_directive_removal" | "propose_routine"
+  | "propose_routine_edit" | "propose_routine_lifecycle" | "propose_skill_config" | "quality_signals"
+  | "replay_eval_case"
   | "routine_definition" | "run_eval_suite" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_triage";
 
@@ -20,6 +23,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   agent_configuration: { backingOperationIds: ["listAgents", "getAgent", "listAgentDirectives"], applicationPrimitiveIds: ["agents.configuration.read"] },
   agent_skills: { backingOperationIds: ["listAgentSkills", "listAgentSkillCapabilities"], applicationPrimitiveIds: ["agents.configuration.read"] },
   audience_topics: { backingOperationIds: ["getAudiencePulse", "getAudiencePulseRefreshStatus"] },
+  context_variables: { backingOperationIds: ["listContextVariables", "listAgentContextVariables"], applicationPrimitiveIds: ["agents.configuration.read"] },
   conversation_history_search: { backingOperationIds: ["listHistory", "listChatHistory", "listHistorySearches", "getHistorySearch"] },
   conversation_transcript: { backingOperationIds: ["getHistoryConversation", "tailHistoryConversation", "getLegacyHistoryConversation"], applicationPrimitiveIds: ["chat.conversation.identity.read"] },
   create_eval_case_from_turn: { backingOperationIds: ["getOrCreateEvalCaseBySourceMessage"], applicationPrimitiveIds: ["eval.case.capture"] },
@@ -27,10 +31,13 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   document_status: { backingOperationIds: ["listDocuments", "listDocumentSources", "listDocumentsBySource"], applicationPrimitiveIds: ["documents.status.read", "documents.source-status.read"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
   propose_agent_setting: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent service receives a setting mutation.") },
+  propose_context_variable: { backingOperationIds: ["createContextVariable", "updateContextVariable", "upsertAgentContextVariable"], applicationPrimitiveIds: ["operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before a context variable definition or an agent's enablement of it is written. Context variable writes are composition-owned (db/repositories/contextVariableRepository.ts), not gated behind a domain module's own service, so no owner-module primitive applies here.") },
   propose_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive coaching as a pending, operator-confirmed proposal.") },
+  propose_directive_removal: { backingOperationIds: ["deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive removal as a pending, operator-confirmed proposal, the same as any other directive change.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; routine lifecycle authority remains in the routine service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine", "reviseAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
   propose_routine_lifecycle: { backingOperationIds: ["publishAgentRoutine", "archiveAgentRoutine", "restoreAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray records an operator-confirmed lifecycle proposal while the routine service enforces transitions.") },
+  propose_skill_config: { backingOperationIds: ["createAgentSkill", "updateAgentSkill"], applicationPrimitiveIds: ["agentSkills.config.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent skill service receives a configuration mutation.") },
   quality_signals: { backingOperationIds: ["listLowQualityTurns", "getQualityStats"] },
   replay_eval_case: { backingOperationIds: ["createEvalRun"], applicationPrimitiveIds: ["eval.case.replay"], ...rayOnly("Ray replays a selected case and carries bounded proposal evidence rather than exposing a general eval-run surface.") },
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },

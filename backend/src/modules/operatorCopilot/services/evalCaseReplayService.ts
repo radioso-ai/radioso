@@ -1,8 +1,12 @@
-import { notFound } from "../../../shared/domain/errors.js";
+import { isDeepStrictEqual } from "node:util";
+
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/expensiveOperation.js";
 import type {
+  CopilotAgentDirectivesPort,
   CopilotEvalCaseReaderPort,
   CopilotEvalCaseReplayInput,
+  CopilotEvalCaseReplayOverrides,
   CopilotEvalCaseReplayPort,
   CopilotEvalCaseReplayResult,
   CopilotEvalCaseReplayRunnerPort,
@@ -10,10 +14,26 @@ import type {
 } from "../contracts/evalCases.js";
 import { enforceCopilotExpensiveOperation } from "./expensiveOperationGuard.js";
 
+/** Directive names are unique per agent (`UNIQUE(agent_id, name)`, migration 076), and canonical
+ * directive serialization never carries an id, so a directive's name is the only stable key that
+ * lets a live directive be matched against its counterpart in a case's captured snapshot. */
+const readDirectiveName = (config: Record<string, unknown>): string | null => {
+  const name = config.name;
+  return typeof name === "string" && name.length > 0 ? name : null;
+};
+
 export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
   evidence: CopilotReplayEvidenceRepositoryPort;
+  /** Resolves a directive exclusion against real agent state; see {@link CopilotAgentDirectivesPort}. */
+  agentDirectives: CopilotAgentDirectivesPort;
+}
+
+interface ResolvedDirectiveExclusion {
+  overrides: CopilotEvalCaseReplayOverrides | undefined;
+  /** Real directive ids the replay actually excluded, for the evidence row to carry. */
+  directivesExcluded: ReadonlyArray<string>;
 }
 
 /**
@@ -34,13 +54,20 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       throw notFound("Eval case not found");
     }
 
+    const { overrides, directivesExcluded } = await this.resolveDirectiveExclusion(
+      input.workspaceId,
+      evalCase.sourceAgentId,
+      evalCase.snapshotAuthoredDirectives,
+      input.overrides,
+    );
+
     const { run } = await this.dependencies.runs.execute({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       snapshotId: evalCase.snapshotId,
       caseId: evalCase.id,
       mode: "full_assistant",
-      overrides: input.overrides,
+      overrides,
       attachToCase: false,
     });
 
@@ -60,7 +87,8 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       baselineCapturedAt: evalCase.snapshotCapturedAt,
       recordedStatus: evalCase.status,
       verdict: run.observedOutput.error ? "error" : run.status,
-      overrides: input.overrides ?? {},
+      overrides: overrides ?? {},
+      directivesExcluded,
     })).id;
 
     return {
@@ -82,6 +110,86 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
         id: run.resolvedConfig.modelId ?? null,
       },
       error: run.observedOutput.error?.message ?? null,
+    };
+  }
+
+  /**
+   * Turns `excludedDirectiveIds` into the concrete directive set the run actually uses. The case's
+   * recorded verdict describes the snapshot it captured, not the source agent's directives as they
+   * stand today, so the replayed set is always the *snapshot's* directives minus the excluded
+   * one(s) — never the live agent's, which may have gained or lost directives unrelated to this
+   * exclusion since capture. Live directives are read only to resolve which snapshot entry an id
+   * means (by name — canonical serialization never carries an id) and to confirm that entry still
+   * matches what the snapshot captured; a rename, edit, or an id absent from the snapshot refuses
+   * the replay rather than silently measure the wrong configuration.
+   * `authoredDirectives` is a freeform, model-authored array that never carries a directive's real
+   * id, so it cannot back a removal claim; `excludedDirectiveIds` is the only seam that can,
+   * precisely because the server — not the model — decides what it resolves to.
+   * Returns the input overrides unchanged when no exclusion was requested.
+   */
+  private async resolveDirectiveExclusion(
+    workspaceId: string,
+    sourceAgentId: string | null,
+    snapshotAuthoredDirectives: ReadonlyArray<Record<string, unknown>>,
+    overrides: CopilotEvalCaseReplayOverrides | undefined,
+  ): Promise<ResolvedDirectiveExclusion> {
+    const excludedDirectiveIds = overrides?.agentConfigOverride?.excludedDirectiveIds;
+    if (!excludedDirectiveIds || excludedDirectiveIds.length === 0) {
+      return { overrides, directivesExcluded: [] };
+    }
+    if (overrides?.agentConfigOverride?.authoredDirectives) {
+      throw badRequest("excludedDirectiveIds cannot be combined with an authoredDirectives override in the same replay");
+    }
+    if (!sourceAgentId) {
+      throw badRequest("This case has no source agent, so a directive exclusion cannot be resolved");
+    }
+
+    const liveDirectives = await this.dependencies.agentDirectives.listDirectives(workspaceId, sourceAgentId);
+    const liveById = new Map(liveDirectives.map((directive) => [directive.id, directive]));
+    const unknownIds = excludedDirectiveIds.filter((id) => !liveById.has(id));
+    if (unknownIds.length > 0) {
+      throw badRequest(`Replay cannot exclude directive id(s) not on the source agent: ${unknownIds.join(", ")}`);
+    }
+
+    const snapshotByName = new Map<string, Record<string, unknown>>();
+    for (const directive of snapshotAuthoredDirectives) {
+      const name = readDirectiveName(directive);
+      if (name) {
+        snapshotByName.set(name, directive);
+      }
+    }
+
+    const excludedNames = new Set<string>();
+    for (const id of excludedDirectiveIds) {
+      const live = liveById.get(id)!;
+      const name = readDirectiveName(live.config);
+      const snapshotDirective = name ? snapshotByName.get(name) : undefined;
+      if (!name || !snapshotDirective) {
+        throw badRequest(
+          `Replay cannot exclude directive ${id}: it is not present in this case's captured snapshot, so its removal cannot be measured against it`,
+        );
+      }
+      if (!isDeepStrictEqual(live.config, snapshotDirective)) {
+        throw badRequest(
+          `Replay cannot exclude directive "${name}": it has changed since this case's snapshot was captured, so this replay cannot honestly attribute a result to removing it`,
+        );
+      }
+      excludedNames.add(name);
+    }
+
+    return {
+      overrides: {
+        ...overrides,
+        agentConfigOverride: {
+          ...overrides?.agentConfigOverride,
+          excludedDirectiveIds: undefined,
+          authoredDirectives: snapshotAuthoredDirectives.filter((directive) => {
+            const name = readDirectiveName(directive);
+            return !name || !excludedNames.has(name);
+          }),
+        },
+      },
+      directivesExcluded: excludedDirectiveIds,
     };
   }
 }

@@ -405,6 +405,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
     audiencePulseService: { read: unusedPort("audiencePulseService.read") },
     agentSkillsService: { list: async () => [] },
     skillCapabilityRegistry: { list: () => [] },
+    contextVariables: { listByWorkspace: async () => [], listByAgent: async () => [] },
     workspaceSettings: {
       getRetrievalDefaults: async () => ({}),
       getIngestionSettings: async () => ({}),
@@ -432,7 +433,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         ...input,
       }),
     },
-    proposalAdapters: (["directive", "agent_setting", "routine"] as const).map((targetType) => ({
+    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
       targetType,
       draft: async (_workspaceId: string, _targetRef: unknown, intent: string) => ({
         payload: { intent },

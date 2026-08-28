@@ -26,9 +26,20 @@ that never triggers can start from the agent name rather than an internal id.
 When the answer is a change, Ray drafts it for you to review.
 
 Ray sees document titles, processing status, and failure reasons rather than
-document text, and it sees the names of a skill's settings rather than their
-values. So it can tell you that a webhook skill has no connection configured,
-without reading the token you would put there.
+document text. For a skill, it sees every setting's name. It also sees the
+value of a setting only when that skill's capability opts the setting in as
+safe to show — a retrieve skill's source scope, metadata rules, vector top K,
+retrieval strategy, and instruction text; an email skill's draft-or-send mode.
+Every other setting
+stays name-only, including a notify skill's recipient list and webhook URL, so
+Ray can tell you that a notify skill has no delivery destination configured
+without ever reading the address or URL you put there.
+
+Ray also reads the workspace's context variable definitions and which of them
+an agent has enabled — the source (pushed, browser, or a resolver skill) and
+how the variable surfaces to the model. It never reads a variable's value for
+a particular visitor session or customer, because that value belongs to a
+conversation Ray was not asked to inspect.
 
 ## Open the panel
 
@@ -110,13 +121,36 @@ conversation.
 ## Review proposals
 
 When Ray identifies a configuration change, it can draft a proposal for a
-directive, an agent setting, or a routine. The proposal card names the target,
-summarizes the change, and shows the current and proposed values before
-anything is written. Expand **Show changes** to inspect the field-level diff.
+directive, an agent setting, a routine, or a skill's configuration. The
+proposal card names the target, summarizes the change, and shows the current
+and proposed values before anything is written. Expand **Show changes** to
+inspect the field-level diff.
 
 A routine proposal comes in three shapes: a new routine, an edit to one that
 already exists, and a lifecycle change — publish, archive, or restore. See
 [Change a routine](#change-a-routine).
+
+A directive removal proposal targets an existing directive by id and drafts
+nothing else. The card shows the directive as it stands on the current side
+and a notice that it will be permanently removed on the proposed side.
+Applying it deletes the directive, and that cannot be undone.
+
+A skill config proposal creates a new skill or updates an existing one by the
+same rules the Skills editor enforces: a setting that depends on another stays
+refused while its parent is off, and a notify skill needs at least a recipient
+email or a webhook URL before Ray will propose it — Ray asks you for either
+rather than inventing one. Updating a skill can change its target, configuration,
+invocation mode, or enabled state, but not its name or capability — Ray proposes
+a new skill for either of those.
+
+A context variable proposal can create or update the variable's definition,
+enable or reconfigure it for the agent, or do both in the same card. A
+resolver-sourced enablement needs the skill that resolves the value, and that
+skill must already exist on the agent the proposal targets; every other
+source refuses one. Applying the proposal writes the definition, the
+enablement, or both, in that order, so a proposal that creates a variable and
+enables it for the agent in one step always has an id to enable by the time it
+runs.
 
 Operators with `workspace.agents.manage` can choose **Apply** and confirm the
 change. Ray sends the confirmed proposal through the same guarded
@@ -266,9 +300,47 @@ proposal for a different one. A setting proposal has to cite a replay that put
 that exact value under test, and a directive proposal has to cite one that ran
 with directives in place.
 
+A directive removal proposal cites replay evidence the opposite way: ask Ray
+to replay a case with that specific directive excluded. The replay service
+resolves the directive against the agent's real configuration and drops it
+before running the turn, so the exclusion it records is something Ray cannot
+fake by handing back a directive list that merely looks like it left the
+directive out. Cite a replay that did not explicitly exclude the directive —
+including one built by hand-editing the directive list — and Ray refuses it,
+because nothing proves that replay ran without the directive in force.
+
+A replay can exclude several directives at once — a fine way to try "what if I
+dropped both of these" — but the evidence it produces only backs a proposal to
+remove that same combination. A proposal to remove one directive by itself
+needs a replay that excluded only that directive: a replay that dropped it
+alongside another one measured a configuration where both were gone, and
+removing two directives together can move a case's verdict in a way that
+removing either one alone would not. Ray refuses to cite that replay for a
+single-directive removal and asks for one that excludes just the directive
+being proposed.
+
+That replay also has to be about nothing else. One that also tried a different
+model, different instructions, different retrieval settings, or a routine
+starting position measured that whole combination, not the directive's absence
+on its own, so a passing verdict could be down to any of those other changes
+instead. Ray refuses to cite a replay like that for a directive removal and
+asks for one where excluding the directive is the only override in play.
+
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed
 — test a routine draft with a real turn instead.
+
+A skill config proposal can carry replay evidence only for an agent's default
+retrieve skill — the one that answers without a routine naming it. A replay
+can put that skill's settings under test the same way it can a setting
+proposal's value; every other skill capability has no equivalent replay
+override, so Ray proposes those changes unmeasured.
+
+A context variable proposal never carries replay evidence. A replay measures
+the configuration Ray sends the model — instructions, directives, skill
+settings — and none of the settings a replay can override install a pushed,
+browser, or resolver value for a visitor session, so no replay can speak to a
+context variable proposal either way.
 
 A replay runs against the configuration the eval case froze, never the agent's
 current one, so a measurement is dated by any edit to that agent after the case
@@ -328,6 +400,10 @@ setup state with a link to **Settings → Providers**.
   affected turn honestly. The answer identifies the data it could not access.
 - **A proposal is stale** — the target changed after Ray drafted it. Ask Ray
   to prepare the change again and review the updated diff.
+- **Apply or Dismiss says conflict** — another apply on that proposal is
+  already running, or one never finished. Wait a few minutes and try again;
+  an apply that never finished releases its hold on its own, after which the
+  proposal can be applied or dismissed.
 - **Agent-turn testing is unavailable** — your session is missing one of
   `workspace.chat.use`, `workspace.history.read`, or
   `workspace.agents.manage` in addition to Ray's agent-read permission.

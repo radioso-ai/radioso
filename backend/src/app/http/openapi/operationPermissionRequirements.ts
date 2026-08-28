@@ -17,4 +17,5 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   updateAgent: ["workspace.agents.manage"],
   createAgentDirective: ["workspace.agents.manage"],
   updateAgentDirective: ["workspace.agents.manage"],
+  deleteAgentDirective: ["workspace.agents.manage"],
 };

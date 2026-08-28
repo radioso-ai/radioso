@@ -3,13 +3,26 @@ import { z, type ZodType } from "zod";
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
 
+/**
+ * The single runtime list of page-context entity types a dashboard surface may report to the
+ * copilot. The client's mirror of this list lives in frontend/lib/api-copilot.ts's
+ * COPILOT_PAGE_ENTITY_TYPES; there is no shared package between the two runtimes, so
+ * backend/tests/unit/operatorCopilot/copilot-contracts.test.ts parses that file's source to keep
+ * the two declarations from drifting apart again (the client type once allowed "agent_skill",
+ * a value this schema had never accepted). The OpenAPI turn schema also derives from this array
+ * rather than repeating its own literal enum, the same discipline copilotProposalTargetTypes below
+ * already follows.
+ */
+export const copilotPageEntityTypes = ["agent", "conversation", "routine", "directive", "document", "evalCase"] as const;
+export type CopilotPageEntityType = (typeof copilotPageEntityTypes)[number];
+
 export const copilotPageContextSchema = z.object({
   view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(),
   agentId: z.string().uuid().nullable(),
   conversationId: z.string().uuid().nullable(),
   selection: z.string().nullable().optional().transform((value) => value === undefined || value === null ? null : value.slice(0, 2_000)),
   entities: z.array(z.object({
-    type: z.enum(["agent", "conversation", "routine", "directive", "document", "evalCase"]),
+    type: z.enum(copilotPageEntityTypes),
     id: z.string().min(1),
     label: z.string().max(120),
     focused: z.boolean(),
@@ -89,7 +102,14 @@ export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
 
-export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine";
+/**
+ * The single runtime list of proposal target types. Every completeness guard over target types
+ * (the copilot service's tool-output narrowing, the repository's row narrowing, the OpenAPI and
+ * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
+ * literal enum, so adding a target type cannot silently miss one of those sites again.
+ */
+export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const;
+export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {
@@ -120,11 +140,28 @@ export interface CopilotProposalCard {
   readonly reason?: string | null;
   /** Absent when nothing was measured; the card must not imply a verified change either way. */
   readonly evidence?: CopilotProposalEvidenceSummary;
+  /**
+   * True only for a proposal that permanently deletes its target (currently
+   * propose_directive_removal) rather than updating it. A structural signal the frontend can act
+   * on directly - e.g. to state plainly in an Apply confirmation that the change cannot be
+   * undone - rather than inferring irreversibility from `summary`'s prose (Finding 1, issue
+   * triage next-ray-epic-issue). Absent, not false, when the proposal is an ordinary update.
+   */
+  readonly removal?: boolean;
 }
 
 export interface CopilotProposalAdapter {
   readonly targetType: CopilotProposalTargetType;
-  readVersionToken(workspaceId: string, targetRef: unknown): Promise<string>;
+  /**
+   * `payload` is the proposal's stored payload where the caller has one (getProposal always
+   * does; a tool minting the very first token for a fresh create does too, once it has drafted
+   * one). A create target ref names no row of its own to read a version from, so a create
+   * adapter's own implementation uses this to check the one thing that actually determines
+   * whether Apply would still succeed — whether the resource it would create already exists —
+   * instead of falling back to an unrelated row's timestamp. Adapters whose target always
+   * addresses an existing row ignore it.
+   */
+  readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
   preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown | null; proposed: unknown }>;
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string): Promise<
     | { outcome: "applied"; appliedRef: unknown }
@@ -163,7 +200,30 @@ export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {
 
 export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "agent_setting";
-  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
+  /**
+   * The version token is returned from the same read that normalizes the payload (not a
+   * follow-up `readVersionToken` call): a partial patch is expanded against current state here,
+   * so a second, later read could pair an expansion built from stale state with a fresher token
+   * and let a concurrent edit slip past the apply-time version check undetected.
+   */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/** A skill config is supplied by Ray from settings it read, not drafted from prose. */
+export interface CopilotAgentSkillProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "agent_skill";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
+ * A context variable proposal is supplied by Ray from a definition and/or an agent enablement it
+ * already read, not drafted from prose — the same reason agent_skill validates rather than drafts.
+ */
+export interface CopilotContextVariableProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "context_variable";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
@@ -227,7 +287,7 @@ export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }
   | { readonly event: "activity"; readonly data: { toolCallId: string; tool: string; stage: "started" | "completed" | "failed"; entity?: CopilotEntityReference } }
   | { readonly event: "chunk"; readonly data: { text: string } }
-  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } }
+  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean } }
   | { readonly event: "outcome"; readonly data: { status: CopilotTurnOutcome } }
   | { readonly event: "done"; readonly data: Record<string, never> };
 

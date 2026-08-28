@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { AgentSkillsService } from "../../../src/modules/agentSkills/service.js";
@@ -8,24 +8,25 @@ import {
   createDefaultSkillCapabilityRegistry,
   createSkillCapabilityDescriptor,
   SkillCapabilityRegistry,
+  type SkillCapabilityTargetEnumerators,
 } from "../../../src/modules/skills/capabilityRegistry.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
 
-const makeService = () => {
+const makeService = (enumerators: SkillCapabilityTargetEnumerators = {}) => {
   const repository = new InMemoryAgentSkillRepository();
   const service = new AgentSkillsService({
     repository,
-    capabilities: createDefaultSkillCapabilityRegistry(),
+    capabilities: createDefaultSkillCapabilityRegistry(enumerators),
   });
   return { repository, service };
 };
 
 describe("AgentSkillsService", () => {
   it("creates and lists skills through a capability-neutral envelope", async () => {
-    const { service } = makeService();
     const workspaceId = randomUUID();
     const agentId = randomUUID();
     const targetId = randomUUID();
+    const { service } = makeService({ email: async () => [{ id: targetId, label: "Inbox" }] });
 
     const created = await service.create(workspaceId, agentId, {
       name: "send_email",
@@ -53,9 +54,10 @@ describe("AgentSkillsService", () => {
   });
 
   it("rejects invalid routine identifiers and duplicate names", async () => {
-    const { service } = makeService();
     const workspaceId = randomUUID();
     const agentId = randomUUID();
+    const webhookTargetId = randomUUID();
+    const { service } = makeService({ webhook_call: async () => [{ id: webhookTargetId, label: "Destination" }] });
 
     await expect(service.create(workspaceId, agentId, {
       name: "bad-name",
@@ -69,7 +71,7 @@ describe("AgentSkillsService", () => {
     const input = {
       name: "send_webhook",
       capability: "webhook_call" as const,
-      target: { kind: "webhook_destination", id: randomUUID() },
+      target: { kind: "webhook_destination", id: webhookTargetId },
       config: { boundPayload: {}, exposedPayload: {} },
       invocationMode: "routine_named" as const,
       enabled: true,
@@ -80,14 +82,15 @@ describe("AgentSkillsService", () => {
   });
 
   it("rejects unsupported invocation modes and second default-answer skills", async () => {
-    const { repository, service } = makeService();
     const workspaceId = randomUUID();
     const agentId = randomUUID();
+    const emailTargetId = randomUUID();
+    const { repository, service } = makeService({ email: async () => [{ id: emailTargetId, label: "Inbox" }] });
 
     await expect(service.create(workspaceId, agentId, {
       name: "default_email",
       capability: "email",
-      target: { kind: "customer_email_connection", id: randomUUID() },
+      target: { kind: "customer_email_connection", id: emailTargetId },
       config: {
         mode: "draft",
         boundInputs: { to: "lead@example.com", subject: "Hello", bodyText: "Hi" },
@@ -102,6 +105,9 @@ describe("AgentSkillsService", () => {
         id: "mcp_tool",
         storedKind: "external_mcp",
         targetKind: "mcp_connection",
+        // This synthetic capability exists only to test default-answer uniqueness, not target
+        // handling, so it opts out of requiring one rather than fabricating a fake connection.
+        requiresTarget: false,
         enumerateTargets: async () => [],
         inputSchema: { source: "discovered" },
         settingsFields: [],
@@ -136,6 +142,90 @@ describe("AgentSkillsService", () => {
       invocationMode: "default_answer",
       enabled: true,
     })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("rejects a create when the capability requires a target but none is supplied", async () => {
+    const { service } = makeService({ webhook_call: async () => [{ id: randomUUID(), label: "Destination" }] });
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    await expect(service.create(workspaceId, agentId, {
+      name: "send_webhook",
+      capability: "webhook_call",
+      target: { kind: "webhook_destination", id: null },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("rejects a create whose target id does not belong to this agent's enumerated targets", async () => {
+    const realTargetId = randomUUID();
+    const { service } = makeService({ webhook_call: async () => [{ id: realTargetId, label: "Destination" }] });
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    await expect(service.create(workspaceId, agentId, {
+      name: "send_webhook",
+      capability: "webhook_call",
+      // A well-formed but foreign/unknown id - never returned by enumerateTargets.
+      target: { kind: "webhook_destination", id: randomUUID() },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("accepts a create whose target id matches an enumerated target", async () => {
+    const realTargetId = randomUUID();
+    const { service } = makeService({ webhook_call: async () => [{ id: realTargetId, label: "Destination" }] });
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "send_webhook",
+      capability: "webhook_call",
+      target: { kind: "webhook_destination", id: realTargetId },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    expect(created.target).toEqual({ kind: "webhook_destination", id: realTargetId });
+  });
+
+  it("rejects a dryRunValidate candidate - the path a copilot proposal validates through - whose target is missing or foreign, instead of letting it become a pending proposal that can never apply", async () => {
+    const realTargetId = randomUUID();
+    const { service } = makeService({ webhook_call: async () => [{ id: realTargetId, label: "Destination" }] });
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    await expect(service.dryRunValidate(workspaceId, agentId, {
+      name: "send_webhook",
+      capability: "webhook_call",
+      target: { kind: "webhook_destination", id: null },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+
+    await expect(service.dryRunValidate(workspaceId, agentId, {
+      name: "send_webhook",
+      capability: "webhook_call",
+      target: { kind: "webhook_destination", id: randomUUID() },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+
+    await expect(service.dryRunValidate(workspaceId, agentId, {
+      name: "send_webhook",
+      capability: "webhook_call",
+      target: { kind: "webhook_destination", id: realTargetId },
+      config: { boundPayload: {}, exposedPayload: {} },
+      invocationMode: "routine_named",
+      enabled: true,
+    })).resolves.toBeTruthy();
   });
 
   it("creates one default-answer retrieve skill and rejects a second with a friendly conflict", async () => {
@@ -227,7 +317,145 @@ describe("AgentSkillsService", () => {
     });
   });
 
+  it("deep-merges a partial config patch so an untouched sibling field survives", async () => {
+    // A notify skill's `delivery` carries both a webhook URL and recipient emails. A PATCH that
+    // only supplies `delivery.recipientEmails` must not disturb `delivery.webhook` - a shallow
+    // top-level merge would replace the whole `delivery` object and, via notifyDeliverySchema's
+    // `.default(null)` on `webhook`, silently reset the stored webhook URL to null.
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "contact_human",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: {
+        delivery: {
+          recipientEmails: ["sales@example.com"],
+          webhook: { url: "https://hooks.example.com/contact" },
+        },
+        exposedInputs: { message: true, email: true },
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, {
+      config: {
+        delivery: { recipientEmails: ["sales@example.com", "ops@example.com"] },
+      },
+    });
+
+    expect(updated.config).toEqual({
+      delivery: {
+        recipientEmails: ["sales@example.com", "ops@example.com"],
+        webhook: { url: "https://hooks.example.com/contact" },
+      },
+      exposedInputs: { message: true, email: true },
+    });
+  });
+
+  it("validates a partial config patch against the same deep merge the repository persists, not a shallow one", async () => {
+    // An email skill's config requires `to` and a body to be bound or exposed. A PATCH that only
+    // supplies `boundInputs.subject` must validate against boundInputs with the existing `to` and
+    // `bodyText` still present (what the repository's deep merge actually persists) - not a
+    // shallow top-level spread, which replaces the whole `boundInputs` object with just
+    // `{ subject }` and would wrongly reject a patch the repository would happily apply.
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const targetId = randomUUID();
+    const { service } = makeService({ email: async () => [{ id: targetId, label: "Inbox" }] });
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "send_email",
+      capability: "email",
+      target: { kind: "customer_email_connection", id: targetId },
+      config: {
+        mode: "draft",
+        boundInputs: { to: "customer@example.com", subject: "Welcome", bodyText: "Hi there" },
+        exposedInputs: {},
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, {
+      config: {
+        boundInputs: { subject: "Welcome, updated" },
+      },
+    });
+
+    expect(updated.config).toEqual({
+      mode: "draft",
+      boundInputs: { to: "customer@example.com", subject: "Welcome, updated", bodyText: "Hi there" },
+      exposedInputs: {},
+    });
+  });
+
+  it("raises a conflict and leaves a concurrent edit intact when expectedUpdatedAt no longer matches", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "answer",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: { sourceScope: "all", exposedInputs: { query: true } },
+      invocationMode: "default_answer",
+      enabled: true,
+    });
+
+    // Simulates a concurrent edit landing after a caller read created.updatedAt as its version
+    // token but before it called update. The repository stamps updated_at from the wall clock,
+    // so the clock must actually advance between the two writes for the timestamps to differ.
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(1_000);
+      const concurrentEdit = await service.update(workspaceId, agentId, created.id, { enabled: false });
+      expect(concurrentEdit.enabled).toBe(false);
+      expect(concurrentEdit.updatedAt).not.toBe(created.updatedAt);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await expect(
+      service.update(workspaceId, agentId, created.id, { enabled: true }, { expectedUpdatedAt: new Date(created.updatedAt) }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" });
+
+    // The concurrent edit must survive the stale update attempt.
+    const persisted = (await service.list(workspaceId, agentId)).find((skill) => skill.id === created.id);
+    expect(persisted?.enabled).toBe(false);
+  });
+
+  it("updates when expectedUpdatedAt matches the skill's current version", async () => {
+    const { service } = makeService();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const created = await service.create(workspaceId, agentId, {
+      name: "answer",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: { sourceScope: "all", exposedInputs: { query: true } },
+      invocationMode: "default_answer",
+      enabled: true,
+    });
+
+    const updated = await service.update(workspaceId, agentId, created.id, { enabled: false }, {
+      expectedUpdatedAt: new Date(created.updatedAt),
+    });
+    expect(updated.enabled).toBe(false);
+  });
+
   describe("persistence-error translation", () => {
+    // A fixed, enumerated id - not a fresh randomUUID() per call - because these tests exercise
+    // translatePersistenceError's handling of a *simulated* DB error, not target validation: the
+    // target must pass validateCreateOrUpdate's own target-membership check so the injected error
+    // is what actually surfaces.
+    const webhookTargetId = randomUUID();
+
     const makeServiceThatThrowsOnCreate = (error: unknown) => {
       const repository = {
         ...new InMemoryAgentSkillRepository(),
@@ -239,14 +467,16 @@ describe("AgentSkillsService", () => {
       } as unknown as InMemoryAgentSkillRepository;
       return new AgentSkillsService({
         repository,
-        capabilities: createDefaultSkillCapabilityRegistry(),
+        capabilities: createDefaultSkillCapabilityRegistry({
+          webhook_call: async () => [{ id: webhookTargetId, label: "Destination" }],
+        }),
       });
     };
 
     const webhookInput = {
       name: "send_webhook",
       capability: "webhook_call" as const,
-      target: { kind: "webhook_destination", id: randomUUID() },
+      target: { kind: "webhook_destination", id: webhookTargetId },
       config: { boundPayload: {}, exposedPayload: {} },
       invocationMode: "routine_named" as const,
       enabled: true,

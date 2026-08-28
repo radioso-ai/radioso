@@ -26,6 +26,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       type: "source_scope",
       help: "Choose whether this retrieve skill can search all sources or only selected sources.",
       group: "Scope",
+      showValueToCopilot: true,
     },
     {
       key: "instruction",
@@ -33,6 +34,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       type: "textarea",
       help: "Capability-specific retrieval instruction used when this skill runs.",
       group: "Scope",
+      showValueToCopilot: true,
     },
     {
       key: "retrievalStrategy",
@@ -47,6 +49,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       ],
       group: "Retrieval tuning",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "vectorTopK",
@@ -58,6 +61,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       max: 300,
       group: "Retrieval tuning",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "rerankEnabled",
@@ -67,6 +71,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       defaultValue: retrieveSettingsDefaults.rerankEnabled,
       group: "Retrieval tuning",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "rerankTopK",
@@ -79,6 +84,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       max: 100,
       group: "Retrieval tuning",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "metadataRules",
@@ -87,6 +93,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "Always boost or filter results by document metadata — for example, only keep documents whose language is English.",
       group: "Retrieval tuning",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "queryRewriteEnabled",
@@ -96,6 +103,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       defaultValue: retrieveSettingsDefaults.queryRewriteEnabled,
       group: "Query rewrite",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "temporalStructuredLookupEnabled",
@@ -105,6 +113,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.",
       group: "Temporal retrieval",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "temporalBoostUpcomingEnabled",
@@ -114,6 +123,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "Rank documents about ongoing or upcoming events above past ones when the question is about event dates.",
       group: "Temporal retrieval",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "temporalDeterministicSortEnabled",
@@ -123,6 +133,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "Present event evidence in date order (soonest first) for event-date questions, instead of relying on the model to order them.",
       group: "Temporal retrieval",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "semanticRewriteInstructions",
@@ -133,6 +144,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       dependsOnKey: "queryRewriteEnabled",
       group: "Query rewrite",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "lexicalRewriteInstructions",
@@ -143,6 +155,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       dependsOnKey: "queryRewriteEnabled",
       group: "Query rewrite",
       advanced: true,
+      showValueToCopilot: true,
     },
     {
       key: "suggestedQuestionsEnabled",
@@ -151,6 +164,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       help: "Offer follow-up question suggestions after each answer.",
       defaultValue: retrieveSettingsDefaults.suggestedQuestionsEnabled,
       group: "Suggested questions",
+      showValueToCopilot: true,
     },
     {
       key: "suggestedQuestionsCount",
@@ -162,6 +176,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       min: 1,
       max: 4,
       group: "Suggested questions",
+      showValueToCopilot: true,
     },
   ],
   outcomeVocabulary: ["found", "empty"],

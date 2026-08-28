@@ -2,9 +2,11 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import { attachCopilotCapabilityProvenance } from "../capabilityProvenance.js";
 import { createAgentConfigurationCopilotTools, createAgentSettingProposalCopilotTools } from "./agents.js";
 import type { AgentConfigurationCopilotToolDependencies, AgentSettingProposalCopilotToolDependencies, CopilotAgentConfigurationPort } from "./agents.js";
-import { createAgentSkillsCopilotTools } from "./agentSkills.js";
-import type { AgentSkillsCopilotToolDependencies, CopilotAgentSkillsAgentPort, CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
+import { createAgentSkillConfigProposalCopilotTools, createAgentSkillsCopilotTools } from "./agentSkills.js";
+import type { AgentSkillConfigProposalCopilotToolDependencies, AgentSkillsCopilotToolDependencies, CopilotAgentSkillsAgentPort, CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 import { createAudiencePulseCopilotTools } from "./audiencePulse.js";
+import { createContextVariableProposalCopilotTools, createContextVariablesCopilotTools } from "./contextVariables.js";
+import type { ContextVariableProposalCopilotToolDependencies, ContextVariablesCopilotToolDependencies, CopilotContextVariablesAgentPort } from "./contextVariables.js";
 import type { AudiencePulseCopilotToolDependencies, CopilotAudiencePulsePort } from "./audiencePulse.js";
 import { createChatCopilotTools } from "./chat.js";
 import type { ChatCopilotToolDependencies, CopilotConversationHistoryPort } from "./chat.js";
@@ -25,7 +27,7 @@ import type { CopilotPendingApprovalsPort, CopilotTriageLogPort, WorkspaceTriage
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
 
-export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort;
+export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkillsAgentPort & CopilotContextVariablesAgentPort;
 
 export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & ChatCopilotToolDependencies
@@ -37,12 +39,15 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & QualityCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
+  & ContextVariablesCopilotToolDependencies
   & { readonly workspaceSettings: CopilotWorkspaceSettingsPort }
   & Omit<WorkspaceTriageCopilotToolDependencies, "agentLookup">
   & Omit<RoutineDefinitionCopilotToolDependencies, "agentLookup">
   & Omit<DirectiveProposalCopilotToolDependencies, "agentLookup">
   & Omit<RoutineProposalCopilotToolDependencies, "agentLookup">
-  & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">;
+  & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">
+  & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">
+  & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">;
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -59,15 +64,19 @@ export const createCopilotToolDescriptors = (
   ...createAudiencePulseCopilotTools(deps),
   ...createDocumentStatusCopilotTools(deps),
   ...createAgentSkillsCopilotTools(deps),
+  ...createContextVariablesCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
   ...createWorkspaceTriageCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createRoutineProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createAgentSkillConfigProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createContextVariableProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
 ]);
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
+export type { CopilotContextVariablesPort } from "./contextVariables.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";

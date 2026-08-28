@@ -449,6 +449,7 @@ export interface CopilotReplayEvidence {
   case_name: string;
   conversation_id: string;
   created_at: Generated<Timestamp>;
+  directives_excluded: Generated<Json>;
   id: string;
   operator_user_id: string;
   overrides: Json;

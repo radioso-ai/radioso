@@ -4,6 +4,8 @@ import type {
   CopilotConversation,
   CopilotMessage,
   CopilotProposal,
+  CopilotProposalApplyClaimGuard,
+  CopilotProposalClaim,
   CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 
@@ -16,7 +18,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
-  private readonly claimedProposalIds = new Set<string>();
+  // Mirrors copilot_proposals.apply_started_at: kept out of the public CopilotProposal shape
+  // (only claiming/finalizing needs it), the same narrowing the real repository does by not
+  // including the column in `proposalColumns`.
+  private readonly applyClaims = new Map<string, Date>();
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
     const timestamp = new Date();
@@ -70,10 +75,16 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
       proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map((proposal) => ({
         id: proposal.id,
         targetType: proposal.targetType,
-        targetLabel: (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
-        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
+        // Mirrors presentProposalCard's own name-bearing-vs-setting-bearing split (copilotRepository.ts):
+        // every target type reads its label from payload.name except agent_setting, which reads
+        // targetRef.settingKey.
+        targetLabel: proposal.targetType !== "agent_setting" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
+        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : proposal.targetType !== "agent_setting" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
         status: proposal.status,
         reason: proposal.reason ?? null,
+        // Mirrors presentProposalCard's own removal discriminator: only an explicit
+        // `op: "remove"` on a directive proposal's payload reads as a removal.
+        ...(proposal.targetType === "directive" && proposal.payload && typeof proposal.payload === "object" && "op" in proposal.payload && proposal.payload.op === "remove" ? { removal: true as const } : {}),
       })),
     }));
   }
@@ -105,25 +116,44 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
   }
 
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null> {
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
-    if (!proposal || proposal.status !== "pending" || (input.requiresApplyClaim === true && !this.claimedProposalIds.has(proposal.id)) || (input.requiresApplyClaim !== true && this.claimedProposalIds.has(proposal.id))) return null;
+    if (!proposal || proposal.status !== "pending") return null;
+    if (!this.satisfiesClaimGuard(proposal.id, input.applyClaimGuard)) return null;
     const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
-    this.claimedProposalIds.delete(proposal.id);
+    this.applyClaims.delete(proposal.id);
     return updated;
   }
 
-  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null> {
     const proposal = await this.findProposal(input);
-    if (proposal?.status !== "pending" || this.claimedProposalIds.has(proposal.id)) return null;
-    this.claimedProposalIds.add(proposal.id);
-    return proposal;
+    if (!proposal || proposal.status !== "pending") return null;
+    if (!this.isClaimFree(proposal.id, input.claimTtlSeconds)) return null;
+    const claimedAt = new Date();
+    this.applyClaims.set(proposal.id, claimedAt);
+    return { proposal, claimedAt };
   }
 
-  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> {
+  /** Clears only the exact claim `claimProposalApply` handed to this attempt, mirroring the real repository's fencing. */
+  async releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string; claimedAt: Date }): Promise<boolean> {
     const proposal = await this.findProposal(input);
-    return proposal?.status === "pending" ? this.claimedProposalIds.delete(proposal.id) : false;
+    if (!proposal || proposal.status !== "pending") return false;
+    const claimedAt = this.applyClaims.get(proposal.id);
+    if (!claimedAt || claimedAt.getTime() !== input.claimedAt.getTime()) return false;
+    this.applyClaims.delete(proposal.id);
+    return true;
+  }
+
+  private isClaimFree(proposalId: string, claimTtlSeconds: number): boolean {
+    const claimedAt = this.applyClaims.get(proposalId);
+    return !claimedAt || Date.now() - claimedAt.getTime() >= claimTtlSeconds * 1000;
+  }
+
+  private satisfiesClaimGuard(proposalId: string, guard: CopilotProposalApplyClaimGuard): boolean {
+    if (guard.state === "free") return this.isClaimFree(proposalId, guard.claimTtlSeconds);
+    const claimedAt = this.applyClaims.get(proposalId);
+    return claimedAt !== undefined && claimedAt.getTime() === guard.claimedAt.getTime();
   }
 
   private replaceStatus(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation {

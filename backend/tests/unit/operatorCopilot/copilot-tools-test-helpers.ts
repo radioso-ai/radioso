@@ -16,10 +16,15 @@ export const pageContext = (agentId: string | null) => ({
   entities: [],
 });
 
+/** Always-authorized stand-in for CopilotCurrentAuthorizationPort; tests exercising a denial
+ * build their own context rather than override this shared fixture. */
+export const alwaysAuthorized = () => ({ hasAllPermissions: vi.fn(async () => true) });
+
 export const context = (agentId: string | null) => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  currentAuthorization: alwaysAuthorized(),
   pageContext: pageContext(agentId),
 });
 
@@ -144,6 +149,7 @@ export const documentSkillsContext = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  currentAuthorization: alwaysAuthorized(),
   pageContext: { view: "documents" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
 
@@ -187,6 +193,24 @@ export const documentStatusPorts = () => {
   return { summarizeWorkspace, listByStatuses, listByWorkspaceIdWithDocumentCounts };
 };
 
+/** Broad enough shape that a test overriding `registryList.mockReturnValueOnce` can add a field
+ * like `showValueToCopilot` without hitting the narrower literal type TS would otherwise infer
+ * from the default fixture below. */
+export interface MockCapabilitySettingsField {
+  readonly key: string;
+  readonly label: string;
+  readonly type: string;
+  readonly defaultValue?: string | number | boolean;
+  readonly showValueToCopilot?: boolean;
+}
+export interface MockCapabilityDescriptor {
+  readonly id: string;
+  readonly targetKind: string;
+  readonly requiresTarget: boolean;
+  readonly settingsFields: ReadonlyArray<MockCapabilitySettingsField>;
+  readonly enumerateTargets: () => Promise<ReadonlyArray<{ id: string; label: string; status?: string }>>;
+}
+
 export const agentSkillPorts = () => {
   const get = vi.fn(async (_workspaceId: string, agentId: string) => ({ id: agentId, name: "Support" }) as never);
   const list = vi.fn(async () => [
@@ -195,28 +219,47 @@ export const agentSkillPorts = () => {
       name: "notify_ops",
       capability: "notify",
       target: { kind: "webhook_destination", id: "target-1" },
-      config: { boundPayload: { customerEmail: "person@example.com" }, delivery: { token: "shhh-secret" } },
+      config: {
+        boundPayload: { customerEmail: "person@example.com" },
+        delivery: {
+          recipientEmails: ["ops@example.com"],
+          webhook: { url: "https://hooks.example.com/t/abc123secrettoken" },
+          token: "shhh-secret",
+        },
+      } as Record<string, unknown>,
       invocationMode: "routine_named",
       enabled: true,
     },
   ]);
-  const registryList = vi.fn(() => [
+  const registryList = vi.fn((): MockCapabilityDescriptor[] => [
     {
       id: "notify",
       targetKind: "webhook_destination",
       requiresTarget: true,
+      // Mirrors the real notify capability's declared settings: neither opts into
+      // `showValueToCopilot`, so the reader must never surface their values even though both keys
+      // carry real values above (a webhook URL and a recipient email), nor the wholly-undeclared
+      // `delivery.token`.
+      settingsFields: [
+        { key: "delivery.recipientEmails", label: "Recipient emails", type: "string_list" },
+        { key: "delivery.webhook.url", label: "Webhook URL", type: "text" },
+      ],
       enumerateTargets: vi.fn(async () => [{ id: "target-1", label: "Ops webhook", status: "active" }]),
     },
     {
       id: "mcp_tool",
       targetKind: "mcp_connection",
       requiresTarget: true,
+      settingsFields: [],
       enumerateTargets: vi.fn(async () => []),
     },
     {
       id: "retrieve",
       targetKind: "workspace",
       requiresTarget: false,
+      settingsFields: [
+        { key: "vectorTopK", label: "Vector top K", type: "number", defaultValue: 20 },
+      ],
       enumerateTargets: vi.fn(async () => []),
     },
   ]);

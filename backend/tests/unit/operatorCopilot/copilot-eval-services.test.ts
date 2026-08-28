@@ -226,6 +226,7 @@ describe("copilot eval case replay", () => {
       cases: { findCase },
       runs: { execute },
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
+      agentDirectives: { listDirectives: vi.fn(async () => []) },
       abuseControl: { enforce },
       audit: { record },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -349,6 +350,7 @@ describe("copilot eval case replay verdict projection", () => {
       cases: { findCase } as never,
       runs: { execute } as never,
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
+      agentDirectives: { listDirectives: vi.fn(async () => []) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -374,6 +376,7 @@ describe("copilot eval case replay verdict projection", () => {
       cases: { findCase } as never,
       runs: { execute } as never,
       evidence: { record: vi.fn(async () => ({ id: "evidence-1" })), findMany: vi.fn() } as never,
+      agentDirectives: { listDirectives: vi.fn(async () => []) },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
@@ -388,7 +391,11 @@ describe("copilot eval case replay verdict projection", () => {
 describe("copilot eval case replay evidence", () => {
   const capturedAt = new Date("2026-08-25T10:00:00.000Z");
 
-  const harness = (options: { sourceAgentId?: string | null } = {}) => {
+  const harness = (options: {
+    sourceAgentId?: string | null;
+    directives?: ReadonlyArray<{ id: string; config: Record<string, unknown> }>;
+    snapshotAuthoredDirectives?: ReadonlyArray<Record<string, unknown>>;
+  } = {}) => {
     const findCase = vi.fn(async () => ({
       id: ids.case,
       name: "Refund window",
@@ -397,6 +404,7 @@ describe("copilot eval case replay evidence", () => {
       assertions: [{ type: "answer_contains" }],
       sourceAgentId: options.sourceAgentId === undefined ? ids.agent : options.sourceAgentId,
       snapshotCapturedAt: capturedAt,
+      snapshotAuthoredDirectives: options.snapshotAuthoredDirectives ?? [],
     }));
     const execute = vi.fn(async () => ({
       run: {
@@ -409,15 +417,17 @@ describe("copilot eval case replay evidence", () => {
     }));
     const record = vi.fn(async (input: Record<string, unknown>) => ({ ...input, id: "evidence-1", createdAt: new Date() }));
     const get = vi.fn(async () => ({ updatedAt: capturedAt }));
+    const listDirectives = vi.fn(async () => options.directives ?? []);
     const service = new EvalCaseReplayService({
       cases: { findCase } as never,
       runs: { execute } as never,
       evidence: { record, findMany: vi.fn() } as never,
+      agentDirectives: { listDirectives },
       abuseControl: { enforce: vi.fn(async () => undefined) },
       audit: { record: vi.fn(async () => undefined) },
       abusePolicy: { limit: 30, windowMs: 3_600_000 },
     });
-    return { service, record, get, execute };
+    return { service, record, get, execute, listDirectives };
   };
 
   it("records what it measured so a later proposal can cite it", async () => {
@@ -443,6 +453,7 @@ describe("copilot eval case replay evidence", () => {
       recordedStatus: "failing",
       verdict: "pass",
       overrides,
+      directivesExcluded: [],
     });
     expect(result.evidenceId).toBe("evidence-1");
   });
@@ -460,5 +471,146 @@ describe("copilot eval case replay evidence", () => {
 
     expect(record).not.toHaveBeenCalled();
     expect(result.evidenceId).toBeNull();
+  });
+
+  it("resolves excludedDirectiveIds against the source agent's real directives before running the replay", async () => {
+    // The server — not the model — decides what "run without this directive" resolves to, so the
+    // authoredDirectives array the run and the evidence row actually see is server-computed.
+    const kept = { id: "directive-kept", config: { name: "Keep answering refunds" } };
+    const removed = { id: "directive-removed", config: { name: "State the refund window" } };
+    const { service, execute, record, listDirectives } = harness({
+      directives: [kept, removed],
+      snapshotAuthoredDirectives: [kept.config, removed.config],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    });
+
+    expect(listDirectives).toHaveBeenCalledWith(ids.workspace, ids.agent);
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { agentConfigOverride: { authoredDirectives: [kept.config] } },
+    }));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { agentConfigOverride: { authoredDirectives: [kept.config] } },
+      directivesExcluded: ["directive-removed"],
+    }));
+  });
+
+  it("replays the snapshot's own directive content, not the agent's current directives, so unrelated live edits since capture cannot leak into the measurement", async () => {
+    // `kept` differs between live and the snapshot — an edit an operator made to an unrelated
+    // directive sometime after this case was captured. The replay must reflect what the snapshot
+    // saw (`keptAtCapture`), never the live edit, or an improvement could get credited to the
+    // directive removal when it was really caused by this unrelated change.
+    const keptLive = { id: "directive-kept", config: { name: "Keep answering refunds", action: "Edited after capture" } };
+    const keptAtCapture = { name: "Keep answering refunds", action: "Original action at capture" };
+    const removed = { id: "directive-removed", config: { name: "State the refund window", action: "Say 30 days" } };
+    const { service, execute, record } = harness({
+      directives: [keptLive, removed],
+      snapshotAuthoredDirectives: [keptAtCapture, removed.config],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    });
+
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { agentConfigOverride: { authoredDirectives: [keptAtCapture] } },
+    }));
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      overrides: { agentConfigOverride: { authoredDirectives: [keptAtCapture] } },
+    }));
+  });
+
+  it("refuses excludedDirectiveIds when the named directive is not present in the case's captured snapshot", async () => {
+    // The directive exists on the live agent but was created after this case's snapshot was
+    // captured, so there is nothing in the snapshot to remove — silently ignoring the exclusion
+    // would credit the removal for a directive the captured "before" verdict never saw.
+    const addedSinceCapture = { id: "directive-new", config: { name: "New directive since capture" } };
+    const { service, execute } = harness({
+      directives: [addedSinceCapture],
+      snapshotAuthoredDirectives: [],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-new"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/not present in this case's captured snapshot/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses excludedDirectiveIds when the live directive no longer matches what the snapshot captured", async () => {
+    // Same name, live id still resolves — but the content was edited since capture. A rename or
+    // edit that reuses the name must not slip through as "the same directive" the case measured.
+    const editedLive = { id: "directive-removed", config: { name: "State the refund window", action: "Say 45 days" } };
+    const capturedVersion = { name: "State the refund window", action: "Say 30 days" };
+    const { service, execute } = harness({
+      directives: [editedLive],
+      snapshotAuthoredDirectives: [capturedVersion],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/changed since this case's snapshot was captured/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses an excludedDirectiveIds entry that is not one of the source agent's real directives", async () => {
+    const { service, execute } = harness({ directives: [{ id: "directive-kept", config: {} }] });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["not-a-real-directive"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/cannot exclude directive/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses excludedDirectiveIds combined with a hand-authored authoredDirectives override", async () => {
+    const { service, execute } = harness({ directives: [{ id: "directive-kept", config: {} }] });
+    const overrides = {
+      agentConfigOverride: {
+        excludedDirectiveIds: ["directive-kept"],
+        authoredDirectives: [{ action: "Anything" }],
+      },
+    };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/cannot be combined/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it("refuses excludedDirectiveIds when the case has no source agent to resolve them against", async () => {
+    const { service, execute } = harness({ sourceAgentId: null });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/no source agent/i);
+    expect(execute).not.toHaveBeenCalled();
   });
 });

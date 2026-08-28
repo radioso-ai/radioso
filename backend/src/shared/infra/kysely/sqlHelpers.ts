@@ -141,3 +141,38 @@ export const anyOf = (
   values: readonly unknown[],
   pgArrayType: string,
 ): RawBuilder<boolean> => sql`${expression} = any(${sql.val(values)}::${sql.raw(pgArrayType)})`;
+
+/**
+ * `<expected> IS NULL OR date_trunc('milliseconds', <column>) = date_trunc('milliseconds', <expected>)`
+ * — an optimistic-concurrency guard for an UPDATE/DELETE predicate: skip the check when `expected`
+ * is `undefined`/`null` (no version gating requested by the caller), otherwise require the column
+ * to match at millisecond precision. JS `Date` only carries millisecond precision while Postgres
+ * `timestamptz` carries microseconds, so a plain `=` would spuriously fail on a timestamp that
+ * round-tripped through the app.
+ *
+ * Push this into the mutation's own `WHERE` (or an `ON CONFLICT ... DO UPDATE ... WHERE`) rather
+ * than comparing a freshly-read row to an expected value beforehand: a separate read-then-compare
+ * leaves a window where a concurrent writer's change lands between the read and the write.
+ */
+export const optionalTimestampMatch = (
+  column: Expression<unknown>,
+  expected: Date | null | undefined,
+): RawBuilder<boolean> =>
+  sql`(${expected ?? null}::timestamptz IS NULL OR date_trunc('milliseconds', ${column}) = date_trunc('milliseconds', ${expected ?? null}::timestamptz))`;
+
+/**
+ * `date_trunc('milliseconds', <column>) = date_trunc('milliseconds', <expected>)` when `expected`
+ * is a timestamp, or always `false` when `expected` is `null`. Use as an
+ * `ON CONFLICT ... DO UPDATE SET ... WHERE` guard for a proposal drafted against "no row exists
+ * yet": if a row now exists (a conflict occurs) the guard is false, so the `DO UPDATE` is skipped
+ * and the statement becomes a no-op for that row instead of silently overwriting a row the caller
+ * never saw. Contrast with {@link optionalTimestampMatch}, whose `null`/`undefined` means "no
+ * gating" rather than "expect absence".
+ */
+export const timestampMatchOrAbsent = (
+  column: Expression<unknown>,
+  expected: Date | null,
+): RawBuilder<boolean> =>
+  expected === null
+    ? sql`false`
+    : sql`date_trunc('milliseconds', ${column}) = date_trunc('milliseconds', ${expected}::timestamptz)`;

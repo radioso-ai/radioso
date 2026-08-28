@@ -220,4 +220,39 @@ describeIfDatabase("agent directives persistence", () => {
 
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
+
+  it("refuses to delete a directive whose expectedUpdatedAt no longer matches, and leaves it in place (#atomic-delete)", async () => {
+    const { account, workspace, agent } = await createAgent();
+
+    const created = await agentRepository.createDirective(agent.id, workspace.id, {
+      name: "formal-register",
+      condition: { kind: "always" },
+      action: "Use a formal register.",
+    });
+    const draftedAt = created.updatedAt;
+
+    // A concurrent edit lands after the caller read the directive's version (draftedAt) but
+    // before it calls delete: this changes the directive's own updated_at.
+    await database.query("SELECT pg_sleep(0.01)");
+    const edited = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      action: "Use a precise, formal register.",
+    });
+    expect(edited.updatedAt.getTime()).toBeGreaterThan(draftedAt.getTime());
+
+    // The delete call is version-gated by the same WHERE predicate that performs the delete, not
+    // by a separate read-then-compare, so a stale expectedUpdatedAt must fail atomically and the
+    // directive must never be removed.
+    await expect(
+      agentRepository.deleteDirective(agent.id, workspace.id, created.id, { expectedUpdatedAt: draftedAt }),
+    ).resolves.toBe(false);
+    expect(await agentRepository.listDirectives(agent.id, workspace.id)).toHaveLength(1);
+
+    // A fresh expectedUpdatedAt (matching the edit) succeeds.
+    await expect(
+      agentRepository.deleteDirective(agent.id, workspace.id, created.id, { expectedUpdatedAt: edited.updatedAt }),
+    ).resolves.toBe(true);
+    expect(await agentRepository.listDirectives(agent.id, workspace.id)).toHaveLength(0);
+
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
 });

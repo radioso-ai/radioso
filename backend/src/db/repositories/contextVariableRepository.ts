@@ -12,7 +12,8 @@ import type {
   ContextVariableValueType,
 } from "../../modules/context-variables/public.js";
 import type { ContextVariableSurfacing } from "../../modules/context-variables/public.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { badRequest, conflict } from "../../shared/domain/errors.js";
+import { currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface ContextVariableCreateRecord {
@@ -45,6 +46,53 @@ export interface AgentContextVariableEnablementRecord {
   enabled?: boolean;
 }
 
+/** Full replacement value for a variable's definition, used only by {@link ApplyContextVariableProposalInput}. */
+export interface ContextVariableDefinitionWrite {
+  readonly name: string;
+  readonly description: string | null;
+  readonly valueType: ContextVariableValueType;
+  readonly trustTier: ContextVariableTrustTier;
+  readonly sensitivity: ContextVariableSensitivity;
+  readonly defaultSurfacing: ContextVariableSurfacing;
+}
+
+/** Full replacement value for one agent's enablement, used only by {@link ApplyContextVariableProposalInput}. */
+export interface ContextVariableEnablementWrite {
+  readonly source: ContextVariableSource;
+  readonly resolverSkillId: string | null;
+  readonly maxAgeSeconds: number | null;
+  readonly resolverTimeoutMs: number | null;
+  readonly surfacing: ContextVariableSurfacing;
+  readonly enabled: boolean;
+}
+
+export interface ApplyContextVariableProposalInput {
+  readonly workspaceId: string;
+  readonly agentId: string;
+  /** Existing variable id, or null to create a new variable. */
+  readonly variableId: string | null;
+  /** Definition create/update, or null when the proposal only touches the enablement. */
+  readonly definition: ContextVariableDefinitionWrite | null;
+  /**
+   * Required (and enforced) only when variableId is set and definition is non-null: the
+   * variable's `updated_at` at draft time. Ignored for a fresh insert (variableId null) — there is
+   * nothing yet to race against.
+   */
+  readonly expectedVariableUpdatedAt: Date | null;
+  /** Enablement upsert, or null when the proposal only touches the definition. */
+  readonly enablement: ContextVariableEnablementWrite | null;
+  /**
+   * Draft-time enablement `updated_at`, or `null` when no enablement existed for this
+   * agent+variable at draft time (the proposal expects a fresh insert). Ignored when enablement
+   * is null.
+   */
+  readonly expectedEnablementUpdatedAt: Date | null;
+}
+
+export interface ApplyContextVariableProposalResult {
+  readonly variableId: string;
+}
+
 export interface ContextVariableRepositoryPort {
   create(input: ContextVariableCreateRecord): Promise<ContextVariable>;
   update(workspaceId: string, id: string, input: ContextVariableUpdateRecord): Promise<ContextVariable | null>;
@@ -65,6 +113,18 @@ export interface ContextVariableRepositoryPort {
     agentId: string,
     scopes: ContextVariableScope[],
   ): Promise<ResolvedVariableInput[]>;
+
+  /**
+   * Applies a copilot proposal's definition write, enablement write, or both as a single
+   * all-or-nothing transaction, each write version-gated in its own predicate rather than by a
+   * separate read-then-compare. Throws a `conflict` AppError (not a discriminated "stale" return)
+   * when either write's version guard fails, so a partially-applied write is always rolled back —
+   * a definition update that would have succeeded on its own must not survive a stale enablement
+   * write, and vice versa. A brand-new variable (`variableId: null`) has no earlier row to
+   * version-gate against, so a replayed apply is instead caught by, and also throws `conflict`
+   * for, the workspace+name uniqueness constraint the insert itself would violate.
+   */
+  applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult>;
 }
 
 interface ContextVariableRow {
@@ -210,6 +270,23 @@ const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariab
   data: row.data,
   lastModified: new Date(row.last_modified),
 });
+
+// Mirrors RoutineDefinitionService's isRoutineDefinitionNameVersionConstraintError: applyProposal
+// is the only writer of a brand-new context_variables row that has no earlier read to compare
+// against (see the comment on ApplyContextVariableProposalInput.expectedVariableUpdatedAt), so a
+// name collision from a replayed apply can only be caught here, at the constraint itself. Without
+// this translation the raw pg driver error is not an AppError, so the copilot's isStale() check
+// never recognizes it and the proposal is left reporting "failed" instead of "stale" even though
+// the variable this same request created is sitting right there.
+const isContextVariableNameConflict = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; constraint?: unknown; message?: unknown };
+  return record.code === "23505" &&
+    (
+      record.constraint === "context_variables_workspace_id_name_key" ||
+      (typeof record.message === "string" && record.message.includes("context_variables_workspace_id_name_key"))
+    );
+};
 
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -445,5 +522,163 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       }
     }
     return null;
+  }
+
+  async applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
+    return this.db.transaction().execute(async (trx) => {
+      let variableId = input.variableId;
+
+      if (input.definition) {
+        if (variableId) {
+          // Wrapped the same way the insert branch below is: a rename onto another variable's
+          // name hits the identical context_variables_workspace_id_name_key constraint, just
+          // through UPDATE instead of INSERT. The copilot adapter's own draft-time name check
+          // (copilotProposalAdapters.ts's resolveProposal) closes the common case, but a second
+          // proposal can still take the name between this proposal's draft and its Apply: without
+          // this translation that raw pg driver error isn't an AppError, so isStale() never
+          // recognizes it and the proposal reports "failed" instead of "stale".
+          let row: { id: string } | undefined;
+          try {
+            row = await trx
+              .updateTable("context_variables")
+              .set({
+                updated_at: currentTimestamp(),
+                name: input.definition.name,
+                description: input.definition.description,
+                value_type: input.definition.valueType,
+                trust_tier: input.definition.trustTier,
+                sensitivity: input.definition.sensitivity,
+                default_surfacing: input.definition.defaultSurfacing,
+              })
+              .where("workspace_id", "=", input.workspaceId)
+              .where("id", "=", variableId)
+              .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedVariableUpdatedAt))
+              .returning(["id"])
+              .executeTakeFirst();
+          } catch (error) {
+            if (isContextVariableNameConflict(error)) {
+              throw conflict(`A context variable named "${input.definition.name}" already exists for this workspace`);
+            }
+            throw error;
+          }
+          if (!row) {
+            throw conflict("Context variable was updated by another writer; reload before saving again");
+          }
+        } else {
+          try {
+            const created = await trx
+              .insertInto("context_variables")
+              .values({
+                id: randomUUID(),
+                workspace_id: input.workspaceId,
+                name: input.definition.name,
+                description: input.definition.description,
+                value_type: input.definition.valueType,
+                trust_tier: input.definition.trustTier,
+                sensitivity: input.definition.sensitivity,
+                default_surfacing: input.definition.defaultSurfacing,
+              })
+              .returning(["id"])
+              .executeTakeFirstOrThrow();
+            variableId = created.id;
+          } catch (error) {
+            if (isContextVariableNameConflict(error)) {
+              throw conflict(`A context variable named "${input.definition.name}" already exists for this workspace`);
+            }
+            throw error;
+          }
+        }
+      }
+
+      if (input.enablement) {
+        if (!variableId) {
+          throw badRequest("Cannot enable a context variable with no resolved id");
+        }
+        if (!input.definition) {
+          // Nothing above already proved this row still exists: the definition branch either
+          // just inserted a fresh one (variableId came from that INSERT) or re-checked an
+          // existing one's presence via its own UPDATE...WHERE id (throwing conflict when it
+          // found no row). An enablement-only proposal has no definition write to piggyback that
+          // proof on, and agent_context_variables.variable_id carries no foreign key check here
+          // otherwise - a proposal can sit pending indefinitely, and this variable can just as
+          // easily be deleted between draft and Apply as the resolver skill below can, so without
+          // this the insert below would raise a raw agent_context_variables_variable_id_fkey
+          // violation instead of the same stale-proposal contract every other check here upholds.
+          // Locked (SELECT ... FOR UPDATE), matching the resolver-skill check immediately below,
+          // so a concurrent delete cannot land between this check and the insert.
+          const variableRow = await trx
+            .selectFrom("context_variables")
+            .select("id")
+            .where("workspace_id", "=", input.workspaceId)
+            .where("id", "=", variableId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (!variableRow) {
+            throw conflict("Context variable no longer exists");
+          }
+        }
+        if (input.enablement.source === "resolver" && input.enablement.resolverSkillId) {
+          // Verified - and locked, so a concurrent delete or disable of this skill cannot land
+          // between the check and the write below - fresh inside this same transaction, not only
+          // at draft time. A proposal can sit pending indefinitely, resolver_skill_id carries no
+          // foreign key (migration 112), and a resolver-sourced enablement whose skill is gone or
+          // disabled resolves nothing at runtime with no error anywhere
+          // (SkillBackedContextResolver.resolve silently returns null for an id it cannot find or
+          // whose agentSkill.enabled is false), so nothing else catches a skill deleted or
+          // disabled between draft and Apply. Turning that into a conflict here - not a silent
+          // insert - is what lets applyIfVersionMatches report the proposal stale instead.
+          const resolverSkill = await trx
+            .selectFrom("agent_skills")
+            .select(["id", "enabled"])
+            .where("id", "=", input.enablement.resolverSkillId)
+            .where("agent_id", "=", input.agentId)
+            .where("workspace_id", "=", input.workspaceId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (!resolverSkill) {
+            throw conflict(`Resolver skill "${input.enablement.resolverSkillId}" no longer exists on this agent`);
+          }
+          if (!resolverSkill.enabled) {
+            throw conflict(`Resolver skill "${input.enablement.resolverSkillId}" is disabled on this agent`);
+          }
+        }
+        const row = await trx
+          .insertInto("agent_context_variables")
+          .values({
+            id: randomUUID(),
+            agent_id: input.agentId,
+            variable_id: variableId,
+            source: input.enablement.source,
+            resolver_skill_id: input.enablement.resolverSkillId,
+            max_age_seconds: input.enablement.maxAgeSeconds,
+            resolver_timeout_ms: input.enablement.resolverTimeoutMs,
+            surfacing: input.enablement.surfacing,
+            enabled: input.enablement.enabled,
+          })
+          .onConflict((oc) =>
+            oc.columns(["agent_id", "variable_id"]).doUpdateSet((eb) => ({
+              source: eb.ref("excluded.source"),
+              resolver_skill_id: eb.ref("excluded.resolver_skill_id"),
+              max_age_seconds: eb.ref("excluded.max_age_seconds"),
+              resolver_timeout_ms: eb.ref("excluded.resolver_timeout_ms"),
+              surfacing: eb.ref("excluded.surfacing"),
+              enabled: eb.ref("excluded.enabled"),
+              updated_at: currentTimestamp(),
+            // Qualified with the table name: inside ON CONFLICT ... DO UPDATE ... WHERE, an
+            // unqualified column is ambiguous between the target row and the `excluded` row.
+            })).where((eb) => timestampMatchOrAbsent(eb.ref("agent_context_variables.updated_at"), input.expectedEnablementUpdatedAt)),
+          )
+          .returning(["id"])
+          .executeTakeFirst();
+        if (!row) {
+          throw conflict("Context variable enablement was updated by another writer; reload before saving again");
+        }
+      }
+
+      if (!variableId) {
+        throw badRequest("A context variable proposal must include a definition or target an existing variable");
+      }
+      return { variableId };
+    });
   }
 }

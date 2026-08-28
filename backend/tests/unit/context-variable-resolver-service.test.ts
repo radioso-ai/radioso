@@ -10,6 +10,8 @@ import type {
 import { ContextVariableResolverService, type ContextResolverPort } from "../../src/modules/context-variables/public.js";
 import type {
   AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
   ContextVariableCreateRecord,
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
@@ -94,6 +96,9 @@ class FakeContextVariableRepository implements ContextVariableRepositoryPort {
     throw new Error("not implemented");
   }
   deleteValue(_variableId: string, _scope: ContextVariableScope): Promise<boolean> {
+    throw new Error("not implemented");
+  }
+  applyProposal(_input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult> {
     throw new Error("not implemented");
   }
 }

@@ -1799,7 +1799,7 @@ export const createTestDependencies = (overrides: {
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
-    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository }),
+    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService }),
   ] as const;
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const copilotCapabilityRunner = new AgenticCapabilityRunner({

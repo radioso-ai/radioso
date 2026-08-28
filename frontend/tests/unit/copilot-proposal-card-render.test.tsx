@@ -143,4 +143,35 @@ describe('CopilotProposalCard', () => {
     expect(rows[0]?.current).toEqual(current)
     expect(rows[0]?.proposed).toBe('This directive will be permanently removed.')
   })
+
+  it('shows no rows for an untouched half of a preview once the source echoes it identically on both sides', () => {
+    // This is the shape createContextVariableCopilotProposalAdapter's preview now returns for a
+    // definition-only proposal: the untouched enablement is echoed forward as the same value on
+    // both sides, not the stored payload's literal null - see the next test for why that
+    // distinction matters to this diff algorithm.
+    const enablement = { source: 'pushed', resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: 'on_reference', enabled: true }
+    const current = { definition: { name: 'loyalty_tier', sensitivity: 'normal' }, enablement }
+    const proposed = { definition: { name: 'loyalty_tier', sensitivity: 'sensitive' }, enablement }
+
+    const rows = buildCopilotProposalDiff({ current, proposed })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ path: '$.definition.sensitivity', current: 'normal', proposed: 'sensitive' })
+  })
+
+  it('would render an untouched half as a full removal if a preview passed its literal null through instead of echoing the current value', () => {
+    // Documents the bug the preceding test's projection prevents: a record-shaped
+    // `current.enablement` next to a null `proposed.enablement` (a stored payload's "not part of
+    // this proposal" marker, taken literally) recurses through the generic diff and expands into
+    // one removed row per enablement field - a removal that will not actually happen on Apply.
+    const enablement = { source: 'pushed', resolverSkillId: null, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: 'on_reference', enabled: true }
+    const current = { definition: { name: 'loyalty_tier' }, enablement }
+    const proposed = { definition: { name: 'loyalty_tier' }, enablement: null }
+
+    const rows = buildCopilotProposalDiff({ current, proposed })
+
+    expect(rows.length).toBeGreaterThan(1)
+    expect(rows.every((row) => row.path.startsWith('$.enablement.'))).toBe(true)
+    expect(rows.every((row) => row.kind === 'removed')).toBe(true)
+  })
 })

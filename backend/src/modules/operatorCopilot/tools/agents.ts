@@ -300,7 +300,6 @@ export const createAgentSettingProposalCopilotTools = (
         invoke: async ({ agentId, settingKey, value, rationale, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };
           const validated = await settingAdapter.validatePayload(context.workspaceId, targetRef, { value, ...(rationale ? { rationale } : {}) });
-          const versionToken = await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
           const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "agent_setting", settingKey, value: validated.payload && typeof validated.payload === "object" ? (validated.payload as { value?: unknown }).value : value });
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
@@ -309,7 +308,7 @@ export const createAgentSettingProposalCopilotTools = (
             targetType: "agent_setting",
             targetRef: validated.targetRef,
             payload: validated.payload,
-            versionToken,
+            versionToken: validated.versionToken,
             evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);

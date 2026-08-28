@@ -112,6 +112,7 @@ describe("propose_context_variable", () => {
       validatePayload: vi.fn(async (_workspaceId: string, targetRef: unknown, payload: unknown) => ({
         targetRef,
         payload: { name: "loyalty_tier", definition: { name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" }, enablement: null, ...(payload as Record<string, unknown>) },
+        versionToken: "variable-version",
       })),
     };
     const auditService = { record: vi.fn() };
@@ -125,7 +126,7 @@ describe("propose_context_variable", () => {
   };
 
   it("creates a pending proposal for a new variable definition", async () => {
-    const { descriptors, createProposal } = buildTools();
+    const { descriptors, createProposal, adapter } = buildTools();
     const descriptor = descriptors.find((entry) => entry.name === "propose_context_variable");
 
     const result = await descriptor!.createTool(context).invoke({
@@ -143,6 +144,11 @@ describe("propose_context_variable", () => {
       versionToken: "variable-version",
     }));
     expect(result).toMatchObject({ targetType: "context_variable", targetLabel: "loyalty_tier" });
+    // The version token comes from validatePayload's own return, not a follow-up call: a second,
+    // separate read could pair a payload expansion built from the first (now stale) read with a
+    // token from the second, fresher read, letting a concurrent edit slip past Apply's version
+    // check undetected.
+    expect((adapter as { readVersionToken: ReturnType<typeof vi.fn> }).readVersionToken).not.toHaveBeenCalled();
   });
 
   it("targets an existing variable by id and falls back to the page agent", async () => {

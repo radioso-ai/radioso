@@ -139,8 +139,9 @@ a new skill for either of those.
 
 A context variable proposal can create or update the variable's definition,
 enable or reconfigure it for the agent, or do both in the same card. A
-resolver-sourced enablement needs the skill that resolves the value; every
-other source refuses one. Applying the proposal writes the definition, the
+resolver-sourced enablement needs the skill that resolves the value, and that
+skill must already exist on the agent the proposal targets; every other
+source refuses one. Applying the proposal writes the definition, the
 enablement, or both, in that order, so a proposal that creates a variable and
 enables it for the agent in one step always has an id to enable by the time it
 runs.

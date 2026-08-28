@@ -154,13 +154,20 @@ export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {
 
 export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "agent_setting";
-  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
+  /**
+   * The version token is returned from the same read that normalizes the payload (not a
+   * follow-up `readVersionToken` call): a partial patch is expanded against current state here,
+   * so a second, later read could pair an expansion built from stale state with a fresher token
+   * and let a concurrent edit slip past the apply-time version check undetected.
+   */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
 /** A skill config is supplied by Ray from settings it read, not drafted from prose. */
 export interface CopilotAgentSkillProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "agent_skill";
-  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
 /**
@@ -169,7 +176,8 @@ export interface CopilotAgentSkillProposalAdapter extends CopilotProposalAdapter
  */
 export interface CopilotContextVariableProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "context_variable";
-  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {

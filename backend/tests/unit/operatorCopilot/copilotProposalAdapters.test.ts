@@ -25,6 +25,12 @@ const makeAgentService = (agentsByWorkspace: Record<string, string[]> = {}) => (
   }),
 });
 
+// Minimal stand-in for AgentSkillsService.list, scoped to whichever ids this test registers as
+// belonging to the agent - used to validate a resolver enablement's resolverSkillId.
+const makeAgentSkillsPort = (skillIds: string[] = []) => ({
+  list: vi.fn(async () => skillIds.map((id) => ({ id }))) as never,
+});
+
 const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) => {
   const variables = new Map(seedVariables.map((variable) => [variable.id, variable]));
   const enablements = new Map<string, AgentContextVariableEnablement>();
@@ -130,7 +136,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     const variable = makeVariable({ workspaceId });
     const contextVariableRepository = makeContextVariableRepository([variable]);
     const agentService = makeAgentService({}); // no agent registered anywhere
-    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
 
     const foreignAgentId = randomUUID();
     await expect(
@@ -144,7 +150,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     const variable = makeVariable({ workspaceId });
     const contextVariableRepository = makeContextVariableRepository([variable]);
     const agentService = makeAgentService({}); // no agent registered anywhere
-    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
 
     const foreignAgentId = randomUUID();
     await expect(
@@ -160,7 +166,7 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     const variable = makeVariable({ workspaceId });
     const contextVariableRepository = makeContextVariableRepository([variable]);
     const agentService = makeAgentService({}); // no agent registered anywhere - variable exists, agent does not
-    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
 
     const foreignAgentId = randomUUID();
     const targetRef = { agentId: foreignAgentId, variableId: variable.id };
@@ -177,6 +183,109 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     expect(outcome.outcome).not.toBe("applied");
     expect(contextVariableRepository.applyProposal).not.toHaveBeenCalled();
+  });
+
+  it("derives the version token from the same read used to expand a partial definition patch, not a second, later one", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variable = makeVariable({ workspaceId });
+    const contextVariableRepository = makeContextVariableRepository([variable]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    const targetRef = { agentId, variableId: variable.id };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, { sensitivity: "sensitive" });
+
+    // A follow-up read (e.g. the old code's separate readVersionToken call) would see whatever a
+    // concurrent write landed in between; a single read cannot.
+    expect(contextVariableRepository.get).toHaveBeenCalledTimes(1);
+    expect(validated.versionToken).toBe(`${variable.updatedAt.toISOString()}|`);
+  });
+
+  it("previews only what a definition-only proposal changes, leaving its untouched enablement identical on both sides of the diff", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variable = makeVariable({ workspaceId });
+    const contextVariableRepository = makeContextVariableRepository([variable]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    // The sibling value a definition-only proposal must not appear to remove.
+    await contextVariableRepository.upsertEnablement({ agentId, variableId: variable.id, source: "pushed", surfacing: "on_reference", enabled: true });
+
+    const targetRef = { agentId, variableId: variable.id };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, { sensitivity: "sensitive" });
+    const preview = await adapter.preview(workspaceId, validated.targetRef, validated.payload) as {
+      current: { definition: Record<string, unknown> | null; enablement: Record<string, unknown> | null };
+      proposed: { definition: Record<string, unknown> | null; enablement: Record<string, unknown> | null };
+    };
+
+    expect(preview.proposed.definition).toMatchObject({ sensitivity: "sensitive" });
+    expect(preview.current.definition).toMatchObject({ sensitivity: "normal" });
+    // The enablement side is untouched by this proposal - `null` here (the stored payload's
+    // literal value for "not part of this proposal") would render as a removal next to the real
+    // current value, so the preview must echo the current value forward instead.
+    expect(preview.current.enablement).not.toBeNull();
+    expect(preview.proposed.enablement).toEqual(preview.current.enablement);
+    // Neither side carries identity/audit columns the payload never had.
+    expect(preview.current.definition).not.toHaveProperty("id");
+    expect(preview.current.definition).not.toHaveProperty("updatedAt");
+    expect(preview.current.enablement).not.toHaveProperty("id");
+    expect(preview.current.enablement).not.toHaveProperty("variableId");
+  });
+
+  it("agrees with Apply about staleness: a definition-only proposal is not reported stale by an unrelated enablement edit that lands after it", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variable = makeVariable({ workspaceId });
+    const contextVariableRepository = makeContextVariableRepository([variable]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    const targetRef = { agentId, variableId: variable.id };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, { sensitivity: "sensitive" });
+
+    // An enablement edit unrelated to this proposal lands after it was drafted.
+    await contextVariableRepository.upsertEnablement({ agentId, variableId: variable.id, source: "pushed", surfacing: "on_reference", enabled: true });
+
+    // What getProposal shows before Apply is even attempted must match what Apply itself decides.
+    const currentToken = await adapter.readVersionToken(workspaceId, validated.targetRef);
+    expect(currentToken).toBe(validated.versionToken);
+
+    const outcome = await adapter.applyIfVersionMatches(workspaceId, targetRef, validated.payload, validated.versionToken);
+    expect(outcome.outcome).toBe("applied");
+  });
+
+  it("resolves a resolver enablement's skill through this agent, accepting one that belongs to it", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const skillId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository([]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort([skillId]) });
+
+    const validated = await adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
+      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      enablement: { source: "resolver", resolverSkillId: skillId, surfacing: "operator_only" },
+    });
+
+    expect((validated.payload as { enablement: { resolverSkillId: string } }).enablement.resolverSkillId).toBe(skillId);
+  });
+
+  it("refuses a resolver enablement naming a skill id that does not exist for this agent", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const foreignSkillId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository([]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    // Nothing registered for this agent - a hallucinated id, or one that belongs to a different
+    // agent or workspace, looks identical from here.
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort([]) });
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
+      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      enablement: { source: "resolver", resolverSkillId: foreignSkillId, surfacing: "operator_only" },
+    })).rejects.toMatchObject({ statusCode: 400 });
   });
 });
 
@@ -277,5 +386,60 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
       recipientEmails: ["ops2@example.com"],
       webhook: { url: "https://hooks.example.com/abc" },
     });
+  });
+
+  it("derives the version token from the same read used to expand a partial config patch, not a second, later one", async () => {
+    const { adapter, agentSkillsService } = makeSkillsHarness();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const existing = await agentSkillsService.create(workspaceId, agentId, {
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: { url: "https://hooks.example.com/abc" } }, exposedInputs: { message: true } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    // A follow-up read (e.g. the old code's separate readVersionToken call) would see whatever a
+    // concurrent write landed in between; a single read cannot.
+    const listSpy = vi.spyOn(agentSkillsService, "list");
+    const targetRef = { agentId, skillId: existing.id };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, {
+      config: { delivery: { recipientEmails: ["ops2@example.com"] } },
+    });
+
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(validated.versionToken).toBe(new Date(existing.updatedAt).toISOString());
+  });
+
+  it("projects the existing skill to the payload's own editable shape in a preview, so identity and audit fields never render as removed", async () => {
+    const { adapter, agentSkillsService } = makeSkillsHarness();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const existing = await agentSkillsService.create(workspaceId, agentId, {
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null }, exposedInputs: { message: true } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const targetRef = { agentId, skillId: existing.id };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, { config: { delivery: { recipientEmails: ["ops2@example.com"] } } });
+    const preview = await adapter.preview(workspaceId, validated.targetRef, validated.payload) as { current: Record<string, unknown> | null };
+
+    expect(preview.current).not.toBeNull();
+    // The proposal payload never carries these columns, so a preview diff must not either -
+    // otherwise they render as fields the proposal "removes" when it changes nothing about them.
+    expect(preview.current).not.toHaveProperty("id");
+    expect(preview.current).not.toHaveProperty("workspaceId");
+    expect(preview.current).not.toHaveProperty("createdAt");
+    expect(preview.current).not.toHaveProperty("updatedAt");
+    expect(preview.current).not.toHaveProperty("storedKind");
+    expect(preview.current).toMatchObject({ name: "notify_ops", capability: "notify", enabled: true });
   });
 });

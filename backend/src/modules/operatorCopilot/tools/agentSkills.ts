@@ -181,7 +181,6 @@ export const createAgentSkillConfigProposalCopilotTools = (
           const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
           const targetRef = { agentId: resolvedAgentId, skillId: skillId ?? null };
           const validated = await skillAdapter.validatePayload(context.workspaceId, targetRef, { name, capability, target, config, invocationMode, enabled, rationale });
-          const versionToken = await skillAdapter.readVersionToken(context.workspaceId, validated.targetRef);
           const validatedPayload = validated.payload as { name: string; capability: string; invocationMode: string; config: unknown; rationale?: string };
           const evidence = await citedProposalEvidence(deps, context, resolvedAgentId, evidenceIds, {
             targetType: "agent_skill",
@@ -195,7 +194,7 @@ export const createAgentSkillConfigProposalCopilotTools = (
             targetType: "agent_skill",
             targetRef: validated.targetRef,
             payload: validated.payload,
-            versionToken,
+            versionToken: validated.versionToken,
             evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);

@@ -412,7 +412,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
-    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository }),
+    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService }),
   ] as const;
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: repositories.conversationRepository,

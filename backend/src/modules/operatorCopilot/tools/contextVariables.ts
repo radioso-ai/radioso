@@ -187,7 +187,6 @@ export const createContextVariableProposalCopilotTools = (
           const validated = await adapter.validatePayload(context.workspaceId, targetRef, {
             name, description: variableDescription, valueType, trustTier, sensitivity, defaultSurfacing, enablement, rationale,
           });
-          const versionToken = await adapter.readVersionToken(context.workspaceId, validated.targetRef);
           const validatedPayload = validated.payload as { name: string; rationale?: string };
           const evidence = await citedProposalEvidence(deps, context, resolvedAgentId, evidenceIds, { targetType: "context_variable" });
           const proposal = await deps.proposalRepository.createProposal({
@@ -197,7 +196,7 @@ export const createContextVariableProposalCopilotTools = (
             targetType: "context_variable",
             targetRef: validated.targetRef,
             payload: validated.payload,
-            versionToken,
+            versionToken: validated.versionToken,
             evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);

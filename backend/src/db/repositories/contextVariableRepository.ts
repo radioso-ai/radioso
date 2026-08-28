@@ -120,7 +120,9 @@ export interface ContextVariableRepositoryPort {
    * separate read-then-compare. Throws a `conflict` AppError (not a discriminated "stale" return)
    * when either write's version guard fails, so a partially-applied write is always rolled back —
    * a definition update that would have succeeded on its own must not survive a stale enablement
-   * write, and vice versa.
+   * write, and vice versa. A brand-new variable (`variableId: null`) has no earlier row to
+   * version-gate against, so a replayed apply is instead caught by, and also throws `conflict`
+   * for, the workspace+name uniqueness constraint the insert itself would violate.
    */
   applyProposal(input: ApplyContextVariableProposalInput): Promise<ApplyContextVariableProposalResult>;
 }
@@ -268,6 +270,23 @@ const mapContextVariableValueRow = (row: ContextVariableValueRow): ContextVariab
   data: row.data,
   lastModified: new Date(row.last_modified),
 });
+
+// Mirrors RoutineDefinitionService's isRoutineDefinitionNameVersionConstraintError: applyProposal
+// is the only writer of a brand-new context_variables row that has no earlier read to compare
+// against (see the comment on ApplyContextVariableProposalInput.expectedVariableUpdatedAt), so a
+// name collision from a replayed apply can only be caught here, at the constraint itself. Without
+// this translation the raw pg driver error is not an AppError, so the copilot's isStale() check
+// never recognizes it and the proposal is left reporting "failed" instead of "stale" even though
+// the variable this same request created is sitting right there.
+const isContextVariableNameConflict = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; constraint?: unknown; message?: unknown };
+  return record.code === "23505" &&
+    (
+      record.constraint === "context_variables_workspace_id_name_key" ||
+      (typeof record.message === "string" && record.message.includes("context_variables_workspace_id_name_key"))
+    );
+};
 
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -531,21 +550,28 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
             throw conflict("Context variable was updated by another writer; reload before saving again");
           }
         } else {
-          const created = await trx
-            .insertInto("context_variables")
-            .values({
-              id: randomUUID(),
-              workspace_id: input.workspaceId,
-              name: input.definition.name,
-              description: input.definition.description,
-              value_type: input.definition.valueType,
-              trust_tier: input.definition.trustTier,
-              sensitivity: input.definition.sensitivity,
-              default_surfacing: input.definition.defaultSurfacing,
-            })
-            .returning(["id"])
-            .executeTakeFirstOrThrow();
-          variableId = created.id;
+          try {
+            const created = await trx
+              .insertInto("context_variables")
+              .values({
+                id: randomUUID(),
+                workspace_id: input.workspaceId,
+                name: input.definition.name,
+                description: input.definition.description,
+                value_type: input.definition.valueType,
+                trust_tier: input.definition.trustTier,
+                sensitivity: input.definition.sensitivity,
+                default_surfacing: input.definition.defaultSurfacing,
+              })
+              .returning(["id"])
+              .executeTakeFirstOrThrow();
+            variableId = created.id;
+          } catch (error) {
+            if (isContextVariableNameConflict(error)) {
+              throw conflict(`A context variable named "${input.definition.name}" already exists for this workspace`);
+            }
+            throw error;
+          }
         }
       }
 

@@ -293,6 +293,54 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
     expect(enablements.find((row) => row.variableId === result.variableId)).toMatchObject({ source: "pushed", enabled: true });
   });
 
+  it("applyProposal reports a create-name collision as a conflict, not a raw driver error (#copilot-proposal-create-not-version-gated)", async () => {
+    const proposalAgentId = randomUUID();
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1,$2,$3)`, [
+      proposalAgentId,
+      workspaceId,
+      "Duplicate Name Agent",
+    ]);
+    const name = `dup_${randomUUID().replaceAll("-", "_")}`;
+    const definition = {
+      name,
+      description: null,
+      valueType: "string" as const,
+      trustTier: "unverified" as const,
+      sensitivity: "normal" as const,
+      defaultSurfacing: "on_reference" as const,
+    };
+
+    const first = await repository.applyProposal({
+      workspaceId,
+      agentId: proposalAgentId,
+      variableId: null,
+      definition,
+      expectedVariableUpdatedAt: null,
+      enablement: null,
+      expectedEnablementUpdatedAt: null,
+    });
+    expect(first.variableId).toEqual(expect.any(String));
+
+    // Simulates a crash-recovery replay of the same apply: the create-branch has no earlier row
+    // to version-gate against (nothing existed to read before the first attempt), so this is the
+    // only place a second, duplicate attempt can be caught at all. Without translating the
+    // workspace+name unique-constraint violation into an AppError, this throws a raw pg driver
+    // error and the copilot adapter's isStale() check does not recognize it, so the proposal is
+    // left reporting "failed" instead of "stale" even though the variable this same request
+    // created is sitting right there.
+    await expect(
+      repository.applyProposal({
+        workspaceId,
+        agentId: proposalAgentId,
+        variableId: null,
+        definition,
+        expectedVariableUpdatedAt: null,
+        enablement: null,
+        expectedEnablementUpdatedAt: null,
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" } as Partial<AppError>);
+  });
+
   it("applyProposal rejects a stale definition update and changes nothing", async () => {
     const variable = await repository.create({
       workspaceId,

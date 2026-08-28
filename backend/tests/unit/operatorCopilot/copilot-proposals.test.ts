@@ -185,7 +185,7 @@ describe("US3 copilot proposals", () => {
           readVersionToken: vi.fn(async () => "agent-version"),
           preview: vi.fn(),
           applyIfVersionMatches: vi.fn(),
-          validatePayload: vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload })),
+          validatePayload: vi.fn(async (_workspaceId, targetRef, payload) => ({ targetRef, payload, versionToken: "agent-version" })),
         },
         { targetType: "routine", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn(), draftEdit: vi.fn(), draftLifecycle: vi.fn() },
       ],
@@ -552,13 +552,12 @@ describe("directive proposal adapter payload mapping", () => {
 });
 
 describe("routine proposal adapter", () => {
-  it("keeps authored assist payload intact, creates a draft, and guards it against agent changes", async () => {
+  it("keeps authored assist payload intact and creates a draft even when an unrelated agent edit lands first", async () => {
     const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
     const payload = routineDraftPayload();
     const draft = vi.fn(async () => ({ draft: payload, validation: { ok: false, diagnostics: [{ code: "missing_transition" }] } }));
     const createDraft = vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } }));
-    const updatedAt = new Date(0);
-    const agentService = { get: vi.fn(async () => ({ updatedAt })) };
+    const agentService = { get: vi.fn(async () => ({ updatedAt: new Date(0) })) };
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: agentService as never,
       routineDraftAssistService: { draft } as never,
@@ -580,15 +579,41 @@ describe("routine proposal adapter", () => {
     // A new routine previews element by element too, so the card shows one row per step rather
     // than one row holding the whole graph.
     expect(preview.proposed.steps.step_collect_reason!.instruction).toBe("Ask for {{slot.reason}}.");
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, updatedAt.toISOString())).toEqual({
+
+    // The token was minted against the agent's updatedAt at draft time, and something unrelated
+    // to this routine (a different agent-setting proposal, say) has since touched the agent row -
+    // createDraft never touches it, so this must not block a legitimate first-time create.
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, new Date(1).toISOString())).toEqual({
       outcome: "applied",
       appliedRef: { agentId: targetRef.agentId, routineId: "routine-1" },
     });
     expect(createDraft).toHaveBeenCalledWith("workspace-1", targetRef.agentId, payload);
+  });
 
-    updatedAt.setTime(updatedAt.getTime() + 1);
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, new Date(0).toISOString())).toEqual({ outcome: "stale" });
-    expect(createDraft).toHaveBeenCalledOnce();
+  it("reports stale, not a duplicate success, when a create apply is retried after the routine already exists", async () => {
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const payload = routineDraftPayload();
+    // Mirrors RoutineDefinitionService.createDraft: the first call succeeds, and a second call
+    // for the exact same name+version (a crash-recovery replay of the same apply) collides on
+    // the routine_definition_agent_id_name_version_key constraint and is turned into a conflict.
+    const createDraft = vi.fn()
+      .mockResolvedValueOnce({ routine: { id: "routine-1", status: "draft" } })
+      .mockRejectedValueOnce(conflict("A routine definition with this name and version already exists for this agent"));
+    const agentService = { get: vi.fn(async () => ({ updatedAt: new Date(0) })) };
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: agentService as never,
+      routineDraftAssistService: {} as never,
+      routineDefinitionService: { createDraft } as never,
+    });
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+    const token = new Date(0).toISOString();
+
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId: targetRef.agentId, routineId: "routine-1" },
+    });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, payload, token)).toEqual({ outcome: "stale" });
+    expect(createDraft).toHaveBeenCalledTimes(2);
   });
 
   it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
@@ -657,7 +682,7 @@ describe("agent skill config proposal adapter", () => {
     return { adapter, list, create, update, agentService };
   };
 
-  it("validates a brand-new retrieve skill and creates it, guarding against a moved agent", async () => {
+  it("validates a brand-new retrieve skill and creates it even when an unrelated agent edit lands first", async () => {
     const { adapter, create, agentService } = await buildAdapter();
     const targetRef = { agentId: agentSkillAgentId, skillId: null };
 
@@ -667,16 +692,38 @@ describe("agent skill config proposal adapter", () => {
       config: { vectorTopK: 40 },
     });
     expect(validated.payload).toMatchObject({ name: "faq_search", capability: "retrieve", invocationMode: "default_answer", enabled: true, config: expect.objectContaining({ vectorTopK: 40 }) });
+    expect(validated.versionToken).toBe(new Date(0).toISOString());
 
-    const token = await adapter.readVersionToken("workspace-1", targetRef);
-    expect(token).toBe(new Date(0).toISOString());
-
-    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token);
+    // The token was minted against the agent's updatedAt at draft time, and something unrelated
+    // to this skill has since touched the agent row - create never touches it, so this must not
+    // block a legitimate first-time create.
+    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
+    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: agentSkillAgentId, skillId: "created-skill-1" } });
     expect(create).toHaveBeenCalledWith("workspace-1", agentSkillAgentId, expect.objectContaining({ name: "faq_search", capability: "retrieve" }));
+  });
 
-    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
+  it("reports stale, not a duplicate success, when a create apply is retried after the skill already exists", async () => {
+    const create = vi.fn()
+      .mockResolvedValueOnce({ id: "created-skill-1" })
+      // Mirrors AgentSkillsService.create: a second call for the same name (a crash-recovery
+      // replay of the same apply) collides on the service's own findByName check.
+      .mockRejectedValueOnce(conflict('A skill named "faq_search" already exists for this agent'));
+    const { adapter } = await buildAdapter({ create });
+    const targetRef = { agentId: agentSkillAgentId, skillId: null };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, {
+      name: "faq_search",
+      capability: "retrieve",
+      config: { vectorTopK: 40 },
+    });
+
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId: agentSkillAgentId, skillId: "created-skill-1" },
+    });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken)).toEqual({ outcome: "stale" });
+    expect(create).toHaveBeenCalledTimes(2);
   });
 
   it("merges a proposed config onto the existing skill and updates it by id", async () => {
@@ -835,20 +882,23 @@ describe("context variable proposal adapter", () => {
     enablements?: Array<{ id: string; agentId: string; variableId: string; source: string; resolverSkillId: string | null; maxAgeSeconds: number | null; resolverTimeoutMs: number | null; surfacing: string; enabled: boolean; updatedAt: Date }>;
     agentUpdatedAt?: Date;
     applyProposal?: ReturnType<typeof vi.fn>;
+    agentSkillIds?: string[];
   } = {}) => {
     const { createContextVariableCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
     const get = vi.fn(async () => overrides.variable ?? null);
     const listByAgent = vi.fn(async () => overrides.enablements ?? []);
     const applyProposal = overrides.applyProposal ?? vi.fn(async () => ({ variableId: overrides.variable?.id ?? "created-variable-1" }));
     const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
+    const agentSkillsService = { list: vi.fn(async () => (overrides.agentSkillIds ?? []).map((id) => ({ id }))) };
     const adapter = createContextVariableCopilotProposalAdapter({
       agentService: agentService as never,
       contextVariableRepository: { get, listByAgent, applyProposal } as never,
+      agentSkillsService: agentSkillsService as never,
     });
-    return { adapter, get, listByAgent, applyProposal, agentService };
+    return { adapter, get, listByAgent, applyProposal, agentService, agentSkillsService };
   };
 
-  it("validates a brand-new variable definition and creates it, guarding against a moved agent", async () => {
+  it("validates a brand-new variable definition and creates it even when an unrelated agent edit lands first", async () => {
     const applyProposal = vi.fn(async () => ({ variableId: "created-variable-1" }));
     const { adapter, agentService } = await buildAdapter({ applyProposal });
     const targetRef = { agentId: contextVariableAgentId, variableId: null };
@@ -868,10 +918,13 @@ describe("context variable proposal adapter", () => {
 
     // A brand-new variable has no row of its own to gate against, so the token instead anchors
     // the agent's own updatedAt - hence the trailing "|" with an empty enablement segment.
-    const token = await adapter.readVersionToken("workspace-1", targetRef);
-    expect(token).toBe(`${new Date(0).toISOString()}|`);
+    expect(validated.versionToken).toBe(`${new Date(0).toISOString()}|`);
 
-    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token);
+    // The token was minted against the agent's updatedAt at draft time, and something unrelated
+    // to this variable has since touched the agent row - applyProposal's create branch never
+    // touches it, so this must not block a legitimate first-time create.
+    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
+    const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-1" } });
     expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "workspace-1",
@@ -879,9 +932,32 @@ describe("context variable proposal adapter", () => {
       variableId: null,
       definition: expect.objectContaining({ name: "loyalty_tier", valueType: "string" }),
     }));
+  });
 
-    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, token)).toEqual({ outcome: "stale" });
+  it("reports stale, not a duplicate success, when a create apply is retried after the variable already exists", async () => {
+    const applyProposal = vi.fn()
+      .mockResolvedValueOnce({ variableId: "created-variable-1" })
+      // Mirrors ContextVariableRepository.applyProposal: a second call for the same name (a
+      // crash-recovery replay of the same apply) collides on the workspace+name uniqueness
+      // constraint, which applyProposal turns into a real conflict rather than a raw pg error.
+      .mockRejectedValueOnce(conflict('A context variable named "loyalty_tier" already exists for this workspace'));
+    const { adapter } = await buildAdapter({ applyProposal });
+    const targetRef = { agentId: contextVariableAgentId, variableId: null };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, {
+      name: "loyalty_tier",
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "on_reference",
+    });
+
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-1" },
+    });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken)).toEqual({ outcome: "stale" });
+    expect(applyProposal).toHaveBeenCalledTimes(2);
   });
 
   it("updates an existing variable's definition by id without touching its enablement", async () => {
@@ -935,7 +1011,7 @@ describe("context variable proposal adapter", () => {
 
   it("creates a variable and enables it for the agent from a single proposal", async () => {
     const applyProposal = vi.fn(async () => ({ variableId: "created-variable-2" }));
-    const { adapter } = await buildAdapter({ applyProposal });
+    const { adapter } = await buildAdapter({ applyProposal, agentSkillIds: ["6b6b6b6b-1111-2222-3333-444444444999"] });
     const targetRef = { agentId: contextVariableAgentId, variableId: null };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, {

@@ -10,6 +10,7 @@ vi.mock("../../../src/modules/routines/public.js", async (importOriginal) => ({
 
 import {
   OperatorCopilotService,
+  CopilotAuthorizationError,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -25,6 +26,7 @@ const operatorUserId = randomUUID();
 const agentId = randomUUID();
 const directiveId = randomUUID();
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
+const currentAuthorization = { hasAllPermissions: async () => true };
 
 type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilotTools>[0]
   & Parameters<typeof createRoutineProposalCopilotTools>[0]
@@ -56,6 +58,7 @@ describe("US3 copilot proposals", () => {
       versionToken: "version-1",
       evidence: null,
     });
+    const audit = auditService();
     const service = new OperatorCopilotService({
       repository,
       capabilityRunner: {
@@ -77,9 +80,10 @@ describe("US3 copilot proposals", () => {
         }),
       },
       usageLimitPolicy: noLimitPolicy(),
-      auditService: auditService(),
+      auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [tool("propose_directive", "workspace.agents.manage")],
     });
 
@@ -186,6 +190,7 @@ describe("US3 copilot proposals", () => {
       auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "new"), preview: vi.fn(), applyIfVersionMatches }],
     });
@@ -194,6 +199,32 @@ describe("US3 copilot proposals", () => {
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("stale");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "stale" }) }));
+  });
+
+  it("does not claim or mutate a pending proposal after current manage authority is revoked", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current", evidence: null });
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { directiveId } }));
+    const audit = auditService();
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: audit,
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      tools: [],
+      currentAuthorization: { hasAllPermissions: vi.fn(async () => false) },
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+    });
+
+    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.apply_denied",
+      metadata: { proposalId: proposal.id, outcome: "authorization_denied" },
+    }));
   });
 
   it("finalizes an unexpected apply exception as failed so the proposal is not stranded", async () => {
@@ -207,6 +238,7 @@ describe("US3 copilot proposals", () => {
       auditService: audit,
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => { throw new Error("target unavailable"); }) }],
     });
@@ -228,6 +260,7 @@ describe("US3 copilot proposals", () => {
       auditService: auditService(),
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
     });
@@ -251,7 +284,7 @@ describe("US3 copilot proposals", () => {
           result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "I drafted it.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
         }),
       },
-      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, tools: [tool("propose_routine", "workspace.agents.manage")],
+      usageLimitPolicy: noLimitPolicy(), auditService: auditService(), prompt: "system", workspaceRouteKeyResolver, currentAuthorization, tools: [tool("propose_routine", "workspace.agents.manage")],
     });
 
     const events = [];
@@ -301,7 +334,7 @@ const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targe
 
 describe("directive proposal adapter payload mapping", () => {
   it("strips draft-only presentation fields before calling directive management", async () => {
-    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
@@ -331,7 +364,7 @@ describe("directive proposal adapter payload mapping", () => {
 
 describe("routine proposal adapter", () => {
   it("keeps authored assist payload intact, creates a draft, and guards it against agent changes", async () => {
-    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const payload = routineDraftPayload();
     const draft = vi.fn(async () => ({ draft: payload, validation: { ok: false, diagnostics: [{ code: "missing_transition" }] } }));
     const createDraft = vi.fn(async () => ({ routine: { id: "routine-1", status: "draft" } }));
@@ -370,7 +403,7 @@ describe("routine proposal adapter", () => {
   });
 
   it("keeps duplicate identities visible when previewing a new invalid routine", async () => {
-    const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const payload = routineDraftPayload();
     const duplicated = {
       ...payload,
@@ -595,7 +628,7 @@ const routineAdapter = async (
   ports: ReturnType<typeof routineAdapterPorts>,
   logger = { warn: vi.fn() },
 ) => {
-  const { createRoutineCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+  const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
   return createRoutineCopilotProposalAdapter({
     agentService: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-01T10:00:00.000Z") })) } as never,
     routineDraftAssistService: { draft: vi.fn() } as never,
@@ -903,6 +936,7 @@ describe("routine lifecycle proposal adapter", () => {
       auditService: auditService(),
       prompt: "system",
       workspaceRouteKeyResolver,
+      currentAuthorization,
       tools: [],
       proposalAdapters: [adapter],
     });

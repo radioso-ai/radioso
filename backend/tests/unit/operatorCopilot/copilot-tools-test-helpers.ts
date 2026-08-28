@@ -232,7 +232,10 @@ export const buildDescriptors = (
       listByStatuses: documents.listByStatuses,
     },
     documentSourceStatusService: {
-      listByWorkspaceIdWithDocumentCounts: documents.listByWorkspaceIdWithDocumentCounts,
+      summarizeSourcesForWorkspace: async () => ({
+        sources: await documents.listByWorkspaceIdWithDocumentCounts(),
+        documentsWithoutSourceCount: 0,
+      }),
     },
   }),
   ...createAgentSkillsCopilotTools({

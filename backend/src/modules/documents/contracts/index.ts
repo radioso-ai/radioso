@@ -24,6 +24,8 @@ export type {
   DocumentSourceRecord,
   DocumentSourceResolverInput,
   DocumentSourceSummary,
+  WorkspaceDocumentSourceStatus,
+  WorkspaceDocumentSourceStatusSummary,
   DocumentSummary,
   DocumentSummaryRecord,
   DocumentUpdateInput,

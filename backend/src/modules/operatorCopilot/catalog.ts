@@ -16,6 +16,22 @@ export const filterCopilotToolCatalog = (
 ): ReadonlyArray<CopilotToolDescriptor> => descriptors.filter((descriptor) =>
   hasAllCopilotToolPermissions(descriptor.requiredPermissions, permissions));
 
+/**
+ * A descriptor can be selected from the turn-start catalog, then wait behind a
+ * model step while the operator's role changes. Re-read entitlement immediately
+ * before each descriptor-owned read/effect. The turn-start snapshot is used
+ * only for initial catalog discovery and cannot authorize descriptor hooks.
+ */
+export const hasCurrentCopilotToolPermissions = async (
+  descriptor: CopilotToolDescriptor,
+  context: CopilotToolInvocationContext,
+): Promise<boolean> => context.currentAuthorization.hasAllPermissions({
+  workspaceId: context.workspaceId,
+  accountId: context.accountId,
+  operatorUserId: context.operatorUserId,
+  requiredPermissions: descriptor.requiredPermissions,
+});
+
 const linkedOutputSchema = z.object({ dashboardUrl: z.string().startsWith("/") }).passthrough();
 
 const isEntityResolution = (
@@ -86,16 +102,20 @@ export const enrichCopilotToolCatalog = (
       outputSchema: linkedOutputSchema,
       invoke: async (input, agentContext) => {
         const workspaceKey = await deps.resolveWorkspaceKey(context.workspaceId);
-        // Fails closed: an absent permission set is treated as holding nothing, not as a reason to
-        // skip the check. Every current caller supplies one, but this guard exists for transports
-        // that do not pre-filter the catalog, and those are the ones most likely to omit it.
-        if (!hasAllCopilotToolPermissions(descriptor.requiredPermissions, context.permissions)) {
+        // Current authorization is mandatory even if a transport bypasses turn-start catalog
+        // filtering, so descriptor hooks never rely on a stale permission snapshot.
+        if (!(await hasCurrentCopilotToolPermissions(descriptor, context))) {
           return unresolved(workspaceKey, descriptor.dashboardSubject);
         }
 
         const description = descriptor.describeEntity
           ? await descriptor.describeEntity(input, context)
           : null;
+        // A resolver can read protected names and candidates. Do not let a role change while it
+        // runs turn that result into an ambiguity or handoff visible to the model or dashboard.
+        if (descriptor.describeEntity && !(await hasCurrentCopilotToolPermissions(descriptor, context))) {
+          return unresolved(workspaceKey, descriptor.dashboardSubject);
+        }
         const resolution = resolvedDescription(description, input);
         // Deliberately the same shape a permission denial returns: an operator who may not read an
         // entity must not be able to tell it apart from one that does not exist.
@@ -115,6 +135,11 @@ export const enrichCopilotToolCatalog = (
           };
         }
 
+        // Resolution itself is protected and a role can change while it runs.
+        // Check again before the effect/read represented by the tool invocation.
+        if (!(await hasCurrentCopilotToolPermissions(descriptor, context))) {
+          return unresolved(workspaceKey, descriptor.dashboardSubject);
+        }
         const output = await tool.invoke(resolution.input, agentContext);
         if (!isRecord(output)) {
           throw new Error(`Copilot tool "${descriptor.name}" returned a non-object result`);

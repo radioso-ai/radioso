@@ -8,7 +8,7 @@ import {
   validateAgentInput,
   type AgentInput,
   type AuthoredDirectiveInput,
-} from "../../modules/agents/public.js";
+} from "../agents/public.js";
 import {
   applyRoutineFieldPatch,
   describeRoutineFieldPatch,
@@ -20,13 +20,13 @@ import {
   type RoutineDefinitionService,
   type RoutineDraftAssistService,
   type RoutineValidationDiagnostic,
-} from "../../modules/routines/public.js";
+} from "../routines/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotDirectiveProposalAdapter,
   CopilotRoutineLifecycleAction,
   CopilotRoutineProposalAdapter,
-} from "../../modules/operatorCopilot/public.js";
+} from "./contracts.js";
 import { AppError } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();

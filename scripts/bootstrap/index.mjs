@@ -6,7 +6,7 @@ import {
   attachComposeStack,
   startComposeStack,
 } from "./compose-runner.mjs";
-import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
+import { buildEnvValues, enforceEnvFilePermissions, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
 import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
 import { getEnvContract, getProviderCredentialKeys, getProviderRequiredKeys } from "./support/env-contract.mjs";
@@ -146,6 +146,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   const out = dependencies.stdout ?? process.stdout;
   const detectEnv = dependencies.detectEnvState ?? detectEnvState;
   const preflight = dependencies.runPreflightChecks ?? runPreflightChecks;
+  const enforceEnvPermissions = dependencies.enforceEnvFilePermissions ?? enforceEnvFilePermissions;
   const writeEnv = dependencies.writeEnvFileAtomic ?? writeEnvFileAtomic;
   const startCompose = dependencies.startComposeStack ?? startComposeStack;
   const attachCompose = dependencies.attachComposeStack ?? attachComposeStack;
@@ -185,6 +186,8 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   } else {
     out.write(`${formatMessage("helper", "Using existing .env\n", ansi)}`);
   }
+
+  await enforceEnvPermissions(targetEnvPath);
 
   validateProviderConfig(values, contract);
   printConfigurationSummary(values, ansi, out);

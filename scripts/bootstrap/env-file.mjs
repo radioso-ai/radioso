@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -76,9 +77,27 @@ export const renderEnvFile = (values, contract = getEnvContract()) => {
   return `${lines.join("\n")}\n`;
 };
 
+export const enforceEnvFilePermissions = async (filePath) => {
+  await fs.chmod(filePath, 0o600);
+};
+
 export const writeEnvFileAtomic = async (filePath, source) => {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  const tempPath = `${filePath}.tmp`;
-  await fs.writeFile(tempPath, source, "utf8");
-  await fs.rename(tempPath, filePath);
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${crypto.randomUUID()}.tmp`,
+  );
+  let handle;
+
+  try {
+    handle = await fs.open(tempPath, "wx", 0o600);
+    await handle.writeFile(source, "utf8");
+    await handle.close();
+    handle = undefined;
+    await fs.rename(tempPath, filePath);
+  } catch (error) {
+    await handle?.close();
+    await fs.rm(tempPath, { force: true });
+    throw error;
+  }
 };

@@ -52,6 +52,7 @@ import {
 import { EmailSkillDefinitionService } from "../../../modules/customerEmail/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/contracts/index.js";
 import { MCP_OAUTH_CALLBACK_PATH } from "../../../modules/externalSkills/domain.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 
 
@@ -178,6 +179,7 @@ export const buildIntegrationServices = (input: {
     appBaseUrl: input.env.APP_BASE_URL,
     apiBaseUrl: input.env.CONNECTOR_PUBLIC_BASE_URL ?? input.env.APP_BASE_URL,
     assertPublicUrl: input.assertPublicUrl,
+    fetchImpl: fetchPublicUrl,
     logger: input.logger,
     onAuthorized: async ({ connection, tokens, metadata }) => {
       if (connection.provider !== "slack") {
@@ -210,9 +212,10 @@ export const buildIntegrationServices = (input: {
   const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(input.infrastructure.database.kysely);
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
-    toolServiceFactory: createMcpToolServiceFactory(input.assertPublicUrl),
+    toolServiceFactory: createMcpToolServiceFactory(input.assertPublicUrl, fetchPublicUrl),
     encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
     assertPublicUrl: input.assertPublicUrl,
+    fetchImpl: fetchPublicUrl,
     oauthRedirectUri: input.env.APP_BASE_URL
       ? `${input.env.APP_BASE_URL.replace(/\/$/, "")}${MCP_OAUTH_CALLBACK_PATH}`
       : undefined,

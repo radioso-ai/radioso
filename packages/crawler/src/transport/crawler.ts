@@ -72,6 +72,7 @@ export type FetchPage = (
     userAgent?: string;
     preserveContentLinks?: boolean;
     validateNavigationUrl?: ValidateNavigationUrl;
+    fetchImpl?: typeof fetch;
     signal?: AbortSignal;
   }
 ) => Promise<FetchedPage>;
@@ -89,6 +90,7 @@ type CrawlSiteParams = {
   includeBaseUrl?: boolean;
   fetchPage?: FetchPage;
   validateNavigationUrl?: ValidateNavigationUrl;
+  fetchImpl?: typeof fetch;
   getPageMetadata?: (
     url: string
   ) => Promise<{ etag?: string | null; lastModified?: string | null } | null>;
@@ -124,6 +126,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
     includeBaseUrl,
     fetchPage = fetchPageWithCrawlee,
     validateNavigationUrl,
+    fetchImpl,
     getPageMetadata,
     onDiscoveredUrl,
     onCandidateUrl,
@@ -283,7 +286,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
       const robotsUrl = toOriginScopeUrl(baseUrl);
       const parsedRobotsUrl = new URL(robotsUrl);
       parsedRobotsUrl.pathname = "/robots.txt";
-      const robots = await fetchText(parsedRobotsUrl.toString(), { signal, userAgent, validateNavigationUrl });
+      const robots = await fetchText(parsedRobotsUrl.toString(), { signal, userAgent, validateNavigationUrl, fetchImpl });
       if (robots.status === 404 || !robots.ok) {
         return [];
       }
@@ -295,7 +298,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
           continue;
         }
         try {
-          const sitemap = await fetchText(sitemapUrl, { signal, userAgent, validateNavigationUrl });
+          const sitemap = await fetchText(sitemapUrl, { signal, userAgent, validateNavigationUrl, fetchImpl });
           if (!sitemap.ok) {
             continue;
           }
@@ -325,6 +328,7 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             userAgent,
             preserveContentLinks,
             validateNavigationUrl,
+            fetchImpl,
             signal
           });
           signal?.throwIfAborted();

@@ -6,7 +6,7 @@ import {
   attachComposeStack,
   startComposeStack,
 } from "./compose-runner.mjs";
-import { buildEnvValues, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
+import { buildEnvValues, enforceEnvFilePermissions, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
 import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
 import { getEnvContract, getProviderCredentialKeys, getProviderRequiredKeys } from "./support/env-contract.mjs";
@@ -146,6 +146,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   const out = dependencies.stdout ?? process.stdout;
   const detectEnv = dependencies.detectEnvState ?? detectEnvState;
   const preflight = dependencies.runPreflightChecks ?? runPreflightChecks;
+  const enforceEnvPermissions = dependencies.enforceEnvFilePermissions ?? enforceEnvFilePermissions;
   const writeEnv = dependencies.writeEnvFileAtomic ?? writeEnvFileAtomic;
   const startCompose = dependencies.startComposeStack ?? startComposeStack;
   const attachCompose = dependencies.attachComposeStack ?? attachComposeStack;
@@ -154,14 +155,17 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   out.write(`${renderHeader(ansi)}\n\n`);
   out.write(`${formatMessage("helper", "Checking local prerequisites...\n", ansi)}`);
 
+  await enforceEnvPermissions(targetEnvPath);
+  const envState = await detectEnv(targetEnvPath, contract);
+
   const preflightResults = await preflight();
   printPreflightResults(preflightResults, ansi, out);
   if (preflightResults.some((result) => result.isBlocking)) {
     return 1;
   }
 
-  const envState = await detectEnv(targetEnvPath, contract);
   let values = envState.values ?? {};
+  let wroteEnvFile = false;
 
   if (reconfigure || envState.state !== "valid") {
     const generated = resolveGeneratedValues(values);
@@ -170,6 +174,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
       values = buildEnvValues(values, generated, contract);
       validateProviderConfig(values, contract);
       await writeEnv(targetEnvPath, renderEnvFile(values, contract));
+      wroteEnvFile = true;
       out.write(`${formatMessage("helper", "Auto-completed .env for non-interactive startup\n", ansi)}`);
     } else {
       out.write(`\n${formatMessage("helper", "Collecting local configuration...\n", ansi)}`);
@@ -180,10 +185,15 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
         ...answers,
       }, contract);
       await writeEnv(targetEnvPath, renderEnvFile(values, contract));
+      wroteEnvFile = true;
       out.write(`${formatMessage("success", "Updated .env\n", ansi)}`);
     }
   } else {
     out.write(`${formatMessage("helper", "Using existing .env\n", ansi)}`);
+  }
+
+  if (wroteEnvFile) {
+    await enforceEnvPermissions(targetEnvPath);
   }
 
   validateProviderConfig(values, contract);

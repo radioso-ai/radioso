@@ -78,6 +78,7 @@ export type AuthenticatedPrincipal =
     type: "workspace_api_token";
     role: WorkspaceApiTokenRole;
     tokenId?: string | null;
+    workspaceId: string;
   }
   | {
     type: "public_chat_session";
@@ -428,7 +429,8 @@ export class AccountAccessService {
     }
 
     if (input.principal?.type === "workspace_api_token") {
-      return this.principalRoleAllows(input.principal.role, input.permission);
+      return input.workspaceId === input.principal.workspaceId
+        && this.principalRoleAllows(input.principal.role, input.permission);
     }
 
     const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
@@ -490,10 +492,14 @@ export class AccountAccessService {
       type: string;
       role?: WorkspaceApiTokenRole | PublicAccessRole;
       userId?: string;
+      workspaceId?: string;
     } | null;
     workspaceId: string;
   }): Promise<AccountMembershipRole | null> {
     if (input.principal?.type === "workspace_api_token") {
+      if (input.principal.workspaceId !== input.workspaceId) {
+        return null;
+      }
       return input.principal.role === "admin" || input.principal.role === "member"
         ? input.principal.role
         : null;

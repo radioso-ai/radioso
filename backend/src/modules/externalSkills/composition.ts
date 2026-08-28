@@ -23,6 +23,7 @@ import type {
  */
 export const createMcpToolServiceFactory = (
   assertPublicUrl?: (url: string) => void | Promise<void>,
+  fetchImpl?: typeof fetch,
 ): ToolServiceFactory => ({
   create: (connection: McpConnectionRecord): SdkMcpToolService => {
     const credentialProvider =
@@ -39,6 +40,7 @@ export const createMcpToolServiceFactory = (
       serverUrl: connection.serverUrl,
       credentialProvider,
       assertPublicUrl,
+      fetchImpl,
     });
   },
 });
@@ -48,6 +50,7 @@ export interface LiveMcpConnectionLookupOptions {
   logger?: AppLogger;
   encryptionKeyId?: string | null;
   assertPublicUrl?: (url: string) => void | Promise<void>;
+  transportFetchImpl?: typeof fetch;
 }
 
 /**
@@ -117,7 +120,7 @@ export const buildExternalSkillsDeps = (
     ...options,
     assertPublicUrl,
   }),
-  toolServices: createMcpToolServiceFactory(assertPublicUrl),
+  toolServices: createMcpToolServiceFactory(assertPublicUrl, options.transportFetchImpl),
   // The transport-agnostic ToolSkillBridge factory, injected from composition so the
   // executor stays free of a direct conversation-tools (concrete) dependency.
   toolSkillExecutorFactory: createToolSkillExecutor,

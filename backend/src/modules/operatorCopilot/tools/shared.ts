@@ -86,6 +86,8 @@ export const proposalOutputSchema = z.object({
     unchanged: z.number().int().nonnegative(),
     stale: z.number().int().nonnegative(),
   }).strict().optional(),
+  /** True only for a proposal that permanently deletes its target; absent for an ordinary update. */
+  removal: z.boolean().optional(),
 });
 
 export interface CopilotProposalEvidenceDependencies {

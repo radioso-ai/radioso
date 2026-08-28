@@ -254,6 +254,48 @@ describe("OperatorCopilotService", () => {
     // The label degrades to no entity, which is already a normal result for this path.
     expect(events.filter((event) => event.event === "activity").every((event) => !("entity" in (event.data as Record<string, unknown>)))).toBe(true);
   });
+
+  // Finding 1 (issue triage, next-ray-epic-issue): the streamed "proposal" event is what the
+  // frontend card is built from live (copilot-chat-surface.tsx's handleProposal), before any
+  // reload — so a removal proposal's structural signal has to survive tool output -> trace ->
+  // SSE event unmodified, not just the reload path presentProposalCard covers separately.
+  it("carries a directive-removal proposal's removal signal through the streamed proposal event", async () => {
+    const repository = new MemoryCopilotRepository();
+    const runStreaming = vi.fn(() => ({
+      events: (async function* () {
+        yield {
+          kind: "tool_call_completed" as const,
+          stepIndex: 0,
+          toolName: "propose_directive_removal",
+          callId: "call",
+          output: { proposalId: "proposal-1", targetType: "directive" as const, targetLabel: "Avoid competitors", summary: "Permanently remove the directive.", removal: true },
+          resultTokens: 1,
+          latencyMs: 1,
+          at: 1,
+        };
+      })(),
+      result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Drafted a removal for review.", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+    }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming },
+      usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
+      prompt: "system",
+      workspaceRouteKeyResolver,
+      currentAuthorization,
+      tools: [tool("propose_directive_removal", "workspace.agents.read", vi.fn(async () => ({})))],
+      now: () => now,
+    });
+
+    const events = [];
+    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Remove the competitor directive", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+
+    expect(events).toContainEqual({
+      event: "proposal",
+      data: { proposalId: "proposal-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Permanently remove the directive.", removal: true },
+    });
+  });
 });
 
 describe("OperatorCopilotService proposal apply-claim recovery", () => {
@@ -395,6 +437,29 @@ describe("InMemoryCopilotRepository proposal card reload", () => {
     const [reloaded] = await repository.listMessages({ conversationId: conversation.id });
     const expectedLabel = targetType === "agent_setting" ? "retrievalEnabled" : "Example";
     expect(reloaded?.proposals?.[0]).toMatchObject({ id: proposal.id, targetLabel: expectedLabel });
+  });
+
+  // Finding 1 (issue triage, next-ray-epic-issue): resuming a past conversation reloads proposal
+  // cards through this in-memory repository (mirroring presentProposalCard's own derivation), so
+  // the removal signal has to survive that path too, not just the live stream.
+  it("reloads a directive removal proposal card with removal: true, not a generic save", async () => {
+    const repository = new MemoryCopilotRepository();
+    const conversation = await repository.createConversation({ workspaceId: "workspace", operatorUserId: "operator", title: "Remove it" });
+    const message = await repository.createMessage({ conversationId: conversation.id, role: "copilot", content: "Drafted a removal for review.", outcome: "completed", activity: [] });
+    const proposal = await repository.createProposal({
+      workspaceId: "workspace",
+      operatorUserId: "operator",
+      conversationId: conversation.id,
+      targetType: "directive",
+      targetRef: { agentId: "agent-1", directiveId: "directive-1" },
+      payload: { op: "remove", name: "Avoid competitors", rationale: "Permanently remove the directive." },
+      versionToken: "v1",
+      evidence: null,
+    });
+    await repository.attachProposalsToMessage({ proposalIds: [proposal.id], messageId: message.id, conversationId: conversation.id });
+
+    const [reloaded] = await repository.listMessages({ conversationId: conversation.id });
+    expect(reloaded?.proposals?.[0]).toMatchObject({ id: proposal.id, removal: true });
   });
 });
 

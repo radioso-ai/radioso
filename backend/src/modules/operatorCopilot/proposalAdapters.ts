@@ -410,6 +410,21 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
     enabled: skill.enabled,
   });
 
+  /** Same projection as projectSkillForPreview, applied to the stored payload's `proposed` side.
+   * `rationale` is presentation-only (Apply never writes it — AgentSkillsService.update/.create
+   * take no such field), so passing the payload through whole would render it in the diff as a
+   * config value the proposal adds, the same class of leak already fixed for identity/audit
+   * columns on the current side and for the untouched context-variable half (Finding 3, issue
+   * triage next-ray-epic-issue). */
+  const projectSkillPayloadForPreview = (payload: z.infer<typeof skillConfigStoredPayloadSchema>) => ({
+    name: payload.name,
+    capability: payload.capability,
+    target: payload.target,
+    config: payload.config,
+    invocationMode: payload.invocationMode,
+    enabled: payload.enabled,
+  });
+
   return {
     targetType: "agent_skill",
     async readVersionToken(workspaceId, rawTargetRef, rawPayload) {
@@ -426,7 +441,7 @@ export const createAgentSkillCopilotProposalAdapter = (deps: {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
       const payload = skillConfigStoredPayloadSchema.parse(rawPayload);
       const existing = await findExisting(workspaceId, targetRef.agentId, targetRef.skillId);
-      return { targetLabel: payload.name, current: existing ? projectSkillForPreview(existing) : null, proposed: payload };
+      return { targetLabel: payload.name, current: existing ? projectSkillForPreview(existing) : null, proposed: projectSkillPayloadForPreview(payload) };
     },
     async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
       const targetRef = skillTargetRefSchema.parse(rawTargetRef);
@@ -1174,13 +1189,18 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       if (payload.enablement.source === "resolver" && payload.enablement.resolverSkillId) {
         // agent_context_variables.resolver_skill_id carries no foreign key either (same
         // migration 112 gap as agent_id), and SkillBackedContextResolver.resolve silently
-        // returns null for an id it cannot find or that belongs to another agent - so a
-        // hallucinated or cross-workspace skill id would persist as an enablement that never
-        // resolves, with no error anywhere. Resolving it through this agent's own skills here
-        // mirrors the agent-id resolution above.
+        // returns null for an id it cannot find, that belongs to another agent, or that is
+        // disabled - so a hallucinated or cross-workspace skill id, or one an operator has
+        // simply turned off, would persist as an enablement that never resolves, with no error
+        // anywhere. Resolving it through this agent's own enabled skills here mirrors the
+        // agent-id resolution above.
         const agentSkills = await deps.agentSkillsService.list(workspaceId, targetRef.agentId);
-        if (!agentSkills.some((skill) => skill.id === payload.enablement!.resolverSkillId)) {
+        const resolverSkill = agentSkills.find((skill) => skill.id === payload.enablement!.resolverSkillId);
+        if (!resolverSkill) {
           throw badRequest(`resolverSkillId "${payload.enablement.resolverSkillId}" does not name a skill on this agent`);
+        }
+        if (!resolverSkill.enabled) {
+          throw badRequest(`resolverSkillId "${payload.enablement.resolverSkillId}" names a skill that is disabled on this agent`);
         }
       }
       enablement = {

@@ -30,6 +30,21 @@ export interface AgentSkillUpdateRecord {
    * Omitted entirely by callers that do not need version gating (the pre-existing default).
    */
   expectedUpdatedAt?: Date;
+  /**
+   * Optional post-lock revalidation hook for the config-merge path (`updateWithConfigMerge`
+   * only - a `replaceConfig` write already persists exactly the object the caller validated, so
+   * there is no later merge to recheck). Called with the config actually about to be written -
+   * the deep merge computed *after* the row's FOR UPDATE lock is held, against whatever the row
+   * currently holds, not the caller's earlier pre-lock read - so it can veto a write by throwing.
+   * A thrown error aborts the transaction (nothing is persisted) and propagates out of `update`.
+   *
+   * This exists because the caller (AgentSkillsService) validates one candidate before this
+   * method ever runs, but this method recomputes the merge itself once it actually holds the
+   * lock: two individually-valid concurrent partial patches can compose, under the lock, into a
+   * config nobody validated. The repository owns the lock and the merge; it does not know
+   * capability validation rules, so it accepts them as a callback instead of duplicating them.
+   */
+  validateMergedConfig?: (mergedConfig: Record<string, unknown>) => void;
 }
 
 export interface AgentSkillRepositoryPort {
@@ -185,7 +200,10 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
    * reading a base until this transaction commits, so two concurrent partial patches to different
    * nested keys (e.g. notify's `delivery.recipientEmails` and `delivery.webhook`) serialize and
    * compose instead of one silently clobbering the other. `expectedUpdatedAt`, when supplied, is
-   * still enforced in the final UPDATE's own WHERE predicate underneath that lock.
+   * still enforced in the final UPDATE's own WHERE predicate underneath that lock. `input.
+   * validateMergedConfig`, when supplied, runs against this merge - the actual config about to
+   * be written, not the caller's pre-lock candidate - and can veto the write by throwing, so a
+   * second concurrent patch that composes into an invalid config is refused instead of persisted.
    */
   private async updateWithConfigMerge(
     workspaceId: string,
@@ -206,6 +224,7 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
         return null;
       }
       const mergedConfig = mergeSkillConfig((existing.config as Record<string, unknown> | null) ?? {}, input.config);
+      input.validateMergedConfig?.(mergedConfig);
       return this.applyUpdate(trx, workspaceId, agentId, id, input, mergedConfig);
     });
   }

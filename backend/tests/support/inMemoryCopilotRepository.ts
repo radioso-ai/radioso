@@ -82,6 +82,9 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
         summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : proposal.targetType !== "agent_setting" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
         status: proposal.status,
         reason: proposal.reason ?? null,
+        // Mirrors presentProposalCard's own removal discriminator: only an explicit
+        // `op: "remove"` on a directive proposal's payload reads as a removal.
+        ...(proposal.targetType === "directive" && proposal.payload && typeof proposal.payload === "object" && "op" in proposal.payload && proposal.payload.op === "remove" ? { removal: true as const } : {}),
       })),
     }));
   }

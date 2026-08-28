@@ -114,7 +114,7 @@ export const createDirectiveProposalCopilotTools = (
             evidence,
           });
           await recordProposalCreated(deps.auditService, context, proposal);
-          return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: preview.targetLabel, summary, ...proposalEvidenceOutput(evidence) };
+          return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: preview.targetLabel, summary, removal: true as const, ...proposalEvidenceOutput(evidence) };
         },
       }),
       describeEntity: (input, context) => describeDirectiveToolAgent(deps, input as { agentId?: string; agentName?: string }, context),

@@ -166,6 +166,19 @@ const statusMessage = (state: CopilotProposalCardState, detail: CopilotProposalD
 const statusFromProposalDetail = (detail: CopilotProposalDetail): CopilotProposalStatus =>
   detail.status === 'pending' && !detail.currentVersionMatches ? 'stale' : detail.status
 
+export type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reversible-update'
+
+/**
+ * What kind of confirmation an Apply click should show. A removal (e.g. propose_directive_removal)
+ * permanently deletes its target and cannot be undone, so its confirmation must say so plainly
+ * instead of the generic "this updates X" copy every other proposal gets - and it must be
+ * knowable from the summary card alone, before the operator ever expands the diff, since Apply is
+ * reachable without expanding it. Reads the structural `removal` signal the backend's proposal
+ * card already carries, not `summary`'s prose.
+ */
+export const applyConfirmationKind = (proposal: CopilotProposalSummary): CopilotProposalApplyConfirmationKind =>
+  proposal.removal ? 'irreversible-removal' : 'reversible-update'
+
 export function CopilotProposalCard({
   proposal,
   canApply,
@@ -308,8 +321,17 @@ export function CopilotProposalCard({
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Apply this proposal?</AlertDialogTitle>
-            <AlertDialogDescription>This updates {proposal.targetLabel} with the proposed values. The target is checked again before the change is written.</AlertDialogDescription>
+            {applyConfirmationKind(proposal) === 'irreversible-removal' ? (
+              <>
+                <AlertDialogTitle>Delete {proposal.targetLabel} permanently?</AlertDialogTitle>
+                <AlertDialogDescription>This permanently deletes {proposal.targetLabel}. This cannot be undone.</AlertDialogDescription>
+              </>
+            ) : (
+              <>
+                <AlertDialogTitle>Apply this proposal?</AlertDialogTitle>
+                <AlertDialogDescription>This updates {proposal.targetLabel} with the proposed values. The target is checked again before the change is written.</AlertDialogDescription>
+              </>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

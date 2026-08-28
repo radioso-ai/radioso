@@ -140,6 +140,14 @@ export interface CopilotProposalCard {
   readonly reason?: string | null;
   /** Absent when nothing was measured; the card must not imply a verified change either way. */
   readonly evidence?: CopilotProposalEvidenceSummary;
+  /**
+   * True only for a proposal that permanently deletes its target (currently
+   * propose_directive_removal) rather than updating it. A structural signal the frontend can act
+   * on directly - e.g. to state plainly in an Apply confirmation that the change cannot be
+   * undone - rather than inferring irreversibility from `summary`'s prose (Finding 1, issue
+   * triage next-ray-epic-issue). Absent, not false, when the proposal is an ordinary update.
+   */
+  readonly removal?: boolean;
 }
 
 export interface CopilotProposalAdapter {
@@ -279,7 +287,7 @@ export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }
   | { readonly event: "activity"; readonly data: { toolCallId: string; tool: string; stage: "started" | "completed" | "failed"; entity?: CopilotEntityReference } }
   | { readonly event: "chunk"; readonly data: { text: string } }
-  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } }
+  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean } }
   | { readonly event: "outcome"; readonly data: { status: CopilotTurnOutcome } }
   | { readonly event: "done"; readonly data: Record<string, never> };
 

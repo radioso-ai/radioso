@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
+import { applyConfirmationKind, buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
 import type { CopilotProposalDetail, CopilotProposalSummary } from '@/lib/api-copilot'
 
 beforeAll(() => {
@@ -123,6 +123,24 @@ describe('CopilotProposalCard', () => {
     })
 
     expect(targetReference(proposal, null, null)).toBeNull()
+  })
+
+  it('picks the irreversible-removal confirmation only for a proposal the card marks removal: true', () => {
+    // Finding 1 (issue triage, next-ray-epic-issue): Apply is reachable straight from the summary
+    // card, without ever expanding "Show changes" - so this decision has to work off the card's
+    // own `removal` field, not detail loaded later, and must not fall back to reading `summary`'s
+    // prose for words like "permanently".
+    const base: CopilotProposalSummary = {
+      id: 'proposal-1',
+      targetType: 'directive',
+      targetLabel: 'Avoid competitors',
+      summary: 'Permanently remove the directive "Avoid competitors". This cannot be undone.',
+      status: 'pending',
+    }
+
+    expect(applyConfirmationKind(base)).toBe('reversible-update')
+    expect(applyConfirmationKind({ ...base, removal: true })).toBe('irreversible-removal')
+    expect(applyConfirmationKind({ ...base, removal: false })).toBe('reversible-update')
   })
 
   it('renders a directive removal preview as one legible row instead of every field marked blank', () => {

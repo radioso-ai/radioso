@@ -432,4 +432,68 @@ describe("cited evidence must be about the change being proposed", () => {
 
     expect(evidence?.cases).toHaveLength(1);
   });
+
+  describe("an omitted replay-override field is measured against the captured baseline, not a schema default", () => {
+    // agentConfig.ts's replay materialization deep-merges skillSettings[key] onto the case's
+    // *captured* baseline envelope (applyAgentConfigOverride/mergeConfigValue) - an override field
+    // the replay never touched means "ran with whatever the capture had", never a schema default.
+    // These cases wire a `cases` dependency with a captured baseline directly, since the shared
+    // `resolve()` helper above never does (proving the fallback used when no baseline is wired -
+    // exercised by every other test in this file - stays behaviorally a no-op).
+    const resolveWithCapturedBaseline = (
+      measured: CopilotReplayEvidenceRecord["overrides"],
+      change: Parameters<typeof resolveProposalEvidence>[1]["change"],
+      snapshotDefaultAnswerSkill: { enabled: unknown; settings: Record<string, unknown> },
+    ) => resolveProposalEvidence(
+      {
+        evidence: { record: vi.fn(), findMany: vi.fn(async () => [record(measured)]) },
+        agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-24T10:00:00.000Z") })) },
+        cases: { findCase: vi.fn(async () => ({ snapshotDefaultAnswerSkill })) },
+      } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+        change,
+      },
+    );
+
+    it("refuses evidence whose replay never touched sourceScope when the proposal's stated value only matches the schema default, not the captured baseline", async () => {
+      // The exact hole this closes: an override that omits sourceScope entirely used to
+      // canonicalize as the schema default "all" instead of "whatever the capture had". A
+      // proposal stating "all" then byte-matched a replay that actually ran against a captured
+      // `selected` scope, unchanged - evidence for behavior the replay never exercised.
+      await expect(resolveWithCapturedBaseline(
+        { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } },
+        { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { sourceScope: "all", vectorTopK: 40 } },
+        { enabled: true, settings: { __agentRetrievalDefaults: { sourceScope: { mode: "selected", sourceIds: ["source-9"] } } } },
+      )).rejects.toThrow(/did not measure/i);
+    });
+
+    it("accepts evidence whose replay never touched sourceScope when the proposal's stated value matches the captured baseline it actually ran against", async () => {
+      const evidence = await resolveWithCapturedBaseline(
+        { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } },
+        { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { sourceScope: { sourceIds: ["source-9"] }, vectorTopK: 40 } },
+        { enabled: true, settings: { __agentRetrievalDefaults: { sourceScope: { mode: "selected", sourceIds: ["source-9"] } } } },
+      );
+
+      expect(evidence?.cases).toHaveLength(1);
+    });
+
+    it("accepts evidence whose replay never touched enabled when the proposal's stated enabled state matches the captured baseline it actually ran against", async () => {
+      // Same confusion, the `enabled` field: comparing the raw override's `enabled` (undefined,
+      // since this replay never touched it) directly against the proposal's stated value used to
+      // always refuse this evidence, even when the replay genuinely ran with the proposed enabled
+      // state by inheriting it unchanged from the baseline.
+      const evidence = await resolveWithCapturedBaseline(
+        { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } },
+        { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 }, enabled: false },
+        { enabled: false, settings: {} },
+      );
+
+      expect(evidence?.cases).toHaveLength(1);
+    });
+  });
 });

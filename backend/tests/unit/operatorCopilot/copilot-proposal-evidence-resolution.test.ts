@@ -265,6 +265,39 @@ describe("proposal evidence staleness window", () => {
     expect(evidence?.cases[0]).toMatchObject({ stale: true });
   });
 
+  it("keeps an agent_skill measurement fresh when the proposal creates the retrieve skill's first row and none exists live", async () => {
+    // A brand-new agent has no agent_skills row at all - agentRepository's sync only updates an
+    // existing row, it never inserts one - even though the case's snapshot still synthesises
+    // *some* retrieval.answer envelope from the agent's own columns. A create proposal has no
+    // live row to compare against by design, so a missing one must not read as "deleted since
+    // capture" the way it does for an update.
+    const captured = new Date("2026-08-20T10:00:00.000Z");
+    const skillOverride = { agentConfigOverride: { skillSettings: { "retrieval.answer": { settings: { vectorTopK: 40 } } } } };
+    const findMany = vi.fn(async () => [record({ baselineCapturedAt: captured, overrides: skillOverride })]);
+    const get = vi.fn(async () => ({ updatedAt: new Date("2026-08-19T09:00:00.000Z") }));
+    const getDefaultAnswerSkill = vi.fn(async () => null);
+    const findCase = vi.fn(async () => ({ snapshotDefaultAnswerSkill: { enabled: true, settings: {} } }));
+
+    const evidence = await resolveProposalEvidence(
+      {
+        evidence: { record: vi.fn(), findMany },
+        agentVersion: { get },
+        agentSkillConfig: { getDefaultAnswerSkill },
+        cases: { findCase },
+      } as never,
+      {
+        workspaceId: ids.workspace,
+        operatorUserId: ids.operator,
+        copilotConversationId: "conversation-1",
+        agentId: ids.agent,
+        evidenceIds: [ids.evidence],
+        change: { targetType: "agent_skill", skillSettingsKey: "retrieval.answer", config: { vectorTopK: 40 }, createsNewSkill: true },
+      },
+    );
+
+    expect(evidence?.cases[0]).toMatchObject({ stale: false });
+  });
+
   it("does not consult the skill dependencies for a non-agent_skill proposal even when both are wired", async () => {
     // The direct skill-config comparison only applies to agent_skill proposals; every other
     // proposal type's staleness stays purely agents.updated_at-vs-baselineCapturedAt.

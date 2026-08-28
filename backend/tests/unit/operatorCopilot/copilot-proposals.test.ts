@@ -248,6 +248,11 @@ describe("US3 copilot proposals", () => {
     }));
     expect(result).toMatchObject({ targetType: "directive", targetLabel: "Avoid competitors" });
     expect((result as { summary: string }).summary).toMatch(/permanently|cannot be undone/i);
+    // Finding 1 (issue triage, next-ray-epic-issue): the operator-facing card must carry a
+    // structural removal signal of its own, not just a summary sentence Ray happened to phrase
+    // as irreversible - so the confirmation dialog can state plainly that Apply deletes the
+    // directive without parsing prose.
+    expect((result as { removal?: boolean }).removal).toBe(true);
   });
 
   it("fails clearly when asked to remove a directive that does not exist for the resolved agent", async () => {
@@ -1093,7 +1098,11 @@ describe("context variable proposal adapter", () => {
     const listByAgent = vi.fn(async () => overrides.enablements ?? []);
     const applyProposal = overrides.applyProposal ?? vi.fn(async () => ({ variableId: overrides.variable?.id ?? "created-variable-1" }));
     const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
-    const agentSkillsService = { list: vi.fn(async () => (overrides.agentSkillIds ?? []).map((id) => ({ id }))) };
+    // Finding 2 (issue triage, next-ray-epic-issue): validatePayload now refuses a disabled
+    // resolver skill too, not just one that does not exist - so this fixture's ids must carry an
+    // enabled flag the way the real AgentSkillsService.list result does. Every id this helper's
+    // callers register is meant to resolve cleanly, so it defaults to enabled: true.
+    const agentSkillsService = { list: vi.fn(async () => (overrides.agentSkillIds ?? []).map((id) => ({ id, enabled: true }))) };
     const adapter = createContextVariableCopilotProposalAdapter({
       agentService: agentService as never,
       contextVariableRepository: { get, listByWorkspace, listByAgent, applyProposal } as never,
@@ -1298,6 +1307,35 @@ describe("proposal card presentation", () => {
 
     expect(presentProposalCard({ ...base, payload: { name: "Return intake", rationale: summary } })).toMatchObject({ targetLabel: "Return intake", summary });
     expect(presentProposalCard({ ...base, payload: { name: "Return intake" } })).toMatchObject({ targetLabel: "Return intake", summary: "Return intake" });
+  });
+
+  // Finding 1 (issue triage, next-ray-epic-issue): a removal proposal's card must reload with a
+  // structural removal signal (not just its prose summary), the same discriminator
+  // (payload.op === "remove") proposalAdapters.ts already uses to pick the removal branch at
+  // preview/apply time - so the frontend's Apply confirmation can state plainly that the change
+  // is a permanent deletion even after the operator resumes a past conversation.
+  it("marks a reloaded directive removal proposal's card with removal: true", async () => {
+    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const base = {
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
+      status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
+    };
+
+    expect(presentProposalCard({ ...base, payload: { op: "remove", name: "Avoid competitors", rationale: "Permanently remove the directive." } }))
+      .toMatchObject({ targetLabel: "Avoid competitors", removal: true });
+  });
+
+  it("does not mark an ordinary directive save proposal's card as a removal", async () => {
+    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const base = {
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
+      status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
+    };
+
+    expect(presentProposalCard({ ...base, payload: { name: "Avoid competitors", action: "Do not recommend competitors", rationale: "State it plainly." } }))
+      .not.toHaveProperty("removal");
   });
 });
 

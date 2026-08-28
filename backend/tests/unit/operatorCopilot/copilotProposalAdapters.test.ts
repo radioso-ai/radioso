@@ -26,9 +26,11 @@ const makeAgentService = (agentsByWorkspace: Record<string, string[]> = {}) => (
 });
 
 // Minimal stand-in for AgentSkillsService.list, scoped to whichever ids this test registers as
-// belonging to the agent - used to validate a resolver enablement's resolverSkillId.
-const makeAgentSkillsPort = (skillIds: string[] = []) => ({
-  list: vi.fn(async () => skillIds.map((id) => ({ id }))) as never,
+// belonging to the agent - used to validate a resolver enablement's resolverSkillId. A plain
+// string id defaults to enabled: true; pass { id, enabled: false } to model a disabled skill
+// (Finding 2, issue triage next-ray-epic-issue).
+const makeAgentSkillsPort = (skills: ReadonlyArray<string | { id: string; enabled: boolean }> = []) => ({
+  list: vi.fn(async () => skills.map((entry) => typeof entry === "string" ? { id: entry, enabled: true } : entry)) as never,
 });
 
 const makeContextVariableRepository = (seedVariables: ContextVariable[] = []) => {
@@ -290,6 +292,29 @@ describe("createContextVariableCopilotProposalAdapter", () => {
     })).rejects.toMatchObject({ statusCode: 400 });
   });
 
+  // Finding 2 (issue triage, next-ray-epic-issue): SkillBackedContextResolver.resolve silently
+  // returns null for a disabled skill (contextResolverModule.ts checks agentSkill.enabled), but
+  // draft-time validation here only checked that the id existed and belonged to this agent. That
+  // let an operator apply a proposal naming a disabled resolver skill and get a context variable
+  // that never resolves anything, with no error anywhere.
+  it("refuses a resolver enablement naming a skill that exists on this agent but is disabled", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const disabledSkillId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository([]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService,
+      contextVariableRepository,
+      agentSkillsService: makeAgentSkillsPort([{ id: disabledSkillId, enabled: false }]),
+    });
+
+    await expect(adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
+      name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      enablement: { source: "resolver", resolverSkillId: disabledSkillId, surfacing: "operator_only" },
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it("does not report a create proposal stale after an unrelated agent edit, but does once a same-named variable now exists", async () => {
     const workspaceId = randomUUID();
     const agentId = randomUUID();
@@ -530,6 +555,39 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
     expect(preview.current).not.toHaveProperty("updatedAt");
     expect(preview.current).not.toHaveProperty("storedKind");
     expect(preview.current).toMatchObject({ name: "notify_ops", capability: "notify", enabled: true });
+  });
+
+  // Finding 3 (issue triage, next-ray-epic-issue): rationale is presentation-only - Apply never
+  // writes it (AgentSkillsService.update/.create take no such field) - but preview() returned the
+  // whole stored payload as `proposed`, so it rendered in the diff as a config value the proposal
+  // adds. The same class of leak already fixed for identity/audit columns on the current side and
+  // for the untouched context-variable half; this was the payload's own analogous field.
+  it("does not render the drafted rationale as a proposed configuration value in a preview", async () => {
+    const { adapter, agentSkillsService } = makeSkillsHarness();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+
+    const existing = await agentSkillsService.create(workspaceId, agentId, {
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: { delivery: { recipientEmails: ["ops@example.com"], webhook: null }, exposedInputs: { message: true } },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const targetRef = { agentId, skillId: existing.id };
+    const validated = await adapter.validatePayload(workspaceId, targetRef, {
+      config: { delivery: { recipientEmails: ["ops2@example.com"] } },
+      rationale: "Add a second recipient",
+    });
+    // The rationale really is on the stored payload preview() receives - otherwise this proves
+    // nothing about preview() stripping it.
+    expect(validated.payload).toHaveProperty("rationale", "Add a second recipient");
+
+    const preview = await adapter.preview(workspaceId, validated.targetRef, validated.payload) as { proposed: Record<string, unknown> };
+
+    expect(preview.proposed).not.toHaveProperty("rationale");
   });
 
   it("does not report a create proposal stale after an unrelated agent edit, but does once a same-named skill now exists", async () => {

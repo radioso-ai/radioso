@@ -526,6 +526,27 @@ export const effectiveRetrieveAnswerSkillSettings = (
   return { sourceScope: split.sourceScope, settings: result };
 };
 
+/**
+ * A replay override's `skillSettings[key]` entry as `applyAgentConfigOverride` actually resolves
+ * it at replay time: deep-merged onto the case's captured baseline envelope, field by field —
+ * never onto a schema default. An override field the operator's replay never touched (an
+ * untouched `enabled`, a `.settings` field such as `sourceScope` it never set) means the replay
+ * ran with whatever the captured baseline had, so a caller reconstructing what a cited replay
+ * actually measured must merge here first and only then canonicalize the result through
+ * {@link effectiveRetrieveAnswerSkillSettings} — canonicalizing the override in isolation cannot
+ * tell "the replay left this unchanged" apart from "the replay set this to the schema default",
+ * which is exactly the gap that let a proposal's stated `sourceScope: "all"` byte-match a replay
+ * that never touched `sourceScope` at all, even when the captured baseline was `selected`.
+ * Reuses `mergeConfigValue`, the same field-by-field deep merge {@link applyAgentConfigOverride}
+ * performs for every other `InternalAgentConfig` field, rather than a second hand-rolled merge
+ * that could drift from what a real replay's materialization does.
+ */
+export const mergeRetrieveAnswerSkillEnvelope = (
+  baseline: { enabled: unknown; settings: Record<string, unknown> },
+  override: { enabled?: unknown; settings?: Record<string, unknown> },
+): { enabled: unknown; settings: Record<string, unknown> } =>
+  mergeConfigValue(baseline, override) as { enabled: unknown; settings: Record<string, unknown> };
+
 const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): WebsiteEmbedSurfaceConfig => ({
   enabled: websiteEmbed.enabled,
   token: websiteEmbed.token ? secretPlaceholder() : null,

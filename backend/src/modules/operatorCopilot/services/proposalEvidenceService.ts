@@ -1,5 +1,5 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { canonicalRetrieveAnswerSkillConfig, effectiveRetrieveAnswerSkillSettings } from "../../agents/public.js";
+import { canonicalRetrieveAnswerSkillConfig, effectiveRetrieveAnswerSkillSettings, mergeRetrieveAnswerSkillEnvelope } from "../../agents/public.js";
 import type { CopilotProposalEvidence } from "../contracts.js";
 import type {
   CopilotAgentSkillConfigPort,
@@ -46,7 +46,23 @@ export type ProposalChange =
   // `enabled` is optional because not every caller can state a target enabled value (see
   // assertMeasuredTheProposedChange's agent_skill handling) — when present it must match what the
   // replay measured, exactly like `config`.
-  | { targetType: "agent_skill"; skillSettingsKey: string | null; config: unknown; enabled?: boolean }
+  | {
+      targetType: "agent_skill";
+      skillSettingsKey: string | null;
+      config: unknown;
+      enabled?: boolean;
+      /**
+       * True when this proposal has no existing skill to update — applying it would create the
+       * retrieve default-answer skill's first `agent_skills` row. `agentRepository`'s sync only
+       * `updateTable(...)`s an existing row, it never inserts one, so a brand-new agent has no
+       * row at all even though every case snapshot still synthesises *some* `retrieval.answer`
+       * envelope from the agent's own columns. See `skillConfigDriftedSinceCapture`: without this,
+       * a missing live row always read as "deleted since capture", so evidence for creating the
+       * first skill was permanently unusable. Absent/false for an update proposal, which *does*
+       * expect a live row to still exist.
+       */
+      createsNewSkill?: boolean;
+    }
   | { targetType: "context_variable" };
 
 /**
@@ -157,12 +173,21 @@ const hasConfoundingOverride = (overrides: Record<string, unknown>): boolean => 
  *   used to byte-match and read as measured, even though `materializeAgentFromConfig` only reads
  *   `sourceScope` from nested under `__agentRetrievalDefaults` and the skill's own instruction
  *   field is `customInstruction`, not `instruction` — the replay actually ran with the baseline's
- *   values for both, unchanged. `effectiveRetrieveAnswerSkillSettings` and
- *   `canonicalRetrieveAnswerSkillConfig` (agentConfig.ts) project both sides onto the same
+ *   values for both, unchanged. The override is also often *partial* — `agentConfigOverride` is
+ *   "merged key by key onto the captured settings" — so a field the replay never touched (an
+ *   untouched `sourceScope`, an untouched `enabled`) means "ran with whatever the cited case's
+ *   snapshot captured", never a schema default: canonicalizing the raw override in isolation used
+ *   to default an omitted `sourceScope` to `"all"` and let a proposal stating `"all"` byte-match a
+ *   replay that actually measured `selected` sources, unchanged. `mergeRetrieveAnswerSkillEnvelope`
+ *   (agentConfig.ts) reconstructs what the replay actually merged onto — the cited case's captured
+ *   `retrieval.answer` envelope (`capturedSkillByCaseId`) — using the same field-by-field deep
+ *   merge `applyAgentConfigOverride` performs everywhere else, before `effectiveRetrieveAnswerSkillSettings`
+ *   and `canonicalRetrieveAnswerSkillConfig` (agentConfig.ts) project both sides onto the same
  *   canonical shape via the real materialization path, rather than duplicating that mapping here.
  *   A key set outside `.settings` entirely never reaches the tuning fields
  *   materializeAgentFromConfig reads at all and is silently ignored at runtime, so it must not
- *   read as measured either. `enabled` is checked the same way whenever the proposal states one.
+ *   read as measured either. `enabled` is checked the same way whenever the proposal states one,
+ *   also against the merged (not raw override) value.
  * - No override installs a routine, so no replay can support a routine proposal.
  * - No override installs visitor context either, so the same is true of a context variable
  *   proposal: nothing in CopilotEvalCaseReplayOverrides can put a pushed, browser, or resolver
@@ -171,6 +196,7 @@ const hasConfoundingOverride = (overrides: Record<string, unknown>): boolean => 
 const assertMeasuredTheProposedChange = (
   record: CopilotReplayEvidenceRecord,
   change: ProposalChange,
+  capturedSkillByCaseId: ReadonlyMap<string, CopilotSkillConfigEnvelope | null> | null,
 ): void => {
   const overrides = asRecord(record.overrides);
   if (change.targetType === "routine") {
@@ -210,8 +236,17 @@ const assertMeasuredTheProposedChange = (
     if (!change.skillSettingsKey) {
       throw badRequest("This skill's configuration cannot be measured by a replay, so evidence cannot support it");
     }
-    const envelope = skillEnvelopeOverride(overrides, change.skillSettingsKey);
-    const effective = effectiveRetrieveAnswerSkillSettings(envelope.settings);
+    const overrideEnvelope = skillEnvelopeOverride(overrides, change.skillSettingsKey);
+    // The replay override is deep-merged onto the cited case's captured baseline when
+    // materialization runs, never onto a schema default — see mergeRetrieveAnswerSkillEnvelope's
+    // doc comment. `capturedSkillByCaseId` is null when no case reader is wired at all (a caller
+    // that never exercises agent_skill proposals; see ProposalEvidenceDependencies) or when this
+    // record's case captured nothing, in which case there is no baseline to merge onto and the
+    // override is measured as-is.
+    const capturedEnvelope = capturedSkillByCaseId?.get(record.caseId) ?? null;
+    const baselineEnvelope = capturedEnvelope ?? { enabled: undefined, settings: {} };
+    const measuredEnvelope = mergeRetrieveAnswerSkillEnvelope(baselineEnvelope, overrideEnvelope);
+    const effective = effectiveRetrieveAnswerSkillSettings(measuredEnvelope.settings);
     const canonicalProposed = canonicalRetrieveAnswerSkillConfig(asRecord(change.config));
     if (
       !sameValue(effective.sourceScope, canonicalProposed.sourceScope)
@@ -219,7 +254,7 @@ const assertMeasuredTheProposedChange = (
     ) {
       throw badRequest("Replay evidence did not measure the proposed skill configuration");
     }
-    if (change.enabled !== undefined && envelope.enabled !== change.enabled) {
+    if (change.enabled !== undefined && measuredEnvelope.enabled !== change.enabled) {
       throw badRequest("Replay evidence did not measure the proposed skill's enabled state");
     }
     return;
@@ -269,13 +304,22 @@ export const resolveProposalEvidence = async (
   if (otherThread.length > 0) {
     throw badRequest("Replay evidence was measured in a different conversation");
   }
+
+  // Loaded once, up front, and shared by both the match check (what a cited replay's override
+  // actually merged onto — see assertMeasuredTheProposedChange) and the staleness check (what the
+  // live skill has since moved away from — see resolveAgentSkillDrift), so the two do not each
+  // read the same cases rows separately.
+  const capturedSkillByCaseId = request.change.targetType === "agent_skill"
+    ? await loadSnapshotDefaultAnswerSkillByCaseId(dependencies, request.workspaceId, records)
+    : null;
+
   for (const record of records) {
-    assertMeasuredTheProposedChange(record, request.change);
+    assertMeasuredTheProposedChange(record, request.change, capturedSkillByCaseId);
   }
 
   const agent = await dependencies.agentVersion.get(request.workspaceId, request.agentId);
   const skillDriftByEvidenceId = request.change.targetType === "agent_skill"
-    ? await resolveAgentSkillDrift(dependencies, request, records)
+    ? await resolveAgentSkillDrift(dependencies, request, records, capturedSkillByCaseId)
     : null;
 
   return {
@@ -293,43 +337,66 @@ export const resolveProposalEvidence = async (
 };
 
 /**
+ * The retrieve default-answer skill's captured envelope for every case a set of cited evidence
+ * records names, keyed by case id — fetched once per distinct `caseId` rather than once per
+ * record, since several cited records commonly share a case (different cases can also capture the
+ * agent at different times). `null` when no case reader is wired at all (see
+ * {@link ProposalEvidenceDependencies}), which both the match check and the staleness check treat
+ * as "no baseline for any record" rather than failing the whole resolution.
+ */
+const loadSnapshotDefaultAnswerSkillByCaseId = async (
+  dependencies: ProposalEvidenceDependencies,
+  workspaceId: string,
+  records: ReadonlyArray<CopilotReplayEvidenceRecord>,
+): Promise<Map<string, CopilotSkillConfigEnvelope | null> | null> => {
+  if (!dependencies.cases) {
+    return null;
+  }
+  const { cases } = dependencies;
+  const caseIds = [...new Set(records.map((record) => record.caseId))];
+  const entries = await Promise.all(caseIds.map(async (caseId) => {
+    const evalCase = await cases.findCase(workspaceId, caseId);
+    return [caseId, evalCase?.snapshotDefaultAnswerSkill ?? null] as const;
+  }));
+  return new Map(entries);
+};
+
+/**
  * Whether the retrieve default-answer skill's *live* configuration has moved since the config a
  * cited case's snapshot captured — the direct check an `agent_skill` proposal's evidence needs,
  * since `agents.updated_at` never moves when a skill is created, edited, or removed (agent_skills
- * is a sibling table) and so cannot answer this on its own. Both dependencies are optional (see
- * {@link ProposalEvidenceDependencies}); their absence contributes no additional signal rather
- * than failing the whole resolution, the same fallback the deleted per-agent version signal used.
- * Fetches the live skill once (constant across every cited case in one request) and each cited
- * case's snapshot once per distinct `caseId`, since different cases can capture the agent at
- * different times.
+ * is a sibling table) and so cannot answer this on its own. `agentSkillConfig` is optional (see
+ * {@link ProposalEvidenceDependencies}) and `capturedSkillByCaseId` is null when no case reader was
+ * wired either; either absence contributes no additional signal rather than failing the whole
+ * resolution, the same fallback the deleted per-agent version signal used.
  */
 const resolveAgentSkillDrift = async (
   dependencies: ProposalEvidenceDependencies,
   request: ProposalEvidenceRequest,
   records: ReadonlyArray<CopilotReplayEvidenceRecord>,
+  capturedSkillByCaseId: ReadonlyMap<string, CopilotSkillConfigEnvelope | null> | null,
 ): Promise<Map<string, boolean> | null> => {
-  if (!dependencies.agentSkillConfig || !dependencies.cases) {
+  if (!dependencies.agentSkillConfig || !capturedSkillByCaseId || request.change.targetType !== "agent_skill") {
     return null;
   }
-  const { agentSkillConfig, cases } = dependencies;
-  const currentSkill = await agentSkillConfig.getDefaultAnswerSkill(request.workspaceId, request.agentId);
-  const caseIds = [...new Set(records.map((record) => record.caseId))];
-  const snapshotSkillByCaseId = new Map(
-    await Promise.all(caseIds.map(async (caseId) => {
-      const evalCase = await cases.findCase(request.workspaceId, caseId);
-      return [caseId, evalCase?.snapshotDefaultAnswerSkill ?? null] as const;
-    })),
-  );
+  const currentSkill = await dependencies.agentSkillConfig.getDefaultAnswerSkill(request.workspaceId, request.agentId);
+  const createsNewSkill = request.change.createsNewSkill ?? false;
   return new Map(records.map((record) => [
     record.id,
-    skillConfigDriftedSinceCapture(currentSkill, snapshotSkillByCaseId.get(record.caseId) ?? null),
+    skillConfigDriftedSinceCapture(currentSkill, capturedSkillByCaseId.get(record.caseId) ?? null, createsNewSkill),
   ]));
 };
 
 /**
- * A missing live skill (deleted since the case was captured) always reads as drifted: there is
- * nothing left to vouch for the measurement with. Otherwise both sides run through the same
- * canonicalization `assertMeasuredTheProposedChange` uses for the proposal-match check
+ * A missing live skill reads as drifted only when this proposal expects one to still be there
+ * (an update): a genuinely deleted skill has nothing left to vouch for the measurement with. A
+ * *create* proposal (`createsNewSkill`) has no live row to compare against by design —
+ * `agentRepository`'s sync only updates an existing `agent_skills` row, it never inserts one, so a
+ * brand-new agent has no row at all even though the cited case's snapshot still synthesises *some*
+ * `retrieval.answer` envelope from the agent's own columns (every capture does). That is not the
+ * row "disappearing since capture", so it must not read as drift the way an update whose row was
+ * actually deleted does. Otherwise both sides run through the same canonicalization
+ * `assertMeasuredTheProposedChange` uses for the proposal-match check
  * (`canonicalRetrieveAnswerSkillConfig` for the live config, `effectiveRetrieveAnswerSkillSettings`
  * for the captured envelope's settings), so a difference in either `enabled` or the canonical
  * `sourceScope`/`settings` counts as drift.
@@ -337,9 +404,10 @@ const resolveAgentSkillDrift = async (
 const skillConfigDriftedSinceCapture = (
   current: { enabled: boolean; config: Record<string, unknown> } | null,
   captured: CopilotSkillConfigEnvelope | null,
+  createsNewSkill: boolean,
 ): boolean => {
   if (!current) {
-    return true;
+    return !createsNewSkill;
   }
   const baseline = captured ?? { enabled: undefined, settings: {} };
   const currentCanonical = canonicalRetrieveAnswerSkillConfig(current.config);

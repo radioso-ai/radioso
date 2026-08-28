@@ -77,6 +77,14 @@ export interface CopilotProposalSummary {
   status: CopilotProposalStatus
   reason?: string | null
   evidence?: CopilotProposalEvidenceSummary
+  /**
+   * True only for a proposal that permanently deletes its target rather than updating it (e.g.
+   * a directive removal). Absent, not false, for an ordinary update. Read this instead of
+   * parsing `summary`'s prose for irreversibility - the backend already distinguishes a removal
+   * structurally (proposalAdapters.ts's `op: "remove"` discriminator) and carries that signal
+   * through the card itself.
+   */
+  removal?: boolean
 }
 
 export interface CopilotProposalPreview {
@@ -189,6 +197,7 @@ export interface CopilotProposalEvent {
   targetLabel: string
   summary: string
   evidence?: CopilotProposalEvidenceSummary
+  removal?: boolean
 }
 
 export interface CopilotChunkEvent {

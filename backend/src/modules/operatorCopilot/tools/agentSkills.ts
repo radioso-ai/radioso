@@ -194,6 +194,10 @@ export const createAgentSkillConfigProposalCopilotTools = (
             // Forwarded so a proposal that turns the skill off cannot cite a replay that left it on:
             // enablement lives outside `settings` in the replay envelope, so config alone never sees it.
             enabled: validatedPayload.enabled,
+            // No skillId means this proposal has no existing skill to update — applying it creates
+            // the first row. See skillConfigDriftedSinceCapture: a missing live row must not read
+            // as "deleted since capture" when there was never a row to delete in the first place.
+            createsNewSkill: targetRef.skillId === null,
           });
           await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
           const proposal = await deps.proposalRepository.createProposal({

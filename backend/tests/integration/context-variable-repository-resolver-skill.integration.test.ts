@@ -103,4 +103,29 @@ describeIntegration("ContextVariableRepository.applyProposal resolver skill exis
     const variables = await database.query(`SELECT id FROM context_variables WHERE workspace_id = $1 AND name = $2`, [workspaceId, variableName]);
     expect(variables).toHaveLength(0);
   });
+
+  // Finding 2 (issue triage, next-ray-epic-issue): SkillBackedContextResolver.resolve silently
+  // returns null for a disabled skill (contextResolverModule.ts checks agentSkill.enabled), and
+  // the skill row itself carries no foreign key, so a skill disabled after drafting and before
+  // Apply previously still passed this existence check and persisted an enablement that would
+  // never resolve anything - the same inert-configuration gap the deleted-skill case above
+  // already covers, just for "disabled" rather than "gone".
+  it("refuses to apply a resolver enablement once the named skill has been disabled, rather than persisting an inert one", async () => {
+    const skill = await createSkill();
+    const variableName = `var_${randomUUID().slice(0, 8)}`;
+    expect(await agentSkillRepository.update(workspaceId, agentId, skill.id, { enabled: false })).not.toBeNull();
+
+    await expect(contextVariableRepository.applyProposal({
+      workspaceId,
+      agentId,
+      variableId: null,
+      definition: { name: variableName, description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference" },
+      expectedVariableUpdatedAt: null,
+      enablement: { source: "resolver", resolverSkillId: skill.id, maxAgeSeconds: null, resolverTimeoutMs: null, surfacing: "operator_only", enabled: true },
+      expectedEnablementUpdatedAt: null,
+    })).rejects.toMatchObject({ statusCode: 409 });
+
+    const variables = await database.query(`SELECT id FROM context_variables WHERE workspace_id = $1 AND name = $2`, [workspaceId, variableName]);
+    expect(variables).toHaveLength(0);
+  });
 });

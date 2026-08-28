@@ -190,13 +190,24 @@ export class AgentSkillsService {
 
     try {
       const updated = await this.options.repository.update(workspaceId, agentId, id, {
-        targetType: input.target?.kind,
-        targetId: input.target?.id,
+        // Only forwarded when the caller's patch actually named a `target` (agentSkillUpdateSchema
+        // requires both `kind` and `id` together, never one alone): the repository treats *key
+        // presence* as "explicitly change target_id, including to null" (see its own doc comment),
+        // so unconditionally forwarding these two keys - even as `undefined` - would tell it every
+        // config-only or enabled-only patch means "clear the target," which the target-reference
+        // trigger then rejects outright for any capability that requires one.
+        ...(input.target ? { targetType: input.target.kind, targetId: input.target.id } : {}),
         config: input.config,
         replaceConfig: input.replaceConfig,
         invocationMode: input.invocationMode,
         enabled: input.enabled,
         expectedUpdatedAt: options.expectedUpdatedAt,
+        // The candidate validated above is built from *this* read of `existing`; a concurrent
+        // writer can commit between that read and the repository actually taking its lock. The
+        // repository recomputes the real merge once it holds the lock and calls this back with
+        // it, so the config that gets persisted is the config that gets validated, not the one
+        // validated here against a base that may already be stale.
+        validateMergedConfig: (mergedConfig) => this.assertValidMergedConfig(descriptor, mergedConfig),
       });
       if (!updated) {
         // The repository's own WHERE predicate is what enforces expectedUpdatedAt (not a
@@ -320,6 +331,22 @@ export class AgentSkillsService {
     if (input.target.kind !== descriptor.targetKind) {
       throw badRequest(`Capability ${descriptor.id} must target ${descriptor.targetKind}`);
     }
+    // A proposal that can never apply must not be created (the same rule already applied to a
+    // colliding skill name and a colliding context-variable name below/elsewhere): a capability
+    // that requires a target must be given one, and a supplied id must actually be one of this
+    // workspace/agent's targets - not merely well-formed. Checked here, shared by create/update
+    // and dryRunValidate, so a copilot proposal with a missing or foreign target id is refused
+    // when it is drafted instead of becoming a pending card that only fails once Apply is clicked.
+    const requiresTarget = descriptor.requiresTarget ?? true;
+    if (requiresTarget && !input.target.id) {
+      throw badRequest(`Capability ${descriptor.id} requires a ${descriptor.targetKind} target`);
+    }
+    if (input.target.id) {
+      const targets = await descriptor.enumerateTargets({ workspaceId, agentId });
+      if (!targets.some((target) => target.id === input.target.id)) {
+        throw badRequest(`Target ${input.target.id} is not a valid ${descriptor.targetKind} for this agent`);
+      }
+    }
     if (!descriptor.supportedInvocationModes.includes(input.invocationMode)) {
       throw badRequest(`Capability ${descriptor.id} does not support ${input.invocationMode}`);
     }
@@ -343,6 +370,19 @@ export class AgentSkillsService {
       }
     }
     return config.data as Record<string, unknown>;
+  }
+
+  /**
+   * Callback the repository invokes, inside its own locked transaction, with the config it
+   * actually computed by merging a patch into the row's *current* stored config - not the
+   * candidate `update()` validated a moment earlier against its own pre-lock read of that row.
+   * Throwing here (instead of returning a boolean) lets the repository simply propagate the
+   * failure out of its transaction, aborting the write without persisting anything.
+   */
+  private assertValidMergedConfig(descriptor: SkillCapabilityDescriptor, mergedConfig: Record<string, unknown>): void {
+    if (!descriptor.validateConfig(mergedConfig).success) {
+      throw conflict("Concurrent edits produced an invalid configuration; reload and try again");
+    }
   }
 
   private toView(record: AgentSkillSpine): AgentSkillView {

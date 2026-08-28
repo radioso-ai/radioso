@@ -80,6 +80,7 @@ export {
   canonicalRetrieveAnswerSkillConfig,
   effectiveRetrieveAnswerSkillSettings,
   materializeAgentFromConfig,
+  mergeRetrieveAnswerSkillEnvelope,
   projectInternalAgentConfig,
   serializeAgentConfig,
   serializeAuthoredDirectivesWithIds,

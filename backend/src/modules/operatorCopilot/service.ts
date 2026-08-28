@@ -251,7 +251,7 @@ export class OperatorCopilotService {
         const proposal = proposalFromTrace(trace);
         if (proposal) {
           proposals.push(proposal);
-          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}) } };
+          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}), ...(proposal.removal ? { removal: true as const } : {}) } };
         }
       }
       const result = await stream.result;
@@ -398,11 +398,17 @@ const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null =
   if (trace.kind !== "tool_call_completed" || !isProposalOutput(trace.output)) return null;
   const card = { id: trace.output.proposalId, targetType: trace.output.targetType, targetLabel: trace.output.targetLabel, summary: trace.output.summary, status: "pending" as const };
   // The draft tool already summarized what it measured, so the card states it on the turn that
-  // drafted it rather than only after a reload.
-  return trace.output.evidence ? { ...card, evidence: trace.output.evidence } : card;
+  // drafted it rather than only after a reload. Same reasoning for removal (Finding 1, issue
+  // triage next-ray-epic-issue): the tool already knows it drafted a deletion, so the card
+  // carries that structural signal from the turn that drafted it, not only after a reload.
+  return {
+    ...card,
+    ...(trace.output.evidence ? { evidence: trace.output.evidence } : {}),
+    ...(trace.output.removal ? { removal: true as const } : {}),
+  };
 };
 
-const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary } => {
+const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
   return typeof output.proposalId === "string" && (copilotProposalTargetTypes as ReadonlyArray<unknown>).includes(output.targetType) && typeof output.targetLabel === "string" && typeof output.summary === "string";

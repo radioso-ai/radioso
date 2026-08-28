@@ -9,6 +9,7 @@ import type {
   ToolCallResult,
   ToolService,
 } from "@radioso/conversation-contract";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 /**
  * Resolves the auth a connection presents to its MCP server. Pluggable so the
@@ -37,6 +38,8 @@ export interface SdkMcpToolServiceOptions {
    * rebinding (the create-time check alone is not sufficient).
    */
   assertPublicUrl?: (url: string) => void | Promise<void>;
+  /** Connection-bound fetch used for every MCP HTTP/SSE request. */
+  fetchImpl?: typeof fetch;
   clientInfo?: { name: string; version: string };
 }
 
@@ -127,11 +130,15 @@ export class SdkMcpToolService implements ToolService {
     // SSRF guard re-checked immediately before the outbound connection.
     await this.options.assertPublicUrl?.(this.options.serverUrl);
     const url = new URL(this.options.serverUrl);
+    const fetchImpl = this.options.fetchImpl ?? fetchPublicUrl;
     if (this.options.authProvider) {
-      return new StreamableHTTPClientTransport(url, { authProvider: this.options.authProvider });
+      return new StreamableHTTPClientTransport(url, {
+        authProvider: this.options.authProvider,
+        fetch: fetchImpl,
+      });
     }
     const headers = (await this.options.credentialProvider?.getRequestHeaders()) ?? {};
-    return new StreamableHTTPClientTransport(url, { requestInit: { headers } });
+    return new StreamableHTTPClientTransport(url, { requestInit: { headers }, fetch: fetchImpl });
   }
 
   private async connectClient(): Promise<Client> {

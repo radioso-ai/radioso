@@ -110,6 +110,7 @@ export class WordpressConnector implements ConnectorPlugin {
       db: connectorKyselyDb(context.db),
       state: context.state,
       ingestion: context.ingestion,
+      publicHttp: context.publicHttp,
     };
 
     context.http.mount(

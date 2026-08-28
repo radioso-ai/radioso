@@ -66,6 +66,7 @@ describe("webhook delivery signing", () => {
 });
 
 describe("FetchWebhookHttpClient", () => {
+  const fetchThroughGlobal: typeof fetch = (input, init) => globalThis.fetch(input, init);
   const redirect = (location: string | null, status = 307): Response =>
     new Response(null, {
       status,
@@ -79,7 +80,7 @@ describe("FetchWebhookHttpClient", () => {
     const assertPublicUrl = vi.fn(async () => undefined);
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new FetchWebhookHttpClient(assertPublicUrl);
+    const client = new FetchWebhookHttpClient(assertPublicUrl, { fetchImpl: fetchThroughGlobal });
     await client.post({
       url: "https://hooks.example.com/start",
       rawBody: "{}",
@@ -89,6 +90,24 @@ describe("FetchWebhookHttpClient", () => {
     expect(assertPublicUrl).toHaveBeenNthCalledWith(1, "https://hooks.example.com/start");
     expect(assertPublicUrl).toHaveBeenNthCalledWith(2, "https://hooks.example.com/next");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the connection-bound fetch supplied by composition", async () => {
+    const globalFetch = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", globalFetch);
+
+    const client = new FetchWebhookHttpClient(async () => undefined, {
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await client.post({
+      url: "https://hooks.example.com/start",
+      rawBody: "{}",
+      headers: {},
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(globalFetch).not.toHaveBeenCalled();
   });
 
   it("allows explicit local loopback delivery without running the public-url guard", async () => {
@@ -136,7 +155,7 @@ describe("FetchWebhookHttpClient", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new FetchWebhookHttpClient(assertPublicUrl);
+    const client = new FetchWebhookHttpClient(assertPublicUrl, { fetchImpl: fetchThroughGlobal });
     await expect(client.post({
       url: "https://hooks.example.com/start",
       rawBody: "{}",
@@ -150,7 +169,7 @@ describe("FetchWebhookHttpClient", () => {
   it("rejects redirects without a location header", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(redirect(null)));
 
-    const client = new FetchWebhookHttpClient(async () => undefined);
+    const client = new FetchWebhookHttpClient(async () => undefined, { fetchImpl: fetchThroughGlobal });
     await expect(client.post({
       url: "https://hooks.example.com/start",
       rawBody: "{}",
@@ -162,7 +181,7 @@ describe("FetchWebhookHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(redirect("https://attacker.example.net/capture"));
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new FetchWebhookHttpClient(async () => undefined);
+    const client = new FetchWebhookHttpClient(async () => undefined, { fetchImpl: fetchThroughGlobal });
     await expect(client.post({
       url: "https://hooks.example.com/start",
       rawBody: JSON.stringify({ sensitive: "payload" }),
@@ -176,7 +195,10 @@ describe("FetchWebhookHttpClient", () => {
     const fetchMock = vi.fn().mockResolvedValue(redirect("/again"));
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new FetchWebhookHttpClient(async () => undefined, { maxRedirects: 1 });
+    const client = new FetchWebhookHttpClient(async () => undefined, {
+      maxRedirects: 1,
+      fetchImpl: fetchThroughGlobal,
+    });
     await expect(client.post({
       url: "https://hooks.example.com/start",
       rawBody: "{}",

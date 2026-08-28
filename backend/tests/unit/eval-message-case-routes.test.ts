@@ -78,6 +78,7 @@ const createApp = (input?: {
           type: "workspace_api_token",
           role: "admin",
           tokenId: "token-id",
+          workspaceId: WORKSPACE_ID,
         },
       }),
     },

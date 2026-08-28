@@ -1,21 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RadiosoCrawlerProvider } from "../../../src/modules/websiteCrawler/radiosoCrawlerProvider.js";
+import {
+  createRadiosoCrawlerUtilityProvider,
+  RadiosoCrawlerProvider,
+} from "../../../src/modules/websiteCrawler/radiosoCrawlerProvider.js";
 
 const mocks = vi.hoisted(() => ({
   crawlSite: vi.fn(),
   crawlSiteStream: vi.fn(),
+  fetchPageWithScreenshot: vi.fn(),
+  isPlaywrightAvailable: vi.fn(),
 }));
 
 vi.mock("@radioso/crawler", () => ({
   crawlSite: mocks.crawlSite,
   crawlSiteStream: mocks.crawlSiteStream,
+  fetchPageWithScreenshot: mocks.fetchPageWithScreenshot,
+  isPlaywrightAvailable: mocks.isPlaywrightAvailable,
 }));
 
 describe("RadiosoCrawlerProvider", () => {
   beforeEach(() => {
     mocks.crawlSite.mockReset();
     mocks.crawlSiteStream.mockReset();
+    mocks.fetchPageWithScreenshot.mockReset();
+    mocks.isPlaywrightAvailable.mockReset();
     delete process.env.WEBSITE_CRAWLER_USER_AGENT;
   });
 
@@ -102,7 +111,7 @@ describe("RadiosoCrawlerProvider", () => {
     }));
   });
 
-  it("passes the public URL validator to batch and streaming crawler calls", async () => {
+  it("passes the public URL validator and connection-bound fetcher to batch and streaming crawler calls", async () => {
     mocks.crawlSite.mockResolvedValue([]);
     mocks.crawlSiteStream.mockResolvedValue({ pages: 0 });
 
@@ -118,15 +127,30 @@ describe("RadiosoCrawlerProvider", () => {
 
     const batchParams = mocks.crawlSite.mock.calls[0]?.[0] as {
       validateNavigationUrl?: (url: string) => Promise<void> | void;
+      fetchImpl?: typeof fetch;
     };
     const streamParams = mocks.crawlSiteStream.mock.calls[0]?.[0] as {
       validateNavigationUrl?: (url: string) => Promise<void> | void;
+      fetchImpl?: typeof fetch;
     };
 
     expect(batchParams.validateNavigationUrl).toEqual(expect.any(Function));
     expect(streamParams.validateNavigationUrl).toEqual(expect.any(Function));
+    expect(batchParams.fetchImpl).toEqual(expect.any(Function));
+    expect(streamParams.fetchImpl).toEqual(expect.any(Function));
     await expect(batchParams.validateNavigationUrl?.("http://127.0.0.1/")).rejects.toThrow("publicly routable host");
     await expect(streamParams.validateNavigationUrl?.("http://127.0.0.1/")).rejects.toThrow("publicly routable host");
+  });
+
+  it("keeps browser transport disabled until it has connection-bound egress", async () => {
+    mocks.isPlaywrightAvailable.mockResolvedValue(true);
+    const utility = createRadiosoCrawlerUtilityProvider();
+
+    await expect(utility.isBrowserTransportAvailable()).resolves.toBe(false);
+    await expect(utility.fetchPageWithScreenshot("https://example.com"))
+      .rejects.toThrow("connection-bound egress");
+    expect(mocks.isPlaywrightAvailable).not.toHaveBeenCalled();
+    expect(mocks.fetchPageWithScreenshot).not.toHaveBeenCalled();
   });
 
   it("does not seed already-processed checkpoint URLs back into the crawler", async () => {

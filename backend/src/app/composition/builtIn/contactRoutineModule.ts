@@ -35,6 +35,7 @@ import {
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
@@ -95,7 +96,7 @@ const buildOperatorNotificationDispatcher = (input: {
       input.mailService,
       recipients,
       input.logger,
-      new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl),
+      new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -151,7 +152,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           logger,
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.
-          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+          new FetchContactWebhookHttpClient(assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
           errorReporter,
         );
       },

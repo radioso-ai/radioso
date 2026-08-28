@@ -29,6 +29,7 @@ describe("requireWorkspacePermission", () => {
       authPrincipal: {
         type: "workspace_api_token",
         role: "admin",
+        workspaceId: "workspace-1",
       },
     });
 
@@ -41,7 +42,41 @@ describe("requireWorkspacePermission", () => {
       principal: {
         type: "workspace_api_token",
         role: "admin",
+        workspaceId: "workspace-1",
       },
+    });
+    expect(next).toHaveBeenCalledWith();
+  });
+
+  it("passes a path workspace to scope-aware authorization without replacing the token scope", async () => {
+    const requirePermission = vi.fn().mockResolvedValue(undefined);
+    const middleware = requireWorkspacePermission(
+      {
+        accountAccessService: {
+          requirePermission,
+        } as unknown as AccountAccessService,
+      },
+      "workspace.documents.manage",
+      () => "workspace-b",
+    );
+    const principal = {
+      type: "workspace_api_token" as const,
+      role: "admin" as const,
+      workspaceId: "workspace-a",
+    };
+    const { req, res, next } = createRequestResponse({
+      accountId: "account-1",
+      workspaceId: "workspace-a",
+      authPrincipal: principal,
+    });
+
+    await middleware(req, res, next);
+
+    expect(requirePermission).toHaveBeenCalledWith({
+      accountId: "account-1",
+      permission: "workspace.documents.manage",
+      principal,
+      workspaceId: "workspace-b",
     });
     expect(next).toHaveBeenCalledWith();
   });

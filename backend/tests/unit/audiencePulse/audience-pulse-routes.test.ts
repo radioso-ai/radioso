@@ -74,7 +74,11 @@ const createDependencies = (calls: { bearer: number; permission: number; rate: n
     },
     async authenticateApiToken() {
       calls.bearer += 1;
-      return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID, principal: { type: "workspace_api_token" } };
+      return {
+        accountId: ACCOUNT_ID,
+        workspaceId: WORKSPACE_ID,
+        principal: { type: "workspace_api_token", role: "admin", tokenId: "token-id", workspaceId: WORKSPACE_ID },
+      };
     },
   },
   accountAccessService: {

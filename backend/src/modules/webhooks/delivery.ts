@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
+
 export interface WebhookHttpClient {
   post(request: {
     url: string;
@@ -41,6 +43,7 @@ export class FetchWebhookHttpClient implements WebhookHttpClient {
       maxRedirects?: number;
       deadlineMs?: number;
       allowHttpLoopback?: boolean;
+      fetchImpl?: typeof fetch;
     } = {},
   ) {}
 
@@ -59,7 +62,10 @@ export class FetchWebhookHttpClient implements WebhookHttpClient {
       if (remainingMs <= 0) {
         throw new Error(`Webhook exceeded ${deadlineMs}ms delivery deadline`);
       }
-      const response = await fetch(currentUrl, {
+      const fetchImpl = this.options.allowHttpLoopback === true && isLocalDevelopmentHttpUrl(currentUrl)
+        ? fetch
+        : (this.options.fetchImpl ?? fetchPublicUrl);
+      const response = await fetchImpl(currentUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...request.headers },
         body: request.rawBody,

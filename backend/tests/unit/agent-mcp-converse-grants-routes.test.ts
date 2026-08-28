@@ -39,7 +39,7 @@ const createDependencies = (
     authenticateApiToken: vi.fn().mockResolvedValue({
       accountId: "account-1",
       workspaceId,
-      principal: { type: "workspace_api_token", role: "admin", tokenId: "token-1" },
+      principal: { type: "workspace_api_token", role: "admin", tokenId: "token-1", workspaceId },
     }),
   },
   accountAccessService: {

@@ -88,6 +88,7 @@ import { EmailSkillActivityRepository } from "../../../db/repositories/emailSkil
 import { WebhookSkillDefinitionRepository } from "../../../db/repositories/webhookSkillDefinitionRepository.js";
 import { OauthConnectionRepository } from "../../../db/repositories/oauthConnectionRepository.js";
 import { FetchWebhookHttpClient, type WebhookDestinationRuntimePort } from "../../../modules/webhooks/public.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { LlmCapabilityResolver } from "../../../shared/infra/llm/capabilityResolver.js";
 import { IngestionSettingsService, AgentConverseSessionService } from "../../../modules/settings/composition.js";
 import { retrievalAnswerSkillDefinition, type RoutineInvocableSkillNames } from "../../../modules/skills/public.js";
@@ -313,7 +314,9 @@ export const buildChatServices = (input: {
       adapter: EXTERNAL_SKILLS_ADAPTER,
       executor: new McpSkillExecutor(
         buildExternalSkillsDeps(input.database, input.env.CONNECTOR_ENCRYPTION_KEY, input.assertPublicWebsiteUrl, {
+          fetchImpl: fetchPublicUrl,
           logger: input.logger,
+          transportFetchImpl: fetchPublicUrl,
         }),
       ),
     });
@@ -348,6 +351,7 @@ export const buildChatServices = (input: {
           providers: customerEmailProviderRegistry,
           encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
           assertPublicUrl: input.assertPublicWebsiteUrl,
+          fetchImpl: fetchPublicUrl,
           logger: input.logger,
         }),
         activity: input.emailSkillActivityRepository,
@@ -363,6 +367,7 @@ export const buildChatServices = (input: {
         destinations: input.webhookDestinations,
         httpClient: new FetchWebhookHttpClient(input.assertPublicWebsiteUrl, {
           allowHttpLoopback: input.env.NODE_ENV !== "production" && input.env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true,
+          fetchImpl: fetchPublicUrl,
         }),
         logger: input.logger,
       }),

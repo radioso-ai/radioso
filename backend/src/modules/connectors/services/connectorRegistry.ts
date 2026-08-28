@@ -126,6 +126,7 @@ export class ConnectorRegistry {
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
     workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
     assertPublicUrl?: (url: string) => Promise<void>;
+    fetchPublicUrl?: typeof fetch;
   }): Promise<void> {
     for (const plugin of this.plugins.values()) {
       try {
@@ -140,6 +141,14 @@ export class ConnectorRegistry {
           metricsRegistry: context.metricsRegistry,
           workspaceInvalidationPublisher: context.workspaceInvalidationPublisher,
           assertPublicUrl: context.assertPublicUrl,
+          publicHttp: {
+            assertPublicUrl: context.assertPublicUrl ?? (async () => {
+              throw new Error("Public URL policy is unavailable");
+            }),
+            fetch: context.fetchPublicUrl ?? (async () => {
+              throw new Error("Connection-bound public HTTP transport is unavailable");
+            }),
+          },
           state: this.createPluginState(context.db, plugin.id),
           http: this.createHttpHost(plugin.id),
         } as Parameters<ConnectorPlugin["initialize"]>[0]);

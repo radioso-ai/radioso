@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import { fetchPublicUrl } from "../../../../shared/infra/http/publicUrlFetch.js";
+
 export interface WebhookHttpClient {
   post(request: {
     url: string;
@@ -20,7 +22,7 @@ const DEFAULT_MAX_WEBHOOK_REDIRECTS = 3;
 export class FetchWebhookHttpClient implements WebhookHttpClient {
   constructor(
     private readonly assertPublicUrl: WebhookUrlGuard,
-    private readonly options: { timeoutMs?: number; maxRedirects?: number } = {},
+    private readonly options: { timeoutMs?: number; maxRedirects?: number; fetchImpl?: typeof fetch } = {},
   ) {}
 
   async post(request: { url: string; rawBody: string; headers: Record<string, string> }): Promise<void> {
@@ -30,7 +32,7 @@ export class FetchWebhookHttpClient implements WebhookHttpClient {
 
     for (let hop = 0; hop <= maxRedirects; hop += 1) {
       await this.assertPublicUrl(currentUrl);
-      const response = await fetch(currentUrl, {
+      const response = await (this.options.fetchImpl ?? fetchPublicUrl)(currentUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...request.headers },
         body: request.rawBody,

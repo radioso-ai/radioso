@@ -5,7 +5,6 @@ import {
   type ConversationIntentSnapshot,
 } from "./conversationIntentSnapshot.js";
 import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
-import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 
 export interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;
@@ -21,8 +20,19 @@ export interface GroundedAnswerSystemPromptInput {
   retrievalSenseOfferAlternatives?: Array<{ label: string; description?: string }>;
 }
 
-export interface GroundedAnswerSystemPromptResult {
+/**
+ * Role-separated prompt parts for one grounded-answer generation. The composer
+ * owns static/operator instruction assembly; its caller assigns the dynamic
+ * conversation data to the gateway's user prompt.
+ */
+export interface GroundedAnswerPromptResult {
   systemPrompt: string;
+  /**
+   * Conversation-derived material for the user/data role. It must never be
+   * concatenated into systemPrompt because visitor turns and rolling summaries
+   * are not operator-authored instructions.
+   */
+  conversationContextPrompt: string;
   suggestionsExpected: boolean;
 }
 
@@ -43,7 +53,7 @@ const formatOfferAlternatives = (
 
 export const composeGroundedAnswerSystemPrompt = (
   input: GroundedAnswerSystemPromptInput,
-): GroundedAnswerSystemPromptResult => {
+): GroundedAnswerPromptResult => {
   const suggestionsExpected =
     input.suggestedQuestionsEnabled &&
     input.suggestedQuestionsCount > 0 &&
@@ -52,28 +62,39 @@ export const composeGroundedAnswerSystemPrompt = (
   const base = input.baseSystemPrompt ?? "";
   const steeringBlock = renderSteeringBlock(input.steering ?? [], { includeRuleIds: true });
   const withSteering = steeringBlock ? joinBlocks(base, steeringBlock) : base;
-  const summarySection = renderConversationSummarySection(input.conversationSummary);
-  const withSummary = summarySection ? joinBlocks(withSteering, summarySection) : withSteering;
   const alternatives = formatOfferAlternatives(input.retrievalSenseOfferAlternatives);
   const grounded = alternatives
-    ? joinBlocks(withSummary, renderPromptTemplate("chat/retrieval-sense-offer.md", { alternatives }))
-    : withSummary;
+    ? joinBlocks(withSteering, renderPromptTemplate("chat/retrieval-sense-offer.md", {}))
+    : withSteering;
 
   const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
   const withEnvelope = joinBlocks(grounded, envelopeBlock);
   if (!suggestionsExpected) {
-    return { systemPrompt: withEnvelope, suggestionsExpected: false };
+    return {
+      systemPrompt: withEnvelope,
+      conversationContextPrompt: input.conversationSummary?.trim() || alternatives
+        ? renderConversationContextPrompt(input)
+        : "",
+      suggestionsExpected: false,
+    };
   }
 
   const suggestionBlock = renderPromptTemplate("chat/answer-suggestions.md", {
     max_suggestions: String(input.suggestedQuestionsCount),
-    recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
-    active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
-    active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
   });
 
   return {
     systemPrompt: joinBlocks(withEnvelope, suggestionBlock),
+    conversationContextPrompt: renderConversationContextPrompt(input),
     suggestionsExpected: true,
   };
 };
+
+const renderConversationContextPrompt = (input: GroundedAnswerSystemPromptInput): string =>
+  renderPromptTemplate("chat/grounded-answer-conversation-context.md", {
+    conversation_summary: input.conversationSummary?.trim() || "None",
+    recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
+    active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
+    active_goal: input.conversationIntentSnapshot.activeGoal ?? "None",
+    retrieval_sense_offer_alternatives: formatOfferAlternatives(input.retrievalSenseOfferAlternatives) || "None",
+  });

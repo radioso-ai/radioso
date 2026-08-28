@@ -71,4 +71,4 @@ jobs:
           service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Deploy to Firebase Hosting
-        run: npx --yes firebase-tools@13 deploy --only hosting --project "${FIREBASE_PROJECT}" --non-interactive
+        run: pnpm --filter radioso-docs-portal exec firebase deploy --only hosting --project "${FIREBASE_PROJECT}" --non-interactive

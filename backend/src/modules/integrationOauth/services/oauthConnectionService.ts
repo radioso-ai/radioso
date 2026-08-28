@@ -28,6 +28,7 @@ import type {
   OauthConnectionRepositoryPort,
 } from "../../../db/repositories/oauthConnectionRepository.js";
 import { badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 
 export interface OauthProviderDefinition {
@@ -211,7 +212,7 @@ export class OauthConnectionService {
       code: input.code,
       codeVerifier: flow.codeVerifier,
       redirectUri: flow.redirectUri,
-      fetchImpl: this.options.fetchImpl ?? globalThis.fetch,
+      fetchImpl: this.options.fetchImpl ?? fetchPublicUrl,
       tokenResponseNormalizer: provider.tokenResponseNormalizer,
     });
     const grantedScopes = tokens.tokens.scope?.split(/\s+/).filter(Boolean) ?? config.scopes ?? record.grantedScopes;

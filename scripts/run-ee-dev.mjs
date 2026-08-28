@@ -6,6 +6,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { writeEnvFileAtomic } from "./bootstrap/env-file.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const eeRoot = path.join(repoRoot, "ee");
 
@@ -113,7 +115,7 @@ const updateEnvFile = async (filePath, updates) => {
     }
   }
 
-  await fs.writeFile(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
+  await writeEnvFileAtomic(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
 };
 
 const removeEnvFileKeys = async (filePath, keys) => {
@@ -126,7 +128,7 @@ const removeEnvFileKeys = async (filePath, keys) => {
       return !match || !keySet.has(match[1]);
     });
 
-  await fs.writeFile(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
+  await writeEnvFileAtomic(filePath, `${nextLines.join("\n").replace(/\n+$/u, "")}\n`);
 };
 
 const readEnvValues = async (filePath) => {

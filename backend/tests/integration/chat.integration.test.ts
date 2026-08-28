@@ -759,13 +759,13 @@ describe("chat integration", () => {
   it("uses recent conversation context for broader exploratory suggestions across turns", async () => {
     let latestSuggestionPrompt = "";
     const deterministicGateway: ChatGateway = {
-      async answer({ systemPrompt, query }) {
+      async answer({ systemPrompt, prompt, query }) {
         const answerText =
           query === "What should I add next?"
             ? "Add meals and orientation[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
-          latestSuggestionPrompt = systemPrompt;
+          latestSuggestionPrompt = prompt;
           return envelope(answerText, [
             { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
             { text: "How should facilitators support retreat attendees?", kind: "broader", contextIndex: 2 },
@@ -830,15 +830,15 @@ describe("chat integration", () => {
   it("recenters broader exploratory suggestions after an explicit subject pivot", async () => {
     let latestSuggestionPrompt = "";
     const deterministicGateway: ChatGateway = {
-      async answer({ systemPrompt, query }) {
+      async answer({ systemPrompt, prompt, query }) {
         const answerText =
           query === "What about facilitator support?"
             ? "Facilitators should balance logistics and attendee care[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
         if (systemPrompt?.includes("Output envelope")) {
-          latestSuggestionPrompt = systemPrompt;
+          latestSuggestionPrompt = prompt;
 
-          if (systemPrompt.includes("Active subject:\nFacilitator support")) {
+          if (prompt.includes("Active subject:\nFacilitator support")) {
             return envelope(answerText, [
               { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
               { text: "Which support roles should back up retreat facilitators?", kind: "broader", contextIndex: 2 },

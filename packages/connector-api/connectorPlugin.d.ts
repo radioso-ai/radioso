@@ -56,6 +56,12 @@ export interface ConnectorHttpHost {
   mount(path: string, router: Router): void;
 }
 
+/** Connection-bound HTTP access for tenant-configured public endpoints. */
+export interface ConnectorPublicHttpPort {
+  assertPublicUrl(url: string): Promise<void>;
+  fetch(input: string | URL, init?: RequestInit): Promise<Response>;
+}
+
 /**
  * Source descriptor a connector hands to the ingestion port so that documents
  * and the "Sources" view are tagged with the upstream channel they belong to.
@@ -148,6 +154,7 @@ export interface ConnectorContext {
   chat: ConnectorChatPort;
   state: ConnectorStatePort;
   http: ConnectorHttpHost;
+  publicHttp: ConnectorPublicHttpPort;
   ingestion: ConnectorIngestionPort;
 }
 

@@ -4,7 +4,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { buildEnvValues, parseEnvFile, renderEnvFile, writeEnvFileAtomic } from "../../scripts/bootstrap/env-file.mjs";
+import {
+  buildEnvValues,
+  enforceEnvFilePermissions,
+  parseEnvFile,
+  renderEnvFile,
+  writeEnvFileAtomic,
+} from "../../scripts/bootstrap/env-file.mjs";
 import { listRequiredKeys } from "../../scripts/bootstrap/support/env-contract.mjs";
 
 test("parseEnvFile ignores comments and reads values", () => {
@@ -90,6 +96,58 @@ test("writeEnvFileAtomic writes rendered env content", async () => {
   assert.match(written, /MAIL_DRIVER=log/);
   assert.match(written, /PASSWORD_RESET_TOKEN_TTL_MINUTES=30/);
   assert.match(written, /EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=30/);
+});
+
+test("writeEnvFileAtomic creates secret-bearing env files with owner-only permissions under a permissive umask", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-"));
+  const filePath = path.join(tempDir, ".env");
+  const previousUmask = process.umask(0o022);
+
+  try {
+    await writeEnvFileAtomic(filePath, "SESSION_COOKIE_SECRET=generated-secret\n");
+  } finally {
+    process.umask(previousUmask);
+  }
+
+  const stats = await fs.stat(filePath);
+  assert.equal(stats.mode & 0o777, 0o600);
+});
+
+test("writeEnvFileAtomic corrects an existing env file to owner-only permissions", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-"));
+  const filePath = path.join(tempDir, ".env");
+  await fs.writeFile(filePath, "SESSION_COOKIE_SECRET=old-secret\n", { mode: 0o644 });
+  await fs.chmod(filePath, 0o644);
+
+  await writeEnvFileAtomic(filePath, "SESSION_COOKIE_SECRET=new-secret\n");
+
+  const stats = await fs.stat(filePath);
+  assert.equal(stats.mode & 0o777, 0o600);
+});
+
+test("enforceEnvFilePermissions corrects a valid existing env file without rewriting it", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-"));
+  const filePath = path.join(tempDir, ".env");
+  const source = "SESSION_COOKIE_SECRET=existing-secret\n";
+  await fs.writeFile(filePath, source, { mode: 0o644 });
+  await fs.chmod(filePath, 0o644);
+
+  await enforceEnvFilePermissions(filePath);
+
+  const stats = await fs.stat(filePath);
+  assert.equal(stats.mode & 0o777, 0o600);
+  assert.equal(await fs.readFile(filePath, "utf8"), source);
+});
+
+test("enforceEnvFilePermissions tolerates a missing first-boot env file", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-"));
+  const filePath = path.join(tempDir, ".env");
+
+  try {
+    await assert.doesNotReject(enforceEnvFilePermissions(filePath));
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("renderEnvFile omits blank optional values", () => {

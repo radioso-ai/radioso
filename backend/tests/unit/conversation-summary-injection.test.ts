@@ -31,7 +31,7 @@ describe("rolling conversation summary injection (#866)", () => {
     });
   });
 
-  describe("grounded answer system prompt", () => {
+  describe("grounded answer role separation", () => {
     const base = {
       baseSystemPrompt: "Base grounded instructions.",
       suggestedQuestionsEnabled: false,
@@ -40,15 +40,20 @@ describe("rolling conversation summary injection (#866)", () => {
       conversationIntentSnapshot: emptyIntentSnapshot,
     };
 
-    it("includes the summary block when present", () => {
-      const { systemPrompt } = composeGroundedAnswerSystemPrompt({ ...base, conversationSummary: SUMMARY });
-      expect(systemPrompt).toContain(SUMMARY_MARKER);
-      expect(systemPrompt).toContain(SUMMARY);
+    it("includes the summary as untrusted conversation data when present", () => {
+      const { systemPrompt, conversationContextPrompt } = composeGroundedAnswerSystemPrompt({
+        ...base,
+        conversationSummary: SUMMARY,
+      });
+      expect(systemPrompt).not.toContain(SUMMARY);
+      expect(conversationContextPrompt).toContain("Rolling conversation summary");
+      expect(conversationContextPrompt).toContain(SUMMARY);
     });
 
-    it("omits the summary block when absent", () => {
-      const { systemPrompt } = composeGroundedAnswerSystemPrompt(base);
+    it("omits conversation context when the summary is absent", () => {
+      const { systemPrompt, conversationContextPrompt } = composeGroundedAnswerSystemPrompt(base);
       expect(systemPrompt).not.toContain(SUMMARY_MARKER);
+      expect(conversationContextPrompt).toBe("");
     });
   });
 

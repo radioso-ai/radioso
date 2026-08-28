@@ -55,6 +55,12 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
         return {
           accountId: "account-1",
           workspaceId: "workspace-token",
+          principal: {
+            type: "workspace_api_token",
+            role: "admin",
+            tokenId: "token-id",
+            workspaceId: "workspace-token",
+          },
         };
       },
     },

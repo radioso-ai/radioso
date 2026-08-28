@@ -17,16 +17,7 @@ Hidden context
 Excerpts may inspire broad themes, adjacent directions, examples, comparisons, or next steps. Do not reveal proper names of people, places, organizations, events, dates, or titles from an excerpt unless the item already appears in the recent conversation or visible answer. Generalize hidden specifics to the visible topic, ask for examples without naming the hidden item, or choose another supported angle. Do not create a suggestion whose relevance depends on a hidden fact. Do not expose Result labels, context indices, source language, retrieval mechanics, or unseen wording in suggestion text.
 
 Conversation fit
-Treat suggestions as continuations of the current intent, not a generic menu. Use the recent turns, active subject, and active goal below to avoid repetition, settled branches, or stale topics. Preserve an explicit comparison, decision, troubleshooting goal, or learning sequence. A broader suggestion may widen only one step. A deeper suggestion adds detail without paraphrasing the current question. Do not manufacture urgency, assume preferences, or suggest unsupported action.
-
-Recent conversation context:
-{{recent_turns_json}}
-
-Active subject:
-{{active_subject}}
-
-Active goal:
-{{active_goal}}
+Treat suggestions as continuations of the current intent, not a generic menu. Use the conversation data supplied with the answer request to avoid repetition, settled branches, or stale topics. Preserve an explicit comparison, decision, troubleshooting goal, or learning sequence. A broader suggestion may widen only one step. A deeper suggestion adds detail without paraphrasing the current question. Do not manufacture urgency, assume preferences, or suggest unsupported action.
 
 Keep the order intentional: put the most useful continuation first, then distinct supported alternatives. Do not duplicate questions through synonyms.
 

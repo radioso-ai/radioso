@@ -257,13 +257,13 @@ if [ "$frontend" = true ]; then
   else
     run_sh "cd frontend && pnpm exec playwright install chromium"
   fi
-  run_sh "cd frontend && pnpm run test:e2e"
+  run_sh "cd frontend && NODE_ENV=production pnpm run test:e2e"
 fi
 
 if [ "$docs" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-docs-portal...
   run_sh "cd docs-portal && pnpm run lint"
-  run_sh "cd docs-portal && pnpm run build"
+  run_sh "cd docs-portal && NODE_ENV=production pnpm run build"
 fi
 
 if [ "$typescript_sdk" = true ]; then

@@ -1,3 +1,5 @@
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
+
 export interface SlackResponseUrlClient {
   postToResponseUrl(url: string, body: Record<string, unknown>): Promise<void>;
 }
@@ -19,7 +21,7 @@ export class FetchSlackResponseUrlClient implements SlackResponseUrlClient {
     assertPublicUrl?: (url: string) => Promise<void> | void;
     timeoutMs?: number;
   } = {}) {
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = options.fetchImpl ?? fetchPublicUrl;
   }
 
   async postToResponseUrl(url: string, body: Record<string, unknown>): Promise<void> {

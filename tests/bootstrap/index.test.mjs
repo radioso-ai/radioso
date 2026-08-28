@@ -17,6 +17,37 @@ test("bootstrap generates and preserves a strong worker task authentication toke
   );
 });
 
+test("main secures an existing env file before a blocking preflight exit", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-main-"));
+  const envPath = path.join(tempDir, ".env");
+  await fs.writeFile(envPath, "SESSION_COOKIE_SECRET=existing-secret\n", { mode: 0o644 });
+  await fs.chmod(envPath, 0o644);
+
+  try {
+    const exitCode = await main([], {
+      detectEnvState: async () => ({
+        values: { SESSION_COOKIE_SECRET: "existing-secret" },
+        state: "valid",
+      }),
+      runPreflightChecks: async () => [{
+        name: "docker",
+        status: "fail",
+        summary: "Docker is unavailable.",
+        recoveryAction: null,
+        isBlocking: true,
+      }],
+      stdout: { write: () => {} },
+      envPath,
+    });
+
+    assert.equal(exitCode, 1);
+    const stats = await fs.stat(envPath);
+    assert.equal(stats.mode & 0o777, 0o600);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("main auto-completes a partial env file during non-interactive startup", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-main-"));
   const envPath = path.join(tempDir, ".env");

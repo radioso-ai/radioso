@@ -139,6 +139,10 @@ describe("WordpressConnector.onEnable", () => {
       state,
       http: { mount: () => {} },
       ingestion,
+      publicHttp: {
+        assertPublicUrl: async () => undefined,
+        fetch: (input, init) => fetch(input, init),
+      },
     };
     return { connector, context, ensureSource, setErrorStatus };
   };

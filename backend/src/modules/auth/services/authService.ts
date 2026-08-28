@@ -61,6 +61,7 @@ export type WorkspaceApiTokenPrincipal = {
   type: "workspace_api_token";
   role: "admin";
   tokenId: string;
+  workspaceId: string;
 };
 
 export interface AccountRepositoryPort {
@@ -827,6 +828,7 @@ export class AuthService {
         type: "workspace_api_token",
         role: "admin",
         tokenId: workspaceToken.id,
+        workspaceId: workspaceToken.workspaceId,
       },
     };
   }

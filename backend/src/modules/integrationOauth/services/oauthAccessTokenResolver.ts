@@ -1,4 +1,5 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { OauthCredentialRecord, OauthReauthStatus } from "../domain.js";
 import {
   isAccessTokenExpired,
@@ -115,7 +116,7 @@ export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInpu
 };
 
 const defaultFetch: FetchLike = async (url, init) => {
-  const response = await fetch(url, {
+  const response = await fetchPublicUrl(url, {
     method: init.method,
     headers: init.headers,
     body: init.body,

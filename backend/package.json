@@ -111,6 +111,7 @@
     "pino-http": "^10.5.0",
     "redis": "6.2.1",
     "swagger-ui-express": "^5.0.1",
+    "undici": "8.10.0",
     "yaml": "^2.8.3",
     "zod": "^3.25.76"
   },

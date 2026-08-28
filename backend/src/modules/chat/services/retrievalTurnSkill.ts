@@ -165,7 +165,7 @@ export class RetrievalAnswerComposer {
     });
   }
 
-  composeGroundedSystemPrompt(session: PreparedSession): string {
+  private composeGroundedAnswerPrompt(session: PreparedSession) {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
       latestQuery: session.effectiveQuery ?? session.userMessage.content,
@@ -182,7 +182,21 @@ export class RetrievalAnswerComposer {
       conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
-    }).systemPrompt;
+    });
+  }
+
+  composeGroundedSystemPrompt(session: PreparedSession): string {
+    return this.composeGroundedAnswerPrompt(session).systemPrompt;
+  }
+
+  private promptWithConversationContext(prompt: string, session: PreparedSession) {
+    const groundedPrompt = this.composeGroundedAnswerPrompt(session);
+    return {
+      systemPrompt: groundedPrompt.systemPrompt,
+      prompt: groundedPrompt.conversationContextPrompt
+        ? `${prompt}\n\n${groundedPrompt.conversationContextPrompt}`
+        : prompt,
+    };
   }
 
   private async generateGroundedAnswerEnvelope(
@@ -193,11 +207,12 @@ export class RetrievalAnswerComposer {
     attemptKey: string,
     signal?: AbortSignal,
   ): Promise<GroundedAnswerEnvelope> {
+    const groundedPrompt = this.promptWithConversationContext(prompt, session);
     const raw = await this.chatGateway.answer({
       query,
       history: session.history,
-      systemPrompt: this.composeGroundedSystemPrompt(session),
-      prompt,
+      systemPrompt: groundedPrompt.systemPrompt,
+      prompt: groundedPrompt.prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
       generation: {
@@ -402,11 +417,15 @@ export class RetrievalAnswerComposer {
       });
       const requiresIndexedSourceGate = session.pageReadOutcome?.gate.kind !== "capture";
       const gateController = new AbortController();
+      const prompt = this.promptWithConversationContext(
+        this.support.buildPromptWithContext(session.retrieval.prompt, session),
+        session,
+      );
       const candidateStream = this.chatGateway.streamAnswer({
         query,
         history: session.history,
-        systemPrompt: this.composeGroundedSystemPrompt(session),
-        prompt: this.support.buildPromptWithContext(session.retrieval.prompt, session),
+        systemPrompt: prompt.systemPrompt,
+        prompt: prompt.prompt,
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),
         generation: {

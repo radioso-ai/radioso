@@ -161,7 +161,7 @@ const createDependencies = (
       return {
         accountId: ACCOUNT_ID,
         workspaceId: WORKSPACE_ID,
-        principal: { type: "workspace_api_token", role: "admin", tokenId: "token-id" },
+        principal: { type: "workspace_api_token", role: "admin", tokenId: "token-id", workspaceId: WORKSPACE_ID },
       };
     },
   },

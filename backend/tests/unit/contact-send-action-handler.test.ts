@@ -313,6 +313,7 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
 describe("FetchContactWebhookHttpClient", () => {
   const okResponse = () => new Response(null, { status: 204 });
   const redirect = (location: string) => new Response(null, { status: 307, headers: { location } });
+  const fetchThroughGlobal: typeof fetch = (input, init) => globalThis.fetch(input, init);
 
   it("rejects (does not fetch) a URL the SSRF guard blocks", async () => {
     const fetchSpy = vi.fn(async () => okResponse());
@@ -322,7 +323,7 @@ describe("FetchContactWebhookHttpClient", () => {
         throw new Error("Website URL must resolve to a publicly routable host");
       }
     });
-    const client = new FetchContactWebhookHttpClient(guard);
+    const client = new FetchContactWebhookHttpClient(guard, { fetchImpl: fetchThroughGlobal });
 
     await expect(
       client.post({ url: "http://169.254.169.254/latest/meta-data", rawBody: "{}", headers: {} }),
@@ -342,7 +343,7 @@ describe("FetchContactWebhookHttpClient", () => {
         throw new Error("Website URL must resolve to a publicly routable host");
       }
     });
-    const client = new FetchContactWebhookHttpClient(guard);
+    const client = new FetchContactWebhookHttpClient(guard, { fetchImpl: fetchThroughGlobal });
 
     // A public URL that 3xx-redirects to a private host must be blocked at the hop,
     // never delivered. fetch ran once (the public hop); the redirect target is refused.
@@ -361,7 +362,10 @@ describe("FetchContactWebhookHttpClient", () => {
       return okResponse();
     });
     vi.stubGlobal("fetch", fetchSpy);
-    const client = new FetchContactWebhookHttpClient(async () => {}, { timeoutMs: 5_000 });
+    const client = new FetchContactWebhookHttpClient(async () => {}, {
+      timeoutMs: 5_000,
+      fetchImpl: fetchThroughGlobal,
+    });
 
     await client.post({ url: "https://hooks.example.com/contact", rawBody: "{\"a\":1}", headers: { "X-A": "1" } });
 
@@ -377,7 +381,7 @@ describe("FetchContactWebhookHttpClient", () => {
       throw new DOMException("The operation was aborted.", "TimeoutError");
     });
     vi.stubGlobal("fetch", fetchSpy);
-    const client = new FetchContactWebhookHttpClient(async () => {});
+    const client = new FetchContactWebhookHttpClient(async () => {}, { fetchImpl: fetchThroughGlobal });
 
     await expect(
       client.post({ url: "https://hooks.example.com/contact", rawBody: "{}", headers: {} }),

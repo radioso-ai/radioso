@@ -49,6 +49,24 @@ export const attachCopilotCapabilityProvenance = (
   capabilityProvenance: copilotCapabilityProvenance[descriptor.name as ProductionDescriptorName],
 }));
 
+/**
+ * The registry is reviewed coverage, so it must be a bijection with the assembled catalog:
+ * missing entries leave a descriptor ungoverned and stale entries turn a removed capability into
+ * false coverage. Keep this separate from per-descriptor validation so focused fixture tests can
+ * validate individual declarations without pretending to assemble production.
+ */
+export const assertCopilotCapabilityProvenanceRegistry = (
+  descriptors: ReadonlyArray<CopilotToolDescriptor>,
+  provenance: Readonly<Record<string, CopilotCapabilityProvenance>> = copilotCapabilityProvenance,
+): void => {
+  const descriptorNames = new Set(descriptors.map((descriptor) => descriptor.name));
+  const provenanceNames = new Set(Object.keys(provenance));
+  const missing = [...descriptorNames].filter((name) => !provenanceNames.has(name));
+  if (missing.length > 0) throw new Error(`Missing copilot capability provenance: ${missing.sort().join(", ")}`);
+  const stale = [...provenanceNames].filter((name) => !descriptorNames.has(name));
+  if (stale.length > 0) throw new Error(`Stale copilot capability provenance: ${stale.sort().join(", ")}`);
+};
+
 export const assertCopilotCapabilityProvenance = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
   publicOperationIds: ReadonlySet<string>,

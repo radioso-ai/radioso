@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AccountPermission } from "../account/public.js";
 import type { CopilotToolDescriptor } from "./contracts.js";
 import type { CopilotEntityDescription, CopilotEntityReference, CopilotToolInvocationContext } from "./contracts.js";
+import { CopilotToolAuthorizationError, hasCurrentCopilotPermissions } from "./authorization.js";
 import { buildCopilotDashboardLink } from "./dashboardLinks.js";
 
 export const hasAllCopilotToolPermissions = (
@@ -25,12 +26,7 @@ export const filterCopilotToolCatalog = (
 export const hasCurrentCopilotToolPermissions = async (
   descriptor: CopilotToolDescriptor,
   context: CopilotToolInvocationContext,
-): Promise<boolean> => context.currentAuthorization.hasAllPermissions({
-  workspaceId: context.workspaceId,
-  accountId: context.accountId,
-  operatorUserId: context.operatorUserId,
-  requiredPermissions: descriptor.requiredPermissions,
-});
+): Promise<boolean> => hasCurrentCopilotPermissions(context, descriptor.requiredPermissions);
 
 const linkedOutputSchema = z.object({ dashboardUrl: z.string().startsWith("/") }).passthrough();
 
@@ -140,7 +136,20 @@ export const enrichCopilotToolCatalog = (
         if (!(await hasCurrentCopilotToolPermissions(descriptor, context))) {
           return unresolved(workspaceKey, descriptor.dashboardSubject);
         }
-        const output = await tool.invoke(resolution.input, agentContext);
+        let output: unknown;
+        try {
+          output = await tool.invoke(resolution.input, agentContext);
+        } catch (error) {
+          // Proposal tools can detect revocation at their own preflight and persistence boundaries.
+          // Present that denial exactly like absence rather than surfacing a tool error or a draft.
+          if (error instanceof CopilotToolAuthorizationError) return unresolved(workspaceKey, descriptor.dashboardSubject);
+          throw error;
+        }
+        // A descriptor-owned read can finish after its pre-invocation authorization check. Never
+        // project its result into the model context unless the operator is still entitled now.
+        if (!(await hasCurrentCopilotToolPermissions(descriptor, context))) {
+          return unresolved(workspaceKey, descriptor.dashboardSubject);
+        }
         if (!isRecord(output)) {
           throw new Error(`Copilot tool "${descriptor.name}" returned a non-object result`);
         }

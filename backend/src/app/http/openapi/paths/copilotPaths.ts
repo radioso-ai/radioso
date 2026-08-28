@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSecurity } from "../openApiRegistry.js";
-import { copilotProposalTargetTypes } from "../../../../modules/operatorCopilot/public.js";
+import { copilotPageEntityTypes, copilotProposalTargetTypes } from "../../../../modules/operatorCopilot/public.js";
 
 const availability = z.object({ available: z.boolean(), reason: z.enum(["ok", "no_llm_capability"]), canManage: z.boolean() });
 const conversation = z.object({ id: z.string().uuid(), title: z.string().nullable(), status: z.enum(["idle", "running"]), createdAt: z.string(), updatedAt: z.string() });
-const turn = z.object({ conversationId: z.string().uuid().nullable(), message: z.string().min(1).max(8000), pageContext: z.object({ view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(), agentId: z.string().uuid().nullable(), conversationId: z.string().uuid().nullable(), selection: z.string().nullable().optional(), entities: z.array(z.object({ type: z.enum(["agent", "conversation", "routine", "directive", "document", "evalCase"]), id: z.string(), label: z.string().max(120), focused: z.boolean() })).max(30).optional() }) });
+const pageEntityType = z.enum(copilotPageEntityTypes);
+const turn = z.object({ conversationId: z.string().uuid().nullable(), message: z.string().min(1).max(8000), pageContext: z.object({ view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(), agentId: z.string().uuid().nullable(), conversationId: z.string().uuid().nullable(), selection: z.string().nullable().optional(), entities: z.array(z.object({ type: pageEntityType, id: z.string(), label: z.string().max(120), focused: z.boolean() })).max(30).optional() }) });
 const proposalTargetType = z.enum(copilotProposalTargetTypes);
 const proposalEvidenceCase = z.object({ caseId: z.string().uuid(), caseName: z.string(), runId: z.string().uuid(), before: z.enum(["pending", "passing", "failing", "error"]), after: z.enum(["pass", "fail", "error", "recorded"]), stale: z.boolean() });
 const proposalEvidenceSummary = z.object({ total: z.number().int(), improved: z.number().int(), regressed: z.number().int(), unchanged: z.number().int(), stale: z.number().int() });

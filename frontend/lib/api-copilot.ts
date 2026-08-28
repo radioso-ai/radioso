@@ -23,7 +23,14 @@ export interface CopilotPageContext {
   entities: CopilotPageEntity[]
 }
 
-export type CopilotPageEntityType = 'agent' | 'conversation' | 'routine' | 'directive' | 'document' | 'evalCase' | 'agent_skill'
+// Mirrors backend/src/modules/operatorCopilot/contracts.ts's copilotPageEntityTypes, the runtime
+// list the copilot turn schema accepts for pageContext.entities. There is no shared package
+// between the two runtimes, so backend/tests/unit/operatorCopilot/copilot-contracts.test.ts
+// parses this file's source to keep the two declarations from drifting apart again — do not
+// widen this without adding the value on the backend side (and vice versa).
+export const COPILOT_PAGE_ENTITY_TYPES = ['agent', 'conversation', 'routine', 'directive', 'document', 'evalCase'] as const
+
+export type CopilotPageEntityType = (typeof COPILOT_PAGE_ENTITY_TYPES)[number]
 
 export interface CopilotPageEntity {
   type: CopilotPageEntityType
@@ -120,7 +127,16 @@ export interface CopilotActivitySummary {
 }
 
 export interface CopilotEntityReference {
-  type: CopilotPageEntityType
+  /**
+   * A dashboard-link hint attached by the server (a tool's dashboardSubject/describeEntity) or
+   * built locally from a proposal's targetType (e.g. "proposal", "workspace_settings",
+   * "agent_skill"). Unlike CopilotPageEntity.type above, this is never sent back to the backend
+   * as part of pageContext.entities and is not validated against a closed enum there either — the
+   * backend's own CopilotEntityReference types this field as a plain string for the same reason.
+   * Keep it a string, not CopilotPageEntityType, or a new value here would reintroduce the
+   * client/runtime enum drift the comment on COPILOT_PAGE_ENTITY_TYPES warns about.
+   */
+  type: string
   id: string
 }
 

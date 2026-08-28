@@ -3,13 +3,26 @@ import { z, type ZodType } from "zod";
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
 
+/**
+ * The single runtime list of page-context entity types a dashboard surface may report to the
+ * copilot. The client's mirror of this list lives in frontend/lib/api-copilot.ts's
+ * COPILOT_PAGE_ENTITY_TYPES; there is no shared package between the two runtimes, so
+ * backend/tests/unit/operatorCopilot/copilot-contracts.test.ts parses that file's source to keep
+ * the two declarations from drifting apart again (the client type once allowed "agent_skill",
+ * a value this schema had never accepted). The OpenAPI turn schema also derives from this array
+ * rather than repeating its own literal enum, the same discipline copilotProposalTargetTypes below
+ * already follows.
+ */
+export const copilotPageEntityTypes = ["agent", "conversation", "routine", "directive", "document", "evalCase"] as const;
+export type CopilotPageEntityType = (typeof copilotPageEntityTypes)[number];
+
 export const copilotPageContextSchema = z.object({
   view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(),
   agentId: z.string().uuid().nullable(),
   conversationId: z.string().uuid().nullable(),
   selection: z.string().nullable().optional().transform((value) => value === undefined || value === null ? null : value.slice(0, 2_000)),
   entities: z.array(z.object({
-    type: z.enum(["agent", "conversation", "routine", "directive", "document", "evalCase"]),
+    type: z.enum(copilotPageEntityTypes),
     id: z.string().min(1),
     label: z.string().max(120),
     focused: z.boolean(),

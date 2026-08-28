@@ -13,31 +13,25 @@ import {
   useState,
 } from 'react'
 
-import type {
-  CopilotActivityEvent,
-  CopilotAvailability,
-  CopilotConversationSummary,
-  CopilotMessage,
+import {
+  COPILOT_PAGE_ENTITY_TYPES,
+  type CopilotActivityEvent,
+  type CopilotAvailability,
+  type CopilotConversationSummary,
+  type CopilotMessage,
+  type CopilotPageEntity,
+  type CopilotPageEntityType,
 } from './api-copilot'
 
-export const COPILOT_ENTITY_TYPES = [
-  'agent',
-  'conversation',
-  'routine',
-  'directive',
-  'document',
-  'evalCase',
-  'agent_skill',
-] as const
+// A registered page-context entity is exactly a CopilotPageEntity: this is the pre-serialization
+// shape useCopilotEntity below builds before buildCopilotPageContext sends it to the backend, so
+// it must accept the same entity types the backend's copilotPageContextSchema does (see the
+// comment on COPILOT_PAGE_ENTITY_TYPES in api-copilot.ts).
+export const COPILOT_ENTITY_TYPES = COPILOT_PAGE_ENTITY_TYPES
 
-export type CopilotEntityType = (typeof COPILOT_ENTITY_TYPES)[number]
+export type CopilotEntityType = CopilotPageEntityType
 
-export interface CopilotEntity {
-  type: CopilotEntityType
-  id: string
-  label: string
-  focused: boolean
-}
+export type CopilotEntity = CopilotPageEntity
 
 export type CopilotLocalMessage = CopilotMessage & {
   streaming?: boolean
@@ -272,9 +266,13 @@ export function useCopilotEntity(
   }, [focused, id, label, registerEntity, type, unregisterEntity])
 }
 
+// `type` accepts a plain string, not CopilotEntityType: a caller resolving a label for an
+// activity-reported CopilotEntityReference (lib/api-copilot.ts) passes a type that is not
+// guaranteed to be one of the closed page-context entity types (e.g. "agent_skill", "proposal").
+// It simply falls through to the id fallback below when nothing registered matches, same as today.
 export const resolveCopilotEntityLabel = (
   entities: readonly CopilotEntity[],
-  type: CopilotEntityType,
+  type: string,
   id: string,
 ): string => entities.find((entity) => entity.type === type && entity.id === id)?.label ?? id
 

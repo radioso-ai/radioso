@@ -1,3 +1,4 @@
+import type { ChatSuggestion } from "../types/chatResponses.js";
 import type {
   ClarificationPolicy,
   ConversationClarifier,
@@ -126,6 +127,9 @@ export interface WorkbenchReplayResult {
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  /** Follow-up questions the replayed turn would offer, for previewing a directive
+   * addressed to that generator rather than to the answer. */
+  suggestions?: ChatSuggestion[];
   groundingSummary?: GroundingSummary;
   turnTrace?: TurnTraceEnvelope;
   actions?: RoutineActionRequest[];
@@ -450,6 +454,9 @@ export class WorkbenchReplayRunner {
       answer: input.presentation.answer,
       citations: input.presentation.citations,
       answerSegments: input.presentation.answerSegments,
+      // Carried so a coach preview can show the effect of a directive addressed to
+      // the follow-up question generator, which leaves the answer untouched.
+      suggestions: input.presentation.suggestions,
       groundingSummary: input.presentation.groundingSummary,
       turnTrace: tracePresentation.turnTrace,
       actions: input.actions,

@@ -1,3 +1,4 @@
+import { GENERATION_SURFACE, type GenerationSurface } from "../../shared/domain/generationSurface.js";
 import type {
   AgentLogo,
   AgentSourceScope,
@@ -75,6 +76,7 @@ export interface AuthoredDirectiveConfig {
   dependsOn: string[];
   excludes: string[];
   routes: ChatTurnRoute[];
+  surfaces: GenerationSurface[];
   tags: string[];
   description: string | null;
   binding: AuthoredDirectiveBinding;
@@ -596,6 +598,12 @@ const serializeAuthoredDirectives = (
     dependsOn: [...directive.dependsOn],
     excludes: [...directive.excludes],
     routes: [...directive.routes],
+    // Defensive on two axes. A config serialized before this field exists carries no
+    // scope, which reads as the answering voice. A config carrying a surface this
+    // build does not know — a replay override, or a newer writer — must not silently
+    // switch the directive off by addressing it to nothing: an unrecognized scope
+    // falls back to the answering voice rather than to nowhere.
+    surfaces: knownSurfacesOrDefault(directive.surfaces),
     tags: [...directive.tags],
     description: directive.description,
     binding: directive.binding,
@@ -762,6 +770,20 @@ export const projectInternalAgentConfig = (
 
 const INTERNAL_CONFIG_DATE = new Date(0);
 
+const KNOWN_SURFACES = new Set<string>(Object.values(GENERATION_SURFACE));
+
+const knownSurfacesOrDefault = (
+  surfaces: readonly GenerationSurface[] | undefined,
+): GenerationSurface[] => {
+  const recognized = (surfaces ?? []).filter((surface) => KNOWN_SURFACES.has(surface));
+  if (recognized.length > 0) {
+    return recognized;
+  }
+  // Empty because none were authored is the answering voice; empty because none were
+  // recognized would be a silently disabled directive, so both resolve the same way.
+  return [];
+};
+
 const materializeAuthoredDirectives = (
   directives: readonly AuthoredDirectiveConfig[],
   identity: { agentId: string },
@@ -777,6 +799,7 @@ const materializeAuthoredDirectives = (
     dependsOn: [...(directive.dependsOn ?? [])],
     excludes: [...(directive.excludes ?? [])],
     routes: [...(directive.routes ?? [])],
+    surfaces: [...(directive.surfaces ?? [])],
     tags: [...(directive.tags ?? [])],
     description: directive.description ?? null,
     binding: directive.binding ?? null,

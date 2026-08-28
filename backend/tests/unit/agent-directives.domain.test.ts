@@ -13,6 +13,7 @@ describe("authored directive domain validation", () => {
       condition: { kind: "contextual" },
       action: "Use the procurement team's preferred tone.",
       routes: ["retrieval"],
+      surfaces: [],
     });
 
     expect(result.success).toBe(false);
@@ -24,6 +25,7 @@ describe("authored directive domain validation", () => {
       condition: { kind: "always" },
       action: "Use the procurement team's preferred tone.",
       routes: ["retrieval"],
+      surfaces: [],
     });
 
     expect(result.success).toBe(false);
@@ -35,6 +37,7 @@ describe("authored directive domain validation", () => {
       condition: { kind: "always" },
       action: "Change the built-in behavior.",
       routes: ["retrieval"],
+      surfaces: [],
     });
 
     expect(result.success).toBe(false);
@@ -47,6 +50,7 @@ describe("authored directive domain validation", () => {
       action: "Use the configured behavior.",
       criticality: "high",
       routes: ["retrieval"],
+      surfaces: [],
     }).success).toBe(false);
   });
 
@@ -56,6 +60,7 @@ describe("authored directive domain validation", () => {
       condition: { kind: "always" },
       action: "Use the configured behavior.",
       routes: ["marketing"],
+      surfaces: [],
     }).success).toBe(false);
   });
 
@@ -113,6 +118,7 @@ describe("authored directive domain validation", () => {
       dependsOn: [],
       excludes: [],
       routes: [],
+      surfaces: [],
       tags: ["step:contact:ask_email"],
       description: null,
       metadata: {},

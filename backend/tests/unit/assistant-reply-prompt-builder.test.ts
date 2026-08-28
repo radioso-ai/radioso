@@ -105,7 +105,7 @@ describe("non-retrieval answer prompt builder", () => {
       ],
     });
 
-    expect(prompt).toContain("The following behavioral directives apply to this turn");
+    expect(prompt).toContain("The following behavioral directives govern the visible answer you write");
     expect(prompt).toContain("Prefer short paragraphs and avoid unnecessary structure.");
   });
 });

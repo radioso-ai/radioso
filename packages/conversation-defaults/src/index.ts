@@ -1,15 +1,28 @@
 export {
   directiveToSteeringRule,
+  addressesSurface,
+  effectiveSurfaces,
   orderSteeringRules,
+  resolveRenderSurfaces,
   resolveDirectiveRelationships,
+  steeringForSurface,
   type Directive,
   type DirectiveCondition,
   type DirectiveLifecycle,
   type DirectiveMatch,
   type DirectiveOmission,
   type DirectiveSelectionMode,
+  type GenerationSurface,
   type SteeringRule,
 } from "./domain.js";
+export {
+  DEFAULT_CLARIFICATION_STEERING_PROMPT,
+  DEFAULT_STEERING_PROMPT,
+  appendSteeringRules,
+  clarificationSteeringOptions,
+  renderSteeringRules,
+  type RenderSteeringRulesOptions,
+} from "./steeringPrompt.js";
 export { DirectiveCatalogRegistry } from "./directiveCatalogRegistry.js";
 export {
   DEFAULT_DIRECTIVE_PRIORITY,

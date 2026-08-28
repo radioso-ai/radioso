@@ -2619,6 +2619,12 @@ components:
             - kind
             - turns
           additionalProperties: false
+    GenerationSurface:
+      type: string
+      enum:
+        - answer
+        - suggested_questions
+      description: Generator a directive addresses. Omitted or empty means the answer body only.
     AuthoredDirectiveCreateRequest:
       type: object
       properties:
@@ -2656,6 +2662,10 @@ components:
             type: string
             minLength: 1
             maxLength: 200
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationSurface"
         tags:
           type: array
           items:
@@ -2723,6 +2733,10 @@ components:
             type: string
             minLength: 1
             maxLength: 200
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationSurface"
         tags:
           type: array
           items:
@@ -2802,6 +2816,10 @@ components:
             type: string
             minLength: 1
             maxLength: 200
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationSurface"
       required:
         - name
         - condition
@@ -2859,6 +2877,10 @@ components:
           type: array
           items:
             type: string
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationSurface"
         tags:
           type: array
           items:
@@ -2897,6 +2919,7 @@ components:
         - dependsOn
         - excludes
         - routes
+        - surfaces
         - tags
         - description
         - binding
@@ -24331,6 +24354,9 @@ paths:
                     type: array
                     items: {}
                   answerSegments:
+                    type: array
+                    items: {}
+                  suggestions:
                     type: array
                     items: {}
                   groundingVerdict:

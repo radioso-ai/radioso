@@ -58,6 +58,7 @@ const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<Au
     excludes: input.excludes ?? [],
     tags: input.tags ?? [],
     routes: [],
+    surfaces: input.surfaces ?? [],
     description: input.description ?? null,
     binding: input.binding ?? null,
     lifecycle: null,
@@ -110,6 +111,7 @@ class StubAgentRepository implements StubAgentRepositoryPort {
       name: input.name ?? existing?.name ?? "updated-directive",
       condition: input.condition ?? existing?.condition ?? { kind: "always" },
       action: input.action ?? existing?.action ?? "Updated action",
+      surfaces: input.surfaces ?? existing?.surfaces ?? [],
       requiredCapabilities: input.requiredCapabilities ?? existing?.requiredCapabilities ?? [],
       dependsOn: input.dependsOn ?? existing?.dependsOn ?? [],
       excludes: input.excludes ?? existing?.excludes ?? [],
@@ -372,6 +374,33 @@ describe("AuthoredDirectiveService", () => {
     ]);
   });
 
+  it("compares coherence only with directives that address the candidate's surfaces", async () => {
+    const repository = new StubAgentRepository();
+    repository.directives.push(
+      persistedDirective(directiveInput({ name: "answer-only", surfaces: [] })),
+      persistedDirective(directiveInput({ name: "suggestion-only", surfaces: ["suggested_questions"] })),
+      persistedDirective(directiveInput({
+        name: "answer-and-suggestion",
+        surfaces: ["answer", "suggested_questions"],
+      })),
+    );
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.create(workspaceId, agentId, directiveInput({
+      surfaces: ["suggested_questions"],
+    }));
+
+    expect(checker.checks[0]?.existingDirectives.map((directive) => directive.name)).toEqual([
+      "suggestion-only",
+      "answer-and-suggestion",
+    ]);
+  });
+
   it("fails open when the checker throws and still saves the directive", async () => {
     const repository = new StubAgentRepository();
     const service = new AuthoredDirectiveService({
@@ -439,6 +468,81 @@ describe("AuthoredDirectiveService", () => {
 
     await service.update(workspaceId, agentId, existing.id, { priority: null });
     expect(repository.updated.at(-1)?.input.priority).toBeNull();
+  });
+
+  it("rejects a skill binding on a directive scoped away from the reply", async () => {
+    const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    await expect(service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: "order.lookup" },
+      surfaces: ["suggested_questions"],
+    }))).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("allows a skill binding when the directive still addresses the reply", async () => {
+    const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    const created = await service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: "order.lookup" },
+      surfaces: ["answer", "suggested_questions"],
+    }));
+
+    expect(created.directive.binding).toEqual({ kind: "skill", skillName: "order.lookup" });
+  });
+
+  it("keeps a directive's generation surface scope across an unrelated edit", async () => {
+    const repository = new StubAgentRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills: new StubAgentSkillRepository(),
+    });
+
+    const created = await service.create(workspaceId, agentId, directiveInput({
+      surfaces: ["suggested_questions"],
+    }));
+    expect(created.directive.surfaces).toEqual(["suggested_questions"]);
+
+    await service.update(workspaceId, agentId, created.directive.id, {
+      action: "Never suggest a follow-up question about price or discounts.",
+    });
+
+    expect(repository.updated.at(-1)?.input.surfaces).toEqual(["suggested_questions"]);
+  });
+
+  it("widens a directive back to the answering voice when the operator clears the scope", async () => {
+    const repository = new StubAgentRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills: new StubAgentSkillRepository(),
+    });
+
+    const created = await service.create(workspaceId, agentId, directiveInput({
+      surfaces: ["suggested_questions"],
+    }));
+
+    await service.update(workspaceId, agentId, created.directive.id, { surfaces: [] });
+
+    expect(repository.updated.at(-1)?.input.surfaces).toEqual([]);
   });
 
   it("deletes when expectedUpdatedAt matches the directive's current version", async () => {

@@ -884,6 +884,7 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
     requiredCapabilities: z.array(z.string()).optional(),
     dependsOn: z.array(z.string()).optional(),
     excludes: z.array(z.string()).optional(),
+    surfaces: z.array(z.string()).optional(),
     description: z.string().optional(),
     binding: z.unknown().optional(),
     lifecycle: z.unknown().optional(),

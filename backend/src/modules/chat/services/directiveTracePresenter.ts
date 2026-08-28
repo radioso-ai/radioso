@@ -1,3 +1,4 @@
+import { effectiveSurfaces, resolveRenderSurfaces } from "../../../shared/domain/steeringRule.js";
 import type { ActivityTrace } from "../../retrieval/public.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
 
@@ -44,6 +45,11 @@ export const appendDirectiveSteeringStage = (
             selectionMode: match.selectionMode,
             selectionReason: match.selectionReason,
             selectionConfidence: match.selectionConfidence,
+            // Which generator the rule reached. Resolved rather than authored: a
+            // directive narrowed by a relationship on one generator shows only the
+            // ones it survived on, so a builder can tell "applied to the reply" from
+            // "applied to the follow-up questions".
+            surfaces: [...effectiveSurfaces(resolveRenderSurfaces(match))],
           })),
           omitted: steering.omissions,
           // Matched but held back from the rendered steering block by the top-k
@@ -53,6 +59,13 @@ export const appendDirectiveSteeringStage = (
           // Held back before matching by a once/cooldown lifecycle policy that
           // already fired earlier in the conversation (#865).
           lifecycleSuppressed,
+          // Which generators produced output this turn. Compare against each match's
+          // `surfaces` to tell a rule that reached the visitor from one whose target
+          // generator never ran. Covers every matched rule, unlike `pendingSurfaces`.
+          renderedSurfaces: steering.renderedSurfaces,
+          // Lifecycle only: once/cooldown directives whose budget is still unspent
+          // because the generator they address had not rendered when this closed.
+          pendingSurfaces: steering.pendingSurfaceFirings,
         },
       },
     ],

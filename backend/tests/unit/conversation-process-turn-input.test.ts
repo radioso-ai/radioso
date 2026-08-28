@@ -198,9 +198,11 @@ const routeScopedDirectiveRuntime = (directives: Directive[]): {
       async resolveMatches(_input: DirectiveSteerInput, matches: DirectiveMatch[]): Promise<DirectiveSteeringResult> {
         return {
           rules: matches.map((match) => ({
+            directiveName: match.directive.name,
             action: match.directive.action,
             source: "directive",
             lifespan: "response",
+            ...(match.directive.surfaces?.length ? { surfaces: match.directive.surfaces } : {}),
           })),
           matches,
           omissions: [],
@@ -215,9 +217,11 @@ const routeScopedDirectiveRuntime = (directives: Directive[]): {
         }));
         return {
           rules: matches.map((match) => ({
+            directiveName: match.directive.name,
             action: match.directive.action,
             source: "directive",
             lifespan: "response",
+            ...(match.directive.surfaces?.length ? { surfaces: match.directive.surfaces } : {}),
           })),
           matches,
           omissions: [],
@@ -674,6 +678,7 @@ describe("createChatProcessTurnInput", () => {
         dependsOn: [],
         excludes: [],
         routes: [],
+        surfaces: [],
         tags: [],
         description: null,
         metadata: {},
@@ -980,5 +985,43 @@ describe("directive lifecycle memory (#865)", () => {
     });
     await session.directiveStateStore?.commit();
     expect(loadSpy).not.toHaveBeenCalled();
+  });
+
+  it("advances an existing lifecycle turn sequence on an intervening repeatable-only route", async () => {
+    const store = inMemoryDirectiveStateStore();
+    await store.save({
+      sessionId: "conv_1",
+      state: { turnSeq: 1, firings: { nudge: { lastFiredTurn: 0, count: 1 } } },
+    });
+    const repeatable: Directive = { name: "brief", condition: { kind: "always" }, action: "Be brief." };
+    const { runtime } = routeScopedDirectiveRuntime([repeatable]);
+    const session = preparedSession();
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      directiveStateStore: store,
+      dispatcher,
+      selector,
+      composer,
+      getSession: () => session,
+    });
+
+    await input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: [repeatable],
+    });
+    await session.directiveStateStore?.commit();
+
+    expect(await store.load({ sessionId: "conv_1" })).toEqual({
+      turnSeq: 2,
+      firings: { nudge: { lastFiredTurn: 0, count: 1 } },
+    });
   });
 });

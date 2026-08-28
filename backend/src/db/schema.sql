@@ -540,6 +540,7 @@ CREATE TABLE public.agent_directives (
     scope_tags text[] DEFAULT '{}'::text[] NOT NULL,
     binding jsonb,
     lifecycle jsonb,
+    surfaces text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT agent_directives_check CHECK ((((condition_kind = 'always'::text) AND (condition_description IS NULL)) OR ((condition_kind = 'contextual'::text) AND (NULLIF(btrim(condition_description), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_directives_condition_kind_check CHECK ((condition_kind = ANY (ARRAY['always'::text, 'contextual'::text])))
 );

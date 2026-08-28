@@ -66,6 +66,7 @@ interface AgentDirectiveRow {
   depends_on: string[];
   excludes: string[];
   routes: Array<AuthoredDirective["routes"][number]>;
+  surfaces: Array<AuthoredDirective["surfaces"][number]>;
   scope_tags: string[];
   description: string | null;
   binding: AuthoredDirectiveBinding;
@@ -86,6 +87,7 @@ interface LoadedDirectiveJson {
   dependsOn?: unknown;
   excludes?: unknown;
   routes?: unknown;
+  surfaces?: unknown;
   tags?: unknown;
   description?: unknown;
   binding?: unknown;
@@ -202,6 +204,7 @@ const agentColumns = sql`
           'dependsOn', agent_directives.depends_on,
           'excludes', agent_directives.excludes,
           'routes', agent_directives.routes,
+          'surfaces', agent_directives.surfaces,
           'tags', agent_directives.scope_tags,
           'description', agent_directives.description,
           'binding', agent_directives.binding,
@@ -324,6 +327,9 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     excludes: Array.isArray(value.excludes)
       ? value.excludes.filter((item): item is string => typeof item === "string")
       : [],
+    surfaces: Array.isArray(value.surfaces)
+      ? value.surfaces.filter((item): item is AuthoredDirective["surfaces"][number] => typeof item === "string")
+      : [],
     routes: Array.isArray(value.routes)
       ? value.routes.filter((item): item is AuthoredDirective["routes"][number] => typeof item === "string")
       : [],
@@ -358,7 +364,8 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   requiredCapabilities: row.required_capabilities ?? [],
   dependsOn: row.depends_on ?? [],
   excludes: row.excludes ?? [],
-  routes: row.routes ?? [],
+  routes: (row.routes ?? []) as AuthoredDirective["routes"],
+  surfaces: (row.surfaces ?? []) as AuthoredDirective["surfaces"],
   tags: row.scope_tags ?? [],
   description: row.description,
   binding: asDirectiveBinding(row.binding),
@@ -773,6 +780,7 @@ export class AgentRepository implements AgentRepositoryPort {
             depends_on,
             excludes,
             routes,
+            surfaces,
             scope_tags,
             description,
             binding,
@@ -790,6 +798,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${sql.val(directive.dependsOn)}::text[],
             ${sql.val(directive.excludes)}::text[],
             ${sql.val(directive.routes)}::text[],
+            ${sql.val(directive.surfaces)}::text[],
             ${sql.val(directive.tags)}::text[],
             ${directive.description},
             ${toJsonb(directive.binding)},
@@ -832,6 +841,7 @@ export class AgentRepository implements AgentRepositoryPort {
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
       routes: input.routes ?? existing.routes,
+      surfaces: input.surfaces ?? existing.surfaces,
       tags: input.tags ?? existing.tags,
       description: hasOwn(input, "description") ? input.description : existing.description,
       binding: hasOwn(input, "binding") ? input.binding : existing.binding,
@@ -852,6 +862,7 @@ export class AgentRepository implements AgentRepositoryPort {
             depends_on = ${sql.val(directive.dependsOn)}::text[],
             excludes = ${sql.val(directive.excludes)}::text[],
             routes = ${sql.val(directive.routes)}::text[],
+            surfaces = ${sql.val(directive.surfaces)}::text[],
             scope_tags = ${sql.val(directive.tags)}::text[],
             description = ${directive.description},
             binding = ${toJsonb(directive.binding)},

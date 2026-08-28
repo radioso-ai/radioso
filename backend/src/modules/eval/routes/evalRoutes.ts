@@ -155,6 +155,7 @@ const presentWorkbenchReplayRun = (result: Awaited<ReturnType<EvalRunService["ex
   answer: result.run.observedOutput.answer,
   citations: result.run.observedOutput.citations,
   answerSegments: result.run.observedOutput.answerSegments,
+  suggestions: result.run.observedOutput.suggestions,
   groundingVerdict: result.run.observedOutput.groundingVerdict,
   groundingDiagnostics: result.run.observedOutput.groundingDiagnostics,
   turnTrace: result.run.observedOutput.turnTrace,

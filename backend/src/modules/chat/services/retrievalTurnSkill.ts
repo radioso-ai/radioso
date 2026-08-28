@@ -17,7 +17,11 @@ import type {
   AnswerSideChannelFactory,
 } from "../../../shared/domain/answerSideChannel.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
-import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
+import {
+  attestableSteering,
+  composeGroundedAnswerSystemPrompt,
+} from "./groundedAnswerPromptComposer.js";
 import type { ComposedDecline, FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
@@ -32,6 +36,7 @@ import {
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
+import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
 
 export class GroundingStreamGateBoundError extends Error {
   constructor() {
@@ -132,11 +137,11 @@ export class RetrievalAnswerComposer {
    * The answer side channel for this turn, if composition supplied one. The composer
    * merges its schema extension into the envelope and hands the parsed extras back
    * to it for an opaque metadata patch — it never learns what the side channel means
-   * (directive adherence today). Built from the turn's active steering rules, which
-   * the composer already renders into the prompt.
+   * (directive adherence today). Built from the steering rules the answer prompt
+   * renders with ids, so the model is never asked to attest to a rule it cannot see.
    */
   private sideChannel(session: PreparedSession): AnswerSideChannel | undefined {
-    return this.answerSideChannel?.forSteeringRules(session.directiveSteering?.rules ?? []);
+    return this.answerSideChannel?.forSteeringRules(attestableSteering(session.directiveSteering?.rules ?? []));
   }
 
   private recordGroundingGateBound(declineReason: TurnDeclineReason): void {
@@ -172,7 +177,7 @@ export class RetrievalAnswerComposer {
       priorRewriteContinuityState: session.priorRewriteContinuityState,
       rewriteProposal: session.retrieval.diagnostics.rewriteProposal,
     });
-    return composeGroundedAnswerSystemPrompt({
+    const composed = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: session.retrieval.systemPrompt,
       suggestedQuestionsEnabled: session.retrieval.responseSettings?.suggestedQuestionsEnabled ?? true,
       suggestedQuestionsCount:
@@ -183,6 +188,13 @@ export class RetrievalAnswerComposer {
       steering: session.directiveSteering?.rules ?? [],
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     });
+    if (session.directiveSteering) {
+      // Whether the follow-up question generator's block went into the prompt at all.
+      // "Ran and produced nothing" and "never ran" are different turns, and only the
+      // second leaves a suggestion-scoped rule unfired.
+      session.directiveSteering.suggestionBlockRendered = composed.suggestionsExpected;
+    }
+    return composed;
   }
 
   composeGroundedSystemPrompt(session: PreparedSession): string {
@@ -197,6 +209,30 @@ export class RetrievalAnswerComposer {
         ? `${prompt}\n\n${groundedPrompt.conversationContextPrompt}`
         : prompt,
     };
+  }
+
+  /**
+   * Records that the follow-up question generator ran, and spends the once/cooldown
+   * budget of any directive addressed only to it.
+   *
+   * The test is whether that generator's block reached the model and its output was
+   * kept — not whether a suggestion survived. A rule whose whole purpose is to
+   * suppress suggestions can legitimately leave zero of them: it ran, it applied, and
+   * it has fired. Counting only visible output would leave such a rule unfired
+   * forever, re-firing on every turn despite a `once_per_conversation` policy.
+   *
+   * The generator has not run when its block never entered the prompt (suggestions
+   * off, count zero, nothing retrieved), or when the draft it belonged to was thrown
+   * away and replaced by a focused decline.
+   */
+  private recordSuggestionGeneratorRun(
+    session: PreparedSession,
+    declined: boolean,
+  ): void {
+    if (!session.directiveSteering?.suggestionBlockRendered || declined) {
+      return;
+    }
+    recordDirectiveSurfaceRendered(session, GENERATION_SURFACE.SUGGESTED_QUESTIONS);
   }
 
   private async generateGroundedAnswerEnvelope(
@@ -327,6 +363,7 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       { grounding, ...(declineReason ? { declineReason } : {}) },
     );
+    this.recordSuggestionGeneratorRun(session, declineReason !== undefined);
     return {
       ...presentation,
       ...(metadataPatch
@@ -540,6 +577,7 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       { grounding, ...(declineReason ? { declineReason } : {}) },
     );
+    this.recordSuggestionGeneratorRun(session, declineReason !== undefined);
     return {
       finalPresentation: {
         ...presentation,

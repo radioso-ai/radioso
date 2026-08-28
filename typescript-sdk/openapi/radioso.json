@@ -3915,6 +3915,14 @@
           }
         ]
       },
+      "GenerationSurface": {
+        "type": "string",
+        "enum": [
+          "answer",
+          "suggested_questions"
+        ],
+        "description": "Generator a directive addresses. Omitted or empty means the answer body only."
+      },
       "AuthoredDirectiveCreateRequest": {
         "type": "object",
         "properties": {
@@ -3961,6 +3969,12 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenerationSurface"
             }
           },
           "tags": {
@@ -4063,6 +4077,12 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 200
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenerationSurface"
             }
           },
           "tags": {
@@ -4182,6 +4202,12 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenerationSurface"
+            }
           }
         },
         "required": [
@@ -4265,6 +4291,12 @@
               "type": "string"
             }
           },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenerationSurface"
+            }
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -4327,6 +4359,7 @@
           "dependsOn",
           "excludes",
           "routes",
+          "surfaces",
           "tags",
           "description",
           "binding",
@@ -37976,6 +38009,10 @@
                       "items": {}
                     },
                     "answerSegments": {
+                      "type": "array",
+                      "items": {}
+                    },
+                    "suggestions": {
                       "type": "array",
                       "items": {}
                     },

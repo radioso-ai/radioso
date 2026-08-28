@@ -25,6 +25,9 @@ export const authoredDirectiveToDirective = (
     requiredCapabilities: directive.requiredCapabilities,
     dependsOn: directive.dependsOn,
     excludes: directive.excludes,
+    // Absent rather than empty: the renderer reads an absent scope as the answering
+    // voice, and an empty array would say the same thing more noisily.
+    ...(directive.surfaces && directive.surfaces.length > 0 ? { surfaces: directive.surfaces } : {}),
     tags: directive.tags,
     ...(directive.description === null ? {} : { description: directive.description }),
     metadata: directive.metadata,

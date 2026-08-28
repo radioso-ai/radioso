@@ -530,22 +530,37 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
 
       if (input.definition) {
         if (variableId) {
-          const row = await trx
-            .updateTable("context_variables")
-            .set({
-              updated_at: currentTimestamp(),
-              name: input.definition.name,
-              description: input.definition.description,
-              value_type: input.definition.valueType,
-              trust_tier: input.definition.trustTier,
-              sensitivity: input.definition.sensitivity,
-              default_surfacing: input.definition.defaultSurfacing,
-            })
-            .where("workspace_id", "=", input.workspaceId)
-            .where("id", "=", variableId)
-            .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedVariableUpdatedAt))
-            .returning(["id"])
-            .executeTakeFirst();
+          // Wrapped the same way the insert branch below is: a rename onto another variable's
+          // name hits the identical context_variables_workspace_id_name_key constraint, just
+          // through UPDATE instead of INSERT. The copilot adapter's own draft-time name check
+          // (copilotProposalAdapters.ts's resolveProposal) closes the common case, but a second
+          // proposal can still take the name between this proposal's draft and its Apply: without
+          // this translation that raw pg driver error isn't an AppError, so isStale() never
+          // recognizes it and the proposal reports "failed" instead of "stale".
+          let row: { id: string } | undefined;
+          try {
+            row = await trx
+              .updateTable("context_variables")
+              .set({
+                updated_at: currentTimestamp(),
+                name: input.definition.name,
+                description: input.definition.description,
+                value_type: input.definition.valueType,
+                trust_tier: input.definition.trustTier,
+                sensitivity: input.definition.sensitivity,
+                default_surfacing: input.definition.defaultSurfacing,
+              })
+              .where("workspace_id", "=", input.workspaceId)
+              .where("id", "=", variableId)
+              .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedVariableUpdatedAt))
+              .returning(["id"])
+              .executeTakeFirst();
+          } catch (error) {
+            if (isContextVariableNameConflict(error)) {
+              throw conflict(`A context variable named "${input.definition.name}" already exists for this workspace`);
+            }
+            throw error;
+          }
           if (!row) {
             throw conflict("Context variable was updated by another writer; reload before saving again");
           }
@@ -578,6 +593,29 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       if (input.enablement) {
         if (!variableId) {
           throw badRequest("Cannot enable a context variable with no resolved id");
+        }
+        if (!input.definition) {
+          // Nothing above already proved this row still exists: the definition branch either
+          // just inserted a fresh one (variableId came from that INSERT) or re-checked an
+          // existing one's presence via its own UPDATE...WHERE id (throwing conflict when it
+          // found no row). An enablement-only proposal has no definition write to piggyback that
+          // proof on, and agent_context_variables.variable_id carries no foreign key check here
+          // otherwise - a proposal can sit pending indefinitely, and this variable can just as
+          // easily be deleted between draft and Apply as the resolver skill below can, so without
+          // this the insert below would raise a raw agent_context_variables_variable_id_fkey
+          // violation instead of the same stale-proposal contract every other check here upholds.
+          // Locked (SELECT ... FOR UPDATE), matching the resolver-skill check immediately below,
+          // so a concurrent delete cannot land between this check and the insert.
+          const variableRow = await trx
+            .selectFrom("context_variables")
+            .select("id")
+            .where("workspace_id", "=", input.workspaceId)
+            .where("id", "=", variableId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (!variableRow) {
+            throw conflict("Context variable no longer exists");
+          }
         }
         if (input.enablement.source === "resolver" && input.enablement.resolverSkillId) {
           // Verified - and locked, so a concurrent delete of this skill cannot land between the

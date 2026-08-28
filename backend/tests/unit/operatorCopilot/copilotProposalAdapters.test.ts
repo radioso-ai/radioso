@@ -323,6 +323,59 @@ describe("createContextVariableCopilotProposalAdapter", () => {
 
     expect(await adapter.readVersionToken(workspaceId, validated.targetRef, validated.payload)).not.toBe(validated.versionToken);
   });
+
+  // Finding 2 (P2, next-ray-epic-issue review): a create proposal drafted while another variable
+  // already holds the proposed name can never apply - applyProposal's own workspace+name
+  // uniqueness constraint always rejects it. Before this fix, resolveProposal only recorded the
+  // blocker in the stored `blocked:...` version token (the same mechanism the prior "does not
+  // report a create proposal stale..." test exercises for a blocker that appears *after* drafting),
+  // so the card read as current and Apply always failed. Refusing at draft time here is the single
+  // place that stops an unapplyable create proposal from ever being minted.
+  it("refuses to draft a create proposal for a context variable whose name already exists, rather than minting a proposal Apply can never satisfy", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const existingVariable = makeVariable({ workspaceId, name: "loyalty_tier" });
+    const contextVariableRepository = makeContextVariableRepository([existingVariable]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    await expect(
+      adapter.validatePayload(workspaceId, { agentId, variableId: null }, {
+        name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  // Finding 3 (P2, next-ray-epic-issue review) draft-time half: renaming an existing variable onto
+  // another variable's name can never apply either - applyProposal's update branch hits the same
+  // workspace+name constraint. Before this fix there was no name check on the update path at all,
+  // so this drafted cleanly and only failed (with a raw persistence error - see the paired
+  // integration test) once Apply ran.
+  it("refuses to draft a rename proposal for an existing context variable onto another variable's name, rather than minting a proposal Apply can never satisfy", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variableA = makeVariable({ workspaceId, name: "loyalty_tier" });
+    const variableB = makeVariable({ workspaceId, name: "cart_total" });
+    const contextVariableRepository = makeContextVariableRepository([variableA, variableB]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    await expect(
+      adapter.validatePayload(workspaceId, { agentId, variableId: variableA.id }, { name: "cart_total" }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("still allows renaming an existing context variable to a name nothing else holds", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variableA = makeVariable({ workspaceId, name: "loyalty_tier" });
+    const contextVariableRepository = makeContextVariableRepository([variableA]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService: makeAgentSkillsPort() });
+
+    const validated = await adapter.validatePayload(workspaceId, { agentId, variableId: variableA.id }, { name: "tier_loyalty" });
+    expect((validated.payload as { name: string }).name).toBe("tier_loyalty");
+  });
 });
 
 const makeSkillsHarness = (agentsByWorkspace: Record<string, string[]> = {}) => {
@@ -510,5 +563,35 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
     });
 
     expect(await adapter.readVersionToken(workspaceId, validated.targetRef, validated.payload)).not.toBe(validated.versionToken);
+  });
+
+  // Finding 1 (P2, next-ray-epic-issue review): the mirror image of the "does not report a create
+  // proposal stale..." test above. There, the blocker appears *after* the proposal is drafted, and
+  // the create-staleness token correctly flags it. Here, a same-named skill already exists *at
+  // draft time* - dryRunValidate never ran create()'s findByName check, so this used to draft
+  // cleanly (minting a stable `blocked:...` token both now and at GET time, so the card read as
+  // current) even though Apply's own uniqueness check must always reject it. Refusing at draft
+  // time is the single place that stops an unapplyable create proposal from ever being minted.
+  it("refuses to draft a create proposal for a skill whose name already exists, rather than minting a proposal Apply can never satisfy", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const { adapter, agentSkillsService } = makeSkillsHarness({ [workspaceId]: [agentId] });
+
+    await agentSkillsService.create(workspaceId, agentId, {
+      name: "faq_search",
+      capability: "retrieve",
+      target: { kind: "source_scope", id: null },
+      config: {},
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    await expect(
+      adapter.validatePayload(workspaceId, { agentId, skillId: null }, {
+        name: "faq_search",
+        capability: "retrieve",
+        config: {},
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
   });
 });

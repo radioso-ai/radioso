@@ -122,11 +122,12 @@ export class AgentSkillsService {
   async create(workspaceId: string, agentId: string, rawInput: AgentSkillCreateInput): Promise<AgentSkillView> {
     const input = this.parseCreate(rawInput);
     const descriptor = this.requireCapability(input.capability);
+    // Name uniqueness is checked inside validateCreateOrUpdate (the same path dryRunValidate
+    // runs), not here: a copilot proposal validates through dryRunValidate before this method
+    // ever runs, and a name collision it can't see would draft a proposal Apply can only reject.
+    // The DB's own unique constraint (agent_skills_agent_id_skill_name_key), caught below by
+    // translatePersistenceError, remains the backstop for a genuine race against this check.
     await this.validateCreateOrUpdate(workspaceId, agentId, descriptor, input);
-
-    if (await this.options.repository.findByName(workspaceId, agentId, input.name)) {
-      throw conflict(`A skill named "${input.name}" already exists for this agent`);
-    }
 
     try {
       const record = await this.options.repository.create({
@@ -325,6 +326,15 @@ export class AgentSkillsService {
     const config = descriptor.validateConfig(input.config);
     if (!config.success) {
       throw badRequest("Invalid skill config", config.error.flatten());
+    }
+    // Shared by create() and dryRunValidate() so a copilot proposal that would collide on name is
+    // refused when it is drafted, not only once Apply's own insert hits the same unique constraint
+    // (agent_skills_agent_id_skill_name_key). existingId excludes a skill validating against
+    // itself, matching the default-answer check below - update() never changes name (see
+    // resolveProposal's rename guard in copilotProposalAdapters.ts), so this is always a no-op there.
+    const sameName = await this.options.repository.findByName(workspaceId, agentId, input.name);
+    if (sameName && sameName.id !== existingId) {
+      throw conflict(`A skill named "${input.name}" already exists for this agent`);
     }
     if (input.invocationMode === "default_answer") {
       const existingDefault = await this.options.repository.findDefaultAnswer(workspaceId, agentId);

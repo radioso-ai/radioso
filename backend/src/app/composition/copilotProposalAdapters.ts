@@ -39,7 +39,7 @@ import type {
 } from "../../modules/operatorCopilot/public.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../../modules/context-variables/public.js";
 import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
-import { badRequest, notFound, AppError } from "../../shared/domain/errors.js";
+import { badRequest, conflict, notFound, AppError } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
@@ -1152,6 +1152,20 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         sensitivity,
         defaultSurfacing,
       };
+
+      // A create, or a rename, that would collide with another variable's workspace+name identity
+      // (context_variables_workspace_id_name_key) can never apply - refusing it here, at draft
+      // time, is what keeps that always-doomed proposal from ever becoming a pending card (Findings
+      // 1-2, next-ray-epic-issue review). Skipped when the name is unchanged so an update that
+      // leaves it alone never pays for this read. A blocker that appears only *after* this check -
+      // racing a create (contextVariableCreateToken, read fresh again at GET time) or a rename
+      // (applyProposal's own translated unique-constraint conflict) - is still caught, just later.
+      if (name !== existing?.name) {
+        const blocking = await findBlockingVariable(workspaceId, name);
+        if (blocking && blocking.id !== existing?.id) {
+          throw conflict(`A context variable named "${name}" already exists for this workspace`);
+        }
+      }
     }
 
     let enablement: NormalizedContextVariableEnablement | null = null;

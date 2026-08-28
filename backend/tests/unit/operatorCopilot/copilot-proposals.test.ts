@@ -697,10 +697,11 @@ describe("agent skill config proposal adapter", () => {
     const capabilities = createDefaultSkillCapabilityRegistry();
     // dryRunValidate is the real module-owned validation (target-kind match, invocation-mode
     // support, capability config schema, name/shape) - these tests exercise it for real rather
-    // than re-stating its rules as a mock. It only needs the async default-answer-uniqueness
-    // check answered; none of these tests seed a conflicting default-answer skill.
+    // than re-stating its rules as a mock. It only needs the async name- and default-answer-
+    // uniqueness checks answered; none of these tests seed a conflicting name or default-answer
+    // skill.
     const validationService = new AgentSkillsService({
-      repository: { findDefaultAnswer: vi.fn(async () => null) } as never,
+      repository: { findByName: vi.fn(async () => null), findDefaultAnswer: vi.fn(async () => null) } as never,
       capabilities,
     });
     const adapter = createAgentSkillCopilotProposalAdapter({

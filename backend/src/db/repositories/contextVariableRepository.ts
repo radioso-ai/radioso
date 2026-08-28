@@ -579,6 +579,27 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
         if (!variableId) {
           throw badRequest("Cannot enable a context variable with no resolved id");
         }
+        if (input.enablement.source === "resolver" && input.enablement.resolverSkillId) {
+          // Verified - and locked, so a concurrent delete of this skill cannot land between the
+          // check and the write below - fresh inside this same transaction, not only at draft
+          // time. A proposal can sit pending indefinitely, resolver_skill_id carries no foreign
+          // key (migration 112), and a resolver-sourced enablement whose skill is gone resolves
+          // nothing at runtime with no error anywhere (SkillBackedContextResolver.resolve
+          // silently returns null for an id it cannot find), so nothing else catches a skill
+          // deleted between draft and Apply. Turning that into a conflict here - not a silent
+          // insert - is what lets applyIfVersionMatches report the proposal stale instead.
+          const resolverSkill = await trx
+            .selectFrom("agent_skills")
+            .select("id")
+            .where("id", "=", input.enablement.resolverSkillId)
+            .where("agent_id", "=", input.agentId)
+            .where("workspace_id", "=", input.workspaceId)
+            .forUpdate()
+            .executeTakeFirst();
+          if (!resolverSkill) {
+            throw conflict(`Resolver skill "${input.enablement.resolverSkillId}" no longer exists on this agent`);
+          }
+        }
         const row = await trx
           .insertInto("agent_context_variables")
           .values({

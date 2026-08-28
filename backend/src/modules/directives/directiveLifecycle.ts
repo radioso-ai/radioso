@@ -1,5 +1,6 @@
-import type { Directive, DirectiveLifecycle, DirectiveMatch } from "./domain.js";
-import type { SteeringBoundDrop } from "./steeringBound.js";
+import type { GenerationSurface } from "../../shared/domain/generationSurface.js";
+import { addressesSurface, type SteeringRule } from "../../shared/domain/steeringRule.js";
+import type { Directive, DirectiveLifecycle } from "./domain.js";
 
 /**
  * Cross-turn directive firing memory. This is the structural fix for the
@@ -147,13 +148,30 @@ export const partitionDirectivesByLifecycle = (
   return { eligible, trackedNames, suppressed };
 };
 
-/** Matched directives that actually rendered — the matched set minus the bound drops. */
-export const renderedDirectiveNames = (result: {
-  matches: DirectiveMatch[];
-  bounded?: SteeringBoundDrop[];
-}): string[] => {
-  const held = new Set((result.bounded ?? []).map((drop) => drop.directiveName));
-  return result.matches.map((m) => m.directive.name).filter((name) => !held.has(name));
+/**
+ * Authored directives that actually rendered, read from the post-resolution rules.
+ * Those rules preserve the exact surfaces that survived independent relationship
+ * and prompt-bound passes; the pre-bound matches cannot answer that question.
+ */
+export const renderedDirectiveNames = (
+  result: {
+    rules: SteeringRule[];
+  },
+  /**
+   * Narrows to the directives addressed to one generator. A turn renders each
+   * generator's block at a different moment — the answer always, the follow-up
+   * questions only when they are generated — so "fired" is asked per surface and
+   * captured when that block actually renders. Omit to ask about every surface.
+   */
+  surface?: GenerationSurface,
+): string[] => {
+  const rendered = result.rules.flatMap((rule) =>
+    rule.directiveName !== undefined
+      && (surface === undefined || addressesSurface(rule.surfaces, surface))
+      ? [rule.directiveName]
+      : [],
+  );
+  return [...new Set(rendered)];
 };
 
 /**

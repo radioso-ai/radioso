@@ -1,4 +1,4 @@
-import type { DirectiveMatch } from "./domain.js";
+import { addressesSurface, type DirectiveMatch } from "./domain.js";
 
 import { directiveMatchConfidence, directiveMatchPriority } from "./directiveMatchRanking.js";
 
@@ -86,6 +86,12 @@ export const resolveDirectiveBinding = (input: ResolveDirectiveBindingInput): Di
     .filter((match) => {
       const binding = match.directive.binding;
       if (binding?.kind !== "skill") {
+        return false;
+      }
+      // Binding decides who answers the turn, so only a directive addressed to the
+      // answer may claim it. One scoped away from the answer steers its own
+      // generator and has no say in which skill replies.
+      if (!addressesSurface(match.directive.surfaces, "answer")) {
         return false;
       }
       const state = input.agentSkillStates?.get(binding.skillName);

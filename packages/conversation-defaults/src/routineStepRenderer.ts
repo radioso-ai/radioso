@@ -16,6 +16,7 @@ import {
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_DEFAULT_PROMPT,
   DEFAULT_ROUTINE_STEP_TERMINAL_HANDOFF_WITH_MESSAGE_PROMPT,
 } from "./generated/defaultPrompts.js";
+import { steeringForSurface } from "./domain.js";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 export {
@@ -62,7 +63,10 @@ const scopeReferenceBlock = (agent: ConversationAgentConfig): string => {
 };
 
 const instructionsBlock = (step: RoutineStep, steering: SteeringRule[]): string => {
-  const actions = steering.map((rule) => rule.action);
+  // A routine step reply is text the agent says, so it takes the rules addressed to
+  // the answering voice. A rule aimed at another generator steers that generator and
+  // must not rewrite what the step says.
+  const actions = steeringForSurface(steering, "answer").map((rule) => rule.action);
   // The projected step steering is the source of truth; fall back to the step's own
   // action so a step with no projected steering still renders something.
   if (actions.length === 0 && step.action) {
@@ -163,7 +167,7 @@ const isHandoffTerminal = (step: RoutineStep): boolean =>
   step.kind === "terminal" && step.metadata?.terminalKind === "handoff";
 
 const terminalMessage = (step: RoutineStep, steering: SteeringRule[]): string | null => {
-  const actions = steering
+  const actions = steeringForSurface(steering, "answer")
     .filter((rule) => rule.source === "routine")
     .map((rule) => rule.action.trim())
     .filter((action) => action.length > 0);

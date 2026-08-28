@@ -87,6 +87,9 @@ const EvalWorkbenchReplayRunResponseSchema = z
     answer: z.string().optional(),
     citations: z.array(z.unknown()).optional(),
     answerSegments: z.array(z.unknown()).optional(),
+    // The follow-up questions the replayed turn would offer, so a coach preview can
+    // show what a directive scoped to that generator actually changed.
+    suggestions: z.array(z.unknown()).optional(),
     groundingVerdict: GroundingVerdictSchema.optional(),
     groundingDiagnostics: GroundingDiagnosticsSchema.optional(),
     turnTrace: z.unknown().optional(),

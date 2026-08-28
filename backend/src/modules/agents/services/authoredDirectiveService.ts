@@ -1,3 +1,5 @@
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
+import { addressesSurface, effectiveSurfaces } from "../../../shared/domain/steeringRule.js";
 import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
 import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
@@ -83,6 +85,10 @@ export class AuthoredDirectiveService {
       requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
       dependsOn: input.dependsOn ?? existing.dependsOn,
       excludes: input.excludes ?? existing.excludes,
+      // Absent keeps the stored scope; an explicit empty array widens the directive
+      // back to the answering voice. Omitting it here would silently reset the scope
+      // on every unrelated edit, because the schema defaults it to empty.
+      surfaces: input.surfaces ?? existing.surfaces,
       tags: input.tags ?? existing.tags,
       routes: [],
       description: Object.prototype.hasOwnProperty.call(input, "description") ? input.description : existing.description,
@@ -131,6 +137,15 @@ export class AuthoredDirectiveService {
     if (!binding) {
       return;
     }
+    // Binding names the skill that answers the turn, and only a directive addressed
+    // to the answer can claim it. Storing one on a directive scoped away from the
+    // answer would look configured and do nothing, so it is rejected at authoring
+    // rather than ignored at runtime.
+    if (!addressesSurface(directive.surfaces, GENERATION_SURFACE.ANSWER)) {
+      throw badRequest(
+        `Directive binding requires the directive to apply to the agent's reply, but "${directive.name}" is scoped away from it`,
+      );
+    }
     const skill = await this.options.agentSkills?.findByName(workspaceId, agentId, binding.skillName);
     if (!skill) {
       throw badRequest(`Directive binding references unknown skill "${binding.skillName}"`);
@@ -158,6 +173,15 @@ export class AuthoredDirectiveService {
     existingDirectives: AuthoredDirective[],
   ): Promise<DirectiveCoherenceVerdict> {
     try {
+      const candidateDirective = authoredDirectiveToDirective(candidate);
+      const comparisonDirectives = [
+        ...existingDirectives.map((directive) => authoredDirectiveToDirective(directive)),
+        ...defaultAnswerDirectives,
+      ].filter((directive) =>
+        effectiveSurfaces(candidateDirective.surfaces).some((surface) =>
+          addressesSurface(directive.surfaces, surface),
+        ),
+      );
       return await this.options.coherenceChecker.check({
         invocationContext: { workspaceId, agentId: agent.id },
         agent: {
@@ -167,11 +191,8 @@ export class AuthoredDirectiveService {
           defaultLocale: agent.assistantDefaultLocale,
           model: agent.chatModelOverride,
         },
-        candidate: authoredDirectiveToDirective(candidate),
-        existingDirectives: [
-          ...existingDirectives.map((directive) => authoredDirectiveToDirective(directive)),
-          ...defaultAnswerDirectives,
-        ],
+        candidate: candidateDirective,
+        existingDirectives: comparisonDirectives,
       });
     } catch {
       return coherenceUnavailableVerdict();

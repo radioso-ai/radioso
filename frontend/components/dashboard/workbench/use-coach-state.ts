@@ -69,6 +69,7 @@ export const toReplayOverrideDirective = (directive: ReplaySourceDirective): Rep
   requiredCapabilities: directive.requiredCapabilities ?? [],
   dependsOn: directive.dependsOn ?? [],
   excludes: directive.excludes ?? [],
+  surfaces: directive.surfaces ?? [],
   routes: directive.routes ?? [],
   tags: [...(directive.tags ?? [])],
   description: directive.description ?? null,
@@ -223,6 +224,10 @@ export function useCoachState({
         condition: draft.directive.condition,
         action: draft.directive.action,
         tags: draft.directive.tags,
+        // The preview replays with the drafted scope, so the save must persist the
+        // same one — otherwise a suggestion-scoped draft previews correctly and then
+        // lands on the answer.
+        surfaces: draft.directive.surfaces ?? [],
         metadata: {
           diagnosis: draft.diagnosis,
           ...(draft.rationale ? { rationale: draft.rationale } : {}),

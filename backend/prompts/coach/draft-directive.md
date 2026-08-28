@@ -26,7 +26,8 @@ Return one JSON object with this shape:
     "name": "...",
     "condition": { "kind": "always" },
     "action": "...",
-    "tags": []
+    "tags": [],
+    "surfaces": []
   },
   "diagnosis": "directive_recommended",
   "rationale": "..."
@@ -48,6 +49,13 @@ action:
 - Agent-neutral and durable. It should tell the assistant how to behave next time.
 - Not a canned reply, not a rewritten answer, not a one-off response to the coached user.
 - Do not include private reasoning, raw coaching text, or quoted turn content.
+
+surfaces:
+- Names the generators the directive speaks to. A turn writes more than one piece of visitor-facing text: the assistant's reply, and the follow-up questions offered to the visitor after that reply. They are written separately, and coaching often aims at one of them.
+- Use [] when the coaching is about how the assistant replies. This is the common case and the safe default.
+- Use ["suggested_questions"] when the coaching is about the follow-up questions offered after an answer, and the reply itself should be unaffected.
+- Use ["answer", "suggested_questions"] when the coaching applies to both, such as a topic the assistant should avoid raising anywhere.
+- Judge this from the meaning of the coaching, not from keywords. Coaching that objects to what the visitor is invited to ask next is about suggestions; coaching that objects to what the assistant said is about the reply.
 
 tags:
 - Use [] for a global directive.

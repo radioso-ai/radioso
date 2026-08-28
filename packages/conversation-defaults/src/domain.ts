@@ -2,8 +2,18 @@ import type {
   Directive,
   DirectiveMatch,
   DirectiveSelectionMode,
+  GenerationSurface,
   SteeringRule,
 } from "@radioso/conversation-contract";
+
+import { resolveRenderSurfaces } from "@radioso/conversation-engine";
+
+export {
+  addressesSurface,
+  effectiveSurfaces,
+  resolveRenderSurfaces,
+  steeringForSurface,
+} from "@radioso/conversation-engine";
 
 export type {
   Directive,
@@ -11,6 +21,7 @@ export type {
   DirectiveLifecycle,
   DirectiveMatch,
   DirectiveSelectionMode,
+  GenerationSurface,
   SteeringRule,
 } from "@radioso/conversation-contract";
 
@@ -30,6 +41,7 @@ export const directiveToSteeringRule = (match: DirectiveMatch): SteeringRule => 
   description: match.directive.description,
   source: "directive",
   lifespan: "response",
+  ...(resolveRenderSurfaces(match) ? { surfaces: resolveRenderSurfaces(match) } : {}),
 });
 
 /**

@@ -212,6 +212,7 @@ const asDirectiveOverride = (
   requiredCapabilities: Array.isArray(directive.requiredCapabilities) ? directive.requiredCapabilities.filter((value): value is string => typeof value === 'string') : [],
   dependsOn: Array.isArray(directive.dependsOn) ? directive.dependsOn.filter((value): value is string => typeof value === 'string') : [],
   excludes: Array.isArray(directive.excludes) ? directive.excludes.filter((value): value is string => typeof value === 'string') : [],
+  surfaces: Array.isArray(directive.surfaces) ? directive.surfaces as WorkbenchOverrideValues['authoredDirectives'][number]['surfaces'] : [],
   routes: Array.isArray(directive.routes) ? directive.routes as WorkbenchOverrideValues['authoredDirectives'][number]['routes'] : [],
   tags: Array.isArray(directive.tags) ? directive.tags.filter((value): value is string => typeof value === 'string') : [],
   description: typeof directive.description === 'string' ? directive.description : null,
@@ -1100,6 +1101,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           answer: result.run.observedOutput.answer,
           citations: result.run.observedOutput.citations,
           answerSegments: result.run.observedOutput.answerSegments,
+          suggestions: result.run.observedOutput.suggestions,
           turnTrace: result.run.observedOutput.turnTrace,
           resolvedConfig: {
             ...result.run.resolvedConfig,

@@ -72,6 +72,7 @@ export const authoredDirective = (overrides: Record<string, unknown> = {}) => ({
   dependsOn: [],
   excludes: [],
   routes: [],
+  surfaces: [],
   tags: [],
   description: null,
   binding: null,

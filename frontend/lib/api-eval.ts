@@ -1,3 +1,4 @@
+import type { ChatSuggestion } from './api-types'
 import { request } from './api-client'
 import type { ActivityTrace, AnswerSegment, Citation, Directive, TurnTraceEnvelope } from './api-types'
 
@@ -140,6 +141,7 @@ export interface EvalRunObservedOutput {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  suggestions?: ChatSuggestion[]
   groundingSummary?: GroundingSummary
   groundingVerdict?: GroundingVerdict
   groundingDiagnostics?: GroundingDiagnostics
@@ -238,6 +240,7 @@ export interface AgentConfigAuthoredDirectiveOverride {
   requiredCapabilities: string[]
   dependsOn: string[]
   excludes: string[]
+  surfaces: Directive['surfaces']
   routes: Directive['routes']
   tags: string[]
   description: string | null
@@ -287,6 +290,9 @@ export interface WorkbenchReplayRunResponse {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  /** Follow-up questions the replayed turn would offer, for previewing a directive
+   * scoped to that generator rather than to the answer. */
+  suggestions?: ChatSuggestion[]
   groundingVerdict?: GroundingVerdict
   groundingDiagnostics?: GroundingDiagnostics
   turnTrace?: TurnTraceEnvelope

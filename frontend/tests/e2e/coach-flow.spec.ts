@@ -62,6 +62,7 @@ const replayDraftDirective = {
   requiredCapabilities: [],
   dependsOn: [],
   excludes: [],
+  surfaces: [],
   routes: [],
   description: null,
   metadata: {},
@@ -286,6 +287,9 @@ test("operator coaches a captured turn, previews a drafted directive, and valida
     method: "POST",
     body: {
       ...draftDirective,
+      // The save persists the scope the preview replayed with; an undrafted scope
+      // is the answering voice, stored empty.
+      surfaces: [],
       metadata: {
         diagnosis: "knowledge_recommended_deferred",
         rationale: "The coaching asks for specific release facts.",

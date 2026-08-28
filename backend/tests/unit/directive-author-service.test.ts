@@ -181,6 +181,48 @@ describe("DirectiveAuthorService", () => {
     expect(result.directive.tags).toEqual([]);
   });
 
+  it("carries an authored generation surface scope onto the draft", async () => {
+    const draft = JSON.stringify({
+      directive: {
+        name: "no-price-suggestions",
+        condition: { kind: "always" },
+        action: "Never suggest a follow-up question about price.",
+        tags: [],
+        surfaces: ["suggested_questions"],
+      },
+      diagnosis: "directive_recommended",
+    });
+    const { service } = createService(new FakeTextClient([draft]));
+
+    const result = await service.draft(workspaceId, agentId, draftInput());
+
+    expect(result.directive.surfaces).toEqual(["suggested_questions"]);
+  });
+
+  it("leaves the scope absent when the draft names no surface", async () => {
+    const { service } = createService(new FakeTextClient([validDraft()]));
+
+    const result = await service.draft(workspaceId, agentId, draftInput());
+
+    expect(result.directive.surfaces).toBeUndefined();
+  });
+
+  it("rejects a drafted surface outside the vocabulary", async () => {
+    const draft = JSON.stringify({
+      directive: {
+        name: "bad-scope",
+        condition: { kind: "always" },
+        action: "Do a thing.",
+        tags: [],
+        surfaces: ["greeting"],
+      },
+      diagnosis: "directive_recommended",
+    });
+    const { service } = createService(new FakeTextClient([draft, draft]));
+
+    await expect(service.draft(workspaceId, agentId, draftInput())).rejects.toThrow();
+  });
+
   it("retries malformed model output once and returns the retried draft", async () => {
     const textGenerationClient = new FakeTextClient([
       "not json",

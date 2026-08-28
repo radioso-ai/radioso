@@ -20,6 +20,7 @@ const baseDirective = (
   dependsOn: [],
   excludes: [],
   routes: [],
+  surfaces: [],
   tags: [],
   description: null,
   binding: null,

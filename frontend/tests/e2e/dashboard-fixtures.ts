@@ -549,6 +549,7 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   requiredCapabilities: [],
   dependsOn: [],
   excludes: [],
+  surfaces: [],
   routes: [],
   tags: [],
   description: null,

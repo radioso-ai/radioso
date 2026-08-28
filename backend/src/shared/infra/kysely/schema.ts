@@ -121,6 +121,7 @@ export interface AgentDirectives {
   required_capabilities: Generated<string[]>;
   routes: Generated<string[]>;
   scope_tags: Generated<string[]>;
+  surfaces: Generated<string[]>;
   updated_at: Generated<Timestamp>;
 }
 

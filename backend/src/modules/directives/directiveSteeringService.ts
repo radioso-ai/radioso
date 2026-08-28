@@ -1,16 +1,17 @@
+import type { GenerationSurface } from "../../shared/domain/generationSurface.js";
 import type { DirectiveCatalogRegistryPort, DirectiveMatcherPort } from "@radioso/conversation-contract";
 import { DIRECTIVES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
-import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
+import { effectiveSurfaces, orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
 
 import {
   directiveToSteeringRule,
-  resolveDirectiveRelationships,
   type Directive,
   type DirectiveMatch,
   type DirectiveOmission,
 } from "./domain.js";
+import { boundSteeringPerSurface, resolveRelationshipsPerSurface } from "./surfaceScopedResolution.js";
 import {
   boundSteeringMatches,
   type SteeringBoundConfig,
@@ -59,6 +60,30 @@ export interface DirectiveSteeringResult {
    * service — the service is stateless across turns. For the trace only.
    */
   lifecycleSuppressed?: DirectiveLifecycleSuppression[];
+  /**
+   * Lifecycle-tracked directives addressed only to a generator that renders later in
+   * the turn, keyed by that generator. They have matched but not yet fired: the host
+   * captures them into the firing memory when the generator's block actually renders,
+   * so a `once_per_conversation` rule is never consumed by a turn that never showed
+   * it. Populated by the host directive wiring, not the service.
+   */
+  pendingSurfaceFirings?: Partial<Record<GenerationSurface, string[]>>;
+  /**
+   * Generators that actually produced output this turn. Distinct from
+   * {@link pendingSurfaceFirings}, which is a lifecycle mechanism and therefore only
+   * ever covers once/cooldown directives: this covers every matched rule, so the
+   * trace can say whether a repeatable suggestion-only directive reached the visitor
+   * or its generator never ran. The answer always renders; the follow-up question
+   * generator renders only when a suggestion survives to the final presentation.
+   */
+  renderedSurfaces?: GenerationSurface[];
+  /**
+   * Whether the follow-up question generator's steering block went into the prompt
+   * this turn. Set by the host that composes the answer. Distinct from that generator
+   * having produced anything: a rule that suppresses suggestions leaves none, and
+   * still ran.
+   */
+  suggestionBlockRendered?: boolean;
 }
 
 /**
@@ -128,15 +153,18 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
     }
 
     // Resolve excludes/dependsOn over the capability-allowed set: a denied
-    // directive never applied, so it can neither exclude nor satisfy others.
-    const { kept, omissions: relationshipOmissions } = resolveDirectiveRelationships(allowed);
+    // directive never applied, so it can neither exclude nor satisfy others. Resolved
+    // per generator, because a directive can only cancel one it actually competes
+    // with — see resolveRelationshipsPerSurface.
+    const { kept, omissions: relationshipOmissions } = resolveRelationshipsPerSurface(allowed);
 
     // Bound contextual steering: unconditional directives and their dependencies
     // always render, while the contextual remainder is ranked by confidence ×
-    // priority and fitted to the top-k and token caps. `matches` stays the full set
+    // priority and fitted to the top-k and token caps — per generator, since each
+    // renders its own block. `matches` stays the full set
     // (skill binding and the trace still see every match); only `rules` narrows,
     // and every held-back contextual directive is recorded in `bounded`.
-    const { kept: rendered, dropped } = boundSteeringMatches(kept, this.steeringBound);
+    const { rendered, dropped } = boundSteeringPerSurface(kept, this.steeringBound);
     if (dropped.length > 0) {
       this.logger?.debug(
         {
@@ -156,12 +184,38 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
     // rendered set: held-back and lifecycle-suppressed directives are never
     // prompted, so they get no attestation id.
     const orderedRules = orderSteeringRules(rendered.map(directiveToSteeringRule));
+    // `matches` keeps every directive that survived relationships — skill binding and
+    // the trace need the full set — but it carries the *post-bound* rendering state.
+    // Hosts that rebuild steering from matches (the engine does, for routine replies
+    // and clarifying questions) must not restore a surface the bound dropped, nor
+    // turn a directive that lost every surface back into prompt steering.
+    // Effective, never raw: an unscoped directive's `surfaces` is undefined, and a map
+    // storing that is indistinguishable from a missing key — which would read every
+    // default-scoped directive as fully bounded and drop it from engine-rebuilt
+    // steering, taking the built-in answer directives with it.
+    const boundSurfaces = new Map(
+      rendered.map((match) => [match.directive.name, effectiveSurfaces(match.directive.surfaces)]),
+    );
+    const matches = kept.map((match) => {
+      const boundScope = boundSurfaces.get(match.directive.name);
+      if (!boundScope) {
+        return { ...match, renderInSteering: false };
+      }
+      // Narrower than authored: the directive lost one generator's budget but not
+      // another's. Recorded beside the directive, never written into it — overwriting
+      // the authored scope would cost the directive its skill binding, and a bound
+      // governs prompt rendering, not activation.
+      const authored = effectiveSurfaces(match.directive.surfaces);
+      const unchanged = boundScope.length === authored.length
+        && boundScope.every((surface) => authored.includes(surface));
+      return unchanged ? match : { ...match, renderSurfaces: [...boundScope] };
+    });
     return {
       rules: orderedRules.map((rule, index) => ({
         ...rule,
         id: `d${index + 1}`,
       })),
-      matches: kept,
+      matches,
       omissions: [...omissions, ...relationshipOmissions],
       bounded: dropped,
     };

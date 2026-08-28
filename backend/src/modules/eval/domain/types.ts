@@ -1,9 +1,14 @@
 import type { RoutineState } from "@radioso/conversation-contract";
 import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js";
-import type { AnswerSegment, ChatCitation, TurnTraceEnvelope } from "../../chat/contracts/index.js";
+import type {
+  AnswerSegment,
+  ChatCitation,
+  ChatSuggestion,
+  GroundingSummary,
+  TurnTraceEnvelope,
+} from "../../chat/contracts/index.js";
 import type { ActivityTrace } from "../../retrieval/public.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
-import type { GroundingSummary } from "../../chat/contracts/index.js";
 import type {
   RetrievalSettingsRecord,
   RetrievalSettingsSnapshot,
@@ -181,6 +186,7 @@ export interface EvalRunObservedOutput {
   answer?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  suggestions?: ChatSuggestion[];
   groundingSummary?: GroundingSummary;
   groundingVerdict?: GroundingSummary["verdict"];
   groundingDiagnostics?: Omit<GroundingSummary, "verdict">;

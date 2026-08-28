@@ -148,6 +148,7 @@ import {
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 
 export type { ChatGateway } from "../contracts/chatGateway.js";
 export type { ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -1167,6 +1168,7 @@ export class ChatService {
     let lazySuggestionsPromise:
       | Promise<Pick<ChatPresentedAnswer, "suggestions">>
       | undefined;
+    let persistedQuestionSuggestions: NonNullable<ChatPresentedAnswer["suggestions"]> = [];
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
     let usageReservation: UsageLimitReservation | null = null;
     let usageReservationCommitted = false;
@@ -1509,6 +1511,11 @@ export class ChatService {
         throw new Error("chat_stream_missing_prepared_session");
       }
       const preparedSession = session;
+      persistedQuestionSuggestions = this.composeQuestionSuggestions({
+        session: preparedSession,
+        presentation: finalPresentation,
+        suggestions,
+      });
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
       // promise stays in flight — swallow its rejection so it can't surface as an
@@ -1517,13 +1524,18 @@ export class ChatService {
       lazySuggestionsPromise = this.composeLazySuggestions({
         session: preparedSession,
         presentation: finalPresentation,
-        suggestions,
+        questionSuggestions: persistedQuestionSuggestions,
         userExpectedLocale: input.userExpectedLocale,
       });
       lazySuggestionsPromise.catch(() => undefined);
       const presentation: ChatPresentedAnswer = {
         ...finalPresentation,
-        suggestions: undefined,
+        // Finalized question suggestions are already available synchronously. Persist
+        // them with the answer so the directive firing committed below always refers
+        // to durable visitor-facing output. Action chips remain lazy enrichment.
+        suggestions: persistedQuestionSuggestions.length > 0
+          ? persistedQuestionSuggestions
+          : undefined,
       };
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session: preparedSession,
@@ -1557,6 +1569,9 @@ export class ChatService {
       yield {
         type: "done",
         ...completedTurn.response,
+        // Preserve the streaming protocol: suggestions arrive in their own event
+        // after `done`, even though the question subset is already durable.
+        suggestions: undefined,
       };
 
     } catch (error) {
@@ -1589,50 +1604,73 @@ export class ChatService {
     }
     const conversationId = session.conversation.id;
 
+    let suggestionsToEmit = persistedQuestionSuggestions;
     try {
       const lazySuggestions = await lazySuggestionsPromise;
-      if (lazySuggestions.suggestions && lazySuggestions.suggestions.length > 0) {
-        const suggestions = lazySuggestions.suggestions ?? [];
+      const enrichedSuggestions = lazySuggestions.suggestions ?? [];
+      if (enrichedSuggestions.length > 0) {
         if (assistantMessageId) {
           await this.chatTurnLifecycle.updateSuggestions({
             workspaceId: input.workspaceId,
             conversationId,
             assistantMessageId,
-            suggestions,
+            suggestions: enrichedSuggestions,
           });
         }
-
-        yield {
-          type: "suggestions",
-          conversationId,
-          suggestions,
-        };
+        suggestionsToEmit = enrichedSuggestions;
       }
     } catch {
-      // Lazy follow-up suggestions are best effort after the answer is already complete.
+      // Lazy action enrichment is best effort. The question suggestions were
+      // persisted with the answer, so keep serving that durable subset when the
+      // enrichment call or its audit update fails.
     }
+    if (suggestionsToEmit.length > 0) {
+      yield {
+        type: "suggestions",
+        conversationId,
+        suggestions: suggestionsToEmit,
+      };
+    }
+  }
+
+  private composeQuestionSuggestions(input: {
+    session: PreparedSession;
+    presentation: ChatPresentedAnswer;
+    suggestions: TurnStreamSuggestions;
+  }): NonNullable<ChatPresentedAnswer["suggestions"]> {
+    const { session, presentation, suggestions } = input;
+    // The skill decides where question suggestions come from: assistant-voice
+    // replies settle their own onto the presentation; retrieval defers to the
+    // host's expansion of the model's planned envelope suggestions. This is
+    // synchronous so the host can record visible generator output before the
+    // turn's one directive-state commit.
+    return suggestions.mode === "presentation"
+      ? (presentation.suggestions ?? [])
+      : (this.chatAnswerPresenter
+          .applyAssistantSuggestions(session, presentation, suggestions.planned)
+          .suggestions ?? []);
   }
 
   private async composeLazySuggestions(input: {
     session: PreparedSession;
     presentation: ChatPresentedAnswer;
-    suggestions: TurnStreamSuggestions;
+    questionSuggestions: NonNullable<ChatPresentedAnswer["suggestions"]>;
     userExpectedLocale?: string | null;
   }): Promise<Pick<ChatPresentedAnswer, "suggestions">> {
-    const { session, presentation, suggestions, userExpectedLocale } = input;
-    // The skill decides where question suggestions come from: assistant-voice
-    // replies settle their own onto the presentation; retrieval defers to the
-    // host's expansion of the model's planned envelope suggestions.
-    const questionSuggestions = suggestions.mode === "presentation"
-      ? (presentation.suggestions ?? [])
-      : (this.chatAnswerPresenter
-          .applyAssistantSuggestions(session, presentation, suggestions.planned)
-          .suggestions ?? []);
-    const actionSuggestionsResult = await this.chatAnswerPresenter.applyActionSuggestions(
-      session,
-      presentation,
-      userExpectedLocale,
-    );
+    const { session, presentation, questionSuggestions, userExpectedLocale } = input;
+    let actionSuggestionsResult: Pick<ChatPresentedAnswer, "suggestions">;
+    try {
+      actionSuggestionsResult = await this.chatAnswerPresenter.applyActionSuggestions(
+        session,
+        presentation,
+        userExpectedLocale,
+      );
+    } catch {
+      // Action chips are best-effort enrichment. Question suggestions have already
+      // survived their own final filtering and remain useful when that enrichment
+      // fails independently.
+      return { suggestions: questionSuggestions };
+    }
     const actionMergedSuggestions = actionSuggestionsResult.suggestions ?? [];
     return { suggestions: [...actionMergedSuggestions, ...questionSuggestions] };
   }

@@ -46,6 +46,15 @@ import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+import {
+  createRouteScopedDirectiveSteering,
+} from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import type {
+  Directive,
+  DirectiveFiringState,
+  DirectiveStateStore,
+} from "../../src/modules/directives/public.js";
 
 const createUncommittedSseResponse = () => {
   const writes: string[] = [];
@@ -616,6 +625,79 @@ describe("chat service streaming", () => {
       };
     },
   } as const);
+
+  const createSuggestionLifecycleService = (input: {
+    plannedSuggestions: unknown[];
+    failActionSuggestions?: boolean;
+    failSuggestionPersistence?: boolean;
+  }) => {
+    const directive: Directive = {
+      name: "follow-up-once",
+      condition: { kind: "always" },
+      action: "Keep follow-up questions concise.",
+      surfaces: ["suggested_questions"],
+      lifecycle: { kind: "once_per_conversation" },
+    };
+    const savedStates: DirectiveFiringState[] = [];
+    const directiveStateStore: DirectiveStateStore = {
+      async load() {
+        return null;
+      },
+      async save({ state }) {
+        savedStates.push(state);
+      },
+    };
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return groundingEnvelope(
+          "The guide covers known topic details.[[1]]",
+          "grounded",
+          input.plannedSuggestions,
+        );
+      },
+      async *streamAnswer() {
+        yield groundingEnvelope(
+          "The guide covers known topic details.[[1]]",
+          "grounded",
+          input.plannedSuggestions,
+        );
+      },
+    };
+    const actionSuggestions = new ChatActionSuggestionService(new ChatActionSuggestionRegistry());
+    if (input.failActionSuggestions) {
+      vi.spyOn(actionSuggestions, "evaluate").mockRejectedValue(new Error("action suggestions unavailable"));
+    }
+    const auditEventRepository = new InMemoryAuditEventRepository();
+    if (input.failSuggestionPersistence) {
+      vi.spyOn(auditEventRepository, "updateChatAnswerSuggestions")
+        .mockRejectedValue(new Error("suggestion persistence unavailable"));
+    }
+    const service = new ChatService({
+      conversationRepository: new InMemoryConversationRepository(),
+      messageRepository: new InMemoryMessageRepository(),
+      retrievalTurn: new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      auditService: createAuditService(auditEventRepository),
+      turnRuntime: buildChatTurnRuntime({
+        chatGateway,
+        fallbackReplyComposer,
+        chatActionSuggestionService: actionSuggestions,
+        skillOutcomeCapabilities: groundedSkillCapabilities,
+      }),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [{ directive, routes: ["retrieval"] }],
+      }),
+      directiveStateStore,
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval", framing: { isIdentityQuestion: false } };
+        },
+      },
+      conversationEngine: createConversationEngine(),
+    });
+    return { service, savedStates, auditEventRepository };
+  };
 
   it("keeps authenticated streaming quota failures on the untouched JSON error path", async () => {
     const conversationRepository = new InMemoryConversationRepository();
@@ -6168,6 +6250,84 @@ describe("chat service streaming", () => {
         },
       ],
     });
+  });
+
+  it("captures a visible streamed follow-up before lifecycle commit even when action enrichment fails", async () => {
+    const { service, savedStates } = createSuggestionLifecycleService({
+      plannedSuggestions: [{ text: "What other details does the guide cover?", contextIndex: 1 }],
+      failActionSuggestions: true,
+    });
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "How does the known topic work?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.find((event) => event.type === "suggestions")).toMatchObject({
+      suggestions: [expect.objectContaining({ text: "What other details does the guide cover?" })],
+    });
+    expect(savedStates).toEqual([{
+      turnSeq: 1,
+      firings: { "follow-up-once": { lastFiredTurn: 0, count: 1 } },
+    }]);
+  });
+
+  it("keeps a streamed follow-up visible when later suggestion persistence fails", async () => {
+    const { service, savedStates, auditEventRepository } = createSuggestionLifecycleService({
+      plannedSuggestions: [{ text: "What other details does the guide cover?", contextIndex: 1 }],
+      failSuggestionPersistence: true,
+    });
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "How does the known topic work?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.find((event) => event.type === "suggestions")).toMatchObject({
+      suggestions: [expect.objectContaining({ text: "What other details does the guide cover?" })],
+    });
+    expect(auditEventRepository.items.find((event) => event.eventType === "chat.answer")?.metadata)
+      .toMatchObject({
+        suggestions: [expect.objectContaining({ text: "What other details does the guide cover?" })],
+      });
+    expect(savedStates).toEqual([{
+      turnSeq: 1,
+      firings: { "follow-up-once": { lastFiredTurn: 0, count: 1 } },
+    }]);
+  });
+
+  // A directive whose whole purpose is to suppress follow-ups leaves none, and it has
+  // still run and applied. Keying the firing on visible output would leave exactly the
+  // rules operators care most about — the suppressive ones — unable to satisfy
+  // `once_per_conversation`, re-firing on every turn forever.
+  it.each([
+    ["empty", []],
+    ["filtered", [{ text: "How does the known topic work?", contextIndex: 1 }]],
+  ])("consumes suggestion lifecycle for %s streamed follow-ups, because the generator ran", async (_case, plannedSuggestions) => {
+    const { service, savedStates } = createSuggestionLifecycleService({ plannedSuggestions });
+    const events: ChatStreamEvent[] = [];
+
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "How does the known topic work?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.some((event) => event.type === "suggestions")).toBe(false);
+    expect(savedStates).toEqual([{
+      turnSeq: 1,
+      firings: { "follow-up-once": { lastFiredTurn: 0, count: 1 } },
+    }]);
   });
 
   it("does not convert a completed answer into a failure when lazy suggestions fail", async () => {

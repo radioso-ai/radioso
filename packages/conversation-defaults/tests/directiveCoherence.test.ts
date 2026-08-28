@@ -18,6 +18,7 @@ const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "act
   excludes: overrides.excludes,
   description: overrides.description,
   metadata: overrides.metadata,
+  surfaces: overrides.surfaces,
 });
 
 describe("directive coherence", () => {
@@ -72,6 +73,38 @@ describe("directive coherence", () => {
 
     expect(error.message).toBe("conversation_kit_directive_coherence_conflict");
     expect(error.code).toBe("conversation_kit_directive_coherence_conflict");
+  });
+
+  it("includes directive surfaces in the model payload", async () => {
+    const complete = vi.fn(async () => ({
+      text: JSON.stringify({
+        verdict: "coherent",
+        conflicts: [],
+        rationale: "The directives can be followed together.",
+      }),
+    }));
+    const checker = createDirectiveCoherenceChecker({ modelGateway: { complete } });
+
+    await checker.check({
+      agent: { id: "agent_support", name: "Support" },
+      candidate: directive({
+        name: "candidate",
+        action: "Do not suggest questions about pricing.",
+      }),
+      existingDirectives: [directive({
+        name: "existing",
+        action: "Answer concisely and suggest a relevant follow-up.",
+        surfaces: ["answer", "suggested_questions"],
+      })],
+    });
+
+    const request = complete.mock.calls[0]?.[0];
+    const payload = JSON.parse(request?.messages[0]?.content ?? "null") as {
+      candidate?: { surfaces?: string[] };
+      existingDirectives?: Array<{ surfaces?: string[] }>;
+    };
+    expect(payload.candidate?.surfaces).toEqual(["answer"]);
+    expect(payload.existingDirectives?.[0]?.surfaces).toEqual(["answer", "suggested_questions"]);
   });
 
   it("fails open when the model does not return a structured verdict", async () => {

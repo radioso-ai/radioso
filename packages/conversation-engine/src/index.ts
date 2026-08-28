@@ -1,3 +1,9 @@
+export {
+  addressesSurface,
+  effectiveSurfaces,
+  resolveRenderSurfaces,
+  steeringForSurface,
+} from "./generationSurface.js";
 import type {
   AttemptRoutineInput,
   ConversationEngine,

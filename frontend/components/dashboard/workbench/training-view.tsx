@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { directivesApi, type AgentSettings, type Directive } from '@/lib/api'
+import { directiveSurfaceLabel } from '@/lib/directive-surfaces'
 import type { WorkbenchReplayRunResponse } from '@/lib/api-eval'
 import type { WorkbenchSeedTurn } from './use-workbench-state'
 import { useCoachState, type CoachStateDeps, type DirectivesLoadStatus } from './use-coach-state'
@@ -86,6 +87,14 @@ export function TrainingView({
   const previewAnswer = coach.preview?.replay.answer
     ?? coach.preview?.replay.run.observedOutput.answer
     ?? ''
+  // Action chips come from skill intents, not the follow-up question generator, so a
+  // preview of what a suggestion-scoped directive changed must leave them out.
+  const previewSuggestions = (coach.preview?.replay.suggestions ?? []).filter(
+    (suggestion) => suggestion.action?.kind !== 'start_intent',
+  )
+  const previewsSuggestionScopedDraft = (coach.preview?.draft.directive.surfaces ?? []).includes(
+    'suggested_questions',
+  )
   const diagnosis = coach.preview?.draft.diagnosis
   let draftButtonLabel = 'Draft directive'
   if (activeDirectives.status === 'loading') {
@@ -170,8 +179,12 @@ export function TrainingView({
                         <Badge key={tag} variant="secondary">{tag}</Badge>
                       ))
                     ) : (
-                      <Badge variant="secondary">Global</Badge>
+                      <Badge variant="secondary">Every turn</Badge>
                     )}
+                    <Badge variant="secondary">
+                      {directiveSurfaceLabel(coach.preview.draft.directive.surfaces)
+                        ?? "The agent's reply"}
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -201,6 +214,22 @@ export function TrainingView({
                   <p className="text-sm text-muted-foreground">No preview answer returned.</p>
                 )}
               </div>
+              {previewSuggestions.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">…and offer these follow-ups</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {previewSuggestions.map((suggestion) => (
+                      <Badge key={suggestion.text} variant="outline">{suggestion.text}</Badge>
+                    ))}
+                  </div>
+                </div>
+              ) : previewsSuggestionScopedDraft ? (
+                <p className="text-xs text-muted-foreground">
+                  This preview offered no follow-up questions. That may be this directive
+                  suppressing them, or the agent may not be offering any on this turn — the
+                  preview cannot tell the two apart, so check a turn that normally shows them.
+                </p>
+              ) : null}
             </div>
 
             <Button

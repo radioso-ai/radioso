@@ -311,7 +311,7 @@ describe("grounded miss response composer", () => {
       ],
     });
 
-    expect(observedPrompt).toContain("The following behavioral directives apply to this turn");
+    expect(observedPrompt).toContain("The following behavioral directives govern the visible answer you write");
     expect(observedPrompt).toContain("Prefer short paragraphs and avoid unnecessary structure.");
   });
 

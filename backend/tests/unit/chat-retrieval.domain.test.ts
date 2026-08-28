@@ -1949,6 +1949,7 @@ describe("chat retrieval domain", () => {
 
   it("applies retrieval-route directive steering to direct answer generation", async () => {
     const steeringInputs: unknown[] = [];
+    let steeringResult: Record<string, unknown> | undefined;
     const answerInputs: Array<{ systemPrompt: string }> = [];
     const service = new RetrievalAnswerService({
       retrievalPipeline: {
@@ -2010,7 +2011,7 @@ describe("chat retrieval domain", () => {
       directiveSteering: {
         async steer(input: unknown) {
           steeringInputs.push(input);
-          return {
+          steeringResult = {
             matches: [],
             omissions: [],
             rules: [
@@ -2028,6 +2029,7 @@ describe("chat retrieval domain", () => {
               },
             ],
           };
+          return steeringResult;
         },
       },
     } as never);
@@ -2049,9 +2051,12 @@ describe("chat retrieval domain", () => {
       },
     });
     expect(answerInputs[0]?.systemPrompt).toContain("base retrieval system");
-    expect(answerInputs[0]?.systemPrompt).toContain("The following behavioral directives apply");
+    expect(answerInputs[0]?.systemPrompt).toContain("The following behavioral directives govern the visible answer you write");
     expect(answerInputs[0]?.systemPrompt).toContain("Represent the organization as its assistant.");
     expect(answerInputs[0]?.systemPrompt).toContain("Use supported links inline with human-readable text.");
+    // This surface renders the answering voice, so the trace has to record it — a
+    // rule that steered this answer must not read like one whose generator never ran.
+    expect(steeringResult?.renderedSurfaces).toEqual(["answer"]);
   });
 
   it("records a retrieval.answer failure when the retrieval pipeline throws", async () => {

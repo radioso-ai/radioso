@@ -116,6 +116,7 @@ export {
   validateAuthoredDirectiveCapabilities,
   AUTHORED_DIRECTIVE_LIMITS,
   authoredDirectiveRouteValues,
+  authoredDirectiveSurfaceValues,
   type AuthoredDirective,
   type AuthoredDirectiveBinding,
   type AuthoredDirectiveLifecycle,

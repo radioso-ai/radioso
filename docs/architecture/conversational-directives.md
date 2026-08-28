@@ -146,9 +146,10 @@ short-lived guidance as part of its result. Both share one value type,
 `SteeringRule`, so the answer composer reads a single ordered set rather than
 two separate channels.
 
-A `SteeringRule` carries the action, an optional condition, and an optional
-priority used for ordering. The turn assigns its source (`directive` or `skill`)
-and lifespan when it merges the two sources.
+A `SteeringRule` carries the action, an optional condition, an optional
+priority used for ordering, and the generators it addresses. The turn assigns
+its source (`directive` or `skill`) and lifespan when it merges the two
+sources.
 
 ## Priority and precedence
 
@@ -171,6 +172,80 @@ A directive resolves against the others two ways, one soft and one hard.
   The per-built-in **Override** button is a shortcut that pre-selects that
   built-in. Use it when a built-in's behavior must be gone for sure, not merely
   outranked.
+
+## Where a directive applies
+
+A turn writes more than one piece of visitor-facing text. The agent's reply is
+one; the follow-up questions offered underneath it are another, written to their
+own rules — on the grounded path both come back in a single answer envelope, so
+the two rule sets share one prompt and the prompt states the boundary between
+them. A directive that governs one of them
+does not necessarily govern the other: "never suggest a follow-up question about
+price" belongs to the question generator, while the answer itself may still
+quote a price the visitor asked for.
+
+`surfaces` names the generators a directive addresses, from a closed vocabulary
+(`backend/src/shared/domain/generationSurface.ts`):
+
+| Surface | The text it governs |
+| --- | --- |
+| `answer` | The agent's reply, and the clarifying question that speaks in the same voice. |
+| `suggested_questions` | The follow-up questions offered to the visitor after an answer. |
+
+An empty `surfaces` means `answer`, so a directive that names no surface shapes
+the agent's reply and leaves the follow-up questions to their own rules. The
+agent editor surfaces this as **Where this applies**, a pair of choices with the
+reply selected. A directive addresses at least one generator, so the last
+selected choice stays selected.
+
+Each generator renders the rules addressed to it inside its own prompt block,
+next to that generator's standing rules. Those standing rules hold: a directive
+narrows what a generator may write, and the generator's own constraints — what
+it may ground a suggestion on, what it may reveal from an excerpt — apply
+whatever the directive says.
+
+`surfaces` is orthogonal to `routes`. A route picks which turn path a directive
+applies on; a surface picks which generator inside that turn it speaks to.
+
+### What the scope governs
+
+Scope reaches every decision that acts on behalf of a single generator, not only
+prompt text:
+
+- **Rendering.** Each generator renders the rules addressed to it.
+- **Skill binding.** Binding decides which skill answers the turn, so only a
+  directive addressed to `answer` can claim it. One scoped away from the answer
+  steers its own generator and has no say in who replies.
+- **Relationships.** `excludes` and `dependsOn` resolve per generator. "Replaces"
+  means "when this applies, cancel that one and run instead" — a claim about how
+  one generator behaves — so a directive cannot cancel one it never competes
+  with. A directive that survives on some of its surfaces and loses on others
+  keeps the surfaces it survived on, and still steers where it won.
+- **Lifecycle.** A `once_per_conversation` or `cooldown` directive counts as
+  fired when a generator it addresses **ran** — that is, when that generator's
+  rules reached the model and its output was kept. Producing nothing still counts:
+  a directive whose purpose is to suppress follow-up questions leaves none, and it
+  applied. Keying the budget on visible output instead would leave exactly those
+  rules unable to satisfy `once_per_conversation`, re-firing forever. The budget
+  is preserved when the generator did not run at all: suggestions switched off,
+  a count of zero, nothing retrieved, or a draft replaced by a decline.
+
+  Whether the visitor *saw* anything is tracked separately, as
+  `renderedSurfaces` in the trace, because it answers a different question.
+- **Rule identity.** The same action addressed to two generators is two rules.
+
+The two blocks share one system prompt, so the prompts say the boundary out
+loud: the answer directives state that their reach is the answer text, and the
+suggestion rules state that only directives in their own section govern what may
+be suggested. Without that, a model reading "follow these when forming your
+response" would apply an answer rule to the suggestions too.
+
+The turn's activity trace records the surfaces each matched directive resolved
+to, plus `renderedSurfaces` — the generators that actually produced output. Read
+together they tell a rule that shaped the reply from one that shaped the
+follow-up questions from one whose generator never ran. `pendingSurfaces` is
+narrower and lifecycle-only: the once/cooldown directives whose budget is still
+unspent because their generator had not rendered.
 
 ## Relationships
 
@@ -201,8 +276,8 @@ dialog, no code involved. The fields are **Name**, **When this applies**
 (`Always`, or `In a specific situation`, which opens a **Situation** field for
 the condition's description), **Instruction** (the steering text — the
 `action` field described above; the label reads "Instruction" because it
-states what the agent should do when the directive fires), **Replaces**, and
-**Priority**.
+states what the agent should do when the directive fires), **Where this
+applies**, **Replaces**, and **Priority**.
 
 ## Practical implication
 

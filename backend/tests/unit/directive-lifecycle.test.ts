@@ -83,8 +83,12 @@ describe("isDirectiveLifecycleEligible", () => {
 });
 
 describe("renderedDirectiveNames", () => {
-  it("returns matched directives minus those the bound held back", () => {
+  it("returns only directives preserved in the rendered steering rules", () => {
     const result = {
+      rules: [
+        { directiveName: "a", action: "do a", source: "directive" as const, lifespan: "response" as const },
+        { directiveName: "c", action: "do c", source: "directive" as const, lifespan: "response" as const },
+      ],
       matches: [match("a"), match("b"), match("c")],
       omissions: [],
       bounded: [{ directiveName: "b", reason: "top_k" as const }],
@@ -92,9 +96,45 @@ describe("renderedDirectiveNames", () => {
     expect(renderedDirectiveNames(result).sort()).toEqual(["a", "c"]);
   });
 
-  it("returns all matches when nothing was bounded", () => {
-    const result = { matches: [match("a"), match("b")], omissions: [] };
+  it("returns every rendered directive when no surface is requested", () => {
+    const result = {
+      rules: [
+        { directiveName: "a", action: "do a", source: "directive" as const, lifespan: "response" as const },
+        { directiveName: "b", action: "do b", source: "directive" as const, lifespan: "response" as const },
+      ],
+      matches: [match("a"), match("b")],
+      omissions: [],
+    };
     expect(renderedDirectiveNames(result).sort()).toEqual(["a", "b"]);
+  });
+
+  it("returns each rendered directive name once", () => {
+    const renderedRule = {
+      directiveName: "a",
+      action: "do a",
+      source: "directive" as const,
+      lifespan: "response" as const,
+    };
+    expect(renderedDirectiveNames({ rules: [renderedRule, renderedRule] })).toEqual(["a"]);
+  });
+
+  it("preserves the exact surfaces that survived independent per-surface bounding", () => {
+    const bothSurfaces = match("both");
+    bothSurfaces.directive.surfaces = ["answer", "suggested_questions"];
+    const result = {
+      rules: [{
+        directiveName: "both",
+        action: "do both",
+        source: "directive" as const,
+        lifespan: "response" as const,
+        surfaces: ["suggested_questions" as const],
+      }],
+      matches: [bothSurfaces],
+      omissions: [],
+    };
+
+    expect(renderedDirectiveNames(result, "answer")).toEqual([]);
+    expect(renderedDirectiveNames(result, "suggested_questions")).toEqual(["both"]);
   });
 });
 

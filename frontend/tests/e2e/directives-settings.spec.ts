@@ -111,6 +111,54 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
   await expect(page.locator("#directive-44444444-4444-4444-8444-000000000001")).toBeHidden();
 });
 
+test("agent directives scope a rule to the follow-up question generator", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("no-price-suggestions");
+  await fillInstruction(page, "Never suggest a follow-up question about price.");
+
+  // The reply is selected by default, so addressing only the suggestion generator
+  // means checking that one and clearing the reply.
+  await page.getByRole("checkbox", { name: "Suggested follow-up questions" }).click();
+  await page.getByRole("checkbox", { name: "The agent's reply" }).click();
+  await expect(page.getByRole("checkbox", { name: "The agent's reply" })).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+
+  await page.getByRole("button", { name: "Save directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({
+    method: "POST",
+    body: {
+      name: "no-price-suggestions",
+      surfaces: ["suggested_questions"],
+    },
+  });
+});
+
+test("agent directives cannot be addressed to no generator at all", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-directives`);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+
+  const reply = page.getByRole("checkbox", { name: "The agent's reply" });
+  await expect(reply).toHaveAttribute("aria-checked", "true");
+  await reply.click();
+  await expect(reply).toHaveAttribute("aria-checked", "true");
+});
+
 test("agent directives settings can replace and restore a built-in directive", async ({ page }) => {
   const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
 
@@ -882,7 +930,10 @@ test("agent directives drop a selected replacement from its pill", async ({ page
   await expect(page.getByRole("dialog")).toBeHidden();
 
   await expect.poll(() => directiveUpdates.length).toBe(1);
-  expect(directiveUpdates[0]?.body).not.toHaveProperty("excludes");
+  // Sent explicitly empty rather than omitted: the update service reads a missing
+  // field as "keep what is stored", so omitting it would leave a cleared replacement
+  // alive in storage on the edit path.
+  expect(directiveUpdates[0]?.body).toMatchObject({ excludes: [] });
 });
 
 test("agent directives stay quiet until the operator asks to save", async ({ page }) => {

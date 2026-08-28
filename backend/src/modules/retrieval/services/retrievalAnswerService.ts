@@ -1,3 +1,4 @@
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -108,6 +109,12 @@ export class RetrievalAnswerService {
       },
     });
     const systemPrompt = appendSteeringBlock(retrieval.systemPrompt, directiveSteering?.rules ?? []);
+    if (directiveSteering) {
+      // This surface renders the answering voice and nothing else, so the trace has to
+      // say so — otherwise a rule that steered this answer is indistinguishable from
+      // one whose generator never ran.
+      directiveSteering.renderedSurfaces = [GENERATION_SURFACE.ANSWER];
+    }
     const activitySummary = this.activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
     });

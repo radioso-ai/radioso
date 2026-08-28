@@ -4186,6 +4186,11 @@ export interface components {
             kind: "cooldown";
             turns: number;
         };
+        /**
+         * @description Generator a directive addresses. Omitted or empty means the answer body only.
+         * @enum {string}
+         */
+        GenerationSurface: "answer" | "suggested_questions";
         AuthoredDirectiveCreateRequest: {
             name: string;
             condition: components["schemas"]["AuthoredDirectiveCondition"];
@@ -4194,6 +4199,7 @@ export interface components {
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
+            surfaces?: components["schemas"]["GenerationSurface"][];
             tags?: string[];
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
@@ -4210,6 +4216,7 @@ export interface components {
             requiredCapabilities?: string[];
             dependsOn?: string[];
             excludes?: string[];
+            surfaces?: components["schemas"]["GenerationSurface"][];
             tags?: string[];
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
@@ -4232,6 +4239,7 @@ export interface components {
             condition: components["schemas"]["AuthoredDirectiveCondition"];
             action: string;
             tags: string[];
+            surfaces?: components["schemas"]["GenerationSurface"][];
         };
         DirectiveDraftResponse: {
             directive: components["schemas"]["DirectiveDraftDirective"];
@@ -4252,6 +4260,7 @@ export interface components {
             dependsOn: string[];
             excludes: string[];
             routes: string[];
+            surfaces: components["schemas"]["GenerationSurface"][];
             tags: string[];
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
@@ -19822,6 +19831,7 @@ export interface operations {
                         answer?: string;
                         citations?: unknown[];
                         answerSegments?: unknown[];
+                        suggestions?: unknown[];
                         /** @enum {string} */
                         groundingVerdict?: "grounded" | "degraded" | "no_support";
                         groundingDiagnostics?: {

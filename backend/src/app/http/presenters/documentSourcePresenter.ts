@@ -6,6 +6,7 @@ import { parseDocumentSourceEnrichmentOverride } from "../../../modules/document
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 import { parseSourceDocumentMetadata } from "../../../modules/documents/domain/sourceDocumentMetadata.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
+import type { WorkspaceDocumentSourceStatus } from "../../../modules/documents/contracts/index.js";
 
 export interface WebsiteSourceCrawlSettings {
   url: string | null;
@@ -57,7 +58,7 @@ export const buildSyntheticManualDocumentSource = (
 });
 
 export const presentDocumentSource = (
-  source: DocumentSourceRecord,
+  source: Pick<DocumentSourceRecord, "id" | "kind" | "name" | "externalId" | "config" | "lastSyncStatus" | "lastSyncedAt" | "createdAt" | "updatedAt">,
   documentCount = 0,
 ) => ({
   id: source.id,
@@ -76,7 +77,7 @@ export const presentDocumentSource = (
 
 export const presentDocumentSourceList = (
   workspaceId: string,
-  sources: DocumentSourceListRecord[],
+  sources: ReadonlyArray<DocumentSourceListRecord | WorkspaceDocumentSourceStatus>,
   documentsWithoutSourceCount: number,
 ) => {
   const allSources = documentsWithoutSourceCount > 0

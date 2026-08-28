@@ -40,6 +40,7 @@ const catalogToolCoverage = {
   getEvalCaseBySourceMessage: "eval_results",
   getOrCreateEvalCaseBySourceMessage: "create_eval_case_from_turn",
   runEvalCases: "run_eval_suite",
+  listEvalCases: "eval_results",
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
   getAudiencePulse: "audience_topics",
@@ -202,6 +203,15 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "syncConnector",
   ], wave5WorkspaceConfig),
   ...coverage(["deleteAgentRoutine"], routineStructuralEditing),
+  ...coverage([
+    "createEvalSnapshot",
+    "getEvalSnapshot",
+    "createEvalCase",
+    "getEvalCase",
+    "renameEvalCase",
+    "replaceEvalCaseAssertions",
+    "createEvalCaseRun",
+  ], wave2BehaviorAuthoring),
   ...coverage([
     "createAgent",
     "updateAgent",

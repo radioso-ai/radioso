@@ -16,6 +16,25 @@ export interface DocumentSourceSummary {
   externalId: string | null;
 }
 
+/** Content-free source state shared by REST and operator read surfaces. */
+export interface WorkspaceDocumentSourceStatus {
+  readonly id: string;
+  readonly kind: "website" | "api" | "connector" | "upload";
+  readonly name: string;
+  readonly externalId: string | null;
+  readonly config: Record<string, unknown>;
+  readonly lastSyncStatus: string | null;
+  readonly lastSyncedAt: Date | null;
+  readonly documentCount: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface WorkspaceDocumentSourceStatusSummary {
+  readonly sources: ReadonlyArray<WorkspaceDocumentSourceStatus>;
+  readonly documentsWithoutSourceCount: number;
+}
+
 export type DocumentSourceResolverInput =
   | { id: string }
   | {

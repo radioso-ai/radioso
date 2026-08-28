@@ -62,7 +62,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
     previewRoutineIds: readonly string[],
   ): Promise<void> {
     if (input.conversationId) {
-      const conversation = await this.dependencies.conversationReader.findByIdAndWorkspaceId(
+      const conversation = await this.dependencies.conversationReader.findProbeConversation(
         input.conversationId,
         input.workspaceId,
       );
@@ -77,7 +77,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
       }
     }
 
-    const agent = await this.dependencies.agentReader.findByIdAndWorkspaceId(
+    const agent = await this.dependencies.agentReader.findAgentForProbe(
       input.agentId,
       input.workspaceId,
     );
@@ -86,7 +86,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
     }
 
     for (const routineId of previewRoutineIds) {
-      const routine = await this.dependencies.routineReader.findById(input.agentId, routineId);
+      const routine = await this.dependencies.routineReader.findPreviewRoutine(input.workspaceId, input.agentId, routineId);
       if (!routine || !PREVIEW_ELIGIBLE_STATUSES.has(routine.status)) {
         throw notFound("Preview routine not found");
       }

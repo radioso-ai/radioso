@@ -47,6 +47,7 @@ import type {
   DocumentWorkspaceSummaryRecord,
   EmbeddingCoverageReconciliationPort,
   IndexedFieldValue,
+  WorkspaceDocumentSourceStatusSummary,
 } from "../contracts/documentContracts.js";
 
 export type {
@@ -633,6 +634,32 @@ export class DocumentIngestionService {
 
   async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
     return this.documentRepository.summarizeWorkspace(workspaceId);
+  }
+
+  /** Documents owns this source summary so REST and Ray cannot query source persistence directly. */
+  async summarizeSourcesForWorkspace(workspaceId: string): Promise<WorkspaceDocumentSourceStatusSummary> {
+    if (!this.documentSourceRepository) {
+      return { sources: [], documentsWithoutSourceCount: 0 };
+    }
+    const [sources, documentsWithoutSourceCount] = await Promise.all([
+      this.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
+      this.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
+    ]);
+    return {
+      sources: sources.map((source) => ({
+        id: source.id,
+        kind: source.kind,
+        name: source.name,
+        externalId: source.externalId,
+        config: source.config,
+        lastSyncStatus: source.lastSyncStatus,
+        lastSyncedAt: source.lastSyncedAt,
+        documentCount: source.documentCount,
+        createdAt: source.createdAt,
+        updatedAt: source.updatedAt,
+      })),
+      documentsWithoutSourceCount,
+    };
   }
 
   /**

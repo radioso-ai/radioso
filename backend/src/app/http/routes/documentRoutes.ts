@@ -134,11 +134,8 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
   router.get("/sources", workspaceSession, documentsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const [sources, documentsWithoutSourceCount] = await Promise.all([
-        dependencies.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
-        dependencies.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
-      ]);
-      res.status(200).json(presentDocumentSourceList(workspaceId, sources, documentsWithoutSourceCount));
+      const summary = await dependencies.documentIngestionService.summarizeSourcesForWorkspace(workspaceId);
+      res.status(200).json(presentDocumentSourceList(workspaceId, summary.sources, summary.documentsWithoutSourceCount));
     } catch (error) {
       next(error);
     }

@@ -15,7 +15,7 @@ describe("copilot document readers", () => {
 
     expect(documents.summarizeWorkspace).toHaveBeenCalledWith("workspace-1");
     expect(documents.listByStatuses).toHaveBeenCalledWith("workspace-1", ["failed", "queued", "processing"], { limit: 25 });
-    expect(documents.listByWorkspaceIdWithDocumentCounts).toHaveBeenCalledWith("workspace-1");
+    expect(documents.listByWorkspaceIdWithDocumentCounts).toHaveBeenCalledTimes(1);
     expect(result.counts).toEqual({ total: 12, ready: 9, pending: 2, failed: 1 });
     expect(result.attention).toEqual([
       {

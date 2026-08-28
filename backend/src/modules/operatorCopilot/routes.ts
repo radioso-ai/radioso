@@ -9,7 +9,7 @@ import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
-import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotConflictError, CopilotNotFoundError } from "./public.js";
+import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
 
@@ -92,6 +92,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       const { proposalId } = proposalParamsSchema.parse(req.params);
       res.status(200).json(await dependencies.operatorCopilotService.applyProposal({ workspaceId, accountId, operatorUserId: userId, proposalId }));
     } catch (error) {
+      if (error instanceof CopilotAuthorizationError) { next(forbidden()); return; }
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
       if (error instanceof CopilotNotFoundError) { next(notFound("Copilot proposal not found")); return; }
       next(error);

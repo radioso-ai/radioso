@@ -37,7 +37,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
-import { RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
+import { ProbeRoutineReader, RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
 import {
   type ComposedDecline,
   type FallbackReplyComposer,
@@ -170,7 +170,7 @@ import {
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/app/composition/copilotProposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -216,7 +216,7 @@ import {
   NoopPublicChatActionAdvertiser,
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
-import { InMemoryPublicConversationEventBus } from "../../src/modules/chat/composition.js";
+import { InMemoryPublicConversationEventBus, ProbeConversationReader } from "../../src/modules/chat/composition.js";
 import { NoopContactHistoryProvider, type ContactHistoryProviderPort } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -1605,11 +1605,11 @@ export const createTestDependencies = (overrides: {
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
   const agentTurnProbeService = new AgentTurnProbeService({
-    conversationReader: conversationRepository,
+    conversationReader: new ProbeConversationReader(conversationRepository),
     agentReader: {
-      findByIdAndWorkspaceId: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
+      findAgentForProbe: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
     },
-    routineReader: routineDefinitionRepository,
+    routineReader: new ProbeRoutineReader(routineDefinitionService),
     abuseControl: abuseControlService,
     audit: auditService,
     abusePolicy: {
@@ -1786,7 +1786,7 @@ export const createTestDependencies = (overrides: {
     qualitySignalsService,
     audiencePulseService,
     documentStatusService: documentIngestionService,
-    documentSourceStatusService: documentSourceRepository,
+    documentSourceStatusService: documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
     workspaceSettings: {
@@ -1833,6 +1833,16 @@ export const createTestDependencies = (overrides: {
     prompt: copilotPrompt,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     tools: copilotToolCatalog,
+    currentAuthorization: {
+      hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>
+        accountAccessService.hasAllWorkspacePermissions({
+          accountId,
+          userId: operatorUserId,
+          principal: { type: "session_user", userId: operatorUserId },
+          workspaceId,
+          permissions: requiredPermissions,
+        }),
+    },
   });
   const dependencies: AppDependencies = {
     env,

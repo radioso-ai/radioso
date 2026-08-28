@@ -580,6 +580,17 @@ CREATE TABLE public.agent_skills (
 
 
 --
+-- Name: agent_skills_watermarks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_skills_watermarks (
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: agents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3267,6 +3278,14 @@ ALTER TABLE ONLY public.agent_skills
 
 
 --
+-- Name: agent_skills_watermarks agent_skills_watermarks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_skills_watermarks
+    ADD CONSTRAINT agent_skills_watermarks_pkey PRIMARY KEY (agent_id);
+
+
+--
 -- Name: agents agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5589,6 +5608,13 @@ CREATE INDEX idx_agent_skills_target ON public.agent_skills USING btree (workspa
 
 
 --
+-- Name: idx_agent_skills_watermarks_workspace; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agent_skills_watermarks_workspace ON public.agent_skills_watermarks USING btree (workspace_id);
+
+
+--
 -- Name: idx_agent_skills_workspace; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7719,6 +7745,22 @@ ALTER TABLE ONLY public.agent_document_sources
 
 ALTER TABLE ONLY public.agent_skills
     ADD CONSTRAINT agent_skills_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_skills_watermarks agent_skills_watermarks_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_skills_watermarks
+    ADD CONSTRAINT agent_skills_watermarks_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_skills_watermarks agent_skills_watermarks_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_skills_watermarks
+    ADD CONSTRAINT agent_skills_watermarks_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -209,6 +209,33 @@ describe("workspace_triage", () => {
     expect(result.sources).toContainEqual({ source: "handoffs", status: "ok", total: 0, included: 0 });
   });
 
+  it("drops a source read when its permission is revoked before the rows are emitted", async () => {
+    const listPending = vi.fn(async () => [{
+      conversationId: "conversation-approval",
+      agentId: "agent-1",
+      reason: "Refund over limit",
+      createdAt: new Date("2026-08-26T06:00:00.000Z"),
+    }]);
+    let approvalChecks = 0;
+    const result = await digest(
+      dependencies({ pendingApprovals: { listPending } }),
+      {
+        ...context(ALL_PERMISSIONS),
+        currentAuthorization: {
+          hasAllPermissions: vi.fn(async ({ requiredPermissions }: { requiredPermissions: ReadonlyArray<string> }) => {
+            if (requiredPermissions[0] !== "workspace.conversation.takeover") return false;
+            approvalChecks += 1;
+            return approvalChecks === 1;
+          }),
+        },
+      },
+    );
+
+    expect(listPending).toHaveBeenCalledOnce();
+    expect(result.items).toHaveLength(0);
+    expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
+  });
+
   it("drops a review line for a conversation an operator is already being asked to act on", async () => {
     const result = await digest(dependencies({
       pendingApprovals: {

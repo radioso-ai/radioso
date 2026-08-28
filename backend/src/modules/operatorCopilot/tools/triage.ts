@@ -183,6 +183,17 @@ const readSource = async (
   }
   try {
     const result = await read();
+    // Each source may take a different amount of time. Recheck its own permission before the
+    // rows become part of the aggregate, so a revocation during this read cannot leak a line.
+    const stillAuthorized = await context.currentAuthorization.hasAllPermissions({
+      workspaceId: context.workspaceId,
+      accountId: context.accountId,
+      operatorUserId: context.operatorUserId,
+      requiredPermissions: [permission],
+    });
+    if (!stillAuthorized) {
+      return { report: { source, status: "unauthorized", total: null }, items: [] };
+    }
     return { report: { source, status: "ok", total: result.total }, items: result.items };
   } catch (error) {
     deps.logger?.warn(

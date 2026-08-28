@@ -63,6 +63,8 @@ export interface CopilotRepositoryPort {
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
   updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null>;
   claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
+  /** Clears only a still-pending claim held by this apply attempt after a pre-mutation denial. */
+  releaseProposalApplyClaim(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean>;
 }
 
 export interface OperatorCopilotServiceDeps {
@@ -125,7 +127,16 @@ export class OperatorCopilotService {
       await this.requireProposalAuthorization(input);
       result = await this.adapterFor(proposal.targetType).applyIfVersionMatches(input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken);
     } catch (error) {
-      if (error instanceof CopilotAuthorizationError) throw error;
+      if (error instanceof CopilotAuthorizationError) {
+        // The authorization check is intentionally after the claim. Leaving that bookkeeping
+        // claim set would make an otherwise pending proposal impossible to apply or dismiss.
+        await this.deps.repository.releaseProposalApplyClaim({
+          id: proposal.id,
+          workspaceId: input.workspaceId,
+          operatorUserId: input.operatorUserId,
+        });
+        throw error;
+      }
       await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "failed", true);
       return { status: "failed" };
     }

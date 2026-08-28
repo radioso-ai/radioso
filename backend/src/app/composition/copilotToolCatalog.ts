@@ -30,7 +30,7 @@ import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
 import { enrichCopilotToolCatalog } from "../../modules/operatorCopilot/catalog.js";
-import { assertCopilotCapabilityProvenance } from "../../modules/operatorCopilot/capabilityProvenance.js";
+import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceRegistry } from "../../modules/operatorCopilot/capabilityProvenance.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../modules/agents/public.js";
@@ -93,6 +93,7 @@ export const createCopilotToolCatalog = (deps: {
     ...routineCopilotPrimitives,
     ...settingsCopilotPrimitives,
   ]);
+  assertCopilotCapabilityProvenanceRegistry(descriptors);
   assertCopilotCapabilityProvenance(descriptors, publicOperationIds, operationPermissionRequirements, ownerExportedPrimitiveIds);
   return enrichCopilotToolCatalog(descriptors, deps.workspaceRouteKeyResolver);
 };

@@ -6896,6 +6896,59 @@ export interface components {
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
         };
+        EvalAssertion: {
+            /** @enum {string} */
+            type: "retrieval_includes_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_excludes_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_top_k_includes_document";
+            /** Format: uuid */
+            documentId: string;
+            k: number;
+        } | {
+            /** @enum {string} */
+            type: "retrieval_document_order";
+            documentIds: string[];
+        } | {
+            /** @enum {string} */
+            type: "retrieval_chunk_metadata";
+            /** Format: uuid */
+            documentId: string;
+            metadata: {
+                [key: string]: string | number | boolean | null;
+            };
+        } | {
+            /** @enum {string} */
+            type: "answer_cites_document";
+            /** Format: uuid */
+            documentId: string;
+        } | {
+            /** @enum {string} */
+            type: "answer_contains";
+            pattern: string;
+            /** @enum {string} */
+            matchMode: "substring" | "regex";
+            caseSensitive?: boolean;
+        } | {
+            /** @enum {string} */
+            type: "answer_does_not_contain";
+            pattern: string;
+            /** @enum {string} */
+            matchMode: "substring" | "regex";
+            caseSensitive?: boolean;
+        } | {
+            /** @enum {string} */
+            type: "llm_judge";
+            expectedAnswer: string;
+            criteria?: string;
+        };
         EvalMessageCaseLookup: {
             /** Format: uuid */
             assistantMessageId: string;
@@ -6907,7 +6960,59 @@ export interface components {
                 /** Format: uuid */
                 snapshotId: string;
                 name: string;
-                assertions: unknown[];
+                assertions: ({
+                    /** @enum {string} */
+                    type: "retrieval_includes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_excludes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_top_k_includes_document";
+                    /** Format: uuid */
+                    documentId: string;
+                    k: number;
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_document_order";
+                    documentIds: string[];
+                } | {
+                    /** @enum {string} */
+                    type: "retrieval_chunk_metadata";
+                    /** Format: uuid */
+                    documentId: string;
+                    metadata: {
+                        [key: string]: string | number | boolean | null;
+                    };
+                } | {
+                    /** @enum {string} */
+                    type: "answer_cites_document";
+                    /** Format: uuid */
+                    documentId: string;
+                } | {
+                    /** @enum {string} */
+                    type: "answer_contains";
+                    pattern: string;
+                    /** @enum {string} */
+                    matchMode: "substring" | "regex";
+                    caseSensitive?: boolean;
+                } | {
+                    /** @enum {string} */
+                    type: "answer_does_not_contain";
+                    pattern: string;
+                    /** @enum {string} */
+                    matchMode: "substring" | "regex";
+                    caseSensitive?: boolean;
+                } | {
+                    /** @enum {string} */
+                    type: "llm_judge";
+                    expectedAnswer: string;
+                    criteria?: string;
+                })[];
                 /** @enum {string} */
                 status: "pending" | "passing" | "failing" | "error";
                 /** Format: uuid */
@@ -6986,7 +7091,7 @@ export interface components {
             /** Format: uuid */
             snapshotId: string;
             name: string;
-            assertions: unknown[];
+            assertions: components["schemas"]["EvalAssertion"][];
             /** @enum {string} */
             status: "pending" | "passing" | "failing" | "error";
             /** Format: uuid */
@@ -18858,10 +18963,59 @@ export interface operations {
                     snapshotId: string;
                     name: string;
                     /** @default [] */
-                    assertions?: {
+                    assertions?: ({
                         /** @enum {string} */
-                        type: "retrieval_includes_document" | "retrieval_excludes_document" | "retrieval_top_k_includes_document" | "retrieval_document_order" | "retrieval_chunk_metadata" | "answer_cites_document" | "answer_contains" | "answer_does_not_contain" | "llm_judge";
-                    }[];
+                        type: "retrieval_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_excludes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_top_k_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                        k: number;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_document_order";
+                        documentIds: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_chunk_metadata";
+                        /** Format: uuid */
+                        documentId: string;
+                        metadata: {
+                            [key: string]: string | number | boolean | null;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_cites_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_contains";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_does_not_contain";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "llm_judge";
+                        expectedAnswer: string;
+                        criteria?: string;
+                    })[];
                 };
             };
         };
@@ -19219,10 +19373,59 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    assertions: {
+                    assertions: ({
                         /** @enum {string} */
-                        type: "retrieval_includes_document" | "retrieval_excludes_document" | "retrieval_top_k_includes_document" | "retrieval_document_order" | "retrieval_chunk_metadata" | "answer_cites_document" | "answer_contains" | "answer_does_not_contain" | "llm_judge";
-                    }[];
+                        type: "retrieval_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_excludes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_top_k_includes_document";
+                        /** Format: uuid */
+                        documentId: string;
+                        k: number;
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_document_order";
+                        documentIds: string[];
+                    } | {
+                        /** @enum {string} */
+                        type: "retrieval_chunk_metadata";
+                        /** Format: uuid */
+                        documentId: string;
+                        metadata: {
+                            [key: string]: string | number | boolean | null;
+                        };
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_cites_document";
+                        /** Format: uuid */
+                        documentId: string;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_contains";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "answer_does_not_contain";
+                        pattern: string;
+                        /** @enum {string} */
+                        matchMode: "substring" | "regex";
+                        caseSensitive?: boolean;
+                    } | {
+                        /** @enum {string} */
+                        type: "llm_judge";
+                        expectedAnswer: string;
+                        criteria?: string;
+                    })[];
                 };
             };
         };

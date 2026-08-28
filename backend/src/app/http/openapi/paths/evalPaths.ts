@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+import { evalAssertionSchema } from "../../../../modules/eval/domain/assertionSchema.js";
 
 const AgentConfigOverrideSchema = z
   .object({
@@ -142,24 +143,10 @@ const EvalSnapshotCaptureRequestSchema = z.object({
   messageId: z.string().uuid().optional(),
 });
 
-const EvalAssertionSchema = z.object({
-  type: z.enum([
-    "retrieval_includes_document",
-    "retrieval_excludes_document",
-    "retrieval_top_k_includes_document",
-    "retrieval_document_order",
-    "retrieval_chunk_metadata",
-    "answer_cites_document",
-    "answer_contains",
-    "answer_does_not_contain",
-    "llm_judge",
-  ]),
-}).passthrough();
-
 const CreateEvalCaseRequestSchema = z.object({
   snapshotId: z.string().uuid(),
   name: z.string().min(1).max(200),
-  assertions: z.array(EvalAssertionSchema).max(20).optional().default([]),
+  assertions: z.array(evalAssertionSchema).max(20).optional().default([]),
 });
 
 const RenameEvalCaseRequestSchema = z.object({
@@ -167,7 +154,7 @@ const RenameEvalCaseRequestSchema = z.object({
 });
 
 const ReplaceEvalCaseAssertionsRequestSchema = z.object({
-  assertions: z.array(EvalAssertionSchema).max(20),
+  assertions: z.array(evalAssertionSchema).max(20),
 });
 
 const EvalCaseRunRequestSchema = z.object({
@@ -184,7 +171,7 @@ const EvalCaseSchema = z.object({
   workspaceId: z.string().uuid(),
   snapshotId: z.string().uuid(),
   name: z.string(),
-  assertions: z.array(z.unknown()),
+  assertions: z.array(evalAssertionSchema).max(20),
   status: z.enum(["pending", "passing", "failing", "error"]),
   lastRunId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
@@ -245,6 +232,7 @@ export const registerEvalPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const RegisteredEvalAssertionSchema = registry.register("EvalAssertion", evalAssertionSchema);
   const RegisteredEvalMessageCaseLookupSchema = registry.register(
     "EvalMessageCaseLookup",
     EvalMessageCaseLookupSchema,
@@ -255,7 +243,10 @@ export const registerEvalPaths = (
       created: z.boolean().describe("True only when this request created the association."),
     })),
   );
-  const RegisteredEvalCaseSchema = registry.register("EvalCase", EvalCaseSchema);
+  const RegisteredEvalCaseSchema = registry.register(
+    "EvalCase",
+    EvalCaseSchema.extend({ assertions: z.array(RegisteredEvalAssertionSchema).max(20) }),
+  );
   const RegisteredEvalSnapshotSchema = registry.register("EvalSnapshot", EvalSnapshotSchema);
   const RegisteredEvalCaseWithRunsSchema = registry.register(
     "EvalCaseWithRuns",

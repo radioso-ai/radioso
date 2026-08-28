@@ -12,6 +12,7 @@ import type { EvalMessageCaseService } from "../services/evalMessageCaseService.
 import type { InternalAgentConfig } from "../../agents/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { summarizeSuite } from "../domain/suite.js";
+import { evalAssertionSchema } from "../domain/assertionSchema.js";
 import { workbenchReplayRateLimiter, type WorkbenchReplayRateLimitDependencies } from "./workbenchReplayRateLimit.js";
 
 const captureSnapshotSchema = z.object({
@@ -19,60 +20,7 @@ const captureSnapshotSchema = z.object({
   messageId: z.string().uuid().optional(),
 });
 
-const answerMatchModeSchema = z.enum(["substring", "regex"]);
-
-const answerAssertionFields = {
-  pattern: z.string().min(1).max(4000),
-  matchMode: answerMatchModeSchema,
-  caseSensitive: z.boolean().optional(),
-};
-
-const assertionSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("retrieval_includes_document"),
-    documentId: z.string().uuid(),
-  }),
-  z.object({
-    type: z.literal("retrieval_excludes_document"),
-    documentId: z.string().uuid(),
-  }),
-  z.object({
-    type: z.literal("retrieval_top_k_includes_document"),
-    documentId: z.string().uuid(),
-    k: z.number().int().min(1).max(100),
-  }),
-  z.object({
-    type: z.literal("retrieval_document_order"),
-    documentIds: z.array(z.string().uuid()).min(1).max(100),
-  }),
-  z.object({
-    type: z.literal("retrieval_chunk_metadata"),
-    documentId: z.string().uuid(),
-    metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).refine(
-      (metadata) => Object.keys(metadata).length > 0,
-      "metadata must include at least one expected field",
-    ),
-  }),
-  z.object({
-    type: z.literal("answer_cites_document"),
-    documentId: z.string().uuid(),
-  }),
-  z.object({
-    type: z.literal("answer_contains"),
-    ...answerAssertionFields,
-  }),
-  z.object({
-    type: z.literal("answer_does_not_contain"),
-    ...answerAssertionFields,
-  }),
-  z.object({
-    type: z.literal("llm_judge"),
-    expectedAnswer: z.string().min(1).max(8000),
-    criteria: z.string().max(2000).optional(),
-  }),
-]);
-
-const assertionsSchema = z.array(assertionSchema).max(20);
+const assertionsSchema = z.array(evalAssertionSchema).max(20);
 
 const overridesSchema = z
   .object({
@@ -171,6 +119,22 @@ const batchRunSchema = z.object({
   caseIds: z.array(z.string().uuid()).min(1).max(500).optional(),
 });
 
+const evalCaseParamsSchema = z.object({ id: z.string().uuid() });
+const evalSnapshotParamsSchema = z.object({ id: z.string().uuid() });
+const evalSourceMessageParamsSchema = z.object({ assistantMessageId: z.string().uuid() });
+
+const parseRouteParams = <T extends z.ZodType>(
+  schema: T,
+  params: unknown,
+  message: string,
+): z.output<T> => {
+  const result = schema.safeParse(params);
+  if (!result.success) {
+    throw badRequest(message, result.error.flatten());
+  }
+  return result.data;
+};
+
 const oneOffRunSchema = z.object({
   snapshotId: z.string().uuid(),
   mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
@@ -243,8 +207,12 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     requireQuery,
     async (req, res, next) => {
       try {
+        const { id: snapshotId } = parseRouteParams(
+          evalSnapshotParamsSchema,
+          req.params,
+          "Invalid snapshot id",
+        );
         const { workspaceId } = res.locals as { workspaceId: string };
-        const snapshotId = String(req.params.id);
         const snapshot = await dependencies.snapshotService.getById(workspaceId, snapshotId);
         res.status(200).json(snapshot);
       } catch (error) {
@@ -280,16 +248,15 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     requireQuery,
     async (req, res, next) => {
       try {
-        const params = z
-          .object({ assistantMessageId: z.string().uuid() })
-          .safeParse(req.params);
-        if (!params.success) {
-          throw badRequest("Invalid assistant message id", params.error.flatten());
-        }
+        const params = parseRouteParams(
+          evalSourceMessageParamsSchema,
+          req.params,
+          "Invalid assistant message id",
+        );
         const { workspaceId } = res.locals as { workspaceId: string };
         const association = await dependencies.messageCaseService.get(
           workspaceId,
-          params.data.assistantMessageId,
+          params.assistantMessageId,
         );
         res.status(200).json(association);
       } catch (error) {
@@ -304,19 +271,18 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     requireQuery,
     async (req, res, next) => {
       try {
-        const params = z
-          .object({ assistantMessageId: z.string().uuid() })
-          .safeParse(req.params);
-        if (!params.success) {
-          throw badRequest("Invalid assistant message id", params.error.flatten());
-        }
+        const params = parseRouteParams(
+          evalSourceMessageParamsSchema,
+          req.params,
+          "Invalid assistant message id",
+        );
         const { workspaceId, userId } = res.locals as {
           workspaceId: string;
           userId?: string | null;
         };
         const association = await dependencies.messageCaseService.findOrCreate({
           workspaceId,
-          assistantMessageId: params.data.assistantMessageId,
+          assistantMessageId: params.assistantMessageId,
           createdBy: userId ?? null,
         });
         res.status(association.created ? 201 : 200).json(association);
@@ -333,8 +299,8 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     validateBody(renameCaseSchema),
     async (req, res, next) => {
       try {
+        const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
         const { workspaceId } = res.locals as { workspaceId: string };
-        const caseId = String(req.params.id);
         const updated = await dependencies.caseService.rename(workspaceId, caseId, req.body.name);
         res.status(200).json(updated);
       } catch (error) {
@@ -350,8 +316,8 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     validateBody(replaceAssertionsSchema),
     async (req, res, next) => {
       try {
+        const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
         const { workspaceId } = res.locals as { workspaceId: string };
-        const caseId = String(req.params.id);
         const updated = await dependencies.caseService.replaceAssertions(
           workspaceId,
           caseId,
@@ -366,8 +332,8 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
 
   router.delete("/cases/:id", workspaceSession, requireQuery, async (req, res, next) => {
     try {
+      const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
-      const caseId = String(req.params.id);
       await dependencies.caseService.delete(workspaceId, caseId);
       await dependencies.auditService.record({
         accountId: accountId ?? null,
@@ -419,8 +385,8 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
 
   router.get("/cases/:id", workspaceSession, requireQuery, async (req, res, next) => {
     try {
+      const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
       const { workspaceId } = res.locals as { workspaceId: string };
-      const caseId = String(req.params.id);
       const caseWithRuns = await dependencies.caseService.getWithRuns(workspaceId, caseId);
       res.status(200).json(caseWithRuns);
     } catch (error) {
@@ -436,8 +402,8 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     rateLimitWorkbenchReplay,
     async (req, res, next) => {
       try {
+        const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
-        const caseId = String(req.params.id);
         const evalCase = await dependencies.caseService.getWithRuns(workspaceId, caseId);
         // A routine start state is a workbench-replay override too: it only takes effect
         // through the conversation-engine replay path, never the plain retrieval runner.

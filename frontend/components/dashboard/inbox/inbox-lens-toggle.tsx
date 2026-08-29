@@ -38,6 +38,7 @@ export function InboxLensToggle({
         { value: 'all', label: 'All' },
       ]}
       aria-label="Inbox lens"
+      fullWidth
     />
   )
 }

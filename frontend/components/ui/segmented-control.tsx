@@ -14,14 +14,21 @@ export function SegmentedControl<TValue extends string>({
   onValueChange,
   options,
   'aria-label': ariaLabel,
+  fullWidth = false,
 }: {
   value: TValue
   onValueChange: (value: TValue) => void
   options: readonly SegmentedControlOption<TValue>[]
   'aria-label'?: string
+  /** Stretches the control to fill its container's width, with segments sharing the space equally, instead of the default content-width sizing. */
+  fullWidth?: boolean
 }) {
   return (
-    <div className="inline-flex items-center rounded-lg bg-muted p-0.5" role="group" aria-label={ariaLabel}>
+    <div
+      className={cn('inline-flex items-center rounded-lg bg-muted p-0.5', fullWidth && 'flex w-full')}
+      role="group"
+      aria-label={ariaLabel}
+    >
       {options.map((option) => {
         const isSelected = option.value === value
         return (
@@ -32,6 +39,7 @@ export function SegmentedControl<TValue extends string>({
             onClick={() => onValueChange(option.value)}
             className={cn(
               'rounded-md px-3 py-1 text-sm font-medium transition',
+              fullWidth && 'flex-1 text-center',
               isSelected
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',

@@ -15,13 +15,15 @@ export interface InboxEmptyStateProps {
 }
 
 /**
- * The confidence summary shown in place of the open-item rows when the queue
- * is empty (FR-014): recent unassisted agent activity, plus a quiet link into
- * Quality review when there's an untriaged backlog — never a bare dead end.
- * Renders inside the queue's own left pane (below the lens toggle, above the
- * recently-closed strip the queue renders itself) rather than replacing the
- * whole page, so the toggle and the All lens stay reachable with zero open
- * items (spec 1116 unification).
+ * The confidence summary shown in the reading pane in place of the "select an
+ * item" prompt when the queue has zero open items (FR-014): recent
+ * unassisted agent activity, plus a quiet link into Quality review when
+ * there's an untriaged backlog — never a bare dead end. Rendered by
+ * `InboxResponseView`'s `emptyPlaceholder`, centered in the reading pane,
+ * rather than in the queue's own (now filter-less, row-less) left pane, so
+ * the toggle and the All lens stay reachable with zero open items and the
+ * message reads as an answer to "what's the state of my inbox" rather than
+ * unreachable advice (spec 1116 unification).
  *
  * Handoffs and approvals are always accurate here regardless of quality's
  * load state (they come from separate queries) — only the feedback-related
@@ -45,7 +47,7 @@ export function InboxEmptyState({
   const qualityUnavailable = qualityPermissionDenied || qualityLoadFailed
 
   return (
-    <div className="space-y-2 px-1 py-3 text-center">
+    <div className="mx-auto max-w-md space-y-2 text-center">
       <p className="text-sm font-medium text-foreground">Nothing needs you right now</p>
       <p className="text-sm text-muted-foreground">
         {confidence.status === 'ready' && confidence.topAgent && agentLabel

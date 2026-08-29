@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { ExternalLink } from 'lucide-react'
 
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
@@ -81,6 +81,15 @@ export interface InboxResponseViewProps {
    * conversation's normal recent-messages window (see `useHistoryDetailState`).
    */
   isAudiencePulseEvidence?: boolean
+  /**
+   * Rendered centered in this pane in place of the default "select an item"
+   * prompt when nothing is selected. The Needs-you lens uses this to show its
+   * confidence/empty-queue summary once the queue has zero open items —
+   * "select an item from the queue" is not actionable advice when there's
+   * nothing in the queue to select. The All lens never passes one, so its
+   * "nothing selected" state is unchanged.
+   */
+  emptyPlaceholder?: ReactNode
 }
 
 /**
@@ -99,6 +108,7 @@ export function InboxResponseView({
   onOpenDebugView,
   anchorMessageId = null,
   isAudiencePulseEvidence = false,
+  emptyPlaceholder,
 }: InboxResponseViewProps) {
   const item = selection?.source === 'item' ? selection.item : null
   const readOnlySelection = selection?.source === 'readonly' ? selection : null
@@ -228,8 +238,8 @@ export function InboxResponseView({
 
   if (!selection) {
     return (
-      <section className="flex flex-1 items-center justify-center text-sm text-muted-foreground" aria-label="Response">
-        Select an item from the queue to respond.
+      <section className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground" aria-label="Response">
+        {emptyPlaceholder ?? 'Select an item from the queue to respond.'}
       </section>
     )
   }

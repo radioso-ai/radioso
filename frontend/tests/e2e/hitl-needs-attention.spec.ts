@@ -448,7 +448,7 @@ test("operator sees the expected feedback permission boundary without losing the
   await expect(page.getByRole("link", { name: /flagged for quality review/ })).toHaveCount(0);
 });
 
-test("an empty Needs-you queue still shows the lens toggle, and All stays reachable", async ({ page }) => {
+test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
@@ -461,12 +461,24 @@ test("an empty Needs-you queue still shows the lens toggle, and All stays reacha
 
   await page.goto(`/w/${workspaceKey}/activity`);
 
-  // Zero open items still renders the two-pane shell with its toggle — the
-  // confidence message replaces only the row list, not the whole page.
-  await expect(page.getByText("Nothing needs you right now")).toBeVisible();
-  const toggle = page.getByRole("group", { name: "Inbox lens" });
+  // Zero open items still renders the two-pane shell with its toggle in the
+  // left pane, but there is nothing to search or filter, so those controls
+  // hide rather than sitting there inert.
+  const queue = page.getByLabel("Inbox queue");
+  const toggle = queue.getByRole("group", { name: "Inbox lens" });
   await expect(toggle).toBeVisible();
   await expect(toggle.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(queue.getByPlaceholder("Search inbox")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by type")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by agent")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by taken by")).toHaveCount(0);
+
+  // "Select an item from the queue to respond" is not actionable advice when
+  // the queue is empty — the confidence/empty-queue message renders in the
+  // reading pane instead, not stranded in the now filter-less left pane.
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Nothing needs you right now")).toBeVisible();
+  await expect(queue.getByText("Nothing needs you right now")).toHaveCount(0);
 
   await toggle.getByRole("button", { name: "All", exact: true }).click();
   await expect(page).toHaveURL(/tab=all/);

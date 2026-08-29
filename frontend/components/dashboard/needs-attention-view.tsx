@@ -369,14 +369,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               }
               items={filteredItems}
               isQueueEmpty={isQueueEmpty}
-              emptyState={
-                <InboxEmptyState
-                  qualityReviewHref={qualityReviewHref}
-                  untriagedQualityCount={qualityPresentation.reviewCount}
-                  qualityPermissionDenied={qualityPresentation.permissionDenied}
-                  qualityLoadFailed={qualityPresentation.hasLoadFailure}
-                />
-              }
               recentlyClosed={filteredRecentlyClosed}
               typeCounts={typeCounts}
               filters={filters}
@@ -399,6 +391,14 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                 onOperatorChanged={handleOperatorChanged}
                 onRequestFeedbackClose={requestCloseReview}
                 onOpenDebugView={setDebugConversationId}
+                emptyPlaceholder={isQueueEmpty ? (
+                  <InboxEmptyState
+                    qualityReviewHref={qualityReviewHref}
+                    untriagedQualityCount={qualityPresentation.reviewCount}
+                    qualityPermissionDenied={qualityPresentation.permissionDenied}
+                    qualityLoadFailed={qualityPresentation.hasLoadFailure}
+                  />
+                ) : undefined}
               />
             )}
           </div>

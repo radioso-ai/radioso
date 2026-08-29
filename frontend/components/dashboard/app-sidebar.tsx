@@ -17,16 +17,18 @@ import {
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/lib/auth-context'
 import {
-  Activity,
   Bot,
   BookOpen,
+  Inbox,
+  MessageSquareWarning,
+  Radar,
   Settings,
-  FlaskConical,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   buildDashboardHref,
-  type DashboardSection,
   type DashboardRouteState,
+  type DashboardSection,
 } from '@/lib/dashboard-routes'
 import { useAttentionRailQueries } from '@/lib/needs-attention-query-state'
 import { cn } from '@/lib/utils'
@@ -42,14 +44,68 @@ interface AppSidebarProps {
   areaSubNav?: ReactNode
 }
 
-// Activity sits first and is visually separated from the build/config sections below —
-// it's the operator's home: the "needs attention" inbox and other time-sensitive work.
-const navItems = [
-  { id: 'activity' as const, label: 'Activity', icon: Activity },
-  { id: 'agents' as const, label: 'Agents', icon: Bot },
-  { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
-  { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
-  { id: 'settings' as const, label: 'Settings', icon: Settings },
+interface NavItem {
+  id: string
+  label: string
+  icon: LucideIcon
+  section: DashboardSection
+  /** Extra route state the link should carry beyond its section (e.g. a fixed sub-view). */
+  extraRouteState?: Partial<DashboardRouteState>
+  isActive: (routeState: DashboardRouteState) => boolean
+}
+
+// Inbox sits first and is visually separated from the build/config sections below —
+// it's the operator's home: handoffs, approvals, and the full conversation log live
+// behind its two lenses (see inbox-lens-toggle.tsx), not a sidebar sub-nav. Audience
+// Pulse and Quality route to the `quality` section (distinguished by `qualityView`),
+// and Quality's Evals sub-item routes to the separate `eval` section — see
+// area-subnavs.tsx.
+const navItems: NavItem[] = [
+  {
+    id: 'inbox',
+    label: 'Inbox',
+    icon: Inbox,
+    section: 'activity',
+    isActive: (routeState) => routeState.section === 'activity',
+  },
+  {
+    id: 'agents',
+    label: 'Agents',
+    icon: Bot,
+    section: 'agents',
+    isActive: (routeState) => routeState.section === 'agents',
+  },
+  {
+    id: 'knowledge',
+    label: 'Knowledge Base',
+    icon: BookOpen,
+    section: 'knowledge',
+    isActive: (routeState) => routeState.section === 'knowledge',
+  },
+  {
+    id: 'audience-pulse',
+    label: 'Audience Pulse',
+    icon: Radar,
+    section: 'quality',
+    extraRouteState: { qualityView: 'audience-pulse' },
+    isActive: (routeState) => routeState.section === 'quality' && routeState.qualityView === 'audience-pulse',
+  },
+  {
+    id: 'quality',
+    label: 'Quality',
+    icon: MessageSquareWarning,
+    section: 'quality',
+    isActive: (routeState) =>
+      routeState.section === 'eval'
+      || (routeState.section === 'quality' && routeState.qualityView !== 'audience-pulse'),
+  },
+  {
+    id: 'settings',
+    label: 'Settings',
+    icon: Settings,
+    section: 'settings',
+    isActive: (routeState) => routeState.section === 'settings',
+  },
 ]
 
 export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
@@ -73,17 +129,16 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
-                const isActive = item.id === 'activity'
-                  ? currentView === 'activity' || currentView === 'quality'
-                  : currentView === item.id
-                const showBadge = item.id === 'activity' && inboxCount > 0
+                const isActive = item.isActive(routeState)
+                const showBadge = item.id === 'inbox' && inboxCount > 0
                 // In the Agents section the row IS the agent picker (rendered inline by
                 // areaSubNav), so there's a single agent entry instead of a picker above an
                 // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
                 // keep the plain row so the entry never collapses to an empty gap.
                 const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
                 const navState: DashboardRouteState = {
-                  section: item.id,
+                  section: item.section,
+                  ...item.extraRouteState,
                   workspaceId: activeWorkspaceId ?? undefined,
                   workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
                 }
@@ -91,7 +146,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 return (
                   <SidebarMenuItem
                     key={item.id}
-                    className={item.id === 'activity' ? 'mb-1' : undefined}
+                    className={item.id === 'inbox' ? 'mb-1' : undefined}
                   >
                     {isAgentsPicker ? null : (
                         <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>

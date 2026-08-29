@@ -1,7 +1,7 @@
 ---
 title: "Close the Quality Loop with Evals"
 description: "Close answer-quality reviews, optionally classify the outcome, preserve weak turns as Eval cases, and verify the fix."
-last_updated: 2026-07-30
+last_updated: 2026-08-29
 ---
 
 # Close the Quality Loop with Evals
@@ -15,9 +15,8 @@ decision Radioso can learn from. A useful review has three parts:
 
 ## Close a review
 
-Open **Activity → Quality** or **Needs attention**, choose **Resolve** or
-**Dismiss**. A small popover lets you close immediately or add an optional
-classification for reporting. The two surfaces use the same choices:
+Open **Quality → Review**, choose **Resolve** or **Dismiss**. A small popover
+lets you close immediately or add an optional classification for reporting:
 
 - resolved: **Knowledge gap**, **Retrieval issue**, **Agent behavior**,
   **Platform bug**, or **Other**;

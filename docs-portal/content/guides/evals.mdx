@@ -5,13 +5,11 @@ description: Turn real conversations into repeatable eval cases, replay them aga
 
 # Evaluate answer quality
 
-An eval is a real conversation you froze so you can replay it and check the agent still answers the way you expect. It is how you catch a regression before a visitor does — after you add documents, retune retrieval, or edit a directive. You manage evals from the **Eval** section in the dashboard.
-
-![The Eval section showing 1 of 1 case passing, a Run all button, and one case row with a passing status and its last run and expectation count.](/screenshots/dashboard-eval.png)
+An eval is a real conversation you froze so you can replay it and check the agent still answers the way you expect. It is how you catch a regression before a visitor does — after you add documents, retune retrieval, or edit a directive. You manage evals from **Quality → Evals** in the dashboard.
 
 ## Cases come from real conversations
 
-You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench, hover an assistant answer (the agent's reply — API paths say assistant, same thing) and click the **flask icon**. From **Activity → Quality**, choose **Add to Eval**. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
+You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench, hover an assistant answer (the agent's reply — API paths say assistant, same thing) and click the **flask icon**. From **Quality → Review**, choose **Add to Eval**. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
 
 The Quality action uses one idempotent endpoint. Repeating it, including from two browser tabs, opens the same case instead of creating duplicates:
 
@@ -48,7 +46,7 @@ editor.
 
 ## From review to verified fix
 
-In **Activity → Quality**, resolve or dismiss a turn. You can optionally classify
+In **Quality → Review**, resolve or dismiss a turn. You can optionally classify
 the decision so it appears in resolution reporting. After you change knowledge,
 retrieval, behavior, or platform code, run the linked Eval. Quality shows
 timestamped passing or failing evidence beside the turn. A pass offers **Review
@@ -73,7 +71,7 @@ Answer assertions:
 
 A case holds up to 20 assertions.
 
-For the shipping case in the screenshot above, three assertions pin the behavior from different angles: `answer_contains` with pattern `3–5 business days` pins the number, `answer_cites_document` pins it to the Shipping policy document, and `llm_judge` with the original answer as reference catches drift in meaning that exact text matching would miss.
+For a case named "Shipping window to Germany," three assertions pin the behavior from different angles: `answer_contains` with pattern `3–5 business days` pins the number, `answer_cites_document` pins it to the Shipping policy document, and `llm_judge` with the original answer as reference catches drift in meaning that exact text matching would miss.
 
 ## Run a case
 
@@ -89,7 +87,7 @@ POST /api/v1/evals/cases/{id}/runs   { mode, overrides? }
 
 ## Run the whole suite
 
-The Eval list header shows how many cases pass — "1 of 1 case passing" — and a **Run all** button. Run all replays every case with assertions and reports each case's outcome plus the workspace pass rate. Cases with no assertions are skipped, because there is nothing to score. The suite runs case by case, so a large suite takes a moment.
+The Evals page header shows how many cases pass — "1 of 1 case passing" — and a **Run all** button. Run all replays every case with assertions and reports each case's outcome plus the workspace pass rate. Cases with no assertions are skipped, because there is nothing to score. The suite runs case by case, so a large suite takes a moment.
 
 Watch the pass rate the way you watch a test suite: a change that drops it tells you something regressed, and the failing cases point at where.
 

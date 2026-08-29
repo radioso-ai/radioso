@@ -245,7 +245,20 @@ test("asks Ray about selected dashboard text", async ({ page }) => {
     await route.continue();
   });
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
-  await page.getByText(selectedText).first().selectText();
+  // The All lens row bundles the title with a timestamp, visitor label, and
+  // outcome chip inside one clickable element (spec 1116). locator.selectText()
+  // resolved to more than the title span in practice, so build the Range
+  // directly against the title's own text node and dispatch selectionchange
+  // ourselves (the app listens for that event, not a Playwright-internal one).
+  const conversationRow = page.getByRole("button", { name: new RegExp(selectedText) });
+  await conversationRow.locator("span").first().evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+  });
   // The bottom-right tag exposes the same accessible name, so pick the popover's button.
   await page.getByRole("button", { name: "Ask Ray" }).and(page.locator('button:not([data-testid="ask-ray-tag"])')).click();
   await expect(page.getByRole("textbox", { name: "Ask Ray" })).toHaveValue(new RegExp(selectedText));

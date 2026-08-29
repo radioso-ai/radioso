@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Bug, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -18,8 +18,6 @@ import { ActivityTraceDetail } from './activity-trace-detail'
 import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
-import { OperatorActionBar } from './operator-action-bar'
-import type { OperatorActionResult } from './operator-action-bar'
 import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
@@ -32,9 +30,7 @@ import {
   type ChatConversationTurn,
   type ContactHistoryDetail,
   type DocumentSearchResponse,
-  type PendingApprovalDecision,
 } from '@/lib/api'
-import { hitlApi } from '@/lib/api-hitl'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import {
   formatConversationChannelContextDetails,
@@ -223,17 +219,6 @@ export interface ConversationDrawerProps {
    */
   onAfterClose?: () => void
   /**
-   * Optional callback fired after operator actions mutate conversation ownership
-   * or pending approvals. Use this to sync parent inbox lists.
-   */
-  onOperatorChanged?: (result: OperatorActionResult) => Promise<void> | void
-  /**
-   * Optional pending approvals supplied by a parent that already owns the inbox
-   * refresh. When present, the drawer derives its conversation-scoped approvals
-   * from this list instead of issuing its own pending-decision fetch.
-   */
-  pendingDecisions?: PendingApprovalDecision[]
-  /**
    * Builds a dashboard link to a routine version for the diagnostics routine
    * band. Supplied by call sites that own the route state; omitted where routine
    * deep-links don't apply.
@@ -248,8 +233,6 @@ export function ConversationDrawer({
   isAudiencePulseEvidence,
   accessory,
   onAfterClose,
-  onOperatorChanged,
-  pendingDecisions,
   buildRoutineHref,
 }: ConversationDrawerProps) {
   const selectedChatConversationId = selectedItem?.kind === 'chat' ? selectedItem.id : null
@@ -282,7 +265,6 @@ export function ConversationDrawer({
     setSelectedStageId,
     showGraph,
     setShowGraph,
-    refetchDetail,
     handleSelectThreadMessage,
     loadOlderMessages,
     effectiveConversationMessages,
@@ -311,107 +293,8 @@ export function ConversationDrawer({
   } = useHistoryDocumentDialogState()
 
   const [flowOpen, setFlowOpen] = useState(false)
-  const [pendingDecisionState, setPendingDecisionState] = useState<{
-    conversationId: string | null
-    decisions: PendingApprovalDecision[]
-  }>({ conversationId: null, decisions: [] })
-  const [pendingDecisionError, setPendingDecisionError] = useState<string | null>(null)
-
-  const loadPendingDecisions = useCallback(async () => {
-    if (pendingDecisions) {
-      return
-    }
-
-    if (!selectedChatConversationId) {
-      setPendingDecisionState({ conversationId: null, decisions: [] })
-      setPendingDecisionError(null)
-      return
-    }
-
-    try {
-      const response = await hitlApi.listPendingDecisions()
-      setPendingDecisionState({
-        conversationId: selectedChatConversationId,
-        decisions: response.decisions.filter((decision) => decision.conversationId === selectedChatConversationId),
-      })
-      setPendingDecisionError(null)
-    } catch {
-      setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
-      setPendingDecisionError('Failed to refresh approval requests.')
-    }
-  }, [pendingDecisions, selectedChatConversationId])
-
-  useEffect(() => {
-    if (pendingDecisions) {
-      return
-    }
-
-    if (!selectedChatConversationId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Synchronously clears conversation-scoped approvals when the chat drawer closes.
-      setPendingDecisionState({ conversationId: null, decisions: [] })
-      setPendingDecisionError(null)
-      return
-    }
-
-    let isActive = true
-    setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
-    setPendingDecisionError(null)
-
-    const load = async () => {
-      try {
-        const response = await hitlApi.listPendingDecisions()
-        if (!isActive) {
-          return
-        }
-        setPendingDecisionState({
-          conversationId: selectedChatConversationId,
-          decisions: response.decisions.filter((decision) => decision.conversationId === selectedChatConversationId),
-        })
-      } catch {
-        if (isActive) {
-          setPendingDecisionState({ conversationId: selectedChatConversationId, decisions: [] })
-          setPendingDecisionError('Failed to load approval requests.')
-        }
-      }
-    }
-
-    void load()
-
-    return () => {
-      isActive = false
-    }
-  }, [pendingDecisions, selectedChatConversationId])
-
-  const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
-    if (pendingDecisions) {
-      await Promise.all([
-        refetchDetail(),
-        onOperatorChanged?.(result),
-      ])
-      return
-    }
-
-    await Promise.all([
-      refetchDetail(),
-      loadPendingDecisions(),
-      onOperatorChanged?.(result),
-    ])
-  }, [loadPendingDecisions, onOperatorChanged, pendingDecisions, refetchDetail])
 
   const renderedConversationMessages = effectiveConversationMessages
-
-  const tailOwnershipIsCurrent =
-    !conversationDetail?.ownership ||
-    !conversationTail.ownership ||
-    conversationTail.ownership.version >= conversationDetail.ownership.version
-  const actionBarOwnership = conversationTail.hasPolled && tailOwnershipIsCurrent
-    ? conversationTail.ownership
-    : conversationDetail?.ownership
-  const activePendingDecisions = pendingDecisions
-    ? pendingDecisions.filter((decision) => decision.conversationId === selectedChatConversationId)
-    : pendingDecisionState.conversationId === selectedChatConversationId
-      ? pendingDecisionState.decisions.filter((decision) => decision.conversationId === selectedChatConversationId)
-      : []
 
   // Mark which turns a routine drove so the conversation thread can band the
   // routine's span (start chip, paused/ended marker). The signal lives on each
@@ -639,21 +522,6 @@ export function ConversationDrawer({
                     skillCatalog={skillCatalog}
                     routineMarkers={namedRoutineMarkers}
                   />
-                  {selectedItem.kind === 'chat' ? (
-                    <>
-                      <OperatorActionBar
-                        conversationId={selectedItem.id}
-                        ownership={actionBarOwnership}
-                        pendingDecisions={activePendingDecisions}
-                        onChanged={handleOperatorChanged}
-                      />
-                      {pendingDecisionError ? (
-                        <p className="px-4 pb-4 text-sm text-destructive" role="status">
-                          {pendingDecisionError}
-                        </p>
-                      ) : null}
-                    </>
-                  ) : null}
                 </div>
 
                 {showGraph ? (

@@ -535,11 +535,14 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByLabel("Conversation details")).toBeHidden();
 
     // A later normal Activity selection of the same conversation must not
-    // resurrect the consumed evidence handoff.
+    // resurrect the consumed evidence handoff. A regular selection opens the
+    // reading pane (not the drawer, which is reserved for the Audience Pulse
+    // evidence jump and "Open in debug view") — spec 1116 unification.
     const regularConversation = page.getByRole("button", { name: "Open regular conversation" });
     await expect(regularConversation).toHaveCount(1);
     await regularConversation.click();
-    await expect(page.getByLabel("Conversation details")).toBeVisible();
+    await expect(page.getByLabel("Response", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Conversation details")).toHaveCount(0);
     await page.waitForTimeout(150);
     expect(evidenceAnchorBodies).toHaveLength(1);
     expect(historyTailRequests).toHaveLength(1);

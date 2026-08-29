@@ -4,14 +4,28 @@ import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, Pe
 import {
   buildInboxModel,
   buildInboxItems,
+  buildRecentlyClosedFeedbackItems,
+  countAiHandledConversationsByAgent,
+  countInboxItemsByType,
   countNewInboxItems,
+  EMPTY_INBOX_FILTERS,
+  filterInboxItems,
   formatInboxDuration,
   inboxItemKeys,
+  inboxWaitingPresentation,
+  listInboxAgents,
+  listTakenByOperators,
+  matchesInboxSearch,
   ownershipLabel,
   QUALITY_INBOX_ITEM_LIMIT,
+  RECENTLY_CLOSED_FEEDBACK_LIMIT,
   selectHumanOwnedConversations,
+  TAKEN_BY_ME,
+  TAKEN_BY_UNCLAIMED,
   waitingTone,
+  withinLastDays,
   type HumanOwnedConversationSummary,
+  type InboxItem,
 } from '@/lib/needs-attention'
 
 const ownership = (overrides: Partial<ConversationOwnership> = {}): ConversationOwnership => ({
@@ -612,5 +626,471 @@ describe('inbox waiting durations', () => {
     expect(waitingTone(15 * 60_000)).toBe('amber')
     expect(waitingTone(59 * 60_000)).toBe('amber')
     expect(waitingTone(60 * 60_000)).toBe('destructive')
+  })
+})
+
+describe('inboxWaitingPresentation', () => {
+  const now = new Date('2026-06-19T12:00:00.000Z')
+
+  it('shows a relative time for feedback items', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({}, '2026-06-19T10:00:00.000Z')],
+    })
+
+    expect(inboxWaitingPresentation(items[0], now)).toEqual({ label: '2 hours ago', tone: 'default' })
+  })
+
+  it('shows "waiting" with escalating tone for an unclaimed handoff', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ ownership: ownership({ updatedAt: '2026-06-19T11:40:00.000Z' }) })],
+      qualityTurns: [],
+    })
+
+    expect(inboxWaitingPresentation(items[0], now)).toEqual({ label: 'waiting 20 min', tone: 'amber' })
+  })
+
+  it('shows "with them" and a neutral tone once a handoff is taken over', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({
+        ownership: ownership({
+          ownerAccountId: 'account-anna',
+          ownerDisplayName: 'Anna',
+          takenOverAt: '2026-06-19T11:55:00.000Z',
+        }),
+      })],
+      qualityTurns: [],
+    })
+
+    expect(inboxWaitingPresentation(items[0], now)).toEqual({ label: 'with them 5 min', tone: 'default' })
+  })
+})
+
+describe('inbox item last-message time and taken-by', () => {
+  it('uses the conversation updatedAt as the handoff last-message time', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T11:30:00.000Z' })],
+      qualityTurns: [],
+    })
+
+    expect(items[0]).toMatchObject({ lastMessageAt: '2026-06-19T11:30:00.000Z' })
+  })
+
+  it('leaves approvals without a last-message time', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval' })],
+      conversations: [],
+      qualityTurns: [],
+    })
+
+    expect(items[0]).toMatchObject({ lastMessageAt: null })
+  })
+
+  it('uses the answer turn createdAt as the feedback last-message proxy', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ createdAt: '2026-06-19T09:15:00.000Z' })],
+    })
+
+    expect(items[0]).toMatchObject({ lastMessageAt: '2026-06-19T09:15:00.000Z' })
+  })
+
+  it('marks an unclaimed handoff with a null taken-by account', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ ownership: ownership({ ownerAccountId: null, ownerDisplayName: null }) })],
+      qualityTurns: [],
+    })
+
+    expect(items[0]).toMatchObject({ takenByAccountId: null })
+  })
+
+  it('carries the claimant onto a taken handoff', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({
+        ownership: ownership({ ownerAccountId: 'account-2', ownerDisplayName: 'Ada Lovelace' }),
+      })],
+      qualityTurns: [],
+    })
+
+    expect(items[0]).toMatchObject({ takenByAccountId: 'account-2', takenByDisplayName: 'Ada Lovelace' })
+  })
+
+  it('carries the anonymous session id onto a handoff item', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [humanOwned({ anonymousSessionId: 'session-1' })],
+      qualityTurns: [],
+    })
+
+    expect(items[0]).toMatchObject({ anonymousSessionId: 'session-1' })
+  })
+
+  it('leaves approvals and feedback without a known session state', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval' })],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+    })
+
+    for (const item of items) {
+      expect(item.anonymousSessionId).toBeUndefined()
+    }
+  })
+
+  it('leaves approvals and feedback without a taken-by concept', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval' })],
+      conversations: [],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+    })
+
+    for (const item of items) {
+      expect(item.takenByAccountId).toBeUndefined()
+    }
+  })
+})
+
+describe('matchesInboxSearch', () => {
+  const item = (title: string): InboxItem => ({
+    key: 'k',
+    conversationId: 'c-1',
+    type: 'handoff',
+    severity: 'critical',
+    title,
+    detail: '',
+    timestamp: '2026-06-19T10:00:00.000Z',
+  })
+
+  it('matches everything on an empty or whitespace-only query', () => {
+    expect(matchesInboxSearch(item('Weekly yoga schedule'), '')).toBe(true)
+    expect(matchesInboxSearch(item('Weekly yoga schedule'), '   ')).toBe(true)
+  })
+
+  it('matches case-insensitively against the gist title', () => {
+    expect(matchesInboxSearch(item('Weekly yoga schedule'), 'YOGA')).toBe(true)
+    expect(matchesInboxSearch(item('Weekly yoga schedule'), 'refund')).toBe(false)
+  })
+})
+
+describe('filterInboxItems', () => {
+  const context = { currentAccountId: 'account-me' }
+
+  it('filters by item type', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [],
+    })
+
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, type: 'approval' }, context)
+
+    expect(filtered.map((i) => i.conversationId)).toEqual(['c-approval'])
+  })
+
+  it('filters by agent', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({ id: 'c-a', agentId: 'agent-a' }),
+        humanOwned({ id: 'c-b', agentId: 'agent-b', ownership: ownership({ conversationId: 'c-b' }) }),
+      ],
+      qualityTurns: [],
+    })
+
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, agentId: 'agent-b' }, context)
+
+    expect(filtered.map((i) => i.conversationId)).toEqual(['c-b'])
+  })
+
+  it('filters by search text', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval', reason: 'Apply a goodwill discount' })],
+      conversations: [humanOwned({ id: 'c-handoff', preview: 'Weekly yoga schedule' })],
+      qualityTurns: [],
+    })
+
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, search: 'yoga' }, context)
+
+    expect(filtered.map((i) => i.conversationId)).toEqual(['c-handoff'])
+  })
+
+  it('taken-by anyone includes unclaimed handoffs, approvals, and feedback', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+    })
+
+    expect(filterInboxItems(items, EMPTY_INBOX_FILTERS, context)).toHaveLength(3)
+  })
+
+  it('taken-by unclaimed excludes claimed handoffs and non-ownership item types', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval' })],
+      conversations: [
+        humanOwned({ id: 'c-unclaimed' }),
+        humanOwned({
+          id: 'c-claimed',
+          ownership: ownership({ conversationId: 'c-claimed', ownerAccountId: 'account-other', ownerDisplayName: 'Anna' }),
+        }),
+      ],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+    })
+
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: TAKEN_BY_UNCLAIMED }, context)
+
+    expect(filtered.map((i) => i.conversationId)).toEqual(['c-unclaimed'])
+  })
+
+  it('taken-by me matches only the current operator\'s claims', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({
+          id: 'c-mine',
+          ownership: ownership({ conversationId: 'c-mine', ownerAccountId: 'account-me', ownerDisplayName: 'Me' }),
+        }),
+        humanOwned({
+          id: 'c-theirs',
+          ownership: ownership({ conversationId: 'c-theirs', ownerAccountId: 'account-other', ownerDisplayName: 'Anna' }),
+        }),
+      ],
+      qualityTurns: [],
+    })
+
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: TAKEN_BY_ME }, context)
+
+    expect(filtered.map((i) => i.conversationId)).toEqual(['c-mine'])
+  })
+
+  it('taken-by a specific operator id matches only that claimant', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({
+          id: 'c-anna',
+          ownership: ownership({ conversationId: 'c-anna', ownerAccountId: 'account-anna', ownerDisplayName: 'Anna' }),
+        }),
+        humanOwned({
+          id: 'c-other',
+          ownership: ownership({ conversationId: 'c-other', ownerAccountId: 'account-other', ownerDisplayName: 'Someone' }),
+        }),
+      ],
+      qualityTurns: [],
+    })
+
+    const filtered = filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, takenBy: 'account-anna' }, context)
+
+    expect(filtered.map((i) => i.conversationId)).toEqual(['c-anna'])
+  })
+
+  it('combines filters', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'c-approval', reason: 'Apply a goodwill discount' })],
+      conversations: [humanOwned({ id: 'c-handoff', preview: 'Weekly yoga schedule' })],
+      qualityTurns: [],
+    })
+
+    expect(filterInboxItems(items, { ...EMPTY_INBOX_FILTERS, type: 'approval', search: 'yoga' }, context)).toEqual([])
+  })
+})
+
+describe('countInboxItemsByType', () => {
+  it('counts each type plus a total', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],
+      conversations: [humanOwned({ id: 'c-handoff' })],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-feedback' })],
+    })
+
+    expect(countInboxItemsByType(items)).toEqual({
+      all: 3,
+      approval: 1,
+      handoff: 1,
+      negative_feedback: 1,
+    })
+  })
+
+  it('returns all zeros for an empty queue', () => {
+    expect(countInboxItemsByType([])).toEqual({ all: 0, approval: 0, handoff: 0, negative_feedback: 0 })
+  })
+})
+
+describe('listInboxAgents', () => {
+  it('deduplicates agents across item types in first-seen order', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({ id: 'c-1', agentId: 'agent-1', agentName: 'Marta' }),
+        humanOwned({
+          id: 'c-2',
+          agentId: 'agent-1',
+          agentName: 'Marta',
+          ownership: ownership({ conversationId: 'c-2' }),
+        }),
+      ],
+      qualityTurns: [commentedQualityTurn({ conversationId: 'c-3', agentId: 'agent-2', agentName: 'Support' })],
+    })
+
+    expect(listInboxAgents(items)).toEqual([
+      { agentId: 'agent-1', agentName: 'Marta', agentInternalName: null },
+      { agentId: 'agent-2', agentName: 'Support', agentInternalName: null },
+    ])
+  })
+})
+
+describe('listTakenByOperators', () => {
+  it('deduplicates operators and falls back to a teammate label', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [
+        humanOwned({
+          id: 'c-1',
+          ownership: ownership({ conversationId: 'c-1', ownerAccountId: 'account-anna', ownerDisplayName: 'Anna' }),
+        }),
+        humanOwned({
+          id: 'c-2',
+          ownership: ownership({ conversationId: 'c-2', ownerAccountId: 'account-anna', ownerDisplayName: 'Anna' }),
+        }),
+        humanOwned({
+          id: 'c-3',
+          ownership: ownership({ conversationId: 'c-3', ownerAccountId: 'account-x', ownerDisplayName: null }),
+        }),
+      ],
+      qualityTurns: [],
+    })
+
+    expect(listTakenByOperators(items)).toEqual([
+      { accountId: 'account-anna', displayName: 'Anna' },
+      { accountId: 'account-x', displayName: 'A teammate' },
+    ])
+  })
+})
+
+describe('buildRecentlyClosedFeedbackItems', () => {
+  const closedTurn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
+    assistantMessageId: 'message-1',
+    conversationId: 'conversation-1',
+    agentId: 'agent-1',
+    agentName: 'Marta',
+    agentInternalName: null,
+    channel: 'authenticated_chat',
+    question: 'What is your refund policy?',
+    answerPreview: 'I could not find that in the documents.',
+    skillName: 'retrieval.answer',
+    skillOutcome: 'no_context',
+    skillStatus: 'completed',
+    totalLatencyMs: 1200,
+    grounding: null,
+    createdAt: '2026-06-19T10:00:00.000Z',
+    feedback: { upCount: 0, downCount: 1, latestDownUpdatedAt: null, comments: [] },
+    triage: {
+      state: 'resolved',
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: '2026-06-19T11:00:00.000Z',
+      updatedAt: '2026-06-19T11:00:00.000Z',
+    },
+    verification: null,
+    ...overrides,
+  })
+
+  it('keeps only resolved and dismissed turns', () => {
+    const items = buildRecentlyClosedFeedbackItems([
+      closedTurn({ assistantMessageId: 'open', triage: { state: 'open', version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null } }),
+      closedTurn({ assistantMessageId: 'resolved' }),
+      closedTurn({ assistantMessageId: 'dismissed', triage: { state: 'dismissed', version: 1, resolution: null, legacyReason: null, closedAt: '2026-06-19T12:00:00.000Z', updatedAt: '2026-06-19T12:00:00.000Z' } }),
+    ])
+
+    expect(items.map((i) => i.key)).toEqual(['quality:dismissed', 'quality:resolved'])
+  })
+
+  it('sorts newest closure first', () => {
+    const items = buildRecentlyClosedFeedbackItems([
+      closedTurn({
+        assistantMessageId: 'older',
+        triage: { state: 'resolved', version: 1, resolution: null, legacyReason: null, closedAt: '2026-06-19T09:00:00.000Z', updatedAt: '2026-06-19T09:00:00.000Z' },
+      }),
+      closedTurn({
+        assistantMessageId: 'newer',
+        triage: { state: 'resolved', version: 1, resolution: null, legacyReason: null, closedAt: '2026-06-19T15:00:00.000Z', updatedAt: '2026-06-19T15:00:00.000Z' },
+      }),
+    ])
+
+    expect(items.map((i) => i.key)).toEqual(['quality:newer', 'quality:older'])
+  })
+
+  it('caps the strip length', () => {
+    const turns = Array.from({ length: RECENTLY_CLOSED_FEEDBACK_LIMIT + 3 }, (_, index) =>
+      closedTurn({
+        assistantMessageId: `message-${index}`,
+        triage: {
+          state: 'resolved',
+          version: 1,
+          resolution: null,
+          legacyReason: null,
+          closedAt: new Date(Date.UTC(2026, 5, 19, 10, index)).toISOString(),
+          updatedAt: new Date(Date.UTC(2026, 5, 19, 10, index)).toISOString(),
+        },
+      }))
+
+    expect(buildRecentlyClosedFeedbackItems(turns)).toHaveLength(RECENTLY_CLOSED_FEEDBACK_LIMIT)
+  })
+})
+
+describe('withinLastDays', () => {
+  const now = new Date('2026-06-19T12:00:00.000Z')
+
+  it('includes a timestamp exactly at the window boundary', () => {
+    expect(withinLastDays('2026-06-12T12:00:00.000Z', 7, now)).toBe(true)
+  })
+
+  it('excludes a timestamp just past the window', () => {
+    expect(withinLastDays('2026-06-12T11:59:59.000Z', 7, now)).toBe(false)
+  })
+
+  it('excludes an unparseable timestamp', () => {
+    expect(withinLastDays('not-a-date', 7, now)).toBe(false)
+  })
+})
+
+describe('countAiHandledConversationsByAgent', () => {
+  it('counts conversations never escalated to a human, per agent', () => {
+    const counts = countAiHandledConversationsByAgent([
+      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Gioia' }),
+      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Gioia' }),
+      conversation({ id: 'c-3', agentId: 'agent-2', agentName: 'Claudio' }),
+      conversation({ id: 'c-4', agentId: 'agent-1', agentName: 'Gioia', ownership: ownership({ conversationId: 'c-4' }) }),
+    ])
+
+    expect(counts).toEqual([
+      { agentId: 'agent-1', agentName: 'Gioia', agentInternalName: null, count: 2 },
+      { agentId: 'agent-2', agentName: 'Claudio', agentInternalName: null, count: 1 },
+    ])
+  })
+
+  it('excludes conversations handed to a human', () => {
+    const counts = countAiHandledConversationsByAgent([
+      conversation({
+        id: 'c-1',
+        agentId: 'agent-1',
+        ownership: ownership({
+          conversationId: 'c-1',
+          state: 'human_owned',
+          ownerAccountId: 'account-1',
+          ownerDisplayName: 'Anna',
+        }),
+      }),
+    ])
+
+    expect(counts).toEqual([])
   })
 })

@@ -860,6 +860,7 @@ export const installDashboardApiMocks = async (
     pendingDecisions?: ApiSchemas["PendingApprovalDecision"][];
     conversationTailResponses?: ApiSchemas["ChatConversationTail"][];
     takeOverConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
+    handBackConversationResponse?: ApiSchemas["ConversationOwnershipResponse"];
     humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
     resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
@@ -1384,6 +1385,39 @@ export const installDashboardApiMocks = async (
           ...conversationTailResponses[0],
           ownership: response.ownership,
         };
+      }
+      await json(route, response);
+      return;
+    }
+
+    if (request.method() === "POST" && path.startsWith("/conversations/") && path.endsWith("/handback")) {
+      const conversationId = path.replace("/conversations/", "").replace("/handback", "");
+      const response = options.handBackConversationResponse ?? {
+        ownership: {
+          conversationId,
+          workspaceId,
+          state: "ai_owned",
+          ownerAccountId: null,
+          ownerDisplayName: null,
+          reason: null,
+          version: 3,
+          takenOverAt: null,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      };
+      if (conversationDetail && typeof conversationDetail === "object") {
+        conversationDetail = {
+          ...conversationDetail,
+          ownership: response.ownership,
+        };
+      }
+      const activeConversationDetail = conversationDetails.get(conversationId);
+      if (activeConversationDetail && typeof activeConversationDetail === "object") {
+        conversationDetails.set(conversationId, {
+          ...activeConversationDetail,
+          ownership: response.ownership,
+        });
       }
       await json(route, response);
       return;

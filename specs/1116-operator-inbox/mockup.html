@@ -204,6 +204,17 @@
     border: 6px solid transparent; border-top-color: var(--foreground); z-index: 10;
   }
 
+  /* Lens toggle (segmented control) */
+  .lens-toggle {
+    display: flex; background: var(--muted-50); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 3px; margin: 0 2px 4px;
+  }
+  .lens {
+    flex: 1; text-align: center; font-size: 12.5px; font-weight: 550; padding: 5px 0;
+    border-radius: calc(var(--radius) - 3px); color: var(--muted-foreground); cursor: pointer;
+  }
+  .lens.active { background: var(--background); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+
   /* Queue filters (Gmail-style: search + dropdown selectors) */
   .search-row { position: relative; margin: 0 2px 2px; }
   .search-row svg {
@@ -234,19 +245,9 @@
       <span class="name">Ananda Edizioni</span>
     </div>
     <a class="nav-item section-active" href="#">
-      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
-      Activity
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
+      Inbox <span class="badge-count">4</span>
     </a>
-    <div class="nav-subs">
-      <a class="nav-sub active" href="#">
-        <span class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
-        Inbox <span class="badge-count">4</span>
-      </a>
-      <a class="nav-sub" href="#">
-        <span class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></span>
-        Conversations
-      </a>
-    </div>
     <a class="nav-item" href="#">
       <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8"/><path d="M9 13h.01M15 13h.01"/></svg></span>
       Agents
@@ -280,6 +281,10 @@
 
       <!-- ── Queue ── -->
       <aside class="queue">
+        <div class="lens-toggle">
+          <div class="lens active">Needs you · 4</div>
+          <div class="lens">All</div>
+        </div>
         <div class="search-row">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
           <input type="search" placeholder="Search inbox">

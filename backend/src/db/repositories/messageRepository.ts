@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
 import type { MessageSource } from "@radioso/conversation-contract";
 
 import { clockTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -417,6 +419,10 @@ export class MessageRepository implements MessageRepositoryPort {
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "in", conversationIds)
       .where("role", "=", "user")
+      // Skip whitespace-only user messages so a blank first turn doesn't overwrite the
+      // newest-message fallback below with an empty preview; DISTINCT ON then naturally
+      // lands on the earliest *non-blank* user message, or none at all.
+      .where(sql<boolean>`btrim(content) <> ''`)
       .orderBy("conversation_id")
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")

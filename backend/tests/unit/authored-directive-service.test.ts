@@ -519,6 +519,78 @@ describe("AuthoredDirectiveService", () => {
     expect(repository.updated.at(-1)?.input.enabled).toBe(true);
   });
 
+  it("preserves every stored optional field when an update names only one unrelated field", async () => {
+    // Regression test for the whole class of bug, not just lifecycle: every field the schema
+    // knows about must survive an update that never mentions it. Each field below is seeded with
+    // a non-default value; if the service's merge omits a field (the historical bug for
+    // `lifecycle`), that field silently reverts to the schema default here and the structural
+    // comparison below catches it, including for a field added after this test was written.
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "full-directive",
+      condition: { kind: "contextual", description: "When the customer asks about refunds." },
+      action: "Escalate to a human.",
+      requiredCapabilities: ["custom.capability"],
+      dependsOn: ["some-other-directive"],
+      excludes: ["conflicting-directive"],
+      surfaces: ["suggested_questions"],
+      tags: ["tag-a", "tag-b"],
+      description: "A fully populated directive.",
+      binding: { kind: "skill", skillName: "order.lookup" },
+      // Disabled so validateBinding and the capability/coherence checks - which are only run
+      // for a directive that can actually fire - don't need real dependencies wired up here;
+      // this test is only about which fields the merge carries forward.
+      enabled: false,
+    }), {
+      priority: 42,
+      lifecycle: { kind: "cooldown", turns: 3 },
+      metadata: { source: "operator" },
+    });
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.update(workspaceId, agentId, existing.id, { name: "renamed-directive" });
+
+    // Built from `existing` itself (minus the repository-owned fields and the one field this
+    // update actually changed) rather than a hand-typed object, so a field this test doesn't
+    // even know about yet still has to round-trip correctly.
+    const { id: _id, agentId: _agentId, createdAt: _createdAt, updatedAt: _updatedAt, ...carriedForward } = existing;
+    expect(repository.updated.at(-1)?.input).toEqual({
+      ...carriedForward,
+      name: "renamed-directive",
+      routes: [],
+    });
+  });
+
+  it("clears lifecycle and priority only when the caller explicitly sets them to null, not when they're omitted", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "cooldown-rule" }), {
+      priority: 42,
+      lifecycle: { kind: "cooldown", turns: 3 },
+    });
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    // Omitting both preserves the stored values.
+    await service.update(workspaceId, agentId, existing.id, { action: "Reworded." });
+    expect(repository.updated.at(-1)?.input.lifecycle).toEqual({ kind: "cooldown", turns: 3 });
+    expect(repository.updated.at(-1)?.input.priority).toBe(42);
+
+    // Explicit null clears each back to the schema default - the distinction this whole
+    // has-own-property scheme exists to preserve.
+    await service.update(workspaceId, agentId, existing.id, { lifecycle: null, priority: null });
+    expect(repository.updated.at(-1)?.input.lifecycle).toBeNull();
+    expect(repository.updated.at(-1)?.input.priority).toBeNull();
+  });
+
   it("skips the coherence check and returns a coherent verdict when a directive is updated to disabled", async () => {
     const repository = new StubAgentRepository();
     const existing = persistedDirective(directiveInput({ name: "flaky-rule" }));

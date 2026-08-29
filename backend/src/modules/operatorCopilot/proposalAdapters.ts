@@ -1186,32 +1186,73 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
 
     let enablement: NormalizedContextVariableEnablement | null = null;
     if (payload.enablement) {
-      assertEnablementIsWellFormed(payload.enablement);
-      if (payload.enablement.source === "resolver" && payload.enablement.resolverSkillId) {
+      const rawEnablement = payload.enablement;
+      // ApplyContextVariableProposalInput.enablement is a full-row replacement (see
+      // ContextVariableEnablementWrite), so a proposal that restates only the fields it means to
+      // change has to be merged against the stored row here, field by field, before it reaches
+      // that write - otherwise every omitted field (staleness/timeout tuning, a deliberate
+      // `enabled: false`) would silently reset. An absent key means "keep the stored value"; an
+      // explicit `null` means "clear it" - `"key" in rawEnablement` is the presence test (Zod
+      // does not materialize an absent `.optional()` key as `undefined`, verified separately),
+      // so `??` alone can't tell those two cases apart.
+      const mergedSource = rawEnablement.source;
+      // Resolver-only fields (resolverSkillId/maxAgeSeconds/resolverTimeoutMs) only survive the
+      // merge when BOTH the proposed and the stored source are "resolver" - carrying them forward
+      // across a source change (e.g. resolver -> pushed) would resurrect exactly the
+      // contradictory/inert combination assertEnablementIsWellFormed exists to forbid.
+      const carriesResolverFields = mergedSource === "resolver" && existingEnablement?.source === "resolver";
+      const mergedResolverSkillId = "resolverSkillId" in rawEnablement
+        ? rawEnablement.resolverSkillId ?? null
+        : (carriesResolverFields ? existingEnablement!.resolverSkillId : null);
+      const mergedMaxAgeSeconds = "maxAgeSeconds" in rawEnablement
+        ? rawEnablement.maxAgeSeconds ?? null
+        : (carriesResolverFields ? existingEnablement!.maxAgeSeconds : null);
+      const mergedResolverTimeoutMs = "resolverTimeoutMs" in rawEnablement
+        ? rawEnablement.resolverTimeoutMs ?? null
+        : (carriesResolverFields ? existingEnablement!.resolverTimeoutMs : null);
+      // `enabled` carries forward regardless of source (it is not resolver-only), and only
+      // defaults to `true` when there is no stored enablement at all - this is the headline fix:
+      // a deliberately-disabled variable must never come back on just because an unrelated field
+      // changed.
+      const mergedEnabled = "enabled" in rawEnablement && rawEnablement.enabled !== undefined
+        ? rawEnablement.enabled
+        : (existingEnablement?.enabled ?? true);
+
+      const mergedEnablement: NormalizedContextVariableEnablement = {
+        source: mergedSource,
+        resolverSkillId: mergedResolverSkillId,
+        maxAgeSeconds: mergedMaxAgeSeconds,
+        resolverTimeoutMs: mergedResolverTimeoutMs,
+        surfacing: rawEnablement.surfacing,
+        enabled: mergedEnabled,
+      };
+      // Checked on the MERGED object, not the raw payload: a proposal that only names
+      // `resolverSkillId` in the resolver-inheritance branch above is legitimately incomplete on
+      // its own (it relies on a still-resolver stored source to fill the rest in), so asserting
+      // the raw payload here would reject a merge this function is meant to allow. Any way the
+      // merge could still produce a contradictory/inert combination is caught here instead.
+      assertEnablementIsWellFormed(mergedEnablement);
+      if (mergedSource === "resolver" && mergedResolverSkillId) {
         // agent_context_variables.resolver_skill_id carries no foreign key either (same
         // migration 112 gap as agent_id), and SkillBackedContextResolver.resolve silently
         // returns null for an id it cannot find, that belongs to another agent, or that is
         // disabled - so a hallucinated or cross-workspace skill id, or one an operator has
         // simply turned off, would persist as an enablement that never resolves, with no error
         // anywhere. Resolving it through this agent's own enabled skills here mirrors the
-        // agent-id resolution above.
+        // agent-id resolution above. Checked against the EFFECTIVE (merged) id, not the raw
+        // payload's, since that is the id that actually gets persisted below - including when a
+        // proposal omits resolverSkillId and inherits one whose skill has since been deleted or
+        // disabled, which must be refused here rather than silently persisted.
         const agentSkills = await deps.agentSkillsService.list(workspaceId, targetRef.agentId);
-        const resolverSkill = agentSkills.find((skill) => skill.id === payload.enablement!.resolverSkillId);
+        const resolverSkill = agentSkills.find((skill) => skill.id === mergedResolverSkillId);
         if (!resolverSkill) {
-          throw badRequest(`resolverSkillId "${payload.enablement.resolverSkillId}" does not name a skill on this agent`);
+          throw badRequest(`resolverSkillId "${mergedResolverSkillId}" does not name a skill on this agent`);
         }
         if (!resolverSkill.enabled) {
-          throw badRequest(`resolverSkillId "${payload.enablement.resolverSkillId}" names a skill that is disabled on this agent`);
+          throw badRequest(`resolverSkillId "${mergedResolverSkillId}" names a skill that is disabled on this agent`);
         }
       }
-      enablement = {
-        source: payload.enablement.source,
-        resolverSkillId: payload.enablement.resolverSkillId ?? null,
-        maxAgeSeconds: payload.enablement.maxAgeSeconds ?? null,
-        resolverTimeoutMs: payload.enablement.resolverTimeoutMs ?? null,
-        surfacing: payload.enablement.surfacing,
-        enabled: payload.enablement.enabled ?? true,
-      };
+      enablement = mergedEnablement;
     }
 
     // Scoped to what this proposal actually writes (Apply already does the same - see the

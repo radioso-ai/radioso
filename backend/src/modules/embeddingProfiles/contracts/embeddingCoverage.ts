@@ -4,8 +4,8 @@
  *
  * Canonical coverage is otherwise invisible outside the database: reconciliation runs
  * on ingest, the operator backfill drains asynchronously, and nothing reports where a
- * workspace has got to. That matters twice — while an embedding-model change re-indexes,
- * and while the one-time backfill runs ahead of retiring the legacy vector column.
+ * workspace has got to. That matters when an embedding-model change re-indexes a
+ * workspace and when an operator repairs a stalled backfill.
  */
 export interface WorkspaceCanonicalEmbeddingCoverage {
   readonly workspaceId: string;

@@ -4,7 +4,7 @@ import { PgVectorAdapter } from "../../../src/modules/retrieval/infra/pgVectorAd
 import type { Database } from "../../../src/shared/infra/database.js";
 
 describe("PgVectorAdapter", () => {
-  it("uses strict iterative HNSW scanning for a filtered candidate query", async () => {
+  it("uses high-recall strict iterative HNSW scanning for a filtered candidate query", async () => {
     const calls: string[] = [];
     const database = {
       withTransaction: async (callback: (client: {
@@ -38,8 +38,10 @@ describe("PgVectorAdapter", () => {
       filter: { retrievalEnabled: true },
     });
 
-    expect(calls[0]).toBe("SET LOCAL hnsw.iterative_scan = strict_order");
-    expect(calls[1]).toContain("WITH nearest");
+    expect(calls[0]).toBe("SET LOCAL hnsw.ef_search = 1000");
+    expect(calls[1]).toBe("SET LOCAL hnsw.max_scan_tuples = 20000");
+    expect(calls[2]).toBe("SET LOCAL hnsw.iterative_scan = strict_order");
+    expect(calls[3]).toContain("WITH nearest");
     expect(results).toEqual([{
       chunkId: "chunk-1",
       documentId: "document-1",

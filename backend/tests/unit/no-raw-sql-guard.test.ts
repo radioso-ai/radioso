@@ -33,7 +33,6 @@ describe("no-raw-sql guard", () => {
         "modules/retrieval/infra/hnswIterativeScan.ts",
         "modules/retrieval/infra/lexicalSearch.ts",
         "modules/retrieval/infra/pgVectorAdapter.ts",
-        "modules/retrieval/infra/vectorSearch.ts",
         "shared/infra/database.ts",
       ].sort(),
     );

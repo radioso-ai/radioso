@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { hitlApi, isHitlApiStatusError } from '@/lib/api-hitl'
 import type { ConversationOwnership, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveOperatorActions } from '@/lib/operator-actions'
+import { cn } from '@/lib/utils'
 
 /**
  * The operator-mutation outcomes a caller may need to react to (refetch a
@@ -141,7 +142,19 @@ export function OperatorComposer({
   }, [actions.canTakeOver, actions.version, conversationId, runner, trimmedMessage])
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t border-border bg-background px-6 py-4">
+    <div
+      className={cn(
+        'flex shrink-0 flex-col gap-2 border-t border-border bg-background px-6 pt-4',
+        // The global "Ask Ray" tag is fixed to the bottom-right viewport corner
+        // (see AskRayTag in copilot-panel.tsx) and must stay exactly there. When
+        // this composer renders a trailing action (Done), that button lands in
+        // the same bottom-right corner, so give the row extra clearance below it
+        // — sized to the tag's height, not its width, since the tag's single
+        // line of text keeps a stable height across locales while its width
+        // does not.
+        trailingActions ? 'pb-12' : 'pb-4',
+      )}
+    >
       <Textarea
         aria-label="Reply to the visitor"
         placeholder="Reply to the visitor - sending takes over the conversation"

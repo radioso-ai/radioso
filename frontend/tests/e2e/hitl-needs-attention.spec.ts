@@ -127,7 +127,11 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await expect(response.getByText("Verified visitor")).toBeVisible();
   await expect(response.getByRole("link", { name: "https://corsi.example.com/yoga" })).toBeVisible();
   await expect(response.getByText(/Handed off — agent had no weekly schedule information/)).toBeVisible();
-  await expect(response.getByText("dove trovo gli orari dei corsi di yoga settimanali")).toBeVisible();
+  // The situation card quotes the visitor's opening message as context, and the
+  // message thread below renders the same message in full — both legitimately
+  // match this text, so disambiguate to the situation card's copy (it renders
+  // first in DOM order).
+  await expect(response.getByText("dove trovo gli orari dei corsi di yoga settimanali").first()).toBeVisible();
 
   const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
   await replyBox.fill("Ecco gli orari aggiornati dei corsi di yoga.");
@@ -146,7 +150,11 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
   await expect(drawer.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Take over" })).toHaveCount(0);
   await expect(drawer.getByRole("button", { name: "Hand back to AI" })).toHaveCount(0);
-  await expect(drawer.getByRole("button", { name: "Send" })).toHaveCount(0);
+  // Exact match: the drawer's message thread legitimately renders a "Send to
+  // eval" action (evalCaptureEnabled), which a substring match on "Send" would
+  // also catch. This assertion only cares about the operator reply composer's
+  // Send button, which is what "spec 1116 User Story 4" keeps out of the drawer.
+  await expect(drawer.getByRole("button", { name: "Send", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Close details panel" }).click();
 
   // Done hands the conversation back to the agent - the single wrap-up action.

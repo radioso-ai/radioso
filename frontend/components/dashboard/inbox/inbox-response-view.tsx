@@ -61,7 +61,16 @@ export function InboxResponseView({
   onOpenDebugView,
 }: InboxResponseViewProps) {
   const conversationId = item?.conversationId ?? null
-  const selectedItem: SelectedHistoryItem = conversationId ? { kind: 'chat', id: conversationId } : null
+  // Memoized on conversationId alone: useHistoryDetailState re-runs its fetch
+  // whenever this object's reference changes, and this component re-renders
+  // every second from the conversation tail poll below. An inline literal here
+  // would recreate the object on each of those renders and re-trigger the
+  // conversation-detail fetch in a tight loop, flashing the pane back to its
+  // loading state and detaching whatever the operator is trying to click.
+  const selectedItem: SelectedHistoryItem = useMemo(
+    () => (conversationId ? { kind: 'chat', id: conversationId } : null),
+    [conversationId],
+  )
 
   const conversationTail = useConversationTail({
     conversationId: conversationId ?? '',

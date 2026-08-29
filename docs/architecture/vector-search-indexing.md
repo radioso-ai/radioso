@@ -1,7 +1,7 @@
 ---
 title: "Vector Search Indexing"
 description: "Design for isolating vector storage behind adapters while keeping PostgreSQL as the canonical source, with a future backend evaluation path."
-last_updated: 2026-08-26
+last_updated: 2026-08-28
 ---
 
 # Vector Search Indexing
@@ -24,13 +24,9 @@ space.
 
 The retrieval read side uses `VectorCandidateSearchPort`, implemented by
 `PgVectorAdapter`. It searches the active embedding space with a per-width HNSW
-index when one exists and otherwise uses an exact PostgreSQL scan.
-
-`VectorCandidateSearchRolloutAdapter` wraps that port and merges a second search over
-the `chunks.embedding` / `chunks.embedding_unbounded` columns, which hold the vectors
-for chunks the canonical backfill has yet to reach. Canonical results win a chunk both
-legs return, and the merge applies to the 1536- and 3072-wide spaces those columns can
-answer for.
+index when one exists and otherwise uses an exact PostgreSQL scan. Filtered HNSW
+queries set a transaction-scoped high-recall search breadth and strict ordering, so
+the setting cannot leak to another pooled request.
 
 Canonical chunk persistence is owned by the Documents module in
 `backend/src/modules/documents/infra/chunkRepository.ts`. It writes the chunk row

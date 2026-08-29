@@ -130,6 +130,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     description: "Operator-authored behavior rule.",
     binding: { kind: "skill", skillName: "order.lookup" },
     lifecycle: null,
+    enabled: false,
     metadata: { owner: "ops" },
     createdAt: new Date(0),
     updatedAt: new Date(0),
@@ -316,6 +317,7 @@ describe("serializeAgentConfig", () => {
       description: "Operator-authored behavior rule.",
       binding: { kind: "skill", skillName: "order.lookup" },
       lifecycle: null,
+      enabled: false,
       metadata: { owner: "ops" },
     }]);
   });
@@ -448,6 +450,7 @@ describe("serializeAgentConfig", () => {
       description: "Operator-authored behavior rule.",
       binding: { kind: "skill", skillName: "order.lookup" },
       lifecycle: null,
+      enabled: false,
       metadata: { owner: "ops" },
       createdAt: new Date(0),
       updatedAt: new Date(0),
@@ -532,6 +535,9 @@ describe("serializeAgentConfig", () => {
       description: null,
       binding: null,
       lifecycle: null,
+      // A snapshot recorded before `enabled` existed carries no such field. Its
+      // absence must read as "live," never as "off" (see serializeAuthoredDirectives).
+      enabled: true,
       metadata: {},
       createdAt: new Date(0),
       updatedAt: new Date(0),

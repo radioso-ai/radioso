@@ -245,6 +245,11 @@ export interface AgentConfigAuthoredDirectiveOverride {
   tags: string[]
   description: string | null
   metadata: Record<string, unknown>
+  // A missing entry on the wire materializes as enabled on the backend (a freshly drafted
+  // directive has no enabled yet and should preview as on). Optional here because not every
+  // producer of this shape carries a source enabled value; toReplayOverrideDirective always
+  // states it explicitly rather than letting a disabled source directive be replayed as live.
+  enabled?: boolean
 }
 
 export interface EvalRunOverridesInput {

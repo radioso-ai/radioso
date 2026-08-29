@@ -112,6 +112,9 @@ export const authoredDirectiveInputSchema = z.object({
   description: optionalTrimmedText(AUTHORED_DIRECTIVE_LIMITS.description),
   binding: authoredDirectiveBindingSchema.nullable().optional().transform((value) => value ?? null),
   lifecycle: authoredDirectiveLifecycleSchema.nullable().optional().transform((value) => value ?? null),
+  // Reversible off switch: a disabled directive keeps its authored text but is never
+  // converted into a runtime Directive (see authoredDirectiveMapper.steeringDirectivesFromAuthored).
+  enabled: z.boolean().optional().default(true),
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
 
@@ -141,6 +144,7 @@ export interface AuthoredDirective {
   description: string | null;
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
+  enabled: boolean;
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;

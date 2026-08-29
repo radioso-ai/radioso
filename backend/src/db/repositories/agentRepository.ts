@@ -71,6 +71,7 @@ interface AgentDirectiveRow {
   description: string | null;
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
+  enabled: boolean;
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -92,6 +93,7 @@ interface LoadedDirectiveJson {
   description?: unknown;
   binding?: unknown;
   lifecycle?: unknown;
+  enabled?: unknown;
   metadata?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -209,6 +211,7 @@ const agentColumns = sql`
           'description', agent_directives.description,
           'binding', agent_directives.binding,
           'lifecycle', agent_directives.lifecycle,
+          'enabled', agent_directives.enabled,
           'metadata', agent_directives.metadata,
           'createdAt', agent_directives.created_at,
           'updatedAt', agent_directives.updated_at
@@ -339,6 +342,9 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
     description: typeof value.description === "string" ? value.description : null,
     binding: asDirectiveBinding(value.binding),
     lifecycle: asDirectiveLifecycle(value.lifecycle),
+    // A snapshot loaded from before this column existed carries no `enabled` at all;
+    // its absence must read as "live," never as "off" (mirrors agentConfig materialize).
+    enabled: typeof value.enabled === "boolean" ? value.enabled : true,
     metadata: asMetadata(value.metadata),
     createdAt: readDate(value.createdAt),
     updatedAt: readDate(value.updatedAt),
@@ -370,6 +376,7 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   description: row.description,
   binding: asDirectiveBinding(row.binding),
   lifecycle: asDirectiveLifecycle(row.lifecycle),
+  enabled: row.enabled,
   metadata: asMetadata(row.metadata),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -785,6 +792,7 @@ export class AgentRepository implements AgentRepositoryPort {
             description,
             binding,
             lifecycle,
+            enabled,
             metadata
           )
           SELECT
@@ -803,6 +811,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${directive.description},
             ${toJsonb(directive.binding)},
             ${toJsonb(directive.lifecycle)},
+            ${directive.enabled},
             ${toJsonb(directive.metadata)}
           FROM matched_agent
           RETURNING *
@@ -846,6 +855,7 @@ export class AgentRepository implements AgentRepositoryPort {
       description: hasOwn(input, "description") ? input.description : existing.description,
       binding: hasOwn(input, "binding") ? input.binding : existing.binding,
       lifecycle: hasOwn(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
+      enabled: hasOwn(input, "enabled") ? input.enabled : existing.enabled,
       metadata: input.metadata ?? existing.metadata,
     });
     let rows: AgentDirectiveRow[];
@@ -867,6 +877,7 @@ export class AgentRepository implements AgentRepositoryPort {
             description = ${directive.description},
             binding = ${toJsonb(directive.binding)},
             lifecycle = ${toJsonb(directive.lifecycle)},
+            enabled = ${directive.enabled},
             metadata = ${toJsonb(directive.metadata)},
             updated_at = ${currentTimestamp()}
           FROM agents

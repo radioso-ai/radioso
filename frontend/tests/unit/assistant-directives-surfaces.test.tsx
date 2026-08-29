@@ -9,6 +9,7 @@ import type { BuiltInDirective, Directive } from '@/lib/api'
 
 const apiMocks = vi.hoisted(() => ({
   listDirectives: vi.fn(),
+  updateDirective: vi.fn(),
   listSkills: vi.fn(),
   getSkillCapabilities: vi.fn(),
 }))
@@ -17,7 +18,7 @@ vi.mock('@/lib/api', () => ({
   directivesApi: {
     listDirectives: apiMocks.listDirectives,
     createDirective: vi.fn(),
-    updateDirective: vi.fn(),
+    updateDirective: apiMocks.updateDirective,
     deleteDirective: vi.fn(),
   },
 }))
@@ -108,6 +109,7 @@ const directive = (
     binding: null,
     lifecycle: null,
     metadata: {},
+    enabled: true,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -156,6 +158,53 @@ describe('assistant directive surface-aware editing', () => {
       await Promise.resolve()
     })
   }
+
+  it('stops reporting a save once a toggle settles for an agent the operator has left', async () => {
+    // The toggle announces "saving" through the section's save protocol before its request goes
+    // out. A response that arrives for a list no longer on screen has nothing to apply, but the
+    // announcement still has to be answered, or the page's save indicator sits on "saving" until
+    // some unrelated save happens to close it out.
+    const saveStates: string[] = []
+    const onSaveStateChange = ({ state }: { state: string }) => {
+      saveStates.push(state)
+    }
+    let settleToggle: (value: unknown) => void = () => {}
+    apiMocks.updateDirective.mockReturnValue(new Promise((resolve) => {
+      settleToggle = resolve
+    }))
+    apiMocks.listDirectives.mockResolvedValue({
+      directives: [directive({ id: 'tone-rule', name: 'Tone rule' })],
+      builtIns: [builtIn],
+    })
+
+    await act(async () => {
+      root.render(<AssistantDirectivesSection agentId="agent-1" onSaveStateChange={onSaveStateChange} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await click(container.querySelector('[aria-label="Disable Tone rule"]'))
+    expect(saveStates.at(-1)).toBe('saving')
+
+    // The operator moves to another agent while the request is still outstanding. This section
+    // reloads in place rather than unmounting, so the indicator it reported to is still mounted.
+    await act(async () => {
+      root.render(<AssistantDirectivesSection agentId="agent-2" onSaveStateChange={onSaveStateChange} />)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      settleToggle({
+        directive: directive({ id: 'tone-rule', name: 'Tone rule', enabled: false }),
+        coherence: { coherent: true, conflicts: [], rationale: 'Not checked.' },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(saveStates.at(-1)).not.toBe('saving')
+  })
 
   it('does not present a suggestion-only legacy exclusion as replacing a reply built-in', async () => {
     await renderSection([

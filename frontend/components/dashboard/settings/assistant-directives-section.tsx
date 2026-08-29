@@ -8,6 +8,7 @@ import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { mentionsSkill, SkillMentionInput, type SkillMentionOption } from '@/components/dashboard/settings/skill-mention-input'
 import { CapabilityPicker } from '@/components/dashboard/settings/skills/CapabilityPicker'
 import { SkillForm } from '@/components/dashboard/settings/skills/SkillForm'
+import { useScopedRowMutations } from '@/components/dashboard/settings/use-scoped-row-mutations'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Button } from '@/components/ui/button'
 import {
@@ -30,6 +31,7 @@ import {
   type DirectiveSurface,
 } from '@/lib/directive-surfaces'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -67,6 +69,9 @@ type DirectiveFormState = {
   // Which generators the directive addresses. Always holds at least one; the reply
   // alone normalizes back to an empty stored scope on save.
   surfaces: DirectiveSurface[]
+  // Carried invisibly through the dialog: the row toggle is the only control that changes this,
+  // so editing a disabled directive's text must not flip it back on as a side effect of saving.
+  enabled: boolean
 }
 
 // `default` mirrors AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY in
@@ -140,6 +145,7 @@ const emptyForm: DirectiveFormState = {
   surfaces: ['answer'],
   priority: '',
   replaces: [],
+  enabled: true,
 }
 
 // The binding names the one mention the stored action is known to carry. Everything else in the
@@ -169,6 +175,7 @@ const directiveToForm = (directive: Directive): DirectiveFormState => ({
   priority: directive.priority == null ? '' : String(directive.priority),
   replaces: directive.excludes ?? [],
   surfaces: directiveSurfacesToForm(directive.surfaces),
+  enabled: directive.enabled,
 })
 
 const overrideNameFor = (builtInName: string): string => `Override: ${builtInName}`
@@ -203,6 +210,10 @@ const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
     // because a surface change made the replacement impossible — would survive in
     // storage and come back the moment the surfaces overlapped again.
     excludes: replaces,
+    // Always sent: the row toggle, not this dialog, is the control for this field, so an
+    // omission must never be read as "leave it as the API found it" — the API has no other
+    // signal, and the field is never touched by anything else in this form.
+    enabled: form.enabled,
   }
   return payload
 }
@@ -222,6 +233,10 @@ const directiveToPayload = (
   excludes: options.excludes ?? directive.excludes,
   description: directive.description,
   metadata: directive.metadata,
+  // Superseding resends the winner unmodified apart from the new exclusion: a disabled
+  // directive that wins a conflict must stay disabled rather than come back to life as a
+  // side effect of the resend.
+  enabled: directive.enabled,
 })
 
 const dedupeNames = (names: string[]): string[] => Array.from(new Set(names))
@@ -236,6 +251,7 @@ function CoherenceResolver({
   onSupersede,
   onMakeConditional,
   isSaving,
+  isRowPending,
 }: {
   coherence: DirectiveCoherence
   directives: Directive[]
@@ -243,6 +259,10 @@ function CoherenceResolver({
   onSupersede: (winner: Directive, loser: Directive) => void
   onMakeConditional: (directive: Directive) => void
   isSaving: boolean
+  // Each of these actions resubmits one directive in full, from the copy this panel is holding.
+  // A row mutation in flight for that directive is about to change what "in full" means, so the
+  // action waits rather than writing a stale value back over it.
+  isRowPending: (directiveId: string) => boolean
 }) {
   if (coherence.coherent) {
     return (
@@ -281,7 +301,7 @@ function CoherenceResolver({
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={isSaving}
+                      disabled={isSaving || isRowPending(subject.id)}
                       onClick={() => onSupersede(subject, existing)}
                       aria-label={`${subject.name} supersedes ${existing.name}`}
                     >
@@ -291,7 +311,7 @@ function CoherenceResolver({
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={isSaving}
+                      disabled={isSaving || isRowPending(existing.id)}
                       onClick={() => onSupersede(existing, subject)}
                       aria-label={`${existing.name} supersedes ${subject.name}`}
                     >
@@ -301,7 +321,7 @@ function CoherenceResolver({
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={isSaving}
+                      disabled={isSaving || isRowPending(subject.id)}
                       onClick={() => onMakeConditional(subject)}
                       aria-label={`Make ${subject.name} apply only conditionally`}
                     >
@@ -353,6 +373,8 @@ function DirectiveRow({
   onDelete,
   onOverride,
   onFocusReplacement,
+  onToggleEnabled,
+  isTogglingEnabled = false,
 }: {
   id?: string
   directive: Directive | BuiltInDirective
@@ -363,6 +385,10 @@ function DirectiveRow({
   onDelete?: () => void
   onOverride?: () => void
   onFocusReplacement?: () => void
+  // Only ever passed for an authored directive. Built-ins have no `enabled` field of their own
+  // and are not affected by this control.
+  onToggleEnabled?: (enabled: boolean) => void
+  isTogglingEnabled?: boolean
 }) {
   // A contextual replacer only supersedes this built-in when its condition
   // fires, so the built-in still applies normally the rest of the time. Only an
@@ -370,11 +396,13 @@ function DirectiveRow({
   // out and strike through.
   const isConditionalReplacement = replacedBy?.condition.kind === 'contextual'
   const isFullyReplaced = replacedBy != null && !isConditionalReplacement
+  // Built-ins have no `enabled` field of their own and are never turned off from here.
+  const isDisabled = 'enabled' in directive && !directive.enabled
   return (
     <div
       id={id}
       tabIndex={id ? -1 : undefined}
-      className={`space-y-3 rounded-lg border border-border p-4 ${isFullyReplaced ? 'bg-muted/40 text-muted-foreground' : ''}`}
+      className={`space-y-3 rounded-lg border border-border p-4 ${isFullyReplaced || isDisabled ? 'bg-muted/40 text-muted-foreground' : ''}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
@@ -385,6 +413,11 @@ function DirectiveRow({
             {readOnly ? (
               <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
                 Read-only
+              </span>
+            ) : null}
+            {isDisabled ? (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                Disabled
               </span>
             ) : null}
             {directive.priority != null ? (
@@ -438,10 +471,35 @@ function DirectiveRow({
           </Button>
         ) : !readOnly ? (
           <div className="flex shrink-0 items-center gap-1">
-            <Button type="button" variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${directive.name}`}>
+            {onToggleEnabled ? (
+              <Switch
+                checked={!isDisabled}
+                onCheckedChange={onToggleEnabled}
+                disabled={isTogglingEnabled}
+                aria-label={`${isDisabled ? 'Enable' : 'Disable'} ${directive.name}`}
+              />
+            ) : null}
+            {/* The dialog opens from this row's current values and always resends them on save,
+                so editing while the toggle is still in flight would save the pre-toggle state
+                back over it. Both actions wait out the request rather than race it. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onEdit}
+              disabled={isTogglingEnabled}
+              aria-label={`Edit ${directive.name}`}
+            >
               <Pencil className="h-4 w-4" />
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={onDelete} aria-label={`Delete ${directive.name}`}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onDelete}
+              disabled={isTogglingEnabled}
+              aria-label={`Delete ${directive.name}`}
+            >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
@@ -468,6 +526,10 @@ export function AssistantDirectivesSection({
   const [coherenceSubjectId, setCoherenceSubjectId] = useState<string | null>(null)
   const [editingDirective, setEditingDirective] = useState<Directive | null>(null)
   const [deletingDirective, setDeletingDirective] = useState<Directive | null>(null)
+  // The row toggle is a per-row mutation, not a section save: two rows can be in flight at once,
+  // and this section reloads in place when the operator switches agents rather than unmounting.
+  // Both facts live in the hook so this component does not hand-roll them again.
+  const rowMutations = useScopedRowMutations(agentId)
   const [form, setForm] = useState<DirectiveFormState>(emptyForm)
   // A dialog that reports "Name is required." before the operator has typed anything is scolding
   // them for not having started. Errors wait for the field to be written or for a save attempt.
@@ -492,7 +554,7 @@ export function AssistantDirectivesSection({
   const [skillFormError, setSkillFormError] = useState<string | null>(null)
   const [isCreatingSkill, setIsCreatingSkill] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
   const bindableSkills = useMemo<SkillMentionOption[]>(
     () => agentSkills
       .filter(isBindableSkill)
@@ -547,6 +609,10 @@ export function AssistantDirectivesSection({
   const supersededBuiltIns = useMemo(() => {
     const replacements = new Map<string, Directive>()
     for (const directive of directives) {
+      // A disabled directive never becomes a runtime Directive, so its excludes never fire and
+      // the built-in it names is still fully live. This map drives the built-in's displayed
+      // status, a statement about live behavior, so a disabled replacer must not retire it.
+      if (!directive.enabled) continue
       // Built-ins govern the reply. An exclusion authored through an older API client may name
       // one from a suggestion-only directive, but those rules never meet on a generator and the
       // UI must not retire the built-in as though they did.
@@ -598,7 +664,10 @@ export function AssistantDirectivesSection({
     // directive was written, and the API then rejects the binding. Say which skill is the
     // problem here rather than surface a request failure. Skipped until the list loads: an
     // unread or failed fetch must not block a directive that is fine.
-    if (skillsLoaded) {
+    // Only while the directive is in play: a disabled directive cannot dispatch its skill, so the
+    // API accepts it with a broken binding, and blocking the save here would leave the operator
+    // unable to reword a rule they have already turned off.
+    if (skillsLoaded && form.enabled) {
       const unbindable = mentioned.find((name) => !bindableSkills.some((skill) => skill.skillName === name))
       if (unbindable) {
         return {
@@ -909,6 +978,49 @@ export function AssistantDirectivesSection({
     }
   }
 
+  // A one-click, reversible response to a misfiring directive: the row toggle, not the edit
+  // dialog. The response replaces the row from the server rather than flipping it optimistically,
+  // matching skill enablement (SkillList.toggleSkill), and reports through the same save protocol
+  // as every other mutation here so a toggle is not invisible to the section's save state.
+  //
+  // Unlike the dialog saves, two toggles can be in flight at once, so what each response is
+  // allowed to do is split three ways. A committed row is always applied — a second toggle on
+  // another row does not make the first one's result untrue, and skipping it would leave a row
+  // showing the opposite of what the server stored until a reload. The section's single save-state
+  // chip stays last-write-wins, since it has only one thing to say. Only the agent is a hard gate:
+  // a response for an agent the operator has navigated away from describes another list entirely.
+  const handleToggleEnabled = async (directive: Directive, enabled: boolean) => {
+    const saveId = beginSave()
+    setError(null)
+    const outcome = await rowMutations.run(directive.id, () =>
+      directivesApi.updateDirective(agentId, directive.id, { enabled }))
+
+    // beginSave already told the section it is saving. A stale outcome has nothing to report about
+    // this list, but leaving the announcement unanswered strands the page's save indicator on
+    // "saving" until some unrelated save happens to close it out. Only the newest save may reset,
+    // so a mutation still in flight keeps its own state.
+    if (outcome.status === 'stale') {
+      if (isCurrentSave(saveId)) resetSaveState()
+      return
+    }
+    if (outcome.status === 'failed') {
+      const message = getApiErrorMessage(outcome.error, 'Failed to update directive.')
+      setError(message)
+      // The section's save chip has one thing to say, so it stays last-write-wins. What happened
+      // to this row is a separate question, and the hook answers it per row.
+      if (isCurrentSave(saveId)) markError(message)
+      return
+    }
+
+    mergeSavedDirective(outcome.value.directive)
+    // Disabling skips the backend coherence check (it comes back coherent, clearing any
+    // stale panel about a rule that is no longer in play); re-enabling runs the real check,
+    // so this is the same verdict-threading handleSubmit and handleSupersede already do.
+    setCoherence(outcome.value.coherence)
+    setCoherenceSubjectId(outcome.value.directive.id)
+    if (isCurrentSave(saveId)) markSaved()
+  }
+
   const handleDelete = async () => {
     if (!deletingDirective) return
     const saveId = beginSave()
@@ -957,6 +1069,7 @@ export function AssistantDirectivesSection({
             onSupersede={(winner, loser) => void handleSupersede(winner, loser)}
             onMakeConditional={openConditionalEditDialog}
             isSaving={isSaving}
+            isRowPending={rowMutations.isPending}
           />
         ) : null}
 
@@ -980,6 +1093,8 @@ export function AssistantDirectivesSection({
                   replaces={effectiveReplacements.get(directive.id) ?? []}
                   onEdit={() => openEditDialog(directive)}
                   onDelete={() => setDeletingDirective(directive)}
+                  onToggleEnabled={(enabled) => void handleToggleEnabled(directive, enabled)}
+                  isTogglingEnabled={rowMutations.isPending(directive.id)}
                 />
               ))}
             </div>

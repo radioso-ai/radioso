@@ -182,6 +182,29 @@ describe('directivesApi', () => {
     )
   })
 
+  it('updates agent directives with an enabled flag', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      directive: { id: 'directive-1' },
+      coherence: { coherent: true, conflicts: [], rationale: 'ok' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await directivesApi.updateDirective('agent-1', 'directive-1', {
+      enabled: false,
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/agents/agent-1/directives/directive-1',
+      expect.objectContaining({
+        method: 'PATCH',
+        credentials: 'omit',
+        body: JSON.stringify({
+          enabled: false,
+        }),
+      }),
+    )
+  })
+
   it('deletes agent directives and accepts 204 responses', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

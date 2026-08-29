@@ -34,9 +34,22 @@ export const authoredDirectiveToDirective = (
   };
 };
 
-export const authoredDirectiveToSteeringDirective = (
+const authoredDirectiveToSteeringDirective = (
   directive: AuthoredDirective,
 ): Directive =>
   authoredDirectiveToDirective(directive, {
     defaultPriority: AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY,
   });
+
+/**
+ * The only supported way to turn an agent's authored directives into steering candidates.
+ * A disabled directive keeps its authored text but must never reach the matcher — this is
+ * the one place that invariant is enforced, so every call site that builds a turn's
+ * candidate set goes through here rather than mapping `authoredDirectives` directly.
+ */
+export const steeringDirectivesFromAuthored = (
+  directives: readonly AuthoredDirective[] | undefined,
+): Directive[] =>
+  (directives ?? [])
+    .filter((directive) => directive.enabled)
+    .map(authoredDirectiveToSteeringDirective);

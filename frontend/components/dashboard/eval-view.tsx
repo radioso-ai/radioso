@@ -219,6 +219,11 @@ const asDirectiveOverride = (
   metadata: directive.metadata && typeof directive.metadata === 'object' && !Array.isArray(directive.metadata)
     ? directive.metadata as Record<string, unknown>
     : {},
+  // A snapshot captured before directives carried an off switch omits it, and so does one whose
+  // directive was in play — both mean enabled. Stating it is what matters: the replay always
+  // sends authoredDirectives, and the backend reads an absent value as enabled, so leaving it out
+  // would run a captured disabled directive as live and measure a different set than the snapshot.
+  enabled: typeof directive.enabled === 'boolean' ? directive.enabled : true,
 })
 
 const buildSnapshotReplayBaseline = (snapshot: EvalSnapshot | null): WorkbenchOverrideValues => {

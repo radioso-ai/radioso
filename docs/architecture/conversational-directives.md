@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-08-24
+last_updated: 2026-08-29
 ---
 
 # Conversational Directives
@@ -278,6 +278,20 @@ the condition's description), **Instruction** (the steering text — the
 `action` field described above; the label reads "Instruction" because it
 states what the agent should do when the directive fires), **Where this
 applies**, **Replaces**, and **Priority**.
+
+Every authored directive also carries `enabled`, a reversible off switch on the
+directive record itself. The dialog has no field for it: the control is a
+switch on the directive's row in the directive list, next to Edit and Delete,
+so turning a rule off or back on is a single click that never reopens or
+resubmits the dialog. Turn one off to take it out of play without losing
+its condition, instruction, or any of its other settings, then turn it back on
+later. A disabled directive is never handed to the matcher, so it cannot fire,
+conflict with another directive, or show up as a conflict in the coherence
+check. This is a different question from `lifecycle`: `enabled` asks whether
+the directive is in play at all, while `lifecycle` (repeatable, once per
+conversation, or on a cooldown) governs how often a directive that *is* in
+play may fire. A disabled repeatable directive never fires; an enabled
+once-per-conversation directive fires at most once.
 
 ## Practical implication
 

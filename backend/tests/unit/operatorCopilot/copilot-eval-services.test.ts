@@ -570,6 +570,48 @@ describe("copilot eval case replay evidence", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it("still excludes a directive whose snapshot was captured before directives carried an enabled flag", async () => {
+    // A case captured before the field existed simply omits it, while live serialization always
+    // states it. Comparing those directly would call every pre-existing case's directives
+    // "changed since capture" and refuse a replay that is perfectly honest.
+    const live = { id: "directive-removed", config: { name: "State the refund window", action: "Say 30 days", enabled: true } };
+    const capturedBeforeTheField = { name: "State the refund window", action: "Say 30 days" };
+    const { service, execute } = harness({
+      directives: [live],
+      snapshotAuthoredDirectives: [capturedBeforeTheField],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    });
+
+    expect(execute).toHaveBeenCalled();
+  });
+
+  it("still refuses a directive turned off since a snapshot captured before the enabled flag existed", async () => {
+    // Absent means enabled, so an operator disabling the directive after capture is a real change
+    // to what the case measured — the defaulting must not swallow that.
+    const live = { id: "directive-removed", config: { name: "State the refund window", action: "Say 30 days", enabled: false } };
+    const capturedBeforeTheField = { name: "State the refund window", action: "Say 30 days" };
+    const { service, execute } = harness({
+      directives: [live],
+      snapshotAuthoredDirectives: [capturedBeforeTheField],
+    });
+    const overrides = { agentConfigOverride: { excludedDirectiveIds: ["directive-removed"] } };
+
+    await expect(service.replayCase({
+      ...subject,
+      caseId: ids.case,
+      copilotConversationId: ids.conversation,
+      overrides,
+    })).rejects.toThrow(/changed since this case's snapshot was captured/i);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it("refuses an excludedDirectiveIds entry that is not one of the source agent's real directives", async () => {
     const { service, execute } = harness({ directives: [{ id: "directive-kept", config: {} }] });
     const overrides = { agentConfigOverride: { excludedDirectiveIds: ["not-a-real-directive"] } };

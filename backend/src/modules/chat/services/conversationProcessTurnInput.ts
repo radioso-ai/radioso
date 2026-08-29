@@ -40,7 +40,7 @@ import {
 } from "./conversationContractMappers.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { visitorMatchContext } from "./visitorMatchContext.js";
-import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
+import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import { planAwareDirectiveClassifications } from "./turnPlanCoordinator.js";
 
 const missingModelGateway: ConversationModelGateway = {
@@ -105,7 +105,7 @@ const directivesForSession = (session: PreparedSession): Directive[] =>
   directiveMatchesForSession(session).map((match) => match.directive);
 
 const authoredDirectivesForSession = (session: PreparedSession): Directive[] =>
-  (session.agent.authoredDirectives ?? []).map(authoredDirectiveToSteeringDirective);
+  steeringDirectivesFromAuthored(session.agent.authoredDirectives);
 
 const effectiveInputEventForSession = (session: PreparedSession) => ({
   ...toConversationInputEvent(session.userMessage),

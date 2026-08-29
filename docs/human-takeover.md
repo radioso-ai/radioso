@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-08-21
+last_updated: 2026-08-29
 ---
 
 # Human Takeover
@@ -190,38 +190,55 @@ is exposed, never the operator's account id. The operator tail also includes
 
 ## Operator console
 
-The dashboard surfaces this work under **Activity**, which has three tabs:
+The dashboard surfaces this work under **Activity**, which has two pages:
+**Inbox** and **Conversations**.
 
-- **Needs attention** — the operator inbox. One categorized table with an
-  escalation-type column. Critical escalations (an **Approval** to decide, a
-  **Handoff** awaiting or held by a human) sort to the top. Thumbs-down feedback
-  with a written customer comment follows, ordered by its latest creation or
-  edit. Automatically detected signals and uncommented feedback stay in
-  **Quality** instead of creating one inbox row per answer. A compact summary
-  shows the unique number of answers in active Quality review without adding
-  that total to the Needs attention item or refresh counts.
+**Inbox** is a two-pane queue for everything waiting on a person: handoffs,
+approvals, and negative feedback. The left pane lists open items with search
+and filters for type, agent, and who has taken each one; critical escalations
+— an approval to decide, a handoff awaiting or held by a human — sort to the
+top, followed by written negative feedback ordered by its latest creation or
+edit. Automatically detected signals and uncommented feedback stay in
+**Quality** instead of creating an inbox row per answer.
 
-  Reviewing written feedback opens the exact failed answer and keeps direct
-  links to Knowledge, the agent's Profile settings, and agent chat beside the
-  evidence. Mark it resolved after updating and testing, or choose **Not
-  actionable**. Both actions open a compact popover where the operator can close
-  immediately or add an optional classification. Only **Other** asks for a
-  note. If another operator closes it first, a confirmation dialog shows their
-  current decision instead of overwriting it. A later written thumbs-down
-  comment reopens the work even if that answer was previously resolved or
-  dismissed. Approvals and handoffs clear by resolving or handing back from the
-  conversation drawer.
-- **All activity** — the full conversation history.
-- **Quality** — answer quality in two zones with different scopes. **Health**
-  covers a rolling 7- or 30-day window: answer volume, grounded-answer rate,
-  negative-feedback rate, and skill-failure rate, each shown against the equal
-  preceding window. **Queue** is the full, paginated backlog and per-turn triage
-  for negative feedback, grounding gaps, and skill failures.
-  Needs attention links to this union as one deduplicated count rather than
-  listing its automatic signals individually. The queue is not windowed, so a
-  turn that is still untriaged stays visible however old it is. Its resolution
-  breakdown and filters open exact reason/closure-time queues, while **Add to
-  Eval** preserves a failed answer and later shows timestamped run evidence.
+Selecting an item opens the right pane: a one-line header naming the visitor,
+the page they were on, and how long they have been waiting; a situation card
+with the handoff reason and the visitor's opening request; the live
+transcript; and a reply composer that stays visible throughout. Sending a
+reply claims the item for you — there is no separate take-over step. Messages
+carry attribution (a badge for human-agent and system messages), and the pane
+reads the tail endpoint while open, so new visitor messages and your own
+replies appear without a manual refresh. **Done** closes a handoff or
+approval and hands the conversation back to the agent; on a negative-feedback
+item, **Done** opens the same resolution-reason flow Quality → Review uses to
+classify it.
+
+The browser tab title carries the count of open items, and a soft sound plays
+when a new handoff or approval arrives while the dashboard is open.
+
+**Conversations** lists the full conversation history, titled by the
+visitor's opening request, with the page URL they arrived from and an Outcome
+column — In progress, Completed, or Handed off, the last linking back to the
+Inbox item. Search and filters for outcome, agent, and site narrow the list.
+
+Opening a conversation from **Conversations**, or from **Quality**, opens the
+conversation drawer: transcript, Debug, Flow, a button to continue the
+conversation in test chat, and a button to send it to Eval. The drawer is for
+inspecting and testing a conversation — replying, taking over, handing back,
+and approving or rejecting a pending decision all happen from the Inbox.
+
+**Quality** is a separate top-level section with two pages. **Review** is the
+answer-quality triage view, covering answer quality in two zones with
+different scopes. **Health** covers a rolling 7- or 30-day window: answer
+volume, grounded-answer rate, negative-feedback rate, and skill-failure rate,
+each shown against the equal preceding window. **Queue** is the full,
+paginated backlog and per-turn triage for negative feedback, grounding gaps,
+and skill failures. The Inbox links to this union as one deduplicated count
+rather than listing its automatic signals individually. The queue is not
+windowed, so a turn that is still untriaged stays visible however old it is.
+Its resolution breakdown and filters open exact reason/closure-time queues,
+while **Add to Eval** preserves a failed answer, which then shows timestamped
+run evidence and appears on the **Evals** page.
 
 A turn only counts as a grounding gap when the agent tried to ground an answer
 and came up empty. When it declines because the question falls outside what its
@@ -245,17 +262,11 @@ invalidSourceCount }` or `null`. Use `groundingVerdict` (CSV or repeated),
 presence filter matches complete diagnostics with a zero count; it does not
 match unknown diagnostics.
 
-Both zones measure AI turns only. A reply you write during a takeover is stored
+Both zones measure AI turns only. A reply you write from the Inbox is stored
 as an assistant message, but it carries your authorship, so it is left out of the
 quality counts and rates. The same applies to conversations from the dashboard
 test chat, the workbench replay, and Ray's agent-turn probes. In practice this
 means your own work as an operator never moves the agent's quality numbers.
-
-The conversation view shows message attribution (a badge for human-agent and
-system messages) and an operator action bar: take over, reply, hand back, and
-approve or reject a pending decision. While the view is open it reads the tail
-endpoint, so new visitor messages and the operator's own replies appear without a
-manual refresh.
 
 ## Approval resume and human ownership
 

@@ -19,9 +19,6 @@ export const editionController = {
   shouldRenderWebsiteEmbedSettings: (mode: 'workspace' | 'assistant' | 'channels') =>
     mode === 'channels',
 
-  getActivityDescription: () =>
-    'Review past chats and searches. Retrieval diagnostics live here.',
-
   getActivityFilterOptions: () =>
     [
       { value: 'all' as const, label: 'All' },

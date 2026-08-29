@@ -402,10 +402,7 @@ export function HistoryList({
 
   return (
     <DashboardPage
-      title="Activity"
-      description={
-        editionController.getActivityDescription()
-      }
+      title="Conversations"
     >
         {isLoading && !hasAnyHistory ? (
           <div className="flex h-full items-center justify-center">

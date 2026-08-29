@@ -4,19 +4,24 @@ import {
   ArrowDownToLine,
   Boxes,
   Building2,
+  ClipboardCheck,
   FileText,
+  FlaskConical,
   FolderOpen,
   Inbox,
   MessagesSquare,
-  MessageSquareWarning,
-  Radar,
 } from 'lucide-react'
 
 import { SectionNavBody, type SubNavGroup } from '@/components/dashboard/subnav-column'
-import { buildActivityTabHref, type ActivitySurfaceTab } from '@/components/dashboard/activity-tabs'
+import {
+  buildActivityTabHref,
+  buildQualityTabHref,
+  type QualitySurfaceTab,
+} from '@/components/dashboard/activity-tabs'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   buildDashboardHref,
+  type ActivityTab,
   type DashboardRouteState,
   type KnowledgeTab,
   type SettingsTab,
@@ -31,21 +36,34 @@ function useWorkspaceRouteParts() {
 }
 
 export function ActivitySubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
-  const activeTab: ActivitySurfaceTab =
-    routeState.section === 'quality'
-      ? (routeState.qualityView === 'audience-pulse' ? 'audience-pulse' : 'quality')
-      : routeState.activityTab === 'all'
-        ? 'all'
-        : 'needs-attention'
-  const href = (target: ActivitySurfaceTab) => buildActivityTabHref(accountId, routeState, activeTab, target)
+  const activeTab: ActivityTab = routeState.activityTab === 'all' ? 'all' : 'needs-attention'
+  const href = (target: ActivityTab) => buildActivityTabHref(accountId, routeState, activeTab, target)
 
   const groups: SubNavGroup[] = [
     {
       items: [
-        { id: 'needs-attention', label: 'Needs attention', icon: Inbox, href: href('needs-attention'), active: activeTab === 'needs-attention' },
-        { id: 'all', label: 'All activity', icon: MessagesSquare, href: href('all'), active: activeTab === 'all' },
-        { id: 'quality', label: 'Quality', icon: MessageSquareWarning, href: href('quality'), active: activeTab === 'quality' },
-        { id: 'audience-pulse', label: 'Audience Pulse', icon: Radar, href: href('audience-pulse'), active: activeTab === 'audience-pulse' },
+        { id: 'needs-attention', label: 'Inbox', icon: Inbox, href: href('needs-attention'), active: activeTab === 'needs-attention' },
+        { id: 'all', label: 'Conversations', icon: MessagesSquare, href: href('all'), active: activeTab === 'all' },
+      ],
+    },
+  ]
+
+  return <SectionNavBody groups={groups} />
+}
+
+/**
+ * Quality's two surfaces: the triage Review queue (`quality` section) and Evals
+ * (the separate `eval` section), nested here so one rail row covers both.
+ */
+export function QualitySubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
+  const activeTab: QualitySurfaceTab = routeState.section === 'eval' ? 'evals' : 'review'
+  const href = (target: QualitySurfaceTab) => buildQualityTabHref(accountId, routeState, activeTab, target)
+
+  const groups: SubNavGroup[] = [
+    {
+      items: [
+        { id: 'review', label: 'Review', icon: ClipboardCheck, href: href('review'), active: activeTab === 'review' },
+        { id: 'evals', label: 'Evals', icon: FlaskConical, href: href('evals'), active: activeTab === 'evals' },
       ],
     },
   ]

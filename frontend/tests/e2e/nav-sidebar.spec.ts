@@ -37,9 +37,19 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
 
   // Activity's views are nested sidebar items now, not in-page tabs.
   await sidebar.getByRole("link", { name: "Activity" }).click();
-  await expect(sidebar.getByRole("link", { name: "Needs attention" })).toBeVisible();
-  await expect(sidebar.getByRole("link", { name: "All activity" })).toBeVisible();
-  await expect(sidebar.getByRole("link", { name: "Quality" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Conversations" })).toBeVisible();
+
+  // Audience Pulse and Quality are top-level rail items, not nested under Activity.
+  await expect(sidebar.getByRole("link", { name: "Audience Pulse" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Quality", exact: true })).toBeVisible();
+  // Eval no longer has its own top-level rail entry — it lives under Quality.
+  await expect(sidebar.getByRole("link", { name: "Eval", exact: true })).toHaveCount(0);
+
+  // Quality nests its own views (Review / Evals) when active.
+  await sidebar.getByRole("link", { name: "Quality", exact: true }).click();
+  await expect(sidebar.getByRole("link", { name: "Review" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Evals" })).toBeVisible();
 });
 
 test("Activity is promoted with a needs-attention badge reflecting the inbox count", async ({ page }) => {

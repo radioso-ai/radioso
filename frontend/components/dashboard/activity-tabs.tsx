@@ -5,33 +5,18 @@ import {
 } from '@/lib/dashboard-routes'
 
 /**
- * Builds hrefs for the Activity surfaces (Needs attention / All activity / Quality /
- * Audience Pulse), which now live as nested items in the sidebar rather than in-page
- * tabs. Quality and Audience Pulse are both variants of the `quality` section, so the
- * rail highlight stays on Activity while the view switches.
+ * Builds hrefs for the Activity sidebar's two nested items (Inbox / Conversations).
+ * Clicking the already-active tab preserves whatever filters/deep-link state the
+ * operator has open; switching tabs resets to a fresh view of the target tab so
+ * state from one surface never leaks into the other.
  */
-export type ActivitySurfaceTab = ActivityTab | 'quality' | 'audience-pulse'
-
 export function buildActivityTabHref(
   accountId: string,
   routeState: DashboardRouteState,
-  activeTab: ActivitySurfaceTab,
-  targetTab: ActivitySurfaceTab,
+  activeTab: ActivityTab,
+  targetTab: ActivityTab,
 ) {
-  const workspaceState = {
-    workspaceId: routeState.workspaceId,
-    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
-  }
-
   if (targetTab === activeTab) {
-    if (targetTab === 'quality' || targetTab === 'audience-pulse') {
-      return buildDashboardHref(accountId, {
-        ...routeState,
-        section: 'quality',
-        activityTab: undefined,
-        qualityView: targetTab === 'audience-pulse' ? 'audience-pulse' : undefined,
-      })
-    }
     return buildDashboardHref(accountId, {
       ...routeState,
       section: 'activity',
@@ -39,17 +24,37 @@ export function buildActivityTabHref(
     })
   }
 
-  if (targetTab === 'quality' || targetTab === 'audience-pulse') {
-    return buildDashboardHref(accountId, {
-      section: 'quality',
-      ...workspaceState,
-      qualityView: targetTab === 'audience-pulse' ? 'audience-pulse' : undefined,
-    })
+  return buildDashboardHref(accountId, {
+    section: 'activity',
+    workspaceId: routeState.workspaceId,
+    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+    activityTab: targetTab,
+  })
+}
+
+/**
+ * Builds hrefs for the Quality sidebar's two nested items (Review / Evals). Review is
+ * the `quality` section's triage queue; Evals is the separate `eval` section. Clicking
+ * the already-active tab preserves its filters/deep-link state; switching tabs resets
+ * to a fresh view so state from one surface never leaks into the other.
+ */
+export type QualitySurfaceTab = 'review' | 'evals'
+
+export function buildQualityTabHref(
+  accountId: string,
+  routeState: DashboardRouteState,
+  activeTab: QualitySurfaceTab,
+  targetTab: QualitySurfaceTab,
+) {
+  const targetSection = targetTab === 'evals' ? 'eval' : 'quality'
+
+  if (targetTab === activeTab) {
+    return buildDashboardHref(accountId, { ...routeState, section: targetSection })
   }
 
   return buildDashboardHref(accountId, {
-    section: 'activity',
-    ...workspaceState,
-    activityTab: targetTab,
+    section: targetSection,
+    workspaceId: routeState.workspaceId,
+    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
   })
 }

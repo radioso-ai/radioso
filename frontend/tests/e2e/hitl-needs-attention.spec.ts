@@ -220,16 +220,16 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
     });
   });
 
-  // Activity defaults to the Needs attention inbox.
+  // Activity defaults to the Inbox.
   await page.goto(`/w/${workspaceKey}/activity`);
-  await expect(page.getByRole("link", { name: "Needs attention" })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByRole("link", { name: "Inbox" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
 
-  // The tab selector sits in the page header actions; All activity is one click away.
-  await page.getByRole("link", { name: "All activity" }).click();
+  // The tab selector sits in the page header actions; Conversations is one click away.
+  await page.getByRole("link", { name: "Conversations" }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity\\?tab=all`));
   await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
-  await page.getByRole("link", { name: "Needs attention" }).click();
+  await page.getByRole("link", { name: "Inbox" }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity$`));
 
   // One unified inbox table with an escalation-type column.

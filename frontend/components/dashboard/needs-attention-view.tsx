@@ -1003,8 +1003,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [accountId, routeState],
   )
 
-  const needsAttentionCount = items.length
-
   const displayedQualityTurns = useMemo(() => {
     const displayedMessageIds = new Set(
       items.flatMap((item) => item.assistantMessageId ? [item.assistantMessageId] : []),
@@ -1090,8 +1088,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   return (
     <>
       <DashboardPage
-        title={<span ref={pageTitleRef} tabIndex={-1}>Needs attention</span>}
-        description={`${needsAttentionCount} item${needsAttentionCount === 1 ? '' : 's'} needing operator attention`}
+        title={<span ref={pageTitleRef} tabIndex={-1}>Inbox</span>}
         actions={
           <Button
             type="button"

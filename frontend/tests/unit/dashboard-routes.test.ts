@@ -10,7 +10,7 @@ import {
   parseDashboardRoute,
   retargetDashboardRouteToWorkspace,
 } from '@/lib/dashboard-routes'
-import { buildActivityTabHref } from '@/components/dashboard/activity-tabs'
+import { buildActivityTabHref, buildQualityTabHref } from '@/components/dashboard/activity-tabs'
 import { QUALITY_SIGNAL_IDS, QUALITY_STATS_RANGES } from '@/lib/api-quality'
 import { agentSectionFromRoute, agentSectionRoute } from '@/lib/dashboard-areas'
 
@@ -156,8 +156,12 @@ describe('dashboard route state', () => {
     expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'all')).toBe(
       '/w/support-abc123/activity?tab=all&filter=chat&itemKind=chat&itemId=conversation-1',
     )
-    expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'quality')).toBe('/w/support-abc123/quality')
+    expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'needs-attention')).toBe(
+      '/w/support-abc123/activity',
+    )
+  })
 
+  it('builds quality tab hrefs without discarding active surface filters', () => {
     const filteredQuality: DashboardRouteState = {
       section: 'quality',
       workspacePublicRouteKey: 'support-abc123',
@@ -165,10 +169,21 @@ describe('dashboard route state', () => {
       qualityTriageStates: ['open'],
     }
 
-    expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'quality')).toBe(
+    expect(buildQualityTabHref('account-1', filteredQuality, 'review', 'review')).toBe(
       '/w/support-abc123/quality?feedback=down&triage=open',
     )
-    expect(buildActivityTabHref('account-1', filteredQuality, 'quality', 'all')).toBe('/w/support-abc123/activity?tab=all')
+    expect(buildQualityTabHref('account-1', filteredQuality, 'review', 'evals')).toBe('/w/support-abc123/eval')
+
+    const filteredEval: DashboardRouteState = {
+      section: 'eval',
+      workspacePublicRouteKey: 'support-abc123',
+      evalCaseId: 'case-xyz',
+    }
+
+    expect(buildQualityTabHref('account-1', filteredEval, 'evals', 'evals')).toBe(
+      '/w/support-abc123/eval/case-xyz',
+    )
+    expect(buildQualityTabHref('account-1', filteredEval, 'evals', 'review')).toBe('/w/support-abc123/quality')
   })
 
   it('ignores activity tab query state outside the activity section', () => {

@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, connect skills, test drafts, and manage their lifecycle."
-last_updated: 2026-08-19
+last_updated: 2026-08-29
 ---
 
 # Authoring Routines
@@ -127,7 +127,7 @@ For a collection checkpoint, add a slot-filled rule that waits for the selected
 
 Use an approval step before a consequential action, such as issuing a refund or
 sending a webhook. The step pauses the routine and presents a workspace member
-with a set of choices in **Needs attention**. Their selection sends the routine
+with a set of choices in the **Inbox**. Their selection sends the routine
 along that choice's decision edge.
 
 Add an approval step from **+ Step**, give the decision a clear name, and add two

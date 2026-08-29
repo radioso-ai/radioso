@@ -1394,6 +1394,108 @@ describe("chat history service", () => {
     });
   });
 
+  it("previews the visitor's first user message, not the newest agent reply", async () => {
+    const { conversationRepository, messageRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    conversation.updatedAt = new Date("2026-04-24T10:00:00.000Z");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hi, how can I help?",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "What are your shop hours?",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "We're open 9-5",
+    });
+
+    const itemsPage = await service.listItems("workspace-1", { limit: 10, offset: 0 });
+
+    expect(itemsPage.items[0]).toMatchObject({
+      kind: "chat",
+      id: conversation.id,
+      conversation: {
+        preview: "What are your shop hours?",
+      },
+    });
+  });
+
+  it("falls back to the newest message preview when a conversation has no user message yet", async () => {
+    const { conversationRepository, messageRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    conversation.updatedAt = new Date("2026-04-24T11:00:00.000Z");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hi, how can I help?",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Still here if you need anything",
+    });
+
+    const itemsPage = await service.listItems("workspace-1", { limit: 10, offset: 0 });
+
+    expect(itemsPage.items[0]).toMatchObject({
+      kind: "chat",
+      id: conversation.id,
+      conversation: {
+        preview: "Still here if you need anything",
+      },
+    });
+  });
+
+  it("skips a whitespace-only first user message and previews the next meaningful one", async () => {
+    const { conversationRepository, messageRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    conversation.updatedAt = new Date("2026-04-25T10:00:00.000Z");
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "   ",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "Hi, how can I help?",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "What are your shop hours?",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "We're open 9-5",
+    });
+
+    const itemsPage = await service.listItems("workspace-1", { limit: 10, offset: 0 });
+
+    expect(itemsPage.items[0]).toMatchObject({
+      kind: "chat",
+      id: conversation.id,
+      conversation: {
+        preview: "What are your shop hours?",
+      },
+    });
+  });
+
   it("applies offset pagination to the merged history items", async () => {
     const { conversationRepository, auditRepository, service } = createService();
     const first = await conversationRepository.create("workspace-1");

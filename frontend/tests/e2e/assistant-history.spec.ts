@@ -207,8 +207,8 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
 
-  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
-  await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
   expect(requestLog).toContain("GET /history?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
@@ -218,7 +218,10 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(
     page.locator("li").filter({ hasText: "Advanced techniques" }).getByRole("button", { name: /Open source 1/ }),
   ).toBeVisible();
-  // The inline Debug pane shows the textual diagnostics.
+  // Diagnostics (Debug/Flow) are builder tooling, reached from the reading
+  // pane's quiet "Open in debug view" link rather than inline (spec 1116
+  // User Story 4: the response view carries zero builder tools of its own).
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Debug" }).click();
   await expect(page.getByText("Outcome summary").first()).toBeVisible();
 
@@ -244,9 +247,10 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
 });
 
-test("activity uses operator labels and entry-page locations", async ({ page }) => {
+test("the All lens row shows the visitor label and location as plain text; the reading pane header carries the real, tracking-stripped link", async ({ page }) => {
+  const conversationId = "conversation-legibility-selected";
   const conversation = {
-    id: "conversation-legibility-selected",
+    id: conversationId,
     agentId: defaultAgentId,
     agentName: "Marta",
     agentInternalName: "Website support",
@@ -262,6 +266,31 @@ test("activity uses operator labels and entry-page locations", async ({ page }) 
     assistantMessageCount: 1,
     preview: "Selected agent conversation",
   };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    agentInternalName: "Website support",
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://it.ananda.eu",
+    entryPageUrl: "https://it.ananda.eu/support/getting-started?utm_source=chat",
+    channelContext: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      { id: "user-message-legibility", role: "user" as const, source: "customer" as const, content: "Selected agent conversation", createdAt: nowIso },
+      { id: "assistant-message-legibility", role: "assistant" as const, source: "ai_agent" as const, content: "Happy to help.", createdAt: nowIso },
+    ],
+  };
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -271,18 +300,83 @@ test("activity uses operator labels and entry-page locations", async ({ page }) 
       nextCursor: null,
       hasMore: false,
     },
+    conversationDetail,
   });
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
-  const table = page.getByRole("table", { name: "Activity" });
-  const row = table.getByRole("row").filter({ hasText: "Selected agent conversation" });
+  const row = page.getByRole("button", { name: /Selected agent conversation/ });
 
-  await expect(row).toContainText("Website support");
-  await expect(row.getByText("Embedded", { exact: true })).toHaveCount(1);
-  await expect(row.getByRole("link", { name: "it.ananda.eu/support/getting-started" })).toHaveAttribute(
-    "href",
-    "https://it.ananda.eu/support/getting-started?utm_source=chat",
-  );
+  await expect(row).toContainText("Anonymous");
+  // The location renders as plain text inside the row — the row is itself
+  // one big button (the row-select control), and an <a> nested inside a
+  // <button> is invalid HTML that breaks keyboard/screen-reader activation.
+  await expect(row).toContainText("it.ananda.eu/support/getting-started");
+  await expect(row.getByRole("link")).toHaveCount(0);
+
+  // The real, independently clickable, tracking-stripped link lives in the
+  // reading pane header once the conversation is selected.
+  await row.click();
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(
+    response.getByRole("link", { name: "https://it.ananda.eu/support/getting-started" }),
+  ).toHaveAttribute("href", "https://it.ananda.eu/support/getting-started");
+});
+
+test("conversations toolbar search narrows the visible rows", async ({ page }) => {
+  const matchingConversation = {
+    id: "conversation-toolbar-match",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-toolbar-1",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 3,
+    userMessageCount: 2,
+    assistantMessageCount: 1,
+    preview: "Disponibilità del libro in inglese",
+  };
+  const otherConversation = {
+    id: "conversation-toolbar-other",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-toolbar-2",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Orari dei corsi di yoga settimanali",
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [matchingConversation, otherConversation],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat`);
+  const list = page.getByRole("complementary", { name: "Conversations" });
+  await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toBeVisible();
+  await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
+
+  await page.getByPlaceholder("Search conversations").fill("yoga");
+
+  await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
+  await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toHaveCount(0);
 });
 
 test("activity drawer continues a conversation in test chat", async ({ page }) => {
@@ -359,6 +453,9 @@ test("activity drawer continues a conversation in test chat", async ({ page }) =
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /I want to continue this as a test/ }).click();
+  // "Continue in test chat" is builder tooling, reached through the reading
+  // pane's "Open in debug view" link (spec 1116 User Story 4).
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Continue in test chat" }).click();
 
   await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?chatConversation=${forkConversationId}`);
@@ -533,8 +630,10 @@ test("turn flow shows offered clarification decisions and candidates", async ({ 
   await page.getByRole("button", { name: /Tell me about yoga/ }).click();
   await expect(page).toHaveURL(/itemKind=chat/);
 
-  // The Flow button only renders once the Debug pane is open (same flow as the
-  // turn-flow test above).
+  // Debug/Flow are builder tooling, reached through the reading pane's "Open
+  // in debug view" link; the Flow button only renders once the Debug pane is
+  // open (same flow as the turn-flow test above).
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Debug" }).click();
   await page.getByRole("button", { name: "Flow" }).click();
 
@@ -672,6 +771,7 @@ test("routine-driven turn without a retrieval leaf still exposes the debug panel
 
   // The debug toggle must appear even though this turn has no retrieval leaf —
   // the spine envelope alone is inspectable.
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Debug" }).click();
   await expect(page.getByText("Outcome summary").first()).toBeVisible();
 
@@ -749,6 +849,7 @@ test("Debug button stays available for a turn with no recorded diagnostics", asy
   await expect(page).toHaveURL(/itemKind=chat/);
 
   // The Debug button is present even though this turn recorded no trace...
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   await page.getByRole("button", { name: "Debug", exact: true }).click();
   // ...and the panel renders a graceful unavailable state instead of being hidden.
   await expect(page.getByText("Activity trace unavailable for this turn.")).toBeVisible();
@@ -777,7 +878,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   });
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat&page=3`);
-  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/chat?limit=50&offset=100");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
@@ -785,7 +886,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
 
   requestLog.length = 0;
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=search&page=2`);
-  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/search?limit=50&offset=50");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");

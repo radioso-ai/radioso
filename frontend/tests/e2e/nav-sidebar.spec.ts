@@ -35,14 +35,26 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   await expect(sidebar.getByRole("button", { name: "Marta" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Agents" })).toHaveCount(0);
 
-  // Activity's views are nested sidebar items now, not in-page tabs.
-  await sidebar.getByRole("link", { name: "Activity" }).click();
-  await expect(sidebar.getByRole("link", { name: "Needs attention" })).toBeVisible();
-  await expect(sidebar.getByRole("link", { name: "All activity" })).toBeVisible();
-  await expect(sidebar.getByRole("link", { name: "Quality" })).toBeVisible();
+  // Inbox is a flat top-level rail item — no Activity section, no nested
+  // sub-nav; the Needs-you/All split lives inside the page as a lens toggle.
+  await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Activity" })).toHaveCount(0);
+  await sidebar.getByRole("link", { name: "Inbox" }).click();
+  await expect(sidebar.getByRole("link", { name: "Conversations" })).toHaveCount(0);
+
+  // Audience Pulse and Quality are top-level rail items, not nested under Inbox.
+  await expect(sidebar.getByRole("link", { name: "Audience Pulse" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Quality", exact: true })).toBeVisible();
+  // Eval no longer has its own top-level rail entry — it lives under Quality.
+  await expect(sidebar.getByRole("link", { name: "Eval", exact: true })).toHaveCount(0);
+
+  // Quality nests its own views (Review / Evals) when active.
+  await sidebar.getByRole("link", { name: "Quality", exact: true }).click();
+  await expect(sidebar.getByRole("link", { name: "Review" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Evals" })).toBeVisible();
 });
 
-test("Activity is promoted with a needs-attention badge reflecting the inbox count", async ({ page }) => {
+test("Inbox is promoted with a needs-attention badge reflecting the inbox count", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { pendingDecisions });
 
@@ -50,8 +62,8 @@ test("Activity is promoted with a needs-attention badge reflecting the inbox cou
 
   const sidebar = page.locator('[data-slot="sidebar-container"]');
   const links = sidebar.getByRole("link");
-  // Activity is promoted to the first position, above Agents.
-  await expect(links.nth(0)).toContainText("Activity");
+  // Inbox is promoted to the first position, above Agents.
+  await expect(links.nth(0)).toContainText("Inbox");
   await expect(links.nth(1)).toContainText("Agents");
 
   await expect(sidebar.getByLabel("3 items need attention")).toHaveText("3");

@@ -82,11 +82,11 @@ result.
 These actions need the app's interactivity and user lookup scopes. If the Slack
 app was installed before these were added, reinstall or re-consent it.
 
-## Slack in the Activity View
+## Slack in the Inbox
 
-A Slack conversation shows its real Slack context in the Activity view. The
-conversation list and the detail view show the Slack workspace, whether it is a
-direct message or a channel, the thread, and the Slack user. A Slack
+A Slack conversation shows its real Slack context in the Inbox. The
+conversation list and the reading pane show the Slack workspace, whether it is
+a direct message or a channel, the thread, and the Slack user. A Slack
 conversation is not shown as a plain authenticated chat.
 
 ## Cloud Setup

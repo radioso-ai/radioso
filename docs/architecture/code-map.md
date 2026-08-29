@@ -804,7 +804,7 @@ Focused checks:
 
 Related docs:
 
-- `docs/human-takeover.md` (Activity tabs and the operator console)
+- `docs/human-takeover.md` (the Inbox and the operator console)
 - `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
 
 ## Audience Pulse

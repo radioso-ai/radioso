@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import {
+  accountId,
   defaultAgentId,
   installDashboardApiMocks,
   nowIso,
@@ -9,69 +10,48 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("operator can use activity tabs to open a pending approval", async ({ page }) => {
+test("operator opens the inbox, replies to a handoff, marks it done, and the debug drawer stays builder-only", async ({ page }) => {
   const conversationId = "conversation-hitl-inbox";
-  const humanConversationId = "conversation-human-owned-inbox";
-  const aiConversationId = "conversation-ai-owned-inbox";
-  const humanOwnership = {
-    conversationId: humanConversationId,
+  const requestLog: string[] = [];
+  const ownership = {
+    conversationId,
     workspaceId,
     state: "human_owned" as const,
     ownerAccountId: null,
     ownerDisplayName: null,
-    reason: "requested_handoff",
-    version: 2,
+    reason: "agent had no weekly schedule information",
+    version: 1,
     takenOverAt: null,
     createdAt: nowIso,
     updatedAt: nowIso,
+  };
+  const humanOwnership = {
+    ...ownership,
+    ownerAccountId: accountId,
+    ownerDisplayName: "Test Operator",
+    version: 2,
+    takenOverAt: nowIso,
   };
   const historyList = {
     conversations: [
       {
         id: conversationId,
         agentId: defaultAgentId,
-        agentName: "Marta",
+        agentName: "Gioia",
         sourceChannel: "authenticated_chat",
         sourceOrigin: null,
         anonymousSessionId: null,
+        entryPageUrl: "https://corsi.example.com/yoga?utm_source=newsletter&utm_medium=email",
         createdAt: nowIso,
         updatedAt: nowIso,
         messageCount: 2,
         userMessageCount: 1,
         assistantMessageCount: 1,
-        preview: "Please send the booking update",
-      },
-      {
-        id: humanConversationId,
-        agentId: defaultAgentId,
-        agentName: "Marta",
-        sourceChannel: "authenticated_chat",
-        sourceOrigin: null,
-        anonymousSessionId: null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        messageCount: 1,
-        userMessageCount: 1,
-        assistantMessageCount: 0,
-        preview: "A guest needs manual follow-up",
-        ownership: humanOwnership,
-      },
-      {
-        id: aiConversationId,
-        agentId: defaultAgentId,
-        agentName: "Marta",
-        sourceChannel: "authenticated_chat",
-        sourceOrigin: null,
-        anonymousSessionId: null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        messageCount: 1,
-        userMessageCount: 1,
-        assistantMessageCount: 0,
-        preview: "The AI can keep handling this",
+        preview: "Weekly yoga schedule",
+        ownership,
       },
     ],
-    total: 3,
+    total: 1,
     nextCursor: null,
     hasMore: false,
   };
@@ -79,14 +59,142 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
     conversationId,
     workspaceId,
     agentId: defaultAgentId,
+    agentName: "Gioia",
     sourceChannel: "authenticated_chat",
     sourceOrigin: null,
+    entryPageUrl: "https://corsi.example.com/yoga?utm_source=newsletter&utm_medium=email",
     createdAt: nowIso,
     updatedAt: nowIso,
     messageCount: 2,
     userMessageCount: 1,
     assistantMessageCount: 1,
     messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    ownership,
+    messages: [
+      {
+        id: "customer-message-inbox",
+        role: "user" as const,
+        source: "customer" as const,
+        content: "dove trovo gli orari dei corsi di yoga settimanali",
+        createdAt: nowIso,
+      },
+      {
+        id: "assistant-message-inbox",
+        role: "assistant" as const,
+        source: "ai_agent" as const,
+        content: "Per gli orari aggiornati, contatta la reception.",
+        createdAt: nowIso,
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList,
+    conversationDetail,
+    takeOverConversationResponse: { ownership: humanOwnership },
+    handBackConversationResponse: {
+      ownership: { ...humanOwnership, state: "ai_owned", ownerAccountId: null, ownerDisplayName: null, version: 3 },
+    },
+    requestLog,
+  });
+
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
+    });
+  });
+
+  // The Inbox page defaults to the Needs-you lens, shown via the segmented
+  // toggle at the top of the left pane (spec 1116 unification).
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "false");
+
+  const queue = page.getByLabel("Inbox queue");
+  const handoffRow = queue.getByRole("button", { name: /Weekly yoga schedule/ });
+  await expect(handoffRow).toBeVisible();
+  await expect(handoffRow).toContainText("Handoff");
+
+  await handoffRow.click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Verified visitor")).toBeVisible();
+  await expect(response.getByRole("link", { name: "https://corsi.example.com/yoga" })).toBeVisible();
+  await expect(response.getByText(/Handed off — agent had no weekly schedule information/)).toBeVisible();
+  // The situation card quotes the visitor's opening message as context, and the
+  // message thread below renders the same message in full — both legitimately
+  // match this text, so disambiguate to the situation card's copy (it renders
+  // first in DOM order).
+  await expect(response.getByText("dove trovo gli orari dei corsi di yoga settimanali").first()).toBeVisible();
+
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await replyBox.fill("Ecco gli orari aggiornati dei corsi di yoga.");
+  await response.getByRole("button", { name: "Send" }).click();
+
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/reply`);
+  await expect(replyBox).toHaveValue("");
+
+  // The response view's only link into the drawer is quiet, and the drawer it
+  // opens carries zero operator mutation controls (spec 1116 User Story 4).
+  await response.getByRole("button", { name: "Open in debug view" }).click();
+  const drawer = page.getByLabel("Conversation details");
+  await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
+  await expect(drawer.getByText("dove trovo gli orari dei corsi di yoga settimanali")).toBeVisible();
+  await expect(drawer.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Take over" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "Hand back to AI" })).toHaveCount(0);
+  // Exact match: the drawer's message thread legitimately renders a "Send to
+  // eval" action (evalCaptureEnabled), which a substring match on "Send" would
+  // also catch. This assertion only cares about the operator reply composer's
+  // Send button, which is what "spec 1116 User Story 4" keeps out of the drawer.
+  await expect(drawer.getByRole("button", { name: "Send", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close details panel" }).click();
+
+  // Done hands the conversation back to the agent - the single wrap-up action.
+  await response.getByRole("button", { name: "Done" }).click();
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/handback`);
+});
+
+test("operator resolves a pending decision from the response view", async ({ page }) => {
+  const conversationId = "conversation-hitl-approval";
+  const pendingDecision = {
+    handle: "decision-inbox-1",
+    conversationId,
+    agentId: defaultAgentId,
+    routineId: "routine-1",
+    stepId: "step-1",
+    reason: "Apply a 20% goodwill discount?",
+    options: [
+      { id: "approve", label: "Approve", description: "Issue the 20% discount." },
+      { id: "reject", label: "Reject" },
+    ],
+    contentHash: "hash-1",
+    canResolve: true,
+    deadline: null,
+    createdAt: nowIso,
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    sourceChannel: "authenticated_chat",
+    sourceOrigin: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 1,
+    userMessageCount: 1,
+    assistantMessageCount: 0,
+    messagesTotal: 1,
     messageWindowOffset: 0,
     messageWindowLimit: 50,
     hasOlderMessages: false,
@@ -105,182 +213,50 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
     },
     messages: [
       {
-        id: "customer-message-inbox",
+        id: "customer-message-approval",
         role: "user" as const,
         source: "customer" as const,
-        content: "Please send the booking update",
-        createdAt: nowIso,
-      },
-      {
-        id: "assistant-message-inbox",
-        role: "assistant" as const,
-        source: "ai_agent" as const,
-        content: "I can prepare that update.",
+        content: "My order arrived damaged, can I get a discount?",
         createdAt: nowIso,
       },
     ],
-  };
-  const humanConversationDetail = {
-    conversationId: humanConversationId,
-    workspaceId,
-    agentId: defaultAgentId,
-    sourceChannel: "authenticated_chat",
-    sourceOrigin: null,
-    createdAt: nowIso,
-    updatedAt: nowIso,
-    messageCount: 1,
-    userMessageCount: 1,
-    assistantMessageCount: 0,
-    messagesTotal: 1,
-    messageWindowOffset: 0,
-    messageWindowLimit: 50,
-    hasOlderMessages: false,
-    nextCursor: null,
-    ownership: humanOwnership,
-    messages: [
-      {
-        id: "customer-message-human-owned",
-        role: "user" as const,
-        source: "customer" as const,
-        content: "A guest needs manual follow-up",
-        createdAt: nowIso,
-      },
-    ],
-  };
-  const pendingDecision = {
-    handle: "decision-inbox-1",
-    conversationId,
-    agentId: defaultAgentId,
-    routineId: "routine-1",
-    stepId: "step-1",
-    reason: "Approve sending the booking update",
-    options: [
-      { id: "approve", label: "Approve" },
-      { id: "reject", label: "Reject" },
-    ],
-    contentHash: "hash-1",
-    canResolve: true,
-    deadline: null,
-    createdAt: nowIso,
   };
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
-    historyList,
     conversationDetail,
-    conversationDetails: {
-      [humanConversationId]: humanConversationDetail,
-    },
     pendingDecisions: [pendingDecision],
   });
-
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
-    const isWrittenFeedback =
-      new URL(route.request().url()).searchParams.get("hasComment") === "true";
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({
-        items: isWrittenFeedback ? [] : [
-          {
-            assistantMessageId: "message-degraded-inbox",
-            conversationId: "conversation-degraded-inbox",
-            agentId: "agent-1",
-            agentName: "Concierge",
-            channel: "authenticated_chat",
-            question: "Do you sell gift cards?",
-            answerPreview: "I could not find that in the documents.",
-            skillName: "retrieval.answer",
-            skillOutcome: "no_context",
-            skillStatus: "completed",
-            totalLatencyMs: 1200,
-            createdAt: "2026-06-19T09:00:00.000Z",
-            feedback: {
-              upCount: 0,
-              downCount: 0,
-              latestDownUpdatedAt: null,
-              comments: [],
-            },
-            triage: {
-              state: "open",
-              version: 0,
-              resolution: null,
-              legacyReason: null,
-              closedAt: null,
-              updatedAt: null,
-            },
-            verification: null,
-          },
-        ],
-        total: isWrittenFeedback ? 0 : 14,
-        page: 1,
-        pageSize: isWrittenFeedback ? 25 : 1,
-        totalPages: 1,
-      }),
+      body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
     });
   });
 
-  // Activity defaults to the Needs attention inbox.
   await page.goto(`/w/${workspaceKey}/activity`);
-  await expect(page.getByRole("link", { name: "Needs attention" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+  const queue = page.getByLabel("Inbox queue");
+  await queue.getByRole("button", { name: /Apply a 20% goodwill discount/ }).click();
 
-  // The tab selector sits in the page header actions; All activity is one click away.
-  await page.getByRole("link", { name: "All activity" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity\\?tab=all`));
-  await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
-  await page.getByRole("link", { name: "Needs attention" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity$`));
+  const response = page.getByLabel("Response", { exact: true });
+  const decisionPanel = response.getByLabel("Pending approval");
+  await expect(decisionPanel.getByText("Apply a 20% goodwill discount?")).toBeVisible();
+  // Approvals close on decision, not on a separate Done control.
+  await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
 
-  // One unified inbox table with an escalation-type column.
-  const inbox = page.getByRole("table", { name: "Needs attention" });
-  await expect(inbox).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve sending the booking update" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "A guest needs manual follow-up" })).toBeVisible();
-  await expect(inbox.getByText("Awaiting a human")).toBeVisible();
-
-  // Only work requiring an immediate human action appears as an inbox row.
-  await expect(inbox.getByText("Approval", { exact: true })).toBeVisible();
-  await expect(inbox.getByText("Handoff", { exact: true })).toBeVisible();
-  await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Quality review" })).toBeVisible();
-  await expect(page.getByText("14 answers flagged for review.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Review in Quality" })).toHaveAttribute(
-    "href",
-    `/w/${workspaceKey}/quality`,
-  );
-
-  await expect(page.getByText("The AI can keep handling this")).toHaveCount(0);
-
-  await page.getByRole("button", { name: "Approve sending the booking update" }).click();
-  await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
-  await expect(page.getByLabel("Conversation details").getByText("Approve sending the booking update")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Close details panel" }).click();
-  await page.getByRole("button", { name: "A guest needs manual follow-up" }).click();
-  await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
-  await expect(page.getByLabel("Conversation details").getByText("A guest needs manual follow-up")).toBeVisible();
-  await expect(page.getByText("Waiting for a human")).toBeVisible();
-
-  await page.getByRole("button", { name: "Close details panel" }).click();
-  await page.getByRole("link", { name: "Review in Quality" }).click();
-  await expect(page).toHaveURL(`/w/${workspaceKey}/quality`);
-  await expect(page.getByRole("heading", { name: "Quality review" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Quality" })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("link", { name: "Quality", exact: true })).toHaveCount(1);
+  await decisionPanel.getByRole("button", { name: "Approve" }).click();
+  await expect(queue.getByRole("button", { name: /Apply a 20% goodwill discount/ })).toHaveCount(0);
 });
 
-test("operator can turn written negative feedback into a remediation task", async ({ page }) => {
+test("operator resolves negative feedback through Done, surviving a version conflict", async ({ page }) => {
   const conversationId = "conversation-negative-feedback";
   const assistantMessageId = "assistant-negative-feedback";
   const triageRequests: Array<{
-    state: string
-    expectedVersion: number
-    resolution?: { reason: string; note: string | null }
+    state: string;
+    expectedVersion: number;
+    resolution?: { reason: string; note: string | null };
   }> = [];
-  let acknowledgementAttempts = 0;
   let resolutionAttempts = 0;
   const feedbackTurn = {
     assistantMessageId,
@@ -316,43 +292,9 @@ test("operator can turn written negative feedback into a remediation task", asyn
     },
     verification: null,
   };
-  const passiveTurn = {
-    ...feedbackTurn,
-    assistantMessageId: "assistant-passive-quality",
-    conversationId: "conversation-passive-quality",
-    question: "Do you sell gift cards?",
-    answerPreview: "I could not find that in the documents.",
-    skillOutcome: "no_context",
-    createdAt: "2026-06-19T11:00:00.000Z",
-    feedback: {
-      upCount: 0,
-      downCount: 0,
-      latestDownUpdatedAt: null,
-      comments: [],
-    },
-  };
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
-    historyList: {
-      conversations: [{
-        id: conversationId,
-        agentId: defaultAgentId,
-        agentName: "Marta",
-        sourceChannel: "website_embed",
-        sourceOrigin: "https://shop.example.com",
-        anonymousSessionId: null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        messageCount: 4,
-        userMessageCount: 2,
-        assistantMessageCount: 2,
-        preview: "Can I return an opened item?",
-      }],
-      total: 1,
-      nextCursor: null,
-      hasMore: false,
-    },
     conversationDetail: {
       conversationId,
       workspaceId,
@@ -361,10 +303,10 @@ test("operator can turn written negative feedback into a remediation task", asyn
       sourceOrigin: "https://shop.example.com",
       createdAt: nowIso,
       updatedAt: nowIso,
-      messageCount: 4,
-      userMessageCount: 2,
-      assistantMessageCount: 2,
-      messagesTotal: 4,
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messagesTotal: 2,
       messageWindowOffset: 0,
       messageWindowLimit: 50,
       hasOlderMessages: false,
@@ -383,20 +325,6 @@ test("operator can turn written negative feedback into a remediation task", asyn
       },
       messages: [
         {
-          id: "customer-earlier",
-          role: "user",
-          source: "customer",
-          content: "What is your standard return window?",
-          createdAt: "2026-06-19T09:00:00.000Z",
-        },
-        {
-          id: "assistant-earlier",
-          role: "assistant",
-          source: "ai_agent",
-          content: "The standard return window is 30 days.",
-          createdAt: "2026-06-19T09:01:00.000Z",
-        },
-        {
           id: "customer-negative-feedback",
           role: "user",
           source: "customer",
@@ -409,48 +337,21 @@ test("operator can turn written negative feedback into a remediation task", asyn
           source: "ai_agent",
           content: "Items can be returned within 30 days.",
           createdAt: "2026-06-19T10:01:00.000Z",
-          answerFeedbackEntries: [{
-            id: "11111111-1111-4111-8111-111111111111",
-            value: "down",
-            comment: "This does not explain the opened-item exception.",
-            actorType: "anonymous_user",
-            actorId: "anonymous-session-1",
-            accountId: null,
-            userId: null,
-            anonymousSessionId: "anonymous-session-1",
-            createdAt: "2026-06-19T10:05:00.000Z",
-            updatedAt: "2026-06-19T10:05:00.000Z",
-          }],
         },
       ],
     },
   });
 
-  await page.route("**/backend/api/v1/skills**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        skills: [{
-          name: "retrieval.answer",
-          outcomes: [{ name: "no_context", groundedAnswer: false }],
-        }],
-      }),
-    });
-  });
-
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
     const url = new URL(route.request().url());
     const isWrittenFeedback =
-      url.searchParams.get("feedback") === "down"
-      && url.searchParams.get("hasComment") === "true";
-    const items = isWrittenFeedback ? [feedbackTurn] : [passiveTurn];
+      url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        items,
-        total: isWrittenFeedback ? 1 : 12,
+        items: isWrittenFeedback ? [feedbackTurn] : [],
+        total: isWrittenFeedback ? 1 : 0,
         page: 1,
         pageSize: isWrittenFeedback ? 25 : 1,
         totalPages: 1,
@@ -460,35 +361,11 @@ test("operator can turn written negative feedback into a remediation task", asyn
 
   await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
     const body = route.request().postDataJSON() as {
-      state: string
-      expectedVersion: number
-      resolution?: { reason: string; note: string | null }
+      state: string;
+      expectedVersion: number;
+      resolution?: { reason: string; note: string | null };
     };
     triageRequests.push(body);
-    if (body.state === "acknowledged" && acknowledgementAttempts === 0) {
-      acknowledgementAttempts += 1;
-      await route.fulfill({
-        status: 409,
-        contentType: "application/json",
-        body: JSON.stringify({
-          error: {
-            code: "QUALITY_TRIAGE_CONFLICT",
-            message: "Quality triage changed",
-            details: {
-              current: {
-                state: "open",
-                version: 3,
-                resolution: null,
-                legacyReason: null,
-                closedAt: null,
-                updatedAt: "2026-06-19T11:30:00.000Z",
-              },
-            },
-          },
-        }),
-      });
-      return;
-    }
     if (body.state === "resolved" && resolutionAttempts === 0) {
       resolutionAttempts += 1;
       await route.fulfill({
@@ -502,10 +379,7 @@ test("operator can turn written negative feedback into a remediation task", asyn
               current: {
                 state: "dismissed",
                 version: 5,
-                resolution: {
-                  reason: "expected_behavior",
-                  note: "Policy already covers opened products.",
-                },
+                resolution: { reason: "expected_behavior", note: "Policy already covers opened products." },
                 legacyReason: null,
                 closedAt: "2026-06-19T11:45:00.000Z",
                 updatedAt: "2026-06-19T11:45:00.000Z",
@@ -524,272 +398,89 @@ test("operator can turn written negative feedback into a remediation task", asyn
         version: body.expectedVersion + 1,
         resolution: body.resolution ?? null,
         legacyReason: null,
-        closedAt: body.state === "resolved" ? "2026-06-19T12:00:00.000Z" : null,
+        closedAt: "2026-06-19T12:00:00.000Z",
         updatedAt: "2026-06-19T12:00:00.000Z",
       }),
     });
   });
 
   await page.goto(`/w/${workspaceKey}/activity`);
+  const queue = page.getByLabel("Inbox queue");
+  const feedbackRow = queue.getByRole("button", { name: /Can I return an opened item\?/ });
+  await expect(feedbackRow).toBeVisible();
+  await feedbackRow.click();
+  // Selecting a feedback item acknowledges it in the background.
+  await expect.poll(() => triageRequests.some((r) => r.state === "acknowledged")).toBe(true);
 
-  const inbox = page.getByRole("table", { name: "Needs attention" });
-  await expect(inbox.getByText("Negative feedback", { exact: true })).toBeVisible();
-  await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
-  await expect(page.getByText(
-    "12 answers flagged for review. 1 includes written customer feedback.",
-  )).toBeVisible();
+  const response = page.getByLabel("Response", { exact: true });
+  await response.getByRole("button", { name: "Done" }).click();
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(inbox).toBeHidden();
-  const mobileInbox = page.locator('div[aria-label="Needs attention"]');
-  await expect(mobileInbox).toBeVisible();
-  await mobileInbox.getByRole("button", {
-    name: "Review feedback: Can I return an opened item?",
-  }).click();
+  await expect(page.getByRole("heading", { name: "Resolve review" })).toBeVisible();
+  await page.getByRole("button", { name: "Knowledge gap" }).click();
 
-  const remediation = page.getByLabel("Negative feedback remediation");
-  await expect(remediation.getByText(
-    "Another operator already changed this feedback to open. Their current record has been loaded.",
-  )).toBeVisible();
-  await expect(remediation.getByRole("link", { name: /Add knowledge/ })).toBeEnabled();
-  await page.getByRole("button", { name: "Close details panel" }).click();
-  const feedbackReviewButton = mobileInbox.getByRole("button", {
-    name: "Review feedback: Can I return an opened item?",
-  });
-  await feedbackReviewButton.click();
-  await expect.poll(() => acknowledgementAttempts).toBe(1);
-  await expect.poll(() =>
-    triageRequests.filter(({ state }) => state === "acknowledged").length,
-  ).toBe(2);
+  await expect(page.getByRole("heading", { name: "Another operator updated this review" })).toBeVisible();
+  await page.getByLabel("I reviewed the current decision and want to replace it.").check();
+  await page.getByRole("button", { name: "Replace current decision" }).click();
 
-  const mobileDisclosure = remediation.getByRole("button", { name: "Negative feedback" });
-  await expect(mobileDisclosure).toHaveAttribute("aria-expanded", "true");
-  await mobileDisclosure.click();
-  await expect(mobileDisclosure).toHaveAttribute("aria-expanded", "false");
-  await mobileDisclosure.click();
-  await expect(remediation.getByText(
-    "This does not explain the opened-item exception.",
-  )).toBeVisible();
-  await expect(remediation.getByRole("link", { name: /Add knowledge/ })).toHaveAttribute(
-    "target",
-    "_blank",
-  );
-  await expect(remediation.getByRole("link", { name: /Add knowledge/ })).toHaveAttribute(
-    "href",
-    new RegExp(`/w/${workspaceKey}/knowledge`),
-  );
-  await expect(remediation.getByRole("link", { name: /Improve behavior/ })).toHaveAttribute(
-    "target",
-    "_blank",
-  );
-  await expect(remediation.getByRole("link", { name: /Improve behavior/ })).toHaveAttribute(
-    "href",
-    new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}.*tab=behavior`),
-  );
-  await expect(remediation.getByRole("link", { name: /Open agent chat/ })).toHaveAttribute(
-    "href",
-    `/w/${workspaceKey}/agents/${defaultAgentId}`,
-  );
-
-  await page.evaluate(() => {
-    Object.defineProperty(navigator.clipboard, "writeText", {
-      configurable: true,
-      value: async () => undefined,
-    });
-  });
-  await remediation.getByRole("button", { name: "Copy question" }).click();
-  await expect(remediation.getByText("Question copied.")).toBeVisible();
-
-  const failedTurn = page.locator(`[data-message-id="${assistantMessageId}"]`);
-  await expect(failedTurn).toBeVisible();
-  await expect(failedTurn).toContainText("Items can be returned within 30 days.");
-
-  await remediation.getByRole("button", { name: "Mark resolved" }).click();
-  const resolutionDialog = page.getByRole("dialog");
-  await expect(resolutionDialog.getByRole("heading", { name: "Resolve review" })).toBeVisible();
-  await resolutionDialog.getByRole("button", { name: "Knowledge gap" }).click();
-  await expect.poll(() => triageRequests).toContainEqual({
-    state: "resolved",
-    expectedVersion: 4,
-    resolution: { reason: "knowledge_gap", note: null },
-  });
-  await expect(resolutionDialog.getByRole("heading", {
-    name: "Another operator updated this review",
-  })).toBeVisible();
-  await expect(resolutionDialog.getByText("Dismissed", { exact: true })).toBeVisible();
-  await expect(resolutionDialog.getByText("Expected behavior", { exact: true })).toBeVisible();
-  await expect(resolutionDialog.getByText(
-    "Policy already covers opened products.",
-  )).toBeVisible();
-  await expect(resolutionDialog.getByRole("button", {
-    name: "Replace current decision",
-  })).toBeDisabled();
-  await expect(resolutionDialog.getByRole("button", {
-    name: "Keep current decision",
-  })).toBeVisible();
-  await resolutionDialog.getByLabel(
-    "I reviewed the current decision and want to replace it.",
-  ).check();
-  await resolutionDialog.getByRole("button", { name: "Replace current decision" }).click();
+  // The conflict response carries version 5; replacing it resubmits at that version.
   await expect.poll(() => triageRequests).toContainEqual({
     state: "resolved",
     expectedVersion: 5,
     resolution: { reason: "knowledge_gap", note: null },
   });
-  await expect(inbox.getByText("Negative feedback", { exact: true })).toHaveCount(0);
-  await expect(page.locator("main").getByRole("status")).toContainText("Marked resolved.");
-  await expect(page.getByText(
-    "11 answers flagged for review.",
-  )).toBeVisible();
-  await expect(page.locator("main").getByText("Needs attention", { exact: true })).toBeFocused();
-});
-
-test("a terminal acknowledgement conflict removes stale feedback actions", async ({ page }) => {
-  const assistantMessageId = "assistant-terminal-feedback";
-  const conversationId = "conversation-terminal-feedback";
-  const triageRequests: Array<Record<string, unknown>> = [];
-  let holdStaleFeedbackRefresh = false;
-  let resolveStaleFeedbackRefreshStarted: () => void = () => undefined;
-  const staleFeedbackRefreshStarted = new Promise<void>((resolve) => {
-    resolveStaleFeedbackRefreshStarted = resolve;
-  });
-  let releaseStaleFeedbackRefresh: () => void = () => undefined;
-  const staleFeedbackRefreshReleased = new Promise<void>((resolve) => {
-    releaseStaleFeedbackRefresh = resolve;
-  });
-  const feedbackTurn = {
-    assistantMessageId,
-    conversationId,
-    agentId: defaultAgentId,
-    agentName: "Marta",
-    channel: "website_embed",
-    question: "Can I return an opened item?",
-    answerPreview: "Items can be returned within 30 days.",
-    skillName: "retrieval.answer",
-    skillOutcome: "grounded",
-    skillStatus: "completed",
-    totalLatencyMs: 900,
-    createdAt: "2026-06-19T10:00:00.000Z",
-    feedback: {
-      upCount: 0,
-      downCount: 1,
-      latestDownUpdatedAt: "2026-06-19T10:05:00.000Z",
-      comments: [{
-        value: "down",
-        comment: "This does not explain the opened-item exception.",
-        createdAt: "2026-06-19T10:05:00.000Z",
-        updatedAt: "2026-06-19T10:05:00.000Z",
-      }],
-    },
-    triage: {
-      state: "open",
-      version: 1,
-      resolution: null,
-      legacyReason: null,
-      closedAt: null,
-      updatedAt: nowIso,
-    },
-    verification: null,
-  };
-
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page);
-  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
-    const isWrittenFeedback =
-      new URL(route.request().url()).searchParams.get("hasComment") === "true";
-    if (isWrittenFeedback && holdStaleFeedbackRefresh) {
-      resolveStaleFeedbackRefreshStarted();
-      await staleFeedbackRefreshReleased;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        items: isWrittenFeedback ? [feedbackTurn] : [],
-        total: isWrittenFeedback ? 1 : 0,
-        page: 1,
-        pageSize: isWrittenFeedback ? 25 : 1,
-        totalPages: 1,
-      }),
-    });
-  });
-  await page.route(
-    `**/backend/api/v1/quality/turns/${assistantMessageId}/triage**`,
-    async (route) => {
-      triageRequests.push(route.request().postDataJSON() as Record<string, unknown>);
-      await route.fulfill({
-        status: 409,
-        contentType: "application/json",
-        body: JSON.stringify({
-          error: {
-            code: "QUALITY_TRIAGE_CONFLICT",
-            message: "Quality triage changed",
-            details: {
-              current: {
-                state: "dismissed",
-                version: 5,
-                resolution: { reason: "expected_behavior", note: null },
-                legacyReason: null,
-                closedAt: "2026-06-19T11:45:00.000Z",
-                updatedAt: "2026-06-19T11:45:00.000Z",
-              },
-            },
-          },
-        }),
-      });
-    },
-  );
-
-  await page.goto(`/w/${workspaceKey}/activity`);
-  const feedbackReviewButton = page.getByRole("button", {
-    name: "Review feedback: Can I return an opened item?",
-  });
-  await expect(feedbackReviewButton).toBeVisible();
-  holdStaleFeedbackRefresh = true;
-  await page.getByRole("button", { name: "Refresh" }).click();
-  await staleFeedbackRefreshStarted;
-  await feedbackReviewButton.click();
-
-  await expect(page.locator("main").getByRole("status")).toContainText(
-    "Another operator already closed this feedback. It was removed from Needs attention.",
-  );
-  releaseStaleFeedbackRefresh();
-  await page.waitForTimeout(100);
-
-  await expect(page.locator(
-    'button[aria-label="Review feedback: Can I return an opened item?"]',
-  )).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
-  expect(triageRequests).toEqual([{
-    state: "acknowledged",
-    expectedVersion: 1,
-  }]);
+  await expect(queue.getByRole("button", { name: /Can I return an opened item\?/ })).toHaveCount(0);
 });
 
 test("operator sees the expected feedback permission boundary without losing the inbox", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
 
-  await page.route("**/backend/api/v1/skills**", async (route) => {
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({}) });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+
+  // A 403 on quality data means the empty state must not promise a feedback
+  // channel the operator can't load — handoffs/approvals still work.
+  await expect(page.getByText("New handoffs and approvals will appear here.")).toBeVisible();
+  await expect(page.getByText("You don't have permission to view quality feedback.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /flagged for quality review/ })).toHaveCount(0);
+});
+
+test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ skills: [] }),
-    });
-  });
-  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
-    await route.fulfill({
-      status: 403,
-      contentType: "application/json",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
     });
   });
 
   await page.goto(`/w/${workspaceKey}/activity`);
 
-  await expect(page.getByText(
-    "Answer feedback is available to workspace admins and owners. Approvals and handoffs are still shown.",
-  )).toBeVisible();
-  await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
-  await expect(page.getByRole("link", { name: "Review in Quality" })).toHaveCount(0);
+  // Zero open items still renders the two-pane shell with its toggle in the
+  // left pane, but there is nothing to search or filter, so those controls
+  // hide rather than sitting there inert.
+  const queue = page.getByLabel("Inbox queue");
+  const toggle = queue.getByRole("group", { name: "Inbox lens" });
+  await expect(toggle).toBeVisible();
+  await expect(toggle.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(queue.getByPlaceholder("Search inbox")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by type")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by agent")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by taken by")).toHaveCount(0);
+
+  // "Select an item from the queue to respond" is not actionable advice when
+  // the queue is empty — the confidence/empty-queue message renders in the
+  // reading pane instead, not stranded in the now filter-less left pane.
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Nothing needs you right now")).toBeVisible();
+  await expect(queue.getByText("Nothing needs you right now")).toHaveCount(0);
+
+  await toggle.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page).toHaveURL(/tab=all/);
+  await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
 });

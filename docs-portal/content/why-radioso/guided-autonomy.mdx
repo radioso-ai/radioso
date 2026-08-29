@@ -59,7 +59,7 @@ Both notify an operator through the contact-delivery transport and record an own
 
 Every conversation is either `ai_owned` or `human_owned`. While a conversation is human-owned, the agent stays quiet: no routines, no retrieval, no skill dispatch, no answer model call. Visitor messages are still saved, so the operator sees everything that arrived. Before a teammate replies, the visitor gets one short waiting line, generated in the conversation's own language.
 
-Operators work in the dashboard **Activity** screen or through authenticated endpoints under `/api/v1/conversations`. The **Needs attention** tab is the inbox, and escalations — an approval to decide, a handoff waiting or held — sort to the top. The conversation view shows the full transcript with message attribution and an action bar to take over, reply, hand back, and resolve a pending decision.
+Operators work in the dashboard **Inbox** or through authenticated endpoints under `/api/v1/conversations`. Escalations — an approval to decide, a handoff waiting or held — sort to the top. Selecting one opens the full transcript with message attribution and a reply composer that claims the item as soon as you send, plus actions to hand back and resolve a pending decision.
 
 A human reply is saved as an assistant-role message with `source: human_agent` and the operator's display name, so the visitor can see who is answering. The agent stays suppressed until an operator explicitly hands the conversation back; after that, the next visitor message follows the normal path again.
 

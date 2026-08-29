@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
 import type { MessageSource } from "@radioso/conversation-contract";
 
 import { clockTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -188,6 +190,16 @@ export const mapMessageRow = (row: MessageRow): MessageRecord => ({
       },
   createdAt: new Date(row.created_at),
 });
+
+const PREVIEW_MAX_LENGTH = 140;
+
+/** Collapses whitespace and truncates to the conversation-list preview length. */
+const toPreview = (content: string): string => {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  return normalized.length > PREVIEW_MAX_LENGTH
+    ? `${normalized.slice(0, PREVIEW_MAX_LENGTH - 3)}...`
+    : normalized;
+};
 
 export class MessageRepository implements MessageRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -400,7 +412,23 @@ export class MessageRepository implements MessageRepositoryPort {
       .groupBy("conversation_id")
       .execute();
 
-    const previewRows = await this.db
+    const firstUserMessageRows = await this.db
+      .selectFrom("messages")
+      .select(["conversation_id", "content"])
+      .distinctOn("conversation_id")
+      .where("workspace_id", "=", workspaceId)
+      .where("conversation_id", "in", conversationIds)
+      .where("role", "=", "user")
+      // Skip whitespace-only user messages so a blank first turn doesn't overwrite the
+      // newest-message fallback below with an empty preview; DISTINCT ON then naturally
+      // lands on the earliest *non-blank* user message, or none at all.
+      .where(sql<boolean>`btrim(content) <> ''`)
+      .orderBy("conversation_id")
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
+      .execute();
+
+    const newestMessageRows = await this.db
       .selectFrom("messages")
       .select(["conversation_id", "content"])
       .distinctOn("conversation_id")
@@ -412,12 +440,11 @@ export class MessageRepository implements MessageRepositoryPort {
       .execute();
 
     const previewByConversationId = new Map(
-      previewRows.map((row) => {
-        const normalized = row.content.replace(/\s+/g, " ").trim();
-        const preview = normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
-        return [row.conversation_id, preview];
-      }),
+      newestMessageRows.map((row) => [row.conversation_id, toPreview(row.content)]),
     );
+    for (const row of firstUserMessageRows) {
+      previewByConversationId.set(row.conversation_id, toPreview(row.content));
+    }
 
     for (const row of countRows) {
       summaries.set(row.conversation_id, {

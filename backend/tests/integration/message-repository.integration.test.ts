@@ -102,4 +102,94 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(summary?.assistantMessageCount).toBe(1);
     expect(summary?.preview).toBeTruthy();
   });
+
+  it("previews the visitor's first user message, not the newest agent reply", async () => {
+    const greeting = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "Hi, how can I help?",
+    });
+    await setTime(greeting.id, "2026-06-02T00:00:00.000Z");
+
+    const question = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "user",
+      content: "What are your shop hours?",
+    });
+    await setTime(question.id, "2026-06-02T00:00:01.000Z");
+
+    const reply = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "We're open 9-5",
+    });
+    await setTime(reply.id, "2026-06-02T00:00:02.000Z");
+
+    const summaries = await repository.summarizeByConversationIds(workspaceId, [conversationId]);
+    const summary = summaries.get(conversationId);
+    expect(summary?.preview).toBe("What are your shop hours?");
+  });
+
+  it("falls back to the newest message preview when a conversation has no user message yet", async () => {
+    const greeting = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "Hi, how can I help?",
+    });
+    await setTime(greeting.id, "2026-06-03T00:00:00.000Z");
+
+    const followUp = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "Still here if you need anything",
+    });
+    await setTime(followUp.id, "2026-06-03T00:00:01.000Z");
+
+    const summaries = await repository.summarizeByConversationIds(workspaceId, [conversationId]);
+    const summary = summaries.get(conversationId);
+    expect(summary?.preview).toBe("Still here if you need anything");
+  });
+
+  it("skips a whitespace-only first user message and previews the next meaningful one", async () => {
+    const blank = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "user",
+      content: "   ",
+    });
+    await setTime(blank.id, "2026-06-04T00:00:00.000Z");
+
+    const greeting = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "Hi, how can I help?",
+    });
+    await setTime(greeting.id, "2026-06-04T00:00:01.000Z");
+
+    const question = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "user",
+      content: "What are your shop hours?",
+    });
+    await setTime(question.id, "2026-06-04T00:00:02.000Z");
+
+    const reply = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "We're open 9-5",
+    });
+    await setTime(reply.id, "2026-06-04T00:00:03.000Z");
+
+    const summaries = await repository.summarizeByConversationIds(workspaceId, [conversationId]);
+    const summary = summaries.get(conversationId);
+    expect(summary?.preview).toBe("What are your shop hours?");
+  });
 });

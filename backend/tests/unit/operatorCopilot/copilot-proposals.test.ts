@@ -1223,6 +1223,112 @@ describe("context variable proposal adapter", () => {
     }));
   });
 
+  // applyProposal upserts all six enablement columns as a full replacement (see
+  // ContextVariableEnablementWrite), so an enablement proposal that restates only the fields it
+  // means to change must merge against the stored row itself - otherwise every omitted field
+  // (staleness/timeout tuning, a deliberate `enabled: false`) silently resets on the next unrelated
+  // enablement edit.
+  const resolverSkillId = "6b6b6b6b-1111-2222-3333-444444444999";
+  const storedResolverEnablement = {
+    id: "enablement-1",
+    agentId: contextVariableAgentId,
+    variableId: existingVariableId,
+    source: "resolver",
+    resolverSkillId,
+    maxAgeSeconds: 3600,
+    resolverTimeoutMs: 500,
+    surfacing: "on_reference",
+    enabled: false,
+    updatedAt: new Date(7),
+  };
+  const variableForMergeTests = { id: existingVariableId, workspaceId: "workspace-1", name: "loyalty_tier", description: null, valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference", updatedAt: new Date(0) };
+
+  it("preserves an existing enablement's staleness tuning and disabled state when a proposal restates only source, resolverSkillId, and surfacing", async () => {
+    const { adapter } = await buildAdapter({
+      variable: variableForMergeTests,
+      enablements: [storedResolverEnablement],
+      agentSkillIds: [resolverSkillId],
+    });
+    const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, {
+      enablement: { source: "resolver", resolverSkillId, surfacing: "always" },
+    });
+
+    expect(validated.payload).toMatchObject({
+      enablement: {
+        source: "resolver",
+        resolverSkillId,
+        maxAgeSeconds: 3600,
+        resolverTimeoutMs: 500,
+        surfacing: "always",
+        enabled: false,
+      },
+    });
+  });
+
+  it("clears an explicit null field while still carrying forward an omitted one, and honors an explicit enabled: true", async () => {
+    const { adapter } = await buildAdapter({
+      variable: variableForMergeTests,
+      enablements: [storedResolverEnablement],
+      agentSkillIds: [resolverSkillId],
+    });
+    const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, {
+      enablement: { source: "resolver", resolverSkillId, surfacing: "always", maxAgeSeconds: null, enabled: true },
+    });
+
+    expect(validated.payload).toMatchObject({
+      enablement: {
+        source: "resolver",
+        resolverSkillId,
+        maxAgeSeconds: null,
+        // omitted - carried forward from the stored row
+        resolverTimeoutMs: 500,
+        surfacing: "always",
+        enabled: true,
+      },
+    });
+  });
+
+  it("nulls out resolver-only fields, without throwing, when a proposal switches source away from resolver", async () => {
+    const { adapter } = await buildAdapter({
+      variable: variableForMergeTests,
+      enablements: [storedResolverEnablement],
+    });
+    const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
+
+    const validated = await adapter.validatePayload("workspace-1", targetRef, {
+      enablement: { source: "pushed", surfacing: "always" },
+    });
+
+    expect(validated.payload).toMatchObject({
+      enablement: {
+        source: "pushed",
+        resolverSkillId: null,
+        maxAgeSeconds: null,
+        resolverTimeoutMs: null,
+        surfacing: "always",
+        // enabled still carries forward even though the resolver-only fields do not
+        enabled: false,
+      },
+    });
+  });
+
+  it("refuses a proposal that would persist an inherited resolverSkillId naming a since-disabled skill", async () => {
+    const { adapter } = await buildAdapter({
+      variable: variableForMergeTests,
+      enablements: [storedResolverEnablement],
+      agentSkillIds: [],
+    });
+    const targetRef = { agentId: contextVariableAgentId, variableId: existingVariableId };
+
+    await expect(adapter.validatePayload("workspace-1", targetRef, {
+      enablement: { source: "resolver", surfacing: "always" },
+    })).rejects.toThrow(/does not name a skill on this agent/i);
+  });
+
   it("creates a variable and enables it for the agent from a single proposal", async () => {
     const applyProposal = vi.fn(async () => ({ variableId: "created-variable-2" }));
     const { adapter } = await buildAdapter({ applyProposal, agentSkillIds: ["6b6b6b6b-1111-2222-3333-444444444999"] });

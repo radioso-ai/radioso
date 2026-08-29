@@ -17,9 +17,9 @@ import {
 } from '@/components/ui/sidebar'
 import { useAuth } from '@/lib/auth-context'
 import {
-  Activity,
   Bot,
   BookOpen,
+  Inbox,
   MessageSquareWarning,
   Radar,
   Settings,
@@ -54,15 +54,17 @@ interface NavItem {
   isActive: (routeState: DashboardRouteState) => boolean
 }
 
-// Activity sits first and is visually separated from the build/config sections below —
-// it's the operator's home: the inbox and other time-sensitive work. Audience Pulse and
-// Quality route to the `quality` section (distinguished by `qualityView`), and Quality's
-// Evals sub-item routes to the separate `eval` section — see area-subnavs.tsx.
+// Inbox sits first and is visually separated from the build/config sections below —
+// it's the operator's home: handoffs, approvals, and the full conversation log live
+// behind its two lenses (see inbox-lens-toggle.tsx), not a sidebar sub-nav. Audience
+// Pulse and Quality route to the `quality` section (distinguished by `qualityView`),
+// and Quality's Evals sub-item routes to the separate `eval` section — see
+// area-subnavs.tsx.
 const navItems: NavItem[] = [
   {
-    id: 'activity',
-    label: 'Activity',
-    icon: Activity,
+    id: 'inbox',
+    label: 'Inbox',
+    icon: Inbox,
     section: 'activity',
     isActive: (routeState) => routeState.section === 'activity',
   },
@@ -128,7 +130,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
             <SidebarMenu>
               {navItems.map((item) => {
                 const isActive = item.isActive(routeState)
-                const showBadge = item.id === 'activity' && inboxCount > 0
+                const showBadge = item.id === 'inbox' && inboxCount > 0
                 // In the Agents section the row IS the agent picker (rendered inline by
                 // areaSubNav), so there's a single agent entry instead of a picker above an
                 // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
@@ -144,7 +146,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 return (
                   <SidebarMenuItem
                     key={item.id}
-                    className={item.id === 'activity' ? 'mb-1' : undefined}
+                    className={item.id === 'inbox' ? 'mb-1' : undefined}
                   >
                     {isAgentsPicker ? null : (
                         <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>

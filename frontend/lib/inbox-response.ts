@@ -1,4 +1,4 @@
-import type { ConversationChannelContext } from '@/lib/api'
+import type { ConversationChannelContext, ConversationOwnership } from '@/lib/api'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { EscalationType } from '@/lib/needs-attention'
 
@@ -123,4 +123,36 @@ export const doneControlTooltip = (item: {
     return `Closes this item and hands the conversation back to ${agentLabel}`
   }
   return 'Closes this item once you resolve or dismiss the feedback'
+}
+
+// ── Read-only footer (All lens, non-actionable conversations) ──────────────
+
+/**
+ * The "handled by X" clause on the read-only footer strip (a conversation
+ * selected in the All lens that isn't awaiting a human). Prefers a durable
+ * human closure record when one exists (`ownership.ownerDisplayName` — not
+ * populated by any read path today, but the field models the eventual
+ * closure-record feature from spec 1116's FR-002), otherwise names the agent
+ * that handled it. Returns `null` rather than a placeholder like "Unknown
+ * agent" when nothing is actually known — the footer must never invent
+ * attribution.
+ */
+export const readOnlyHandledByLabel = (conversation: {
+  ownership?: Pick<ConversationOwnership, 'ownerDisplayName'> | null
+  agentId?: string | null
+  agentName?: string | null
+  agentInternalName?: string | null
+}): string | null => {
+  const ownerName = conversation.ownership?.ownerDisplayName?.trim()
+  if (ownerName) {
+    return `handled by ${ownerName}`
+  }
+  if (!conversation.agentId) {
+    return null
+  }
+  const agentLabel = getAgentOperatorLabel(
+    { internalName: conversation.agentInternalName, name: conversation.agentName },
+    'the agent',
+  )
+  return `handled by ${agentLabel}`
 }

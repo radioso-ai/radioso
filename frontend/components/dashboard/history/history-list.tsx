@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Activity, CheckCircle2, FileText, Hand, MessageSquareText } from 'lucide-react'
 
-import { buildActivityTabHref } from '@/components/dashboard/activity-tabs'
 import { ConversationToolbar } from '@/components/dashboard/history/conversation-toolbar'
 import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
@@ -24,7 +23,7 @@ import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useCopilotEntity } from '@/lib/copilot-context'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
-import { filterConversations, type ConversationFilterState } from '@/lib/conversation-filters'
+import { EMPTY_CONVERSATION_FILTERS, filterConversations } from '@/lib/conversation-filters'
 import { formatConversationLocation } from '@/lib/history-source'
 import { stripTrackingParams } from '@/lib/inbox-response'
 import { stripMarkdownSyntax } from '@/lib/markdown-preview'
@@ -49,13 +48,6 @@ export type HistoryListItem =
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
 const emptyAgentLabel = '—'
-
-const emptyConversationFilters: ConversationFilterState = {
-  search: '',
-  outcome: 'all',
-  agentId: null,
-  siteOrigin: null,
-}
 
 const formatPageSummary = ({
   currentPage,
@@ -129,20 +121,11 @@ function HistoryPagination({
   )
 }
 
-/**
- * Maps a derived outcome to its chip markup. There is no per-conversation deep
- * link into Inbox today (Inbox selection is client-side state, not
- * URL-addressable), so the "handed off" chip can only link to the Inbox tab
- * in general.
- */
+/** Maps a derived outcome to its chip markup. */
 function ConversationOutcomeCell({
   conversation,
-  accountId,
-  routeState,
 }: {
   conversation: ChatConversationSummary
-  accountId: string
-  routeState: DashboardRouteState
 }) {
   const outcome = deriveConversationOutcome(conversation, new Date())
 
@@ -151,13 +134,6 @@ function ConversationOutcomeCell({
       <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
         <Hand className="h-3 w-3" aria-hidden />
         Handed off
-        <a
-          href={buildActivityTabHref(accountId, routeState, 'all', 'needs-attention')}
-          onClick={(event) => event.stopPropagation()}
-          className="underline decoration-dotted underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
-        >
-          open in Inbox
-        </a>
       </span>
     )
   }
@@ -221,13 +197,9 @@ function ConversationMetaLine({ conversation }: { conversation: ChatConversation
 
 function ConversationRow({
   conversation,
-  accountId,
-  routeState,
   onSelect,
 }: {
   conversation: ChatConversationSummary
-  accountId: string
-  routeState: DashboardRouteState
   onSelect: (item: SelectedHistoryItem) => void
 }) {
   useCopilotEntity('conversation', conversation.id, conversation.preview || 'Untitled conversation')
@@ -254,7 +226,7 @@ function ConversationRow({
         <ConversationMetaLine conversation={conversation} />
       </DashboardTableCell>
       <DashboardTableCell>
-        <ConversationOutcomeCell conversation={conversation} accountId={accountId} routeState={routeState} />
+        <ConversationOutcomeCell conversation={conversation} />
       </DashboardTableCell>
       <DashboardTableCell className="text-sm text-muted-foreground">
         <span
@@ -357,14 +329,10 @@ function ContactRow({
 function HistoryTable({
   items,
   emptyMessage,
-  accountId,
-  routeState,
   onSelect,
 }: {
   items: HistoryListItem[]
   emptyMessage: string
-  accountId: string
-  routeState: DashboardRouteState
   onSelect: (item: SelectedHistoryItem) => void
 }) {
   if (items.length === 0) {
@@ -390,8 +358,6 @@ function HistoryTable({
             <ConversationRow
               key={item.id}
               conversation={item.conversation}
-              accountId={accountId}
-              routeState={routeState}
               onSelect={onSelect}
             />
           ) : item.kind === 'search' ? (
@@ -478,7 +444,7 @@ export function HistoryList({
 
   // Toolbar filters are local UI state, not URL-addressable: chatApi.listChatHistory only
   // accepts limit/offset, so there is no server-side agent/outcome/site filter to route to.
-  const [conversationFilters, setConversationFilters] = useState<ConversationFilterState>(emptyConversationFilters)
+  const [conversationFilters, setConversationFilters] = useState(EMPTY_CONVERSATION_FILTERS)
   // Filters apply only to the currently loaded page of conversations, never the full result
   // set behind pagination — see the comment on filterConversations for why.
   const filteredConversations = filterConversations(conversations, conversationFilters, new Date())
@@ -576,8 +542,6 @@ export function HistoryList({
                   <HistoryTable
                     items={visibleAllHistoryItems}
                     emptyMessage="No saved activity on this page."
-                    accountId={accountId}
-                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}
@@ -637,8 +601,6 @@ export function HistoryList({
                         ? 'No conversations match the current filters.'
                         : 'No saved chats on this page.'
                     }
-                    accountId={accountId}
-                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}
@@ -689,8 +651,6 @@ export function HistoryList({
                       search,
                     }))}
                     emptyMessage="No saved searches on this page."
-                    accountId={accountId}
-                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}
@@ -741,8 +701,6 @@ export function HistoryList({
                       contact,
                     }))}
                     emptyMessage="No saved contact requests on this page."
-                    accountId={accountId}
-                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}

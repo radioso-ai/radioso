@@ -3,22 +3,38 @@
 import Link from 'next/link'
 
 import { getAgentOperatorLabel } from '@/lib/agent-label'
-import type { RecentlyClosedInboxItem } from '@/lib/needs-attention'
-import { InboxRecentlyClosedRow } from './inbox-queue-row'
 import { useInboxConfidenceSummary } from './use-inbox-confidence-summary'
 
 export interface InboxEmptyStateProps {
-  recentlyClosed: RecentlyClosedInboxItem[]
   qualityReviewHref: string
   untriagedQualityCount: number | null
+  /** The quality-turns queries came back 403 — the operator has no visibility into feedback signals at all. */
+  qualityPermissionDenied: boolean
+  /** The quality-turns queries failed to load (not a permission issue) — the count, if any, is not trustworthy. */
+  qualityLoadFailed: boolean
 }
 
 /**
- * The empty-open-queue state (FR-014): a confidence summary of recent
- * unassisted agent activity, the recently-closed strip, and a quiet link into
+ * The confidence summary shown in place of the open-item rows when the queue
+ * is empty (FR-014): recent unassisted agent activity, plus a quiet link into
  * Quality review when there's an untriaged backlog — never a bare dead end.
+ * Renders inside the queue's own left pane (below the lens toggle, above the
+ * recently-closed strip the queue renders itself) rather than replacing the
+ * whole page, so the toggle and the All lens stay reachable with zero open
+ * items (spec 1116 unification).
+ *
+ * Handoffs and approvals are always accurate here regardless of quality's
+ * load state (they come from separate queries) — only the feedback-related
+ * copy and the review-queue link are gated on `qualityPermissionDenied` /
+ * `qualityLoadFailed`, so this surface never promises a feedback signal the
+ * operator can't actually see.
  */
-export function InboxEmptyState({ recentlyClosed, qualityReviewHref, untriagedQualityCount }: InboxEmptyStateProps) {
+export function InboxEmptyState({
+  qualityReviewHref,
+  untriagedQualityCount,
+  qualityPermissionDenied,
+  qualityLoadFailed,
+}: InboxEmptyStateProps) {
   const confidence = useInboxConfidenceSummary(true)
   const agentLabel = confidence.topAgent
     ? getAgentOperatorLabel(
@@ -26,37 +42,35 @@ export function InboxEmptyState({ recentlyClosed, qualityReviewHref, untriagedQu
         'Your agent',
       )
     : null
+  const qualityUnavailable = qualityPermissionDenied || qualityLoadFailed
 
   return (
-    <div className="flex h-full flex-col items-center gap-8 overflow-y-auto p-8 text-center">
-      <div className="max-w-md space-y-2 pt-8">
-        <p className="text-sm font-medium text-foreground">Nothing needs you right now</p>
-        <p className="text-sm text-muted-foreground">
-          {confidence.status === 'ready' && confidence.topAgent && agentLabel
-            ? `${agentLabel} handled ${confidence.topAgent.count} conversation${confidence.topAgent.count === 1 ? '' : 's'} in the last 7 days without needing you.`
+    <div className="space-y-2 px-1 py-3 text-center">
+      <p className="text-sm font-medium text-foreground">Nothing needs you right now</p>
+      <p className="text-sm text-muted-foreground">
+        {confidence.status === 'ready' && confidence.topAgent && agentLabel
+          ? `${agentLabel} handled ${confidence.topAgent.count} conversation${confidence.topAgent.count === 1 ? '' : 's'} in the last 7 days without needing you.`
+          : qualityUnavailable
+            ? 'New handoffs and approvals will appear here.'
             : 'New handoffs, approvals, and written customer feedback will appear here.'}
+      </p>
+      {qualityPermissionDenied ? (
+        <p className="text-xs text-muted-foreground">
+          You don&apos;t have permission to view quality feedback.
         </p>
-        {untriagedQualityCount !== null && untriagedQualityCount > 0 ? (
-          <p className="text-sm">
-            <Link
-              href={qualityReviewHref}
-              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              {untriagedQualityCount} answer{untriagedQualityCount === 1 ? '' : 's'} flagged for quality review
-            </Link>
-          </p>
-        ) : null}
-      </div>
-
-      {recentlyClosed.length > 0 ? (
-        <div className="w-full max-w-sm text-left">
-          <p className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Recently closed
-          </p>
-          <div className="flex flex-col gap-2">
-            {recentlyClosed.map((item) => <InboxRecentlyClosedRow key={item.key} item={item} />)}
-          </div>
-        </div>
+      ) : qualityLoadFailed ? (
+        <p className="text-xs text-muted-foreground">
+          Quality feedback couldn&apos;t be loaded right now.
+        </p>
+      ) : untriagedQualityCount !== null && untriagedQualityCount > 0 ? (
+        <p className="text-sm">
+          <Link
+            href={qualityReviewHref}
+            className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {untriagedQualityCount} answer{untriagedQualityCount === 1 ? '' : 's'} flagged for quality review
+          </Link>
+        </p>
       ) : null}
     </div>
   )

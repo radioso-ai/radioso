@@ -21,28 +21,66 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import { hitlApi } from '@/lib/api-hitl'
-import type { PendingApprovalDecision } from '@/lib/api-types'
+import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
+import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
   informativeChannelLabel,
+  readOnlyHandledByLabel,
   stripTrackingParams,
   visitorIdentityLabel,
 } from '@/lib/inbox-response'
-import { inboxWaitingPresentation, type InboxItem } from '@/lib/needs-attention'
+import {
+  deriveInboxResponseHandoffItem,
+  findPendingApprovalDecision,
+  inboxWaitingPresentation,
+  type HandoffCandidateSource,
+  type InboxItem,
+} from '@/lib/needs-attention'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
+import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
 
 const noop = () => {}
 
+/**
+ * What the response view is showing. `item` is a Needs-you queue item — always
+ * actionable, unchanged from before this view was shared with the All lens.
+ * `readonly` is a conversation selected from the All lens's conversation log,
+ * identified by `conversationId` alone — the same id-based loading the old
+ * history drawer used, so a deep link resolves even when the conversation
+ * isn't on the currently loaded list page. `conversation` is an optional,
+ * best-effort hint (the row's own summary, when the selection came from a
+ * visible row) that lets the header and actionable/read-only split render
+ * immediately instead of waiting on the detail fetch; once `conversationDetail`
+ * loads, its ownership takes over as the source of truth regardless.
+ */
+export type InboxResponseSelection =
+  | { source: 'item'; item: InboxItem }
+  | { source: 'readonly'; conversationId: string; conversation?: ChatConversationSummary }
+
 export interface InboxResponseViewProps {
-  item: InboxItem | null
+  selection: InboxResponseSelection | null
   now: Date
   pendingDecisions: PendingApprovalDecision[]
   onOperatorChanged: (result: OperatorActionResult) => Promise<void> | void
   onRequestFeedbackClose: (item: InboxItem, anchor: HTMLElement) => void
   onOpenDebugView: (conversationId: string) => void
+  /**
+   * Scrolls the thread to this message once it loads (e.g. a Usage Details
+   * "open message" deep link, or an Audience Pulse evidence handoff). Only
+   * meaningful alongside a `readonly` selection; the Needs-you lens never
+   * passes one.
+   */
+  anchorMessageId?: string | null
+  /**
+   * True when `anchorMessageId` came from an Audience Pulse evidence handoff —
+   * narrows the loaded window to the anchor and its answer instead of the
+   * conversation's normal recent-messages window (see `useHistoryDetailState`).
+   */
+  isAudiencePulseEvidence?: boolean
 }
 
 /**
@@ -53,14 +91,23 @@ export interface InboxResponseViewProps {
  * header, situation card, and the type-specific Done control.
  */
 export function InboxResponseView({
-  item,
+  selection,
   now,
   pendingDecisions,
   onOperatorChanged,
   onRequestFeedbackClose,
   onOpenDebugView,
+  anchorMessageId = null,
+  isAudiencePulseEvidence = false,
 }: InboxResponseViewProps) {
-  const conversationId = item?.conversationId ?? null
+  const item = selection?.source === 'item' ? selection.item : null
+  const readOnlySelection = selection?.source === 'readonly' ? selection : null
+  // The conversation id drives the detail fetch regardless of whether a row
+  // summary was found — a deep link (a stale page, or arriving straight from
+  // a URL) must still resolve, the same id-based loading the old history
+  // drawer used (bug: previously this fell back to "select a conversation"
+  // whenever the id wasn't on the currently loaded list page).
+  const conversationId = item?.conversationId ?? readOnlySelection?.conversationId ?? null
   // Memoized on conversationId alone: useHistoryDetailState re-runs its fetch
   // whenever this object's reference changes, and this component re-renders
   // every second from the conversation tail poll below. An inline literal here
@@ -84,11 +131,51 @@ export function InboxResponseView({
     detailError,
     refetchDetail,
     effectiveConversationMessages,
+    selectedThreadMessageId,
+    handleSelectThreadMessage,
   } = useHistoryDetailState({
     selectedItem,
     setSelectedItem: noop,
     additionalConversationMessages: conversationTail.messages,
+    anchorMessageId,
+    isAudiencePulseEvidence,
   })
+
+  // The actionable/read-only split and the header's identity/waiting fields
+  // prefer the row's own summary (immediate, no fetch needed) but fall back to
+  // the independently-fetched conversation detail once it loads — the only
+  // source available for a conversation that wasn't on the loaded list page.
+  // `anonymousSessionId` has no equivalent on the detail response, so that one
+  // field stays unknown (a generic visitor label) in the fallback case rather
+  // than guessing.
+  const readOnlySource: HandoffCandidateSource | null = useMemo(() => {
+    if (!readOnlySelection) {
+      return null
+    }
+    if (readOnlySelection.conversation) {
+      return readOnlySelection.conversation
+    }
+    if (!conversationDetail) {
+      return null
+    }
+    return {
+      id: conversationDetail.conversationId,
+      ownership: conversationDetail.ownership,
+      updatedAt: conversationDetail.updatedAt,
+      agentId: conversationDetail.agentId,
+      agentName: conversationDetail.agentName ?? null,
+      agentInternalName: conversationDetail.agentInternalName ?? null,
+    }
+  }, [readOnlySelection, conversationDetail])
+  // A conversation selected from the All lens gets exactly the same actionable
+  // treatment as a Needs-you queue item once it turns out to be awaiting a
+  // human — same composer, same waiting-time presentation, same Done control —
+  // by reusing the identical handoff mapping the queue itself builds from.
+  const derivedHandoffItem = useMemo(
+    () => (readOnlySource ? deriveInboxResponseHandoffItem(readOnlySource) : null),
+    [readOnlySource],
+  )
+  const effectiveItem = item ?? derivedHandoffItem
 
   const {
     isDocumentDialogOpen,
@@ -108,36 +195,38 @@ export function InboxResponseView({
   const handBackRunner = useOperatorActionRunner(conversationId ?? '', handleChanged)
 
   const handleDone = useCallback((anchor: HTMLElement) => {
-    if (!item) {
+    if (!effectiveItem) {
       return
     }
-    if (item.type === 'handoff') {
+    if (effectiveItem.type === 'handoff') {
+      const targetConversationId = effectiveItem.conversationId
       const version = conversationDetail?.ownership?.version ?? null
       void handBackRunner.run('done', async () => {
         if (version === null) {
           throw new Error('Missing conversation ownership version.')
         }
-        const response = await hitlApi.handBackConversation(item.conversationId, { expectedVersion: version })
-        return { kind: 'ownership', conversationId: item.conversationId, ownershipState: response.ownership.state }
+        const response = await hitlApi.handBackConversation(targetConversationId, { expectedVersion: version })
+        return { kind: 'ownership', conversationId: targetConversationId, ownershipState: response.ownership.state }
       })
       return
     }
-    if (item.type === 'negative_feedback') {
-      onRequestFeedbackClose(item, anchor)
+    if (effectiveItem.type === 'negative_feedback') {
+      onRequestFeedbackClose(effectiveItem, anchor)
     }
-  }, [conversationDetail, handBackRunner, item, onRequestFeedbackClose])
+  }, [conversationDetail, effectiveItem, handBackRunner, onRequestFeedbackClose])
 
+  // Matched by identity (agentId + handle), not conversation — two pending
+  // approvals can exist on one conversation, and matching by conversationId
+  // alone would resolve whichever decision the list happened to return first.
   const approvalDecision = useMemo(
-    () => item?.type === 'approval'
-      ? pendingDecisions.find((decision) => decision.conversationId === item.conversationId) ?? null
-      : null,
-    [item, pendingDecisions],
+    () => (effectiveItem ? findPendingApprovalDecision(effectiveItem, pendingDecisions) : null),
+    [effectiveItem, pendingDecisions],
   )
 
   const renderedMessages = effectiveConversationMessages.map((message) =>
     message.role === 'assistant' ? { ...message, persistedAssistantMessageId: message.id } : message)
 
-  if (!item) {
+  if (!selection) {
     return (
       <section className="flex flex-1 items-center justify-center text-sm text-muted-foreground" aria-label="Response">
         Select an item from the queue to respond.
@@ -145,10 +234,19 @@ export function InboxResponseView({
     )
   }
 
+  // A read-only conversation that turned out to be awaiting a human is
+  // actionable via `derivedHandoffItem` (folded into `effectiveItem` above);
+  // this is only true once the row's own ownership rules it out.
+  const readOnlyOutcome = readOnlySource && !effectiveItem
+    ? deriveConversationOutcome(readOnlySource, now)
+    : null
+
   const entryUrl = conversationDetail?.entryPageUrl ? stripTrackingParams(conversationDetail.entryPageUrl) : null
   const channelLabel = informativeChannelLabel(conversationDetail?.channelContext)
-  const waiting = inboxWaitingPresentation(item, now)
-  const identity = visitorIdentityLabel({ anonymousSessionId: item.anonymousSessionId })
+  const waiting = effectiveItem ? inboxWaitingPresentation(effectiveItem, now) : null
+  const identity = visitorIdentityLabel({
+    anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
+  })
 
   return (
     <section className="flex min-w-0 flex-1 flex-col" aria-label="Response">
@@ -174,19 +272,23 @@ export function InboxResponseView({
               </a>
             </>
           ) : null}
-          <span className="text-muted-foreground" aria-hidden>·</span>
-          <span
-            className={cn(
-              'text-xs font-medium',
-              waiting.tone === 'destructive' ? 'text-destructive' : 'text-amber-700 dark:text-amber-300',
-            )}
-          >
-            {waiting.label}
-          </span>
+          {waiting ? (
+            <>
+              <span className="text-muted-foreground" aria-hidden>·</span>
+              <span
+                className={cn(
+                  'text-xs font-medium',
+                  waiting.tone === 'destructive' ? 'text-destructive' : 'text-amber-700 dark:text-amber-300',
+                )}
+              >
+                {waiting.label}
+              </span>
+            </>
+          ) : null}
         </div>
         <button
           type="button"
-          onClick={() => onOpenDebugView(item.conversationId)}
+          onClick={() => conversationId && onOpenDebugView(conversationId)}
           className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
         >
           Open in debug view
@@ -205,14 +307,16 @@ export function InboxResponseView({
           </div>
         ) : (
           <div className="space-y-4">
-            <InboxSituationCard
-              handoffReason={conversationDetail?.ownership?.reason ?? null}
-              firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
-            />
-            {item.type === 'approval' ? (
+            {effectiveItem ? (
+              <InboxSituationCard
+                handoffReason={conversationDetail?.ownership?.reason ?? null}
+                firstVisitorMessage={findFirstVisitorMessage(effectiveConversationMessages)}
+              />
+            ) : null}
+            {effectiveItem?.type === 'approval' ? (
               approvalDecision ? (
                 <ApprovalDecisionPanel
-                  conversationId={item.conversationId}
+                  conversationId={effectiveItem.conversationId}
                   decision={approvalDecision}
                   onChanged={handleChanged}
                 />
@@ -225,6 +329,8 @@ export function InboxResponseView({
             <ChatMessageThread
               messages={renderedMessages}
               onOpenDocument={handleOpenCitation}
+              onMessageSelect={handleSelectThreadMessage}
+              selectedMessageId={selectedThreadMessageId ?? undefined}
               conversationId={conversationId ?? undefined}
               analyticsSurface="dashboard"
               skillCatalog={skillCatalog}
@@ -233,27 +339,34 @@ export function InboxResponseView({
         )}
       </div>
 
-      <OperatorComposer
-        conversationId={item.conversationId}
-        ownership={conversationDetail?.ownership}
-        onChanged={handleChanged}
-        trailingActions={item.type !== 'approval' ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                disabled={handBackRunner.isBusy}
-                onClick={(event) => handleDone(event.currentTarget)}
-              >
-                Done
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{doneControlTooltip(item)}</TooltipContent>
-          </Tooltip>
-        ) : null}
-      />
+      {effectiveItem ? (
+        <OperatorComposer
+          conversationId={effectiveItem.conversationId}
+          ownership={conversationDetail?.ownership}
+          onChanged={handleChanged}
+          trailingActions={effectiveItem.type !== 'approval' ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={handBackRunner.isBusy}
+                  onClick={(event) => handleDone(event.currentTarget)}
+                >
+                  Done
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{doneControlTooltip(effectiveItem)}</TooltipContent>
+            </Tooltip>
+          ) : null}
+        />
+      ) : readOnlyOutcome ? (
+        <InboxReadOnlyFooter
+          outcome={readOnlyOutcome}
+          handledByLabel={readOnlySource ? readOnlyHandledByLabel(readOnlySource) : null}
+        />
+      ) : null}
 
       <HistoryDocumentDialog
         open={isDocumentDialogOpen}

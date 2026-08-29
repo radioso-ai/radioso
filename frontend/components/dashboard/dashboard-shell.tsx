@@ -6,10 +6,10 @@ import { useRouter } from 'next/navigation'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { AppSidebar } from './app-sidebar'
 import { AgentSubNavContainer } from './agent-subnav-container'
-import { ActivitySubNav, KnowledgeSubNav, QualitySubNav, SettingsSubNav } from './area-subnavs'
+import { KnowledgeSubNav, QualitySubNav, SettingsSubNav } from './area-subnavs'
 import { AgentView } from './agent-view'
 import { AccountView } from './account-view'
-import { ChatHistoryView } from './chat-history-view'
+import { AllConversationsView } from './inbox/all-conversations-view'
 import { NeedsAttentionView } from './needs-attention-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
@@ -203,10 +203,6 @@ export function DashboardShell({
     <KnowledgeSubNav accountId={accountId} routeState={routeState} />
   ) : area === 'settings' ? (
     <SettingsSubNav accountId={accountId} routeState={routeState} />
-  ) : currentView === 'activity' ? (
-    // Activity has no content "area", but its two surfaces (Inbox / Conversations) are
-    // sidebar items nested under the Activity rail row.
-    <ActivitySubNav accountId={accountId} routeState={routeState} />
   ) : (currentView === 'quality' && routeState.qualityView !== 'audience-pulse') || currentView === 'eval' ? (
     // Likewise Quality nests its two surfaces (Review / Evals) under its rail row.
     // Audience Pulse is its own top-level item and has no nested sub-nav.
@@ -252,7 +248,7 @@ export function DashboardShell({
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">{areaContent}</div>
           ) : currentView === 'activity' ? (
             routeState.activityTab === 'all' ? (
-              <ChatHistoryView accountId={accountId} onboarding={onboarding} routeState={routeState} />
+              <AllConversationsView accountId={accountId} routeState={routeState} />
             ) : (
               <NeedsAttentionView accountId={accountId} routeState={routeState} />
             )

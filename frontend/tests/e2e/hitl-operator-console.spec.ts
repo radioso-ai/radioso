@@ -111,6 +111,10 @@ test("drawer opened from Conversations carries no operator mutation controls", a
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /I need help with my booking/ }).click();
+  // Selecting a conversation in the All lens opens the reading pane, not the
+  // drawer; the drawer is reached through its quiet "Open in debug view" link
+  // (spec 1116 User Story 4).
+  await page.getByRole("button", { name: "Open in debug view" }).click();
 
   const drawer = page.getByLabel("Conversation details");
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();

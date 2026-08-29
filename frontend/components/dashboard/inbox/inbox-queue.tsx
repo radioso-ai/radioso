@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Search } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
@@ -30,7 +31,17 @@ const TYPE_OPTION_LABEL: Record<EscalationType, string> = {
 }
 
 export interface InboxQueueProps {
+  /** The Needs-you / All lens toggle, rendered above the search row (spec 1116). It must always render, even with zero open items, so the All lens stays reachable. */
+  lensToggle: ReactNode
   items: InboxItem[]
+  /**
+   * True only when the queue has no open items at all (before any filter is
+   * applied) — distinct from filters narrowing a non-empty queue to zero rows.
+   * Swaps the row list for `emptyState`; the toggle, filters, and
+   * recently-closed strip keep rendering either way.
+   */
+  isQueueEmpty: boolean
+  emptyState: ReactNode
   recentlyClosed: RecentlyClosedInboxItem[]
   typeCounts: Record<EscalationType | 'all', number>
   filters: InboxFilters
@@ -43,7 +54,10 @@ export interface InboxQueueProps {
 }
 
 export function InboxQueue({
+  lensToggle,
   items,
+  isQueueEmpty,
+  emptyState,
   recentlyClosed,
   typeCounts,
   filters,
@@ -57,6 +71,7 @@ export function InboxQueue({
   return (
     <aside className="flex w-full shrink-0 flex-col border-border md:w-[360px] md:border-r" aria-label="Inbox queue">
       <div className="shrink-0 space-y-2 border-b border-border p-3">
+        {lensToggle}
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
@@ -121,17 +136,19 @@ export function InboxQueue({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <div className="flex flex-col gap-2">
-          {items.map((item) => (
-            <InboxQueueRow
-              key={item.key}
-              item={item}
-              now={now}
-              selected={item.key === selectedKey}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
+        {isQueueEmpty ? emptyState : (
+          <div className="flex flex-col gap-2">
+            {items.map((item) => (
+              <InboxQueueRow
+                key={item.key}
+                item={item}
+                now={now}
+                selected={item.key === selectedKey}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        )}
 
         {recentlyClosed.length > 0 ? (
           <div className="mt-4">

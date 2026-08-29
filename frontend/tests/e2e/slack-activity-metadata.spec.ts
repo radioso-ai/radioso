@@ -90,21 +90,25 @@ test("Activity shows Slack metadata for DM and channel conversations while web c
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
 
-  await expect(page.getByRole("row", { name: /Slack DM question/ })).toContainText("Direct message with Dana");
-  await expect(page.getByRole("row", { name: /Slack channel mention/ })).toContainText("Channel C123");
-  await expect(page.getByRole("row", { name: /Slack channel mention/ })).toContainText("thread");
-  await expect(page.getByRole("row", { name: /Dashboard chat question/ })).toContainText("Dashboard chat");
-  await expect(
-    page.getByRole("row", { name: /Dashboard chat question/ }).getByRole("cell").nth(3),
-  ).toHaveText("2");
+  // The list pane's meta line already carries the Slack location description
+  // (reusing formatConversationLocation, same as the response-view header).
+  await expect(page.getByRole("button", { name: /Slack DM question/ })).toContainText("Direct message with Dana");
+  await expect(page.getByRole("button", { name: /Slack channel mention/ })).toContainText("Channel C123");
+  await expect(page.getByRole("button", { name: /Slack channel mention/ })).toContainText("thread");
+  await expect(page.getByRole("button", { name: /Dashboard chat question/ })).toContainText("Dashboard chat");
 
+  // Selecting a row opens the reading pane, not the drawer; the richer
+  // per-provider metadata (team, thread) lives in the drawer, reached via the
+  // reading pane's "Open in debug view" link (spec 1116 User Story 4).
   await page.getByRole("button", { name: /Slack DM question/ }).click();
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   const dmDrawer = page.getByLabel("Conversation details");
   await expect(dmDrawer).toContainText("Team Ausalt");
   await expect(dmDrawer).toContainText("Direct message with Dana");
+  await page.getByRole("button", { name: "Close details panel" }).click();
 
-  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByRole("button", { name: /Slack channel mention/ }).click();
+  await page.getByRole("button", { name: "Open in debug view" }).click();
   const channelDrawer = page.getByLabel("Conversation details");
   await expect(channelDrawer).toContainText("Channel C123");
   await expect(channelDrawer).toContainText("User Lee");

@@ -5,10 +5,11 @@ import {
 } from '@/lib/dashboard-routes'
 
 /**
- * Builds hrefs for the Activity sidebar's two nested items (Inbox / Conversations).
- * Clicking the already-active tab preserves whatever filters/deep-link state the
- * operator has open; switching tabs resets to a fresh view of the target tab so
- * state from one surface never leaks into the other.
+ * Builds hrefs for the Inbox page's lens toggle (Needs you / All — spec 1116's
+ * "one shell, two lenses" unification). Clicking the already-active lens
+ * preserves whatever filters/deep-link state the operator has open; switching
+ * lenses resets to a fresh view of the target lens so state from one surface
+ * never leaks into the other.
  */
 export function buildActivityTabHref(
   accountId: string,

@@ -10,6 +10,7 @@ import { useDashboardQueryPolicy } from '@/components/providers/dashboard-query-
 import { useQualityTurnsQuery, type QualityTurnsRequest } from './quality-query-state'
 import type { LowQualityTurnsPage } from './api-quality'
 import type { ChatConversationSummary, PendingApprovalDecision } from './api-types'
+import { buildInboxModel } from './needs-attention'
 import type { QualityInboxSnapshot, QualityInboxSourceAttempts } from './needs-attention-quality'
 import { reduceQualityInboxSnapshot } from './needs-attention-quality'
 
@@ -213,4 +214,31 @@ export const useNeedsAttentionQueries = (workspaceId: string) => {
   )
 
   return { ...attention, commentedFeedback, reviewSummary }
+}
+
+/**
+ * The open-item count behind the inbox lens toggle's "Needs you · N" label
+ * (spec 1116 unification) — the same client inbox model that drives the tab
+ * title in `useInboxAttentionSignal`, so the count never disagrees with what
+ * the Needs-you lens's own queue shows. Uses `useAttentionRailQueries` plus
+ * the one quality-turns query the model needs (commented feedback); the
+ * review-summary query the full `useNeedsAttentionQueries` hook also fetches
+ * is unused for a plain count, so it's left out here to avoid firing it from
+ * the All lens, which otherwise has no reason to load it.
+ */
+export const useNeedsAttentionOpenCount = (workspaceId: string): number => {
+  const attention = useAttentionRailQueries(workspaceId)
+  const { policy } = attention
+  const commentedFeedback = useQualityTurnsQuery(
+    workspaceId,
+    needsAttentionQualityInputs.commentedFeedback,
+    policy.queriesEnabled,
+    policy.intervalFor(dashboardQueryKeys.quality.turns(workspaceId, needsAttentionQualityInputs.commentedFeedback)),
+  )
+
+  return buildInboxModel({
+    decisions: attention.decisions.data?.decisions ?? [],
+    conversations: selectHumanOwned(attention.humanOwned.data?.conversations ?? []),
+    qualityTurns: commentedFeedback.data?.items ?? [],
+  }).items.length
 }

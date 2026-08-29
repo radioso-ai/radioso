@@ -4,6 +4,7 @@ import {
   doneControlTooltip,
   findFirstVisitorMessage,
   informativeChannelLabel,
+  readOnlyHandledByLabel,
   selectSituationBody,
   stripTrackingParams,
   visitorIdentityLabel,
@@ -120,6 +121,42 @@ describe('findFirstVisitorMessage', () => {
 
   it('returns null when there is no visitor message', () => {
     expect(findFirstVisitorMessage([{ source: 'ai_agent', role: 'assistant', content: 'Ciao' }])).toBeNull()
+  })
+})
+
+describe('readOnlyHandledByLabel', () => {
+  it('names the agent that handled the conversation', () => {
+    expect(readOnlyHandledByLabel({
+      agentId: 'agent-1',
+      agentName: 'Gioia',
+      agentInternalName: null,
+    })).toBe('handled by Gioia')
+  })
+
+  it('prefers the internal operator label over the public agent name', () => {
+    expect(readOnlyHandledByLabel({
+      agentId: 'agent-1',
+      agentName: 'Claudio',
+      agentInternalName: 'Website support',
+    })).toBe('handled by Website support')
+  })
+
+  it('prefers a durable human closure record when one is present', () => {
+    expect(readOnlyHandledByLabel({
+      ownership: { ownerDisplayName: 'Anna' },
+      agentId: 'agent-1',
+      agentName: 'Gioia',
+      agentInternalName: null,
+    })).toBe('handled by Anna')
+  })
+
+  it('returns null rather than inventing attribution when no agent is known', () => {
+    expect(readOnlyHandledByLabel({ agentId: null, agentName: null, agentInternalName: null })).toBeNull()
+  })
+
+  it('falls back to a generic agent label when the agent has no resolvable name', () => {
+    expect(readOnlyHandledByLabel({ agentId: 'agent-1', agentName: null, agentInternalName: null }))
+      .toBe('handled by the agent')
   })
 })
 

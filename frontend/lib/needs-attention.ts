@@ -47,6 +47,13 @@ export interface InboxItem {
   takenOverAt?: string | null
   /** Present only for quality signals — the turn to triage so the row can be cleared. */
   assistantMessageId?: string
+  /**
+   * Present only for approvals — the decision's own identity. Two pending
+   * approvals can exist on the same conversation, so the response view must
+   * match a `PendingApprovalDecision` by `agentId` + `handle`, never by
+   * `conversationId` alone (see `findPendingApprovalDecision`).
+   */
+  handle?: string
   /** Quality evidence used by the negative-feedback review accessory. */
   answerPreview?: string
   feedbackComment?: string | null
@@ -162,28 +169,12 @@ export const buildInboxModel = (input: {
     timestamp: decision.createdAt,
     escalatedAt: decision.createdAt,
     agentId: decision.agentId,
+    handle: decision.handle,
     // PendingApprovalDecision carries no conversation-level last-message time.
     lastMessageAt: null,
   }))
 
-  const handoffs: InboxItem[] = input.conversations.map((conversation) => ({
-    key: `handoff:${conversation.id}:${conversation.ownership.version}`,
-    conversationId: conversation.id,
-    type: 'handoff',
-    severity: ESCALATION_SEVERITY.handoff,
-    title: conversation.preview || 'Untitled conversation',
-    detail: ownershipLabel(conversation.ownership),
-    timestamp: conversation.updatedAt,
-    escalatedAt: conversation.ownership.updatedAt,
-    takenOverAt: conversation.ownership.takenOverAt,
-    agentId: conversation.agentId,
-    agentName: conversation.agentName,
-    agentInternalName: conversation.agentInternalName,
-    lastMessageAt: conversation.updatedAt,
-    takenByAccountId: conversation.ownership.ownerAccountId,
-    takenByDisplayName: conversation.ownership.ownerDisplayName,
-    anonymousSessionId: conversation.anonymousSessionId,
-  }))
+  const handoffs: InboxItem[] = input.conversations.map(toHandoffInboxItem)
 
   const escalatedConversationIds = new Set(
     [...approvals, ...handoffs].map((item) => item.conversationId),
@@ -239,9 +230,95 @@ export const buildInboxModel = (input: {
   }
 }
 
+/**
+ * The fields a handoff inbox item can be built from. `ChatConversationSummary`
+ * (and `HumanOwnedConversationSummary`) satisfy this structurally, but so does
+ * a conversation known only by its detail response (`ChatConversationDetail`,
+ * adapted at the call site) — the response view's All-lens deep-link path
+ * fetches a conversation by id independently of any loaded list page, so it
+ * often has no summary to work from. `preview` and `anonymousSessionId` are
+ * optional because the detail response carries neither; a missing
+ * `anonymousSessionId` degrades to a generic visitor label rather than
+ * guessing verified/anonymous.
+ */
+export interface HandoffCandidateSource {
+  id: string
+  ownership?: ConversationOwnership
+  preview?: string | null
+  updatedAt: string
+  agentId?: string | null
+  agentName?: string | null
+  agentInternalName?: string | null
+  anonymousSessionId?: string | null
+}
+
+/**
+ * Maps a human-owned conversation to its handoff inbox-item shape. Extracted
+ * out of `buildInboxModel` so the "All" lens's response view can build the
+ * same handoff item for a conversation it selects directly (a conversation
+ * row, not a queue row) and get identical actionable behavior — composer,
+ * waiting-time presentation, Done semantics — without a second mapping to
+ * drift from this one.
+ */
+export const toHandoffInboxItem = (
+  conversation: HandoffCandidateSource & { ownership: ConversationOwnership },
+): InboxItem => ({
+  key: `handoff:${conversation.id}:${conversation.ownership.version}`,
+  conversationId: conversation.id,
+  type: 'handoff',
+  severity: ESCALATION_SEVERITY.handoff,
+  title: conversation.preview || 'Untitled conversation',
+  detail: ownershipLabel(conversation.ownership),
+  timestamp: conversation.updatedAt,
+  escalatedAt: conversation.ownership.updatedAt,
+  takenOverAt: conversation.ownership.takenOverAt,
+  agentId: conversation.agentId,
+  agentName: conversation.agentName,
+  agentInternalName: conversation.agentInternalName,
+  lastMessageAt: conversation.updatedAt,
+  takenByAccountId: conversation.ownership.ownerAccountId,
+  takenByDisplayName: conversation.ownership.ownerDisplayName,
+  anonymousSessionId: conversation.anonymousSessionId,
+})
+
+/**
+ * The All lens's actionable/read-only split for a selected conversation
+ * (spec 1116 unification): a conversation currently awaiting a human is
+ * actionable — same handoff item, same composer, same Done control as a
+ * Needs-you queue row — everything else (ai-owned, whether still in progress
+ * or already completed) is read-only. Returns `null` for read-only so the
+ * response view can treat "no handoff item" as its one read-only signal.
+ */
+export const deriveInboxResponseHandoffItem = (
+  conversation: HandoffCandidateSource,
+): InboxItem | null =>
+  conversation.ownership?.state === 'human_owned'
+    ? toHandoffInboxItem({ ...conversation, ownership: conversation.ownership })
+    : null
+
 export const buildInboxItems = (
   input: Parameters<typeof buildInboxModel>[0],
 ): InboxItem[] => buildInboxModel(input).items
+
+/**
+ * Matches an approval inbox item to its live `PendingApprovalDecision` by
+ * identity (agentId + handle) rather than by conversation. Two pending
+ * approvals can exist on one conversation (e.g. two paused routines), and
+ * matching by `conversationId` alone would resolve whichever decision the
+ * list happened to return first — silently applying the operator's choice to
+ * the wrong decision. Returns `null` for non-approval items and for an
+ * approval item with no `handle` (never expected, but a decision-less
+ * approval item can't be matched to anything).
+ */
+export const findPendingApprovalDecision = (
+  item: Pick<InboxItem, 'type' | 'agentId' | 'handle'>,
+  decisions: readonly PendingApprovalDecision[],
+): PendingApprovalDecision | null => {
+  if (item.type !== 'approval' || !item.handle) {
+    return null
+  }
+  return decisions.find((decision) => decision.agentId === item.agentId && decision.handle === item.handle) ?? null
+}
 
 /** Page size used when loading the human-owned conversations shown in the inbox. */
 export const HUMAN_OWNED_CONVERSATION_PAGE_SIZE = 50

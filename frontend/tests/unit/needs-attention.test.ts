@@ -8,8 +8,10 @@ import {
   countAiHandledConversationsByAgent,
   countInboxItemsByType,
   countNewInboxItems,
+  deriveInboxResponseHandoffItem,
   EMPTY_INBOX_FILTERS,
   filterInboxItems,
+  findPendingApprovalDecision,
   formatInboxDuration,
   inboxItemKeys,
   inboxWaitingPresentation,
@@ -22,6 +24,7 @@ import {
   selectHumanOwnedConversations,
   TAKEN_BY_ME,
   TAKEN_BY_UNCLAIMED,
+  toHandoffInboxItem,
   waitingTone,
   withinLastDays,
   type HumanOwnedConversationSummary,
@@ -100,6 +103,83 @@ describe('needs attention helpers', () => {
   })
 })
 
+describe('toHandoffInboxItem', () => {
+  it('maps a human-owned conversation to a handoff inbox item', () => {
+    const humanOwnedConversation: HumanOwnedConversationSummary = {
+      ...conversation({ id: 'conversation-handoff', preview: 'Weekly yoga schedule' }),
+      ownership: ownership({ conversationId: 'conversation-handoff', version: 3, ownerAccountId: 'account-2', ownerDisplayName: 'Anna' }),
+    }
+
+    expect(toHandoffInboxItem(humanOwnedConversation)).toMatchObject({
+      key: 'handoff:conversation-handoff:3',
+      conversationId: 'conversation-handoff',
+      type: 'handoff',
+      severity: 'critical',
+      title: 'Weekly yoga schedule',
+      takenByAccountId: 'account-2',
+      takenByDisplayName: 'Anna',
+    })
+  })
+})
+
+describe('deriveInboxResponseHandoffItem', () => {
+  it('returns a handoff item for a conversation awaiting a human', () => {
+    const awaitingHuman = conversation({
+      id: 'conversation-awaiting',
+      ownership: ownership({ conversationId: 'conversation-awaiting', ownerAccountId: null, ownerDisplayName: null }),
+    })
+
+    const result = deriveInboxResponseHandoffItem(awaitingHuman)
+
+    expect(result).toMatchObject({ conversationId: 'conversation-awaiting', type: 'handoff' })
+  })
+
+  it('returns a handoff item for a conversation claimed by an operator', () => {
+    const claimed = conversation({
+      id: 'conversation-claimed',
+      ownership: ownership({ conversationId: 'conversation-claimed', ownerAccountId: 'account-2', ownerDisplayName: 'Anna' }),
+    })
+
+    expect(deriveInboxResponseHandoffItem(claimed)?.takenByDisplayName).toBe('Anna')
+  })
+
+  it('returns null (read-only) for an AI-owned conversation', () => {
+    const aiOwned = conversation({
+      id: 'conversation-ai-owned',
+      ownership: ownership({ conversationId: 'conversation-ai-owned', state: 'ai_owned', ownerAccountId: null, ownerDisplayName: null }),
+    })
+
+    expect(deriveInboxResponseHandoffItem(aiOwned)).toBeNull()
+  })
+
+  it('returns null (read-only) for a conversation with no ownership record at all', () => {
+    const neverEscalated = conversation({ id: 'conversation-plain' })
+
+    expect(deriveInboxResponseHandoffItem(neverEscalated)).toBeNull()
+  })
+
+  it('accepts a conversation known only by its detail response (no preview, no anonymousSessionId) — the All lens deep-link path', () => {
+    // ChatConversationDetail (fetched independently by id, e.g. for a
+    // conversation that isn't on the currently loaded list page) carries no
+    // `preview` and no `anonymousSessionId`. deriveInboxResponseHandoffItem
+    // must still work from that narrower shape rather than requiring a full
+    // ChatConversationSummary.
+    const detailShaped = {
+      id: 'conversation-from-detail',
+      ownership: ownership({ conversationId: 'conversation-from-detail', ownerAccountId: null, ownerDisplayName: null }),
+      updatedAt: '2026-06-19T10:00:00.000Z',
+      agentId: 'agent-1',
+      agentName: 'Marta',
+      agentInternalName: null,
+    }
+
+    const result = deriveInboxResponseHandoffItem(detailShaped)
+
+    expect(result).toMatchObject({ conversationId: 'conversation-from-detail', type: 'handoff', agentName: 'Marta' })
+    expect(result?.anonymousSessionId).toBeUndefined()
+  })
+})
+
 const decision = (overrides: Partial<PendingApprovalDecision> = {}): PendingApprovalDecision => ({
   handle: 'decision-1',
   conversationId: 'conversation-1',
@@ -121,6 +201,35 @@ const humanOwned = (
   ...conversation(),
   ownership: ownership(),
   ...overrides,
+})
+
+describe('findPendingApprovalDecision', () => {
+  it('matches the correct decision when two pending approvals exist on the same conversation', () => {
+    const first = decision({ handle: 'decision-a', conversationId: 'conversation-shared', agentId: 'agent-1', reason: 'Approve the refund' })
+    const second = decision({ handle: 'decision-b', conversationId: 'conversation-shared', agentId: 'agent-1', reason: 'Approve the discount' })
+    const decisions = [first, second]
+
+    const itemForFirst: Pick<InboxItem, 'type' | 'agentId' | 'handle'> = { type: 'approval', agentId: 'agent-1', handle: 'decision-a' }
+    const itemForSecond: Pick<InboxItem, 'type' | 'agentId' | 'handle'> = { type: 'approval', agentId: 'agent-1', handle: 'decision-b' }
+
+    expect(findPendingApprovalDecision(itemForFirst, decisions)).toBe(first)
+    expect(findPendingApprovalDecision(itemForSecond, decisions)).toBe(second)
+  })
+
+  it('distinguishes the same handle across different agents', () => {
+    const agentOne = decision({ handle: 'decision-shared', agentId: 'agent-1', conversationId: 'conversation-1' })
+    const agentTwo = decision({ handle: 'decision-shared', agentId: 'agent-2', conversationId: 'conversation-2' })
+
+    expect(findPendingApprovalDecision({ type: 'approval', agentId: 'agent-2', handle: 'decision-shared' }, [agentOne, agentTwo])).toBe(agentTwo)
+  })
+
+  it('returns null for a non-approval item', () => {
+    expect(findPendingApprovalDecision({ type: 'handoff', agentId: 'agent-1', handle: undefined }, [decision()])).toBeNull()
+  })
+
+  it('returns null when no decision matches the identity', () => {
+    expect(findPendingApprovalDecision({ type: 'approval', agentId: 'agent-1', handle: 'missing' }, [decision({ handle: 'decision-1' })])).toBeNull()
+  })
 })
 
 describe('inboxItemKeys', () => {

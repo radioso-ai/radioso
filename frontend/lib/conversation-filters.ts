@@ -11,6 +11,13 @@ export interface ConversationFilterState {
   siteOrigin: string | null
 }
 
+export const EMPTY_CONVERSATION_FILTERS: ConversationFilterState = {
+  search: '',
+  outcome: 'all',
+  agentId: null,
+  siteOrigin: null,
+}
+
 /**
  * Client-side filtering for the Conversations toolbar (spec 1116). The
  * backend list endpoint (`chatApi.listChatHistory`) only accepts
@@ -48,4 +55,14 @@ export function filterConversations(
 
     return true
   })
+}
+
+/**
+ * The free-text half of the Conversations toolbar's search, reused for the
+ * All lens's non-chat rows (search and contact history entries), which carry
+ * no outcome/agent/site to filter on — only a title-ish preview string.
+ */
+export const matchesConversationSearchText = (text: string, search: string): boolean => {
+  const query = search.trim().toLowerCase()
+  return query.length === 0 || text.toLowerCase().includes(query)
 }

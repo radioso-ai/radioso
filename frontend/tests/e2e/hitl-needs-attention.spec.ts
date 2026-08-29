@@ -111,10 +111,12 @@ test("operator opens the inbox, replies to a handoff, marks it done, and the deb
     });
   });
 
-  // Activity defaults to the Inbox sub-tab.
+  // The Inbox page defaults to the Needs-you lens, shown via the segmented
+  // toggle at the top of the left pane (spec 1116 unification).
   await page.goto(`/w/${workspaceKey}/activity`);
-  await expect(page.getByRole("link", { name: "Inbox" })).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "false");
 
   const queue = page.getByLabel("Inbox queue");
   const handoffRow = queue.getByRole("button", { name: /Weekly yoga schedule/ });
@@ -439,6 +441,34 @@ test("operator sees the expected feedback permission boundary without losing the
 
   await page.goto(`/w/${workspaceKey}/activity`);
 
-  await expect(page.getByText("New handoffs, approvals, and written customer feedback will appear here.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Review in Quality" })).toHaveCount(0);
+  // A 403 on quality data means the empty state must not promise a feedback
+  // channel the operator can't load — handoffs/approvals still work.
+  await expect(page.getByText("New handoffs and approvals will appear here.")).toBeVisible();
+  await expect(page.getByText("You don't have permission to view quality feedback.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /flagged for quality review/ })).toHaveCount(0);
+});
+
+test("an empty Needs-you queue still shows the lens toggle, and All stays reachable", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+
+  // Zero open items still renders the two-pane shell with its toggle — the
+  // confidence message replaces only the row list, not the whole page.
+  await expect(page.getByText("Nothing needs you right now")).toBeVisible();
+  const toggle = page.getByRole("group", { name: "Inbox lens" });
+  await expect(toggle).toBeVisible();
+  await expect(toggle.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+
+  await toggle.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page).toHaveURL(/tab=all/);
+  await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
 });

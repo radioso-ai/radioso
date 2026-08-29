@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ConversationDrawer } from './conversation-drawer'
 import type { OperatorActionResult } from './operator-composer'
 import { InboxEmptyState } from './inbox/inbox-empty-state'
+import { InboxLensToggle } from './inbox/inbox-lens-toggle'
 import { InboxQueue } from './inbox/inbox-queue'
 import { InboxResponseView } from './inbox/inbox-response-view'
 import { useInboxAgentOptions } from './inbox/use-inbox-agent-options'
@@ -223,6 +224,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       if (isTerminalQualityTriageState(current.state)) {
         setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
         patchLatestQuality(messageId, current, true)
+        // The row disappears from the queue via terminalQualityMessageIds
+        // above; the response pane must drop the same item, or it keeps
+        // offering Done/resolution actions for a feedback item another
+        // operator already closed.
+        setSelectedInboxItem((current2) =>
+          current2?.type === 'negative_feedback' && current2.assistantMessageId === messageId ? null : current2)
         setStatusAnnouncement('Another operator already closed this feedback. It was removed from the inbox.')
       } else {
         setQualitySnapshot((previous) =>
@@ -323,8 +330,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   }, [closeReview, patchLatestQuality])
 
   const debugSelectedItem: SelectedHistoryItem = debugConversationId ? { kind: 'chat', id: debugConversationId } : null
-  const showEmptyQueue = !isLoading && !approvalError && !conversationError && items.length === 0
-  const showNoFilterMatches = !showEmptyQueue && filteredItems.length === 0 && !selectedInboxItem
+  // A queue with zero open items still renders the full two-pane shell (the
+  // lens toggle lives in the left pane) — only the row list swaps for the
+  // confidence message, so the operator can always reach the All lens even
+  // when nothing needs them (spec 1116 unification, fix for issue #6).
+  const isQueueEmpty = !isLoading && !approvalError && !conversationError && items.length === 0
+  const showNoFilterMatches = !isQueueEmpty && filteredItems.length === 0 && !selectedInboxItem
 
   return (
     <>
@@ -345,16 +356,27 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
           <div className="flex flex-1 items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />
           </div>
-        ) : showEmptyQueue ? (
-          <InboxEmptyState
-            recentlyClosed={filteredRecentlyClosed}
-            qualityReviewHref={qualityReviewHref}
-            untriagedQualityCount={qualityPresentation.reviewCount}
-          />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <InboxQueue
+              lensToggle={
+                <InboxLensToggle
+                  accountId={accountId}
+                  routeState={routeState}
+                  activeTab="needs-attention"
+                  needsYouCount={items.length}
+                />
+              }
               items={filteredItems}
+              isQueueEmpty={isQueueEmpty}
+              emptyState={
+                <InboxEmptyState
+                  qualityReviewHref={qualityReviewHref}
+                  untriagedQualityCount={qualityPresentation.reviewCount}
+                  qualityPermissionDenied={qualityPresentation.permissionDenied}
+                  qualityLoadFailed={qualityPresentation.hasLoadFailure}
+                />
+              }
               recentlyClosed={filteredRecentlyClosed}
               typeCounts={typeCounts}
               filters={filters}
@@ -371,7 +393,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               </div>
             ) : (
               <InboxResponseView
-                item={selectedInboxItem}
+                selection={selectedInboxItem ? { source: 'item', item: selectedInboxItem } : null}
                 now={now}
                 pendingDecisions={decisions}
                 onOperatorChanged={handleOperatorChanged}

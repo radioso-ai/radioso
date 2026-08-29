@@ -8,20 +8,16 @@ import {
   FileText,
   FlaskConical,
   FolderOpen,
-  Inbox,
-  MessagesSquare,
 } from 'lucide-react'
 
 import { SectionNavBody, type SubNavGroup } from '@/components/dashboard/subnav-column'
 import {
-  buildActivityTabHref,
   buildQualityTabHref,
   type QualitySurfaceTab,
 } from '@/components/dashboard/activity-tabs'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   buildDashboardHref,
-  type ActivityTab,
   type DashboardRouteState,
   type KnowledgeTab,
   type SettingsTab,
@@ -33,22 +29,6 @@ function useWorkspaceRouteParts() {
     workspaceId: activeWorkspaceId ?? undefined,
     workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
   }
-}
-
-export function ActivitySubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
-  const activeTab: ActivityTab = routeState.activityTab === 'all' ? 'all' : 'needs-attention'
-  const href = (target: ActivityTab) => buildActivityTabHref(accountId, routeState, activeTab, target)
-
-  const groups: SubNavGroup[] = [
-    {
-      items: [
-        { id: 'needs-attention', label: 'Inbox', icon: Inbox, href: href('needs-attention'), active: activeTab === 'needs-attention' },
-        { id: 'all', label: 'Conversations', icon: MessagesSquare, href: href('all'), active: activeTab === 'all' },
-      ],
-    },
-  ]
-
-  return <SectionNavBody groups={groups} />
 }
 
 /**

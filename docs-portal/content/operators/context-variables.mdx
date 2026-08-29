@@ -164,8 +164,8 @@ the prompt context.
   surface it into the answer prompt.
 
 Sensitive variables should use the narrowest surfacing that works. Redacted
-values may still appear in Activity so operators can debug what happened without
-exposing raw sensitive data.
+values may still appear in the Inbox so operators can debug what happened
+without exposing raw sensitive data.
 
 ## Conditions that read context
 
@@ -220,9 +220,9 @@ Radioso resolves values from most specific to least specific:
 Use session scope for short-lived visitor state, customer scope for account data,
 agent scope for agent-specific defaults, and workspace scope for shared defaults.
 
-## Activity view
+## Inbox
 
-Open a conversation in Activity and inspect the assistant turn. When context
+Open a conversation in the Inbox and inspect the assistant turn. When context
 variables were resolved for that turn, the debug panel shows a read-only
 **Visitor context** block. Sensitive values are already redacted by the backend
 before they reach the dashboard.

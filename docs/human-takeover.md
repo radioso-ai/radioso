@@ -190,42 +190,46 @@ is exposed, never the operator's account id. The operator tail also includes
 
 ## Operator console
 
-The dashboard surfaces this work under **Activity**, which has two pages:
-**Inbox** and **Conversations**.
+The dashboard surfaces this work in the **Inbox**, a top-level sidebar item
+ahead of Agents, Knowledge Base, Audience Pulse, and Quality, with a badge
+showing the count of open items.
 
-**Inbox** is a two-pane queue for everything waiting on a person: handoffs,
-approvals, and negative feedback. The left pane lists open items with search
-and filters for type, agent, and who has taken each one; critical escalations
-— an approval to decide, a handoff awaiting or held by a human — sort to the
-top, followed by written negative feedback ordered by its latest creation or
-edit. Automatically detected signals and uncommented feedback stay in
-**Quality** instead of creating an inbox row per answer.
+The Inbox is a two-pane page with a lens toggle at the top of the left pane.
+**Needs you** is the default lens: the queue of everything waiting on a
+person — handoffs, approvals, and negative feedback. **All** lists every
+conversation, newest first, with an outcome chip (In progress, Completed, or
+Handed off) plus search and filters for outcome, agent, and site.
 
-Selecting an item opens the right pane: a one-line header naming the visitor,
-the page they were on, and how long they have been waiting; a situation card
-with the handoff reason and the visitor's opening request; the live
-transcript; and a reply composer that stays visible throughout. Sending a
-reply claims the item for you — there is no separate take-over step. Messages
-carry attribution (a badge for human-agent and system messages), and the pane
-reads the tail endpoint while open, so new visitor messages and your own
-replies appear without a manual refresh. **Done** closes a handoff or
-approval and hands the conversation back to the agent; on a negative-feedback
-item, **Done** opens the same resolution-reason flow Quality → Review uses to
-classify it.
+In **Needs you**, the left pane lists open items with search and filters for
+type, agent, and who has taken each one; critical escalations — an approval
+to decide, a handoff awaiting or held by a human — sort to the top, followed
+by written negative feedback ordered by its latest creation or edit.
+Automatically detected signals and uncommented feedback stay in **Quality**
+instead of creating an inbox row per answer.
+
+Both lenses share the same reading pane. For an actionable conversation —
+one awaiting a human or already human-owned — selecting it shows a one-line
+header naming the visitor, the page they were on, and how long they have
+been waiting; a situation card with the handoff reason and the visitor's
+opening request; the live transcript; and a reply composer that stays
+visible throughout. Sending a reply claims the item for you — there is no
+separate take-over step. Messages carry attribution (a badge for human-agent
+and system messages), and the pane reads the tail endpoint while open, so
+new visitor messages and your own replies appear without a manual refresh.
+**Done** closes a handoff or approval and hands the conversation back to the
+agent; on a negative-feedback item, **Done** opens the same resolution-reason
+flow Quality → Review uses to classify it. For any other conversation, the
+reading pane is read-only, with an outcome footer in place of the composer.
 
 The browser tab title carries the count of open items, and a soft sound plays
 when a new handoff or approval arrives while the dashboard is open.
 
-**Conversations** lists the full conversation history, titled by the
-visitor's opening request, with the page URL they arrived from and an Outcome
-column — In progress, Completed, or Handed off, the last linking back to the
-Inbox item. Search and filters for outcome, agent, and site narrow the list.
-
-Opening a conversation from **Conversations**, or from **Quality**, opens the
+An **Open in debug view** link, available from either lens, opens the
 conversation drawer: transcript, Debug, Flow, a button to continue the
 conversation in test chat, and a button to send it to Eval. The drawer is for
 inspecting and testing a conversation — replying, taking over, handing back,
-and approving or rejecting a pending decision all happen from the Inbox.
+and approving or rejecting a pending decision all happen from the reading
+pane instead.
 
 **Quality** is a separate top-level section with two pages. **Review** is the
 answer-quality triage view, covering answer quality in two zones with

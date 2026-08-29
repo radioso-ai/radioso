@@ -90,12 +90,13 @@ test("Activity shows Slack metadata for DM and channel conversations while web c
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
 
-  await expect(page.getByRole("row", { name: /Slack DM question/ })).toContainText("Slack");
   await expect(page.getByRole("row", { name: /Slack DM question/ })).toContainText("Direct message with Dana");
   await expect(page.getByRole("row", { name: /Slack channel mention/ })).toContainText("Channel C123");
   await expect(page.getByRole("row", { name: /Slack channel mention/ })).toContainText("thread");
   await expect(page.getByRole("row", { name: /Dashboard chat question/ })).toContainText("Dashboard chat");
-  await expect(page.getByRole("row", { name: /Dashboard chat question/ })).toContainText("2 messages");
+  await expect(
+    page.getByRole("row", { name: /Dashboard chat question/ }).getByRole("cell").nth(3),
+  ).toHaveText("2");
 
   await page.getByRole("button", { name: /Slack DM question/ }).click();
   const dmDrawer = page.getByLabel("Conversation details");

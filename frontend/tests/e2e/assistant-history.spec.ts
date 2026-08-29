@@ -207,8 +207,8 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
 
-  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
-  await expect(page.getByRole("table", { name: "Activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
+  await expect(page.getByRole("table", { name: "Conversations" })).toBeVisible();
   expect(requestLog).toContain("GET /history?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
@@ -274,15 +274,71 @@ test("activity uses operator labels and entry-page locations", async ({ page }) 
   });
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
-  const table = page.getByRole("table", { name: "Activity" });
+  const table = page.getByRole("table", { name: "Conversations" });
   const row = table.getByRole("row").filter({ hasText: "Selected agent conversation" });
 
   await expect(row).toContainText("Website support");
-  await expect(row.getByText("Embedded", { exact: true })).toHaveCount(1);
   await expect(row.getByRole("link", { name: "it.ananda.eu/support/getting-started" })).toHaveAttribute(
     "href",
-    "https://it.ananda.eu/support/getting-started?utm_source=chat",
+    "https://it.ananda.eu/support/getting-started",
   );
+});
+
+test("conversations toolbar search narrows the visible rows", async ({ page }) => {
+  const matchingConversation = {
+    id: "conversation-toolbar-match",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-toolbar-1",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 3,
+    userMessageCount: 2,
+    assistantMessageCount: 1,
+    preview: "Disponibilità del libro in inglese",
+  };
+  const otherConversation = {
+    id: "conversation-toolbar-other",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-toolbar-2",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Orari dei corsi di yoga settimanali",
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [matchingConversation, otherConversation],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat`);
+  const table = page.getByRole("table", { name: "Conversations" });
+  await expect(table.getByRole("row").filter({ hasText: "Disponibilità" })).toBeVisible();
+  await expect(table.getByRole("row").filter({ hasText: "Orari dei corsi" })).toBeVisible();
+
+  await page.getByPlaceholder("Search conversations").fill("yoga");
+
+  await expect(table.getByRole("row").filter({ hasText: "Orari dei corsi" })).toBeVisible();
+  await expect(table.getByRole("row").filter({ hasText: "Disponibilità" })).toHaveCount(0);
 });
 
 test("activity drawer continues a conversation in test chat", async ({ page }) => {
@@ -777,7 +833,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   });
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat&page=3`);
-  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/chat?limit=50&offset=100");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
@@ -785,7 +841,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
 
   requestLog.length = 0;
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=search&page=2`);
-  await expect(page.getByRole("heading", { name: "Activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Conversations", exact: true })).toBeVisible();
 
   expect(requestLog).toContain("GET /history/search?limit=50&offset=50");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");

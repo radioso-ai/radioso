@@ -4081,7 +4081,10 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 
     for (const conversationId of conversationIds) {
       const messages = (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId);
-      const latestMessage = [...messages].reverse().find((message) => message.content.trim().length > 0);
+      const firstUserMessage = messages.find(
+        (message) => message.role === "user" && message.content.trim().length > 0,
+      );
+      const latestMessage = firstUserMessage ?? [...messages].reverse().find((message) => message.content.trim().length > 0);
       const normalized = latestMessage?.content.replace(/\s+/g, " ").trim() ?? "";
       summaries.set(conversationId, {
         messageCount: messages.length,

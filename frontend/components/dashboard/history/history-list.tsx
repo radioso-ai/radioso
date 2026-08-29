@@ -1,7 +1,10 @@
 'use client'
 
-import { Activity, FileText, MessageSquareText } from 'lucide-react'
+import { useState } from 'react'
+import { Activity, CheckCircle2, FileText, Hand, MessageSquareText } from 'lucide-react'
 
+import { buildActivityTabHref } from '@/components/dashboard/activity-tabs'
+import { ConversationToolbar } from '@/components/dashboard/history/conversation-toolbar'
 import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -20,7 +23,11 @@ import { type ChatConversationSummary, type ContactHistorySummary, type Document
 import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useCopilotEntity } from '@/lib/copilot-context'
-import { formatConversationLocation, getConversationSourceBadge } from '@/lib/history-source'
+import { deriveConversationOutcome } from '@/lib/conversation-outcome'
+import { filterConversations, type ConversationFilterState } from '@/lib/conversation-filters'
+import { formatConversationLocation } from '@/lib/history-source'
+import { stripTrackingParams } from '@/lib/inbox-response'
+import { stripMarkdownSyntax } from '@/lib/markdown-preview'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -41,10 +48,14 @@ export type HistoryListItem =
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
-const formatMessageCount = (messageCount: number) =>
-  `${messageCount} message${messageCount === 1 ? '' : 's'}`
-
 const emptyAgentLabel = '—'
+
+const emptyConversationFilters: ConversationFilterState = {
+  search: '',
+  outcome: 'all',
+  agentId: null,
+  siteOrigin: null,
+}
 
 const formatPageSummary = ({
   currentPage,
@@ -118,11 +129,105 @@ function HistoryPagination({
   )
 }
 
+/**
+ * Maps a derived outcome to its chip markup. There is no per-conversation deep
+ * link into Inbox today (Inbox selection is client-side state, not
+ * URL-addressable), so the "handed off" chip can only link to the Inbox tab
+ * in general.
+ */
+function ConversationOutcomeCell({
+  conversation,
+  accountId,
+  routeState,
+}: {
+  conversation: ChatConversationSummary
+  accountId: string
+  routeState: DashboardRouteState
+}) {
+  const outcome = deriveConversationOutcome(conversation, new Date())
+
+  if (outcome.kind === 'handed_off') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+        <Hand className="h-3 w-3" aria-hidden />
+        Handed off
+        <a
+          href={buildActivityTabHref(accountId, routeState, 'all', 'needs-attention')}
+          onClick={(event) => event.stopPropagation()}
+          className="underline decoration-dotted underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100"
+        >
+          open in Inbox
+        </a>
+      </span>
+    )
+  }
+
+  if (outcome.kind === 'in_progress') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+        In progress
+      </span>
+    )
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
+      <CheckCircle2 className="h-3 w-3" aria-hidden />
+      Completed
+    </span>
+  )
+}
+
+/** The visitor-identity + location meta line under a conversation's title. */
+function ConversationMetaLine({ conversation }: { conversation: ChatConversationSummary }) {
+  const visitorLabel = conversation.anonymousSessionId === null ? 'Verified' : 'Anonymous'
+  const location = formatConversationLocation(conversation)
+  const isSlack = conversation.channelContext?.provider === 'slack'
+  const trimmedEntryPageUrl = conversation.entryPageUrl?.trim() || null
+
+  let locationText = location.text
+  let locationHref: string | null = null
+
+  if (!isSlack && trimmedEntryPageUrl) {
+    const stripped = stripTrackingParams(trimmedEntryPageUrl)
+    locationText = stripped.replace(/^https?:\/\//, '')
+    // location.href is derived from this same entryPageUrl when it parses as a URL — only
+    // then is there a real page to open, so reuse it to decide link vs plain text.
+    locationHref = location.href ? stripped : null
+  }
+
+  return (
+    <span className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+      <span className="shrink-0">{visitorLabel}</span>
+      <span aria-hidden>·</span>
+      {locationHref ? (
+        <a
+          href={locationHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={locationHref}
+          onClick={(event) => event.stopPropagation()}
+          className="min-w-0 truncate hover:text-primary"
+        >
+          {locationText}
+        </a>
+      ) : (
+        <span className="min-w-0 truncate" title={location.title ?? undefined}>{locationText}</span>
+      )}
+    </span>
+  )
+}
+
 function ConversationRow({
   conversation,
+  accountId,
+  routeState,
   onSelect,
 }: {
   conversation: ChatConversationSummary
+  accountId: string
+  routeState: DashboardRouteState
   onSelect: (item: SelectedHistoryItem) => void
 }) {
   useCopilotEntity('conversation', conversation.id, conversation.preview || 'Untitled conversation')
@@ -131,8 +236,6 @@ function ConversationRow({
     conversation.agentId,
     getAgentOperatorLabel({ internalName: conversation.agentInternalName, name: conversation.agentName }, 'Unknown agent'),
   )
-  const location = formatConversationLocation(conversation)
-  const sourceBadge = getConversationSourceBadge(conversation)
   const publicNameHint = getAgentPublicNameHint({
     internalName: conversation.agentInternalName,
     name: conversation.agentName,
@@ -140,48 +243,31 @@ function ConversationRow({
 
   return (
     <DashboardTableRow>
-      <DashboardTableCell className="w-40">
-        <span
-          className="block truncate text-sm text-muted-foreground"
-          title={publicNameHint ?? undefined}
-        >
-          {getAgentOperatorLabel({ internalName: conversation.agentInternalName, name: conversation.agentName }, conversation.agentId ? 'Unknown agent' : 'No agent')}
-        </span>
-      </DashboardTableCell>
-      <DashboardTableCell>
+      <DashboardTableCell className="w-[44%]">
         <button
           type="button"
           onClick={() => onSelect({ kind: 'chat', id: conversation.id })}
           className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          <span className="block truncate">{conversation.preview || 'Untitled conversation'}</span>
+          <span className="block truncate">{stripMarkdownSyntax(conversation.preview || '') || 'Untitled conversation'}</span>
         </button>
+        <ConversationMetaLine conversation={conversation} />
       </DashboardTableCell>
-      <DashboardTableCell className="w-56 text-sm text-muted-foreground">
-        <span className="flex min-w-0 items-center gap-2">
-          {sourceBadge ? <span className={`${sourceBadge.className} shrink-0 text-xs font-medium`}>{sourceBadge.label}</span> : null}
-          {location.href ? (
-            <a
-              href={location.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={location.title ?? undefined}
-              onClick={(event) => event.stopPropagation()}
-              className="block min-w-0 truncate hover:text-primary"
-            >
-              {location.text}
-            </a>
-          ) : (
-            <span className="block min-w-0 truncate" title={location.title ?? undefined}>{location.text}</span>
-          )}
+      <DashboardTableCell>
+        <ConversationOutcomeCell conversation={conversation} accountId={accountId} routeState={routeState} />
+      </DashboardTableCell>
+      <DashboardTableCell className="text-sm text-muted-foreground">
+        <span
+          className="block truncate"
+          title={publicNameHint ?? undefined}
+        >
+          {getAgentOperatorLabel({ internalName: conversation.agentInternalName, name: conversation.agentName }, conversation.agentId ? 'Unknown agent' : 'No agent')}
         </span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-36 text-sm text-muted-foreground">
-        <span className="block truncate">
-          {formatMessageCount(conversation.messageCount)}
-        </span>
+      <DashboardTableCell className="text-right text-sm text-muted-foreground">
+        {conversation.messageCount}
       </DashboardTableCell>
-      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
+      <DashboardTableCell className="text-sm text-muted-foreground">
         {formatTimestamp(conversation.updatedAt)}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -199,10 +285,7 @@ function SearchRow({
 
   return (
     <DashboardTableRow>
-      <DashboardTableCell className="w-40">
-        <span className="block truncate text-sm text-muted-foreground">{emptyAgentLabel}</span>
-      </DashboardTableCell>
-      <DashboardTableCell>
+      <DashboardTableCell className="w-[44%]">
         <button
           type="button"
           onClick={() => onSelect({ kind: 'search', id: search.searchId })}
@@ -215,15 +298,19 @@ function SearchRow({
             Top match: {search.previewTopTitles[0]}
           </p>
         ) : null}
-      </DashboardTableCell>
-      <DashboardTableCell className="w-56 text-sm text-muted-foreground">Document search</DashboardTableCell>
-      <DashboardTableCell className="w-36 text-sm text-muted-foreground">
-        <span className="block truncate">
+        {/* Real information that would otherwise be lost when the old Details column is dropped. */}
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">
           Authenticated - {resultLabel}
           {search.activityTraceAvailable ? ' - trace available' : ''}
-        </span>
+        </p>
       </DashboardTableCell>
-      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
+      {/* No outcome data exists for document searches — a genuine gap, left empty rather than faked. */}
+      <DashboardTableCell>{null}</DashboardTableCell>
+      <DashboardTableCell className="text-sm text-muted-foreground">
+        <span className="block truncate">{emptyAgentLabel}</span>
+      </DashboardTableCell>
+      <DashboardTableCell className="text-right text-sm text-muted-foreground">—</DashboardTableCell>
+      <DashboardTableCell className="text-sm text-muted-foreground">
         {formatTimestamp(search.createdAt)}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -238,14 +325,10 @@ function ContactRow({
   onSelect: (item: SelectedHistoryItem) => void
 }) {
   const location = formatConversationLocation(contact)
-  const sourceBadge = getConversationSourceBadge(contact)
 
   return (
     <DashboardTableRow>
-      <DashboardTableCell className="w-40">
-        <span className="block truncate text-sm text-muted-foreground">{emptyAgentLabel}</span>
-      </DashboardTableCell>
-      <DashboardTableCell>
+      <DashboardTableCell className="w-[44%]">
         <button
           type="button"
           onClick={() => onSelect({ kind: 'contact', id: contact.id })}
@@ -254,30 +337,17 @@ function ContactRow({
           <span className="block truncate">{contact.messagePreview || 'Contact request'}</span>
         </button>
         <p className="mt-1 truncate text-xs text-muted-foreground">{contact.messagePreview}</p>
+        {/* Location and email/status are real information folded in from the now-dropped Source/Details columns. */}
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{location.text}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground">{contact.userEmail} - {contact.status}</p>
       </DashboardTableCell>
-      <DashboardTableCell className="w-56 text-sm text-muted-foreground">
-        <span className="flex min-w-0 items-center gap-2">
-          {sourceBadge ? <span className={`${sourceBadge.className} shrink-0 text-xs font-medium`}>{sourceBadge.label}</span> : null}
-          {location.href ? (
-            <a
-              href={location.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={location.title ?? undefined}
-              onClick={(event) => event.stopPropagation()}
-              className="block min-w-0 truncate hover:text-primary"
-            >
-              {location.text}
-            </a>
-          ) : (
-            <span className="block min-w-0 truncate" title={location.title ?? undefined}>{location.text}</span>
-          )}
-        </span>
+      {/* No outcome data exists for contact requests — a genuine gap, left empty rather than faked. */}
+      <DashboardTableCell>{null}</DashboardTableCell>
+      <DashboardTableCell className="text-sm text-muted-foreground">
+        <span className="block truncate">{emptyAgentLabel}</span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-36 text-sm text-muted-foreground">
-        <span className="block truncate">{contact.userEmail} - {contact.status}</span>
-      </DashboardTableCell>
-      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
+      <DashboardTableCell className="text-right text-sm text-muted-foreground">—</DashboardTableCell>
+      <DashboardTableCell className="text-sm text-muted-foreground">
         {formatTimestamp(contact.createdAt)}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -287,10 +357,14 @@ function ContactRow({
 function HistoryTable({
   items,
   emptyMessage,
+  accountId,
+  routeState,
   onSelect,
 }: {
   items: HistoryListItem[]
   emptyMessage: string
+  accountId: string
+  routeState: DashboardRouteState
   onSelect: (item: SelectedHistoryItem) => void
 }) {
   if (items.length === 0) {
@@ -302,13 +376,13 @@ function HistoryTable({
   }
 
   return (
-    <DashboardTable aria-label="Activity" minWidth="min-w-[980px]">
+    <DashboardTable aria-label="Conversations" minWidth="min-w-[980px]">
       <DashboardTableHead>
-        <DashboardTableHeader className="w-40">Agent</DashboardTableHeader>
-        <DashboardTableHeader>Title</DashboardTableHeader>
-        <DashboardTableHeader className="w-56">Source</DashboardTableHeader>
-        <DashboardTableHeader className="w-36">Details</DashboardTableHeader>
-        <DashboardTableHeader className="w-44">Updated</DashboardTableHeader>
+        <DashboardTableHeader className="w-[44%]">Conversation</DashboardTableHeader>
+        <DashboardTableHeader>Outcome</DashboardTableHeader>
+        <DashboardTableHeader>Agent</DashboardTableHeader>
+        <DashboardTableHeader className="text-right">Msgs</DashboardTableHeader>
+        <DashboardTableHeader>Last activity</DashboardTableHeader>
       </DashboardTableHead>
       <DashboardTableBody>
         {items.map((item) =>
@@ -316,6 +390,8 @@ function HistoryTable({
             <ConversationRow
               key={item.id}
               conversation={item.conversation}
+              accountId={accountId}
+              routeState={routeState}
               onSelect={onSelect}
             />
           ) : item.kind === 'search' ? (
@@ -399,6 +475,13 @@ export function HistoryList({
   // default. URL-level filtering (?filter=) is still honored for deep links.
   const activeFilter = editionController.normalizeHistoryFilter(filter)
   const visibleAllHistoryItems = editionController.filterActivityItems(allHistoryItems)
+
+  // Toolbar filters are local UI state, not URL-addressable: chatApi.listChatHistory only
+  // accepts limit/offset, so there is no server-side agent/outcome/site filter to route to.
+  const [conversationFilters, setConversationFilters] = useState<ConversationFilterState>(emptyConversationFilters)
+  // Filters apply only to the currently loaded page of conversations, never the full result
+  // set behind pagination — see the comment on filterConversations for why.
+  const filteredConversations = filterConversations(conversations, conversationFilters, new Date())
 
   return (
     <DashboardPage
@@ -493,6 +576,8 @@ export function HistoryList({
                   <HistoryTable
                     items={visibleAllHistoryItems}
                     emptyMessage="No saved activity on this page."
+                    accountId={accountId}
+                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}
@@ -517,6 +602,11 @@ export function HistoryList({
                 className="space-y-3"
                 isRefreshing={isLoading && conversations.length > 0}
               >
+                <ConversationToolbar
+                  conversations={conversations}
+                  filters={conversationFilters}
+                  onFiltersChange={setConversationFilters}
+                />
                 <HistoryPagination
                   accountId={accountId}
                   workspaceId={workspaceId}
@@ -536,13 +626,19 @@ export function HistoryList({
                   </div>
                 ) : (
                   <HistoryTable
-                    items={conversations.map((conversation) => ({
+                    items={filteredConversations.map((conversation) => ({
                       kind: 'chat',
                       id: conversation.id,
                       sortAt: conversation.updatedAt,
                       conversation,
                     }))}
-                    emptyMessage="No saved chats on this page."
+                    emptyMessage={
+                      conversations.length > 0 && filteredConversations.length === 0
+                        ? 'No conversations match the current filters.'
+                        : 'No saved chats on this page.'
+                    }
+                    accountId={accountId}
+                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}
@@ -593,6 +689,8 @@ export function HistoryList({
                       search,
                     }))}
                     emptyMessage="No saved searches on this page."
+                    accountId={accountId}
+                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}
@@ -643,6 +741,8 @@ export function HistoryList({
                       contact,
                     }))}
                     emptyMessage="No saved contact requests on this page."
+                    accountId={accountId}
+                    routeState={routeState}
                     onSelect={onSelectItem}
                   />
                 )}

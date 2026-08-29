@@ -120,7 +120,7 @@ import {
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
 import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
-import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
+import { steeringDirectivesFromAuthored } from "../../agents/public.js";
 import {
   type ClarificationMetricDecision,
   type ClarificationMetricReason,
@@ -646,7 +646,7 @@ export class ChatService {
     session: PreparedSession,
     accountId: string | undefined,
   ): TurnPlanDirectiveCandidate[] {
-    const additionalDirectives = (session.agent.authoredDirectives ?? []).map(authoredDirectiveToSteeringDirective);
+    const additionalDirectives = steeringDirectivesFromAuthored(session.agent.authoredDirectives);
     const query = session.effectiveQuery ?? session.userMessage.content;
     return contextualDirectiveCandidates({
       routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],

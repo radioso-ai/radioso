@@ -13,7 +13,7 @@ import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCall
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
   applyAgentConfigOverride,
-  authoredDirectiveToSteeringDirective,
+  steeringDirectivesFromAuthored,
   materializeAgentFromConfig,
   type InternalAgentConfig,
 } from "../../agents/public.js";
@@ -335,8 +335,7 @@ export class WorkbenchReplayRunner {
   }
 
   private startReplayTurnPlan(session: PreparedSession, input: WorkbenchReplayInput): void {
-    const additionalDirectives = (session.agent.authoredDirectives ?? [])
-      .map(authoredDirectiveToSteeringDirective);
+    const additionalDirectives = steeringDirectivesFromAuthored(session.agent.authoredDirectives);
     const query = session.effectiveQuery ?? session.userMessage.content;
     const directiveRuntime = this.options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
     const handle = startTurnPlan({

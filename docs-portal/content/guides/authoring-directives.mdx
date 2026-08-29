@@ -70,6 +70,20 @@ new directive with that built-in already selected in **Replaces**. Use the
 shortcut when you need to author a replacement for a built-in, then finish the
 name, condition, instruction, and priority yourself.
 
+## Turn a rule off
+
+Every authored directive has a switch on its row in the directive list. Turn
+it off to take the rule out of play immediately, without losing its name,
+condition, or instruction. This is the fastest way to confirm that a rule is
+the source of a bad reply before you rewrite it, or to compare an agent's
+answers with and without it. A disabled directive stays in the list, marked
+**Disabled**, so you can find it and turn it back on.
+
+This is different from **Replaces**, which redirects one specific built-in to
+your directive rather than switching anything off, and from deleting the
+directive, which discards the name, condition, and instruction for good. When
+you are not sure a rule should go away permanently, turn it off first.
+
 ## Add a skill only when it helps answer
 
 Most directives do not need a skill. The instruction is the rule. If a matching
@@ -114,6 +128,9 @@ standing rule.
   routine step. It acts, rather than producing the reply a directive needs.
 - A selected skill is unavailable: enable it and set its invocation mode to
   **Agent selectable**, then reopen the directive.
+- Not sure whether a directive is the cause of a bad reply: turn it off with
+  the row switch and retry the conversation, rather than guessing from the
+  instruction text.
 
 ## Read next
 

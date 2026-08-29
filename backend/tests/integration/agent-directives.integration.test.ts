@@ -126,6 +126,39 @@ describeIfDatabase("agent directives persistence", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("defaults enabled to true, persists an explicit disable, and leaves it untouched when an update doesn't mention it (#1111)", async () => {
+    const { account, workspace, agent } = await createAgent();
+
+    const created = await agentRepository.createDirective(agent.id, workspace.id, {
+      name: "off-switch",
+      condition: { kind: "always" },
+      action: "Reversibly disableable.",
+    });
+    expect(created.enabled).toBe(true);
+    const loaded = await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id);
+    expect((loaded?.authoredDirectives ?? [])[0]?.enabled).toBe(true);
+
+    const disabled = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      enabled: false,
+    });
+    expect(disabled.enabled).toBe(false);
+    const loadedAfterDisable = await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id);
+    expect((loadedAfterDisable?.authoredDirectives ?? [])[0]?.enabled).toBe(false);
+
+    // An update that never mentions `enabled` leaves the stored value untouched.
+    const unrelatedUpdate = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      action: "Still reversibly disableable.",
+    });
+    expect(unrelatedUpdate.enabled).toBe(false);
+
+    const reenabled = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      enabled: true,
+    });
+    expect(reenabled.enabled).toBe(true);
+
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("persists an authored priority and lets it be cleared back to the default", async () => {
     const { account, workspace, agent } = await createAgent();
 

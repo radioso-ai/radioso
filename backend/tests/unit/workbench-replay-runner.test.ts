@@ -624,6 +624,95 @@ describe("WorkbenchReplayRunner", () => {
     expect(capturedRequests[0]?.responseLanguage).toBe("Spanish");
   });
 
+  it("excludes a disabled authored directive from the replay turn plan's directive candidates (#1111)", async () => {
+    const planText = JSON.stringify({
+      route: "direct",
+      isIdentityQuestion: false,
+      intentTopic: null,
+      inScopeRequest: null,
+      outsideScopeRequest: null,
+      rewrite: null,
+      responseLanguage: "English",
+      routineRankings: [],
+      directiveClassifications: [{ name: "live-tone", matched: false, confidence: 0.2 }],
+    });
+    const plannerComplete = vi.fn(async (_request: { prompt: string }) => ({ text: planText }));
+    const boundAgent: ConversationAgent = {
+      ...agent(),
+      authoredDirectives: [
+        {
+          id: "directive-live",
+          agentId: "agent-1",
+          name: "live-tone",
+          condition: { kind: "contextual", description: "when the visitor asks about tone" },
+          action: "Use the live agent tone.",
+          priority: null,
+          binding: null,
+          lifecycle: null,
+          requiredCapabilities: [],
+          dependsOn: [],
+          excludes: [],
+          routes: [],
+          surfaces: [],
+          tags: [],
+          description: null,
+          enabled: true,
+          metadata: {},
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+        {
+          id: "directive-disabled",
+          agentId: "agent-1",
+          name: "disabled-tone",
+          condition: { kind: "contextual", description: "when the visitor asks about tone" },
+          action: "Use the disabled agent tone.",
+          priority: null,
+          binding: null,
+          lifecycle: null,
+          requiredCapabilities: [],
+          dependsOn: [],
+          excludes: [],
+          routes: [],
+          surfaces: [],
+          tags: [],
+          description: null,
+          enabled: false,
+          metadata: {},
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+      ],
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("direct"),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [],
+      }),
+      turnPlanCoordinator: new TurnPlanCoordinator(
+        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
+      ),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(boundAgent),
+      query: "what's your tone?",
+      history: [],
+    });
+
+    expect(plannerComplete).toHaveBeenCalledTimes(1);
+    const prompt = plannerComplete.mock.calls[0]?.[0].prompt as string;
+    expect(prompt).toContain('"name": "live-tone"');
+    expect(prompt).not.toContain("disabled-tone");
+  });
+
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {
     const boundSkill: TurnSkill = {
       definition: { name: "order_lookup", outcomeKinds: ["agent_skill"] },
@@ -670,6 +759,7 @@ describe("WorkbenchReplayRunner", () => {
         surfaces: [],
         tags: [],
         description: null,
+        enabled: true,
         metadata: {},
         createdAt: new Date(0),
         updatedAt: new Date(0),
@@ -749,6 +839,7 @@ describe("WorkbenchReplayRunner", () => {
         surfaces: [],
         tags: [],
         description: null,
+        enabled: true,
         metadata: {},
         createdAt: new Date(0),
         updatedAt: new Date(0),
@@ -826,6 +917,7 @@ describe("WorkbenchReplayRunner", () => {
         surfaces: [],
         tags: [],
         description: null,
+        enabled: true,
         metadata: {},
         createdAt: new Date(0),
         updatedAt: new Date(0),

@@ -681,6 +681,7 @@ describe("createChatProcessTurnInput", () => {
         surfaces: [],
         tags: [],
         description: null,
+        enabled: true,
         metadata: {},
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
         updatedAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -705,6 +706,47 @@ describe("createChatProcessTurnInput", () => {
       { name: "agent-tone", action: "Use the saved agent tone.", priority: 50 },
     ]);
     expect(directiveInputs[0]?.additionalDirectives?.map((directive) => directive.name)).toEqual(["agent-tone"]);
+  });
+
+  it("excludes a disabled authored directive from the engine candidate catalog (#1111)", () => {
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    session.agent = {
+      ...session.agent,
+      authoredDirectives: [{
+        id: "directive_1",
+        agentId: "agent_1",
+        name: "agent-tone",
+        condition: { kind: "always" },
+        action: "Use the saved agent tone.",
+        priority: null,
+        binding: null,
+        lifecycle: null,
+        requiredCapabilities: [],
+        dependsOn: [],
+        excludes: [],
+        routes: [],
+        surfaces: [],
+        tags: [],
+        description: null,
+        enabled: false,
+        metadata: {},
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      }],
+    };
+    const { runtime, directiveInputs } = routeScopedDirectiveRuntime([]);
+
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    expect(input.directives).toEqual([]);
+    expect(directiveInputs[0]?.additionalDirectives).toEqual([]);
   });
 
   it("fails closed when a caller tries to use the placeholder model gateway", async () => {

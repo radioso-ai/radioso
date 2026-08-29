@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createConversationEngine } from "@radioso/conversation-engine";
 import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
 import type { ConversationRoutineRunner, Routine, StagedContext } from "@radioso/conversation-contract";
+import type { AgentRecord } from "../../src/modules/agents/domain.js";
 
 import {
   ChatService,
@@ -279,6 +280,7 @@ const buildService = (input: {
   conversationSummary?: string;
   turnPlanInterpretationContextSettings?: ChatServiceOptions["turnPlanInterpretationContextSettings"];
   contextVariableRepository?: ChatServiceOptions["contextVariableRepository"];
+  agentService?: ChatServiceOptions["agentService"];
   clarification?: {
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
@@ -298,6 +300,7 @@ const buildService = (input: {
     turnRouter: input.staged.turnRouter,
     responseLanguageDetector: input.staged.responseLanguageDetector,
     directiveSteering: input.directiveSteering,
+    agentService: input.agentService,
     conversationEngine: createConversationEngine(),
     routineStore: input.routine?.routineStore,
     routineProvider: input.routine?.routineProvider,
@@ -957,6 +960,115 @@ describe("chat service fused turn planning", () => {
     });
     await fallbackService.answer({ workspaceId: "workspace-1", query: "can I get a refund?", stream: false });
     expect(gatewayFactory.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("excludes a disabled authored directive from the turn plan's directive candidates (#1111)", async () => {
+    const agentRecord: AgentRecord = {
+      id: "agent-1",
+      workspaceId: "workspace-1",
+      name: "Support",
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+      customInstruction: "",
+      suggestedQuestionsEnabled: true,
+      assistantLinkUtmEnabled: true,
+      citationDisplayEnabled: true,
+      contactRequestsEnabled: false,
+      webhookExportsEnabled: false,
+      contactRequestDelivery: { recipientEmails: [], webhook: null },
+      retrievalEnabled: true,
+      sourceScope: { mode: "all" },
+      skillSettings: {},
+      logo: null,
+      theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
+      branding: { hidePoweredBy: false, privacyPolicyUrl: null },
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      chatModelOverride: null,
+      surfaceSettings: {
+        authenticatedChat: { enabled: true },
+        anonymousChat: { enabled: false, token: null },
+        websiteEmbed: {
+          enabled: false,
+          token: null,
+          allowedOrigins: [],
+          launcherLabel: "Chat",
+          launcherPosition: "bottom-right",
+          theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
+          copy: {},
+          expertOverrides: {},
+        },
+        extensions: {},
+      },
+      authoredDirectives: [
+        {
+          id: "directive-live",
+          agentId: "agent-1",
+          name: "live-tone",
+          condition: { kind: "contextual", description: "when the visitor asks about tone" },
+          action: "Use the live agent tone.",
+          priority: null,
+          binding: null,
+          lifecycle: null,
+          requiredCapabilities: [],
+          dependsOn: [],
+          excludes: [],
+          routes: [],
+          surfaces: [],
+          tags: [],
+          description: null,
+          enabled: true,
+          metadata: {},
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+        {
+          id: "directive-disabled",
+          agentId: "agent-1",
+          name: "disabled-tone",
+          condition: { kind: "contextual", description: "when the visitor asks about tone" },
+          action: "Use the disabled agent tone.",
+          priority: null,
+          binding: null,
+          lifecycle: null,
+          requiredCapabilities: [],
+          dependsOn: [],
+          excludes: [],
+          routes: [],
+          surfaces: [],
+          tags: [],
+          description: null,
+          enabled: false,
+          metadata: {},
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+      ],
+    };
+    const planner = plannerFactory({
+      completions: [planJson({
+        route: "direct",
+        directiveClassifications: [{ name: "live-tone", matched: false, confidence: 0.2 }],
+      })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("thanks!"),
+      chatGateway: pipelineChatGateway("You're welcome!"),
+      staged: countingStagedPorts(),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [],
+      }),
+      agentService: { resolve: async () => agentRecord },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "what's your tone?", stream: false });
+
+    const prompt = planner.prompts()[0] ?? "";
+    expect(prompt).toContain('"name": "live-tone"');
+    expect(prompt).not.toContain("disabled-tone");
   });
 
   it("feeds the turn's resolved visitor context into the planner's directive classification", async () => {

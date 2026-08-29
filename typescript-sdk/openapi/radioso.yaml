@@ -2688,6 +2688,9 @@ components:
             - $ref: "#/components/schemas/AuthoredDirectiveLifecycle"
             - type: "null"
             - type: "null"
+        enabled:
+          type: boolean
+          description: Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true.
         metadata:
           type: object
           additionalProperties: {}
@@ -2759,6 +2762,9 @@ components:
             - $ref: "#/components/schemas/AuthoredDirectiveLifecycle"
             - type: "null"
             - type: "null"
+        enabled:
+          type: boolean
+          description: Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true.
         metadata:
           type: object
           additionalProperties: {}
@@ -2899,6 +2905,8 @@ components:
             - $ref: "#/components/schemas/AuthoredDirectiveLifecycle"
             - type: "null"
             - type: "null"
+        enabled:
+          type: boolean
         metadata:
           type: object
           additionalProperties: {}
@@ -2924,6 +2932,7 @@ components:
         - description
         - binding
         - lifecycle
+        - enabled
         - metadata
         - createdAt
         - updatedAt

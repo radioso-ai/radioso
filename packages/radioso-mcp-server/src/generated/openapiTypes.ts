@@ -4204,6 +4204,8 @@ export interface components {
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
+            enabled?: boolean;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -4221,6 +4223,8 @@ export interface components {
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            /** @description Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true. */
+            enabled?: boolean;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -4265,6 +4269,7 @@ export interface components {
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
+            enabled: boolean;
             metadata: {
                 [key: string]: unknown;
             };

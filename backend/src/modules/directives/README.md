@@ -27,6 +27,17 @@ resolve the engine-produced matches through the same capability and relationship
 filtering used by `DirectiveSteeringPort`. Direct retrieval surfaces still use
 `DirectiveSteeringPort` directly.
 
+An operator's reversible off switch (`AuthoredDirective.enabled`) is not a
+concept this module or its `Directive` contract knows about — a disabled
+directive is filtered out before it is ever mapped into a `Directive`, in
+`modules/agents/authoredDirectiveMapper.ts`'s `steeringDirectivesFromAuthored`,
+the only supported way to turn an agent's authored directives into candidates
+for the matcher. Do not reintroduce filtering here or in a new call site that
+maps `authoredDirectives` directly; route it through that one helper instead.
+This is a different axis from lifecycle below: `enabled` decides whether a
+directive is in play at all, `lifecycle` decides how often an in-play
+directive may fire.
+
 Matching stays **stateless per turn**. Cross-turn firing policy
 (`once_per_conversation` / `cooldown` / `repeatable`, the default) is an authored
 `Directive.lifecycle` field enforced *outside* the matcher: the chat host loads a

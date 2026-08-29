@@ -4019,6 +4019,10 @@
               }
             ]
           },
+          "enabled": {
+            "type": "boolean",
+            "description": "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true."
+          },
           "metadata": {
             "type": "object",
             "additionalProperties": {}
@@ -4126,6 +4130,10 @@
                 "type": "null"
               }
             ]
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true."
           },
           "metadata": {
             "type": "object",
@@ -4335,6 +4343,9 @@
               }
             ]
           },
+          "enabled": {
+            "type": "boolean"
+          },
           "metadata": {
             "type": "object",
             "additionalProperties": {}
@@ -4364,6 +4375,7 @@
           "description",
           "binding",
           "lifecycle",
+          "enabled",
           "metadata",
           "createdAt",
           "updatedAt"

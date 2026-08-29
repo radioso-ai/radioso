@@ -170,6 +170,7 @@ const projectAgentConfiguration = (
       id: directives[index]!.id,
       name: directives[index]!.name,
       priority: directives[index]!.priority,
+      enabled: directives[index]!.enabled,
       actionChars: directives[index]!.action.length,
     })),
     directiveCount: directives.length,

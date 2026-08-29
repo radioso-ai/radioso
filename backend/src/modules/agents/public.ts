@@ -61,7 +61,7 @@ export {
 export {
   AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY,
   authoredDirectiveToDirective,
-  authoredDirectiveToSteeringDirective,
+  steeringDirectivesFromAuthored,
   type AuthoredDirectiveMappingOptions,
 } from "./authoredDirectiveMapper.js";
 export {

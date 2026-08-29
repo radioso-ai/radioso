@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildCoachReplayOverride,
+  toReplayOverrideDirective,
   useCoachState,
   type CoachStateDeps,
 } from '@/components/dashboard/workbench/use-coach-state'
@@ -58,6 +59,7 @@ const existingDirective: Directive = {
   metadata: { owner: 'ops' },
   binding: null,
   lifecycle: null,
+  enabled: true,
   createdAt: '2026-06-01T09:00:00.000Z',
   updatedAt: '2026-06-01T09:00:00.000Z',
 }
@@ -155,6 +157,7 @@ describe('coach state', () => {
         tags: ['step:onboarding:answer'],
         description: null,
         metadata: {},
+        enabled: true,
       }],
     })
   })
@@ -175,6 +178,7 @@ describe('coach state', () => {
           tags: ['saved'],
           description: 'Existing saved behavior.',
           metadata: { owner: 'ops' },
+          enabled: true,
         },
         {
           name: 'Use release note specifics',
@@ -189,8 +193,25 @@ describe('coach state', () => {
           tags: ['step:onboarding:answer'],
           description: null,
           metadata: {},
+          enabled: true,
         },
       ],
+    })
+  })
+
+  it('carries a disabled source directive into the replay override as disabled', () => {
+    expect(toReplayOverrideDirective({ ...existingDirective, enabled: false })).toMatchObject({
+      name: 'Saved tone',
+      enabled: false,
+    })
+  })
+
+  it('defaults enabled to true for a source directive with no enabled field', () => {
+    // A freshly drafted directive (DirectiveDraftDirective) carries no enabled field at all —
+    // it previews as on, matching the backend's own default for a missing value.
+    expect(toReplayOverrideDirective(draft.directive)).toMatchObject({
+      name: 'Use release note specifics',
+      enabled: true,
     })
   })
 

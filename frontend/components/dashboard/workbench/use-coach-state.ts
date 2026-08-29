@@ -74,6 +74,11 @@ export const toReplayOverrideDirective = (directive: ReplaySourceDirective): Rep
   tags: [...(directive.tags ?? [])],
   description: directive.description ?? null,
   metadata: directive.metadata ?? {},
+  // A freshly drafted directive carries no enabled field at all, and the backend's own
+  // default for a missing value is "on" — so an absent source enabled previews as true.
+  // A saved directive always states its own value, disabled included, so a coach preview
+  // replays it exactly as the live agent runs it rather than silently re-enabling it.
+  enabled: directive.enabled ?? true,
 })
 
 export const buildCoachReplayOverride = (

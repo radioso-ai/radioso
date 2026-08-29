@@ -43,6 +43,12 @@ const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
   rationale: "Coherence check unavailable.",
 });
 
+const disabledCandidateVerdict = (): DirectiveCoherenceVerdict => ({
+  coherent: true,
+  conflicts: [],
+  rationale: "Directive is disabled and cannot fire, so it cannot conflict with other directives; coherence was not checked.",
+});
+
 export class AuthoredDirectiveService {
   constructor(private readonly options: AuthoredDirectiveServiceOptions) {}
 
@@ -93,6 +99,7 @@ export class AuthoredDirectiveService {
       routes: [],
       description: Object.prototype.hasOwnProperty.call(input, "description") ? input.description : existing.description,
       binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
+      enabled: Object.prototype.hasOwnProperty.call(input, "enabled") ? input.enabled : existing.enabled,
       metadata: input.metadata ?? existing.metadata,
     });
     await this.validateBinding(workspaceId, agentId, directive);
@@ -128,17 +135,33 @@ export class AuthoredDirectiveService {
       throw badRequest("Invalid directive input", parsed.error.flatten());
     }
     const directive = parsed.data;
-    const capabilityValidation = validateAuthoredDirectiveCapabilities(
-      directive.requiredCapabilities,
-      this.options.registeredCapabilityNames,
-    );
-    if (!capabilityValidation.ok) {
-      throw badRequest("Directive references unknown capabilities", { unknown: capabilityValidation.unknown });
+    // A disabled directive is out of play, so a capability that has since been removed or renamed
+    // cannot reach a turn through it. Rejecting the save here would make the off switch unusable
+    // in one of the cases it exists for, since an update carries the stored capabilities forward
+    // untouched. Re-enabling validates in full, like the binding and coherence gates.
+    if (directive.enabled) {
+      const capabilityValidation = validateAuthoredDirectiveCapabilities(
+        directive.requiredCapabilities,
+        this.options.registeredCapabilityNames,
+      );
+      if (!capabilityValidation.ok) {
+        throw badRequest("Directive references unknown capabilities", { unknown: capabilityValidation.unknown });
+      }
     }
     return directive;
   }
 
   private async validateBinding(workspaceId: string, agentId: string, directive: NormalizedAuthoredDirectiveInput): Promise<void> {
+    // A disabled directive is out of play and cannot fire, so a binding that would fail at
+    // runtime is not rejected here - the authored text and its binding are preserved as
+    // written, and the validation gate moves to the moment the directive comes back into
+    // play. This is the same rule checkCoherence applies to disabled candidates, and it is
+    // the point of the off switch: an operator must be able to disable a directive whose
+    // binding broke (skill disabled or deleted) rather than being blocked from saving the
+    // very action meant to stop it. Re-enabling runs this validation again in full.
+    if (!directive.enabled) {
+      return;
+    }
     const binding = directive.binding;
     if (!binding) {
       return;
@@ -178,10 +201,21 @@ export class AuthoredDirectiveService {
     candidate: NormalizedAuthoredDirectiveInput,
     existingDirectives: AuthoredDirective[],
   ): Promise<DirectiveCoherenceVerdict> {
+    // A disabled candidate is out of play and cannot fire, so it cannot conflict with
+    // anything - skip the LLM round-trip entirely. This matters because disabling is the
+    // emergency action an operator takes when a rule misfires; it must not cost a provider
+    // call whose verdict the UI would discard. Re-enabling, in contrast, brings the
+    // directive back into play and must still be checked, since that is exactly when a
+    // reintroduced conflict would matter.
+    if (!candidate.enabled) {
+      return disabledCandidateVerdict();
+    }
     try {
       const candidateDirective = authoredDirectiveToDirective(candidate);
       const comparisonDirectives = [
-        ...existingDirectives.map((directive) => authoredDirectiveToDirective(directive)),
+        // A disabled directive cannot fire, so it cannot conflict with the candidate;
+        // including it would flag noise the operator can't act on.
+        ...existingDirectives.filter((directive) => directive.enabled).map((directive) => authoredDirectiveToDirective(directive)),
         ...defaultAnswerDirectives,
       ].filter((directive) =>
         effectiveSurfaces(candidateDirective.surfaces).some((surface) =>

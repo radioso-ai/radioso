@@ -12,6 +12,28 @@ import { appendDirectiveSteeringStage } from "../../src/modules/chat/services/di
 import { composeGroundedAnswerSystemPrompt } from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
 import type { ActivityTrace } from "../../src/modules/retrieval/public.js";
 import type { CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import { steeringDirectivesFromAuthored, type AuthoredDirective } from "../../src/modules/agents/public.js";
+
+const authoredDirective = (overrides: Partial<AuthoredDirective> & Pick<AuthoredDirective, "name" | "action">): AuthoredDirective => ({
+  id: `directive:${overrides.name}`,
+  agentId: "agent-1",
+  condition: { kind: "always" },
+  priority: null,
+  requiredCapabilities: [],
+  dependsOn: [],
+  excludes: [],
+  routes: [],
+  surfaces: [],
+  tags: [],
+  description: null,
+  binding: null,
+  lifecycle: null,
+  enabled: true,
+  metadata: {},
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+  ...overrides,
+});
 
 const allowAllCapabilities: CapabilityPolicy = {
   async can() {
@@ -396,6 +418,31 @@ describe("route-scoped directive steering", () => {
       conciseReadableFormattingDirective.action,
       authored.action,
     ]);
+  });
+
+  it("never matches or renders a disabled authored directive into steering (#1111)", async () => {
+    const authored = [
+      authoredDirective({ name: "live-tone", action: "Use this agent's saved tone." }),
+      authoredDirective({ name: "disabled-tone", action: "Never should render.", enabled: false }),
+    ];
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: conciseReadableFormattingDirective },
+      ],
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval" },
+      additionalDirectives: steeringDirectivesFromAuthored(authored),
+    });
+
+    expect(result.rules.map((rule) => rule.action)).toEqual([
+      conciseReadableFormattingDirective.action,
+      "Use this agent's saved tone.",
+    ]);
+    expect(result.rules.map((rule) => rule.action)).not.toContain("Never should render.");
   });
 
   it("orders turn-provided authored directives with a priority-50 steering default", async () => {

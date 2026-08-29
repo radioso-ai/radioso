@@ -965,3 +965,349 @@ test("agent directives stay quiet until the operator asks to save", async ({ pag
   await expect(page.getByRole("dialog")).toBeHidden();
   await expect.poll(() => directiveUpdates.length).toBe(1);
 });
+
+test("agent directives settings disable and re-enable a directive from the list", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "77777777-7777-4777-8777-000000000010";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: directiveId,
+        name: "handoff-tone",
+        condition: { kind: "always" },
+        action: "Be calm and specific when handing off to support.",
+        priority: null,
+        excludes: [],
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // Disabling is the reversible, one-click response to a misfiring rule: no dialog, just the
+  // row switch, and the row keeps its text so it can be found and turned back on.
+  const disableToggle = page.getByRole("switch", { name: "Disable handoff-tone" });
+  await expect(disableToggle).toBeChecked();
+  await expect(page.getByText("handoff-tone")).toBeVisible();
+
+  await disableToggle.click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({
+    method: "PATCH",
+    directiveId,
+    body: { enabled: false },
+  });
+
+  const enableToggle = page.getByRole("switch", { name: "Enable handoff-tone" });
+  await expect(enableToggle).not.toBeChecked();
+  await expect(page.getByText("Disabled")).toBeVisible();
+  // The row is still there, still editable — disabling never hides or deletes it.
+  await expect(page.getByRole("button", { name: "Edit handoff-tone" })).toBeVisible();
+
+  await enableToggle.click();
+
+  await expect.poll(() => directiveUpdates.length).toBe(2);
+  expect(directiveUpdates[1]).toMatchObject({
+    method: "PATCH",
+    directiveId,
+    body: { enabled: true },
+  });
+  await expect(page.getByRole("switch", { name: "Disable handoff-tone" })).toBeChecked();
+  await expect(page.getByText("Disabled")).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Disable handoff-tone" })).toBeChecked();
+});
+
+test("agent directives settings surface a conflict when a directive is re-enabled", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "77777777-7777-4777-8777-000000000011";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: directiveId,
+        name: "conflict-tone",
+        condition: { kind: "always" },
+        action: "Answer at length with full background.",
+        priority: null,
+        excludes: [],
+        enabled: false,
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // Bringing a rule back into play is exactly when a conflict matters, so the verdict the
+  // update returns has to reach the panel. The toggle is a save like any other.
+  await expect(page.getByText("Potential directive conflicts")).toHaveCount(0);
+
+  await page.getByRole("switch", { name: "Enable conflict-tone" }).click();
+
+  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
+  await expect(page.getByText("The saved directive may conflict with a formatting rule.")).toBeVisible();
+
+  // Turning it back off takes it out of play, so a panel describing conflicts it can no longer
+  // have must not linger.
+  await page.getByRole("switch", { name: "Disable conflict-tone" }).click();
+
+  await expect(page.getByText("Potential directive conflicts")).toHaveCount(0);
+  await expect(page.getByText("No directive conflicts were found.")).toBeVisible();
+});
+
+test("agent directives settings keep a built-in in force while its replacement is disabled", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "77777777-7777-4777-8777-000000000012";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: directiveId,
+        name: "legal-link-policy",
+        condition: { kind: "always" },
+        action: "Use the agent's legal-source link policy instead of the default link style.",
+        priority: null,
+        excludes: ["inline-supported-links"],
+        enabled: false,
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // A disabled directive never reaches the matcher, so its exclusion never fires and the
+  // built-in still governs every reply. Retiring the built-in here would describe behavior
+  // the agent does not have.
+  await expect(page.getByText("Replaced by legal-link-policy")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toBeVisible();
+
+  await page.getByRole("switch", { name: "Enable legal-link-policy" }).click();
+
+  await expect(page.getByText("Replaced by legal-link-policy")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toHaveCount(0);
+});
+
+test("agent directives let a disabled rule with a broken binding still be edited and saved", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "77777777-7777-4777-8777-000000000013";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    agentSkills: [{ ...bindableSkill, enabled: false }],
+    directives: [
+      {
+        id: directiveId,
+        name: "refund-handoff",
+        condition: { kind: "always" },
+        action: "Refund the order using #issue_refund",
+        binding: { kind: "skill", skillName: "issue_refund" },
+        priority: 50,
+        excludes: [],
+        enabled: false,
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // A disabled directive cannot dispatch its skill, so the API accepts it with a binding that
+  // would otherwise be refused. Blocking the save here would leave an operator who has already
+  // turned a rule off unable to reword it without first repairing a binding that does nothing.
+  await page.getByRole("button", { name: "Edit refund-handoff" }).click();
+  await expect(page.getByText(/No skill named issue_refund is available to bind/)).toHaveCount(0);
+
+  await page.getByLabel("Name").fill("refund-handoff-reworded");
+  await page.getByRole("button", { name: "Save directive" }).click();
+
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]).toMatchObject({
+    method: "PATCH",
+    directiveId,
+    body: { name: "refund-handoff-reworded", enabled: false },
+  });
+});
+
+test("agent directives hold row actions while a toggle is still in flight", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const directiveId = "77777777-7777-4777-8777-000000000014";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: directiveId,
+        name: "handoff-tone",
+        condition: { kind: "always" },
+        action: "Be calm and specific when handing off to support.",
+        priority: null,
+        excludes: [],
+      },
+    ],
+  });
+
+  // Hold the toggle's response open so the in-flight window is observable rather than a race.
+  let releasePatch: () => void = () => {};
+  const patchHeld = new Promise<void>((resolve) => {
+    releasePatch = resolve;
+  });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/directives/${directiveId}`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    await patchHeld;
+    await route.fallback();
+  });
+
+  await openDirectives(page);
+  await page.getByRole("switch", { name: "Disable handoff-tone" }).click();
+
+  // The dialog opens from the row's current values and resends them all on save, so an edit
+  // started here would save the pre-toggle state back over the toggle once it lands.
+  await expect(page.getByRole("button", { name: "Edit handoff-tone" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Delete handoff-tone" })).toBeDisabled();
+
+  releasePatch();
+
+  await expect(page.getByRole("switch", { name: "Enable handoff-tone" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Edit handoff-tone" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Delete handoff-tone" })).toBeEnabled();
+});
+
+test("agent directives apply both results when two rows are toggled at once", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const firstId = "77777777-7777-4777-8777-000000000015";
+  const secondId = "77777777-7777-4777-8777-000000000016";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: firstId,
+        name: "handoff-tone",
+        condition: { kind: "always" },
+        action: "Be calm and specific when handing off to support.",
+        priority: null,
+        excludes: [],
+      },
+      {
+        id: secondId,
+        name: "refund-window",
+        condition: { kind: "always" },
+        action: "State the refund window as 30 days.",
+        priority: null,
+        excludes: [],
+      },
+    ],
+  });
+
+  // Hold the first row's response until after the second row has been toggled, so the first
+  // response lands last. The toggle is a per-row action with nothing serializing it, and an
+  // operator switching off two misfiring rules in a row is the ordinary way to reach this.
+  let releaseFirst: () => void = () => {};
+  const firstHeld = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/directives/${firstId}`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    await firstHeld;
+    await route.fallback();
+  });
+
+  await openDirectives(page);
+  await page.getByRole("switch", { name: "Disable handoff-tone" }).click();
+
+  // The second row is untouched by the first row's in-flight request and stays usable.
+  const secondToggle = page.getByRole("switch", { name: "Disable refund-window" });
+  await expect(secondToggle).toBeEnabled();
+  await secondToggle.click();
+  await expect(page.getByRole("switch", { name: "Enable refund-window" })).not.toBeChecked();
+
+  releaseFirst();
+
+  // The first row committed too, so it must not sit showing the opposite of what was stored.
+  await expect(page.getByRole("switch", { name: "Enable handoff-tone" })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Enable refund-window" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Edit handoff-tone" })).toBeEnabled();
+  await expect.poll(() => directiveUpdates.length).toBe(2);
+
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Enable handoff-tone" })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Enable refund-window" })).not.toBeChecked();
+});
+
+test("agent directives hold conflict-resolver actions while the directive they resubmit is toggling", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const subjectId = "77777777-7777-4777-8777-000000000017";
+  const otherId = "77777777-7777-4777-8777-000000000018";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    directives: [
+      {
+        id: subjectId,
+        name: "conflict-tone",
+        condition: { kind: "always" },
+        action: "Answer at length with full background.",
+        priority: null,
+        excludes: [],
+        enabled: false,
+      },
+      {
+        id: otherId,
+        name: "brief-tone",
+        condition: { kind: "always" },
+        action: "Keep answers short.",
+        priority: null,
+        excludes: [],
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  // Bring the conflict panel up by enabling the directive: the resolver now holds a copy of it.
+  await page.getByRole("switch", { name: "Enable conflict-tone" }).click();
+  await expect(page.getByText("Potential directive conflicts")).toBeVisible();
+  const supersede = page.getByRole("button", { name: "conflict-tone supersedes brief-tone" });
+  await expect(supersede).toBeEnabled();
+
+  // Now turn it off, holding the response. Each resolver action resubmits one directive in full
+  // from the copy the panel is holding, so acting on the subject mid-toggle would write its
+  // pre-toggle state back and quietly undo the disable.
+  let releasePatch: () => void = () => {};
+  const patchHeld = new Promise<void>((resolve) => {
+    releasePatch = resolve;
+  });
+  await page.route(`**/backend/api/v1/agents/${defaultAgentId}/directives/${subjectId}`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    await patchHeld;
+    await route.fallback();
+  });
+  await page.getByRole("switch", { name: "Disable conflict-tone" }).click();
+
+  await expect(supersede).toBeDisabled();
+  // The other directive is not the one in flight, so its own action stays available.
+  await expect(page.getByRole("button", { name: "brief-tone supersedes conflict-tone" })).toBeEnabled();
+
+  releasePatch();
+
+  await expect(page.getByRole("switch", { name: "Enable conflict-tone" })).not.toBeChecked();
+  await expect.poll(() => directiveUpdates.length).toBe(2);
+  expect(directiveUpdates.every((update) => update.method === "PATCH")).toBe(true);
+});

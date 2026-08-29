@@ -66,6 +66,11 @@ const replayDraftDirective = {
   routes: [],
   description: null,
   metadata: {},
+  // A drafted directive has no stored on/off state yet, so the preview replays it as on.
+  // The override states it rather than leaving it absent, because a missing value
+  // materializes as enabled server-side — which would silently replay an existing
+  // disabled directive as live.
+  enabled: true,
 };
 
 const installCoachMocks = async (

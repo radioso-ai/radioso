@@ -95,6 +95,23 @@ describe("authored directive domain validation", () => {
     }).success).toBe(false);
   });
 
+  it("defaults enabled to true when omitted, and accepts an explicit false", () => {
+    const defaulted = authoredDirectiveInputSchema.parse({
+      name: "default-enabled",
+      condition: { kind: "always" },
+      action: "Use the configured behavior.",
+    });
+    expect(defaulted.enabled).toBe(true);
+
+    const disabled = authoredDirectiveInputSchema.parse({
+      name: "explicitly-disabled",
+      condition: { kind: "always" },
+      action: "Use the configured behavior.",
+      enabled: false,
+    });
+    expect(disabled.enabled).toBe(false);
+  });
+
   it("normalizes directive tags without requiring scope prefixes", () => {
     const result = authoredDirectiveInputSchema.parse({
       name: "scoped-step",
@@ -121,6 +138,7 @@ describe("authored directive domain validation", () => {
       surfaces: [],
       tags: ["step:contact:ask_email"],
       description: null,
+      enabled: true,
       metadata: {},
     });
 

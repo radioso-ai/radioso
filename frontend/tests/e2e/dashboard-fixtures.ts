@@ -556,6 +556,7 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   metadata: {},
   binding: null,
   lifecycle: null,
+  enabled: true,
   createdAt: nowIso,
   updatedAt: nowIso,
   ...input,
@@ -1010,6 +1011,15 @@ export const installDashboardApiMocks = async (
   let nextMcpConverseGrantIndex = mcpConverseGrants.length + 1;
   const webhookDestinationUpdates = options.webhookDestinationUpdates;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
+    // Mirrors the backend: a disabled directive is not checked at all, so disabling one
+    // always comes back coherent regardless of what would otherwise conflict.
+    if (!directive.enabled) {
+      return {
+        coherent: true,
+        conflicts: [],
+        rationale: "Skipped: this directive is disabled and was not checked.",
+      };
+    }
     const hasConflict =
       (directive.name.toLowerCase().includes("conflict") || directive.action.toLowerCase().includes("verbose")) &&
       directive.excludes.length === 0;
@@ -1853,6 +1863,7 @@ export const installDashboardApiMocks = async (
           requiredCapabilities: body.requiredCapabilities ?? [],
           description: body.description ?? null,
           metadata: body.metadata ?? {},
+          enabled: body.enabled ?? true,
         });
         nextDirectiveIndex += 1;
         directives = [...directives, directive];

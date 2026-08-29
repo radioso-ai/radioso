@@ -333,6 +333,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     description: z.string().min(1).max(1000).nullable().optional(),
     binding: z.union([AuthoredDirectiveBindingSchema, z.null()]).optional(),
     lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]).optional(),
+    enabled: z.boolean().optional().openapi({
+      description: "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true.",
+    }),
     metadata: z.record(z.unknown()).optional(),
   }).strict();
 
@@ -397,6 +400,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
       lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      enabled: z.boolean(),
       metadata: z.record(z.unknown()),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),

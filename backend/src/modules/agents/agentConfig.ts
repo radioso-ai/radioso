@@ -81,6 +81,7 @@ export interface AuthoredDirectiveConfig {
   description: string | null;
   binding: AuthoredDirectiveBinding;
   lifecycle: AuthoredDirectiveLifecycle;
+  enabled: boolean;
   metadata: Record<string, unknown>;
 }
 
@@ -608,6 +609,7 @@ const serializeAuthoredDirectives = (
     description: directive.description,
     binding: directive.binding,
     lifecycle: directive.lifecycle,
+    enabled: directive.enabled,
     metadata: cloneJson(directive.metadata),
   }));
 
@@ -804,6 +806,11 @@ const materializeAuthoredDirectives = (
     description: directive.description ?? null,
     binding: directive.binding ?? null,
     lifecycle: directive.lifecycle ?? null,
+    // Defensive default: a config serialized before this field existed carries no
+    // `enabled` at all, and that silence must read as "live," not "off" — the field
+    // is a reversible off switch an operator sets deliberately, so its absence can
+    // never be the thing that turns a directive off.
+    enabled: directive.enabled ?? true,
     metadata: cloneJson(directive.metadata ?? {}),
     createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
     updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),

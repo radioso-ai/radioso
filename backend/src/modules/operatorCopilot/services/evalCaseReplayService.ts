@@ -22,6 +22,17 @@ const readDirectiveName = (config: Record<string, unknown>): string | null => {
   return typeof name === "string" && name.length > 0 ? name : null;
 };
 
+/**
+ * A snapshot captured before a field existed simply omits it, while the live serialization states
+ * it. Comparing those directly would report an untouched directive as changed and refuse a replay
+ * that is perfectly honest, so both sides are read through the same defaults materialization
+ * applies: an absent `enabled` means the directive was in play. Defaulting both sides rather than
+ * only the snapshot keeps the comparison symmetric, so it stays a question about the directive's
+ * content rather than about which side happens to spell a default out.
+ */
+const withDirectiveDefaults = (config: Record<string, unknown>): Record<string, unknown> =>
+  Object.prototype.hasOwnProperty.call(config, "enabled") ? config : { ...config, enabled: true };
+
 export interface EvalCaseReplayServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   cases: CopilotEvalCaseReaderPort;
   runs: CopilotEvalCaseReplayRunnerPort;
@@ -169,7 +180,7 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
           `Replay cannot exclude directive ${id}: it is not present in this case's captured snapshot, so its removal cannot be measured against it`,
         );
       }
-      if (!isDeepStrictEqual(live.config, snapshotDirective)) {
+      if (!isDeepStrictEqual(withDirectiveDefaults(live.config), withDirectiveDefaults(snapshotDirective))) {
         throw badRequest(
           `Replay cannot exclude directive "${name}": it has changed since this case's snapshot was captured, so this replay cannot honestly attribute a result to removing it`,
         );

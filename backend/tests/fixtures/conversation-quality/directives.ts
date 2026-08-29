@@ -25,6 +25,7 @@ const baseDirective = (
   description: null,
   binding: null,
   lifecycle: null,
+  enabled: true,
   metadata: {},
   createdAt: FIXED_DATE,
   updatedAt: FIXED_DATE,

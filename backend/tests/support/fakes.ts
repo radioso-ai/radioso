@@ -1108,6 +1108,7 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
       tags: input.tags ?? existing.tags,
       description: input.description ?? existing.description,
       binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
+      enabled: Object.prototype.hasOwnProperty.call(input, "enabled") ? input.enabled : existing.enabled,
       metadata: input.metadata ?? existing.metadata,
     });
     this.throwDirectiveNameConflict(agentId, normalized.name, directiveId);

@@ -82,6 +82,7 @@ export const authoredDirective = (overrides: Record<string, unknown> = {}) => ({
   description: null,
   binding: null,
   lifecycle: null,
+  enabled: true,
   metadata: {},
   createdAt: new Date("2026-08-01T10:00:00.000Z"),
   updatedAt: new Date("2026-08-01T10:00:00.000Z"),

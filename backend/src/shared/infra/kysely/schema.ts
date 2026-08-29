@@ -112,6 +112,7 @@ export interface AgentDirectives {
   created_at: Generated<Timestamp>;
   depends_on: Generated<string[]>;
   description: string | null;
+  enabled: Generated<boolean>;
   excludes: Generated<string[]>;
   id: Generated<string>;
   lifecycle: Json | null;

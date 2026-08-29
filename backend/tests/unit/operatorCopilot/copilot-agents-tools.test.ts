@@ -90,6 +90,34 @@ describe("copilot agent readers", () => {
     expect(serialized).not.toContain("https://private.example.com");
   });
 
+  it("reports whether a directive is enabled, in both the summary list and the detail view", async () => {
+    const directives = [
+      authoredDirective({
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        name: "Live directive",
+        enabled: true,
+      }),
+      authoredDirective({
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        name: "Disabled directive",
+        enabled: false,
+      }),
+    ];
+    const ports = dependencies(undefined, resolvedAgent(directives));
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "agent_configuration")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")).invoke({
+      mode: "detail",
+      directiveId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    }, {} as never) as { agent: Record<string, unknown> };
+
+    expect(result.agent.authoredDirectives).toEqual([
+      expect.objectContaining({ name: "Live directive", enabled: true }),
+      expect.objectContaining({ name: "Disabled directive", enabled: false }),
+    ]);
+    expect(result.agent.directive).toMatchObject({ name: "Disabled directive", enabled: false });
+  });
+
   it("reports directive bounds and retrieves a selected long directive without truncating its action", async () => {
     const longAction = "Evidence ".repeat(440).trim();
     const directives = Array.from({ length: 41 }, (_, index) => authoredDirective({

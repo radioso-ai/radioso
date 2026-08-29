@@ -90,7 +90,13 @@ describe('eval coaching replay adapter', () => {
       originalRetrievalSettings: null,
       originalRetrievalResult: null,
       originalAgent: null,
-      originalAgentConfig: { name: 'Captured agent' },
+      originalAgentConfig: {
+        name: 'Captured agent',
+        authoredDirectives: [
+          { name: 'Turned off at capture', condition: { kind: 'always' }, action: 'Say nothing', enabled: false },
+          { name: 'Captured before the field existed', condition: { kind: 'always' }, action: 'Be brief' },
+        ],
+      },
       sourceAgentId: 'agent-1',
       originalRoutineState: null,
       capturedAt: now,
@@ -113,6 +119,39 @@ describe('eval coaching replay adapter', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+  })
+
+  it('replays a captured directive with the on/off state the snapshot captured', async () => {
+    // The eval page falls back to the captured snapshot as its replay baseline whenever the live
+    // agent settings are unavailable, and the replay always sends authoredDirectives. The backend
+    // reads an absent `enabled` as on, so omitting it here would quietly run a directive the
+    // snapshot captured as off — measuring a different configuration than the case captured.
+    await act(async () => {
+      root.render(
+        <EvalView
+          accountId="account-1"
+          routeState={{ evalCaseId: 'case-1' } as DashboardRouteState}
+        />,
+      )
+    })
+
+    const runButton = await vi.waitFor(() => {
+      const button = Array.from(container.querySelectorAll('button'))
+        .find((candidate) => candidate.textContent?.trim() === 'Run case')
+      if (!button) throw new Error('Run case button not rendered')
+      return button
+    })
+    await act(async () => {
+      runButton.click()
+    })
+
+    await vi.waitFor(() => expect(mocks.runCase).toHaveBeenCalled())
+    const directives = mocks.runCase.mock.calls[0]?.[1]?.overrides?.agentConfigOverride?.authoredDirectives
+    expect(directives).toEqual([
+      expect.objectContaining({ name: 'Turned off at capture', enabled: false }),
+      // Absent at capture means the directive was in play, so it replays as on.
+      expect.objectContaining({ name: 'Captured before the field existed', enabled: true }),
+    ])
   })
 
   it('forwards generated suggestions to the training preview', async () => {

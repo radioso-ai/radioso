@@ -62,6 +62,7 @@ const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<Au
     description: input.description ?? null,
     binding: input.binding ?? null,
     lifecycle: null,
+    enabled: input.enabled ?? true,
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -117,6 +118,7 @@ class StubAgentRepository implements StubAgentRepositoryPort {
       excludes: input.excludes ?? existing?.excludes ?? [],
       tags: input.tags ?? existing?.tags ?? [],
       binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing?.binding ?? null,
+      enabled: Object.prototype.hasOwnProperty.call(input, "enabled") ? input.enabled : existing?.enabled ?? true,
     });
     return { ...merged, id: directiveId };
   }
@@ -374,6 +376,28 @@ describe("AuthoredDirectiveService", () => {
     ]);
   });
 
+  it("excludes disabled directives from the coherence comparison set", async () => {
+    const repository = new StubAgentRepository();
+    repository.directives.push(
+      persistedDirective(directiveInput({ name: "live-directive" })),
+      persistedDirective(directiveInput({ name: "disabled-directive" }), { enabled: false }),
+    );
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.create(workspaceId, agentId, directiveInput());
+
+    // A directive that cannot fire cannot conflict, so it never reaches the checker.
+    expect(checker.checks[0]?.existingDirectives.map((directive) => directive.name)).toEqual([
+      "live-directive",
+      ...defaultAnswerDirectives.map((directive) => directive.name),
+    ]);
+  });
+
   it("compares coherence only with directives that address the candidate's surfaces", async () => {
     const repository = new StubAgentRepository();
     repository.directives.push(
@@ -468,6 +492,217 @@ describe("AuthoredDirectiveService", () => {
 
     await service.update(workspaceId, agentId, existing.id, { priority: null });
     expect(repository.updated.at(-1)?.input.priority).toBeNull();
+  });
+
+  it("defaults enabled to true on create, and forwards it with has-own semantics on update", async () => {
+    const repository = new StubAgentRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    const enabledOnCreate = await service.create(workspaceId, agentId, directiveInput({ name: "on-by-default" }));
+    expect(enabledOnCreate.directive.enabled).toBe(true);
+    expect(repository.created.at(-1)?.enabled).toBe(true);
+
+    const disabled = await service.create(workspaceId, agentId, directiveInput({ name: "off", enabled: false }));
+    expect(disabled.directive.enabled).toBe(false);
+    expect(repository.created.at(-1)?.enabled).toBe(false);
+
+    // Omitting enabled on update preserves the stored value rather than resetting it to true.
+    await service.update(workspaceId, agentId, disabled.directive.id, { action: "Reworded." });
+    expect(repository.updated.at(-1)?.input.enabled).toBe(false);
+
+    // An explicit value flips it.
+    await service.update(workspaceId, agentId, disabled.directive.id, { enabled: true });
+    expect(repository.updated.at(-1)?.input.enabled).toBe(true);
+  });
+
+  it("skips the coherence check and returns a coherent verdict when a directive is updated to disabled", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "flaky-rule" }));
+    repository.directives.push(existing);
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    const result = await service.update(workspaceId, agentId, existing.id, { enabled: false });
+
+    // Turning a directive off is the emergency action an operator takes when a rule
+    // misfires; it should not cost an LLM round-trip whose verdict the UI discards.
+    expect(checker.checks).toHaveLength(0);
+    expect(result.coherence.coherent).toBe(true);
+    expect(result.coherence.conflicts).toEqual([]);
+    expect(result.coherence.rationale).not.toBe("Coherence check unavailable.");
+  });
+
+  it("still runs the coherence check when a directive is updated back to enabled", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({ name: "recovering-rule" }), { enabled: false });
+    repository.directives.push(existing);
+    const checker = new CapturingChecker(coherentVerdict);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    const result = await service.update(workspaceId, agentId, existing.id, { enabled: true });
+
+    // Re-enabling brings the directive back into play, which can reintroduce a
+    // conflict - exactly when the operator wants to be told.
+    expect(checker.checks).toHaveLength(1);
+    expect(result.coherence).toEqual(coherentVerdict);
+  });
+
+  it("skips the coherence check when a directive is created as disabled", async () => {
+    const repository = new StubAgentRepository();
+    const checker = new CapturingChecker();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    const result = await service.create(workspaceId, agentId, directiveInput({ name: "born-off", enabled: false }));
+
+    expect(checker.checks).toHaveLength(0);
+    expect(result.coherence.coherent).toBe(true);
+    expect(result.coherence.conflicts).toEqual([]);
+  });
+
+  it("saves a directive turned off even when its bound skill is disabled or missing", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "broken-binding-rule",
+      binding: { kind: "skill", skillName: "order.lookup" },
+      surfaces: ["answer"],
+    }));
+    repository.directives.push(existing);
+    // order.lookup is not registered with the agent's skills at all, simulating a
+    // deleted skill; the binding is exactly the kind of broken state an operator
+    // would want to switch off.
+    const agentSkills = new StubAgentSkillRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    const result = await service.update(workspaceId, agentId, existing.id, { enabled: false });
+
+    expect(result.directive.enabled).toBe(false);
+    expect(repository.updated.at(-1)?.input.enabled).toBe(false);
+    expect(repository.updated.at(-1)?.input.binding).toEqual({ kind: "skill", skillName: "order.lookup" });
+  });
+
+  it("saves a directive turned off even when it requires a capability that no longer exists", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "stale-capability-rule",
+      requiredCapabilities: ["retired.capability"],
+    }));
+    repository.directives.push(existing);
+    // An update carries the stored capabilities forward untouched, so a capability removed or
+    // renamed in code would otherwise make this directive impossible to switch off.
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    const result = await service.update(workspaceId, agentId, existing.id, { enabled: false });
+
+    expect(result.directive.enabled).toBe(false);
+    expect(repository.updated.at(-1)?.input.requiredCapabilities).toEqual(["retired.capability"]);
+  });
+
+  it("rejects re-enabling a directive that requires a capability that no longer exists", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "stale-capability-rule",
+      requiredCapabilities: ["retired.capability"],
+    }), { enabled: false });
+    repository.directives.push(existing);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await expect(service.update(workspaceId, agentId, existing.id, { enabled: true }))
+      .rejects.toThrow(/unknown capabilities/i);
+  });
+
+  it("rejects re-enabling a directive whose bound skill is still disabled or missing", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "broken-binding-rule",
+      binding: { kind: "skill", skillName: "order.lookup" },
+      surfaces: ["answer"],
+    }), { enabled: false });
+    repository.directives.push(existing);
+    const agentSkills = new StubAgentSkillRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    // Bringing the directive back into play must still validate the binding, since
+    // that is exactly when a broken binding would matter again at runtime.
+    await expect(service.update(workspaceId, agentId, existing.id, { enabled: true })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("saves a directive turned off even when its binding is scoped away from the reply", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "scoped-away-rule",
+      binding: { kind: "skill", skillName: "order.lookup" },
+      surfaces: ["suggested_questions"],
+    }));
+    repository.directives.push(existing);
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    // The surface-scope rejection is the same class of authoring-time-only rule as the
+    // skill lookups, so it skips too when the guard sits at validateBinding's entry.
+    const result = await service.update(workspaceId, agentId, existing.id, { enabled: false });
+
+    expect(result.directive.enabled).toBe(false);
+  });
+
+  it("creates a directive turned off with an invalid binding without validating it", async () => {
+    const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    const result = await service.create(workspaceId, agentId, directiveInput({
+      name: "born-off-broken-binding",
+      binding: { kind: "skill", skillName: "order.lookup" },
+      surfaces: ["answer"],
+      enabled: false,
+    }));
+
+    expect(result.directive.enabled).toBe(false);
+    expect(repository.created.at(-1)?.binding).toEqual({ kind: "skill", skillName: "order.lookup" });
   });
 
   it("rejects a skill binding on a directive scoped away from the reply", async () => {

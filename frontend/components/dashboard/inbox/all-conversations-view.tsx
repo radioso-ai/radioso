@@ -18,7 +18,12 @@ import {
   consumeAudiencePulseEvidenceHandoff,
   type AudiencePulseEvidenceHandoff,
 } from '@/lib/audience-pulse-evidence-handoff'
-import { AllConversationsListPane, filterAllLensItems } from './all-conversations-list-pane'
+import {
+  AllConversationsListPane,
+  buildAgentOptions,
+  buildSiteOptions,
+  filterAllLensItems,
+} from './all-conversations-list-pane'
 import { InboxLensToggle } from './inbox-lens-toggle'
 import { InboxResponseView, type InboxResponseSelection } from './inbox-response-view'
 
@@ -260,6 +265,17 @@ export function AllConversationsView({
     [items, conversationFilters, now],
   )
 
+  // Built from the unfiltered loaded page, not filteredItems — otherwise an
+  // active filter or search narrows the dropdowns themselves, hiding other
+  // agents/sites (including the one behind the operator's own active
+  // selection) instead of just narrowing the rows.
+  const unfilteredChatConversations = useMemo(
+    () => items.flatMap((entry) => (entry.kind === 'chat' ? [entry.conversation] : [])),
+    [items],
+  )
+  const agentOptions = useMemo(() => buildAgentOptions(unfilteredChatConversations), [unfilteredChatConversations])
+  const siteOptions = useMemo(() => buildSiteOptions(unfilteredChatConversations), [unfilteredChatConversations])
+
   // A chat selection always resolves — the response view loads the
   // conversation independently by id (same as the old history drawer), so a
   // deep link works even when the row isn't on the currently loaded page. The
@@ -323,6 +339,8 @@ export function AllConversationsView({
             <AllConversationsListPane
               lensToggle={lensToggle}
               items={filteredItems}
+              agentOptions={agentOptions}
+              siteOptions={siteOptions}
               filters={conversationFilters}
               onFiltersChange={setConversationFilters}
               now={now}

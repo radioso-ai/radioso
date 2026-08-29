@@ -344,6 +344,7 @@ export function InboxResponseView({
           conversationId={effectiveItem.conversationId}
           ownership={conversationDetail?.ownership}
           onChanged={handleChanged}
+          externalError={handBackRunner.error}
           trailingActions={effectiveItem.type !== 'approval' ? (
             <Tooltip>
               <TooltipTrigger asChild>

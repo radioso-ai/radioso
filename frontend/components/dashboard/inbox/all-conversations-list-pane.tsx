@@ -111,17 +111,17 @@ function ConversationRow({
   const location = formatConversationLocation(conversation)
   const isSlack = conversation.channelContext?.provider === 'slack'
   const trimmedEntryPageUrl = conversation.entryPageUrl?.trim() || null
-  // Mirrors ConversationMetaLine (history-list.tsx): the stripped entry URL
-  // replaces the plain source description whenever one is available, and
-  // only becomes a link when formatConversationLocation already found a
-  // parseable href — Slack rows never show a raw URL here.
-  let locationText = location.text
-  let locationHref: string | null = null
-  if (!isSlack && trimmedEntryPageUrl) {
-    const stripped = stripTrackingParams(trimmedEntryPageUrl)
-    locationText = stripped.replace(/^https?:\/\//, '')
-    locationHref = location.href ? stripped : null
-  }
+  // Mirrors ConversationMetaLine's text (history-list.tsx): the stripped
+  // entry URL replaces the plain source description whenever one is
+  // available. Unlike that table cell, this row is itself one big button
+  // (the row-select control), so the entry URL renders as plain text here
+  // rather than a nested <a> — an anchor inside a button is invalid HTML and
+  // breaks keyboard/screen-reader activation. The response view's header
+  // renders the same URL as a real, independently clickable link once the
+  // row is selected.
+  const locationText = !isSlack && trimmedEntryPageUrl
+    ? stripTrackingParams(trimmedEntryPageUrl).replace(/^https?:\/\//, '')
+    : location.text
 
   return (
     <RowShell selected={selected} onSelect={onSelect}>
@@ -133,20 +133,7 @@ function ConversationRow({
         <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs text-muted-foreground">
           <span className="shrink-0">{visitorLabel}</span>
           <span aria-hidden>·</span>
-          {locationHref ? (
-            <a
-              href={locationHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={locationHref}
-              onClick={(event) => event.stopPropagation()}
-              className="min-w-0 truncate hover:text-primary hover:underline"
-            >
-              {locationText}
-            </a>
-          ) : (
-            <span className="min-w-0 truncate" title={location.title ?? undefined}>{locationText}</span>
-          )}
+          <span className="min-w-0 truncate" title={trimmedEntryPageUrl ?? location.title ?? undefined}>{locationText}</span>
         </span>
         <OutcomeChip outcome={outcome} />
       </div>
@@ -203,8 +190,14 @@ function ContactEntryRow({
   )
 }
 
-/** Distinct agents among the currently loaded chat entries, in first-seen order. */
-const buildAgentOptions = (conversations: ChatConversationSummary[]) => {
+/**
+ * Distinct agents among the currently loaded chat entries, in first-seen
+ * order. Exported so the caller can build options from the unfiltered page
+ * (see `AllConversationsListPaneProps.agentOptions`) — computing them from a
+ * filtered view would drop agents/sites the operator isn't currently
+ * looking at, including the one behind an active filter selection.
+ */
+export const buildAgentOptions = (conversations: ChatConversationSummary[]) => {
   const seen = new Map<string, string>()
   for (const conversation of conversations) {
     if (conversation.agentId && !seen.has(conversation.agentId)) {
@@ -220,8 +213,8 @@ const buildAgentOptions = (conversations: ChatConversationSummary[]) => {
   return [...seen.entries()].map(([agentId, label]) => ({ agentId, label }))
 }
 
-/** Distinct non-null site origins among the currently loaded chat entries, in first-seen order. */
-const buildSiteOptions = (conversations: ChatConversationSummary[]) => {
+/** Distinct non-null site origins among the currently loaded chat entries, in first-seen order. See `buildAgentOptions` for why this is exported. */
+export const buildSiteOptions = (conversations: ChatConversationSummary[]) => {
   const seen = new Set<string>()
   for (const conversation of conversations) {
     if (conversation.sourceOrigin) {
@@ -270,6 +263,15 @@ export const filterAllLensItems = (
 export interface AllConversationsListPaneProps {
   lensToggle: ReactNode
   items: HistoryListItem[]
+  /**
+   * Built by the caller from the unfiltered loaded page (see
+   * `buildAgentOptions`/`buildSiteOptions`), not from `items` above — `items`
+   * is already filter-narrowed, and deriving options from it would make
+   * agents/sites disappear from the dropdowns (including the one behind an
+   * active filter) as soon as any filter or search narrows the rows.
+   */
+  agentOptions: ReturnType<typeof buildAgentOptions>
+  siteOptions: ReturnType<typeof buildSiteOptions>
   filters: ConversationFilterState
   onFiltersChange: (next: ConversationFilterState) => void
   now: Date
@@ -290,6 +292,8 @@ export interface AllConversationsListPaneProps {
 export function AllConversationsListPane({
   lensToggle,
   items,
+  agentOptions,
+  siteOptions,
   filters,
   onFiltersChange,
   now,
@@ -297,10 +301,6 @@ export function AllConversationsListPane({
   onSelect,
   pagination,
 }: AllConversationsListPaneProps) {
-  const chatConversations = items.flatMap((entry) => (entry.kind === 'chat' ? [entry.conversation] : []))
-  const agentOptions = buildAgentOptions(chatConversations)
-  const siteOptions = buildSiteOptions(chatConversations)
-
   return (
     <aside className="flex w-full shrink-0 flex-col border-border md:w-[360px] md:border-r" aria-label="Conversations">
       <div className="shrink-0 space-y-2 border-b border-border p-3">

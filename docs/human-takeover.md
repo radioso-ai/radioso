@@ -216,9 +216,10 @@ visible throughout. Sending a reply claims the item for you — there is no
 separate take-over step. Messages carry attribution (a badge for human-agent
 and system messages), and the pane reads the tail endpoint while open, so
 new visitor messages and your own replies appear without a manual refresh.
-**Done** closes a handoff or approval and hands the conversation back to the
-agent; on a negative-feedback item, **Done** opens the same resolution-reason
-flow Quality → Review uses to classify it. For any other conversation, the
+**Done** closes a handoff and hands the conversation back to the agent; on a
+negative-feedback item, **Done** opens the same resolution-reason flow
+Quality → Review uses to classify it. An approval closes when you choose one
+of its decision options — it needs no separate Done step. For any other conversation, the
 reading pane is read-only, with an outcome footer in place of the composer.
 
 The browser tab title carries the count of open items, and a soft sound plays

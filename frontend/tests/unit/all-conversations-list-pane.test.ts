@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
 import type { HistoryListItem } from '@/components/dashboard/history/history-list'
-import { filterAllLensItems } from '@/components/dashboard/inbox/all-conversations-list-pane'
+import {
+  buildAgentOptions,
+  buildSiteOptions,
+  filterAllLensItems,
+} from '@/components/dashboard/inbox/all-conversations-list-pane'
 import { EMPTY_CONVERSATION_FILTERS, type ConversationFilterState } from '@/lib/conversation-filters'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
+
+const chatConversation = (entry: HistoryListItem): ChatConversationSummary => {
+  if (entry.kind !== 'chat') {
+    throw new Error('expected a chat entry')
+  }
+  return entry.conversation
+}
 
 const NOW = new Date('2026-08-28T12:00:00.000Z')
 const OLD_TIMESTAMP = new Date(NOW.getTime() - 60 * 60 * 1000).toISOString()
@@ -120,5 +131,44 @@ describe('filterAllLensItems', () => {
     const result = filterAllLensItems(items, filters({ siteOrigin: 'https://www.anandaedizioni.it' }), NOW)
 
     expect(result.map((entry) => entry.kind)).toEqual(['chat'])
+  })
+})
+
+describe('buildAgentOptions / buildSiteOptions', () => {
+  it('stay stable while a filter is active — options must be built from the unfiltered page, not the filtered rows', () => {
+    const items = [
+      chatEntry({ id: 'a', agentId: 'agent-1', agentName: 'Gioia', sourceOrigin: 'https://www.anandaedizioni.it', preview: 'Recupero accesso' }),
+      chatEntry({ id: 'b', agentId: 'agent-2', agentName: 'Claudio', sourceOrigin: 'https://corsi.ananda.it', preview: 'Orari corsi yoga' }),
+    ]
+    const unfilteredConversations = items.map(chatConversation)
+
+    // An active search filter narrows the visible rows to just "a"...
+    const visibleRows = filterAllLensItems(items, filters({ search: 'recupero' }), NOW)
+    expect(visibleRows.map((entry) => entry.id)).toEqual(['a'])
+
+    // ...but the dropdown options, built from the unfiltered page the caller
+    // holds onto separately, must still offer both agents and both sites —
+    // including agent-2/corsi.ananda.it, which the active filter hides from
+    // the row list but must not hide from the filter itself.
+    expect(buildAgentOptions(unfilteredConversations)).toEqual([
+      { agentId: 'agent-1', label: 'Gioia' },
+      { agentId: 'agent-2', label: 'Claudio' },
+    ])
+    expect(buildSiteOptions(unfilteredConversations)).toEqual([
+      'https://www.anandaedizioni.it',
+      'https://corsi.ananda.it',
+    ])
+  })
+
+  it('would silently drop an option if built from the filtered rows instead (the regression this guards against)', () => {
+    const items = [
+      chatEntry({ id: 'a', agentId: 'agent-1', agentName: 'Gioia', preview: 'Recupero accesso' }),
+      chatEntry({ id: 'b', agentId: 'agent-2', agentName: 'Claudio', preview: 'Orari corsi yoga' }),
+    ]
+
+    const visibleRows = filterAllLensItems(items, filters({ search: 'recupero' }), NOW)
+    const optionsFromFilteredRows = buildAgentOptions(visibleRows.map(chatConversation))
+
+    expect(optionsFromFilteredRows).toEqual([{ agentId: 'agent-1', label: 'Gioia' }])
   })
 })

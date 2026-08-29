@@ -96,6 +96,16 @@ export interface OperatorComposerProps {
    * per-item-type semantics.
    */
   trailingActions?: ReactNode
+  /**
+   * An error from a mutation run outside this composer's own send runner —
+   * today, the response view's Done control (hand-back), which runs through
+   * its own `useOperatorActionRunner` since Done's semantics vary by item
+   * type. Surfaced through this composer's one visible error slot rather than
+   * a second error area, so Send and Done never disagree about where an
+   * operator looks for what went wrong. Falls back behind the composer's own
+   * send error when both are set.
+   */
+  externalError?: string | null
 }
 
 /**
@@ -112,12 +122,14 @@ export function OperatorComposer({
   onChanged,
   disabled,
   trailingActions,
+  externalError,
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
   const actions = useMemo(() => deriveOperatorActions(ownership), [ownership])
   const runner = useOperatorActionRunner(conversationId, onChanged)
   const trimmedMessage = message.trim()
   const isDisabled = disabled || runner.isBusy
+  const visibleError = runner.error ?? externalError ?? null
 
   const handleSend = useCallback(() => {
     if (trimmedMessage.length === 0) {
@@ -163,9 +175,9 @@ export function OperatorComposer({
         onChange={(event) => setMessage(event.target.value)}
         className="min-h-16 resize-y"
       />
-      {runner.error ? (
+      {visibleError ? (
         <p className="text-xs text-destructive" role="status" aria-live="polite">
-          {runner.error}
+          {visibleError}
         </p>
       ) : null}
       <div className="flex items-center gap-2">

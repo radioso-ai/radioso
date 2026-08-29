@@ -247,9 +247,10 @@ test("shared activity navigation shows assistant route diagnostics", async ({ pa
   await expect(page.getByText("Turn flow", { exact: true })).toHaveCount(0);
 });
 
-test("the All lens row shows the visitor label and a clickable, tracking-stripped entry-page location", async ({ page }) => {
+test("the All lens row shows the visitor label and location as plain text; the reading pane header carries the real, tracking-stripped link", async ({ page }) => {
+  const conversationId = "conversation-legibility-selected";
   const conversation = {
-    id: "conversation-legibility-selected",
+    id: conversationId,
     agentId: defaultAgentId,
     agentName: "Marta",
     agentInternalName: "Website support",
@@ -265,6 +266,31 @@ test("the All lens row shows the visitor label and a clickable, tracking-strippe
     assistantMessageCount: 1,
     preview: "Selected agent conversation",
   };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    agentInternalName: "Website support",
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://it.ananda.eu",
+    entryPageUrl: "https://it.ananda.eu/support/getting-started?utm_source=chat",
+    channelContext: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      { id: "user-message-legibility", role: "user" as const, source: "customer" as const, content: "Selected agent conversation", createdAt: nowIso },
+      { id: "assistant-message-legibility", role: "assistant" as const, source: "ai_agent" as const, content: "Happy to help.", createdAt: nowIso },
+    ],
+  };
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -274,16 +300,26 @@ test("the All lens row shows the visitor label and a clickable, tracking-strippe
       nextCursor: null,
       hasMore: false,
     },
+    conversationDetail,
   });
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   const row = page.getByRole("button", { name: /Selected agent conversation/ });
 
   await expect(row).toContainText("Anonymous");
-  await expect(row.getByRole("link", { name: "it.ananda.eu/support/getting-started" })).toHaveAttribute(
-    "href",
-    "https://it.ananda.eu/support/getting-started",
-  );
+  // The location renders as plain text inside the row — the row is itself
+  // one big button (the row-select control), and an <a> nested inside a
+  // <button> is invalid HTML that breaks keyboard/screen-reader activation.
+  await expect(row).toContainText("it.ananda.eu/support/getting-started");
+  await expect(row.getByRole("link")).toHaveCount(0);
+
+  // The real, independently clickable, tracking-stripped link lives in the
+  // reading pane header once the conversation is selected.
+  await row.click();
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(
+    response.getByRole("link", { name: "https://it.ananda.eu/support/getting-started" }),
+  ).toHaveAttribute("href", "https://it.ananda.eu/support/getting-started");
 });
 
 test("conversations toolbar search narrows the visible rows", async ({ page }) => {

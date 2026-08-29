@@ -1,9 +1,11 @@
 <!DOCTYPE html>
-<!-- Static design mockup: "All activity" reworked as a Conversations list with outcomes. Companion to mockup.html (spec 1116). Not product code. -->
+<!-- Static design mockup: Conversations adopting the shared two-pane shell ("one shell, two lenses").
+     Click the first two rows to switch the reading pane between actionable and read-only states.
+     Companion to mockup.html (spec 1116). Not product code. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Mockup · Conversations — Radioso</title>
+<title>Mockup · Conversations (unified shell) — Radioso</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
 <style>
@@ -26,43 +28,36 @@
     --green-fg: #16803c;
     --blue-bg: rgba(80, 150, 231, 0.14);
     --blue-fg: #2563b5;
-    --red-bg: rgba(220, 38, 38, 0.10);
     --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-display: 'Fraunces', Georgia, serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: var(--font-sans);
-    color: var(--foreground);
-    background: var(--background);
-    font-size: 14px; line-height: 1.5;
-    height: 100vh; display: flex; overflow: hidden;
+    font-family: var(--font-sans); color: var(--foreground); background: var(--background);
+    font-size: 14px; line-height: 1.5; height: 100vh; display: flex; overflow: hidden;
   }
   svg { flex: none; }
 
   /* ── App sidebar ─────────────────────────────── */
   .app-sidebar {
-    width: 250px; flex: none;
-    background: var(--sidebar);
+    width: 250px; flex: none; background: var(--sidebar);
     border-right: 1px solid var(--border);
-    display: flex; flex-direction: column;
-    padding: 14px 12px; gap: 2px;
+    display: flex; flex-direction: column; padding: 14px 12px; gap: 2px;
   }
   .workspace { display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; }
   .workspace .mark { color: var(--accent); font-size: 22px; line-height: 1; }
   .workspace .name { font-family: var(--font-display); font-weight: 600; font-size: 17px; }
   .nav-item, .nav-sub {
-    display: flex; align-items: center; gap: 10px;
-    padding: 7px 10px; border-radius: var(--radius);
-    color: var(--foreground); text-decoration: none; font-size: 13.5px;
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    border-radius: var(--radius); color: var(--foreground); text-decoration: none; font-size: 13.5px;
   }
-  .nav-item.section-active { background: var(--muted); }
+  .nav-item.section-active, .nav-sub.active { background: var(--muted); }
+  .nav-sub.active { font-weight: 500; }
   .nav-item:hover, .nav-sub:hover { background: var(--muted); }
   .nav-item .icon, .nav-sub .icon { color: var(--muted-foreground); display: flex; }
   .nav-item.section-active .icon { color: var(--accent); }
   .nav-subs { margin: 2px 0 6px 14px; display: flex; flex-direction: column; gap: 1px; }
   .nav-sub { font-size: 13px; padding: 6px 10px; }
-  .nav-sub.active { background: var(--muted); font-weight: 500; }
   .badge-count {
     margin-left: auto; background: var(--accent); color: var(--foreground);
     font-size: 11px; font-weight: 600; border-radius: 999px; padding: 0 7px; line-height: 18px;
@@ -70,70 +65,117 @@
 
   /* ── Page frame ──────────────────────────────── */
   .page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .page-header {
-    padding: 18px 28px 14px;
-    display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  }
+  .page-header { padding: 18px 28px 12px; }
   .page-header h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
+  .split { flex: 1; display: flex; min-height: 0; }
 
-  /* ── Filters (Gmail-style) ───────────────────── */
-  .toolbar { display: flex; gap: 8px; padding: 0 28px 14px; align-items: center; }
-  .search-row { position: relative; width: 300px; }
-  .search-row svg {
-    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-    color: var(--muted-foreground); pointer-events: none;
+  /* ── List pane ───────────────────────────────── */
+  .listpane {
+    width: 400px; flex: none; border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 8px;
   }
+  .search-row { position: relative; margin: 0 2px 2px; }
+  .search-row svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted-foreground); pointer-events: none; }
   .search-row input {
-    width: 100%; padding: 7px 10px 7px 31px;
-    border: 1px solid var(--border); border-radius: var(--radius);
-    font-size: 13px; font-family: var(--font-sans); background: var(--sidebar); color: var(--foreground);
+    width: 100%; padding: 7px 10px 7px 31px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 13px; font-family: var(--font-sans);
+    background: var(--sidebar); color: var(--foreground);
   }
   .search-row input::placeholder { color: var(--muted-foreground); }
-  .search-row input:focus { outline: 2px solid var(--primary); outline-offset: -1px; background: var(--background); }
-  .toolbar select {
-    font-size: 12.5px; font-family: var(--font-sans); color: var(--foreground);
-    padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background);
+  .filter-selects { display: flex; gap: 6px; padding: 0 2px 4px; }
+  .filter-selects select {
+    flex: 1; min-width: 0; font-size: 12px; font-family: var(--font-sans); color: var(--foreground);
+    padding: 5px 4px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background);
   }
-
-  /* ── Conversation table ──────────────────────── */
-  .list { flex: 1; overflow-y: auto; padding: 0 28px 28px; }
-  table { width: 100%; border-collapse: collapse; }
-  thead th {
-    text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
-    text-transform: uppercase; color: var(--muted-foreground);
-    padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--sidebar);
+  .row {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px;
+    cursor: pointer; background: var(--background); display: flex; flex-direction: column; gap: 4px;
   }
-  thead th:first-child { border-radius: var(--radius) 0 0 0; }
-  thead th:last-child { border-radius: 0 var(--radius) 0 0; }
-  tbody td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover td { background: var(--muted-50); }
-  .conv-title { font-weight: 550; font-size: 13.5px; }
-  .conv-meta { font-size: 12px; color: var(--muted-foreground); margin-top: 1px; }
+  .row:hover { border-color: var(--muted-foreground); }
+  .row.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+  .row-top { display: flex; align-items: baseline; gap: 8px; }
+  .row-title { font-weight: 550; font-size: 13.5px; flex: 1; min-width: 0; }
+  .row-time { font-size: 11.5px; color: var(--muted-foreground); white-space: nowrap; }
+  .row-bottom { display: flex; align-items: center; gap: 8px; }
+  .row-meta { font-size: 12px; color: var(--muted-foreground); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .outcome {
     display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
-    font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+    font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px;
   }
   .o-handled  { background: var(--green-bg); color: var(--green-fg); }
   .o-handoff  { background: var(--amber-bg); color: var(--amber-fg); }
-  .o-feedback { background: var(--red-bg); color: var(--destructive); }
   .o-routine  { background: var(--blue-bg); color: var(--blue-fg); }
   .o-progress { background: var(--muted-50); color: var(--foreground); border: 1px solid var(--border); }
   .o-progress .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--primary); }
-  .outcome .sub-link { font-weight: 500; text-decoration: underline; }
-  .cell-agent, .cell-msgs, .cell-time { font-size: 13px; white-space: nowrap; }
-  .cell-msgs { text-align: right; color: var(--muted-foreground); }
-  .cell-time { color: var(--muted-foreground); }
+
+  /* ── Reading pane (shared response view) ─────── */
+  .reading { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .resp-header {
+    padding: 13px 24px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  }
+  .resp-line { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex-wrap: wrap; }
+  .resp-who { font-size: 15px; font-weight: 600; font-family: var(--font-display); white-space: nowrap; }
+  .resp-url { color: var(--muted-foreground); font-size: 13px; text-decoration: none; }
+  .resp-url:hover { text-decoration: underline; }
+  .resp-wait { color: var(--amber-fg); font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .sep { color: var(--muted-foreground); }
+  .debug-link {
+    font-size: 12.5px; color: var(--muted-foreground); text-decoration: none;
+    display: inline-flex; gap: 5px; align-items: center; white-space: nowrap;
+  }
+  .debug-link:hover { color: var(--foreground); text-decoration: underline; }
+  .thread { flex: 1; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .situation { background: var(--sidebar); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; }
+  .sit-reason { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--amber-fg); margin-bottom: 4px; }
+  .situation p { font-size: 13px; }
+  .bubble { max-width: 72%; padding: 10px 14px; border-radius: 14px; font-size: 13.5px; }
+  .bubble.agent { background: var(--muted-50); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
+  .bubble.visitor { background: var(--primary); color: var(--primary-foreground); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .stamp { font-size: 11px; color: var(--muted-foreground); margin-top: -8px; }
+  .stamp.left { align-self: flex-start; padding-left: 4px; }
+  .stamp.right { align-self: flex-end; padding-right: 4px; }
+  .sources { margin-top: 6px; font-size: 12px; color: var(--muted-foreground); }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--amber-fg); font-size: 12px; margin: 2px 0; }
+  .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px dashed var(--border); }
+
+  /* Composer (only when actionable) */
+  .composer {
+    border-top: 1px solid var(--border); padding: 14px 24px 48px;
+    display: flex; flex-direction: column; gap: 10px; background: var(--background);
+  }
+  .composer textarea {
+    width: 100%; min-height: 64px; resize: vertical; font-family: var(--font-sans);
+    font-size: 13.5px; color: var(--foreground); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 12px;
+  }
+  .composer-row { display: flex; align-items: center; gap: 8px; }
+  .btn {
+    font-size: 13px; font-weight: 550; border-radius: var(--radius); padding: 7px 14px;
+    border: 1px solid var(--border); background: var(--background); color: var(--foreground);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { background: var(--muted-50); }
+  .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+  .btn.ghost { border-color: transparent; color: var(--muted-foreground); }
+  .btn.ghost:hover { color: var(--foreground); background: var(--muted-50); }
+  .spacer { flex: 1; }
+
+  /* Read-only footer (when not actionable) */
+  .closed-footer {
+    border-top: 1px solid var(--border); padding: 12px 24px 40px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--muted-foreground); background: var(--sidebar);
+  }
+  .closed-footer .check { color: var(--green-fg); font-weight: 700; }
+
+  .hidden { display: none !important; }
 </style>
 </head>
 <body>
 
-  <!-- App sidebar -->
   <nav class="app-sidebar">
-    <div class="workspace">
-      <span class="mark">✳</span>
-      <span class="name">Ananda Edizioni</span>
-    </div>
+    <div class="workspace"><span class="mark">✳</span><span class="name">Ananda Edizioni</span></div>
     <a class="nav-item section-active" href="#">
       <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
       Activity
@@ -171,146 +213,171 @@
   </nav>
 
   <div class="page">
-    <header class="page-header">
-      <h1>Conversations</h1>
-    </header>
+    <header class="page-header"><h1>Conversations</h1></header>
 
-    <div class="toolbar">
-      <div class="search-row">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input type="search" placeholder="Search conversations">
-      </div>
-      <select>
-        <option>Outcome: all</option>
-        <option>In progress</option>
-        <option>Completed</option>
-        <option>Handed off</option>
-        <option>Negative feedback</option>
-        <option>Routine completed</option>
-      </select>
-      <select>
-        <option>Agent: all</option>
-        <option>Gioia</option>
-        <option>Claudio</option>
-      </select>
-      <select>
-        <option>Site: all</option>
-        <option>www.anandaedizioni.it</option>
-        <option>corsi.ananda.it</option>
-      </select>
-      <select>
-        <option>Last 30 days</option>
-        <option>Last 7 days</option>
-        <option>Today</option>
-        <option>All time</option>
-      </select>
-    </div>
+    <div class="split">
 
-    <div class="list">
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 44%">Conversation</th>
-            <th>Outcome</th>
-            <th>Agent</th>
-            <th style="text-align: right">Msgs</th>
-            <th>Last activity</th>
-          </tr>
-        </thead>
-        <tbody>
+      <!-- ── List pane: the full log, same rows, outcome chips ── -->
+      <aside class="listpane">
+        <div class="search-row">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" placeholder="Search conversations">
+        </div>
+        <div class="filter-selects">
+          <select><option>Outcome: all</option><option>In progress</option><option>Completed</option><option>Handed off</option></select>
+          <select><option>Agent: all</option><option>Gioia</option><option>Claudio</option></select>
+          <select><option>Site: all</option><option>www.anandaedizioni.it</option><option>corsi.ananda.it</option></select>
+        </div>
 
-          <tr>
-            <td>
-              <div class="conv-title">Disponibilità del libro in inglese</div>
-              <div class="conv-meta">Anonymous · www.anandaedizioni.it/shop</div>
-            </td>
-            <td><span class="outcome o-progress"><span class="dot"></span> In progress</span></td>
-            <td class="cell-agent">Gioia</td>
-            <td class="cell-msgs">4</td>
-            <td class="cell-time">today 20:31</td>
-          </tr>
+        <div class="row selected" id="row-handoff" onclick="select('handoff')">
+          <div class="row-top">
+            <div class="row-title">Orari dei corsi di yoga settimanali</div>
+            <div class="row-time">today 20:15</div>
+          </div>
+          <div class="row-bottom">
+            <div class="row-meta">Anonymous · corsi.ananda.it</div>
+            <span class="outcome o-handoff">🙋 Handed off</span>
+          </div>
+        </div>
 
-          <tr>
-            <td>
-              <div class="conv-title">Orari dei corsi di yoga settimanali</div>
-              <div class="conv-meta">Anonymous · corsi.ananda.it/categoria/0000012-yoga</div>
-            </td>
-            <td><span class="outcome o-handoff">🙋 Handed off · <span class="sub-link">open in Inbox</span></span></td>
-            <td class="cell-agent">Claudio</td>
-            <td class="cell-msgs">3</td>
-            <td class="cell-time">today 20:15</td>
-          </tr>
+        <div class="row" id="row-completed" onclick="select('completed')">
+          <div class="row-top">
+            <div class="row-title">Dove scaricare l'audiolibro incluso nel libro</div>
+            <div class="row-time">27 Aug 20:15</div>
+          </div>
+          <div class="row-bottom">
+            <div class="row-meta">Anonymous · www.anandaedizioni.it</div>
+            <span class="outcome o-handled">✓ Completed</span>
+          </div>
+        </div>
 
-          <tr>
-            <td>
-              <div class="conv-title">Dove scaricare l'audiolibro incluso nel libro</div>
-              <div class="conv-meta">Anonymous · www.anandaedizioni.it/autobiografia-di-uno-yogi</div>
-            </td>
-            <td><span class="outcome o-handled">✓ Completed</span></td>
-            <td class="cell-agent">Gioia</td>
-            <td class="cell-msgs">7</td>
-            <td class="cell-time">27 Aug 20:15</td>
-          </tr>
+        <div class="row">
+          <div class="row-top">
+            <div class="row-title">Disponibilità del libro in inglese</div>
+            <div class="row-time">today 20:31</div>
+          </div>
+          <div class="row-bottom">
+            <div class="row-meta">Anonymous · www.anandaedizioni.it</div>
+            <span class="outcome o-progress"><span class="dot"></span> In progress</span>
+          </div>
+        </div>
 
-          <tr>
-            <td>
-              <div class="conv-title">Reclamo per un ordine duplicato</div>
-              <div class="conv-meta">Verified · Maria B. · www.anandaedizioni.it/checkout</div>
-            </td>
-            <td><span class="outcome o-routine">Routine: Order complaints · completed</span></td>
-            <td class="cell-agent">Gioia</td>
-            <td class="cell-msgs">9</td>
-            <td class="cell-time">27 Aug 11:03</td>
-          </tr>
+        <div class="row">
+          <div class="row-top">
+            <div class="row-title">Reclamo per un ordine duplicato</div>
+            <div class="row-time">27 Aug 11:03</div>
+          </div>
+          <div class="row-bottom">
+            <div class="row-meta">Verified · Maria B. · www.anandaedizioni.it</div>
+            <span class="outcome o-routine">Routine · completed</span>
+          </div>
+        </div>
 
-          <tr>
-            <td>
-              <div class="conv-title">Il tema del destino nei libri di Yogananda</div>
-              <div class="conv-meta">Anonymous · www.anandaedizioni.it/blog/karma-e-destino</div>
-            </td>
-            <td><span class="outcome o-handled">✓ Completed</span></td>
-            <td class="cell-agent">Gioia</td>
-            <td class="cell-msgs">5</td>
-            <td class="cell-time">26 Aug 22:52</td>
-          </tr>
+        <div class="row">
+          <div class="row-top">
+            <div class="row-title">Il tema del destino nei libri di Yogananda</div>
+            <div class="row-time">26 Aug 22:52</div>
+          </div>
+          <div class="row-bottom">
+            <div class="row-meta">Anonymous · www.anandaedizioni.it</div>
+            <span class="outcome o-handled">✓ Completed</span>
+          </div>
+        </div>
 
-          <tr>
-            <td>
-              <div class="conv-title">Recupero accesso all'area riservata</div>
-              <div class="conv-meta">Verified · Paolo R. · www.anandaedizioni.it/login</div>
-            </td>
-            <td><span class="outcome o-feedback">👎 Negative feedback</span></td>
-            <td class="cell-agent">Gioia</td>
-            <td class="cell-msgs">3</td>
-            <td class="cell-time">26 Aug 16:40</td>
-          </tr>
+        <div class="row">
+          <div class="row-top">
+            <div class="row-title">Come contattare l'assistenza</div>
+            <div class="row-time">26 Aug 15:19</div>
+          </div>
+          <div class="row-bottom">
+            <div class="row-meta">Anonymous · www.anandaedizioni.it</div>
+            <span class="outcome o-handled">✓ Completed</span>
+          </div>
+        </div>
+      </aside>
 
-          <tr>
-            <td>
-              <div class="conv-title">Come contattare l'assistenza</div>
-              <div class="conv-meta">Anonymous · www.anandaedizioni.it/contatti</div>
-            </td>
-            <td><span class="outcome o-handled">✓ Completed</span></td>
-            <td class="cell-agent">Gioia</td>
-            <td class="cell-msgs">3</td>
-            <td class="cell-time">26 Aug 15:19</td>
-          </tr>
+      <!-- ── Reading pane: state A — handed off, actionable in place ── -->
+      <section class="reading" id="pane-handoff">
+        <div class="resp-header">
+          <div class="resp-line">
+            <span class="resp-who">Anonymous visitor</span>
+            <span class="sep">·</span>
+            <a class="resp-url" href="#">corsi.ananda.it/categoria/0000012-yoga</a>
+            <span class="sep">·</span>
+            <span class="resp-wait">waiting 12 min</span>
+          </div>
+          <a class="debug-link" href="#">Open in debug view
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+          </a>
+        </div>
+        <div class="thread">
+          <div class="situation">
+            <div class="sit-reason">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v8M7 3v4"/><path d="M7 7h9l-2-2m2 2-2 2" transform="translate(0,4)"/></svg>
+              Handed off — agent had no weekly schedule information
+            </div>
+            <p>Visitor wants the weekly yoga course times. The agent couldn't find a current schedule in the knowledge base and offered the reception contact instead.</p>
+          </div>
+          <div class="bubble agent">Ciao, sono Claudio: ti aiuto con eventi, meditazione, corsi e ispirazione Ananda. Come posso aiutarti?</div>
+          <div class="stamp left">Claudio · 20:14</div>
+          <div class="bubble visitor">dove trovo gli orari dei corsi di yoga settimanali</div>
+          <div class="stamp right">20:14</div>
+          <div class="bubble agent">Per gli orari aggiornati dei corsi settimanali di yoga, ti invitiamo a contattare la reception Ananda: <a href="#">info@ananda.it</a> oppure WhatsApp +39&nbsp;334&nbsp;5745930.<div class="sources">1 source ›</div></div>
+          <div class="stamp left">Claudio · 20:14</div>
+          <div class="divider">handed off to a human · 20:15</div>
+        </div>
+        <div class="composer">
+          <textarea placeholder="Reply to the visitor — sending takes over the conversation"></textarea>
+          <div class="composer-row">
+            <button class="btn primary">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg>
+              Send
+            </button>
+            <button class="btn ghost">✨ Draft with Ray</button>
+            <span class="spacer"></span>
+            <button class="btn">✓ Done</button>
+          </div>
+        </div>
+      </section>
 
-          <tr>
-            <td>
-              <div class="conv-title">Meditazione per principianti</div>
-              <div class="conv-meta">Anonymous · corsi.ananda.it/meditazione</div>
-            </td>
-            <td><span class="outcome o-handled">✓ Completed</span></td>
-            <td class="cell-agent">Claudio</td>
-            <td class="cell-msgs">2</td>
-            <td class="cell-time">25 Aug 09:47</td>
-          </tr>
+      <!-- ── Reading pane: state B — completed, read-only ── -->
+      <section class="reading hidden" id="pane-completed">
+        <div class="resp-header">
+          <div class="resp-line">
+            <span class="resp-who">Anonymous visitor</span>
+            <span class="sep">·</span>
+            <a class="resp-url" href="#">www.anandaedizioni.it/autobiografia-di-uno-yogi</a>
+          </div>
+          <a class="debug-link" href="#">Open in debug view
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+          </a>
+        </div>
+        <div class="thread">
+          <div class="bubble visitor">Dice che c'è l'audio libro compreso</div>
+          <div class="stamp right">20:14</div>
+          <div class="bubble agent">Sì, se hai acquistato l'edizione originale di <a href="#">Autobiografia di uno yogi</a>, l'audiolibro integrale è compreso e scaricabile. Dura 21 ore ed è letto da Enzo Decaro.<div class="sources">1 source ›</div></div>
+          <div class="stamp left">Gioia · 20:14</div>
+          <div class="bubble visitor">Ma dove è?</div>
+          <div class="stamp right">20:15</div>
+          <div class="bubble agent">Lo trovi nella pagina dell'<a href="#">audiolibro integrale di Autobiografia di uno yogi</a>. È scaricabile per smartphone, PC o tablet.<div class="sources">1 source ›</div></div>
+          <div class="stamp left">Gioia · 20:15</div>
+        </div>
+        <div class="closed-footer">
+          <span class="check">✓</span> Completed · handled by Gioia · 27 Aug 20:15
+        </div>
+      </section>
 
-        </tbody>
-      </table>
     </div>
   </div>
 
+<script>
+  function select(which) {
+    document.getElementById('pane-handoff').classList.toggle('hidden', which !== 'handoff');
+    document.getElementById('pane-completed').classList.toggle('hidden', which !== 'completed');
+    document.getElementById('row-handoff').classList.toggle('selected', which === 'handoff');
+    document.getElementById('row-completed').classList.toggle('selected', which === 'completed');
+  }
+  if (new URLSearchParams(location.search).get('sel') === 'completed') select('completed');
+</script>
 </body>
 </html>

@@ -23,6 +23,35 @@ export interface AuthoredDirectiveSaveResult {
 
 export type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions;
 
+// Every key the input schema declares, read from the schema itself rather than hand-listed, so a
+// field added to `authoredDirectiveInputSchema` is carried forward on update automatically instead
+// of silently resetting to its schema default the next time someone edits an unrelated field.
+const authoredDirectiveInputKeys = Object.keys(authoredDirectiveInputSchema.shape) as Array<keyof AuthoredDirectiveInput>;
+
+/**
+ * Carries every schema field forward from the stored directive unless the caller's patch names it
+ * explicitly - `hasOwnProperty`, not `??`, is what tells "omitted" apart from "explicitly cleared
+ * with `null` or `[]`". A PATCH body only ever contains the keys the operator actually touched, so
+ * an absent key must mean "leave this alone." This matters most for a field the schema defaults to
+ * empty on absence, such as `surfaces`: omitting it keeps the directive's stored scope, while an
+ * explicit `[]` is the operator widening it back to the answering voice. Treating an omitted key as
+ * `??`'s "value ?? default" would silently narrow or reset a field like that on every unrelated
+ * edit.
+ */
+const carryForwardAuthoredDirectiveInput = (
+  input: Partial<AuthoredDirectiveInput>,
+  existing: AuthoredDirective,
+): AuthoredDirectiveInput =>
+  Object.fromEntries(
+    authoredDirectiveInputKeys.map((key) => [
+      key,
+      Object.prototype.hasOwnProperty.call(input, key) ? input[key] : existing[key],
+    ]),
+    // `existing` is a prior successful parse of this same schema, so every value read from it here
+    // is already valid raw input for the field it came from; the cast just restates that as the
+    // input type Object.fromEntries' generic widens away.
+  ) as AuthoredDirectiveInput;
+
 type AuthoredDirectiveAgentContext = Pick<
   AgentRecord,
   "id" | "name" | "customInstruction" | "greetingInstruction" | "assistantDefaultLocale" | "chatModelOverride"
@@ -83,25 +112,7 @@ export class AuthoredDirectiveService {
     if (!existing) {
       throw notFound("Directive not found");
     }
-    const directive = this.validateInput({
-      name: input.name ?? existing.name,
-      condition: input.condition ?? existing.condition,
-      action: input.action ?? existing.action,
-      priority: Object.prototype.hasOwnProperty.call(input, "priority") ? input.priority : existing.priority,
-      requiredCapabilities: input.requiredCapabilities ?? existing.requiredCapabilities,
-      dependsOn: input.dependsOn ?? existing.dependsOn,
-      excludes: input.excludes ?? existing.excludes,
-      // Absent keeps the stored scope; an explicit empty array widens the directive
-      // back to the answering voice. Omitting it here would silently reset the scope
-      // on every unrelated edit, because the schema defaults it to empty.
-      surfaces: input.surfaces ?? existing.surfaces,
-      tags: input.tags ?? existing.tags,
-      routes: [],
-      description: Object.prototype.hasOwnProperty.call(input, "description") ? input.description : existing.description,
-      binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
-      enabled: Object.prototype.hasOwnProperty.call(input, "enabled") ? input.enabled : existing.enabled,
-      metadata: input.metadata ?? existing.metadata,
-    });
+    const directive = this.validateInput(carryForwardAuthoredDirectiveInput(input, existing));
     await this.validateBinding(workspaceId, agentId, directive);
     const comparisonDirectives = existingDirectives.filter((directiveToCompare) => directiveToCompare.id !== directiveId);
     const coherence = await this.checkCoherence(workspaceId, agent, directive, comparisonDirectives);

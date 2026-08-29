@@ -1,7 +1,7 @@
 ---
 title: "Embedding Coverage"
-description: "How to read a workspace's embedding coverage, repair the chunks that are missing one, and gather the evidence for retiring the second vector store."
-last_updated: 2026-08-27
+description: "How to read a workspace's embedding coverage and repair the chunks that are missing an active-space embedding."
+last_updated: 2026-08-28
 ---
 
 # Embedding Coverage
@@ -38,54 +38,17 @@ The work is idempotent: jobs target chunks that are missing an embedding, so a s
 
 The script also runs from a built image as `node ./dist/scripts/backfillEmbeddingCoverage.js`, which is how to reach a database that only accepts private-network connections.
 
-## Retiring the second vector store
+## Confirm retrieval quality
 
-Two vector stores hold rows while the backfill runs. `chunk_embeddings` is the
-canonical one, and it is where every chunk the backfill has reached lives — along with
-every chunk written from now on. `chunks.embedding` and `chunks.embedding_unbounded`
-hold the vectors for chunks the backfill has yet to reach, and retrieval merges a
-second search over them so those chunks stay findable meanwhile.
+Complete coverage confirms that each eligible chunk has an embedding in the workspace's
+active space. It does not judge whether the resulting answers are useful. A different
+embedding model can change the order of otherwise relevant chunks, so test the
+representative questions or evaluation set you care about after a model change.
 
-Removing that second search, and dropping the columns behind it, depend on the same
-evidence. Coverage has to reach 100% first: parity measured over a partly indexed
-workspace describes the chunks that happen to be there rather than the workspace.
-
-```bash
-cd backend
-pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts
-pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts --workspace <id> --probes 200
-pnpm exec tsx ./scripts/verifyCanonicalVectorParity.ts --index-recall --json
-```
-
-The script samples a workspace's stored vectors and uses each as a search query, so it
-needs no embedding provider and runs against a database clone. For every probe it
-compares the two result sets and reports mean recall, the worst single probe,
-top-result agreement, and how many distinct chunks the canonical path missed. That last
-number is the one that matters: it is the count of chunks that would stop being
-findable.
-
-The gate fails when mean recall drops under 99%, when any single probe falls under 90%,
-when fewer than 30 probes come back with a non-empty reference, or when the workspace
-still has missing chunks. Probes whose reference side is empty cannot pad that floor,
-because recall over an empty reference is 100% by arithmetic and counting them would let
-a run that compared nothing read as a clean pass. The output reports them either way,
-under "probe(s) with an empty reference".
-
-`--index-recall` measures the approximate vector index against an exhaustive scan of the
-same rows. It runs the identical query on a connection whose planner cannot use an
-index, so the comparison is against real ground truth rather than a benchmark. Run it
-where the index was actually built: an index that grew row by row as documents arrived
-gives a slightly worse graph than one built in bulk over a finished table, and a clone
-restored from a dump rebuilds it in bulk.
-
-`--json` prints the per-workspace summaries as JSON — save that output with the
-deployment record. `--seed <text>` picks which vectors become probes, and the same seed
-always selects the same ones, so two runs compare like with like. `--workspace <id>`
-narrows the run to named workspaces, and `--probes` and `--top-k` set the sample size and
-the depth at which the two result sets are compared.
-
-Chunk rows carry their vector in `chunk_embeddings` alone, so the column drop needs no
-worker coordination beyond the coverage and parity evidence above.
+Semantic retrieval reads canonical embeddings from `chunk_embeddings`. The vector index
+uses a high-recall search configuration for filtered candidate queries; coverage and
+retrieval quality are therefore separate checks, and both matter when you change a
+workspace's embedding model.
 
 ## Common failure modes
 

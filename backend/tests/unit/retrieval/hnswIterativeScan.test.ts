@@ -19,7 +19,7 @@ interface Recorded {
  * models the search itself failing once the setting has been accepted.
  */
 const databaseStub = (input: {
-  failSet?: unknown;
+  failSet?: unknown | ((sql: string) => unknown);
   failQuery?: unknown;
   rows?: Record<string, unknown>[];
 }): { database: Database; recorded: Recorded } => {
@@ -34,8 +34,11 @@ const databaseStub = (input: {
         async query(sql: string) {
           statements.push(sql);
           if (sql.startsWith("SET LOCAL")) {
-            if (input.failSet) {
-              throw input.failSet;
+            const failure = typeof input.failSet === "function"
+              ? input.failSet(sql)
+              : input.failSet;
+            if (failure) {
+              throw failure;
             }
             return { rows: [] };
           }
@@ -55,12 +58,14 @@ const databaseStub = (input: {
 };
 
 describe("HnswIterativeScanRunner", () => {
-  it("enables strict-order iterative scanning before the query", async () => {
+  it("uses the high-recall HNSW search breadth before strict-order scanning", async () => {
     const { database, recorded } = databaseStub({ rows: [{ chunk_id: "chunk-1" }] });
 
     const rows = await new HnswIterativeScanRunner(database).run("SELECT 1", []);
 
     expect(recorded.transactions).toEqual([[
+      "SET LOCAL hnsw.ef_search = 1000",
+      "SET LOCAL hnsw.max_scan_tuples = 20000",
       "SET LOCAL hnsw.iterative_scan = strict_order",
       "SELECT 1",
     ]]);
@@ -68,17 +73,26 @@ describe("HnswIterativeScanRunner", () => {
   });
 
   it("falls back to a plain query when the server has no iterative scan", async () => {
-    const { database, recorded } = databaseStub({ failSet: unsupportedGuc() });
+    const { database, recorded } = databaseStub({
+      failSet: (sql) => sql.includes("hnsw.iterative_scan") ? unsupportedGuc() : undefined,
+    });
 
     await new HnswIterativeScanRunner(database).run("SELECT 1", []);
 
+    expect(recorded.transactions).toEqual([[
+      "SET LOCAL hnsw.ef_search = 1000",
+      "SET LOCAL hnsw.max_scan_tuples = 20000",
+      "SET LOCAL hnsw.iterative_scan = strict_order",
+    ]]);
     expect(recorded.direct).toEqual(["SELECT 1"]);
   });
 
   // The probe costs a pooled client and an aborted transaction. Repeating it on every
   // search would make an older server pay that on every retrieval turn forever.
   it("probes support once and reuses the answer", async () => {
-    const { database, recorded } = databaseStub({ failSet: unsupportedGuc() });
+    const { database, recorded } = databaseStub({
+      failSet: (sql) => sql.includes("hnsw.iterative_scan") ? unsupportedGuc() : undefined,
+    });
     const runner = new HnswIterativeScanRunner(database);
 
     await runner.run("SELECT 1", []);
@@ -93,7 +107,9 @@ describe("HnswIterativeScanRunner", () => {
   // production server is obliged to produce. The SQLSTATE is.
   it("recognises the unsupported parameter from its SQLSTATE, not its message text", async () => {
     const { database, recorded } = databaseStub({
-      failSet: undefinedObject("nicht erkannter Konfigurationsparameter »hnsw.iterative_scan«"),
+      failSet: (sql) => sql.includes("hnsw.iterative_scan")
+        ? undefinedObject("nicht erkannter Konfigurationsparameter »hnsw.iterative_scan«")
+        : undefined,
     });
 
     await new HnswIterativeScanRunner(database).run("SELECT 1", []);

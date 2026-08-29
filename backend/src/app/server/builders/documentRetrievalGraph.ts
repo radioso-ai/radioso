@@ -6,11 +6,9 @@ import {
   createSystemRetrievalDefaultsProvider,
   EmbeddingModelTransitionAdapter,
   EmbeddingProfileJobFailureAdapter,
-  LegacyVectorCandidateSearchAdapter,
   PgVectorTransitionIndexPreparation,
   PgVectorTransitionMaintenance,
   RegistryFixedInputEmbeddingValidation,
-  VectorCandidateSearchRolloutAdapter,
   WorkspaceEmbeddingBindingResolver,
   type ApplicationComposition,
 } from "../../composition/index.js";
@@ -21,7 +19,7 @@ import {
 } from "../../../modules/embeddingProfiles/public.js";
 import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
-import { PgVectorAdapter, PgVectorIndex, PostgresChunkCandidateHydrator, VectorIndexReconciler } from "../../../modules/retrieval/composition.js";
+import { PgVectorAdapter, PostgresChunkCandidateHydrator, VectorIndexReconciler } from "../../../modules/retrieval/composition.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import {
   buildDocumentServices,
@@ -163,16 +161,7 @@ export const buildDocumentRetrievalGraph = (input: {
     embeddingBindingResolver,
   );
   const chunkHydrator = new PostgresChunkCandidateHydrator(infrastructure.database.kysely);
-  // Canonical candidates are authoritative, but legacy candidates remain a temporary
-  // safety net until production has recorded complete active-space coverage and parity.
-  const vectorSearch = new VectorCandidateSearchRolloutAdapter({
-    canonical: pgVectorAdapter.search,
-    legacy: new LegacyVectorCandidateSearchAdapter({
-      legacy: new PgVectorIndex(infrastructure.database),
-      profiles: repositories.embeddingProfileRepository,
-    }),
-    legacyDimensions: [1536, 3072],
-  });
+  const vectorSearch = pgVectorAdapter.search;
   const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
     auditService: infrastructure.auditService,
     capabilityRepository: repositories.retrievalSettingsRepository,

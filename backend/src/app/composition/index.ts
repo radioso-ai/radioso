@@ -7,5 +7,4 @@ export * from "./workspaceEmbeddingBindingResolver.js";
 export * from "./modelEmbeddingSpaceMaterializer.js";
 export * from "./embeddingModelTransitionAdapter.js";
 export * from "./embeddingProfileJobFailureAdapter.js";
-export * from "./legacyVectorCandidateSearchAdapter.js";
 export * from "./retrievalComposition.js";

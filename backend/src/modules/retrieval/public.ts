@@ -104,14 +104,6 @@ export type {
 export type { LexicalSearchPort } from "./infra/lexicalSearch.js";
 export type { ChunkCandidateHydratorPort } from "./infra/chunkCandidateHydrator.js";
 export type {
-  VectorIndexCandidate,
-  VectorIndexChunk,
-  VectorIndexFilter,
-  VectorIndexHealth,
-  VectorIndexPort,
-  VectorIndexSearchInput,
-} from "./domain/vectorIndex.js";
-export type {
   EmbeddingSpaceRef,
   VectorAdapter,
   VectorBackendStatus,

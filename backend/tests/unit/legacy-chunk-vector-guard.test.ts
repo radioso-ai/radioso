@@ -10,12 +10,8 @@ import {
   lineReadsLegacyChunkVector,
 } from "../../scripts/checkLegacyChunkVectorReaders.mjs";
 
-// Issue #1063: every chunk vector is stored twice, in chunks.embedding and in
-// chunk_embeddings. Retiring the legacy pair is only mechanical if the set of files
-// touching it stays known — the two readers this guard was written for were both
-// missing from the retirement plan, and one of them fails silently when the column
-// goes. The allowlist is the checklist: when it empties, the columns can be dropped.
-
+// The code-only retirement is safe only while no runtime reader can drift back to
+// chunks.embedding. Keep this guard until the later migration drops those columns.
 describe("legacy chunk vector guard", () => {
   it("flags reads of the legacy embedding columns", () => {
     expect(lineReadsLegacyChunkVector("COALESCE(c.embedding_unbounded, c.embedding)")).toBe(true);
@@ -48,8 +44,6 @@ describe("legacy chunk vector guard", () => {
   });
 
   it("does not flag the canonical table that replaces them", () => {
-    // chunk_embeddings has its own `embedding` column. Matching it would make the
-    // allowlist meaningless, since the replacement reads would all trip the guard.
     expect(lineReadsLegacyChunkVector("FROM chunk_embeddings ce WHERE ce.embedding IS NOT NULL")).toBe(false);
     expect(lineReadsLegacyChunkVector("ce.embedding::vector(1536) <=> $3")).toBe(false);
     expect(lineReadsLegacyChunkVector("await this.db.selectFrom('chunk_embeddings').select('embedding')")).toBe(false);
@@ -63,15 +57,8 @@ describe("legacy chunk vector guard", () => {
     expect(lineReadsLegacyChunkVector("interface DocumentEmbeddingPort {")).toBe(false);
   });
 
-  it("pins the files still reading the legacy columns, and why", () => {
-    // This set may only ever shrink. Each entry names the step of #1063 that removes
-    // it; when the set is empty the columns and this guard go together.
-    expect([...ALLOWLIST.keys()].sort()).toEqual([
-      "modules/retrieval/infra/vectorSearch.ts",
-    ]);
-    for (const reason of ALLOWLIST.values()) {
-      expect(reason.trim().length).toBeGreaterThan(0);
-    }
+  it("keeps the reader allowlist empty until the later column-drop migration", () => {
+    expect([...ALLOWLIST.entries()]).toEqual([]);
   });
 
   it("reports zero violations across src/ (the guard is green on the current tree)", () => {

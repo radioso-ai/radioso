@@ -17,12 +17,11 @@ import { fileURLToPath } from "node:url";
 
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
-  "shared/infra/database.ts", // the pg Pool wrapper + DatabaseExecutor the runner/legacy paths use
+  "shared/infra/database.ts", // the pg Pool wrapper + DatabaseExecutor the runner uses
   "db/repositories/chunkEmbeddingRepository.ts", // canonical vector batch shares document publication's existing pg transaction
   "db/repositories/documentProcessingJobRepository.ts", // profile jobs are inserted inside canonical publication's existing pg transaction
   "db/repositories/vectorIndexWorkRepository.ts", // projection work/tombstones share canonical mutation transactions
   "modules/retrieval/infra/hnswIterativeScan.ts", // `SET LOCAL hnsw.iterative_scan` needs a raw session
-  "modules/retrieval/infra/vectorSearch.ts", // legacy pgvector `<=>` distance, retired by issue #1063 step 3
   "modules/retrieval/infra/pgVectorAdapter.ts", // canonical pgvector exact candidate search
   "modules/retrieval/infra/lexicalSearch.ts", // full-text `@@` / ts_rank
   "modules/documents/infra/chunkRepository.ts", // chunk rows share document publication's existing pg transaction

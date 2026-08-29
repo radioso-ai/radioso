@@ -4,7 +4,7 @@ import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { JsonValue } from "../../../shared/infra/kysely/schema.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
-import type { VectorIndexCandidate } from "../domain/vectorIndex.js";
+import type { VectorCandidate } from "../domain/vectorAdapter.js";
 import type { VectorMetadataFilter } from "../domain/vectorFilter.js";
 import { hasVectorMetadataFilter } from "../domain/vectorFilter.js";
 import { retrievableDocumentWhere } from "./documentRetrievalEligibility.js";
@@ -12,10 +12,9 @@ import { retrievableDocumentWhere } from "./documentRetrievalEligibility.js";
 export interface ChunkCandidateHydratorPort {
   hydrate(input: {
     workspaceId: string;
-    candidates: VectorIndexCandidate[];
+    candidates: VectorCandidate[];
     metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
-    embeddingModel?: string;
   }): Promise<RetrievedChunk[]>;
 }
 
@@ -24,10 +23,9 @@ export class PostgresChunkCandidateHydrator implements ChunkCandidateHydratorPor
 
   async hydrate(input: {
     workspaceId: string;
-    candidates: VectorIndexCandidate[];
+    candidates: VectorCandidate[];
     metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
-    embeddingModel?: string;
   }): Promise<RetrievedChunk[]> {
     const chunkIds = [...new Set(input.candidates.map((candidate) => candidate.chunkId))];
     if (chunkIds.length === 0) {
@@ -52,10 +50,6 @@ export class PostgresChunkCandidateHydrator implements ChunkCandidateHydratorPor
       .where(retrievableDocumentWhere("d"))
       .where(sql<boolean>`${sql.ref("c.id")} = any(${sql.val(chunkIds)}::uuid[])`)
       .orderBy(sql<number>`array_position(${sql.val(chunkIds)}::uuid[], ${sql.ref("c.id")})`);
-
-    if (input.embeddingModel) {
-      query = query.where("c.embedding_model", "=", input.embeddingModel);
-    }
 
     if (hasVectorMetadataFilter(input.metadataFilter)) {
       query = query.where(sql<boolean>`${sql.ref("c.metadata")} @> ${JSON.stringify(input.metadataFilter)}::jsonb`);

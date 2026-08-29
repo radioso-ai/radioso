@@ -52,7 +52,6 @@ export {
 } from "./infra/lexicalSearch.js";
 export { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
 export { PgVectorAdapter } from "./infra/pgVectorAdapter.js";
-export { PgVectorIndex } from "./infra/vectorSearch.js";
 export { VectorIndexReconciler } from "./services/vectorIndexReconciler.js";
 export { CandidatePreparationService } from "./services/candidatePreparationService.js";
 export { ConversationContextService } from "./services/conversationContextService.js";

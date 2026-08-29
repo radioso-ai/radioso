@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<!-- Static design mockup: "All activity" reworked as a Conversations list with outcomes. Companion to mockup.html (spec 1116). Not product code. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mockup · Conversations — Radioso</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --background: #ffffff;
+    --foreground: #142317;
+    --primary: #5096e7;
+    --primary-foreground: #f9f9f7;
+    --muted: #e8eae8;
+    --muted-50: #f3f4f3;
+    --muted-foreground: #5f6560;
+    --accent: #ffc720;
+    --destructive: #dc2626;
+    --border: #d4d8d4;
+    --sidebar: #f9f9f7;
+    --radius: 0.5rem;
+    --amber-bg: rgba(245, 158, 11, 0.12);
+    --amber-fg: #b45309;
+    --green-bg: rgba(22, 128, 60, 0.10);
+    --green-fg: #16803c;
+    --blue-bg: rgba(80, 150, 231, 0.14);
+    --blue-fg: #2563b5;
+    --red-bg: rgba(220, 38, 38, 0.10);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-display: 'Fraunces', Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    color: var(--foreground);
+    background: var(--background);
+    font-size: 14px; line-height: 1.5;
+    height: 100vh; display: flex; overflow: hidden;
+  }
+  svg { flex: none; }
+
+  /* ── App sidebar ─────────────────────────────── */
+  .app-sidebar {
+    width: 250px; flex: none;
+    background: var(--sidebar);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 14px 12px; gap: 2px;
+  }
+  .workspace { display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; }
+  .workspace .mark { color: var(--accent); font-size: 22px; line-height: 1; }
+  .workspace .name { font-family: var(--font-display); font-weight: 600; font-size: 17px; }
+  .nav-item, .nav-sub {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: var(--radius);
+    color: var(--foreground); text-decoration: none; font-size: 13.5px;
+  }
+  .nav-item.section-active { background: var(--muted); }
+  .nav-item:hover, .nav-sub:hover { background: var(--muted); }
+  .nav-item .icon, .nav-sub .icon { color: var(--muted-foreground); display: flex; }
+  .nav-item.section-active .icon { color: var(--accent); }
+  .nav-subs { margin: 2px 0 6px 14px; display: flex; flex-direction: column; gap: 1px; }
+  .nav-sub { font-size: 13px; padding: 6px 10px; }
+  .nav-sub.active { background: var(--muted); font-weight: 500; }
+  .badge-count {
+    margin-left: auto; background: var(--accent); color: var(--foreground);
+    font-size: 11px; font-weight: 600; border-radius: 999px; padding: 0 7px; line-height: 18px;
+  }
+
+  /* ── Page frame ──────────────────────────────── */
+  .page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .page-header {
+    padding: 18px 28px 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .page-header h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
+
+  /* ── Filters (Gmail-style) ───────────────────── */
+  .toolbar { display: flex; gap: 8px; padding: 0 28px 14px; align-items: center; }
+  .search-row { position: relative; width: 300px; }
+  .search-row svg {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: var(--muted-foreground); pointer-events: none;
+  }
+  .search-row input {
+    width: 100%; padding: 7px 10px 7px 31px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    font-size: 13px; font-family: var(--font-sans); background: var(--sidebar); color: var(--foreground);
+  }
+  .search-row input::placeholder { color: var(--muted-foreground); }
+  .search-row input:focus { outline: 2px solid var(--primary); outline-offset: -1px; background: var(--background); }
+  .toolbar select {
+    font-size: 12.5px; font-family: var(--font-sans); color: var(--foreground);
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background);
+  }
+
+  /* ── Conversation table ──────────────────────── */
+  .list { flex: 1; overflow-y: auto; padding: 0 28px 28px; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    text-align: left; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--muted-foreground);
+    padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--sidebar);
+  }
+  thead th:first-child { border-radius: var(--radius) 0 0 0; }
+  thead th:last-child { border-radius: 0 var(--radius) 0 0; }
+  tbody td { padding: 11px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--muted-50); }
+  .conv-title { font-weight: 550; font-size: 13.5px; }
+  .conv-meta { font-size: 12px; color: var(--muted-foreground); margin-top: 1px; }
+  .outcome {
+    display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+    font-size: 11.5px; font-weight: 600; border-radius: 999px; padding: 2px 9px;
+  }
+  .o-handled  { background: var(--green-bg); color: var(--green-fg); }
+  .o-handoff  { background: var(--amber-bg); color: var(--amber-fg); }
+  .o-feedback { background: var(--red-bg); color: var(--destructive); }
+  .o-routine  { background: var(--blue-bg); color: var(--blue-fg); }
+  .o-progress { background: var(--muted-50); color: var(--foreground); border: 1px solid var(--border); }
+  .o-progress .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--primary); }
+  .outcome .sub-link { font-weight: 500; text-decoration: underline; }
+  .cell-agent, .cell-msgs, .cell-time { font-size: 13px; white-space: nowrap; }
+  .cell-msgs { text-align: right; color: var(--muted-foreground); }
+  .cell-time { color: var(--muted-foreground); }
+</style>
+</head>
+<body>
+
+  <!-- App sidebar -->
+  <nav class="app-sidebar">
+    <div class="workspace">
+      <span class="mark">✳</span>
+      <span class="name">Ananda Edizioni</span>
+    </div>
+    <a class="nav-item section-active" href="#">
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+      Activity
+    </a>
+    <div class="nav-subs">
+      <a class="nav-sub" href="#">
+        <span class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
+        Inbox <span class="badge-count">4</span>
+      </a>
+      <a class="nav-sub active" href="#">
+        <span class="icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg></span>
+        Conversations
+      </a>
+    </div>
+    <a class="nav-item" href="#">
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8"/><path d="M9 13h.01M15 13h.01"/></svg></span>
+      Agents
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
+      Knowledge Base
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+      Audience Pulse
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 7v6"/><path d="M12 16h.01"/></svg></span>
+      Quality
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      Settings
+    </a>
+  </nav>
+
+  <div class="page">
+    <header class="page-header">
+      <h1>Conversations</h1>
+    </header>
+
+    <div class="toolbar">
+      <div class="search-row">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" placeholder="Search conversations">
+      </div>
+      <select>
+        <option>Outcome: all</option>
+        <option>In progress</option>
+        <option>Completed</option>
+        <option>Handed off</option>
+        <option>Negative feedback</option>
+        <option>Routine completed</option>
+      </select>
+      <select>
+        <option>Agent: all</option>
+        <option>Gioia</option>
+        <option>Claudio</option>
+      </select>
+      <select>
+        <option>Site: all</option>
+        <option>www.anandaedizioni.it</option>
+        <option>corsi.ananda.it</option>
+      </select>
+      <select>
+        <option>Last 30 days</option>
+        <option>Last 7 days</option>
+        <option>Today</option>
+        <option>All time</option>
+      </select>
+    </div>
+
+    <div class="list">
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 44%">Conversation</th>
+            <th>Outcome</th>
+            <th>Agent</th>
+            <th style="text-align: right">Msgs</th>
+            <th>Last activity</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td>
+              <div class="conv-title">Disponibilità del libro in inglese</div>
+              <div class="conv-meta">Anonymous · www.anandaedizioni.it/shop</div>
+            </td>
+            <td><span class="outcome o-progress"><span class="dot"></span> In progress</span></td>
+            <td class="cell-agent">Gioia</td>
+            <td class="cell-msgs">4</td>
+            <td class="cell-time">today 20:31</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Orari dei corsi di yoga settimanali</div>
+              <div class="conv-meta">Anonymous · corsi.ananda.it/categoria/0000012-yoga</div>
+            </td>
+            <td><span class="outcome o-handoff">🙋 Handed off · <span class="sub-link">open in Inbox</span></span></td>
+            <td class="cell-agent">Claudio</td>
+            <td class="cell-msgs">3</td>
+            <td class="cell-time">today 20:15</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Dove scaricare l'audiolibro incluso nel libro</div>
+              <div class="conv-meta">Anonymous · www.anandaedizioni.it/autobiografia-di-uno-yogi</div>
+            </td>
+            <td><span class="outcome o-handled">✓ Completed</span></td>
+            <td class="cell-agent">Gioia</td>
+            <td class="cell-msgs">7</td>
+            <td class="cell-time">27 Aug 20:15</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Reclamo per un ordine duplicato</div>
+              <div class="conv-meta">Verified · Maria B. · www.anandaedizioni.it/checkout</div>
+            </td>
+            <td><span class="outcome o-routine">Routine: Order complaints · completed</span></td>
+            <td class="cell-agent">Gioia</td>
+            <td class="cell-msgs">9</td>
+            <td class="cell-time">27 Aug 11:03</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Il tema del destino nei libri di Yogananda</div>
+              <div class="conv-meta">Anonymous · www.anandaedizioni.it/blog/karma-e-destino</div>
+            </td>
+            <td><span class="outcome o-handled">✓ Completed</span></td>
+            <td class="cell-agent">Gioia</td>
+            <td class="cell-msgs">5</td>
+            <td class="cell-time">26 Aug 22:52</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Recupero accesso all'area riservata</div>
+              <div class="conv-meta">Verified · Paolo R. · www.anandaedizioni.it/login</div>
+            </td>
+            <td><span class="outcome o-feedback">👎 Negative feedback</span></td>
+            <td class="cell-agent">Gioia</td>
+            <td class="cell-msgs">3</td>
+            <td class="cell-time">26 Aug 16:40</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Come contattare l'assistenza</div>
+              <div class="conv-meta">Anonymous · www.anandaedizioni.it/contatti</div>
+            </td>
+            <td><span class="outcome o-handled">✓ Completed</span></td>
+            <td class="cell-agent">Gioia</td>
+            <td class="cell-msgs">3</td>
+            <td class="cell-time">26 Aug 15:19</td>
+          </tr>
+
+          <tr>
+            <td>
+              <div class="conv-title">Meditazione per principianti</div>
+              <div class="conv-meta">Anonymous · corsi.ananda.it/meditazione</div>
+            </td>
+            <td><span class="outcome o-handled">✓ Completed</span></td>
+            <td class="cell-agent">Claudio</td>
+            <td class="cell-msgs">2</td>
+            <td class="cell-time">25 Aug 09:47</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</body>
+</html>

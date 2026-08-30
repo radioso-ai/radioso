@@ -207,6 +207,33 @@ describe('history list query', () => {
     expect(chatApi[method]).toHaveBeenCalledWith({ limit: 50, offset: 100 }, signal)
   })
 
+  it('forwards the searchParams key tail to listHistory only for the all variant', async () => {
+    const signal = new AbortController().signal
+    vi.mocked(chatApi.listHistory).mockResolvedValue(response as never)
+    await fetchHistory({
+      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, 'refund', 'completed', 'agent-1', 'https://example.com'],
+      signal,
+    } as never)
+    expect(chatApi.listHistory).toHaveBeenCalledWith({
+      limit: 50,
+      offset: 0,
+      q: 'refund',
+      outcome: 'completed',
+      agentId: 'agent-1',
+      sourceOrigin: 'https://example.com',
+    }, signal)
+  })
+
+  it('omits absent searchParams key slots (null) rather than forwarding null values', async () => {
+    const signal = new AbortController().signal
+    vi.mocked(chatApi.listHistory).mockResolvedValue(response as never)
+    await fetchHistory({
+      queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, null, null, 'agent-1', null],
+      signal,
+    } as never)
+    expect(chatApi.listHistory).toHaveBeenCalledWith({ limit: 50, offset: 0, agentId: 'agent-1' }, signal)
+  })
+
   it('does not clamp an active page before its exact variant response arrives', () => {
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: undefined, activePage: 3, totalPages: 1 })).toBe(false)
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: 'all', activePage: 3, totalPages: 1 })).toBe(false)

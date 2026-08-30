@@ -11,7 +11,8 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { useNeedsAttentionOpenCount } from '@/lib/needs-attention-query-state'
-import { EMPTY_CONVERSATION_FILTERS } from '@/lib/conversation-filters'
+import { buildConversationSearchParams, EMPTY_CONVERSATION_FILTERS } from '@/lib/conversation-filters'
+import { useDebouncedValue } from '@/hooks/use-debounced-value'
 import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
 import {
   clearAudiencePulseEvidenceHandoff,
@@ -26,6 +27,11 @@ import {
 } from './all-conversations-list-pane'
 import { InboxLensToggle } from './inbox-lens-toggle'
 import { InboxResponseView, type InboxResponseSelection } from './inbox-response-view'
+
+// Matches the "collapse rapid keystrokes into one request" convention documented on
+// useDebouncedValue; 300ms is short enough to feel live, long enough that a fast typist
+// doesn't fire a request per keystroke.
+const SEARCH_DEBOUNCE_MS = 300
 
 const formatPageSummary = ({
   currentPage,
@@ -59,6 +65,18 @@ export function AllConversationsView({
   accountId: string
   routeState: DashboardRouteState
 }) {
+  const [conversationFilters, setConversationFilters] = useState(EMPTY_CONVERSATION_FILTERS)
+  // Debounced so typing doesn't fire a request per keystroke; the input itself stays
+  // responsive (conversationFilters.search updates immediately for the controlled Input).
+  const debouncedSearch = useDebouncedValue(conversationFilters.search, SEARCH_DEBOUNCE_MS)
+  // The All lens's server-side search/filter params (issue #1126) — sent to the merged
+  // history endpoint instead of filtering the loaded page client-side. Only meaningful
+  // for the 'all' variant; useHistoryListState ignores it for the other three.
+  const serverSearchParams = useMemo(
+    () => buildConversationSearchParams({ ...conversationFilters, search: debouncedSearch }),
+    [conversationFilters, debouncedSearch],
+  )
+
   const {
     filter,
     isListLoading,
@@ -88,9 +106,8 @@ export function AllConversationsView({
     onSearchPageChange,
     onContactPageChange,
     onAllPageChange,
-  } = useHistoryListState({ accountId, routeState })
+  } = useHistoryListState({ accountId, routeState, serverSearchParams })
 
-  const [conversationFilters, setConversationFilters] = useState(EMPTY_CONVERSATION_FILTERS)
   const [debugConversationId, setDebugConversationId] = useState<string | null>(null)
   // Which of the drawer's two purposes triggered the close in progress —
   // read by onAfterClose, which fires after debugConversationId may already
@@ -260,9 +277,14 @@ export function AllConversationsView({
     searchTotal, searchTotalPages, searches,
   ])
 
+  // The 'all' variant's search/outcome/agent/site filtering happens server-side (issue
+  // #1126) — `items` is already the filtered page, so it passes through unchanged. The
+  // other three variants (still reachable via deep links, e.g. Usage Details' "view
+  // conversation" link into the chat-only variant) keep the pre-existing client-side
+  // filter, since their backends were not extended to accept these params.
   const filteredItems = useMemo(
-    () => filterAllLensItems(items, conversationFilters, now),
-    [items, conversationFilters, now],
+    () => (activeFilter === 'all' ? items : filterAllLensItems(items, conversationFilters, now)),
+    [activeFilter, items, conversationFilters, now],
   )
 
   // Built from the unfiltered loaded page, not filteredItems — otherwise an

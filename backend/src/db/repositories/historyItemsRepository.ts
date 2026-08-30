@@ -9,7 +9,88 @@ import {
   WORKBENCH_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
+import {
+  CONVERSATION_OUTCOME_IN_PROGRESS_WINDOW_MINUTES,
+  type ConversationOutcomeFilter,
+} from "../../shared/domain/conversationOutcome.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
+
+// Structural LIKE/ILIKE escaping — not product-vocabulary matching. Postgres treats a bare
+// %, _, or \ in an ILIKE pattern as a wildcard/escape character; the operator's search text
+// must match those characters literally.
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, (match) => `\\${match}`);
+
+const toContainsPattern = (value: string): string => `%${escapeLikePattern(value)}%`;
+
+/**
+ * `q` matches the same text the row displays (see `resolveConversationDisplayTitle` on the
+ * frontend): the generated title, OR the conversation's first non-blank user-role message —
+ * the same message `messageRepository.summarizeByConversationIds`'s DISTINCT ON preview query
+ * surfaces for this conversation. A later message (an assistant reply, or a second user
+ * message) never counts; only the single earliest non-blank user message does.
+ */
+const buildTextSearchFilter = (
+  q: string | undefined,
+  idColumn: RawBuilder<unknown>,
+  workspaceColumn: RawBuilder<unknown>,
+  titleColumn: RawBuilder<unknown>,
+): RawBuilder<unknown> => {
+  if (!q) {
+    return sql``;
+  }
+  const pattern = toContainsPattern(q);
+  return sql`AND (
+    ${titleColumn} ILIKE ${pattern}
+    OR (
+      SELECT m.content
+      FROM messages m
+      WHERE m.conversation_id = ${idColumn}
+        AND m.workspace_id = ${workspaceColumn}
+        AND m.role = 'user'
+        AND btrim(m.content) <> ''
+      ORDER BY m.created_at ASC, m.id ASC
+      LIMIT 1
+    ) ILIKE ${pattern}
+  )`;
+};
+
+const buildAgentFilter = (agentId: string | undefined, column: RawBuilder<unknown>): RawBuilder<unknown> =>
+  agentId ? sql`AND ${column} = ${agentId}` : sql``;
+
+const buildSourceOriginFilter = (sourceOrigin: string | undefined, column: RawBuilder<unknown>): RawBuilder<unknown> =>
+  sourceOrigin ? sql`AND ${column} = ${sourceOrigin}` : sql``;
+
+/**
+ * Mirrors `deriveConversationOutcome` (`frontend/lib/conversation-outcome.ts`) in SQL: an
+ * `conversation_ownership` row in state `human_owned` always wins over recency — that single
+ * state covers both an unclaimed handoff request and one a teammate has taken over, exactly
+ * like the frontend's one `ownership` signal doesn't distinguish them either. Otherwise
+ * recency against the shared in-progress window decides.
+ */
+const buildOutcomeFilter = (
+  outcome: ConversationOutcomeFilter | undefined,
+  idColumn: RawBuilder<unknown>,
+  workspaceColumn: RawBuilder<unknown>,
+  updatedAtColumn: RawBuilder<unknown>,
+): RawBuilder<unknown> => {
+  if (!outcome) {
+    return sql``;
+  }
+  const handedOff = sql`EXISTS (
+    SELECT 1 FROM conversation_ownership co
+    WHERE co.conversation_id = ${idColumn}
+      AND co.workspace_id = ${workspaceColumn}
+      AND co.state = 'human_owned'
+  )`;
+  if (outcome === "handed_off") {
+    return sql`AND ${handedOff}`;
+  }
+  const withinWindow = sql`${updatedAtColumn} >= now() - (${CONVERSATION_OUTCOME_IN_PROGRESS_WINDOW_MINUTES}::int * interval '1 minute')`;
+  if (outcome === "in_progress") {
+    return sql`AND NOT (${handedOff}) AND ${withinWindow}`;
+  }
+  return sql`AND NOT (${handedOff}) AND NOT (${withinWindow})`;
+};
 
 // A parameterized `AND` fragment that filters conversation rows by source scope. `column` is the
 // (correctly aliased) `source_channel` reference to use — the CTE reads `c.source_channel`, the
@@ -50,7 +131,16 @@ export type HistoryItemsSourceRecord =
 export interface HistoryItemsRepositoryPort {
   listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope },
+    input: {
+      limit: number;
+      offset?: number;
+      sourceScope?: ConversationSourceScope;
+      /** Case-insensitive substring over the conversation's title or first user message (issue #1126). */
+      q?: string;
+      agentId?: string;
+      sourceOrigin?: string;
+      outcome?: ConversationOutcomeFilter;
+    },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }>;
 }
 
@@ -87,7 +177,15 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope },
+    input: {
+      limit: number;
+      offset?: number;
+      sourceScope?: ConversationSourceScope;
+      q?: string;
+      agentId?: string;
+      sourceOrigin?: string;
+      outcome?: ConversationOutcomeFilter;
+    },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
@@ -96,6 +194,19 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
     // (unaliased `conversations`) so page rows and `total` stay consistent.
     const rowScopeFilter = buildSourceScopeFilter(scope, sql`c.source_channel`);
     const countScopeFilter = buildSourceScopeFilter(scope, sql`conversations.source_channel`);
+    const rowTextSearchFilter = buildTextSearchFilter(input.q, sql`c.id`, sql`c.workspace_id`, sql`c.title`);
+    const countTextSearchFilter = buildTextSearchFilter(input.q, sql`conversations.id`, sql`conversations.workspace_id`, sql`conversations.title`);
+    const rowAgentFilter = buildAgentFilter(input.agentId, sql`c.agent_id`);
+    const countAgentFilter = buildAgentFilter(input.agentId, sql`conversations.agent_id`);
+    const rowSourceOriginFilter = buildSourceOriginFilter(input.sourceOrigin, sql`c.source_origin`);
+    const countSourceOriginFilter = buildSourceOriginFilter(input.sourceOrigin, sql`conversations.source_origin`);
+    const rowOutcomeFilter = buildOutcomeFilter(input.outcome, sql`c.id`, sql`c.workspace_id`, sql`c.updated_at`);
+    const countOutcomeFilter = buildOutcomeFilter(input.outcome, sql`conversations.id`, sql`conversations.workspace_id`, sql`conversations.updated_at`);
+    // q/agentId/sourceOrigin/outcome only mean something for a chat row — a search row has
+    // none of those facets — so any one of them active excludes search rows entirely, the
+    // same narrowing the All-lens toolbar already applied client-side for outcome/agent/site.
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome);
+    const searchSourceFilter = hasChatOnlyFilter ? sql`AND FALSE` : sql``;
     // A multi-CTE UNION ALL analytical query: expressed with the Kysely `sql` tag (which
     // parameterizes the interpolated values) rather than the builder, which cannot model the
     // NULL-padded union of two heterogeneous sources without more noise than the SQL itself.
@@ -132,6 +243,10 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
          LEFT JOIN agents ag ON ag.id = c.agent_id AND ag.workspace_id = c.workspace_id
          WHERE c.workspace_id = ${workspaceId}
            ${rowScopeFilter}
+           ${rowTextSearchFilter}
+           ${rowAgentFilter}
+           ${rowSourceOriginFilter}
+           ${rowOutcomeFilter}
          ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC
          LIMIT ${sourceLimit}
        ),
@@ -166,6 +281,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
          FROM audit_events a
          WHERE a.workspace_id = ${workspaceId}
            AND a.event_type = 'document.search'
+           ${searchSourceFilter}
          ORDER BY a.created_at DESC, a.id DESC
          LIMIT ${sourceLimit}
        ),
@@ -176,8 +292,14 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
        ),
        counted AS (
          SELECT (
-           (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId} ${countScopeFilter}) +
+           (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId} ${countScopeFilter}
+              ${countTextSearchFilter}
+              ${countAgentFilter}
+              ${countSourceOriginFilter}
+              ${countOutcomeFilter}
+           ) +
            (SELECT COUNT(*) FROM audit_events WHERE workspace_id = ${workspaceId} AND event_type = 'document.search'
+              ${searchSourceFilter}
            )
          )::text AS total_count
        ),

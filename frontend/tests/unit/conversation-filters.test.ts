@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { filterConversations, type ConversationFilterState } from '@/lib/conversation-filters'
+import { buildConversationSearchParams, filterConversations, type ConversationFilterState } from '@/lib/conversation-filters'
 import { IN_PROGRESS_WINDOW_MS } from '@/lib/conversation-outcome'
 import type { ChatConversationSummary } from '@/lib/api'
 
@@ -174,5 +174,43 @@ describe('filterConversations', () => {
     })
 
     expect(filterConversations([atBoundary], { ...baseFilters, outcome: 'in_progress' }, NOW)).toHaveLength(1)
+  })
+})
+
+describe('buildConversationSearchParams', () => {
+  it('omits every key when filters are at their defaults', () => {
+    expect(buildConversationSearchParams(baseFilters)).toEqual({})
+  })
+
+  it('trims search into q, omitting it when blank', () => {
+    expect(buildConversationSearchParams({ ...baseFilters, search: '  refund  ' })).toEqual({ q: 'refund' })
+    expect(buildConversationSearchParams({ ...baseFilters, search: '   ' })).toEqual({})
+  })
+
+  it('passes a non-"all" outcome through, dropping the "all" sentinel', () => {
+    expect(buildConversationSearchParams({ ...baseFilters, outcome: 'handed_off' })).toEqual({ outcome: 'handed_off' })
+    expect(buildConversationSearchParams({ ...baseFilters, outcome: 'all' })).toEqual({})
+  })
+
+  it('passes agentId and siteOrigin through under their API names, omitting null', () => {
+    expect(buildConversationSearchParams({ ...baseFilters, agentId: 'agent-1' })).toEqual({ agentId: 'agent-1' })
+    expect(buildConversationSearchParams({ ...baseFilters, agentId: null })).toEqual({})
+    expect(buildConversationSearchParams({ ...baseFilters, siteOrigin: 'https://www.anandaedizioni.it' }))
+      .toEqual({ sourceOrigin: 'https://www.anandaedizioni.it' })
+    expect(buildConversationSearchParams({ ...baseFilters, siteOrigin: null })).toEqual({})
+  })
+
+  it('combines every active filter into one params object', () => {
+    expect(buildConversationSearchParams({
+      search: ' recupero ',
+      outcome: 'completed',
+      agentId: 'agent-1',
+      siteOrigin: 'https://www.anandaedizioni.it',
+    })).toEqual({
+      q: 'recupero',
+      outcome: 'completed',
+      agentId: 'agent-1',
+      sourceOrigin: 'https://www.anandaedizioni.it',
+    })
   })
 })

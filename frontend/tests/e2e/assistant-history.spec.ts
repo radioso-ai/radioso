@@ -368,12 +368,19 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
     },
   });
 
-  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat`);
+  // No `filter=` param: the default mixed 'all' variant, the one the search/outcome/
+  // agent/site toolbar filters server-side (issue #1126) — not the chat-only variant.
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   const list = page.getByRole("complementary", { name: "Conversations" });
   await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toBeVisible();
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
 
+  const filteredRequest = page.waitForRequest((request) =>
+    request.url().includes("/history?") && new URL(request.url()).searchParams.get("q") === "yoga");
   await page.getByPlaceholder("Search conversations").fill("yoga");
+  // The debounced keystroke reaches the server as a real `q` query param — search is no
+  // longer applied to an already-loaded page on the client.
+  await filteredRequest;
 
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
   await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toHaveCount(0);
@@ -426,7 +433,9 @@ test("an All-lens row shows the generated topic title over the raw preview, and 
     },
   });
 
-  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat`);
+  // No `filter=` param: the default mixed 'all' variant, the one the search toolbar
+  // filters server-side (issue #1126) — not the chat-only variant.
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   const list = page.getByRole("complementary", { name: "Conversations" });
 
   // Titled row shows the generated topic, not the raw first message.
@@ -435,8 +444,13 @@ test("an All-lens row shows the generated topic title over the raw preview, and 
   // Untitled row still falls back to the markdown-stripped preview.
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
 
-  // Search matches the visible (generated) title, not just the raw preview.
+  // Search matches the visible (generated) title, not just the raw preview — and the
+  // match happens server-side: the request itself carries `q`, not a client-side filter.
+  const filteredRequest = page.waitForRequest((request) =>
+    request.url().includes("/history?") && new URL(request.url()).searchParams.get("q") === "refund");
   await page.getByPlaceholder("Search conversations").fill("refund");
+  await filteredRequest;
+
   await expect(list.getByRole("button").filter({ hasText: "Refund for order 4821" })).toBeVisible();
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toHaveCount(0);
 });

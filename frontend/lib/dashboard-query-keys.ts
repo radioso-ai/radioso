@@ -3,6 +3,7 @@ import type {
   ListLowQualityTurnsOptions,
   QualityActionFilter,
 } from './api-quality'
+import type { ConversationSearchParams } from './conversation-filters'
 
 /**
  * Canonical keys for dashboard data which is accelerated by workspace
@@ -49,8 +50,19 @@ export const dashboardQueryKeys = {
     crawlState: (workspaceId: string) => workspaceKey(workspaceId, 'sources', 'crawl-state'),
   },
   history: {
-    list: (workspaceId: string, input: { page: number; pageSize: number; variant: HistoryVariant }) =>
-      workspaceKey(workspaceId, 'history', 'list', input.variant, input.page, input.pageSize),
+    // `searchParams` is only meaningful for the 'all' variant's merged feed (issue #1126);
+    // omitted (not just empty), the key matches exactly what it was before that feature —
+    // callers for 'chat'/'search'/'contact' pass nothing and keep their existing cache keys.
+    list: (workspaceId: string, input: { page: number; pageSize: number; variant: HistoryVariant; searchParams?: ConversationSearchParams }) =>
+      workspaceKey(
+        workspaceId, 'history', 'list', input.variant, input.page, input.pageSize,
+        ...(input.searchParams ? [
+          optional(input.searchParams.q),
+          optional(input.searchParams.outcome),
+          optional(input.searchParams.agentId),
+          optional(input.searchParams.sourceOrigin),
+        ] : []),
+      ),
   },
   quality: {
     stats: (workspaceId: string, input: GetQualityStatsOptions) =>

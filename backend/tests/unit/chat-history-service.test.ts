@@ -1415,6 +1415,43 @@ describe("chat history service", () => {
     });
   });
 
+  it("skips the contact-history fetch once a chat-only filter (q/agent/site/outcome) is active, and forwards filters to the repository", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditRepository = new InMemoryAuditEventRepository();
+    const historyItemsRepository = new InMemoryHistoryItemsRepository(conversationRepository, auditRepository);
+    let contactCalls = 0;
+    const contactProvider: ContactHistoryProviderPort = {
+      async listPageByWorkspaceId() {
+        contactCalls += 1;
+        return { contacts: [], total: 0, nextCursor: null, hasMore: false };
+      },
+      async getById() {
+        return null;
+      },
+    };
+    const service = new ChatHistoryService(
+      conversationRepository,
+      messageRepository,
+      auditRepository,
+      historyItemsRepository,
+      contactProvider,
+    );
+    const matchingConversation = await conversationRepository.create("workspace-1", "agent-1");
+    await conversationRepository.create("workspace-1", "agent-2");
+
+    // No filter: contacts are fetched as usual.
+    await service.listItems("workspace-1", { limit: 50, offset: 0 });
+    expect(contactCalls).toBe(1);
+
+    // agentId active: the contact fetch is skipped entirely (fetch-then-discard would
+    // still cost a request), and the repository call narrows to that agent's conversation.
+    const filtered = await service.listItems("workspace-1", { limit: 50, offset: 0, agentId: "agent-1" });
+    expect(contactCalls).toBe(1);
+    expect(filtered.items.flatMap((item) => (item.kind === "chat" ? [item.conversation.id] : [])))
+      .toEqual([matchingConversation.id]);
+  });
+
   it("previews the visitor's first user message, not the newest agent reply", async () => {
     const { conversationRepository, messageRepository, service } = createService();
     const conversation = await conversationRepository.create("workspace-1");

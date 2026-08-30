@@ -70,3 +70,29 @@ export const matchesConversationSearchText = (text: string, search: string): boo
   const query = search.trim().toLowerCase()
   return query.length === 0 || text.toLowerCase().includes(query)
 }
+
+/** The All lens's server-side search/filter params (`chatApi.listHistory`, issue #1126). */
+export interface ConversationSearchParams {
+  q?: string
+  outcome?: ConversationOutcome['kind']
+  agentId?: string
+  sourceOrigin?: string
+}
+
+/**
+ * Maps toolbar filter state to the All lens's server-side search params. Pure shaping
+ * only — no timing: `search` is expected to already be debounced by the caller (see
+ * `useDebouncedValue`). Trims to `q`, drops the 'all' outcome sentinel, and turns a
+ * `null`/empty filter into an absent key so an unset filter never appears in the request.
+ */
+export function buildConversationSearchParams(
+  filters: Pick<ConversationFilterState, 'search' | 'outcome' | 'agentId' | 'siteOrigin'>,
+): ConversationSearchParams {
+  const q = filters.search.trim()
+  return {
+    ...(q ? { q } : {}),
+    ...(filters.outcome !== 'all' ? { outcome: filters.outcome } : {}),
+    ...(filters.agentId ? { agentId: filters.agentId } : {}),
+    ...(filters.siteOrigin ? { sourceOrigin: filters.siteOrigin } : {}),
+  }
+}

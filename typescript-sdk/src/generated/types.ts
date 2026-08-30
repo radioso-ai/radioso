@@ -16952,6 +16952,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 sourceScope?: "end_user" | "operator_test" | "all";
+                q?: string;
+                agentId?: string;
+                sourceOrigin?: string;
+                outcome?: "in_progress" | "completed" | "handed_off";
             };
             header?: never;
             path?: never;

@@ -234,6 +234,11 @@ export interface DocumentRepositoryPort {
   setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
+  requeueEligibleAndQueue(
+    documentId: string,
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<{ document: DocumentRecord; queued: boolean }>;
   requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
@@ -312,6 +317,12 @@ export interface ChunkDetail {
   embeddingDimensions: number | null;
 }
 
+export interface ChunkPage {
+  chunks: ChunkDetail[];
+  totalChunks: number;
+  nextChunkIndex: number | null;
+}
+
 export interface PublishedChunkRecord {
   chunkIndex: number;
   content: string;
@@ -343,6 +354,12 @@ export interface ChunkRepositoryPort {
     patches: ChunkMetadataRevisionPatch[];
   }): Promise<boolean>;
   listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]>;
+  listPageForDocument(input: {
+    documentId: string;
+    workspaceId: string;
+    startChunkIndex: number;
+    limit: number;
+  }): Promise<ChunkPage | null>;
   findByIdForDocument(input: {
     chunkId: string;
     documentId: string;

@@ -67,6 +67,9 @@ describe("document subject search text", () => {
         async listSummariesForDocument(input) {
           return chunkRepository.listSummariesForDocument(input);
         },
+        async listPageForDocument(input) {
+          return chunkRepository.listPageForDocument(input);
+        },
         async findByIdForDocument(input) {
           return chunkRepository.findByIdForDocument(input);
         },
@@ -156,6 +159,9 @@ describe("document subject search text", () => {
         },
         async listSummariesForDocument(input) {
           return chunkRepository.listSummariesForDocument(input);
+        },
+        async listPageForDocument(input) {
+          return chunkRepository.listPageForDocument(input);
         },
         async findByIdForDocument(input) {
           return chunkRepository.findByIdForDocument(input);

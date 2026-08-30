@@ -14,7 +14,6 @@ import {
   applyDocumentEnrichmentOverridePatch,
   applySourceDocumentMetadataPatch,
   applyWebsiteCrawlSettingsPatch,
-  buildWebsiteRecrawlRequest,
   presentDocumentSource,
   presentDocumentSourceList,
 } from "../presenters/documentSourcePresenter.js";
@@ -41,6 +40,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentDeletionService"
   | "documentImportService"
   | "documentIngestionService"
+  | "documentSourceRecrawlService"
   | "documentSourceReprocessService"
   | "documentSourceRepository"
   | "documentSearchHistoryService"
@@ -168,23 +168,10 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       const { sourceId } = sourceParamsSchema.parse(req.params);
-      const source = await dependencies.documentSourceRepository.findByIdAndWorkspaceId(sourceId, workspaceId);
-      if (!source) {
-        throw notFound("Source not found");
-      }
-      if (source.kind !== "website") {
-        throw badRequest("Only website sources can be recrawled");
-      }
-      const { url, limit, policy } = buildWebsiteRecrawlRequest(source.config);
-      if (!url) {
-        throw badRequest("Source has no configured URL");
-      }
-      const result = await dependencies.websiteCrawlJobService.enqueue({
+      const result = await dependencies.documentSourceRecrawlService.recrawlSource({
         accountId,
         workspaceId,
-        url,
-        limit,
-        policy,
+        sourceId,
       });
       res.status(202).json(result);
     } catch (error) {

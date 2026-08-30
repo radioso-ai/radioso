@@ -369,6 +369,124 @@ describe("document ingestion", () => {
     expect(laterJob?.options).toBeNull();
   });
 
+  it.each(["queued", "processing"])(
+    "keeps repeated eligible reprocess calls idempotent while a document is %s",
+    async (status) => {
+      const documentRepository = new InMemoryDocumentRepository();
+      const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+      documentRepository.setJobRepository(jobRepository);
+      const publisher = { enqueue: vi.fn() };
+      const service = new DocumentIngestionService(
+        documentRepository,
+        createAuditService(),
+        () => jobRepository.getQueueSnapshot(),
+        jobRepository,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        publisher,
+      );
+      const document = await documentRepository.create({
+        workspaceId: "workspace-1",
+        title: "Pending",
+        sourceContent: "Pending content",
+        markdownContent: "Pending content",
+        status,
+      });
+
+      await expect(service.reprocessEligible({
+        workspaceId: "workspace-1",
+        documentId: document.id,
+      })).resolves.toEqual({
+        documentId: document.id,
+        status: "noop",
+        queuedDocumentCount: 0,
+        skippedDocumentCount: 1,
+      });
+      await expect(service.reprocessEligible({
+        workspaceId: "workspace-1",
+        documentId: document.id,
+      })).resolves.toEqual({
+        documentId: document.id,
+        status: "noop",
+        queuedDocumentCount: 0,
+        skippedDocumentCount: 1,
+      });
+
+      const persisted = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+      expect(persisted?.revision).toBe(document.revision);
+      expect(jobRepository.items.size).toBe(0);
+      expect(publisher.enqueue).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reprocesses one eligible document and reports the committed queue transition", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const publisher = { enqueue: vi.fn() };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      () => jobRepository.getQueueSnapshot(),
+      jobRepository,
+      dispatcher,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      publisher,
+    );
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Ready",
+      sourceContent: "Ready content",
+      markdownContent: "Ready content",
+      status: "ready",
+    });
+
+    await expect(service.reprocessEligible({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+    })).resolves.toEqual({
+      documentId: document.id,
+      status: "queued",
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+    });
+
+    const persisted = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+    expect(persisted).toMatchObject({
+      status: "queued",
+      revision: document.revision + 1,
+    });
+    expect(publisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+    expect(auditService.events).toContainEqual(expect.objectContaining({
+      workspaceId: "workspace-1",
+      eventType: "document.reprocess",
+      eventStatus: "success",
+      metadata: expect.objectContaining({
+        documentId: document.id,
+        revision: document.revision + 1,
+        status: "queued",
+      }),
+    }));
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      documentId: document.id,
+      workspaceId: "workspace-1",
+      revision: document.revision + 1,
+    }));
+  });
+
   it("recovers timed-out claims when the same job is retried by id", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
@@ -1526,6 +1644,9 @@ describe("document ingestion", () => {
           },
           async listSummariesForDocument() {
             return [];
+          },
+          async listPageForDocument() {
+            return { chunks: [], totalChunks: 0, nextChunkIndex: null };
           },
           async findByIdForDocument() {
             return null;

@@ -686,6 +686,46 @@ export class DocumentRepository implements DocumentRepositoryPort {
     });
   }
 
+  async requeueEligibleAndQueue(
+    documentId: string,
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<{ document: DocumentRecord; queued: boolean }> {
+    return this.db.transaction().execute(async (trx) => {
+      const documentRow = (await trx
+        .updateTable("documents")
+        .set({
+          status: "queued",
+          revision: sql<number>`revision + 1`,
+          failed_at: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", documentId)
+        .where("workspace_id", "=", workspaceId)
+        .where("status", "not in", ["queued", "processing"])
+        .returning(documentSelectColumns)
+        .executeTakeFirst()) as DocumentRow | undefined;
+
+      if (documentRow) {
+        await this.insertProcessingJob(trx, documentId, workspaceId, documentRow.revision, options);
+        return { document: mapDocument(documentRow), queued: true };
+      }
+
+      const existingRow = (await trx
+        .selectFrom("documents")
+        .select(documentSelectColumns)
+        .where("id", "=", documentId)
+        .where("workspace_id", "=", workspaceId)
+        .executeTakeFirst()) as DocumentRow | undefined;
+      if (!existingRow) {
+        throw notFound("Document not found");
+      }
+
+      return { document: mapDocument(existingRow), queued: false };
+    });
+  }
+
   async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;

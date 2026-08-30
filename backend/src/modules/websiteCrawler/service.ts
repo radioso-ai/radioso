@@ -38,7 +38,9 @@ export interface WebsiteCrawlerDocumentIngestionPort {
   }): Promise<{ documentId: string; status: string }>;
   resolveSource?(input: {
     workspaceId: string;
-    source: { kind: "website"; url: string; config?: Record<string, unknown>; metadata?: Record<string, unknown> };
+    source:
+      | { id: string }
+      | { kind: "website"; url: string; config?: Record<string, unknown>; metadata?: Record<string, unknown> };
   }): Promise<{ id: string }>;
   updateSourceSyncState?(input: {
     workspaceId: string;
@@ -97,6 +99,7 @@ export class WebsiteCrawlerService {
   async crawlAndPublish(input: {
     accountId?: string | null;
     workspaceId: string;
+    sourceId?: string | null;
     url: string;
     limit: number;
     signal?: AbortSignal;
@@ -197,22 +200,36 @@ export class WebsiteCrawlerService {
     let documentSource: { id: string } | null = null;
     try {
       await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(websiteBaseUrl);
-      documentSource = await this.dependencies.documentIngestionService.resolveSource?.({
-        workspaceId: input.workspaceId,
-        source: {
-          kind: "website",
-          url: safeWebsiteBaseUrl,
-          config: {
+      const resolveSource = this.dependencies.documentIngestionService.resolveSource;
+      if (input.sourceId) {
+        if (!resolveSource) {
+          throw new Error("Unable to resolve selected source");
+        }
+        documentSource = await resolveSource({
+          workspaceId: input.workspaceId,
+          source: { id: input.sourceId },
+        });
+        if (!documentSource || documentSource.id !== input.sourceId) {
+          throw new Error("Unable to resolve selected source");
+        }
+      } else {
+        documentSource = await resolveSource?.({
+          workspaceId: input.workspaceId,
+          source: {
+            kind: "website",
             url: safeWebsiteBaseUrl,
-            limit: input.limit,
-            policy,
+            config: {
+              url: safeWebsiteBaseUrl,
+              limit: input.limit,
+              policy,
+            },
+            metadata: {
+              requestedUrl: safeWebsiteBaseUrl,
+              provider: redactSensitiveText(this.dependencies.provider.name),
+            },
           },
-          metadata: {
-            requestedUrl: safeWebsiteBaseUrl,
-            provider: redactSensitiveText(this.dependencies.provider.name),
-          },
-        },
-      }) ?? null;
+        }) ?? null;
+      }
     } catch (error) {
       await this.auditCrawlFailure(input, safeWebsiteBaseUrl, error);
       if (documentSource) {

@@ -165,6 +165,50 @@ export class WebsiteCrawlJobService {
       limit: input.limit,
       policy,
     });
+    return this.publishAndDispatch(job);
+  }
+
+  async enqueueForSource(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    sourceId: string;
+    url: string;
+    limit: number;
+    policy?: Partial<WebsiteCrawlPolicy>;
+  }): Promise<{
+    jobId: string;
+    sourceId: string;
+    requestedUrl: string;
+    status: "queued";
+  }> {
+    const requestedUrl = normalizeBaseUrl(input.url);
+    await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(requestedUrl);
+    const policy = normalizeWebsiteCrawlPolicy({
+      ...DEFAULT_WEBSITE_CRAWL_POLICY,
+      ...(input.policy ?? {}),
+    });
+    const job = await this.dependencies.repository.createForSource({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      sourceId: input.sourceId,
+      requestedUrl,
+      limit: input.limit,
+      policy,
+    });
+    if (!job) {
+      throw notFound("Source not found");
+    }
+    return this.publishAndDispatch(job);
+  }
+
+  private async publishAndDispatch<TSourceId extends string | null>(
+    job: WebsiteCrawlJobRecord & { sourceId: TSourceId },
+  ): Promise<{
+    jobId: string;
+    sourceId: TSourceId;
+    requestedUrl: string;
+    status: "queued";
+  }> {
     this.publisher.enqueue(job.workspaceId, ["crawl.status_changed"]);
     try {
       await this.dependencies.dispatcher.dispatch({

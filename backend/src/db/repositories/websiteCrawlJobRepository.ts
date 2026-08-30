@@ -118,16 +118,25 @@ export interface StaleWebsiteCrawlClaimReleaseBatch {
 export const DEFAULT_STALE_CLAIM_RECOVERY_BATCH_SIZE = 100;
 const MAX_STALE_CLAIM_RECOVERY_BATCH_SIZE = 500;
 
+export interface WebsiteCrawlJobCreateInput {
+  accountId?: string | null;
+  workspaceId: string;
+  sourceId?: string | null;
+  requestedUrl: string;
+  limit: number;
+  policy?: WebsiteCrawlPolicy;
+  checkpoint?: WebsiteCrawlCheckpoint;
+}
+
+export interface WebsiteCrawlJobCreateForSourceInput extends WebsiteCrawlJobCreateInput {
+  sourceId: string;
+}
+
+export type SourceBoundWebsiteCrawlJobRecord = WebsiteCrawlJobRecord & { sourceId: string };
+
 export interface WebsiteCrawlJobRepositoryPort {
-  create(input: {
-    accountId?: string | null;
-    workspaceId: string;
-    sourceId?: string | null;
-    requestedUrl: string;
-    limit: number;
-    policy?: WebsiteCrawlPolicy;
-    checkpoint?: WebsiteCrawlCheckpoint;
-  }): Promise<WebsiteCrawlJobRecord>;
+  create(input: WebsiteCrawlJobCreateInput): Promise<WebsiteCrawlJobRecord>;
+  createForSource(input: WebsiteCrawlJobCreateForSourceInput): Promise<SourceBoundWebsiteCrawlJobRecord | null>;
   findById(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
   findByIdAndWorkspaceId(jobId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord | null>;
   listForWorkspace(workspaceId: string, options?: WebsiteCrawlJobListOptions): Promise<WebsiteCrawlJobRecord[]>;
@@ -153,16 +162,32 @@ export interface WebsiteCrawlJobRepositoryPort {
 export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async create(input: {
-    accountId?: string | null;
-    workspaceId: string;
-    sourceId?: string | null;
-    requestedUrl: string;
-    limit: number;
-    policy?: WebsiteCrawlPolicy;
-    checkpoint?: WebsiteCrawlCheckpoint;
-  }): Promise<WebsiteCrawlJobRecord> {
-    const row = await this.db
+  async create(input: WebsiteCrawlJobCreateInput): Promise<WebsiteCrawlJobRecord> {
+    return this.insert(this.db, input);
+  }
+
+  async createForSource(
+    input: WebsiteCrawlJobCreateForSourceInput,
+  ): Promise<SourceBoundWebsiteCrawlJobRecord | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const source = await trx
+        .selectFrom("document_sources")
+        .select("id")
+        .where("id", "=", input.sourceId)
+        .where("workspace_id", "=", input.workspaceId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!source) {
+        return null;
+      }
+
+      const job = await this.insert(trx, input);
+      return { ...job, sourceId: job.sourceId! };
+    });
+  }
+
+  private async insert(db: Db, input: WebsiteCrawlJobCreateInput): Promise<WebsiteCrawlJobRecord> {
+    const row = await db
       .insertInto("website_crawl_jobs")
       .values({
         id: randomUUID(),

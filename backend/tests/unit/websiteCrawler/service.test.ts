@@ -550,6 +550,73 @@ describe("website crawler service", () => {
     }));
   });
 
+  it("keeps an explicitly selected source authoritative through ingestion, sync, and reaping", async () => {
+    const sourceId = "selected-source";
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const resolveSource = vi.fn().mockImplementation(async ({ source }) => {
+      if ("id" in source) {
+        return { id: source.id };
+      }
+      throw new Error("URL source resolution would select the wrong source");
+    });
+    const updateSourceSyncState = vi.fn().mockResolvedValue(undefined);
+    const reapMissingPages = vi.fn().mockResolvedValue({ deletedCount: 0, deletedContentBytes: 0 });
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{
+        sourceUrl: "https://example.com/a",
+        canonicalUrl: "https://example.com/a",
+        title: "A",
+        content: "alpha",
+        metadata: {},
+      }]),
+      documentIngestionService: { ingest, resolveSource, updateSourceSyncState, reapMissingPages },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      sourceId,
+      url: "https://example.com/search?apiKey=secret",
+      limit: 5,
+    });
+
+    expect(resolveSource).toHaveBeenCalledOnce();
+    expect(resolveSource).toHaveBeenCalledWith({ workspaceId: "workspace-1", source: { id: sourceId } });
+    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({ source: { id: sourceId } }));
+    expect(updateSourceSyncState).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
+    expect(reapMissingPages).toHaveBeenCalledWith(expect.objectContaining({ sourceId }));
+  });
+
+  it.each([
+    ["the source resolver is absent", undefined],
+    ["the selected source cannot be resolved", vi.fn().mockResolvedValue(null)],
+    ["the resolver returns a different source", vi.fn().mockResolvedValue({ id: "wrong-source" })],
+  ])("fails closed when %s", async (_description, resolveSource) => {
+    const crawl = vi.fn().mockResolvedValue({
+      provider: "fake",
+      status: "completed",
+      pages: [{ sourceUrl: "https://example.com/a", content: "alpha" }],
+    });
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const service = new WebsiteCrawlerService({
+      provider: { name: "fake", crawl },
+      documentIngestionService: { ingest, resolveSource },
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    await expect(service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      sourceId: "selected-source",
+      url: "https://example.com",
+      limit: 5,
+    })).rejects.toThrow("selected source");
+
+    expect(crawl).not.toHaveBeenCalled();
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
   it("reports page publication failures without leaking provider metadata", async () => {
     const ingest = vi.fn()
       .mockResolvedValueOnce({ documentId: "doc-1", status: "queued" })

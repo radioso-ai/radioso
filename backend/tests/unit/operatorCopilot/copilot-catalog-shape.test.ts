@@ -65,6 +65,8 @@ const realCatalog = () => {
     routineDefinitionService: { list: stub(), get: stub(), validate: stub() },
     chatHistoryService: { getConversation: stub(), getConversationTurn: stub(), listConversations: stub() },
     documentSearchService: { search: stub() },
+    documentChunks: { listPageForDocument: stub() },
+    documentMaintenance: { reprocessDocument: stub(), reprocessSource: stub(), recrawlSource: stub() },
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
@@ -138,6 +140,18 @@ describe("copilot catalog wiring", () => {
       { name: "create_eval_case_from_turn", shape: "act" },
       { name: "run_eval_suite", shape: "act" },
       { name: "replay_eval_case", shape: "probe" },
+    ]);
+  });
+
+  it("contributes bounded document diagnosis and maintenance through the real barrel", () => {
+    expect(realCatalog()
+      .filter((descriptor) => descriptor.contributingModule === "documents")
+      .map(({ name, shape, requiredPermissions }) => ({ name, shape, requiredPermissions }))).toEqual([
+      { name: "document_search", shape: "read", requiredPermissions: ["workspace.documents.read"] },
+      { name: "document_status", shape: "read", requiredPermissions: ["workspace.documents.read"] },
+      { name: "document_chunks", shape: "read", requiredPermissions: ["workspace.documents.read"] },
+      { name: "reprocess_document", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "recrawl_source", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
     ]);
   });
 

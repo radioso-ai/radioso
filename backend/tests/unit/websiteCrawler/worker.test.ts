@@ -103,6 +103,44 @@ describe("website crawl worker", () => {
     }));
   });
 
+  it("carries the persisted source identity into crawl publication", async () => {
+    const sourceId = "44444444-4444-4444-8444-444444444444";
+    const job = { ...createJob(), sourceId, requestedUrl: "https://example.com/search?apiKey=secret" };
+    const ingest = vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" });
+    const resolveSource = vi.fn().mockImplementation(async ({ source }) => {
+      if ("id" in source) {
+        return { id: source.id };
+      }
+      throw new Error("worker re-resolved the source from its URL");
+    });
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        claimNext: vi.fn().mockResolvedValue(job),
+        markCompleted: vi.fn().mockResolvedValue(true),
+        markFailed: vi.fn().mockResolvedValue(true),
+        updateCheckpoint: vi.fn().mockResolvedValue(false),
+        releasePausedClaim: vi.fn().mockResolvedValue(false),
+      } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockResolvedValue({
+          provider: "test-crawler",
+          runId: "run-1",
+          status: "completed",
+          pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
+        }),
+      },
+      dispatcher: createDispatcher(),
+      documentIngestionService: { ingest, resolveSource } as never,
+      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(resolveSource).toHaveBeenCalledWith({ workspaceId: job.workspaceId, source: { id: sourceId } });
+    expect(ingest).toHaveBeenCalledWith(expect.objectContaining({ source: { id: sourceId } }));
+  });
+
   it("publishes completion only after the repository reports an affected row", async () => {
     const job = createJob();
     const publisher = { enqueue: vi.fn() };

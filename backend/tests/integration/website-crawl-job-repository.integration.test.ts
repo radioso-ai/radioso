@@ -113,6 +113,38 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
     await expect(repository.findById(job.id)).resolves.toBeNull();
   });
 
+  it("atomically creates source-bound jobs only when the source belongs to the workspace", async () => {
+    const valid = await repository.createForSource({
+      accountId,
+      workspaceId,
+      sourceId,
+      requestedUrl: "https://example.com/valid-source",
+      limit: 5,
+    });
+    const wrongWorkspace = await repository.createForSource({
+      accountId,
+      workspaceId: otherWorkspaceId,
+      sourceId,
+      requestedUrl: "https://example.com/wrong-workspace",
+      limit: 5,
+    });
+    const missingSource = await repository.createForSource({
+      accountId,
+      workspaceId,
+      sourceId: randomUUID(),
+      requestedUrl: "https://example.com/missing-source",
+      limit: 5,
+    });
+
+    expect(valid).toMatchObject({ workspaceId, sourceId, status: "queued" });
+    expect(wrongWorkspace).toBeNull();
+    expect(missingSource).toBeNull();
+    await expect(repository.listForWorkspace(workspaceId)).resolves.toEqual([
+      expect.objectContaining({ id: valid?.id, sourceId }),
+    ]);
+    await expect(repository.listForWorkspace(otherWorkspaceId)).resolves.toEqual([]);
+  });
+
   it("requeues a yielded claim only when the caller still owns that claim", async () => {
     const job = await repository.create({
       accountId,

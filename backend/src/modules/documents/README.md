@@ -29,7 +29,7 @@ through canonical chunk storage before chunks are used by retrieval.
 - `contracts/`: document records, repository ports, storage ports, queue ports,
   and history DTOs shared outside the module.
 - `composition.ts`: storage, dispatcher, and module wiring for application
-  composition.
+  composition, including the exported `DocumentSourceRecrawlService`.
 - `historySupport.ts`: narrow support surface for chat history presentation.
 
 Production code outside this module should prefer these entry points over direct
@@ -39,6 +39,9 @@ imports from `services/` or `infra/`.
 
 - `services/documentIngestionService.ts`: upload and ingestion entry point.
 - `services/documentImportService.ts`: import flows and source metadata.
+- `services/documentSourceRecrawlService.ts`: validates a stored website source,
+  resolves its persisted crawl configuration, and queues the recrawl shared by
+  HTTP and operator-copilot callers.
 - `services/documentProcessingService.ts`: processing orchestration.
 - `services/embeddingProfileJobService.ts`: resumable, generation-fenced
   embedding-only work that cannot mutate document or canonical chunk state.
@@ -66,6 +69,7 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/document-processing-worker-runtime.test.ts`
 - `cd backend && pnpm test -- tests/unit/documents/embeddingProfileJobService.test.ts`
 - `cd backend && pnpm test -- tests/unit/document-import-service.test.ts`
+- `cd backend && pnpm test -- tests/unit/document-source-recrawl-service.test.ts`
 - `cd backend && pnpm run test:integration` for processing and import flows.
 
 Use contract tests when document API response shape changes.

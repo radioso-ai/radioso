@@ -268,6 +268,68 @@ describe("chunk repository", () => {
     ]);
   });
 
+  it("returns a bounded full-text chunk page with total count and continuation", async () => {
+    const calls: Array<{ sql: string; params: unknown[] | undefined }> = [];
+    const createdAt = new Date("2026-08-30T10:00:00.000Z");
+    const repository = createRepository({
+      async query(sql: string, params?: unknown[]) {
+        calls.push({ sql, params });
+        if (sql.includes("total_count")) {
+          return [{ document_id: "doc-1", total_count: "12" }];
+        }
+        return [3, 4, 5, 6].map((chunkIndex) => ({
+          id: `chunk-${chunkIndex}`,
+          document_id: "doc-1",
+          workspace_id: "workspace-1",
+          chunk_index: chunkIndex,
+          content: chunkIndex === 4 ? "full text ".repeat(200) : `chunk ${chunkIndex}`,
+          search_text: `search ${chunkIndex}`,
+          start_offset: chunkIndex * 100,
+          end_offset: (chunkIndex + 1) * 100,
+          metadata: { chunkIndex },
+          created_at: createdAt,
+          embedding_dimensions: chunkIndex === 4 ? 1536 : null,
+          date_from: null,
+          date_to: null,
+        }));
+      },
+      async withTransaction() {
+        throw new Error("unused");
+      },
+    } as never);
+
+    const page = await repository.listPageForDocument({
+      documentId: "doc-1",
+      workspaceId: "workspace-1",
+      startChunkIndex: 3,
+      limit: 3,
+    });
+    if (!page) throw new Error("Expected the fixture document to exist");
+
+    const pageCall = calls.find((call) => call.sql.includes("FROM chunks c"));
+    expect(pageCall?.sql).toContain("c.chunk_index >= $3");
+    expect(pageCall?.sql).toContain("ORDER BY c.chunk_index ASC");
+    expect(pageCall?.sql).toContain("LIMIT $4");
+    expect(pageCall?.params).toEqual(["doc-1", "workspace-1", 3, 4]);
+    expect(page).toMatchObject({ totalChunks: 12, nextChunkIndex: 6 });
+    expect(page.chunks.map((chunk) => chunk.chunkIndex)).toEqual([3, 4, 5]);
+    expect(page.chunks[1]?.content).toBe("full text ".repeat(200));
+  });
+
+  it("returns null when the document does not exist in the workspace", async () => {
+    const repository = createRepository({
+      async query(sql: string) {
+        if (sql.includes("COUNT(*)")) return [];
+        return [];
+      },
+      async withTransaction() { throw new Error("unused"); },
+    } as never);
+
+    await expect(repository.listPageForDocument({
+      documentId: "missing", workspaceId: "workspace-1", startChunkIndex: 0, limit: 5,
+    })).resolves.toBeNull();
+  });
+
   it("returns null when fetching a missing chunk", async () => {
     const repository = createRepository({
       async query() {

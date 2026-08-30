@@ -30,6 +30,7 @@ import {
   type EmbeddingProfileTerminalFailurePort,
   DocumentSearchHistoryService,
   DocumentSearchService,
+  DocumentSourceRecrawlService,
   DocumentSourceReprocessService,
   DocumentSourceContentService,
   WorkspaceIngestionReprocessService,
@@ -65,6 +66,7 @@ import {
 } from "../../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../../modules/settings/contracts/ingestion.js";
 import { WebsiteCrawlJobService } from "../../../modules/websiteCrawler/jobService.js";
+import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
@@ -224,6 +226,11 @@ export const buildDocumentServices = (input: {
     logger,
     publisher: input.workspaceInvalidationPublisher,
   });
+  const documentSourceRecrawlService = new DocumentSourceRecrawlService({
+    sourceRepository: documentSourceRepository,
+    crawlJobs: websiteCrawlJobService,
+    crawlerConfig: resolveWebsiteCrawlerConfig(),
+  });
   const documentImportService = new DocumentImportService(
     repositories.documentRepository,
     auditService,
@@ -304,6 +311,7 @@ export const buildDocumentServices = (input: {
     documentJobConsumer,
     documentProcessingWorker,
     documentSearchHistoryService,
+    documentSourceRecrawlService,
     documentSourceReprocessService,
     documentStorage,
     websiteCrawlJobConsumer,

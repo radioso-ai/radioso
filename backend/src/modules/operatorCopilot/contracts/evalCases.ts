@@ -299,7 +299,8 @@ export interface CopilotReplayEvidenceRecord {
    * Real directive ids the replay service validated and excluded from this replay's
    * configuration, resolved against the source agent's actual directives rather than read from
    * `overrides`. Empty when the replay requested no exclusion. This is what a
-   * `propose_directive_removal` evidence citation checks — never `overrides` itself, which is
+   * `propose_directive_removal` or a disable `propose_directive_enablement` evidence citation
+   * checks — never `overrides` itself, which is
    * whatever the model supplied and can omit a directive's id without proving its absence.
    */
   directivesExcluded: ReadonlyArray<string>;

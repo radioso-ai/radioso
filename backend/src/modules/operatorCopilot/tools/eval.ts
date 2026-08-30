@@ -139,10 +139,11 @@ const replayOverridesSchema = z.object({
     authoredDirectives: z.array(unknownRecord).max(50).optional(),
     // Ids to drop from the replayed directive set. Resolved and applied server-side against the
     // case's source agent, never against authoredDirectives, so this is the only override that
-    // can back propose_directive_removal evidence. Cannot be combined with authoredDirectives.
+    // can back propose_directive_removal or a disabling propose_directive_enablement evidence.
+    // Cannot be combined with authoredDirectives.
     // Several ids at once is a fine way to explore "what if I dropped both of these", but the
-    // resulting evidence only backs a propose_directive_removal for that exact combination: a
-    // proposal to remove one of them alone needs its own replay excluding only that one id.
+    // resulting evidence only backs a removal or disable proposal for that exact combination: a
+    // proposal affecting one of them alone needs its own replay excluding only that one id.
     excludedDirectiveIds: z.array(idSchema).max(50).optional(),
   }).strict().optional(),
   routineStartState: z.object({
@@ -199,7 +200,7 @@ export interface EvalVerificationCopilotToolDependencies {
 }
 
 const CAPTURE_DESCRIPTION = "Capture a bad assistant turn as a permanent eval case. Idempotent: a turn that is already captured returns its existing case unchanged.";
-const REPLAY_DESCRIPTION = "Replay one captured eval case against a configuration that is not live yet, and report the verdict it produces, plus an evidenceId a later propose_* call can cite so the proposal carries the measurement. Use this to check a change before proposing it: the case keeps its recorded verdict either way, so a replay never moves the suite's pass rate. Always runs a full assistant turn and costs one, so replay the cases a change should affect rather than the library. To gather evidence for propose_directive_removal, set agentConfigOverride.excludedDirectiveIds to the directive's id rather than hand-editing agentConfigOverride.authoredDirectives: the server resolves the id against the agent's real directives and removes it itself, so only that field can prove the directive was actually absent from the run. A proposal to remove one directive can only cite a replay whose excludedDirectiveIds was that directive's id alone — replaying with other directives excluded too measures a different configuration and is refused, so exclude exactly the one directive you are proposing to remove.";
+const REPLAY_DESCRIPTION = "Replay one captured eval case against a configuration that is not live yet, and report the verdict it produces, plus an evidenceId a later propose_* call can cite so the proposal carries the measurement. Use this to check a change before proposing it: the case keeps its recorded verdict either way, so a replay never moves the suite's pass rate. Always runs a full assistant turn and costs one, so replay the cases a change should affect rather than the library. To gather evidence for propose_directive_removal or disabling propose_directive_enablement, set agentConfigOverride.excludedDirectiveIds to the directive's id rather than hand-editing agentConfigOverride.authoredDirectives: the server resolves the id against the agent's real directives and removes it itself, so only that field can prove the directive was absent from the run. A proposal to remove or disable one directive can only cite a replay whose excludedDirectiveIds was that directive's id alone — replaying with other directives excluded too measures a different configuration and is refused, so exclude exactly the one directive you are proposing to affect. Exclusion evidence cannot support re-enabling, because it measures the directive absent from the run.";
 
 const SUITE_RUN_DESCRIPTION = `Re-run up to ${MAX_COPILOT_EVAL_SUITE_CASES} named eval cases and report their outcomes plus the whole suite's standing. Each case replays for real: the run is recorded and the case's stored status moves to the new verdict. Cases run sequentially, so select the cases a change should affect rather than the whole library; list case ids with eval_results first.`;
 

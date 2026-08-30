@@ -202,6 +202,7 @@ describe("US3 copilot proposals", () => {
     expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "propose_directive", shape: "propose" },
       { name: "propose_directive_removal", shape: "propose" },
+      { name: "propose_directive_enablement", shape: "propose" },
       { name: "propose_routine", shape: "propose" },
       { name: "propose_routine_edit", shape: "propose" },
       { name: "propose_routine_lifecycle", shape: "propose" },
@@ -214,6 +215,66 @@ describe("US3 copilot proposals", () => {
     expect(createProposal).toHaveBeenCalledTimes(2);
     expect(createProposal.mock.calls[0]?.[0]).toMatchObject({ targetType: "directive", targetRef: { agentId, directiveId }, versionToken: "directive-version" });
     expect(createProposal.mock.calls[1]?.[0]).toMatchObject({ targetType: "agent_setting", targetRef: { agentId, settingKey: "retrievalEnabled" }, versionToken: "agent-version" });
+  });
+
+  it("creates a reversible directive enablement proposal after reading its version first", async () => {
+    const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
+      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+    }));
+    const readVersionToken = vi.fn(async () => "directive-version");
+    const preview = vi.fn(async () => ({
+      targetLabel: "Avoid competitors",
+      current: { id: directiveId, name: "Avoid competitors", enabled: true },
+      proposed: { id: directiveId, name: "Avoid competitors", enabled: false },
+    }));
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken, preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+
+    const result = await descriptors.find((descriptor) => descriptor.name === "propose_directive_enablement")?.createTool(context).invoke({ directiveId, agentId, enabled: false }, {} as never);
+
+    expect(readVersionToken).toHaveBeenCalledBefore(preview);
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetType: "directive",
+      targetRef: { agentId, directiveId },
+      versionToken: "directive-version",
+      payload: { op: "set_enabled", enabled: false, name: "Avoid competitors", rationale: expect.any(String) },
+    }));
+    expect(result).toMatchObject({ targetType: "directive", targetLabel: "Avoid competitors" });
+    expect(result).not.toHaveProperty("removal");
+  });
+
+  it("refuses directive enablement proposals that match the directive's current state", async () => {
+    const createProposal = vi.fn();
+    const preview = vi.fn()
+      .mockResolvedValueOnce({
+        targetLabel: "Avoid competitors",
+        current: { id: directiveId, name: "Avoid competitors", enabled: true },
+        proposed: { id: directiveId, name: "Avoid competitors", enabled: true },
+      })
+      .mockResolvedValueOnce({
+        targetLabel: "Avoid competitors",
+        current: { id: directiveId, name: "Avoid competitors", enabled: false },
+        proposed: { id: directiveId, name: "Avoid competitors", enabled: false },
+      });
+    const descriptors = createDirectiveProposalCopilotTools({
+      proposalRepository: { createProposal },
+      proposalEvidence: unmeasured(),
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
+      auditService: auditService(),
+    });
+    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const tool = descriptors.find((descriptor) => descriptor.name === "propose_directive_enablement")?.createTool(context);
+
+    await expect(tool?.invoke({ directiveId, agentId, enabled: true }, {} as never))
+      .rejects.toThrow(/already enabled/i);
+    await expect(tool?.invoke({ directiveId, agentId, enabled: false }, {} as never))
+      .rejects.toThrow(/already disabled/i);
+    expect(createProposal).not.toHaveBeenCalled();
   });
 
   it("creates a pending removal proposal for an existing directive, drafting nothing", async () => {
@@ -722,6 +783,70 @@ describe("directive proposal adapter payload mapping", () => {
     expect(preview.proposed).not.toBeUndefined();
     expect(typeof preview.proposed).toBe("string");
     expect(preview.proposed as string).toMatch(/remov/i);
+  });
+
+  it("previews and applies a set_enabled payload as a one-field partial update", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const existing = {
+      id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: 80,
+      requiredCapabilities: ["retrieve"], dependsOn: ["base-rule"], excludes: ["other-rule"], routes: [], tags: ["sales"], description: "Keep the configured text.", binding: { kind: "skill", skillName: "order.lookup" }, lifecycle: { kind: "cooldown", turns: 3 }, enabled: true, metadata: { source: "operator" }, createdAt: new Date(0), updatedAt: new Date(0),
+    };
+    const update = vi.fn(async () => ({ directive: { ...existing, enabled: false }, coherence: null }));
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn() } as never,
+    });
+    const targetRef = { agentId: existing.agentId, directiveId: existing.id };
+
+    await expect(adapter.preview("workspace-1", targetRef, { op: "set_enabled", enabled: false })).resolves.toEqual({
+      targetLabel: "Avoid competitors",
+      current: existing,
+      proposed: { ...existing, enabled: false },
+    });
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
+      .resolves.toEqual({ outcome: "applied", appliedRef: { directiveId: existing.id } });
+    expect(update).toHaveBeenCalledWith("workspace-1", existing.agentId, existing.id, { enabled: false }, { expectedUpdatedAt: new Date(0) });
+  });
+
+  it("previews a set_enabled proposal for a deleted directive as a stale notice", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn() } as never,
+    });
+
+    await expect(adapter.preview(
+      "workspace-1",
+      { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" },
+      { op: "set_enabled", enabled: false, name: "Avoid competitors" },
+    )).resolves.toEqual({
+      targetLabel: "Avoid competitors",
+      current: null,
+      proposed: "This directive no longer exists, so this change cannot be applied.",
+    });
+  });
+
+  it("maps a stale set_enabled write to stale and preserves the service validation reason on re-enable", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
+    const update = vi.fn()
+      .mockRejectedValueOnce(conflict("Directive was updated by another writer; reload before saving again"))
+      .mockResolvedValueOnce({ directive: { id: targetRef.directiveId, enabled: false }, coherence: null })
+      .mockRejectedValueOnce(new Error('Directive binding skill "order.lookup" is disabled'));
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => []), create: vi.fn(), update, delete: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn() } as never,
+    });
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
+      .resolves.toEqual({ outcome: "stale" });
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: false }, new Date(0).toISOString()))
+      .resolves.toEqual({ outcome: "applied", appliedRef: { directiveId: targetRef.directiveId } });
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "set_enabled", enabled: true }, new Date(0).toISOString()))
+      .resolves.toEqual({ outcome: "failed", reason: 'Directive binding skill "order.lookup" is disabled' });
   });
 });
 

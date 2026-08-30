@@ -274,8 +274,8 @@ describe("chunk repository", () => {
     const repository = createRepository({
       async query(sql: string, params?: unknown[]) {
         calls.push({ sql, params });
-        if (sql.includes("COUNT(*)")) {
-          return [{ total_count: "12" }];
+        if (sql.includes("total_count")) {
+          return [{ document_id: "doc-1", total_count: "12" }];
         }
         return [3, 4, 5, 6].map((chunkIndex) => ({
           id: `chunk-${chunkIndex}`,
@@ -304,6 +304,7 @@ describe("chunk repository", () => {
       startChunkIndex: 3,
       limit: 3,
     });
+    if (!page) throw new Error("Expected the fixture document to exist");
 
     const pageCall = calls.find((call) => call.sql.includes("FROM chunks c"));
     expect(pageCall?.sql).toContain("c.chunk_index >= $3");
@@ -313,6 +314,20 @@ describe("chunk repository", () => {
     expect(page).toMatchObject({ totalChunks: 12, nextChunkIndex: 6 });
     expect(page.chunks.map((chunk) => chunk.chunkIndex)).toEqual([3, 4, 5]);
     expect(page.chunks[1]?.content).toBe("full text ".repeat(200));
+  });
+
+  it("returns null when the document does not exist in the workspace", async () => {
+    const repository = createRepository({
+      async query(sql: string) {
+        if (sql.includes("COUNT(*)")) return [];
+        return [];
+      },
+      async withTransaction() { throw new Error("unused"); },
+    } as never);
+
+    await expect(repository.listPageForDocument({
+      documentId: "missing", workspaceId: "workspace-1", startChunkIndex: 0, limit: 5,
+    })).resolves.toBeNull();
   });
 
   it("returns null when fetching a missing chunk", async () => {

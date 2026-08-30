@@ -3,6 +3,64 @@ import { describe, expect, it, vi } from "vitest";
 import { WebsiteCrawlJobService } from "../../../src/modules/websiteCrawler/jobService.js";
 
 describe("website crawl job service", () => {
+  it("enqueues an existing source without re-identifying it from the URL or replacing its config", async () => {
+    const sourceId = "33333333-3333-4333-8333-333333333333";
+    const createForSource = vi.fn().mockImplementation(async (input) => ({
+      id: "11111111-1111-4111-8111-111111111111",
+      ...input,
+    }));
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+    const resolveSource = vi.fn().mockRejectedValue(new Error("URL source resolution would replace config"));
+    const service = new WebsiteCrawlJobService({
+      repository: { createForSource } as never,
+      dispatcher: { dispatch },
+      documentIngestionService: { resolveSource } as never,
+      assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(service.enqueueForSource({
+      accountId: "44444444-4444-4444-8444-444444444444",
+      workspaceId: "22222222-2222-4222-8222-222222222222",
+      sourceId,
+      url: "https://example.com/search?apiKey=secret",
+      limit: 3,
+    })).resolves.toMatchObject({ sourceId, status: "queued" });
+
+    expect(createForSource).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "22222222-2222-4222-8222-222222222222",
+      sourceId,
+      requestedUrl: "https://example.com/search?apiKey=secret",
+    }));
+    expect(resolveSource).not.toHaveBeenCalled();
+  });
+
+  it("does not enqueue when the existing source cannot be resolved in the workspace", async () => {
+    const createForSource = vi.fn().mockResolvedValue(null);
+    const dispatch = vi.fn();
+    const publisher = { enqueue: vi.fn() };
+    const service = new WebsiteCrawlJobService({
+      repository: { createForSource } as never,
+      dispatcher: { dispatch },
+      documentIngestionService: {} as never,
+      assertCrawlUrlAllowed: vi.fn().mockResolvedValue(undefined),
+      publisher,
+    });
+
+    await expect(service.enqueueForSource({
+      workspaceId: "workspace-1",
+      sourceId: "source-from-another-workspace",
+      url: "https://example.com",
+      limit: 3,
+    })).rejects.toThrow("Source not found");
+
+    expect(createForSource).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      sourceId: "source-from-another-workspace",
+    }));
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it("creates a durable job before dispatching a crawl notification", async () => {
     const create = vi.fn().mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",

@@ -359,7 +359,7 @@ export interface ChunkRepositoryPort {
     workspaceId: string;
     startChunkIndex: number;
     limit: number;
-  }): Promise<ChunkPage>;
+  }): Promise<ChunkPage | null>;
   findByIdForDocument(input: {
     chunkId: string;
     documentId: string;

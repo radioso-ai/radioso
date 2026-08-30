@@ -25,13 +25,13 @@ const websiteSource = (config: Record<string, unknown> = {}) => ({
 
 const dependencies = (source: ReturnType<typeof websiteSource> | null = websiteSource()) => {
   const findByIdAndWorkspaceId = vi.fn(async () => source);
-  const enqueue = vi.fn(async () => ({
+  const enqueueForSource = vi.fn(async () => ({
     jobId: "44444444-4444-4444-8444-444444444444",
     sourceId,
     requestedUrl: "https://help.example.com",
     status: "queued" as const,
   }));
-  return { findByIdAndWorkspaceId, enqueue };
+  return { findByIdAndWorkspaceId, enqueueForSource };
 };
 
 describe("DocumentSourceRecrawlService", () => {
@@ -50,9 +50,10 @@ describe("DocumentSourceRecrawlService", () => {
     })).resolves.toMatchObject({ sourceId, status: "queued" });
 
     expect(deps.findByIdAndWorkspaceId).toHaveBeenCalledWith(sourceId, "workspace-1");
-    expect(deps.enqueue).toHaveBeenCalledWith({
+    expect(deps.enqueueForSource).toHaveBeenCalledWith({
       accountId: "account-1",
       workspaceId: "workspace-1",
+      sourceId,
       url: "https://help.example.com",
       limit: 100,
       policy: { includeUrlPatterns: ["/docs/**"], preserveContentLinks: true },
@@ -74,7 +75,7 @@ describe("DocumentSourceRecrawlService", () => {
 
     await service.recrawlSource({ accountId: "account-1", workspaceId: "workspace-1", sourceId });
 
-    expect(deps.enqueue).toHaveBeenCalledWith(expect.objectContaining({ limit: 25 }));
+    expect(deps.enqueueForSource).toHaveBeenCalledWith(expect.objectContaining({ limit: 25 }));
   });
 
   it("rejects a missing source, a non-website source, and a website source without a stored URL", async () => {

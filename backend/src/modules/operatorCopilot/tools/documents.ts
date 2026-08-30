@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ChunkRepositoryPort } from "../../documents/contracts/index.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
+import { notFound } from "../../../shared/domain/errors.js";
 
 const unknownRecord = z.record(z.unknown());
 const documentAttentionStatuses = ["failed", "queued", "processing"] as const;
@@ -184,6 +185,7 @@ export const createDocumentKnowledgeCopilotTools = (
           startChunkIndex,
           limit,
         });
+        if (!page) throw notFound("Document not found");
 
         return documentChunksOutputSchema.parse({
           documentId,

@@ -943,6 +943,12 @@ export const createTestDependencies = (overrides: {
       requestedUrl: "https://example.com",
       status: "queued" as const,
     }),
+    enqueueForSource: async (input: { sourceId: string; url: string }) => ({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: input.sourceId,
+      requestedUrl: input.url,
+      status: "queued" as const,
+    }),
     cancelJobsForSource: async () => 0,
   } as any;
   const documentSourceRecrawlService = new DocumentSourceRecrawlService({

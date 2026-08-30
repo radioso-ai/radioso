@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDocumentKnowledgeCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
+import type { ChunkRepositoryPort } from "../../../src/modules/documents/contracts/index.js";
+import {
+  createDocumentKnowledgeCopilotTools,
+  type CopilotDocumentMaintenancePort,
+} from "../../../src/modules/operatorCopilot/tools/documents.js";
 import { buildDescriptors, documentSkillsContext as context, documentStatusPorts } from "./copilot-tools-test-helpers.js";
 
 const documentId = "11111111-1111-4111-8111-111111111111";
@@ -29,7 +33,7 @@ const knowledgePorts = () => {
     workspaceId: string;
     startChunkIndex: number;
     limit: number;
-  }) => {
+  }): Promise<Awaited<ReturnType<ChunkRepositoryPort["listPageForDocument"]>>> => {
     const page = chunks
       .filter((chunk) => chunk.chunkIndex >= input.startChunkIndex)
       .slice(0, input.limit);
@@ -42,7 +46,7 @@ const knowledgePorts = () => {
         : chunks.find((chunk) => chunk.chunkIndex > lastChunkIndex)?.chunkIndex ?? null,
     };
   });
-  const reprocessDocument = vi.fn(async () => ({
+  const reprocessDocument = vi.fn(async (): Promise<Awaited<ReturnType<CopilotDocumentMaintenancePort["reprocessDocument"]>>> => ({
     documentId,
     status: "queued" as const,
     queuedDocumentCount: 1,
@@ -71,6 +75,16 @@ const knowledgePorts = () => {
 };
 
 describe("copilot document readers", () => {
+  it("reports a missing document instead of an empty chunk page", async () => {
+    const ports = knowledgePorts();
+    ports.listPageForDocument.mockResolvedValueOnce(null);
+    const descriptor = createDocumentKnowledgeCopilotTools({ documentChunks: ports, documentMaintenance: ports })
+      .find((candidate) => candidate.name === "document_chunks")!;
+
+    await expect(descriptor.createTool(context).invoke({ documentId, startChunkIndex: 0, limit: 1 }, {} as never))
+      .rejects.toThrow("Document not found");
+  });
+
   it("reports workspace ingestion counts, the attention list, and source sync state", async () => {
     const documents = documentStatusPorts();
     const descriptors = buildDescriptors(documents);

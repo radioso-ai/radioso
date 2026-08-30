@@ -277,12 +277,14 @@ export class ChunkRepository implements ChunkRepositoryPort {
     workspaceId: string;
     startChunkIndex: number;
     limit: number;
-  }): Promise<{ chunks: ChunkDetail[]; totalChunks: number; nextChunkIndex: number | null }> {
+  }): Promise<{ chunks: ChunkDetail[]; totalChunks: number; nextChunkIndex: number | null } | null> {
     const [countRows, rows] = await Promise.all([
-      this.database.query<{ total_count: string }>(
-        `SELECT COUNT(*)::text AS total_count
-         FROM chunks
-         WHERE document_id = $1 AND workspace_id = $2`,
+      this.database.query<{ document_id: string; total_count: string }>(
+        `SELECT d.id AS document_id, COUNT(c.id)::text AS total_count
+         FROM documents d
+         LEFT JOIN chunks c ON c.document_id = d.id AND c.workspace_id = d.workspace_id
+         WHERE d.id = $1 AND d.workspace_id = $2
+         GROUP BY d.id`,
         [input.documentId, input.workspaceId],
       ),
       this.database.query<ChunkDetailRow>(
@@ -319,6 +321,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
         [input.documentId, input.workspaceId, input.startChunkIndex, input.limit + 1],
       ),
     ]);
+    if (!countRows[0]) return null;
     const pageRows = rows.slice(0, input.limit);
 
     return {

@@ -101,6 +101,23 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
     expect(await readWidth()).toBe(CANONICAL_DIMENSIONS);
   });
 
+  it("distinguishes a real zero-chunk document from a missing or cross-workspace document", async () => {
+    const emptyDocument = await new DocumentRepository(database.kysely).create({
+      workspaceId,
+      title: "Empty Guide",
+      sourceContent: "",
+      markdownContent: "",
+      status: "ready",
+    });
+
+    await expect(chunkRepository.listPageForDocument({ documentId: emptyDocument.id, workspaceId, startChunkIndex: 0, limit: 5 }))
+      .resolves.toMatchObject({ chunks: [], totalChunks: 0, nextChunkIndex: null });
+    await expect(chunkRepository.listPageForDocument({ documentId, workspaceId: randomUUID(), startChunkIndex: 0, limit: 5 }))
+      .resolves.toBeNull();
+    await expect(chunkRepository.listPageForDocument({ documentId: randomUUID(), workspaceId, startChunkIndex: 0, limit: 5 }))
+      .resolves.toBeNull();
+  });
+
   it("reports no width for a chunk with no canonical row", async () => {
     expect(await readWidth()).toBeNull();
   });
@@ -144,6 +161,7 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
       startChunkIndex: 3,
       limit: 4,
     });
+    if (!page) throw new Error("Expected the fixture document to exist");
 
     expect(page.totalChunks).toBe(12);
     expect(page.chunks.map((chunk) => chunk.chunkIndex)).toEqual([3, 4, 5, 6]);

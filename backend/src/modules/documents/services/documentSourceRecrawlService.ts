@@ -10,9 +10,10 @@ export interface DocumentSourceRecrawlResult {
 }
 
 export interface DocumentSourceRecrawlCrawlJobsPort {
-  enqueue(input: {
+  enqueueForSource(input: {
     accountId: string;
     workspaceId: string;
+    sourceId: string;
     url: string;
     limit: number;
     policy?: Partial<WebsiteCrawlPolicy>;
@@ -58,9 +59,10 @@ export class DocumentSourceRecrawlService {
       ? source.config.policy as Partial<WebsiteCrawlPolicy>
       : undefined;
 
-    return this.dependencies.crawlJobs.enqueue({
+    return this.dependencies.crawlJobs.enqueueForSource({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
+      sourceId: source.id,
       url,
       limit: Math.min(persistedLimit, this.dependencies.crawlerConfig.maxLimit),
       policy,

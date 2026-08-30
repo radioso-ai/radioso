@@ -3252,6 +3252,12 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
     startChunkIndex: number;
     limit: number;
   }) {
+    if (this.documentRepository) {
+      const document = this.documentRepository.items.get(input.documentId);
+      if (!document || document.workspaceId !== input.workspaceId) {
+        return null;
+      }
+    }
     const matchingChunks = (this.items.get(input.documentId) ?? [])
       .filter((chunk) => chunk.workspaceId === input.workspaceId)
       .slice()

@@ -295,6 +295,21 @@ Decisions resolved during drafting and review (planning must not relitigate):
   coverage check — not from schema-generated tools (PostHog Max precedent:
   all tools hand-written; breadth via generic readers and auto-discovered
   per-product contribution).
+- **D8 — Knowledge-base remediation acts (#1049).** The approved catalog
+  extension adds a paged `document_chunks` reader plus `reprocess_document`
+  and `recrawl_source` acts. Reprocessing existing persisted content and
+  recrawling one already-configured website source are idempotent,
+  operator-visible maintenance operations; they do not change authored agent
+  behavior and therefore do not create proposal cards. Creating a new source,
+  whole-workspace reprocessing, and embedding-model changes remain outside
+  this slice.
+- **D9 — Agent-scoped retrieval probes (#1051).** Retrieval probes attributed
+  to an agent must resolve that agent's effective retrieval settings. The
+  target design is optional `agentId` scoping on the public retrieval endpoints
+  (with answer evidence retaining chunk scores); until that contract ships,
+  Ray must use the real agent pipeline through `test_agent_turn` or
+  `replay_eval_case` and must not expose the workspace-default probe endpoints
+  as if they measured an agent.
 
 Open clarifications (non-blocking; default answers stated):
 
@@ -493,6 +508,44 @@ Open clarifications (non-blocking; default answers stated):
   reason. The definition-of-done convention — an operator-facing feature ships
   its copilot tool descriptor or an allowlist entry — MUST be recorded in
   `AGENTS.md` in the same change.
+- **FR-020**: The catalog MUST expose a `document_chunks` read tool under
+  `workspace.documents.read`. It returns workspace-scoped chunk boundaries,
+  complete text, metadata, search text, and active-embedding presence for one
+  document through an explicit chunk-index range with a strict maximum page
+  size. Generic payload compaction MUST NOT truncate chunk text; pagination is
+  the payload bound.
+- **FR-021**: The catalog MUST expose document reprocessing and configured
+  website-source recrawling under `workspace.documents.manage` as `act` tools.
+  Reprocessing MAY target one document or the existing documents belonging to
+  one source; recrawl MUST resolve the stored website source and its bounded
+  crawl settings inside the Documents-owned application service. These tools
+  MUST reuse the existing queue, dispatch, audit, and invalidation paths and
+  MUST NOT accept a new URL or whole-workspace target.
+- **FR-022**: Ray MUST NOT expose `searchRetrievalEvidence` or
+  `createRetrievalAnswer` as an agent diagnostic until those operations can
+  resolve the selected agent's effective retrieval settings. Agent-attributed
+  verification MUST use the real agent execution paths in the interim.
+
+### Wave 3 Knowledge-Base Acceptance Scenarios
+
+1. **Given** a processed workspace document, **When** Ray requests a bounded
+   chunk-index range, **Then** it receives complete, untruncated chunk text in
+   index order together with offsets, metadata, search text, and embedding
+   presence, plus an explicit continuation index when more chunks remain.
+2. **Given** a document or source outside the authenticated workspace, **When**
+   Ray attempts to inspect or reprocess it, **Then** no protected data or
+   mutation is produced.
+3. **Given** an existing document or document source, **When** Ray requests a
+   reprocess, **Then** the existing asynchronous processing path is queued with
+   its normal audit, dispatch, and invalidation behavior and no proposal is
+   created.
+4. **Given** an existing website source, **When** Ray requests a recrawl,
+   **Then** the stored URL, bounded limit, and stored policy are used; a missing
+   source, non-website source, or source without a configured URL fails safely.
+5. **Given** an agent whose effective retrieval settings differ from workspace
+   defaults, **When** Ray diagnoses retrieval before agent-scoped public probes
+   ship, **Then** it uses a real agent turn/eval replay and never attributes a
+   workspace-default probe result to that agent.
 
 ### Key Entities
 

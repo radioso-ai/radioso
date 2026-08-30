@@ -101,6 +101,23 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
     expect(await readWidth()).toBe(CANONICAL_DIMENSIONS);
   });
 
+  it("distinguishes a real zero-chunk document from a missing or cross-workspace document", async () => {
+    const emptyDocument = await new DocumentRepository(database.kysely).create({
+      workspaceId,
+      title: "Empty Guide",
+      sourceContent: "",
+      markdownContent: "",
+      status: "ready",
+    });
+
+    await expect(chunkRepository.listPageForDocument({ documentId: emptyDocument.id, workspaceId, startChunkIndex: 0, limit: 5 }))
+      .resolves.toMatchObject({ chunks: [], totalChunks: 0, nextChunkIndex: null });
+    await expect(chunkRepository.listPageForDocument({ documentId, workspaceId: randomUUID(), startChunkIndex: 0, limit: 5 }))
+      .resolves.toBeNull();
+    await expect(chunkRepository.listPageForDocument({ documentId: randomUUID(), workspaceId, startChunkIndex: 0, limit: 5 }))
+      .resolves.toBeNull();
+  });
+
   it("reports no width for a chunk with no canonical row", async () => {
     expect(await readWidth()).toBeNull();
   });
@@ -119,5 +136,50 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
     // Reprocessing advances the document before its replacement chunks are published.
     // Search rejects the old canonical row during that window, so the inspector must too.
     expect(await readWidth()).toBeNull();
+  });
+
+  it("pages full chunk records in index order with a bounded continuation", async () => {
+    const fullText = "untruncated evidence ".repeat(200);
+    const chunks = Array.from({ length: 12 }, (_, chunkIndex) => ({
+      id: randomUUID(),
+      documentId,
+      workspaceId,
+      chunkIndex,
+      content: chunkIndex === 4 ? fullText : `Chunk ${chunkIndex}`,
+      searchText: `search ${chunkIndex}`,
+      embedding: [],
+      startOffset: chunkIndex * 100,
+      endOffset: (chunkIndex + 1) * 100,
+      metadata: { chunkIndex },
+      createdAt: new Date(),
+    })).reverse();
+    await chunkRepository.replaceForDocument(documentId, chunks);
+
+    const page = await chunkRepository.listPageForDocument({
+      documentId,
+      workspaceId,
+      startChunkIndex: 3,
+      limit: 4,
+    });
+    if (!page) throw new Error("Expected the fixture document to exist");
+
+    expect(page.totalChunks).toBe(12);
+    expect(page.chunks.map((chunk) => chunk.chunkIndex)).toEqual([3, 4, 5, 6]);
+    expect(page.chunks[1]?.content).toBe(fullText);
+    expect(page.nextChunkIndex).toBe(7);
+
+    await expect(chunkRepository.listPageForDocument({
+      documentId,
+      workspaceId,
+      startChunkIndex: 10,
+      limit: 4,
+    })).resolves.toMatchObject({
+      totalChunks: 12,
+      nextChunkIndex: null,
+      chunks: [
+        { chunkIndex: 10 },
+        { chunkIndex: 11 },
+      ],
+    });
   });
 });

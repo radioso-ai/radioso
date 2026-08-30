@@ -22,6 +22,38 @@ interface QueryClient {
   query<T>(text: string, params?: unknown[]): Promise<{ rows: T[] }>;
 }
 
+interface ChunkDetailRow {
+  id: string;
+  document_id: string;
+  workspace_id: string;
+  chunk_index: number;
+  content: string;
+  search_text: string | null;
+  start_offset: number;
+  end_offset: number;
+  metadata: Record<string, unknown> | null;
+  created_at: Date;
+  embedding_dimensions: number | null;
+  date_from: string | null;
+  date_to: string | null;
+}
+
+const mapChunkDetail = (row: ChunkDetailRow): ChunkDetail => ({
+  id: row.id,
+  documentId: row.document_id,
+  workspaceId: row.workspace_id,
+  chunkIndex: Number(row.chunk_index),
+  content: row.content,
+  searchText: row.search_text,
+  startOffset: Number(row.start_offset),
+  endOffset: Number(row.end_offset),
+  metadata: (row.metadata ?? {}) as Record<string, unknown>,
+  dateFrom: row.date_from,
+  dateTo: row.date_to,
+  createdAt: row.created_at,
+  embeddingDimensions: row.embedding_dimensions === null ? null : Number(row.embedding_dimensions),
+});
+
 // The chunk row carries text, offsets and metadata. Its vector is written separately
 // into chunk_embeddings, which is what search compares against.
 const CHUNK_INSERT_COLUMNS = 10;
@@ -240,26 +272,71 @@ export class ChunkRepository implements ChunkRepositoryPort {
     }));
   }
 
+  async listPageForDocument(input: {
+    documentId: string;
+    workspaceId: string;
+    startChunkIndex: number;
+    limit: number;
+  }): Promise<{ chunks: ChunkDetail[]; totalChunks: number; nextChunkIndex: number | null } | null> {
+    const [countRows, rows] = await Promise.all([
+      this.database.query<{ document_id: string; total_count: string }>(
+        `SELECT d.id AS document_id, COUNT(c.id)::text AS total_count
+         FROM documents d
+         LEFT JOIN chunks c ON c.document_id = d.id AND c.workspace_id = d.workspace_id
+         WHERE d.id = $1 AND d.workspace_id = $2
+         GROUP BY d.id`,
+        [input.documentId, input.workspaceId],
+      ),
+      this.database.query<ChunkDetailRow>(
+        `SELECT c.id,
+                c.document_id,
+                c.workspace_id,
+                c.chunk_index,
+                c.content,
+                c.search_text,
+                c.start_offset,
+                c.end_offset,
+                c.metadata,
+                c.created_at,
+                (SELECT ce.dimensions
+                   FROM chunk_embeddings ce
+                   JOIN workspace_embedding_profiles p
+                     ON p.workspace_id = ce.workspace_id
+                    AND p.active_embedding_space_id = ce.embedding_space_id
+                  WHERE ce.workspace_id = c.workspace_id
+                    AND ce.chunk_id = c.id
+                    AND ce.document_revision = d.revision
+                  LIMIT 1) AS embedding_dimensions,
+                c.date_from,
+                c.date_to
+         FROM chunks c
+         JOIN documents d
+           ON d.workspace_id = c.workspace_id
+          AND d.id = c.document_id
+         WHERE c.document_id = $1
+           AND c.workspace_id = $2
+           AND c.chunk_index >= $3
+         ORDER BY c.chunk_index ASC
+         LIMIT $4`,
+        [input.documentId, input.workspaceId, input.startChunkIndex, input.limit + 1],
+      ),
+    ]);
+    if (!countRows[0]) return null;
+    const pageRows = rows.slice(0, input.limit);
+
+    return {
+      chunks: pageRows.map(mapChunkDetail),
+      totalChunks: Number(countRows[0]?.total_count ?? "0"),
+      nextChunkIndex: rows.length > input.limit ? Number(rows[input.limit]!.chunk_index) : null,
+    };
+  }
+
   async findByIdForDocument(input: {
     chunkId: string;
     documentId: string;
     workspaceId: string;
   }): Promise<ChunkDetail | null> {
-    const rows = await this.database.query<{
-      id: string;
-      document_id: string;
-      workspace_id: string;
-      chunk_index: number;
-      content: string;
-      search_text: string | null;
-      start_offset: number;
-      end_offset: number;
-      metadata: Record<string, unknown> | null;
-      created_at: Date;
-      embedding_dimensions: number | null;
-      date_from: string | null;
-      date_to: string | null;
-    }>(
+    const rows = await this.database.query<ChunkDetailRow>(
       // The reported width comes from the canonical row for the workspace's active
       // embedding space, because that is the vector semantic search actually compares
       // against. Chunks are only inspectable as embedded after their canonical vector
@@ -298,21 +375,7 @@ export class ChunkRepository implements ChunkRepositoryPort {
       return null;
     }
 
-    return {
-      id: row.id,
-      documentId: row.document_id,
-      workspaceId: row.workspace_id,
-      chunkIndex: Number(row.chunk_index),
-      content: row.content,
-      searchText: row.search_text,
-      startOffset: Number(row.start_offset),
-      endOffset: Number(row.end_offset),
-      metadata: (row.metadata ?? {}) as Record<string, unknown>,
-      dateFrom: row.date_from,
-      dateTo: row.date_to,
-      createdAt: row.created_at,
-      embeddingDimensions: row.embedding_dimensions === null ? null : Number(row.embedding_dimensions),
-    };
+    return mapChunkDetail(row);
   }
 }
 

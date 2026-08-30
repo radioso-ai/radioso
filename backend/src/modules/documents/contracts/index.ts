@@ -3,6 +3,7 @@ import type { DocumentSourceResolverInput, IndexedFieldValue } from "./documentC
 export type {
   ChunkDetail,
   ChunkMetadataRevisionPatch,
+  ChunkPage,
   ChunkRecord,
   ChunkRepositoryPort,
   ChunkSummary,

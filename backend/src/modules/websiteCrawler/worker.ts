@@ -244,6 +244,7 @@ export class WebsiteCrawlWorker {
       const result = await service.crawlAndPublish({
         accountId: job.accountId,
         workspaceId: job.workspaceId,
+        sourceId: job.sourceId,
         url: job.requestedUrl,
         limit: job.limit,
         maxDurationMs: this.dependencies.sliceDurationMs ?? WebsiteCrawlWorker.DEFAULT_SLICE_DURATION_MS,

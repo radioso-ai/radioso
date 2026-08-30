@@ -37,10 +37,10 @@ export interface ProposalEvidenceRequest {
 }
 
 export type ProposalChange =
-  // `directiveId` is set only for a removal proposal, where it is the honest thing a replay can
-  // put under test: a configuration measured without that directive in place. A save proposal
+  // `directiveId` is set for removal and disable proposals, where it is the honest thing a replay
+  // can put under test: a configuration measured without that directive in place. A save proposal
   // (create or update) omits it, because a drafted directive never matches an override's shape.
-  | { targetType: "directive"; directiveId?: string }
+  | { targetType: "directive"; directiveId?: string; directiveEnabled?: boolean }
   | { targetType: "routine" }
   | { targetType: "agent_setting"; settingKey: string; value: unknown }
   // `enabled` is optional because not every caller can state a target enabled value (see
@@ -206,6 +206,9 @@ const assertMeasuredTheProposedChange = (
     throw badRequest("A replay cannot measure a context variable proposal; no replay override installs visitor context");
   }
   if (change.targetType === "directive") {
+    if (change.directiveEnabled === true) {
+      throw badRequest("Replay exclusion evidence cannot support re-enabling a directive; it only measures the directive absent from the run");
+    }
     if (change.directiveId) {
       // Membership is not enough: a replay that excluded A and B together measured a
       // configuration that never existed as "remove A alone" describes, and removing both can
@@ -214,10 +217,10 @@ const assertMeasuredTheProposedChange = (
       const excludedSet = new Set(record.directivesExcluded);
       const excludedExactlyThisDirective = excludedSet.size === 1 && excludedSet.has(change.directiveId);
       if (!excludedExactlyThisDirective) {
-        throw badRequest("Replay evidence did not exclude exactly the directive being removed; replay again with excludedDirectiveIds set to only this directive's id, with no other directives excluded");
+        throw badRequest("Replay evidence did not exclude exactly the directive being removed or disabled; replay again with excludedDirectiveIds set to only this directive's id, with no other directives excluded");
       }
       if (hasConfoundingOverride(overrides)) {
-        throw badRequest("Replay evidence also measured other configuration changes alongside the directive exclusion, so it cannot isolate the removal's effect; replay again with excludedDirectiveIds as the only override");
+        throw badRequest("Replay evidence also measured other configuration changes alongside the directive exclusion, so it cannot isolate the removal or disable's effect; replay again with excludedDirectiveIds as the only override");
       }
       return;
     }

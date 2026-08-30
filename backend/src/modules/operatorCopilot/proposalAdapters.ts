@@ -200,6 +200,16 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
     if (isDirectiveRemoval(payload)) {
       return { targetLabel: payload.name ?? current?.name ?? "Directive", current, proposed: DIRECTIVE_REMOVAL_NOTICE };
     }
+    if (isDirectiveEnablement(payload)) {
+      if (!current) {
+        return {
+          targetLabel: payload.name ?? "Directive",
+          current: null,
+          proposed: DIRECTIVE_ENABLEMENT_TARGET_MISSING_NOTICE,
+        };
+      }
+      return { targetLabel: current.name, current, proposed: { ...current, enabled: payload.enabled } };
+    }
     const proposed = directivePayload(payload);
     return { targetLabel: proposed.name, current, proposed };
   },
@@ -216,6 +226,22 @@ export const createDirectiveCopilotProposalAdapter = (deps: {
       } catch (error) {
         if (isStale(error)) return { outcome: "stale" as const };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive removal failed" };
+      }
+    }
+    if (isDirectiveEnablement(payload)) {
+      if (!targetRef.directiveId) return { outcome: "failed" as const, reason: "Directive enablement requires an existing directive" };
+      try {
+        const directive = (await deps.authoredDirectiveService.update(
+          workspaceId,
+          targetRef.agentId,
+          targetRef.directiveId,
+          { enabled: payload.enabled },
+          { expectedUpdatedAt: versionDate(token) },
+        )).directive;
+        return { outcome: "applied" as const, appliedRef: { directiveId: directive.id } };
+      } catch (error) {
+        if (isStale(error)) return { outcome: "stale" as const };
+        return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Directive enablement failed" };
       }
     }
     try {
@@ -858,10 +884,24 @@ interface DirectiveRemovalPayload {
   readonly rationale?: string;
 }
 
+interface DirectiveEnablementPayload {
+  readonly op: "set_enabled";
+  readonly enabled: boolean;
+  /** Presentation-only, as on a removal payload. */
+  readonly name?: string;
+  readonly rationale?: string;
+}
+
 // A payload missing `op` is the save shape every proposal used before removal existed, so it must
 // keep reading as a save. Only an explicit `op: "remove"` selects the removal branch.
 const isDirectiveRemoval = (payload: unknown): payload is DirectiveRemovalPayload =>
   typeof payload === "object" && payload !== null && (payload as { op?: unknown }).op === "remove";
+
+const isDirectiveEnablement = (payload: unknown): payload is DirectiveEnablementPayload =>
+  typeof payload === "object"
+  && payload !== null
+  && (payload as { op?: unknown }).op === "set_enabled"
+  && typeof (payload as { enabled?: unknown }).enabled === "boolean";
 
 /**
  * Shown as the "proposed" side of a removal's preview. A plain notice reads far more clearly than
@@ -869,6 +909,12 @@ const isDirectiveRemoval = (payload: unknown): payload is DirectiveRemovalPayloa
  * recursing into every field of the directive and marking each one individually removed.
  */
 const DIRECTIVE_REMOVAL_NOTICE = "This directive will be permanently removed.";
+
+/**
+ * Shown when a directive changed after an enablement proposal was drafted. A plain notice avoids
+ * the generic diff algorithm trying to compare an absent record against a partial replacement.
+ */
+const DIRECTIVE_ENABLEMENT_TARGET_MISSING_NOTICE = "This directive no longer exists, so this change cannot be applied.";
 
 // Maps a stored proposal payload onto the management input. The draft keeps
 // presentation extras (e.g. the coach's rationale) that the .strict()

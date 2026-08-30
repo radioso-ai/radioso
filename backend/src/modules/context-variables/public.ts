@@ -62,6 +62,19 @@ export type {
   ContextVariableValue,
   ContextVariableValueType,
 } from "./domain.js";
+export type {
+  AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
+  ContextVariableCreateRecord,
+  ContextVariableDefinitionWrite,
+  ContextVariableEnablementReaderPort,
+  ContextVariableEnablementWrite,
+  ContextVariableRepositoryPort,
+  ContextVariableResolutionReaderPort,
+  ContextVariableResolverRepositoryPort,
+  ContextVariableUpdateRecord,
+} from "./repository.js";
 export {
   ContextVariableService,
   assertEnablementIsWellFormed,

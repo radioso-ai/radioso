@@ -1,11 +1,11 @@
-import {
-  type AgentContextVariableEnablementRecord,
-  type ApplyContextVariableProposalInput,
-  type ApplyContextVariableProposalResult,
-  type ContextVariableCreateRecord,
-  type ContextVariableRepositoryPort,
-  type ContextVariableUpdateRecord,
-} from "../../../db/repositories/contextVariableRepository.js";
+import type {
+  AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
+  ContextVariableCreateRecord,
+  ContextVariableRepositoryPort,
+  ContextVariableUpdateRecord,
+} from "../repository.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import { isValueCompatibleWithType } from "../valueCompatibility.js";
 import type {

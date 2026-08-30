@@ -10,8 +10,15 @@ import { AgentSkillsService } from "../../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../../src/modules/skills/public.js";
 import { badRequest, conflict, notFound } from "../../../src/shared/domain/errors.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
-import { ContextVariableService, type AgentContextVariableEnablement, type ContextVariable } from "../../../src/modules/context-variables/public.js";
-import type { AgentContextVariableEnablementRecord, ApplyContextVariableProposalInput, ApplyContextVariableProposalResult, ContextVariableRepositoryPort } from "../../../src/db/repositories/contextVariableRepository.js";
+import {
+  ContextVariableService,
+  type AgentContextVariableEnablement,
+  type AgentContextVariableEnablementRecord,
+  type ApplyContextVariableProposalInput,
+  type ApplyContextVariableProposalResult,
+  type ContextVariable,
+  type ContextVariableRepositoryPort,
+} from "../../../src/modules/context-variables/public.js";
 
 // Minimal stand-in for AgentService.get: throws not-found for any agent id the caller never
 // registered as belonging to the given workspace, matching how the real service resolves an

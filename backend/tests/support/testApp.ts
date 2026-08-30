@@ -176,14 +176,6 @@ import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/bu
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
-import type {
-  AgentContextVariableEnablementRecord,
-  ApplyContextVariableProposalInput,
-  ApplyContextVariableProposalResult,
-  ContextVariableCreateRecord,
-  ContextVariableRepositoryPort,
-  ContextVariableUpdateRecord,
-} from "../../src/db/repositories/contextVariableRepository.js";
 import { badRequest, conflict } from "../../src/shared/domain/errors.js";
 import type {
   AgentContextVariableEnablement,
@@ -191,6 +183,12 @@ import type {
   ContextVariableScope,
   ContextVariableValue,
   ResolvedVariableInput,
+  AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
+  ContextVariableCreateRecord,
+  ContextVariableRepositoryPort,
+  ContextVariableUpdateRecord,
 } from "../../src/modules/context-variables/public.js";
 import { ContextVariableService } from "../../src/modules/context-variables/public.js";
 import {
@@ -1435,6 +1433,11 @@ export const createTestDependencies = (overrides: {
     undefined,
     accessGrantService,
   );
+  const contextVariableService = new ContextVariableService({
+    repository: contextVariableRepository,
+    agentReader: { get: agentService.get.bind(agentService) },
+    agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
+  });
   const authoredDirectiveService = new AuthoredDirectiveService({
     repository: agentRepository,
     coherenceChecker: {
@@ -1464,7 +1467,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     repository: routineDefinitionRepository,
     skillAuthoringCatalog,
-    contextVariableReader: contextVariableRepository,
+    contextVariableReader: contextVariableService,
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
@@ -1801,11 +1804,6 @@ export const createTestDependencies = (overrides: {
       return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
     },
   };
-  const contextVariableService = new ContextVariableService({
-    repository: contextVariableRepository,
-    agentReader: { get: agentService.get.bind(agentService) },
-    agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
-  });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -2109,8 +2107,8 @@ export const createTestDependencies = (overrides: {
     userRepository,
     workspaceRepository,
     agentRepository,
-    contextVariableRepository,
     contextVariableService,
+    contextVariableResolutionReader: contextVariableRepository,
     identityNonceRepository,
     bootstrapGreetingCacheRepository,
     conversationRepository,

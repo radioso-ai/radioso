@@ -125,25 +125,43 @@ describe("Audience Pulse summary prompt", () => {
     expect(prompt).toContain("still being processed");
   });
 
-  it("allows exactly the qualifying topic indexes in the response schema and forces themes empty", () => {
+  it("requires exactly one keyed recommendation for each qualifying topic and forces themes empty", () => {
     const withThreeTopics = buildAudiencePulseResponseFormat([0, 2]).schema as {
       properties: {
         themes: { maxItems?: number };
-        recommendations: { minItems?: number; maxItems?: number; items: { properties: { themeIndex: { enum?: number[] } } } };
+        recommendations: {
+          additionalProperties?: boolean;
+          required?: string[];
+          properties?: Record<string, { properties: Record<string, unknown> }>;
+        };
       };
     };
 
     expect(withThreeTopics.properties.themes.maxItems).toBe(0);
-    expect(withThreeTopics.properties.recommendations.minItems).toBe(2);
-    expect(withThreeTopics.properties.recommendations.maxItems).toBe(2);
-    expect(withThreeTopics.properties.recommendations.items.properties.themeIndex).toEqual({ enum: [0, 2] });
+    expect(withThreeTopics.properties.recommendations).toMatchObject({
+      additionalProperties: false,
+      required: ["0", "2"],
+    });
+    expect(Object.keys(withThreeTopics.properties.recommendations.properties ?? {})).toEqual(["0", "2"]);
+    expect(withThreeTopics.properties.recommendations.properties?.["0"]?.properties).not.toHaveProperty("themeIndex");
   });
 
   it("forbids any recommendation when no shown topic qualifies", () => {
     const withNoTopics = buildAudiencePulseResponseFormat([]).schema as {
-      properties: { recommendations: { maxItems?: number } };
+      properties: {
+        recommendations: {
+          additionalProperties?: boolean;
+          required?: string[];
+          properties?: Record<string, unknown>;
+        };
+      };
     };
 
-    expect(withNoTopics.properties.recommendations.maxItems).toBe(0);
+    expect(withNoTopics.properties.recommendations).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: [],
+      properties: {},
+    });
   });
 });

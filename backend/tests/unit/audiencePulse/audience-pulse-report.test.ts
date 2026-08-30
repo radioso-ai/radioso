@@ -471,7 +471,7 @@ describe("Audience Pulse report domain", () => {
     })).toThrow(/unknown topic/i);
   });
 
-  it("deduplicates recommendations and picks up to six nearest eligible conversations", () => {
+  it("picks up to six nearest eligible conversations for recommendation evidence", () => {
     const population = buildPopulation(8, (index) => ({
       contentGapEligible: index < 7,
       reference: { messageId: `message-${index + 1}`, conversationId: index < 2 ? "conversation-1" : `conversation-${index}` },
@@ -488,10 +488,7 @@ describe("Audience Pulse report domain", () => {
       }],
       model: {
         ...emptyModel,
-        recommendations: [
-          { themeIndex: 0, title: "First", rationale: "Rationale", questions: ["Question"] },
-          { themeIndex: 0, title: "Second", rationale: "Rationale", questions: ["Question"] },
-        ],
+        recommendations: [{ themeIndex: 0, title: "First", rationale: "Rationale", questions: ["Question"] }],
       },
     });
 
@@ -500,6 +497,30 @@ describe("Audience Pulse report domain", () => {
       evidenceIds: ["evidence-2", "evidence-3", "evidence-4", "evidence-5", "evidence-6", "evidence-7"],
     })]);
     expect(report.contentGaps.map((gap) => gap.themeId)).toEqual(report.recommendations.map((recommendation) => recommendation.themeId));
+  });
+
+  it("rejects duplicate recommendation topic indexes instead of hiding a missing qualifying topic", () => {
+    const population = buildPopulation(4, (index) => ({
+      contentGapEligible: true,
+      reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
+    }));
+
+    expect(() => buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 },
+      population,
+      topics: [
+        { id: "topic-1", title: "Topic 1", description: "Description", evidenceIds: ["evidence-1", "evidence-2"] },
+        { id: "topic-2", title: "Topic 2", description: "Description", evidenceIds: ["evidence-3", "evidence-4"] },
+      ],
+      model: {
+        ...emptyModel,
+        recommendations: [
+          { themeIndex: 0, title: "First", rationale: "Rationale", questions: ["Question"] },
+          { themeIndex: 0, title: "Second", rationale: "Rationale", questions: ["Question"] },
+        ],
+      },
+    })).toThrow(/only be referenced once/i);
   });
 
   it("keeps the given nearest-first display evidence order bounded to twelve", () => {

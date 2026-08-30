@@ -239,15 +239,47 @@ const hydrateReport = (
   };
 };
 
-const parseModelResult = (text: string): AudiencePulseModelOutput => {
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** Maps the provider's exact keyed contract onto the report domain's index-based contract. */
+const parseModelResult = (
+  text: string,
+  qualifyingTopicIndexes: readonly number[],
+): AudiencePulseModelOutput => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (error) {
     throw new AudiencePulseReportValidationError("Audience Pulse model response was not valid JSON");
   }
+
+  if (!isJsonObject(parsed)) {
+    throw new AudiencePulseReportValidationError("Audience Pulse model response did not match the approved schema");
+  }
+  const rawRecommendations = parsed.recommendations;
+  if (!isJsonObject(rawRecommendations)) {
+    throw new AudiencePulseReportValidationError("Audience Pulse model response did not match the approved schema");
+  }
+  const expectedRecommendationKeys = qualifyingTopicIndexes.map(String);
+  const actualRecommendationKeys = Object.keys(rawRecommendations);
+  if (
+    actualRecommendationKeys.length !== expectedRecommendationKeys.length
+    || expectedRecommendationKeys.some((key) => !Object.hasOwn(rawRecommendations, key))
+  ) {
+    throw new AudiencePulseReportValidationError("Audience Pulse model response did not match the approved schema");
+  }
+
+  const recommendations = qualifyingTopicIndexes.map((themeIndex) => {
+    const recommendation = rawRecommendations[String(themeIndex)];
+    if (!isJsonObject(recommendation) || Object.hasOwn(recommendation, "themeIndex")) {
+      throw new AudiencePulseReportValidationError("Audience Pulse model response did not match the approved schema");
+    }
+    return { ...recommendation, themeIndex };
+  });
+
   try {
-    return parseAudiencePulseModelOutput(parsed);
+    return parseAudiencePulseModelOutput({ ...parsed, recommendations });
   } catch (error) {
     if (error instanceof ZodError) {
       throw new AudiencePulseReportValidationError("Audience Pulse model response did not match the approved schema");
@@ -567,9 +599,9 @@ export class AudiencePulseService implements AudiencePulsePort {
       const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
       const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
       // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
-      const responseFormat = buildAudiencePulseResponseFormat(
-        shown.flatMap((topic, index) => topic.contentGapQualifies ? [index] : []),
-      );
+      const shownQualifyingTopicIndexes = shown.flatMap((topic, index) =>
+        topic.contentGapQualifies ? [index] : []);
+      const responseFormat = buildAudiencePulseResponseFormat(shownQualifyingTopicIndexes);
       const modelCallContext = {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -593,7 +625,7 @@ export class AudiencePulseService implements AudiencePulsePort {
           signal: input.signal,
           operation: modelCallContext,
           validateResult(result) {
-            parseModelResult(result.text);
+            parseModelResult(result.text, shownQualifyingTopicIndexes);
           },
         });
       } catch (error) {
@@ -606,7 +638,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       let report: AudiencePulseStoredReport;
       let generatedAt: Date;
       try {
-        const model = parseModelResult(completion.text);
+        const model = parseModelResult(completion.text, shownQualifyingTopicIndexes);
         generatedAt = this.now();
         report = buildAudiencePulseReport({
           period: { start: analysisStart, end: analysisEnd },
@@ -628,14 +660,16 @@ export class AudiencePulseService implements AudiencePulsePort {
             + `census unclassified count (${censusResult.unclassifiedCount}) for workspace ${input.workspaceId}`,
           );
         }
-        const qualifyingThemeIds = report.contentGaps.map((gap) => gap.themeId).sort();
+        const shownQualifyingThemeIds = shownQualifyingTopicIndexes
+          .flatMap((topicIndex) => report.themes[topicIndex]?.id ?? [])
+          .sort();
         const recommendationThemeIds = report.recommendations.map((recommendation) => recommendation.themeId).sort();
-        if (qualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
+        if (shownQualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
           this.deps.logger?.warn?.({
             workspaceId: input.workspaceId,
-            qualifyingThemeCount: qualifyingThemeIds.length,
+            qualifyingThemeCount: shownQualifyingThemeIds.length,
             recommendationThemeCount: recommendationThemeIds.length,
-            qualifyingThemeIds,
+            qualifyingThemeIds: shownQualifyingThemeIds,
             recommendationThemeIds,
           }, "audience_pulse_recommendation_divergence");
         }

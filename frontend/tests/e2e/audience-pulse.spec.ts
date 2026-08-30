@@ -605,6 +605,69 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/asked 3×/)).toBeVisible();
   });
 
+  test("content-gap evidence counts stay visible when the gap has no recommendation", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const gapWithoutRecommendationReport = {
+      ...completedReport,
+      recommendations: [],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ kind: "completed", report: gapWithoutRecommendationReport }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await expect(topicRow.getByText("asked 6× in 4 conversations", { exact: true })).toBeVisible();
+    await expect(page.getByText("Explain refund timelines end-to-end")).toHaveCount(0);
+  });
+
+  test("topic sparkline announces every weekly value when the trend is non-monotonic", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const nonMonotonicReport = {
+      ...completedReport,
+      themes: [{
+        ...completedReport.themes[0],
+        weeklyPulse: [
+          { weekStart: "2026-04-01T00:00:00.000Z", count: 2 },
+          { weekStart: "2026-04-08T00:00:00.000Z", count: 100 },
+          { weekStart: "2026-04-15T00:00:00.000Z", count: 2 },
+        ],
+      }],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ kind: "completed", report: nonMonotonicReport }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicToggle = page.getByTestId("audience-pulse-topic-row").first()
+      .getByRole("button", { name: /Show examples/ });
+    await expect(topicToggle).toHaveAccessibleName(/Weekly questions by week: 2, 100, 2\./);
+  });
+
   test("ungrouped majority notice appears when most questions were not grouped into a topic", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);

@@ -689,9 +689,6 @@ function TopicRow({
     theme.grounding.contentGapEligible,
     theme.memberCount,
   )
-  const contentGapTitle = gap
-    ? `Not covered · asked ${numberFormat.format(gap.eligibleEvidenceCount)}× in ${numberFormat.format(gap.distinctConversationCount)} conversations`
-    : undefined
 
   return (
     <div className="border-b last:border-b-0" data-testid="audience-pulse-topic-row">
@@ -706,13 +703,19 @@ function TopicRow({
           <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-foreground">{theme.title}</span>
             {gap ? (
-              <Badge
-                variant="outline"
-                title={contentGapTitle}
-                className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-              >
-                Not covered
-              </Badge>
+              <>
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+                >
+                  Not covered
+                </Badge>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  asked {numberFormat.format(gap.eligibleEvidenceCount)}× in{' '}
+                  {numberFormat.format(gap.distinctConversationCount)}{' '}
+                  {gap.distinctConversationCount === 1 ? 'conversation' : 'conversations'}
+                </span>
+              </>
             ) : null}
           </span>
           <TopicSparkline weeklyPulse={theme.weeklyPulse} />
@@ -834,7 +837,7 @@ function TopicSparkline({ weeklyPulse }: { weeklyPulse: AudiencePulseTheme['week
         />
       </svg>
       <span className="sr-only">
-        Weekly questions trend: {numberFormat.format(first.value)} to {numberFormat.format(last.value)}.
+        Weekly questions by week: {points.map((point) => numberFormat.format(point.value)).join(', ')}.
       </span>
     </span>
   )

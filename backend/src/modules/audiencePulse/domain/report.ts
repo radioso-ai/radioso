@@ -134,16 +134,13 @@ const boundedText = (max: number) => z.string().trim().min(1).max(max);
 const evidenceIdsSchema = (minimum: number) => z.array(z.string().trim().min(1).max(80)).min(minimum).max(12);
 
 /**
- * Raw shape of the sampled-report model call (`services/prompt.ts`). `themes` is
- * validated here for compatibility with that call's still-unchanged response format,
- * but `buildAudiencePulseReport` no longer reads it: topic identity and membership
- * come from the census (`AudiencePulseCensusTopic`), never from the model. Callers
- * migrating off the sampled call construct `AudiencePulseCensusTopic[]` themselves --
- * `services/audiencePulseService.ts` bridges the two by mapping `model.themes` onto it
- * until the narrative call described in `topicNamingPrompt.ts` replaces this schema.
- * `recommendations[].themeIndex` resolves against the caller-supplied topics, not
- * `model.themes`, so the field name is a carryover, not a live reference. The model
- * writes recommendation copy only; the report owns its target eligibility and evidence.
+ * Normalized narrative shape consumed by the report domain. The provider contract in
+ * `services/prompt.ts` keys recommendation copy by qualifying topic index so it can
+ * require every target exactly once; `audiencePulseService.ts` validates that wire
+ * shape and injects `recommendations[].themeIndex` at the boundary. `themes` remains
+ * empty and is retained only for compatibility: topic identity and membership come
+ * from the census (`AudiencePulseCensusTopic`), never from the model. The report owns
+ * recommendation eligibility and evidence; the model writes copy only.
  */
 export const audiencePulseModelOutputSchema = z.object({
   summary: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.summary),
@@ -354,7 +351,9 @@ export const buildAudiencePulseReport = (input: {
     if (!parentTheme) {
       throw new AudiencePulseReportValidationError("Recommendation references an unknown topic");
     }
-    if (seenThemeIndexes.has(recommendation.themeIndex)) return [];
+    if (seenThemeIndexes.has(recommendation.themeIndex)) {
+      throw new AudiencePulseReportValidationError("A recommendation topic may only be referenced once");
+    }
     seenThemeIndexes.add(recommendation.themeIndex);
     if (!qualifyingThemeIds.has(parentTheme.id)) return [];
     const parentMemberEvidenceIds = memberEvidenceIdsByTopicId.get(parentTheme.id) ?? [];

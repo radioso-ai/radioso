@@ -28,9 +28,10 @@ export const AUDIENCE_PULSE_SUMMARY_MAX_EXEMPLARS_PER_TOPIC = 6;
 
 /**
  * Response schema for the narrative call, sized to how many topics `topics` actually
- * shows the model this run. `themeIndex` is limited to the shown topics whose full
- * membership already qualifies for a content recommendation, so the model writes
- * copy for decisions code has already made.
+ * shows the model this run. Each qualifying topic index is a required object key, so
+ * the provider must return exactly one recommendation for every shown topic whose
+ * full membership qualifies. The service boundary maps those keys back to the
+ * domain's `themeIndex` representation after validation.
  * `themes` remains a required key only because `audiencePulseModelOutputSchema`
  * (`domain/report.ts`) still declares it for the retired call's compatibility; every
  * call returns it empty; topic identity and membership come from the census, never
@@ -51,28 +52,21 @@ export const buildAudiencePulseResponseFormat = (qualifyingTopicIndexes: readonl
         maxItems: 0,
         items: { type: "object", additionalProperties: false, properties: {} },
       },
-      recommendations: qualifyingTopicIndexes.length === 0
-        ? {
-          type: "array",
-          maxItems: 0,
-          items: { type: "object", additionalProperties: false, properties: {} },
-        }
-        : {
-          type: "array",
-          minItems: qualifyingTopicIndexes.length,
-          maxItems: qualifyingTopicIndexes.length,
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["themeIndex", "title", "rationale", "questions"],
-            properties: {
-              themeIndex: { enum: [...qualifyingTopicIndexes] },
-              title: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle },
-              rationale: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale },
-              questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question } },
-            },
+      recommendations: {
+        type: "object",
+        additionalProperties: false,
+        required: qualifyingTopicIndexes.map(String),
+        properties: Object.fromEntries(qualifyingTopicIndexes.map((topicIndex) => [String(topicIndex), {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "rationale", "questions"],
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle },
+            rationale: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale },
+            questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question } },
           },
-        },
+        }])),
+      },
       caveats: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.caveat } },
     },
   },

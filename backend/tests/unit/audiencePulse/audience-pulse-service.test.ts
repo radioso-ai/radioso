@@ -9,6 +9,7 @@ import type {
 import type { AudiencePulseStoredReport } from "../../../src/modules/audiencePulse/domain/report.js";
 import type { CensusRunResult, CensusService } from "../../../src/modules/audiencePulse/services/censusService.js";
 import type { CensusServiceFactory } from "../../../src/modules/audiencePulse/infra/censusServiceFactory.js";
+import { AUDIENCE_PULSE_SUMMARY_MAX_TOPICS } from "../../../src/modules/audiencePulse/services/prompt.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
@@ -56,15 +57,16 @@ const censusResult = (): CensusRunResult => ({
   }],
 });
 
+const recommendationCopy = (themeIndex: number) => ({
+  title: `Document topic ${themeIndex + 1}`,
+  rationale: `Questions about topic ${themeIndex + 1} recur across visitor conversations.`,
+  questions: [`How does topic ${themeIndex + 1} work?`],
+});
+
 const modelResponse = JSON.stringify({
   summary: "Visitors ask about subscription changes.",
   themes: [],
-  recommendations: [{
-    themeIndex: 0,
-    title: "Document subscription changes",
-    rationale: "Questions recur across visitor conversations.",
-    questions: ["How can I change my plan?"],
-  }],
+  recommendations: { "0": recommendationCopy(0) },
   caveats: [],
 });
 
@@ -427,6 +429,140 @@ describe("AudiencePulseService", () => {
     expect(calls.lifecycle).toEqual(["reserve", "census", "commit", "snapshot"]);
   });
 
+  it("maps structurally keyed recommendation copy to every qualifying domain topic", async () => {
+    const evidence = Array.from({ length: 6 }, (_unused, index) => ({
+      id: `evidence-${index + 1}`,
+      reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
+      question: `Question ${index + 1}`,
+      weekStart: "2026-06-29T00:00:00.000Z",
+      channel: null,
+      grounding: "no_support" as const,
+      contentGapEligible: index < 2 || index >= 4,
+    }));
+    const response = JSON.stringify({
+      summary: "Visitors ask about two recurring topics.",
+      themes: [],
+      recommendations: { "0": recommendationCopy(0), "2": recommendationCopy(2) },
+      caveats: [],
+    });
+    const { service } = createService({
+      historySource: {
+        async read() {
+          return {
+            ...history(),
+            coverage: { populationSize: 6, sampleSize: 6, sampled: false },
+            evidence,
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({
+            ...censusResult(),
+            populationSize: 6,
+            facetReadyQuestionCount: 6,
+            topics: [
+              { topicId: "topic-1", title: "Topic 1", description: "Description 1", memberIds: ["evidence-1", "evidence-2"], memberCount: 2, share: 1 / 3 },
+              { topicId: "topic-2", title: "Topic 2", description: "Description 2", memberIds: ["evidence-3", "evidence-4"], memberCount: 2, share: 1 / 3 },
+              { topicId: "topic-3", title: "Topic 3", description: "Description 3", memberIds: ["evidence-5", "evidence-6"], memberCount: 2, share: 1 / 3 },
+            ],
+          }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() { return { text: response }; },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    if (result.kind !== "completed") throw new Error("expected a completed refresh");
+    expect(result.report.recommendations.map((recommendation) => recommendation.themeId)).toEqual(["topic-1", "topic-3"]);
+  });
+
+  it("does not report recommendation divergence for qualifying topics beyond the narrative cap", async () => {
+    const topicCount = AUDIENCE_PULSE_SUMMARY_MAX_TOPICS + 1;
+    const evidence = Array.from({ length: topicCount * 2 }, (_unused, index) => ({
+      id: `evidence-${index + 1}`,
+      reference: { messageId: `message-${index + 1}`, conversationId: `conversation-${index + 1}` },
+      question: `Question ${index + 1}`,
+      weekStart: "2026-06-29T00:00:00.000Z",
+      channel: null,
+      grounding: "no_support" as const,
+      contentGapEligible: true,
+    }));
+    const topics = Array.from({ length: topicCount }, (_unused, index) => ({
+      topicId: `topic-${index + 1}`,
+      title: `Topic ${index + 1}`,
+      description: `Description ${index + 1}`,
+      memberIds: [`evidence-${index * 2 + 1}`, `evidence-${index * 2 + 2}`],
+      memberCount: 2,
+      share: 1 / topicCount,
+    }));
+    const warnings: string[] = [];
+    const response = JSON.stringify({
+      summary: "Visitors ask about several recurring topics.",
+      themes: [],
+      recommendations: Object.fromEntries(
+        Array.from({ length: AUDIENCE_PULSE_SUMMARY_MAX_TOPICS }, (_unused, index) =>
+          [String(index), recommendationCopy(index)]),
+      ),
+      caveats: [],
+    });
+    const { service } = createService({
+      logger: { warn(_context, message) { warnings.push(message); } },
+      historySource: {
+        async read() {
+          return {
+            ...history(),
+            coverage: { populationSize: evidence.length, sampleSize: evidence.length, sampled: false },
+            evidence,
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({
+            ...censusResult(),
+            populationSize: evidence.length,
+            facetReadyQuestionCount: evidence.length,
+            topics,
+          }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() { return { text: response }; },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    if (result.kind !== "completed") throw new Error("expected a completed refresh");
+    expect(result.report.contentGaps).toHaveLength(topicCount);
+    expect(result.report.recommendations).toHaveLength(AUDIENCE_PULSE_SUMMARY_MAX_TOPICS);
+    expect(warnings).not.toContain("audience_pulse_recommendation_divergence");
+  });
+
   it("starts durable facet preparation without reserving or publishing a partial report", async () => {
     let requested = 0;
     const { service, calls } = createService({
@@ -598,6 +734,24 @@ describe("AudiencePulseService", () => {
           }),
         } as unknown as CensusService),
       } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              return {
+                text: JSON.stringify({
+                  summary: "Visitors ask about a recurring topic.",
+                  themes: [],
+                  recommendations: {},
+                  caveats: [],
+                }),
+              };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
       snapshotStore: {
         async find() { return null; },
         async replace(input) {
@@ -839,6 +993,12 @@ describe("AudiencePulseService", () => {
       {
         expectedReason: "validation",
         complete: async () => ({ text: "not json" }),
+      },
+      {
+        expectedReason: "validation",
+        complete: async () => ({
+          text: JSON.stringify({ summary: "Summary", themes: [], recommendations: {}, caveats: [] }),
+        }),
       },
     ] as const;
 

@@ -71,6 +71,9 @@ const createEphemeralConversationRepository = (): ConversationRepositoryPort => 
   },
   async setVerifiedCustomerId() {},
   async setTitle() {},
+  async getTitle() {
+    return null;
+  },
   async touch() {},
 });
 

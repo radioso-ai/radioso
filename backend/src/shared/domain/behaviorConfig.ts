@@ -167,6 +167,18 @@ export const CHAT_BEHAVIOR = {
     reasoningEffort: "minimal",
     // Output ceiling covering minimal hidden reasoning plus the bounded summary.
     maxOutputTokens: 1_024,
+    // Early title (issue #1129): a title-only call made once per conversation
+    // lifetime, before the conversation is long enough for a real summary — most
+    // conversations (3-7 messages) never reach minMessages, so without this the
+    // title feature is invisible for typical traffic. A title-only response needs
+    // far fewer output tokens than the combined summary+title call.
+    maxEarlyTitleOutputTokens: 256,
+    // Hard cap on early-title attempts per conversation, regardless of outcome
+    // (blank response or thrown error both count). Bounds worst-case LLM spend for
+    // a conversation whose early title keeps coming back blank; retried on a later
+    // turn commit only while the conversation is still title-less and below
+    // minMessages (see ConversationSummaryService).
+    maxEarlyTitleAttempts: 2,
   },
   // Perceived-performance budget — "don't keep the user waiting" made checkable.
   // Not model tuning: these are UX guarantees the existing turn telemetry is

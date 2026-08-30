@@ -7,6 +7,7 @@ import type {
 } from "../../src/modules/chat/contracts/conversationSummary.js";
 import {
   ConversationSummaryService,
+  type ConversationEarlyTitleGenerator,
   type ConversationSummaryGenerator,
   type ConversationSummaryMessageReader,
   type ConversationSummaryTitleWriter,
@@ -45,17 +46,28 @@ const inMemoryStore = (initial?: ConversationSummaryRecord): ConversationSummary
   return store;
 };
 
-const inMemoryTitleWriter = (): ConversationSummaryTitleWriter & {
+const inMemoryTitleWriter = (initialTitle?: string | null): ConversationSummaryTitleWriter & {
   calls: Array<{ conversationId: string; workspaceId: string; title: string }>;
 } => {
+  const state = { title: initialTitle ?? null };
   const calls: Array<{ conversationId: string; workspaceId: string; title: string }> = [];
   return {
     calls,
     async setTitle(conversationId: string, workspaceId: string, title: string) {
       calls.push({ conversationId, workspaceId, title });
+      state.title = title;
+    },
+    async getTitle() {
+      return state.title;
     },
   };
 };
+
+/** A title-only generator fake that never produces a title — the default double for
+ * every test that doesn't exercise the early-title feature itself. */
+const blankEarlyTitleGenerator = (): ConversationEarlyTitleGenerator & { generate: ReturnType<typeof vi.fn> } => ({
+  generate: vi.fn(async () => ({})),
+});
 
 const fifteenMessages = (): MessageRecord[] =>
   Array.from({ length: 15 }, (_, index) =>
@@ -77,18 +89,21 @@ const config = {
 };
 
 describe("ConversationSummaryService", () => {
-  it("skips regeneration below the message threshold without calling the model or store", async () => {
+  it("skips regeneration below the message threshold without calling the summary model, with no reply yet to title early either", async () => {
     const store = inMemoryStore();
     const save = vi.spyOn(store, "save");
     const generator: ConversationSummaryGenerator = { generate: vi.fn() };
+    const earlyTitleGenerator = blankEarlyTitleGenerator();
+    // A single user message: below threshold, and no assistant reply yet, so neither
+    // the combined call nor the early-title call has anything to work from.
     const service = new ConversationSummaryService(store, messageReader([
       message({ id: "a", role: "user", content: "hi" }),
-      message({ id: "b", role: "assistant", content: "hello" }),
-    ]), generator, inMemoryTitleWriter(), undefined, config);
+    ]), generator, inMemoryTitleWriter(), earlyTitleGenerator, undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
     expect(generator.generate).not.toHaveBeenCalled();
+    expect(earlyTitleGenerator.generate).not.toHaveBeenCalled();
     expect(save).not.toHaveBeenCalled();
   });
 
@@ -109,7 +124,7 @@ describe("ConversationSummaryService", () => {
         return { summary: "Fresh summary of the conversation." };
       }),
     };
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, {
       ...config,
       maxSourceMessages: 3,
       maxSourceMessageChars: 500,
@@ -157,7 +172,7 @@ describe("ConversationSummaryService", () => {
         return { summary: `summary ${prompts.length}` };
       }),
     };
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, {
       ...config,
       minMessages: 3,
       maxSourceMessages: 4,
@@ -199,7 +214,7 @@ describe("ConversationSummaryService", () => {
         return { summary: `summary ${prompts.length}` };
       }),
     };
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, {
       ...config,
       minMessages: 3,
       maxSourceMessages: 4,
@@ -236,7 +251,7 @@ describe("ConversationSummaryService", () => {
     const save = vi.spyOn(store, "save");
     const generator: ConversationSummaryGenerator = { generate: vi.fn() };
     // 15 total, 12 covered: 3 uncovered < refreshEveryMessages (6) → skip.
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -246,7 +261,7 @@ describe("ConversationSummaryService", () => {
 
   it("makes the usage attempt key unique per regeneration coverage", async () => {
     const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => ({ summary: "fresh" })) };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, config);
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -266,7 +281,7 @@ describe("ConversationSummaryService", () => {
         message({ id: `sys${index}`, role: "system", content: `system event ${index}` })),
       ...fifteenMessages().slice(0, 4),
     ];
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, config);
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -279,7 +294,7 @@ describe("ConversationSummaryService", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: `${"a".repeat(18)}😀 and more text` })),
     };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, {
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, {
       ...config,
       maxSummaryChars: 20,
     });
@@ -307,7 +322,7 @@ describe("ConversationSummaryService", () => {
         return { summary: "ok" };
       }),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, {
       ...config,
       maxSourceMessageChars: 12,
     });
@@ -323,7 +338,7 @@ describe("ConversationSummaryService", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "y".repeat(50) })),
     };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, {
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, {
       ...config,
       maxSummaryChars: 20,
     });
@@ -338,7 +353,7 @@ describe("ConversationSummaryService", () => {
     const store = inMemoryStore();
     const save = vi.spyOn(store, "save");
     const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => ({ summary: "   " })) };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -354,7 +369,7 @@ describe("ConversationSummaryService", () => {
       }),
     };
     const logger = { debug: vi.fn(), warn: vi.fn() };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), logger, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), logger, config);
 
     await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).resolves.toBeUndefined();
 
@@ -376,7 +391,7 @@ describe("ConversationSummaryService title generation", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Refund for order 4821" })),
     };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -395,7 +410,7 @@ describe("ConversationSummaryService title generation", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "   " })),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -407,7 +422,7 @@ describe("ConversationSummaryService title generation", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "Fresh summary." })),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -419,7 +434,7 @@ describe("ConversationSummaryService title generation", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "t".repeat(50) })),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, {
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), undefined, {
       ...config,
       maxTitleChars: 20,
     });
@@ -436,7 +451,7 @@ describe("ConversationSummaryService title generation", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Refund\nfor  order   4821" })),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -448,7 +463,7 @@ describe("ConversationSummaryService title generation", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "   ", title: "Some topic" })),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -461,12 +476,15 @@ describe("ConversationSummaryService title generation", () => {
       async setTitle() {
         throw new Error("db unavailable");
       },
+      async getTitle() {
+        return null;
+      },
     };
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Some topic" })),
     };
     const logger = { debug: vi.fn(), warn: vi.fn() };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, titleWriter, logger, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, titleWriter, blankEarlyTitleGenerator(), logger, config);
 
     await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).resolves.toBeUndefined();
 
@@ -500,7 +518,7 @@ describe("ConversationSummaryService title generation", () => {
         return { summary: `summary ${call}`, title: `title ${call}` };
       }),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, titleWriter, undefined, {
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, titleWriter, blankEarlyTitleGenerator(), undefined, {
       ...config,
       minMessages: 3,
       maxSourceMessages: 4,
@@ -516,6 +534,222 @@ describe("ConversationSummaryService title generation", () => {
   });
 });
 
+// Issue #1129: most real conversations (3-7 messages) never reach minMessages, so
+// without a separate path the title feature is invisible for typical traffic. These
+// tests exercise ConversationSummaryService's below-threshold branch directly.
+describe("ConversationSummaryService early title generation", () => {
+  const twoMessages = (): MessageRecord[] => [
+    message({ id: "u1", role: "user", content: "I want to learn meditation" }),
+    message({ id: "a1", role: "assistant", content: "Sure, here is a beginner overview." }),
+  ];
+
+  it("generates and persists an early title once the conversation has a user message and a reply, without calling the combined summary generator", async () => {
+    const store = inMemoryStore();
+    const save = vi.spyOn(store, "save");
+    const titleWriter = inMemoryTitleWriter();
+    const summaryGenerator: ConversationSummaryGenerator = { generate: vi.fn() };
+    let capturedPrompt = "";
+    const earlyTitleGenerator: ConversationEarlyTitleGenerator = {
+      generate: vi.fn(async ({ prompt }) => {
+        capturedPrompt = prompt;
+        return { title: "Meditation for beginners" };
+      }),
+    };
+    const service = new ConversationSummaryService(
+      store,
+      messageReader(twoMessages()),
+      summaryGenerator,
+      titleWriter,
+      earlyTitleGenerator,
+      undefined,
+      config,
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(summaryGenerator.generate).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(earlyTitleGenerator.generate).toHaveBeenCalledOnce();
+    expect(capturedPrompt).toContain("I want to learn meditation");
+    expect(titleWriter.calls).toEqual([
+      { conversationId: "conv_1", workspaceId: "ws_1", title: "Meditation for beginners" },
+    ]);
+  });
+
+  it("does not attempt an early title before there is at least one assistant reply", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const earlyTitleGenerator = blankEarlyTitleGenerator();
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader([message({ id: "u1", role: "user", content: "hi" })]),
+      { generate: vi.fn() },
+      titleWriter,
+      earlyTitleGenerator,
+      undefined,
+      config,
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(earlyTitleGenerator.generate).not.toHaveBeenCalled();
+    expect(titleWriter.calls).toEqual([]);
+  });
+
+  it("skips the early-title call entirely once the conversation already has a title", async () => {
+    const titleWriter = inMemoryTitleWriter("Existing title");
+    const earlyTitleGenerator = blankEarlyTitleGenerator();
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader(twoMessages()),
+      { generate: vi.fn() },
+      titleWriter,
+      earlyTitleGenerator,
+      undefined,
+      config,
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(earlyTitleGenerator.generate).not.toHaveBeenCalled();
+    expect(titleWriter.calls).toEqual([]);
+  });
+
+  it("retries on a later turn commit after a blank early title, and writes the title once a later attempt succeeds", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    let call = 0;
+    const earlyTitleGenerator: ConversationEarlyTitleGenerator = {
+      generate: vi.fn(async () => {
+        call += 1;
+        return call === 1 ? {} : { title: "Meditation for beginners" };
+      }),
+    };
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader(twoMessages()),
+      { generate: vi.fn() },
+      titleWriter,
+      earlyTitleGenerator,
+      undefined,
+      config,
+    );
+
+    // Turn 1: blank response, no title written yet.
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+    expect(titleWriter.calls).toEqual([]);
+
+    // Turn 2 (a later turn commit, same conversation still below threshold and
+    // title-less): retried, and this time it succeeds.
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+    expect(earlyTitleGenerator.generate).toHaveBeenCalledTimes(2);
+    expect(titleWriter.calls).toEqual([
+      { conversationId: "conv_1", workspaceId: "ws_1", title: "Meditation for beginners" },
+    ]);
+  });
+
+  it("caps early-title attempts so a persistently blank model is not retried forever", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const earlyTitleGenerator: ConversationEarlyTitleGenerator = { generate: vi.fn(async () => ({})) };
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader(twoMessages()),
+      { generate: vi.fn() },
+      titleWriter,
+      earlyTitleGenerator,
+      undefined,
+      { ...config, maxEarlyTitleAttempts: 2 },
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    // A third turn commit must not cost a third LLM call — the cap is 2.
+    expect(earlyTitleGenerator.generate).toHaveBeenCalledTimes(2);
+    expect(titleWriter.calls).toEqual([]);
+  });
+
+  it("counts a thrown error toward the attempt cap, logging a content-free failure event each time", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const earlyTitleGenerator: ConversationEarlyTitleGenerator = {
+      generate: vi.fn(async () => {
+        throw new Error("provider exploded");
+      }),
+    };
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader(twoMessages()),
+      { generate: vi.fn() },
+      titleWriter,
+      earlyTitleGenerator,
+      logger,
+      { ...config, maxEarlyTitleAttempts: 2 },
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(earlyTitleGenerator.generate).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "conversation_early_title_generation_failed", conversationId: "conv_1" }),
+      expect.any(String),
+    );
+    // Content-free: the log payload never carries message content.
+    for (const [payload] of logger.warn.mock.calls) {
+      expect(JSON.stringify(payload)).not.toContain("meditation");
+    }
+  });
+
+  it("never calls the early-title generator once the conversation reaches the summary threshold", async () => {
+    const earlyTitleGenerator = blankEarlyTitleGenerator();
+    const summaryGenerator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Combined-call title" })),
+    };
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader(fifteenMessages()),
+      summaryGenerator,
+      inMemoryTitleWriter(),
+      earlyTitleGenerator,
+      undefined,
+      config,
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(summaryGenerator.generate).toHaveBeenCalledOnce();
+    expect(earlyTitleGenerator.generate).not.toHaveBeenCalled();
+  });
+
+  it("logs the early-title write with content-free, duration/count-only fields", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const earlyTitleGenerator: ConversationEarlyTitleGenerator = {
+      generate: vi.fn(async () => ({ title: "Meditation for beginners" })),
+    };
+    const service = new ConversationSummaryService(
+      inMemoryStore(),
+      messageReader(twoMessages()),
+      { generate: vi.fn() },
+      titleWriter,
+      earlyTitleGenerator,
+      logger,
+      config,
+    );
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(logger.debug).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "conversation_early_title_written", conversationId: "conv_1", titleWritten: true }),
+      expect.any(String),
+    );
+    const writtenCall = logger.debug.mock.calls.find(([payload]) => payload.event === "conversation_early_title_written");
+    expect(JSON.stringify(writtenCall![0])).not.toContain("Meditation for beginners");
+  });
+});
+
 describe("conversationSummary behavior config", () => {
   it("keeps the refresh interval below the recent-message window", async () => {
     const { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } = await import("../../src/shared/domain/behaviorConfig.js");
@@ -524,5 +758,11 @@ describe("conversationSummary behavior config", () => {
     expect(CHAT_BEHAVIOR.conversationSummary.refreshEveryMessages).toBeLessThan(
       RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
     );
+  });
+
+  it("caps early-title attempts to a small number, matching the retry policy", async () => {
+    const { CHAT_BEHAVIOR } = await import("../../src/shared/domain/behaviorConfig.js");
+    expect(CHAT_BEHAVIOR.conversationSummary.maxEarlyTitleAttempts).toBeGreaterThan(0);
+    expect(CHAT_BEHAVIOR.conversationSummary.maxEarlyTitleAttempts).toBeLessThanOrEqual(3);
   });
 });

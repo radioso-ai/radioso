@@ -131,6 +131,10 @@ class StubConversationRepository implements ConversationRepositoryPort {
 
   async setTitle(): Promise<void> {}
 
+  async getTitle(): Promise<string | null> {
+    return null;
+  }
+
   async touch(): Promise<void> {}
 }
 

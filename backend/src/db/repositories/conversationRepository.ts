@@ -107,6 +107,12 @@ export interface ConversationRepositoryPort {
    * updated-at-ordered inbox list.
    */
   setTitle(conversationId: string, workspaceId: string, title: string): Promise<void>;
+  /**
+   * Cheap single-column read (issue #1129) so the early-title path can check "does
+   * this conversation already have a title?" without pulling a full
+   * {@link ConversationRecord} and before deciding whether an LLM call is worth it.
+   */
+  getTitle(conversationId: string, workspaceId: string): Promise<string | null>;
   touch(conversationId: string, workspaceId: string): Promise<void>;
 }
 
@@ -579,5 +585,15 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .where("workspace_id", "=", workspaceId)
       .where("title", "is distinct from", title)
       .execute();
+  }
+
+  async getTitle(conversationId: string, workspaceId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("conversations")
+      .select("title")
+      .where("id", "=", conversationId)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    return row?.title ?? null;
   }
 }

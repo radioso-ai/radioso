@@ -31,4 +31,18 @@ describe('resolveConversationDisplayTitle', () => {
   it('accepts a custom fallback label', () => {
     expect(resolveConversationDisplayTitle({ title: null, preview: '' }, 'No messages yet')).toBe('No messages yet')
   })
+
+  // Pins the workbench Test Sessions table's wiring (test-sessions-view.tsx), which reuses
+  // this same helper with its own fallback label instead of the All lens's generic one.
+  it('resolves a workbench test session the same way, under its own fallback label', () => {
+    expect(
+      resolveConversationDisplayTitle({ title: 'sqrt(5) walkthrough', preview: 'sqrt(5)' }, 'Untitled test session'),
+    ).toBe('sqrt(5) walkthrough')
+    expect(
+      resolveConversationDisplayTitle({ title: null, preview: 'sqrt(5)' }, 'Untitled test session'),
+    ).toBe('sqrt(5)')
+    expect(
+      resolveConversationDisplayTitle({ title: null, preview: null }, 'Untitled test session'),
+    ).toBe('Untitled test session')
+  })
 })

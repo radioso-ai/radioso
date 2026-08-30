@@ -9,10 +9,7 @@ Rules for the summary:
 - Be compact. Stay well under {{max_summary_chars}} characters. Prefer terse phrasing over complete sentences.
 
 Rules for the title:
-- Write the title in the same language the conversation uses.
-- Name the topic in at most about 8 words — what the conversation is about, not who is in it or which channel it came from.
-- Plain text: no markdown, no surrounding quotes, no trailing punctuation.
-- If the conversation is too short or unclear to name a topic yet, return an empty string rather than guessing.
+{{title_rules}}
 
 Return only the required JSON schema: a `summary` field and a `title` field. No preamble, headings, or commentary about either task.
 

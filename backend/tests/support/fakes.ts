@@ -3815,6 +3815,11 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       this.items.set(conversationId, { ...item, title });
     }
   }
+
+  async getTitle(conversationId: string, workspaceId: string): Promise<string | null> {
+    const item = this.items.get(conversationId);
+    return item && item.workspaceId === workspaceId ? (item.title ?? null) : null;
+  }
 }
 
 export class InMemoryConversationOwnershipRepository implements Pick<

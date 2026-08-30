@@ -141,6 +141,36 @@ export const frozenQualityPageForKey = (
   queryKey: readonly unknown[],
 ) => frozen && JSON.stringify(frozen.queryKey) === JSON.stringify(queryKey) ? frozen.page : null
 
+const patchQualityTurnsPage = (
+  page: LowQualityTurnsPage,
+  assistantMessageId: string,
+  triage: QualityTriageRecord,
+  remove: boolean,
+  fallback?: LowQualityTurnsPage['items'][number],
+): LowQualityTurnsPage => {
+  const exists = page.items.some((item) => item.assistantMessageId === assistantMessageId)
+  const items = remove && exists
+    ? page.items.filter((item) => item.assistantMessageId !== assistantMessageId)
+    : exists
+      ? page.items.map((item) => item.assistantMessageId === assistantMessageId ? { ...item, triage } : item)
+      : fallback ? [...page.items, { ...fallback, triage }] : page.items
+  const total = remove && exists ? Math.max(0, page.total - 1) : !remove && !exists && fallback ? page.total + 1 : page.total
+  return { ...page, items, total, totalPages: total === 0 ? 0 : Math.ceil(total / page.pageSize) }
+}
+
+export const patchFrozenQualityTriage = (
+  frozen: FrozenQualityPage | null,
+  queryKey: readonly unknown[],
+  assistantMessageId: string,
+  triage: QualityTriageRecord,
+  remove: boolean,
+  fallback?: LowQualityTurnsPage['items'][number],
+): FrozenQualityPage | null => {
+  const page = frozenQualityPageForKey(frozen, queryKey)
+  if (!frozen || !page) return frozen
+  return { ...frozen, page: patchQualityTurnsPage(page, assistantMessageId, triage, remove, fallback) }
+}
+
 export const patchQualityTriage = (
   client: QueryClient,
   queryKey: readonly unknown[],
@@ -150,12 +180,5 @@ export const patchQualityTriage = (
   fallback?: LowQualityTurnsPage['items'][number],
 ) => client.setQueryData<LowQualityTurnsPage>(queryKey, (page) => {
   if (!page) return page
-  const exists = page.items.some((item) => item.assistantMessageId === assistantMessageId)
-  const items = remove && exists
-    ? page.items.filter((item) => item.assistantMessageId !== assistantMessageId)
-    : exists
-      ? page.items.map((item) => item.assistantMessageId === assistantMessageId ? { ...item, triage } : item)
-      : fallback ? [...page.items, { ...fallback, triage }] : page.items
-  const total = remove && exists ? Math.max(0, page.total - 1) : !remove && !exists && fallback ? page.total + 1 : page.total
-  return { ...page, items, total, totalPages: total === 0 ? 0 : Math.ceil(total / page.pageSize) }
+  return patchQualityTurnsPage(page, assistantMessageId, triage, remove, fallback)
 })

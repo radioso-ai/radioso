@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-08-29
+last_updated: 2026-08-30
 ---
 
 # Human Takeover
@@ -197,8 +197,10 @@ showing the count of open items.
 The Inbox is a two-pane page with a lens toggle at the top of the left pane.
 **Needs you** is the default lens: the queue of everything waiting on a
 person — handoffs, approvals, and negative feedback. **All** lists every
-conversation, newest first, with an outcome chip (In progress, Completed, or
-Handed off) plus search and filters for outcome, agent, and site.
+conversation, newest first, each row titled with a short topic the model
+generates from the conversation — falling back to the visitor's opening
+message until a topic exists — with an outcome chip (In progress, Completed,
+or Handed off) plus search and filters for outcome, agent, and site.
 
 In **Needs you**, the left pane lists open items with search and filters for
 type, agent, and who has taken each one; critical escalations — an approval

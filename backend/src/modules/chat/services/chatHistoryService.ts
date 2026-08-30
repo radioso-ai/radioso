@@ -1,6 +1,7 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
@@ -111,6 +112,12 @@ export interface ChatConversationSummary {
   userMessageCount: number;
   assistantMessageCount: number;
   preview: string | null;
+  /**
+   * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
+   * summary. Null until the summary service's first successful regeneration; the
+   * dashboard falls back to `preview` (the visitor's opening message) until then.
+   */
+  title: string | null;
   ownership?: ChatConversationOwnership;
 }
 
@@ -203,6 +210,8 @@ export interface ChatConversationDetail {
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   entryPageUrl?: string | null;
+  /** See {@link ChatConversationSummary.title}. */
+  title: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -801,18 +810,38 @@ export class ChatHistoryService {
 
   async listItems(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope } = { limit: 50, offset: 0 },
+    input: {
+      limit: number;
+      offset?: number;
+      sourceScope?: ConversationSourceScope;
+      /** Case-insensitive substring over the conversation's title or first user message (issue #1126). */
+      q?: string;
+      agentId?: string;
+      sourceOrigin?: string;
+      outcome?: ConversationOutcomeFilter;
+    } = { limit: 50, offset: 0 },
   ): Promise<HistoryItemsPage> {
     const offset = input.offset ?? 0;
     const sourceLimit = offset + input.limit;
     const sourceScope = input.sourceScope ?? "end_user";
+    // A q/agent/site/outcome filter narrows the All lens to chat rows only — contact
+    // requests carry none of those facets, mirroring how HistoryItemsRepository already
+    // drops search rows under the same condition. Skip the contact fetch entirely rather
+    // than fetch-then-discard.
+    const hasChatOnlyFilter = Boolean(input.q || input.agentId || input.sourceOrigin || input.outcome);
     const [basePage, contactPage] = await Promise.all([
       this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
         limit: sourceLimit,
         offset: 0,
         sourceScope,
+        q: input.q,
+        agentId: input.agentId,
+        sourceOrigin: input.sourceOrigin,
+        outcome: input.outcome,
       }),
-      this.contactHistoryProvider.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
+      hasChatOnlyFilter
+        ? Promise.resolve({ contacts: [], total: 0, nextCursor: null, hasMore: false })
+        : this.contactHistoryProvider.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
     ]);
     const baseItems = basePage.items;
     const contactItems = contactPage.contacts.map((contact): HistoryItem => ({
@@ -996,6 +1025,7 @@ export class ChatHistoryService {
       sourceChannel: conversation.sourceChannel,
       sourceOrigin: conversation.sourceOrigin,
       channelContext: conversation.channelContext,
+      title: conversation.title,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messageSummary?.messageCount ?? total,

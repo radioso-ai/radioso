@@ -439,13 +439,142 @@ test("operator sees the expected feedback permission boundary without losing the
     await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({}) });
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
 
   // A 403 on quality data means the empty state must not promise a feedback
   // channel the operator can't load — handoffs/approvals still work.
   await expect(page.getByText("New handoffs and approvals will appear here.")).toBeVisible();
   await expect(page.getByText("You don't have permission to view quality feedback.")).toBeVisible();
   await expect(page.getByRole("link", { name: /flagged for quality review/ })).toHaveCount(0);
+});
+
+test("the smart default lens stays on Needs-you when quality fails to load, even with an otherwise-empty reading", async ({ page }) => {
+  // No explicit ?tab= — this is the exact path the smart-default-lens
+  // decision runs on. Decisions and human-owned conversations are both
+  // empty (the default mocks), so the only reason a redirect to All would be
+  // wrong is the quality 403: an empty *reading* while quality couldn't load
+  // isn't a trustworthy "genuinely nothing needs you," and the operator must
+  // see the permission-denied state instead of silently landing on All.
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({}) });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+
+  await expect(page.getByText("You don't have permission to view quality feedback.")).toBeVisible();
+  await expect(page).not.toHaveURL(/tab=all/);
+  const toggle = page.getByLabel("Inbox queue").getByRole("group", { name: "Inbox lens" });
+  await expect(toggle.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("operator opens a recently closed feedback conversation from Needs-you", async ({ page }) => {
+  const conversationId = "conversation-recently-closed-feedback";
+  const assistantMessageId = "assistant-recently-closed-feedback";
+  const closedAt = "2026-06-20T23:12:00.000Z";
+  const closedTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Who is Nikola Tesla?",
+    answerPreview: "Nikola Tesla was an inventor and electrical engineer.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 900,
+    createdAt: "2026-06-20T23:00:00.000Z",
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: "2026-06-20T23:05:00.000Z",
+      comments: [{
+        value: "down",
+        comment: "Needed a source.",
+        createdAt: "2026-06-20T23:05:00.000Z",
+        updatedAt: "2026-06-20T23:05:00.000Z",
+      }],
+    },
+    triage: {
+      state: "resolved",
+      version: 2,
+      resolution: { reason: "expected_behavior", note: null },
+      legacyReason: null,
+      closedAt,
+      updatedAt: closedAt,
+    },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    conversationDetail: {
+      conversationId,
+      workspaceId,
+      agentId: defaultAgentId,
+      agentName: "Marta",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://knowledge.example.com",
+      createdAt: "2026-06-20T23:00:00.000Z",
+      updatedAt: "2026-06-20T23:12:00.000Z",
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messagesTotal: 2,
+      messageWindowOffset: 0,
+      messageWindowLimit: 50,
+      hasOlderMessages: false,
+      nextCursor: null,
+      messages: [
+        {
+          id: "customer-recently-closed-feedback",
+          role: "user" as const,
+          source: "customer" as const,
+          content: "Who is Nikola Tesla?",
+          createdAt: "2026-06-20T23:00:00.000Z",
+        },
+        {
+          id: assistantMessageId,
+          role: "assistant" as const,
+          source: "ai_agent" as const,
+          content: "Nikola Tesla was an inventor and electrical engineer.",
+          createdAt: "2026-06-20T23:01:00.000Z",
+        },
+      ],
+    },
+  });
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const isRecentlyClosed = url.searchParams.get("triage") === "dismissed,resolved";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isRecentlyClosed ? [closedTurn] : [],
+        total: isRecentlyClosed ? 1 : 0,
+        page: 1,
+        pageSize: isRecentlyClosed ? 10 : 25,
+        totalPages: isRecentlyClosed ? 1 : 0,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+
+  const queue = page.getByLabel("Inbox queue");
+  const closedRow = queue.getByRole("button", { name: /Who is Nikola Tesla\?/ });
+  await expect(closedRow).toBeVisible();
+  await expect(closedRow).toContainText("Resolved");
+
+  await closedRow.click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(closedRow).toHaveAttribute("aria-current", "true");
+  await expect(response.getByText("Who is Nikola Tesla?")).toBeVisible();
+  await expect(response.getByText("Nikola Tesla was an inventor and electrical engineer.")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
 });
 
 test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {
@@ -459,7 +588,7 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
     });
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
 
   // Zero open items still renders the two-pane shell with its toggle in the
   // left pane, but there is nothing to search or filter, so those controls
@@ -483,4 +612,82 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
   await toggle.getByRole("button", { name: "All", exact: true }).click();
   await expect(page).toHaveURL(/tab=all/);
   await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
+});
+
+test("the recently-closed strip shows the resolution and when it was closed", async ({ page }) => {
+  const conversationId = "conversation-recently-closed";
+  const assistantMessageId = "assistant-recently-closed";
+  const closedAtIso = "2026-08-26T16:40:00.000Z";
+  const dismissedTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Do you ship internationally?",
+    answerPreview: "We currently only ship within the EU.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 800,
+    createdAt: "2026-08-26T16:00:00.000Z",
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: "2026-08-26T16:05:00.000Z",
+      comments: [{
+        value: "down",
+        comment: "Doesn't mention international shipping timelines.",
+        createdAt: "2026-08-26T16:05:00.000Z",
+        updatedAt: "2026-08-26T16:05:00.000Z",
+      }],
+    },
+    triage: {
+      state: "dismissed",
+      version: 1,
+      resolution: { reason: "expected_behavior", note: null },
+      legacyReason: null,
+      closedAt: closedAtIso,
+      updatedAt: closedAtIso,
+    },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  // The recently-closed strip issues its own query (triageStates:
+  // ['resolved', 'dismissed'], see use-inbox-recently-closed.ts), separate
+  // from the open-feedback query the live queue uses — distinguish them by
+  // the `triage` filter param so only the recently-closed one returns data.
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    // normalizeQualityTurnsRequest sorts the triage-state set alphabetically
+    // (lib/quality-query-state.ts), so ['resolved', 'dismissed'] is sent as
+    // "dismissed,resolved" on the wire.
+    const isRecentlyClosedQuery = url.searchParams.get("triage") === "dismissed,resolved";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isRecentlyClosedQuery ? [dismissedTurn] : [],
+        total: isRecentlyClosedQuery ? 1 : 0,
+        page: 1,
+        pageSize: isRecentlyClosedQuery ? 10 : 25,
+        totalPages: 1,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+
+  const queue = page.getByLabel("Inbox queue");
+  await expect(queue.getByText("Recently closed")).toBeVisible();
+  await expect(queue.getByText("Do you ship internationally?")).toBeVisible();
+  // The resolution label alone used to be all this row showed — the fix
+  // appends when it closed, using the same absolute-timestamp formatter the
+  // All lens's rows use (formatInboxRowTimestamp). The exact rendered string
+  // is locale-dependent, so this checks the fix's shape (a separator
+  // followed by non-empty content) rather than an exact date string.
+  await expect(queue.getByText(/^Dismissed · .+/)).toBeVisible();
+  await expect(queue.getByText("Dismissed", { exact: true })).toHaveCount(0);
 });

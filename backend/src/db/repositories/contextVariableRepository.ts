@@ -303,32 +303,33 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           throw badRequest(`resolverSkillId "${input.resolverSkillId}" names a skill that is disabled on this agent`);
         }
       }
+
       const row = await trx
-      .insertInto("agent_context_variables")
-      .values({
-        id: randomUUID(),
-        agent_id: input.agentId,
-        variable_id: input.variableId,
-        source: input.source,
-        resolver_skill_id: input.resolverSkillId ?? null,
-        max_age_seconds: input.maxAgeSeconds ?? null,
-        resolver_timeout_ms: input.resolverTimeoutMs ?? null,
-        surfacing: input.surfacing,
-        enabled: input.enabled ?? true,
-      })
-      .onConflict((oc) =>
-        oc.columns(["agent_id", "variable_id"]).doUpdateSet((eb) => ({
-          source: eb.ref("excluded.source"),
-          resolver_skill_id: eb.ref("excluded.resolver_skill_id"),
-          max_age_seconds: eb.ref("excluded.max_age_seconds"),
-          resolver_timeout_ms: eb.ref("excluded.resolver_timeout_ms"),
-          surfacing: eb.ref("excluded.surfacing"),
-          enabled: eb.ref("excluded.enabled"),
-          updated_at: currentTimestamp(),
-        })),
-      )
-      .returning(agentContextVariableColumns)
-      .executeTakeFirstOrThrow();
+        .insertInto("agent_context_variables")
+        .values({
+          id: randomUUID(),
+          agent_id: input.agentId,
+          variable_id: input.variableId,
+          source: input.source,
+          resolver_skill_id: input.resolverSkillId ?? null,
+          max_age_seconds: input.maxAgeSeconds ?? null,
+          resolver_timeout_ms: input.resolverTimeoutMs ?? null,
+          surfacing: input.surfacing,
+          enabled: input.enabled ?? true,
+        })
+        .onConflict((oc) =>
+          oc.columns(["agent_id", "variable_id"]).doUpdateSet((eb) => ({
+            source: eb.ref("excluded.source"),
+            resolver_skill_id: eb.ref("excluded.resolver_skill_id"),
+            max_age_seconds: eb.ref("excluded.max_age_seconds"),
+            resolver_timeout_ms: eb.ref("excluded.resolver_timeout_ms"),
+            surfacing: eb.ref("excluded.surfacing"),
+            enabled: eb.ref("excluded.enabled"),
+            updated_at: currentTimestamp(),
+          })),
+        )
+        .returning(agentContextVariableColumns)
+        .executeTakeFirstOrThrow();
       return mapAgentContextVariableRow(row as AgentContextVariableRow);
     });
   }

@@ -3,6 +3,7 @@
 import { CheckCircle2, Hand, ShieldCheck, ThumbsDown, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
 import {
   formatInboxDuration,
   inboxWaitingPresentation,
@@ -87,16 +88,36 @@ export function InboxQueueRow({
   )
 }
 
-export function InboxRecentlyClosedRow({ item }: { item: RecentlyClosedInboxItem }) {
+export function InboxRecentlyClosedRow({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: RecentlyClosedInboxItem
+  selected: boolean
+  onSelect: (item: RecentlyClosedInboxItem) => void
+}) {
+  // No attribution field exists on the triage record yet (see
+  // QualityTriageRecord in the backend contract) — this stays resolution +
+  // timestamp only rather than guessing who closed it.
+  const stateLabel = item.state === 'resolved' ? 'Resolved' : 'Dismissed'
   return (
-    <div className="flex items-start gap-2 rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 opacity-75">
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      aria-current={selected ? 'true' : undefined}
+      className={cn(
+        'flex w-full items-start gap-2 rounded-lg border border-dashed bg-muted/10 px-3 py-2 text-left opacity-75 transition-colors',
+        selected ? 'border-primary ring-1 ring-primary' : 'border-border hover:border-muted-foreground',
+      )}
+    >
       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
       <div className="min-w-0">
         <span className="block truncate text-sm text-foreground">{item.title}</span>
         <span className="text-xs text-muted-foreground">
-          {item.state === 'resolved' ? 'Resolved' : 'Dismissed'}
+          {stateLabel} · {formatInboxRowTimestamp(item.closedAt)}
         </span>
       </div>
-    </div>
+    </button>
   )
 }

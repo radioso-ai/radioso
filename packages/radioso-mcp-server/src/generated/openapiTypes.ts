@@ -5906,6 +5906,8 @@ export interface components {
             userMessageCount: number;
             assistantMessageCount: number;
             preview: string | null;
+            /** @description Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then. */
+            title: string | null;
             ownership?: components["schemas"]["ConversationOwnership"];
         };
         ChatHistoryListResponse: {
@@ -6149,6 +6151,8 @@ export interface components {
             sourceChannel: string | null;
             sourceOrigin: string | null;
             entryPageUrl?: string | null;
+            /** @description See ChatConversationSummary.title. */
+            title: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             /** Format: date-time */
             createdAt: string;
@@ -6186,6 +6190,8 @@ export interface components {
             agentName?: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
+            /** @description See ChatConversationSummary.title. */
+            title: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             /** Format: date-time */
             createdAt: string;
@@ -16946,6 +16952,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 sourceScope?: "end_user" | "operator_test" | "all";
+                q?: string;
+                agentId?: string;
+                sourceOrigin?: string;
+                outcome?: "in_progress" | "completed" | "handed_off";
             };
             header?: never;
             path?: never;

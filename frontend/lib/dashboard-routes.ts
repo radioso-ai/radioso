@@ -177,10 +177,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'anchor',
 ]
 
-const DEFAULT_SECTION: DashboardSection = 'agents'
+const DEFAULT_SECTION: DashboardSection = 'activity'
 const DEFAULT_AGENT_TAB: AgentTab = 'chat'
 const DEFAULT_KNOWLEDGE_TAB: KnowledgeTab = 'documents'
-const DEFAULT_ACTIVITY_TAB: ActivityTab = 'needs-attention'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
 const DEFAULT_ACCOUNT_TAB: AccountTab = 'members'
@@ -450,7 +449,12 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   }
 
   if (state.section === 'activity') {
-    if (state.activityTab && state.activityTab !== DEFAULT_ACTIVITY_TAB) {
+    // Unlike the other section tabs, an explicit 'needs-attention' is kept
+    // (not stripped as "the default") so the URL can distinguish "the
+    // operator has no lens preference yet" (activityTab undefined — the
+    // Inbox's smart default applies) from "the operator chose Needs-you"
+    // (activityTab: 'needs-attention' — always honored, even when empty).
+    if (state.activityTab) {
       normalized.activityTab = state.activityTab
     }
     if (state.historyFilter && state.historyFilter !== DEFAULT_HISTORY_FILTER) {

@@ -1293,7 +1293,37 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/history") {
-      await json(route, historyItems);
+      // The All lens's search/outcome/agent/site filters are server-side (issue #1126):
+      // simulate just enough of that filtering here so an e2e test that types into the
+      // toolbar search box exercises a real request round trip, not client-side narrowing.
+      const url = new URL(request.url());
+      const q = url.searchParams.get("q");
+      const agentId = url.searchParams.get("agentId");
+      const sourceOrigin = url.searchParams.get("sourceOrigin");
+      const hasFilter = Boolean(q || agentId || sourceOrigin || url.searchParams.get("outcome"));
+      const allItems = (historyItems as { items?: Array<Record<string, unknown>> }).items ?? [];
+      const filteredItems = !hasFilter ? allItems : allItems.filter((item) => {
+        if (item.kind !== "chat") {
+          return false;
+        }
+        const conversation = item.conversation as Record<string, unknown>;
+        if (agentId && conversation.agentId !== agentId) {
+          return false;
+        }
+        if (sourceOrigin && conversation.sourceOrigin !== sourceOrigin) {
+          return false;
+        }
+        if (q) {
+          const haystack = `${conversation.title ?? ""} ${conversation.preview ?? ""}`.toLowerCase();
+          if (!haystack.includes(q.toLowerCase())) {
+            return false;
+          }
+        }
+        return true;
+      });
+      await json(route, hasFilter
+        ? { ...historyItems, items: filteredItems, total: filteredItems.length, hasMore: false }
+        : historyItems);
       return;
     }
 

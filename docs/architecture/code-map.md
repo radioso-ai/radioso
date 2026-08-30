@@ -608,7 +608,9 @@ Primary internals:
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
   per-conversation summary #866: regenerated post-turn, injected into interpretation
-  and answer prompts; state in `conversation_summaries`)
+  and answer prompts; state in `conversation_summaries`. The same regeneration call
+  also produces a short conversation title #1114, written to `conversations.title`
+  — a separate, non-expiring column — via `ConversationRepositoryPort.setTitle`)
 - `backend/prompts/`
 
 Useful searches:

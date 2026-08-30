@@ -390,6 +390,7 @@ export interface Conversations {
   id: string;
   source_channel: string | null;
   source_origin: string | null;
+  title: string | null;
   updated_at: Generated<Timestamp>;
   verified_customer_id: string | null;
   workspace_id: string;

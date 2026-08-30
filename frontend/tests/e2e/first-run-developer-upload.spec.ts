@@ -19,7 +19,10 @@ test("first-run developer paths expose separate upload and chat instructions", a
     },
   });
 
-  await page.goto(`/w/${workspaceKey}`);
+  // First-run onboarding is scoped to the Agents chat view (dashboard-shell.tsx's
+  // isAgentChatView), not the bare workspace root — the Inbox is the dashboard's
+  // default landing section, so this needs an explicit path.
+  await page.goto(`/w/${workspaceKey}/agents`);
 
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
   const uploadApiButton = page.getByRole("button", { name: "Upload with API or SDK" });
@@ -63,7 +66,10 @@ test("first-run onboarding can be skipped and stays hidden", async ({ page }) =>
     },
   });
 
-  await page.goto(`/w/${workspaceKey}`);
+  // First-run onboarding is scoped to the Agents chat view (dashboard-shell.tsx's
+  // isAgentChatView), not the bare workspace root — the Inbox is the dashboard's
+  // default landing section, so this needs an explicit path.
+  await page.goto(`/w/${workspaceKey}/agents`);
 
   await expect(page.getByRole("heading", { name: "Get started with Radioso" })).toBeVisible();
   await page.getByRole("button", { name: "Skip" }).click();

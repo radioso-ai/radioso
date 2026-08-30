@@ -117,6 +117,32 @@ describe("history contract", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects an unrecognized outcome filter value on the merged history items", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "history-items-bad-outcome@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/history?outcome=archived")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("narrows the merged history items by agentId end to end through the route", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-items-agent-filter@example.com");
+    const matching = await repositories.conversationRepository.create(session.workspaceId, "99999999-9999-4999-8999-999999999999");
+    await repositories.conversationRepository.create(session.workspaceId, "88888888-8888-4888-8888-888888888888");
+
+    const response = await request(app)
+      .get("/api/v1/history?agentId=99999999-9999-4999-8999-999999999999")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0]).toMatchObject({ kind: "chat", conversation: { id: matching.id } });
+  });
+
   it("keeps contact detail on the same dashboard projection as chat detail", async () => {
     const contact: ContactHistoryDetail = {
       id: "66666666-6666-4666-8666-666666666666",

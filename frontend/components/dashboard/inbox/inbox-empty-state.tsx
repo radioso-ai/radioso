@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 
-import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { useInboxConfidenceSummary } from './use-inbox-confidence-summary'
 
 export interface InboxEmptyStateProps {
@@ -38,20 +37,17 @@ export function InboxEmptyState({
   qualityLoadFailed,
 }: InboxEmptyStateProps) {
   const confidence = useInboxConfidenceSummary(true)
-  const agentLabel = confidence.topAgent
-    ? getAgentOperatorLabel(
-        { internalName: confidence.topAgent.agentInternalName, name: confidence.topAgent.agentName },
-        'Your agent',
-      )
-    : null
+  const hasHandledConversations = confidence.status === 'ready'
+    && confidence.totalCount !== null
+    && confidence.totalCount > 0
   const qualityUnavailable = qualityPermissionDenied || qualityLoadFailed
 
   return (
     <div className="mx-auto max-w-md space-y-2 text-center">
       <p className="text-sm font-medium text-foreground">Nothing needs you right now</p>
       <p className="text-sm text-muted-foreground">
-        {confidence.status === 'ready' && confidence.topAgent && agentLabel
-          ? `${agentLabel} handled ${confidence.topAgent.count} conversation${confidence.topAgent.count === 1 ? '' : 's'} in the last 7 days without needing you.`
+        {hasHandledConversations
+          ? `Your agent${confidence.agentCount === 1 ? '' : 's'} handled ${confidence.totalCount} conversation${confidence.totalCount === 1 ? '' : 's'} in the last 7 days without needing you.`
           : qualityUnavailable
             ? 'New handoffs and approvals will appear here.'
             : 'New handoffs, approvals, and written customer feedback will appear here.'}

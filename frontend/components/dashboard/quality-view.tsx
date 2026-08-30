@@ -89,6 +89,7 @@ import {
   beginQualityInteraction,
   beginQualityInteractionController,
   ownsQualityInteraction,
+  patchFrozenQualityTriage,
   settleQualityInteraction,
   patchQualityTriage,
   qualityTurnRemainsVisible,
@@ -649,6 +650,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogEntry[]>([])
   const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
   const [frozenPage, setFrozenPage] = useState<FrozenQualityPage | null>(null)
+  const [locallyRemovedMessageIds, setLocallyRemovedMessageIds] = useState<ReadonlySet<string>>(new Set())
   const interactionId = useRef(0)
   const [closeReview, setCloseReview] = useState<{
     turn: LowQualityTurn
@@ -659,9 +661,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     queryKey: readonly unknown[]
   } | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
-  const drawerSelectedItem: SelectedHistoryItem = openedConversation
-    ? { kind: 'chat', id: openedConversation.conversationId }
-    : null
+  const drawerSelectedItem: SelectedHistoryItem = useMemo(
+    () => openedConversation ? { kind: 'chat', id: openedConversation.conversationId } : null,
+    [openedConversation],
+  )
 
   const actions = useMemo<string[]>(() => (actionsKey ? actionsKey.split(',') : []), [actionsKey])
   const statuses = useMemo<QualityStatusFilter[]>(
@@ -733,9 +736,17 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     intervalFor(dashboardQueryKeys.quality.turns(workspaceId, normalizedTurnsRequest)),
   )
   const visibleTurnsPage = frozenQualityPageForKey(frozenPage, turnsQuery.queryKey) ?? turnsQuery.data
-  const items = visibleTurnsPage?.items ?? []
-  const total = visibleTurnsPage?.total ?? 0
-  const totalPages = visibleTurnsPage?.totalPages ?? 0
+  const visibleItems = useMemo(() => visibleTurnsPage?.items ?? [], [visibleTurnsPage])
+  const items = useMemo(
+    () => visibleItems.filter((item) => !locallyRemovedMessageIds.has(item.assistantMessageId)),
+    [locallyRemovedMessageIds, visibleItems],
+  )
+  const removedVisibleCount = visibleItems.reduce(
+    (count, item) => count + (locallyRemovedMessageIds.has(item.assistantMessageId) ? 1 : 0),
+    0,
+  )
+  const total = Math.max(0, (visibleTurnsPage?.total ?? 0) - removedVisibleCount)
+  const totalPages = total === 0 ? 0 : Math.ceil(total / PAGE_SIZE)
   const hasLoadedOnce = !turnsQuery.isPending || Boolean(turnsQuery.data)
   const isFetching = turnsQuery.isFetching
   const turnsQueryError = turnsQuery.error && !turnsQuery.data
@@ -758,6 +769,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     queueMicrotask(() => {
       if (!ownsQualityInteraction(interactionId.current, generation)) return
       setFrozenPage(null)
+      setLocallyRemovedMessageIds(new Set())
       setCloseReview(null)
       setError(null)
     })
@@ -1168,8 +1180,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const finishInteraction = (id: number) => {
     if (ownsQualityInteraction(interactionId.current, id)) setFrozenPage(null)
   }
-  const patchCurrentTriage = (assistantMessageId: string, triage: QualityTriageRecord, remove = false) =>
+  const patchCurrentTriage = (
+    assistantMessageId: string,
+    triage: QualityTriageRecord,
+    remove = false,
+    fallback?: LowQualityTurn,
+  ) => {
+    if (remove) {
+      setLocallyRemovedMessageIds((previous) => new Set([...previous, assistantMessageId]))
+    }
     patchQualityTriage(queryClient, turnsQuery.queryKey, assistantMessageId, triage, remove)
+    setFrozenPage((previous) =>
+      patchFrozenQualityTriage(previous, turnsQuery.queryKey, assistantMessageId, triage, remove, fallback))
+  }
   const invalidateTriage = () => invalidateDashboardQueries(['quality.triage_changed'])
 
   const requestCloseReview = (
@@ -1289,7 +1312,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             currentId: interactionId.current,
             interactionId: interaction.id,
             outcome: 'conflict',
-            patch: () => patchCurrentTriage(turn.assistantMessageId, current, true),
+            patch: () => patchCurrentTriage(turn.assistantMessageId, current, true, turn),
             invalidate: invalidateTriage,
             present: () => {
               setError('Another operator already closed this review. It was removed from the active queue.')
@@ -1355,7 +1378,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         currentId: interactionId.current,
         interactionId: interaction.id,
         outcome: 'success',
-        patch: () => patchQualityTriage(queryClient, closeReview.queryKey, turn.assistantMessageId, record, !remainsVisible, turn),
+        patch: () => {
+          if (!remainsVisible) {
+            setLocallyRemovedMessageIds((previous) => new Set([...previous, turn.assistantMessageId]))
+          }
+          patchQualityTriage(queryClient, closeReview.queryKey, turn.assistantMessageId, record, !remainsVisible, turn)
+          setFrozenPage((previous) =>
+            patchFrozenQualityTriage(previous, closeReview.queryKey, turn.assistantMessageId, record, !remainsVisible, turn))
+        },
         invalidate: invalidateTriage,
         present: () => {
           finishInteraction(interaction.id)
@@ -1372,7 +1402,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           currentId: interactionId.current,
           interactionId: interaction.id,
           outcome: 'conflict',
-          patch: () => patchQualityTriage(queryClient, closeReview.queryKey, turn.assistantMessageId, current, !remainsVisible, turn),
+          patch: () => {
+            if (!remainsVisible) {
+              setLocallyRemovedMessageIds((previous) => new Set([...previous, turn.assistantMessageId]))
+            }
+            patchQualityTriage(queryClient, closeReview.queryKey, turn.assistantMessageId, current, !remainsVisible, turn)
+            setFrozenPage((previous) =>
+              patchFrozenQualityTriage(previous, closeReview.queryKey, turn.assistantMessageId, current, !remainsVisible, turn))
+          },
           invalidate: invalidateTriage,
           present: () => {
             setCloseReview((pending) => pending?.turn.assistantMessageId === turn.assistantMessageId

@@ -99,6 +99,17 @@ describe('filterAllLensItems', () => {
     expect(result.map((entry) => entry.id)).toEqual(['a'])
   })
 
+  it('matches free-text search against a chat row\'s generated title when one exists, even if the preview differs', () => {
+    const items = [
+      chatEntry({ id: 'a', title: 'Refund for order 4821', preview: 'hey' }),
+      chatEntry({ id: 'b', title: null, preview: 'Orari dei corsi di yoga' }),
+    ]
+
+    const result = filterAllLensItems(items, filters({ search: 'refund' }), NOW)
+
+    expect(result.map((entry) => entry.id)).toEqual(['a'])
+  })
+
   it('matches free-text search against a search row\'s query and a contact row\'s preview', () => {
     const items = [
       searchEntry({ query: 'audiobook download' }),

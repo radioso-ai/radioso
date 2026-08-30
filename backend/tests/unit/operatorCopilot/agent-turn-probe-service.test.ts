@@ -34,6 +34,7 @@ const conversation = (overrides: Partial<ConversationRecord> = {}): Conversation
   anonymousSessionId: null,
   verifiedCustomerId: null,
   entryPageUrl: null,
+  title: null,
   createdAt: new Date("2026-08-21T12:00:00.000Z"),
   updatedAt: new Date("2026-08-21T12:00:00.000Z"),
   ...overrides,

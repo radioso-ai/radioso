@@ -3,6 +3,7 @@ export { AssistantChatService } from "./services/assistantChatService.js";
 export {
   ConversationSummaryService,
   ModelConversationSummaryGenerator,
+  ModelConversationEarlyTitleGenerator,
 } from "./services/summary/conversationSummaryService.js";
 // App-wiring entrypoints for the MCP converse surface (composed in app/composition).
 export { AgentConverseAudit } from "./services/agentConverseAudit.js";

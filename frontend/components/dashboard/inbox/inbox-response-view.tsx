@@ -28,6 +28,8 @@ import {
   findFirstVisitorMessage,
   informativeChannelLabel,
   readOnlyHandledByLabel,
+  resolveReadOnlySource,
+  shouldShowDoneControl,
   stripTrackingParams,
   visitorIdentityLabel,
 } from '@/lib/inbox-response'
@@ -152,38 +154,22 @@ export function InboxResponseView({
   })
 
   // The actionable/read-only split and the header's identity/waiting fields
-  // prefer the row's own summary (immediate, no fetch needed) but fall back to
-  // the independently-fetched conversation detail once it loads — the only
-  // source available for a conversation that wasn't on the loaded list page.
-  // `anonymousSessionId` has no equivalent on the detail response, so that one
-  // field stays unknown (a generic visitor label) in the fallback case rather
-  // than guessing.
-  const readOnlySource: HandoffCandidateSource | null = useMemo(() => {
-    if (!readOnlySelection) {
-      return null
-    }
-    if (readOnlySelection.conversation) {
-      return readOnlySelection.conversation
-    }
-    if (!conversationDetail) {
-      return null
-    }
-    return {
-      id: conversationDetail.conversationId,
-      ownership: conversationDetail.ownership,
-      updatedAt: conversationDetail.updatedAt,
-      agentId: conversationDetail.agentId,
-      agentName: conversationDetail.agentName ?? null,
-      agentInternalName: conversationDetail.agentInternalName ?? null,
-    }
-  }, [readOnlySelection, conversationDetail])
+  // prefer the independently-fetched conversation detail once it loads — see
+  // `resolveReadOnlySource` for why (a page left open long enough for
+  // ownership to change would otherwise keep rendering a stale hint's
+  // actionable/read-only state).
+  const readOnlySource: HandoffCandidateSource | null = useMemo(
+    () => (readOnlySelection ? resolveReadOnlySource(readOnlySelection.conversation, conversationDetail) : null),
+    [readOnlySelection, conversationDetail],
+  )
   // A conversation selected from the All lens gets exactly the same actionable
-  // treatment as a Needs-you queue item once it turns out to be awaiting a
-  // human — same composer, same waiting-time presentation, same Done control —
-  // by reusing the identical handoff mapping the queue itself builds from.
+  // treatment as a Needs-you queue item once it turns out to be live — awaiting
+  // a human, human-owned, or still in progress with the agent — same composer,
+  // same Done control, by reusing the identical handoff mapping the queue
+  // itself builds from. Only a completed conversation stays read-only.
   const derivedHandoffItem = useMemo(
-    () => (readOnlySource ? deriveInboxResponseHandoffItem(readOnlySource) : null),
-    [readOnlySource],
+    () => (readOnlySource ? deriveInboxResponseHandoffItem(readOnlySource, now) : null),
+    [readOnlySource, now],
   )
   const effectiveItem = item ?? derivedHandoffItem
 
@@ -225,6 +211,17 @@ export function InboxResponseView({
     }
   }, [conversationDetail, effectiveItem, handBackRunner, onRequestFeedbackClose])
 
+  // See `shouldShowDoneControl` for the visibility rule (only renders when
+  // there's something to wrap up).
+  const showDoneControl = shouldShowDoneControl(effectiveItem?.type, conversationDetail)
+  // A handoff selected from the All lens can render its composer immediately
+  // from the row's own summary (see `readOnlySource` above), before
+  // `conversationDetail` — the actual source of both the ownership check
+  // above and the hand-back version below — has loaded. Disabling Done until
+  // then avoids a fast click hitting the "missing ownership version" error
+  // for a state that merely hasn't loaded yet.
+  const isDoneVersionPending = effectiveItem?.type === 'handoff' && !conversationDetail
+
   // Matched by identity (agentId + handle), not conversation — two pending
   // approvals can exist on one conversation, and matching by conversationId
   // alone would resolve whichever decision the list happened to return first.
@@ -244,16 +241,20 @@ export function InboxResponseView({
     )
   }
 
-  // A read-only conversation that turned out to be awaiting a human is
-  // actionable via `derivedHandoffItem` (folded into `effectiveItem` above);
-  // this is only true once the row's own ownership rules it out.
+  // A read-only conversation that turned out to be live (awaiting a human,
+  // human-owned, or still in progress) is actionable via `derivedHandoffItem`
+  // (folded into `effectiveItem` above); this is only reached once the row's
+  // own outcome rules it out, i.e. it's completed.
   const readOnlyOutcome = readOnlySource && !effectiveItem
     ? deriveConversationOutcome(readOnlySource, now)
     : null
 
   const entryUrl = conversationDetail?.entryPageUrl ? stripTrackingParams(conversationDetail.entryPageUrl) : null
   const channelLabel = informativeChannelLabel(conversationDetail?.channelContext)
-  const waiting = effectiveItem ? inboxWaitingPresentation(effectiveItem, now) : null
+  // Only a genuine escalation has a wait to report — a live conversation the
+  // operator hasn't claimed yet (still ai-owned, no ownership record) has no
+  // "waiting since" or "with them since" to show.
+  const waiting = effectiveItem?.escalatedAt ? inboxWaitingPresentation(effectiveItem, now) : null
   const identity = visitorIdentityLabel({
     anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
   })
@@ -355,14 +356,14 @@ export function InboxResponseView({
           ownership={conversationDetail?.ownership}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
-          trailingActions={effectiveItem.type !== 'approval' ? (
+          trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={handBackRunner.isBusy}
+                  disabled={handBackRunner.isBusy || isDoneVersionPending}
                   onClick={(event) => handleDone(event.currentTarget)}
                 >
                   Done

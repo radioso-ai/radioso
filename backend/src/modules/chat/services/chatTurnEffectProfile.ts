@@ -41,6 +41,7 @@ const ephemeralConversation = (
     anonymousSessionId: null,
     verifiedCustomerId: null,
     entryPageUrl: null,
+    title: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -69,6 +70,10 @@ const createEphemeralConversationRepository = (): ConversationRepositoryPort => 
     return null;
   },
   async setVerifiedCustomerId() {},
+  async setTitle() {},
+  async getTitle() {
+    return null;
+  },
   async touch() {},
 });
 

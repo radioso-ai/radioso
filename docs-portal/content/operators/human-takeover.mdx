@@ -1,7 +1,7 @@
 ---
 title: "Human takeover"
 description: "Let an operator own a conversation while the AI stays silent, reply as a human, and hand back — from the dashboard or the API."
-last_updated: 2026-08-29
+last_updated: 2026-08-30
 ---
 
 # Human takeover
@@ -31,7 +31,7 @@ Both request human ownership, notify an operator through the contact-delivery tr
 
 The dashboard surfaces this work in the **Inbox**, a top-level sidebar item ahead of Agents, Knowledge Base, Audience Pulse, and Quality, with a badge showing how many items are open.
 
-The Inbox opens with a lens toggle at the top of its left pane. **Needs you** is the default: the queue of everything waiting on a person — handoffs, approvals, and negative feedback. **All** lists every conversation, newest first, with an outcome chip (In progress, Completed, or Handed off) plus search and filters for outcome, agent, and site.
+The Inbox opens with a lens toggle at the top of its left pane. **Needs you** is the default: the queue of everything waiting on a person — handoffs, approvals, and negative feedback. **All** lists every conversation, newest first, each row titled with a short topic the model generates from the conversation — falling back to the visitor's opening message until a topic exists — with an outcome chip (In progress, Completed, or Handed off) plus search and filters for outcome, agent, and site.
 
 In **Needs you**, the left pane lists open items with search and filters for type, agent, and who has taken each one; critical escalations — an approval to decide, a handoff awaiting or held by a human — sort to the top, then written thumbs-down feedback, ordered by its latest creation or edit. Automatically detected signals and uncommented feedback stay in **Quality** instead of adding one inbox row per answer.
 

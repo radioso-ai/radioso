@@ -12,6 +12,7 @@ import {
 } from '@/components/dashboard/shared/dashboard-table'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { chatApi, type ChatConversationSummary } from '@/lib/api'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { ConversationDrawer } from '@/components/dashboard/conversation-drawer'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
 
@@ -87,7 +88,7 @@ export function TestSessionsView({ agentId }: { agentId?: string }) {
                     onClick={() => setSelectedItem({ kind: 'chat', id: session.id })}
                     className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   >
-                    <span className="block truncate">{session.preview || 'Untitled test session'}</span>
+                    <span className="block truncate">{resolveConversationDisplayTitle(session, 'Untitled test session')}</span>
                   </button>
                 </DashboardTableCell>
                 <DashboardTableCell className="w-32 text-sm text-muted-foreground">

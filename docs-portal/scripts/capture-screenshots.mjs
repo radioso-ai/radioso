@@ -97,9 +97,7 @@ const shots = [
     { name: 'dashboard-routine-editor.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500 },
     { name: 'dashboard-routine-prose.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500, action: openProseView },
   ] : []),
-  { name: 'dashboard-activity.png', url: ws('/history?tab=all'), settle: 2000 },
   { name: 'dashboard-settings.png', url: ws('/settings'), settle: 2000 },
-  { name: 'dashboard-eval.png', url: ws('/eval'), settle: 2000 },
   { name: 'dashboard-agent-channels.png', url: ws(`/agents/${AGENT_ID}?tab=channels&anchor=web-chat`), settle: 2000 },
 ]
 

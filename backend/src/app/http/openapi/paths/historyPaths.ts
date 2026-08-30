@@ -23,6 +23,20 @@ export const registerHistoryPaths = (
           description:
             "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
         }),
+        q: z.string().min(1).max(200).optional().openapi({
+          description:
+            "Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither).",
+        }),
+        agentId: z.string().uuid().optional().openapi({
+          description: "Narrows to conversations handled by this agent. Narrows results to chat rows only.",
+        }),
+        sourceOrigin: z.string().min(1).max(2048).optional().openapi({
+          description: "Exact match on the conversation's site origin. Narrows results to chat rows only.",
+        }),
+        outcome: z.enum(["in_progress", "completed", "handed_off"]).optional().openapi({
+          description:
+            "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only.",
+        }),
       }),
     },
     responses: {

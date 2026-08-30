@@ -439,6 +439,10 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
   readonly enablements = new Map<string, AgentContextVariableEnablement>();
   readonly values = new Map<string, ContextVariableValue>();
 
+  constructor(
+    private readonly agentSkills: Pick<InMemoryAgentSkillRepository, "findById"> | null = null,
+  ) {}
+
   async create(input: ContextVariableCreateRecord): Promise<ContextVariable> {
     const now = new Date();
     const variable: ContextVariable = {
@@ -503,6 +507,19 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
   }
 
   async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
+    if (input.source === "resolver" && input.resolverSkillId) {
+      const variable = this.variables.get(input.variableId);
+      const skill = variable && this.agentSkills
+        ? await this.agentSkills.findById(variable.workspaceId, input.agentId, input.resolverSkillId)
+        : null;
+      if (!skill) {
+        throw badRequest(`resolverSkillId "${input.resolverSkillId}" does not name an enabled skill on this agent`);
+      }
+      if (!skill.enabled) {
+        throw badRequest(`resolverSkillId "${input.resolverSkillId}" names a skill that is disabled on this agent`);
+      }
+    }
+
     const key = this.enablementKey(input.agentId, input.variableId);
     const existing = this.enablements.get(key);
     const now = new Date();
@@ -1344,7 +1361,7 @@ export const createTestDependencies = (overrides: {
   connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRepository = new InMemoryAgentRepository(createDefaultAgentSkillSettingsRegistry());
-  const contextVariableRepository = new InMemoryContextVariableRepository();
+  const contextVariableRepository = new InMemoryContextVariableRepository(agentSkillRepository);
   const identityNonces = new Map<string, Date>();
   const identityNonceRepository = {
     async isUsed(nonce: string) {

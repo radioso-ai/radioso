@@ -64,6 +64,47 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
     config: {},
   });
 
+  const createVariable = () => contextVariableRepository.create({
+    workspaceId,
+    name: `var_${randomUUID().slice(0, 8)}`,
+    valueType: "string",
+    trustTier: "unverified",
+    sensitivity: "normal",
+    defaultSurfacing: "on_reference",
+  });
+
+  it("refuses direct resolver enablement when the named skill is missing", async () => {
+    const variable = await createVariable();
+
+    await expect(contextVariableRepository.upsertEnablement({
+      agentId,
+      variableId: variable.id,
+      source: "resolver",
+      resolverSkillId: randomUUID(),
+      maxAgeSeconds: null,
+      resolverTimeoutMs: null,
+      surfacing: "operator_only",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("refuses direct resolver enablement when the named skill is disabled", async () => {
+    const skill = await createSkill();
+    const variable = await createVariable();
+    expect(await agentSkillRepository.update(workspaceId, agentId, skill.id, { enabled: false })).not.toBeNull();
+
+    await expect(contextVariableRepository.upsertEnablement({
+      agentId,
+      variableId: variable.id,
+      source: "resolver",
+      resolverSkillId: skill.id,
+      maxAgeSeconds: null,
+      resolverTimeoutMs: null,
+      surfacing: "operator_only",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it("persists a resolver enablement whose skill exists on this agent", async () => {
     const skill = await createSkill();
     const variableName = `var_${randomUUID().slice(0, 8)}`;

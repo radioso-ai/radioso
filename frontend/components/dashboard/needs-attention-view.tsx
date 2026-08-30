@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { ConversationDrawer } from './conversation-drawer'
@@ -25,17 +26,20 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { decideDefaultInboxLens, hasBlockingInboxLoadError } from '@/lib/inbox-default-lens'
 import { useInboxAttentionSignal } from '@/hooks/use-inbox-attention-signal'
 import {
   buildInboxModel,
   countInboxItemsByType,
   EMPTY_INBOX_FILTERS,
   filterInboxItems,
+  findRefreshedInboxItem,
   listInboxAgents,
   listTakenByOperators,
   selectHumanOwnedConversations,
   type InboxFilters,
   type InboxItem,
+  type RecentlyClosedInboxItem,
 } from '@/lib/needs-attention'
 import {
   createEmptyQualityInboxSnapshot,
@@ -58,6 +62,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceId = routeState.workspaceId ?? ''
   const attentionQueries = useNeedsAttentionQueries(workspaceId)
   const queryClient = useQueryClient()
+  const router = useRouter()
+  const hasAppliedDefaultLensRef = useRef(false)
   const invalidateDashboardQueries = useDashboardQueryInvalidation()
 
   const [qualitySnapshot, setQualitySnapshot] = useState<QualityInboxSnapshot>(createEmptyQualityInboxSnapshot)
@@ -65,6 +71,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [now, setNow] = useState(() => new Date())
   const [filters, setFilters] = useState<InboxFilters>(EMPTY_INBOX_FILTERS)
   const [selectedInboxItem, setSelectedInboxItem] = useState<InboxItem | null>(null)
+  const [selectedRecentlyClosedItem, setSelectedRecentlyClosedItem] = useState<RecentlyClosedInboxItem | null>(null)
   const [debugConversationId, setDebugConversationId] = useState<string | null>(null)
   const [triagingMessageIds, setTriagingMessageIds] = useState<ReadonlySet<string>>(new Set())
   const [triageError, setTriageError] = useState<string | null>(null)
@@ -130,19 +137,18 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // approvals) - written feedback moves the count but stays quiet.
   useInboxAttentionSignal(items.length, criticalOpenCount)
 
-  // Re-sync the selected item's live fields (waiting time, taken-by) as the
-  // queue refetches. Matched by conversation + type rather than `key`, since a
-  // handoff's key embeds the ownership version and would otherwise "lose" the
-  // match on the operator's own claim. Never cleared just because it briefly
-  // falls out of the list - only explicit Done/decision actions clear it.
+  // Re-sync the selected item's live fields (waiting time, taken-by, and —
+  // for an approval — whether it's still pending) as the queue refetches. See
+  // `findRefreshedInboxItem` for the match rule per type. Never cleared just
+  // because it briefly falls out of the list - only explicit Done/decision
+  // actions clear it.
   useEffect(() => {
     void Promise.resolve().then(() => {
       setSelectedInboxItem((current) => {
         if (!current) {
           return current
         }
-        const fresh = items.find((candidate) =>
-          candidate.conversationId === current.conversationId && candidate.type === current.type)
+        const fresh = findRefreshedInboxItem(items, current)
         return fresh && fresh !== current ? fresh : current
       })
     })
@@ -241,10 +247,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
 
   const handleSelectItem = useCallback((item: InboxItem) => {
     setSelectedInboxItem(item)
+    setSelectedRecentlyClosedItem(null)
     if (item.type === 'negative_feedback' && item.triageState === 'open') {
       void handleAcknowledge(item)
     }
   }, [handleAcknowledge])
+
+  const handleSelectRecentlyClosed = useCallback((item: RecentlyClosedInboxItem) => {
+    setSelectedInboxItem(null)
+    setSelectedRecentlyClosedItem(item)
+  }, [])
 
   const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
     if (result.kind === 'ownership') {
@@ -329,13 +341,73 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
   }, [closeReview, patchLatestQuality])
 
-  const debugSelectedItem: SelectedHistoryItem = debugConversationId ? { kind: 'chat', id: debugConversationId } : null
+  const debugSelectedItem: SelectedHistoryItem = useMemo(
+    () => debugConversationId ? { kind: 'chat', id: debugConversationId } : null,
+    [debugConversationId],
+  )
   // A queue with zero open items still renders the full two-pane shell (the
   // lens toggle lives in the left pane) — only the row list swaps for the
   // confidence message, so the operator can always reach the All lens even
   // when nothing needs them (spec 1116 unification, fix for issue #6).
   const isQueueEmpty = !isLoading && !approvalError && !conversationError && items.length === 0
-  const showNoFilterMatches = !isQueueEmpty && filteredItems.length === 0 && !selectedInboxItem
+  const showNoFilterMatches = !isQueueEmpty
+    && filteredItems.length === 0
+    && !selectedInboxItem
+    && !selectedRecentlyClosedItem
+
+  // Smart default lens (see lib/inbox-default-lens.ts for the decision rule
+  // and its rationale): routeState.activityTab is undefined only when the
+  // operator arrived with no explicit lens choice — an explicit
+  // `?tab=needs-attention` (see buildActivityTabHref) always short-circuits
+  // this effect entirely.
+  //
+  // The quality snapshot above promotes on a queued microtask (see that
+  // effect's comment), so the render where `isLoading` first flips false can
+  // still read a stale, too-small `items` — a queue that actually has an open
+  // feedback item can render as transiently empty for one pass. Deciding on
+  // that render would fire a real navigation from a reading that a moment
+  // later turns out to be wrong, and `hasAppliedDefaultLensRef` intentionally
+  // never reconsiders once decided. Debouncing behind a zero-delay timeout —
+  // cancelled and rescheduled by the dependency array below whenever any
+  // input changes — only lets the decision run once the inputs have gone a
+  // full tick without changing, i.e. once they've actually settled.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const decision = decideDefaultInboxLens({
+        activityTab: routeState.activityTab,
+        alreadyDecided: hasAppliedDefaultLensRef.current,
+        isLoading,
+        hasError: hasBlockingInboxLoadError({
+          approvalError: Boolean(approvalError),
+          conversationError: Boolean(conversationError),
+          qualityLoadFailed: qualityPresentation.hasLoadFailure,
+          qualityPermissionDenied: qualityPresentation.permissionDenied,
+        }),
+        isQueueEmpty,
+      })
+
+      if (decision.kind === 'wait') {
+        return
+      }
+
+      hasAppliedDefaultLensRef.current = true
+      if (decision.kind === 'redirect') {
+        router.replace(buildDashboardHref(accountId, { ...routeState, section: 'activity', activityTab: decision.activityTab }))
+      }
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [
+    accountId,
+    approvalError,
+    conversationError,
+    isLoading,
+    isQueueEmpty,
+    qualityPresentation.hasLoadFailure,
+    qualityPresentation.permissionDenied,
+    routeState,
+    router,
+  ])
 
   return (
     <>
@@ -377,7 +449,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               operatorOptions={operatorOptions}
               now={now}
               selectedKey={selectedInboxItem?.key ?? null}
+              selectedRecentlyClosedKey={selectedRecentlyClosedItem?.key ?? null}
               onSelect={handleSelectItem}
+              onSelectRecentlyClosed={handleSelectRecentlyClosed}
             />
             {showNoFilterMatches ? (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -385,7 +459,13 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               </div>
             ) : (
               <InboxResponseView
-                selection={selectedInboxItem ? { source: 'item', item: selectedInboxItem } : null}
+                selection={
+                  selectedInboxItem
+                    ? { source: 'item', item: selectedInboxItem }
+                    : selectedRecentlyClosedItem
+                      ? { source: 'readonly', conversationId: selectedRecentlyClosedItem.conversationId }
+                      : null
+                }
                 now={now}
                 pendingDecisions={decisions}
                 onOperatorChanged={handleOperatorChanged}

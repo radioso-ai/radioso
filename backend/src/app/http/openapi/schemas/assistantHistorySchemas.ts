@@ -294,6 +294,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       userMessageCount: z.number().int().min(0),
       assistantMessageCount: z.number().int().min(0),
       preview: z.string().nullable(),
+      title: z.string().nullable().openapi({
+        description: "Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then.",
+      }),
       ownership: ConversationOwnershipSchema.optional(),
     }),
   );
@@ -533,6 +536,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       sourceOrigin: z.string().nullable(),
       // Entry page provenance is dashboard-only; the public detail response omits it.
       entryPageUrl: z.string().nullable().optional(),
+      title: z.string().nullable().openapi({
+        description: "See ChatConversationSummary.title.",
+      }),
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
       // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
       // non-Slack conversation) would be invalid against the published schema.

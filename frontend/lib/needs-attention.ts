@@ -7,6 +7,7 @@ import type {
   QualityTriageState,
 } from '@/lib/api'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
 
 export type HumanOwnedConversationSummary = ChatConversationSummary & {
@@ -240,11 +241,15 @@ export const buildInboxModel = (input: {
  * often has no summary to work from. `preview` and `anonymousSessionId` are
  * optional because the detail response carries neither; a missing
  * `anonymousSessionId` degrades to a generic visitor label rather than
- * guessing verified/anonymous.
+ * guessing verified/anonymous. `title` is optional for the same defensive
+ * reason, even though both concrete sources (`ChatConversationSummary` and
+ * `ChatConversationDetail`) carry it; when present it wins over `preview` —
+ * see `resolveConversationDisplayTitle`.
  */
 export interface HandoffCandidateSource {
   id: string
   ownership?: ConversationOwnership
+  title?: string | null
   preview?: string | null
   updatedAt: string
   agentId?: string | null
@@ -276,7 +281,7 @@ export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxI
   conversationId: conversation.id,
   type: 'handoff',
   severity: ESCALATION_SEVERITY.handoff,
-  title: conversation.preview || 'Untitled conversation',
+  title: resolveConversationDisplayTitle(conversation),
   detail: conversation.ownership ? ownershipLabel(conversation.ownership) : 'In progress',
   timestamp: conversation.updatedAt,
   escalatedAt: conversation.ownership?.updatedAt,

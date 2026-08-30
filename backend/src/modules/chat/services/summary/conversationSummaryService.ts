@@ -1,9 +1,10 @@
 import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
-import type { ReasoningEffort } from "../../../../shared/infra/llm/providerTypes.js";
+import type { JsonSchemaResponseFormat, ReasoningEffort } from "../../../../shared/infra/llm/providerTypes.js";
 import type { ModelInferencePipeline } from "../../../../shared/infra/llm/modelInferencePipeline.js";
 import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
+import type { ConversationRepositoryPort } from "../../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../../db/repositories/messageRepository.js";
 import type {
   ConversationSummaryRecord,
@@ -16,9 +17,24 @@ export type ConversationSummaryMessageReader = Pick<
   "countByConversationId" | "listRecentByConversationId"
 >;
 
-/** Generates a fresh summary from the assembled prompt. Wraps the shared inference seam. */
+/**
+ * The narrow write slice the title regeneration needs. Deliberately not part of
+ * {@link ConversationSummaryStore}: the title persists on `conversations` (see
+ * migration 154), never on the expiring `conversation_summaries` row, so it is
+ * written through the conversation repository instead of the summary store.
+ */
+export type ConversationSummaryTitleWriter = Pick<ConversationRepositoryPort, "setTitle">;
+
+/** One regeneration's structured output: the rolling summary plus a short topic title. */
+export interface ConversationSummaryGeneration {
+  summary: string;
+  /** Absent when the model omits it or returns a blank string — never an empty string. */
+  title?: string;
+}
+
+/** Generates a fresh summary (and topic title) from the assembled prompt. Wraps the shared inference seam. */
 export interface ConversationSummaryGenerator {
-  generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<string>;
+  generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<ConversationSummaryGeneration>;
 }
 
 /** Post-turn trigger consumed by the turn lifecycle; fire-and-forget, never awaited. */
@@ -34,6 +50,7 @@ export interface ConversationSummaryConfig {
   maxInitialBackfillMessages: number;
   maxSourceMessageChars: number;
   maxSummaryChars: number;
+  maxTitleChars: number;
 }
 
 /** Model-call knobs for the generator; distinct from the size bounds the service applies. */
@@ -69,6 +86,17 @@ const clampExcerpt = (value: string, maxLength: number): string =>
 const clampSummary = (value: string, maxLength: number): string =>
   truncateWithEllipsis(value.trim(), maxLength);
 
+// Title-specific clamp: normalizes to a single line (a title is a row label, never
+// multi-line) and treats a missing, blank, or whitespace-only value as absent rather
+// than as an empty string, so a caller can `if (title)` without a second blank check.
+const clampTitle = (value: string | undefined, maxLength: number): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const clamped = truncateWithEllipsis(normalizeWhitespace(value), maxLength);
+  return clamped.length > 0 ? clamped : undefined;
+};
+
 /**
  * Regenerates (never appends) the rolling per-conversation summary (#866) off the
  * critical path after a turn completes. Below the message threshold the raw window
@@ -78,8 +106,15 @@ const clampSummary = (value: string, maxLength: number): string =>
    * first summary for a legacy long conversation may use a capped multi-call backfill
    * over recent history, never the unbounded full thread.
  *
+ * The same regeneration call also returns a short topic title (issue #1114), written
+ * to `conversations.title` right after a successful summary save. The title write is
+ * best-effort and independent of the summary write: a title-write failure never
+ * un-does or blocks the summary, and an absent/blank title (the model omitted it, or
+ * it clamps to nothing) simply skips the write, leaving any previously stored title
+ * in place.
+ *
  * All observability here is content-free: it records durations, counts, and reasons,
- * never the summary text, message content, or prompt.
+ * never the summary text, title text, message content, or prompt.
  */
 export class ConversationSummaryService implements ConversationSummaryUpdater {
   private readonly config: ConversationSummaryConfig;
@@ -88,6 +123,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     private readonly store: ConversationSummaryStore,
     private readonly messages: ConversationSummaryMessageReader,
     private readonly generator: ConversationSummaryGenerator,
+    private readonly titleWriter: ConversationSummaryTitleWriter,
     private readonly logger?: Pick<AppLogger, "debug" | "warn">,
     config: Partial<ConversationSummaryConfig> = {},
   ) {
@@ -98,6 +134,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       maxInitialBackfillMessages: CHAT_BEHAVIOR.conversationSummary.maxInitialBackfillMessages,
       maxSourceMessageChars: CHAT_BEHAVIOR.conversationSummary.maxSourceMessageChars,
       maxSummaryChars: CHAT_BEHAVIOR.conversationSummary.maxSummaryChars,
+      maxTitleChars: CHAT_BEHAVIOR.conversationSummary.maxTitleChars,
       ...config,
     };
   }
@@ -171,7 +208,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         prompt,
         usageContext: this.usageContext(input, messageCount),
       });
-      const summary = clampSummary(generated, this.config.maxSummaryChars);
+      const summary = clampSummary(generated.summary, this.config.maxSummaryChars);
       if (!summary) {
         this.logger?.debug(
           {
@@ -191,6 +228,9 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       };
       await this.store.save({ sessionId: input.conversationId, summary: record });
 
+      const title = clampTitle(generated.title, this.config.maxTitleChars);
+      const titleWritten = title ? await this.persistTitle(input, title) : false;
+
       this.logger?.debug(
         {
           event: "conversation_summary_regenerated",
@@ -198,6 +238,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
           durationMs: Date.now() - startedAt,
           sourceMessageCount: conversationMessages.length,
           summaryChars: summary.length,
+          titleWritten,
         },
         "Regenerated conversation summary",
       );
@@ -244,6 +285,9 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     }
 
     let running: ConversationSummaryRecord | null = null;
+    // The freshest chunk's title wins: later chunks see more of the conversation (they
+    // are seeded by the running summary), so their title read is the most complete one.
+    let latestTitle: string | undefined;
     for (let index = 0; index < conversationMessages.length; index += this.config.maxSourceMessages) {
       const chunk = conversationMessages.slice(index, index + this.config.maxSourceMessages);
       const generated = await this.generator.generate({
@@ -254,7 +298,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
           `backfill:${Math.floor(index / this.config.maxSourceMessages)}`,
         ),
       });
-      const summary = clampSummary(generated, this.config.maxSummaryChars);
+      const summary = clampSummary(generated.summary, this.config.maxSummaryChars);
       if (!summary) {
         this.logger?.debug(
           {
@@ -266,6 +310,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         );
         return;
       }
+      latestTitle = clampTitle(generated.title, this.config.maxTitleChars) ?? latestTitle;
       running = {
         summary,
         // The first summary may intentionally use only a bounded recent backfill
@@ -286,6 +331,8 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     };
     await this.store.save({ sessionId: input.conversationId, summary: record });
 
+    const titleWritten = latestTitle ? await this.persistTitle(input, latestTitle) : false;
+
     this.logger?.debug(
       {
         event: "conversation_summary_regenerated",
@@ -293,6 +340,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         durationMs: Date.now() - startedAt,
         sourceMessageCount: conversationMessages.length,
         summaryChars: record.summary.length,
+        titleWritten,
       },
       "Regenerated conversation summary",
     );
@@ -334,7 +382,74 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       conversation_excerpt: conversationExcerpt,
     });
   }
+
+  /**
+   * Best-effort title write, isolated from summary persistence: the summary above has
+   * already been saved by the time this runs, so a title-write failure must never read
+   * as a failed regeneration (the outer catch's `conversation_summary_generation_failed`
+   * event) or retry the summary call. Returns whether the write happened, for the
+   * content-free regeneration log.
+   */
+  private async persistTitle(
+    input: { workspaceId: string; conversationId: string },
+    title: string,
+  ): Promise<boolean> {
+    try {
+      await this.titleWriter.setTitle(input.conversationId, input.workspaceId, title);
+      return true;
+    } catch (error) {
+      this.logger?.warn(
+        {
+          event: "conversation_title_write_failed",
+          conversationId: input.conversationId,
+          errorType: error instanceof Error ? error.name : typeof error,
+          errorMessage: error instanceof Error ? error.message : undefined,
+        },
+        "Failed to persist conversation title",
+      );
+      return false;
+    }
+  }
 }
+
+/**
+ * Strict JSON-schema shape the regeneration call returns: the rolling summary plus a
+ * short topic title, in one response so persisting a title never costs a second LLM
+ * call. `title` still allows an empty string (rather than making it fully optional in
+ * the schema) so a provider without true "optional in strict mode" support has a legal
+ * value to emit when it has nothing better than the previous title.
+ */
+const CONVERSATION_SUMMARY_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
+  type: "json_schema",
+  name: "conversation_summary",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["summary", "title"],
+    properties: {
+      summary: { type: "string" },
+      title: { type: "string" },
+    },
+  },
+};
+
+const parseConversationSummaryGeneration = (raw: string): ConversationSummaryGeneration => {
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Conversation summary model response was not a JSON object");
+  }
+  const { summary, title } = parsed as { summary?: unknown; title?: unknown };
+  if (typeof summary !== "string") {
+    throw new Error("Conversation summary model response was missing a summary string");
+  }
+  return {
+    summary,
+    // A wrong-typed title degrades to absent rather than failing the whole
+    // regeneration — the summary is the load-bearing half of this call.
+    title: typeof title === "string" ? title : undefined,
+  };
+};
 
 /** Wraps the shared inference pipeline as a {@link ConversationSummaryGenerator}. */
 export class ModelConversationSummaryGenerator implements ConversationSummaryGenerator {
@@ -343,13 +458,17 @@ export class ModelConversationSummaryGenerator implements ConversationSummaryGen
     private readonly config: ConversationSummaryGenerationConfig = CHAT_BEHAVIOR.conversationSummary,
   ) {}
 
-  async generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<string> {
+  async generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<ConversationSummaryGeneration> {
     const { text } = await this.inference.complete({
       operation: input.usageContext,
       prompt: input.prompt,
       reasoningEffort: this.config.reasoningEffort,
       maxOutputTokens: this.config.maxOutputTokens,
+      responseFormat: CONVERSATION_SUMMARY_RESPONSE_FORMAT,
+      validateResult: (result) => {
+        parseConversationSummaryGeneration(result.text ?? "");
+      },
     });
-    return text ?? "";
+    return parseConversationSummaryGeneration(text ?? "");
   }
 }

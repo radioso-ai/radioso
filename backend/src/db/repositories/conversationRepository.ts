@@ -29,6 +29,12 @@ export interface ConversationRecord {
   anonymousSessionId: string | null;
   verifiedCustomerId: string | null;
   entryPageUrl: string | null;
+  /**
+   * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
+   * summary. Null until the summary service's first successful regeneration; callers
+   * fall back to the first-message preview until then.
+   */
+  title: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -93,6 +99,14 @@ export interface ConversationRepositoryPort {
     agentId?: string | null,
   ): Promise<ConversationRecord | null>;
   setVerifiedCustomerId(conversationId: string, workspaceId: string, customerId: string): Promise<void>;
+  /**
+   * Best-effort title write (issue #1114), called by `ConversationSummaryService`
+   * right after it saves a fresh rolling summary. A no-op (not an error) when the
+   * stored title already matches — skips the write and never touches `updated_at`, so
+   * a stable topic label does not itself churn a conversation's position in the
+   * updated-at-ordered inbox list.
+   */
+  setTitle(conversationId: string, workspaceId: string, title: string): Promise<void>;
   touch(conversationId: string, workspaceId: string): Promise<void>;
 }
 
@@ -109,6 +123,7 @@ interface ConversationRow {
   anonymous_session_id: string | null;
   verified_customer_id: string | null;
   entry_page_url: string | null;
+  title: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -132,6 +147,7 @@ const conversationColumns = [
   "anonymous_session_id",
   "verified_customer_id",
   "entry_page_url",
+  "title",
   "created_at",
   "updated_at",
 ] as const;
@@ -148,6 +164,7 @@ const conversationSelectColumns = [
   "c.anonymous_session_id as anonymous_session_id",
   "c.verified_customer_id as verified_customer_id",
   "c.entry_page_url as entry_page_url",
+  "c.title as title",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
 ] as const;
@@ -179,6 +196,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   anonymousSessionId: row.anonymous_session_id ?? null,
   verifiedCustomerId: row.verified_customer_id ?? null,
   entryPageUrl: row.entry_page_url ?? null,
+  title: row.title ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -547,6 +565,19 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .where("id", "=", conversationId)
       .where("workspace_id", "=", workspaceId)
       .where("verified_customer_id", "is", null)
+      .execute();
+  }
+
+  async setTitle(conversationId: string, workspaceId: string, title: string): Promise<void> {
+    // No `updated_at` bump: an unchanged topic label must not itself reorder the
+    // updated-at-sorted inbox list, and the `is distinct from` guard makes the write
+    // a no-op (not just a no-visible-effect) when the title already matches.
+    await this.db
+      .updateTable("conversations")
+      .set({ title })
+      .where("id", "=", conversationId)
+      .where("workspace_id", "=", workspaceId)
+      .where("title", "is distinct from", title)
       .execute();
   }
 }

@@ -70,6 +70,7 @@ interface HistoryItemsRow {
   anonymous_session_id: string | null;
   verified_customer_id: string | null;
   entry_page_url: string | null;
+  title: string | null;
   conversation_created_at: Date | null;
   conversation_updated_at: Date | null;
   audit_id: string | null;
@@ -117,6 +118,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            c.anonymous_session_id,
            c.verified_customer_id,
            c.entry_page_url,
+           c.title,
            c.created_at AS conversation_created_at,
            c.updated_at AS conversation_updated_at,
            NULL::uuid AS audit_id,
@@ -151,6 +153,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            NULL::text AS anonymous_session_id,
            NULL::text AS verified_customer_id,
            NULL::text AS entry_page_url,
+           NULL::text AS title,
            NULL::timestamptz AS conversation_created_at,
            NULL::timestamptz AS conversation_updated_at,
            a.id AS audit_id,
@@ -209,6 +212,7 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             anonymousSessionId: row.anonymous_session_id,
             verifiedCustomerId: row.verified_customer_id,
             entryPageUrl: row.entry_page_url,
+            title: row.title,
             createdAt: new Date(row.conversation_created_at),
             updatedAt: new Date(row.conversation_updated_at),
           },

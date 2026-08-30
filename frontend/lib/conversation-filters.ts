@@ -1,6 +1,6 @@
 import type { ChatConversationSummary } from '@/lib/api'
 import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conversation-outcome'
-import { stripMarkdownSyntax } from '@/lib/markdown-preview'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 
 export type OutcomeFilter = 'all' | ConversationOutcome['kind']
 
@@ -35,7 +35,11 @@ export function filterConversations(
 
   return conversations.filter((conversation) => {
     if (search) {
-      const title = stripMarkdownSyntax(conversation.preview || '').toLowerCase()
+      // Matches against the same text the row displays (the generated topic
+      // title once one exists, otherwise the markdown-stripped preview), so a
+      // search never misses a row whose visible title reads differently from
+      // its raw first message.
+      const title = resolveConversationDisplayTitle(conversation).toLowerCase()
       if (!title.includes(search)) {
         return false
       }

@@ -171,6 +171,7 @@ export function InboxResponseView({
     return {
       id: conversationDetail.conversationId,
       ownership: conversationDetail.ownership,
+      title: conversationDetail.title,
       updatedAt: conversationDetail.updatedAt,
       agentId: conversationDetail.agentId,
       agentName: conversationDetail.agentName ?? null,

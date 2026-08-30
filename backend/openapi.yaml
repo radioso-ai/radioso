@@ -7586,6 +7586,11 @@ components:
           type:
             - string
             - "null"
+        title:
+          type:
+            - string
+            - "null"
+          description: Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then.
         ownership:
           $ref: "#/components/schemas/ConversationOwnership"
       required:
@@ -7604,6 +7609,7 @@ components:
         - userMessageCount
         - assistantMessageCount
         - preview
+        - title
     ChatHistoryListResponse:
       type: object
       properties:
@@ -8209,6 +8215,11 @@ components:
           type:
             - string
             - "null"
+        title:
+          type:
+            - string
+            - "null"
+          description: See ChatConversationSummary.title.
         channelContext:
           anyOf:
             - $ref: "#/components/schemas/ConversationChannelContext"
@@ -8261,6 +8272,7 @@ components:
         - agentId
         - sourceChannel
         - sourceOrigin
+        - title
         - channelContext
         - createdAt
         - updatedAt
@@ -8330,6 +8342,11 @@ components:
           type:
             - string
             - "null"
+        title:
+          type:
+            - string
+            - "null"
+          description: See ChatConversationSummary.title.
         channelContext:
           anyOf:
             - $ref: "#/components/schemas/ConversationChannelContext"
@@ -8380,6 +8397,7 @@ components:
         - agentId
         - sourceChannel
         - sourceOrigin
+        - title
         - channelContext
         - createdAt
         - updatedAt

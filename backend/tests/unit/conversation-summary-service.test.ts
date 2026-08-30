@@ -9,6 +9,7 @@ import {
   ConversationSummaryService,
   type ConversationSummaryGenerator,
   type ConversationSummaryMessageReader,
+  type ConversationSummaryTitleWriter,
 } from "../../src/modules/chat/services/summary/conversationSummaryService.js";
 
 const message = (overrides: Partial<MessageRecord> & Pick<MessageRecord, "id" | "role" | "content">): MessageRecord => ({
@@ -44,6 +45,18 @@ const inMemoryStore = (initial?: ConversationSummaryRecord): ConversationSummary
   return store;
 };
 
+const inMemoryTitleWriter = (): ConversationSummaryTitleWriter & {
+  calls: Array<{ conversationId: string; workspaceId: string; title: string }>;
+} => {
+  const calls: Array<{ conversationId: string; workspaceId: string; title: string }> = [];
+  return {
+    calls,
+    async setTitle(conversationId: string, workspaceId: string, title: string) {
+      calls.push({ conversationId, workspaceId, title });
+    },
+  };
+};
+
 const fifteenMessages = (): MessageRecord[] =>
   Array.from({ length: 15 }, (_, index) =>
     message({
@@ -71,7 +84,7 @@ describe("ConversationSummaryService", () => {
     const service = new ConversationSummaryService(store, messageReader([
       message({ id: "a", role: "user", content: "hi" }),
       message({ id: "b", role: "assistant", content: "hello" }),
-    ]), generator, undefined, config);
+    ]), generator, inMemoryTitleWriter(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -93,10 +106,10 @@ describe("ConversationSummaryService", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async ({ prompt }) => {
         capturedPrompt = prompt;
-        return "Fresh summary of the conversation.";
+        return { summary: "Fresh summary of the conversation." };
       }),
     };
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, undefined, {
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
       ...config,
       maxSourceMessages: 3,
       maxSourceMessageChars: 500,
@@ -141,10 +154,10 @@ describe("ConversationSummaryService", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async ({ prompt }) => {
         prompts.push(prompt);
-        return `summary ${prompts.length}`;
+        return { summary: `summary ${prompts.length}` };
       }),
     };
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, undefined, {
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
       ...config,
       minMessages: 3,
       maxSourceMessages: 4,
@@ -183,10 +196,10 @@ describe("ConversationSummaryService", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async ({ prompt }) => {
         prompts.push(prompt);
-        return `summary ${prompts.length}`;
+        return { summary: `summary ${prompts.length}` };
       }),
     };
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, undefined, {
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
       ...config,
       minMessages: 3,
       maxSourceMessages: 4,
@@ -223,7 +236,7 @@ describe("ConversationSummaryService", () => {
     const save = vi.spyOn(store, "save");
     const generator: ConversationSummaryGenerator = { generate: vi.fn() };
     // 15 total, 12 covered: 3 uncovered < refreshEveryMessages (6) → skip.
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, undefined, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -232,8 +245,8 @@ describe("ConversationSummaryService", () => {
   });
 
   it("makes the usage attempt key unique per regeneration coverage", async () => {
-    const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => "fresh") };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, undefined, config);
+    const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => ({ summary: "fresh" })) };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -253,7 +266,7 @@ describe("ConversationSummaryService", () => {
         message({ id: `sys${index}`, role: "system", content: `system event ${index}` })),
       ...fifteenMessages().slice(0, 4),
     ];
-    const service = new ConversationSummaryService(store, messageReader(messages), generator, undefined, config);
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -264,9 +277,9 @@ describe("ConversationSummaryService", () => {
   it("never persists a lone surrogate when the clamp cuts inside a surrogate pair", async () => {
     const store = inMemoryStore();
     const generator: ConversationSummaryGenerator = {
-      generate: vi.fn(async () => `${"a".repeat(18)}😀 and more text`),
+      generate: vi.fn(async () => ({ summary: `${"a".repeat(18)}😀 and more text` })),
     };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, undefined, {
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, {
       ...config,
       maxSummaryChars: 20,
     });
@@ -291,10 +304,10 @@ describe("ConversationSummaryService", () => {
     const generator: ConversationSummaryGenerator = {
       generate: vi.fn(async ({ prompt }) => {
         capturedPrompt = prompt;
-        return "ok";
+        return { summary: "ok" };
       }),
     };
-    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, undefined, {
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, inMemoryTitleWriter(), undefined, {
       ...config,
       maxSourceMessageChars: 12,
     });
@@ -308,9 +321,9 @@ describe("ConversationSummaryService", () => {
   it("hard-clamps the generated summary before persisting", async () => {
     const store = inMemoryStore();
     const generator: ConversationSummaryGenerator = {
-      generate: vi.fn(async () => "y".repeat(50)),
+      generate: vi.fn(async () => ({ summary: "y".repeat(50) })),
     };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, undefined, {
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, {
       ...config,
       maxSummaryChars: 20,
     });
@@ -324,8 +337,8 @@ describe("ConversationSummaryService", () => {
   it("does not save when the model returns a blank summary", async () => {
     const store = inMemoryStore();
     const save = vi.spyOn(store, "save");
-    const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => "   ") };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, undefined, config);
+    const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => ({ summary: "   " })) };
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), undefined, config);
 
     await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
 
@@ -341,7 +354,7 @@ describe("ConversationSummaryService", () => {
       }),
     };
     const logger = { debug: vi.fn(), warn: vi.fn() };
-    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, logger, config);
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), logger, config);
 
     await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).resolves.toBeUndefined();
 
@@ -353,6 +366,153 @@ describe("ConversationSummaryService", () => {
     // The log payload never carries summary/message content.
     const [payload] = logger.warn.mock.calls[0]!;
     expect(JSON.stringify(payload)).not.toContain("message 14");
+  });
+});
+
+describe("ConversationSummaryService title generation", () => {
+  it("persists the generated title on the conversation row after the summary saves", async () => {
+    const store = inMemoryStore();
+    const titleWriter = inMemoryTitleWriter();
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Refund for order 4821" })),
+    };
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(titleWriter.calls).toEqual([
+      { conversationId: "conv_1", workspaceId: "ws_1", title: "Refund for order 4821" },
+    ]);
+    // The summary itself never carries the title — it stays a separate write to
+    // a separate (non-expiring) row.
+    expect(store.saved).toEqual(
+      expect.not.objectContaining({ title: expect.anything() }),
+    );
+  });
+
+  it("treats a blank title as absent and skips the title write", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "   " })),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(titleWriter.calls).toEqual([]);
+  });
+
+  it("treats an omitted title as absent and skips the title write", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary." })),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(titleWriter.calls).toEqual([]);
+  });
+
+  it("clamps an overlong title before persisting", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "t".repeat(50) })),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, {
+      ...config,
+      maxTitleChars: 20,
+    });
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(titleWriter.calls).toHaveLength(1);
+    expect(titleWriter.calls[0]!.title.length).toBeLessThanOrEqual(20);
+    expect(titleWriter.calls[0]!.title.endsWith("…")).toBe(true);
+  });
+
+  it("normalizes internal whitespace in the title to a single line", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Refund\nfor  order   4821" })),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(titleWriter.calls[0]!.title).toBe("Refund for order 4821");
+  });
+
+  it("does not save a title when the summary itself is blank (whole regeneration skipped)", async () => {
+    const titleWriter = inMemoryTitleWriter();
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "   ", title: "Some topic" })),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, titleWriter, undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(titleWriter.calls).toEqual([]);
+  });
+
+  it("does not fail the whole regeneration when the title write itself throws", async () => {
+    const store = inMemoryStore();
+    const titleWriter: ConversationSummaryTitleWriter = {
+      async setTitle() {
+        throw new Error("db unavailable");
+      },
+    };
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => ({ summary: "Fresh summary.", title: "Some topic" })),
+    };
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, titleWriter, logger, config);
+
+    await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).resolves.toBeUndefined();
+
+    // The summary itself still saved: a title-write failure must not undo it.
+    expect(store.saved?.summary).toBe("Fresh summary.");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "conversation_title_write_failed", conversationId: "conv_1" }),
+      expect.any(String),
+    );
+    // Never logged as a failed regeneration — the summary succeeded.
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ event: "conversation_summary_generation_failed" }),
+      expect.any(String),
+    );
+  });
+
+  it("writes the final chunk's title once after a multi-chunk backfill, not once per chunk", async () => {
+    const messages = Array.from({ length: 9 }, (_, index) =>
+      message({
+        id: `m${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message ${index}`,
+        createdAt: new Date(2026, 0, 1, 0, index),
+      }),
+    );
+    const titleWriter = inMemoryTitleWriter();
+    let call = 0;
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async () => {
+        call += 1;
+        return { summary: `summary ${call}`, title: `title ${call}` };
+      }),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, titleWriter, undefined, {
+      ...config,
+      minMessages: 3,
+      maxSourceMessages: 4,
+      refreshEveryMessages: 2,
+    });
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(generator.generate).toHaveBeenCalledTimes(3);
+    expect(titleWriter.calls).toEqual([
+      { conversationId: "conv_1", workspaceId: "ws_1", title: "title 3" },
+    ]);
   });
 });
 

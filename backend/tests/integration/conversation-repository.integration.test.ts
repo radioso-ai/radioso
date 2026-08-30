@@ -88,6 +88,29 @@ describeIntegration("ConversationRepository (Postgres)", () => {
       .toBe("customer-first");
   });
 
+  it("sets a title, is idempotent when unchanged, and never bumps updated_at", async () => {
+    const conversation = await repository.create(workspaceId);
+    expect((await repository.findByIdAndWorkspaceId(conversation.id, workspaceId))?.title).toBeNull();
+
+    await repository.setTitle(conversation.id, workspaceId, "Refund for order 4821");
+    const afterFirstWrite = await repository.findByIdAndWorkspaceId(conversation.id, workspaceId);
+    expect(afterFirstWrite?.title).toBe("Refund for order 4821");
+    // A title write must never itself reorder the updated-at-sorted inbox list.
+    expect(afterFirstWrite?.updatedAt.getTime()).toBe(conversation.updatedAt.getTime());
+
+    // Writing the same title again is a no-op (migration 154's `is distinct
+    // from` guard), so a second regeneration with an unchanged topic label
+    // never churns the row.
+    await repository.setTitle(conversation.id, workspaceId, "Refund for order 4821");
+    expect((await repository.findByIdAndWorkspaceId(conversation.id, workspaceId))?.title)
+      .toBe("Refund for order 4821");
+
+    // A later regeneration replaces the title outright (never appends).
+    await repository.setTitle(conversation.id, workspaceId, "Refund escalated to a human");
+    expect((await repository.findByIdAndWorkspaceId(conversation.id, workspaceId))?.title)
+      .toBe("Refund escalated to a human");
+  });
+
   it("paginates newest-first with a keyset cursor, total, and hasMore", async () => {
     const ids = await seedOrdered();
 

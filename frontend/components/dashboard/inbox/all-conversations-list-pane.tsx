@@ -15,11 +15,11 @@ import {
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { useCopilotEntity } from '@/lib/copilot-context'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conversation-outcome'
 import { matchesConversationSearchText, type ConversationFilterState, type OutcomeFilter } from '@/lib/conversation-filters'
 import { formatConversationLocation } from '@/lib/history-source'
 import { stripTrackingParams } from '@/lib/inbox-response'
-import { stripMarkdownSyntax } from '@/lib/markdown-preview'
 import { cn } from '@/lib/utils'
 import type { HistoryListItem, SelectedHistoryItem } from '@/components/dashboard/history/history-list'
 
@@ -97,11 +97,12 @@ function ConversationRow({
   onSelect: () => void
 }) {
   const outcome = deriveConversationOutcome(conversation, now)
-  const title = stripMarkdownSyntax(conversation.preview || '') || 'Untitled conversation'
+  const title = resolveConversationDisplayTitle(conversation)
   // Ambient page context for Ray (spec 087): the same registration the old
   // history table's ConversationRow made, so asking Ray about the page still
-  // resolves this row's conversation and agent.
-  useCopilotEntity('conversation', conversation.id, conversation.preview || 'Untitled conversation')
+  // resolves this row's conversation and agent. Uses the same title the row
+  // displays, so Ray's ambient label never disagrees with what's on screen.
+  useCopilotEntity('conversation', conversation.id, title)
   useCopilotEntity(
     'agent',
     conversation.agentId,
@@ -245,7 +246,7 @@ export const filterAllLensItems = (
   }
 
   const search = filters.search.trim().toLowerCase()
-  if (search && !stripMarkdownSyntax(entry.conversation.preview || '').toLowerCase().includes(search)) {
+  if (search && !resolveConversationDisplayTitle(entry.conversation).toLowerCase().includes(search)) {
     return false
   }
   if (filters.outcome !== 'all' && deriveConversationOutcome(entry.conversation, now).kind !== filters.outcome) {

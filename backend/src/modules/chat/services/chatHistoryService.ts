@@ -111,6 +111,12 @@ export interface ChatConversationSummary {
   userMessageCount: number;
   assistantMessageCount: number;
   preview: string | null;
+  /**
+   * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
+   * summary. Null until the summary service's first successful regeneration; the
+   * dashboard falls back to `preview` (the visitor's opening message) until then.
+   */
+  title: string | null;
   ownership?: ChatConversationOwnership;
 }
 
@@ -203,6 +209,8 @@ export interface ChatConversationDetail {
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   entryPageUrl?: string | null;
+  /** See {@link ChatConversationSummary.title}. */
+  title: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -996,6 +1004,7 @@ export class ChatHistoryService {
       sourceChannel: conversation.sourceChannel,
       sourceOrigin: conversation.sourceOrigin,
       channelContext: conversation.channelContext,
+      title: conversation.title,
       createdAt: toIsoString(conversation.createdAt),
       updatedAt: toIsoString(conversation.updatedAt),
       messageCount: messageSummary?.messageCount ?? total,

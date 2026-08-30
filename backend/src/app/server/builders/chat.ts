@@ -651,13 +651,16 @@ export const buildChatServices = (input: {
   const conversationSummaryRepository = new ConversationSummaryRepository(input.database.kysely);
   // Rolling per-conversation summary (#866): read at prepare, regenerated
   // fire-and-forget post-turn on the cheap rewrite-tier inference (a background
-  // summarization pass, never on the answer latency budget).
+  // summarization pass, never on the answer latency budget). The same call also
+  // produces a short topic title (#1114), written through the conversation
+  // repository — never the expiring summary row (see migration 154).
   const conversationSummaryService = new ConversationSummaryService(
     conversationSummaryRepository,
     input.messageRepository,
     new ModelConversationSummaryGenerator(
       input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
     ),
+    input.conversationRepository,
     input.logger,
   );
   const contextVariableRepository = new ContextVariableRepository(input.database.kysely);

@@ -155,6 +155,10 @@ export const CHAT_BEHAVIOR = {
     // Hard clamp applied to the generated summary before it is persisted or
     // injected, so the summary can never grow the prompt without bound.
     maxSummaryChars: 1_500,
+    // Hard clamp applied to the generated conversation title (issue #1114) before
+    // it is persisted to `conversations.title`. The prompt asks for ~8 words; this
+    // just bounds a runaway model response, so it stays generous relative to that.
+    maxTitleChars: 80,
     // Generous TTL, refreshed on every write; an abandoned conversation's summary
     // is eventually reclaimed and a revived conversation starts fresh.
     ttlDays: 30,

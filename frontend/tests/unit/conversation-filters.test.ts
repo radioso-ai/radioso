@@ -52,6 +52,17 @@ describe('filterConversations', () => {
     expect(result.map((c) => c.id)).toEqual(['a'])
   })
 
+  it('matches search against the generated title when one exists, even if the raw preview differs', () => {
+    const conversations = [
+      conversation({ id: 'a', title: 'Refund for order 4821', preview: 'hey' }),
+      conversation({ id: 'b', title: null, preview: 'Orari dei corsi di yoga' }),
+    ]
+
+    const result = filterConversations(conversations, { ...baseFilters, search: 'refund' }, NOW)
+
+    expect(result.map((c) => c.id)).toEqual(['a'])
+  })
+
   it('filters by outcome', () => {
     const handedOff = conversation({
       id: 'handed-off',

@@ -11250,6 +11250,13 @@
               "null"
             ]
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then."
+          },
           "ownership": {
             "$ref": "#/components/schemas/ConversationOwnership"
           }
@@ -11269,7 +11276,8 @@
           "messageCount",
           "userMessageCount",
           "assistantMessageCount",
-          "preview"
+          "preview",
+          "title"
         ]
       },
       "ChatHistoryListResponse": {
@@ -12148,6 +12156,13 @@
               "null"
             ]
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "See ChatConversationSummary.title."
+          },
           "channelContext": {
             "anyOf": [
               {
@@ -12225,6 +12240,7 @@
           "agentId",
           "sourceChannel",
           "sourceOrigin",
+          "title",
           "channelContext",
           "createdAt",
           "updatedAt",
@@ -12321,6 +12337,13 @@
               "null"
             ]
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "See ChatConversationSummary.title."
+          },
           "channelContext": {
             "anyOf": [
               {
@@ -12395,6 +12418,7 @@
           "agentId",
           "sourceChannel",
           "sourceOrigin",
+          "title",
           "channelContext",
           "createdAt",
           "updatedAt",

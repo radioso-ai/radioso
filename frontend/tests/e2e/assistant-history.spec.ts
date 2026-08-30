@@ -379,6 +379,68 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
   await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toHaveCount(0);
 });
 
+test("an All-lens row shows the generated topic title over the raw preview, and search matches it", async ({ page }) => {
+  const titledConversation = {
+    id: "conversation-titled",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-titled-1",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 3,
+    userMessageCount: 2,
+    assistantMessageCount: 1,
+    preview: "hey",
+    title: "Refund for order 4821",
+  };
+  const untitledConversation = {
+    id: "conversation-untitled",
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: "visitor-titled-2",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Orari dei corsi di yoga settimanali",
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: {
+      conversations: [titledConversation, untitledConversation],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat`);
+  const list = page.getByRole("complementary", { name: "Conversations" });
+
+  // Titled row shows the generated topic, not the raw first message.
+  await expect(list.getByRole("button").filter({ hasText: "Refund for order 4821" })).toBeVisible();
+  await expect(list.getByRole("button").filter({ hasText: "hey" })).toHaveCount(0);
+  // Untitled row still falls back to the markdown-stripped preview.
+  await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
+
+  // Search matches the visible (generated) title, not just the raw preview.
+  await page.getByPlaceholder("Search conversations").fill("refund");
+  await expect(list.getByRole("button").filter({ hasText: "Refund for order 4821" })).toBeVisible();
+  await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toHaveCount(0);
+});
+
 test("selecting a completed conversation in the All lens opens the reading pane, read-only", async ({ page }) => {
   const conversationId = "conversation-completed-1";
   // No `ownership` field at all — matches the real list endpoint, which omits

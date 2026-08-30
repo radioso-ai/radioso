@@ -22,6 +22,7 @@ export const buildChatConversationSummary = (
   channelContext: conversation.channelContext,
   anonymousSessionId: conversation.anonymousSessionId ?? null,
   entryPageUrl: conversation.entryPageUrl ?? null,
+  title: conversation.title ?? null,
   createdAt: toIsoString(conversation.createdAt),
   updatedAt: toIsoString(conversation.updatedAt),
   messageCount: messageSummary?.messageCount ?? 0,

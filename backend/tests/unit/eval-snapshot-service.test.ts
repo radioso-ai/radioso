@@ -129,6 +129,8 @@ class StubConversationRepository implements ConversationRepositoryPort {
 
   async setVerifiedCustomerId(): Promise<void> {}
 
+  async setTitle(): Promise<void> {}
+
   async touch(): Promise<void> {}
 }
 
@@ -366,6 +368,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -430,6 +433,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -499,6 +503,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -542,6 +547,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -680,6 +686,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -737,6 +744,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -792,6 +800,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -847,6 +856,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -889,6 +899,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -929,6 +940,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -989,6 +1001,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -1049,6 +1062,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -1101,6 +1115,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };
@@ -1155,6 +1170,7 @@ describe("EvalSnapshotService.capture", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: fixedDate,
       updatedAt: fixedDate,
     };

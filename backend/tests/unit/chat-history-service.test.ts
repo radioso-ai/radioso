@@ -278,6 +278,27 @@ describe("chat history service ownership read surface", () => {
     expect(webDetail.channelContext).toBeNull();
   });
 
+  it("projects the generated conversation title into list, items, and detail responses, defaulting to null", async () => {
+    const { conversationRepository, service } = createService();
+    const titled = await conversationRepository.create("workspace-1");
+    await conversationRepository.setTitle(titled.id, "workspace-1", "Refund for order 4821");
+    const untitled = await conversationRepository.create("workspace-1");
+
+    const list = await service.listConversations("workspace-1", { limit: 50, offset: 0 });
+    const items = await service.listItems("workspace-1", { limit: 50, offset: 0 });
+    const titledRow = list.conversations.find((row) => row.id === titled.id);
+    const untitledRow = list.conversations.find((row) => row.id === untitled.id);
+    const titledItem = items.items.find((item) => item.kind === "chat" && item.conversation.id === titled.id);
+    const titledDetail = await service.getConversation("workspace-1", titled.id, detailInput);
+    const untitledDetail = await service.getConversation("workspace-1", untitled.id, detailInput);
+
+    expect(titledRow?.title).toBe("Refund for order 4821");
+    expect(untitledRow?.title).toBeNull();
+    expect(titledItem?.kind === "chat" ? titledItem.conversation.title : null).toBe("Refund for order 4821");
+    expect(titledDetail.title).toBe("Refund for order 4821");
+    expect(untitledDetail.title).toBeNull();
+  });
+
   it("tails dashboard messages with ownership only while human-owned", async () => {
     const { conversationRepository, messageRepository, conversationOwnershipRepository, service } = createService();
     const conversation = await conversationRepository.create("workspace-1");

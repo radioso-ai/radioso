@@ -82,6 +82,40 @@ describeIntegration("ContextVariableService resolver skill validation (Postgres)
     expect(enablements.find((enablement) => enablement.variableId === result.variableId)?.resolverSkillId).toBe(skill.id);
   });
 
+  it("disables active resolver enablements when their skill is disabled", async () => {
+    const skill = await createSkill();
+    const variable = await contextVariableRepository.create({
+      workspaceId,
+      name: `disable_${randomUUID().slice(0, 8)}`,
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+    const enablement = await contextVariableService.upsertEnablement({
+      workspaceId,
+      agentId,
+      variableId: variable.id,
+      source: "resolver",
+      resolverSkillId: skill.id,
+      maxAgeSeconds: null,
+      resolverTimeoutMs: null,
+      surfacing: "always",
+      enabled: true,
+    });
+
+    expect(await agentSkillRepository.update(workspaceId, agentId, skill.id, { enabled: false })).not.toBeNull();
+
+    const updated = (await contextVariableRepository.listByAgent(workspaceId, agentId))
+      .find((candidate) => candidate.id === enablement.id);
+    expect(updated).toMatchObject({
+      enabled: false,
+      resolverSkillId: skill.id,
+      source: "resolver",
+    });
+    expect(updated?.updatedAt.getTime()).toBeGreaterThan(enablement.updatedAt.getTime());
+  });
+
   it("rejects a direct resolver enablement once its skill is disabled", async () => {
     const skill = await createSkill();
     const variable = await contextVariableRepository.create({

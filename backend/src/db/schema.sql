@@ -198,6 +198,27 @@ $_$;
 
 
 --
+-- Name: disable_context_variable_enablements_with_resolver_skill(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.disable_context_variable_enablements_with_resolver_skill() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE agent_context_variables
+  SET enabled = FALSE,
+      -- A proposal can hold the skill row lock while this transaction waits. `NOW()` is fixed at
+      -- transaction start and could move the enablement version backwards after that wait.
+      updated_at = clock_timestamp()
+  WHERE resolver_skill_id = NEW.id
+    AND enabled = TRUE;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: enforce_agent_skill_target_reference(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7576,6 +7597,13 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p9_wor
 --
 
 CREATE TRIGGER embedding_spaces_identity_immutable BEFORE UPDATE ON public.embedding_spaces FOR EACH ROW EXECUTE FUNCTION public.reject_embedding_space_identity_mutation();
+
+
+--
+-- Name: agent_skills trg_agent_skills_disable_context_variable_enablements; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_agent_skills_disable_context_variable_enablements AFTER UPDATE OF enabled ON public.agent_skills FOR EACH ROW WHEN (((old.enabled IS TRUE) AND (new.enabled IS FALSE))) EXECUTE FUNCTION public.disable_context_variable_enablements_with_resolver_skill();
 
 
 --

@@ -39,6 +39,13 @@ export const shouldResetAllLensPageForFilterChange = (input: {
   && input.activePage !== 1
   && input.previousServerSearchParamsFingerprint !== input.serverSearchParamsFingerprint
 
+export const keepHistoryListPlaceholderData = (
+  previousData: HistoryListResponse | undefined,
+  activeVariant: HistoryVariant,
+): HistoryListResponse | undefined => (
+  previousData?.variant === activeVariant ? previousData : undefined
+)
+
 // Positional tail appended by dashboardQueryKeys.history.list only when `searchParams` was
 // given (see its own comment) — [q, outcome, agentId, sourceOrigin], each optional(...)'d to
 // `null` when absent. Read back here rather than threaded as a separate queryFn argument, so
@@ -95,5 +102,6 @@ export const useHistoryListQuery = ({
     queryFn: fetchHistory,
     enabled: Boolean(workspaceId) && policy.queriesEnabled,
     refetchInterval: policy.intervalFor(key),
+    placeholderData: (previousData) => keepHistoryListPlaceholderData(previousData, variant),
   })
 }

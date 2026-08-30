@@ -469,6 +469,114 @@ test("the smart default lens stays on Needs-you when quality fails to load, even
   await expect(toggle.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
 });
 
+test("operator opens a recently closed feedback conversation from Needs-you", async ({ page }) => {
+  const conversationId = "conversation-recently-closed-feedback";
+  const assistantMessageId = "assistant-recently-closed-feedback";
+  const closedAt = "2026-06-20T23:12:00.000Z";
+  const closedTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Who is Nikola Tesla?",
+    answerPreview: "Nikola Tesla was an inventor and electrical engineer.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 900,
+    createdAt: "2026-06-20T23:00:00.000Z",
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: "2026-06-20T23:05:00.000Z",
+      comments: [{
+        value: "down",
+        comment: "Needed a source.",
+        createdAt: "2026-06-20T23:05:00.000Z",
+        updatedAt: "2026-06-20T23:05:00.000Z",
+      }],
+    },
+    triage: {
+      state: "resolved",
+      version: 2,
+      resolution: { reason: "expected_behavior", note: null },
+      legacyReason: null,
+      closedAt,
+      updatedAt: closedAt,
+    },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    conversationDetail: {
+      conversationId,
+      workspaceId,
+      agentId: defaultAgentId,
+      agentName: "Marta",
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://knowledge.example.com",
+      createdAt: "2026-06-20T23:00:00.000Z",
+      updatedAt: "2026-06-20T23:12:00.000Z",
+      messageCount: 2,
+      userMessageCount: 1,
+      assistantMessageCount: 1,
+      messagesTotal: 2,
+      messageWindowOffset: 0,
+      messageWindowLimit: 50,
+      hasOlderMessages: false,
+      nextCursor: null,
+      messages: [
+        {
+          id: "customer-recently-closed-feedback",
+          role: "user" as const,
+          source: "customer" as const,
+          content: "Who is Nikola Tesla?",
+          createdAt: "2026-06-20T23:00:00.000Z",
+        },
+        {
+          id: assistantMessageId,
+          role: "assistant" as const,
+          source: "ai_agent" as const,
+          content: "Nikola Tesla was an inventor and electrical engineer.",
+          createdAt: "2026-06-20T23:01:00.000Z",
+        },
+      ],
+    },
+  });
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const isRecentlyClosed = url.searchParams.get("triage") === "dismissed,resolved";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isRecentlyClosed ? [closedTurn] : [],
+        total: isRecentlyClosed ? 1 : 0,
+        page: 1,
+        pageSize: isRecentlyClosed ? 10 : 25,
+        totalPages: isRecentlyClosed ? 1 : 0,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+
+  const queue = page.getByLabel("Inbox queue");
+  const closedRow = queue.getByRole("button", { name: /Who is Nikola Tesla\?/ });
+  await expect(closedRow).toBeVisible();
+  await expect(closedRow).toContainText("Resolved");
+
+  await closedRow.click();
+
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(closedRow).toHaveAttribute("aria-current", "true");
+  await expect(response.getByText("Who is Nikola Tesla?")).toBeVisible();
+  await expect(response.getByText("Nikola Tesla was an inventor and electrical engineer.")).toBeVisible();
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+});
+
 test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);

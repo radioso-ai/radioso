@@ -39,6 +39,7 @@ import {
   selectHumanOwnedConversations,
   type InboxFilters,
   type InboxItem,
+  type RecentlyClosedInboxItem,
 } from '@/lib/needs-attention'
 import {
   createEmptyQualityInboxSnapshot,
@@ -70,6 +71,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [now, setNow] = useState(() => new Date())
   const [filters, setFilters] = useState<InboxFilters>(EMPTY_INBOX_FILTERS)
   const [selectedInboxItem, setSelectedInboxItem] = useState<InboxItem | null>(null)
+  const [selectedRecentlyClosedItem, setSelectedRecentlyClosedItem] = useState<RecentlyClosedInboxItem | null>(null)
   const [debugConversationId, setDebugConversationId] = useState<string | null>(null)
   const [triagingMessageIds, setTriagingMessageIds] = useState<ReadonlySet<string>>(new Set())
   const [triageError, setTriageError] = useState<string | null>(null)
@@ -245,10 +247,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
 
   const handleSelectItem = useCallback((item: InboxItem) => {
     setSelectedInboxItem(item)
+    setSelectedRecentlyClosedItem(null)
     if (item.type === 'negative_feedback' && item.triageState === 'open') {
       void handleAcknowledge(item)
     }
   }, [handleAcknowledge])
+
+  const handleSelectRecentlyClosed = useCallback((item: RecentlyClosedInboxItem) => {
+    setSelectedInboxItem(null)
+    setSelectedRecentlyClosedItem(item)
+  }, [])
 
   const handleOperatorChanged = useCallback(async (result: OperatorActionResult) => {
     if (result.kind === 'ownership') {
@@ -342,7 +350,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // confidence message, so the operator can always reach the All lens even
   // when nothing needs them (spec 1116 unification, fix for issue #6).
   const isQueueEmpty = !isLoading && !approvalError && !conversationError && items.length === 0
-  const showNoFilterMatches = !isQueueEmpty && filteredItems.length === 0 && !selectedInboxItem
+  const showNoFilterMatches = !isQueueEmpty
+    && filteredItems.length === 0
+    && !selectedInboxItem
+    && !selectedRecentlyClosedItem
 
   // Smart default lens (see lib/inbox-default-lens.ts for the decision rule
   // and its rationale): routeState.activityTab is undefined only when the
@@ -438,7 +449,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               operatorOptions={operatorOptions}
               now={now}
               selectedKey={selectedInboxItem?.key ?? null}
+              selectedRecentlyClosedKey={selectedRecentlyClosedItem?.key ?? null}
               onSelect={handleSelectItem}
+              onSelectRecentlyClosed={handleSelectRecentlyClosed}
             />
             {showNoFilterMatches ? (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
@@ -446,7 +459,13 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               </div>
             ) : (
               <InboxResponseView
-                selection={selectedInboxItem ? { source: 'item', item: selectedInboxItem } : null}
+                selection={
+                  selectedInboxItem
+                    ? { source: 'item', item: selectedInboxItem }
+                    : selectedRecentlyClosedItem
+                      ? { source: 'readonly', conversationId: selectedRecentlyClosedItem.conversationId }
+                      : null
+                }
                 now={now}
                 pendingDecisions={decisions}
                 onOperatorChanged={handleOperatorChanged}

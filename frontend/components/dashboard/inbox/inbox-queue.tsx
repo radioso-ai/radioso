@@ -53,7 +53,9 @@ export interface InboxQueueProps {
   operatorOptions: InboxOperatorOption[]
   now: Date
   selectedKey: string | null
+  selectedRecentlyClosedKey: string | null
   onSelect: (item: InboxItem) => void
+  onSelectRecentlyClosed: (item: RecentlyClosedInboxItem) => void
 }
 
 export function InboxQueue({
@@ -68,7 +70,9 @@ export function InboxQueue({
   operatorOptions,
   now,
   selectedKey,
+  selectedRecentlyClosedKey,
   onSelect,
+  onSelectRecentlyClosed,
 }: InboxQueueProps) {
   return (
     <aside className="flex w-full shrink-0 flex-col border-border md:w-[360px] md:border-r" aria-label="Inbox queue">
@@ -168,7 +172,12 @@ export function InboxQueue({
             </p>
             <div className="flex flex-col gap-2">
               {recentlyClosed.map((item) => (
-                <InboxRecentlyClosedRow key={item.key} item={item} />
+                <InboxRecentlyClosedRow
+                  key={item.key}
+                  item={item}
+                  selected={item.key === selectedRecentlyClosedKey}
+                  onSelect={onSelectRecentlyClosed}
+                />
               ))}
             </div>
           </div>

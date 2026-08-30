@@ -7,7 +7,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { chatApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
-import { fetchHistory, shouldClampHistoryPage, shouldResetAllLensPageForFilterChange } from '@/components/dashboard/history/history-list-query'
+import {
+  fetchHistory,
+  keepHistoryListPlaceholderData,
+  shouldClampHistoryPage,
+  shouldResetAllLensPageForFilterChange,
+} from '@/components/dashboard/history/history-list-query'
 import { DashboardQueryProvider } from '@/components/providers/dashboard-query-provider'
 import { useHistoryListQuery } from '@/components/dashboard/history/history-list-query'
 
@@ -238,6 +243,17 @@ describe('history list query', () => {
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: undefined, activePage: 3, totalPages: 1 })).toBe(false)
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: 'all', activePage: 3, totalPages: 1 })).toBe(false)
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: 'chat', activePage: 3, totalPages: 1 })).toBe(true)
+  })
+
+  describe('keepHistoryListPlaceholderData', () => {
+    it('keeps previous data while refetching the same history variant', () => {
+      const previousData = { variant: 'all' as const, response }
+      expect(keepHistoryListPlaceholderData(previousData, 'all')).toBe(previousData)
+    })
+
+    it('drops previous data when switching history variants', () => {
+      expect(keepHistoryListPlaceholderData({ variant: 'all', response }, 'chat')).toBeUndefined()
+    })
   })
 
   describe('shouldResetAllLensPageForFilterChange', () => {

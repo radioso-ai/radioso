@@ -367,6 +367,24 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
       hasMore: false,
     },
   });
+  await page.route(/\/history\?.*q=yoga/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [{
+          kind: "chat",
+          id: otherConversation.id,
+          sortAt: otherConversation.updatedAt,
+          conversation: otherConversation,
+        }],
+        total: 1,
+        nextCursor: null,
+        hasMore: false,
+      }),
+    });
+  });
 
   // No `filter=` param: the default mixed 'all' variant, the one the search/outcome/
   // agent/site toolbar filters server-side (issue #1126) — not the chat-only variant.
@@ -381,6 +399,7 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
   // The debounced keystroke reaches the server as a real `q` query param — search is no
   // longer applied to an already-loaded page on the client.
   await filteredRequest;
+  await expect(page.getByPlaceholder("Search conversations")).toBeFocused();
 
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
   await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toHaveCount(0);

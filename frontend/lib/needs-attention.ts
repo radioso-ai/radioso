@@ -338,6 +338,28 @@ export const findPendingApprovalDecision = (
   return decisions.find((decision) => decision.agentId === item.agentId && decision.handle === item.handle) ?? null
 }
 
+/**
+ * Finds the freshest version of a previously selected inbox item after the
+ * queue refetches (waiting time, taken-by, and — for an approval — whether
+ * it's still pending all live in the fresh copy). Approvals are matched by
+ * identity (agentId + handle), same as `findPendingApprovalDecision` and for
+ * the same reason: two pending approvals can exist on one conversation, and
+ * matching by conversationId + type alone could silently swap the selected
+ * approval for the conversation's other one on refetch. Every other type
+ * matches by conversationId + type instead — a handoff's key embeds its
+ * ownership version, which changes the moment the operator claims it, and
+ * key-matching would otherwise "lose" that item on the very refetch it's
+ * trying to track.
+ */
+export const findRefreshedInboxItem = (
+  items: readonly InboxItem[],
+  current: InboxItem,
+): InboxItem | undefined => items.find((candidate) => (
+  current.type === 'approval'
+    ? candidate.type === 'approval' && candidate.agentId === current.agentId && candidate.handle === current.handle
+    : candidate.conversationId === current.conversationId && candidate.type === current.type
+))
+
 /** Page size used when loading the human-owned conversations shown in the inbox. */
 export const HUMAN_OWNED_CONVERSATION_PAGE_SIZE = 50
 

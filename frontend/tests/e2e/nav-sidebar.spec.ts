@@ -68,3 +68,61 @@ test("Inbox is promoted with a needs-attention badge reflecting the inbox count"
 
   await expect(sidebar.getByLabel("3 items need attention")).toHaveText("3");
 });
+
+test("the Inbox badge counts commented negative feedback too, matching the tab title and lens toggle count", async ({ page }) => {
+  // A feedback-only workspace: zero pending decisions, zero human-owned
+  // conversations, but one open commented-negative-feedback turn — an open
+  // inbox item the badge previously ignored entirely (it only summed
+  // decisions + human-owned conversations).
+  const feedbackTurn = {
+    assistantMessageId: "assistant-badge-feedback",
+    conversationId: "conversation-badge-feedback",
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Do you offer gift wrapping?",
+    answerPreview: "We don't offer gift wrapping at checkout.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 700,
+    createdAt: nowIso,
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: nowIso,
+      comments: [{
+        value: "down",
+        comment: "Doesn't mention holiday wrapping options.",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }],
+    },
+    triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const isCommentedFeedbackQuery =
+      url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isCommentedFeedbackQuery ? [feedbackTurn] : [],
+        total: isCommentedFeedbackQuery ? 1 : 0,
+        page: 1,
+        pageSize: isCommentedFeedbackQuery ? 25 : 1,
+        totalPages: 1,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+
+  const sidebar = page.locator('[data-slot="sidebar-container"]');
+  await expect(sidebar.getByLabel("1 items need attention")).toHaveText("1");
+});

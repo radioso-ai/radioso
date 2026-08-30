@@ -28,6 +28,7 @@ import {
   findFirstVisitorMessage,
   informativeChannelLabel,
   readOnlyHandledByLabel,
+  resolveReadOnlySource,
   stripTrackingParams,
   visitorIdentityLabel,
 } from '@/lib/inbox-response'
@@ -152,32 +153,14 @@ export function InboxResponseView({
   })
 
   // The actionable/read-only split and the header's identity/waiting fields
-  // prefer the row's own summary (immediate, no fetch needed) but fall back to
-  // the independently-fetched conversation detail once it loads — the only
-  // source available for a conversation that wasn't on the loaded list page.
-  // `anonymousSessionId` has no equivalent on the detail response, so that one
-  // field stays unknown (a generic visitor label) in the fallback case rather
-  // than guessing.
-  const readOnlySource: HandoffCandidateSource | null = useMemo(() => {
-    if (!readOnlySelection) {
-      return null
-    }
-    if (readOnlySelection.conversation) {
-      return readOnlySelection.conversation
-    }
-    if (!conversationDetail) {
-      return null
-    }
-    return {
-      id: conversationDetail.conversationId,
-      ownership: conversationDetail.ownership,
-      title: conversationDetail.title,
-      updatedAt: conversationDetail.updatedAt,
-      agentId: conversationDetail.agentId,
-      agentName: conversationDetail.agentName ?? null,
-      agentInternalName: conversationDetail.agentInternalName ?? null,
-    }
-  }, [readOnlySelection, conversationDetail])
+  // prefer the independently-fetched conversation detail once it loads — see
+  // `resolveReadOnlySource` for why (a page left open long enough for
+  // ownership to change would otherwise keep rendering a stale hint's
+  // actionable/read-only state).
+  const readOnlySource: HandoffCandidateSource | null = useMemo(
+    () => (readOnlySelection ? resolveReadOnlySource(readOnlySelection.conversation, conversationDetail) : null),
+    [readOnlySelection, conversationDetail],
+  )
   // A conversation selected from the All lens gets exactly the same actionable
   // treatment as a Needs-you queue item once it turns out to be live — awaiting
   // a human, human-owned, or still in progress with the agent — same composer,
@@ -226,6 +209,14 @@ export function InboxResponseView({
       onRequestFeedbackClose(effectiveItem, anchor)
     }
   }, [conversationDetail, effectiveItem, handBackRunner, onRequestFeedbackClose])
+
+  // A handoff selected from the All lens can render its composer immediately
+  // from the row's own summary (see `readOnlySource` above), before
+  // `conversationDetail` — the actual source of the hand-back version below —
+  // has loaded. Disabling Done until then avoids a fast click hitting the
+  // "missing ownership version" error for a state that merely hasn't loaded
+  // yet; negative-feedback Done never depends on ownership, so it's unaffected.
+  const isDoneVersionPending = effectiveItem?.type === 'handoff' && !conversationDetail
 
   // Matched by identity (agentId + handle), not conversation — two pending
   // approvals can exist on one conversation, and matching by conversationId
@@ -368,7 +359,7 @@ export function InboxResponseView({
                   type="button"
                   size="sm"
                   variant="outline"
-                  disabled={handBackRunner.isBusy}
+                  disabled={handBackRunner.isBusy || isDoneVersionPending}
                   onClick={(event) => handleDone(event.currentTarget)}
                 >
                   Done

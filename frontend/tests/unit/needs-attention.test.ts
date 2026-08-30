@@ -12,6 +12,7 @@ import {
   EMPTY_INBOX_FILTERS,
   filterInboxItems,
   findPendingApprovalDecision,
+  findRefreshedInboxItem,
   formatInboxDuration,
   inboxItemKeys,
   inboxWaitingPresentation,
@@ -265,6 +266,41 @@ describe('findPendingApprovalDecision', () => {
 
   it('returns null when no decision matches the identity', () => {
     expect(findPendingApprovalDecision({ type: 'approval', agentId: 'agent-1', handle: 'missing' }, [decision({ handle: 'decision-1' })])).toBeNull()
+  })
+})
+
+describe('findRefreshedInboxItem', () => {
+  it('refresh with two pending approvals on the same conversation preserves the selected handle', () => {
+    const first = decision({ handle: 'decision-a', conversationId: 'conversation-shared', agentId: 'agent-1', reason: 'Approve the refund' })
+    const second = decision({ handle: 'decision-b', conversationId: 'conversation-shared', agentId: 'agent-1', reason: 'Approve the discount' })
+    const items = buildInboxModel({ decisions: [first, second], conversations: [], qualityTurns: [] }).items
+    const selectedSecond = items.find((item) => item.handle === 'decision-b')!
+
+    // A refetch can reorder or reconstruct the list — conversationId + type
+    // alone can't tell two approvals on the same conversation apart, so this
+    // must match on identity (agentId + handle) instead.
+    const refetched = buildInboxModel({ decisions: [second, first], conversations: [], qualityTurns: [] }).items
+    const refreshed = findRefreshedInboxItem(refetched, selectedSecond)
+
+    expect(refreshed?.handle).toBe('decision-b')
+    expect(refreshed?.title).toBe('Approve the discount')
+  })
+
+  it('matches a handoff by conversationId + type, not by key, so claiming it does not lose the selection', () => {
+    // The key embeds the ownership version (`live:` vs `handoff:...:version`),
+    // so matching on key alone would fail to find the claimed copy.
+    const before = toHandoffInboxItem(conversation({ id: 'conversation-1', ownership: undefined }))
+    const after = toHandoffInboxItem(conversation({ id: 'conversation-1', ownership: ownership() }))
+
+    expect(before.key).not.toBe(after.key)
+    expect(findRefreshedInboxItem([after], before)).toBe(after)
+  })
+
+  it('returns undefined when the selected approval is no longer in the refreshed list', () => {
+    const first = decision({ handle: 'decision-a', agentId: 'agent-1' })
+    const items = buildInboxModel({ decisions: [first], conversations: [], qualityTurns: [] }).items
+
+    expect(findRefreshedInboxItem([], items[0])).toBeUndefined()
   })
 })
 

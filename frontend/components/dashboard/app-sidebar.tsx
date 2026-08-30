@@ -30,7 +30,7 @@ import {
   type DashboardRouteState,
   type DashboardSection,
 } from '@/lib/dashboard-routes'
-import { useAttentionRailQueries } from '@/lib/needs-attention-query-state'
+import { useNeedsAttentionOpenCount } from '@/lib/needs-attention-query-state'
 import { cn } from '@/lib/utils'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { AccountMenu } from './account-menu'
@@ -111,9 +111,12 @@ const navItems: NavItem[] = [
 export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const railQueries = useAttentionRailQueries(activeWorkspaceId ?? '')
-  const inboxCount = (railQueries.decisions.data?.decisions.length ?? 0)
-    + (railQueries.humanOwned.data?.total ?? 0)
+  // Same unified open-count the tab title (useInboxAttentionSignal) and the
+  // Needs-you lens toggle's "Needs you · N" badge use — decisions +
+  // human-owned conversations + commented negative feedback, from the same
+  // client inbox model, so the badge can never disagree with either of them
+  // (a feedback-only workspace previously showed no badge at all here).
+  const inboxCount = useNeedsAttentionOpenCount(activeWorkspaceId ?? '')
   const userDisplayName = user?.email?.split('@')[0] || 'User'
   const userInitial = userDisplayName.charAt(0).toUpperCase() || 'U'
   const isAccountActive = currentView === 'account'

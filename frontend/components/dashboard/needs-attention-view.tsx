@@ -33,6 +33,7 @@ import {
   countInboxItemsByType,
   EMPTY_INBOX_FILTERS,
   filterInboxItems,
+  findRefreshedInboxItem,
   listInboxAgents,
   listTakenByOperators,
   selectHumanOwnedConversations,
@@ -134,19 +135,18 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // approvals) - written feedback moves the count but stays quiet.
   useInboxAttentionSignal(items.length, criticalOpenCount)
 
-  // Re-sync the selected item's live fields (waiting time, taken-by) as the
-  // queue refetches. Matched by conversation + type rather than `key`, since a
-  // handoff's key embeds the ownership version and would otherwise "lose" the
-  // match on the operator's own claim. Never cleared just because it briefly
-  // falls out of the list - only explicit Done/decision actions clear it.
+  // Re-sync the selected item's live fields (waiting time, taken-by, and —
+  // for an approval — whether it's still pending) as the queue refetches. See
+  // `findRefreshedInboxItem` for the match rule per type. Never cleared just
+  // because it briefly falls out of the list - only explicit Done/decision
+  // actions clear it.
   useEffect(() => {
     void Promise.resolve().then(() => {
       setSelectedInboxItem((current) => {
         if (!current) {
           return current
         }
-        const fresh = items.find((candidate) =>
-          candidate.conversationId === current.conversationId && candidate.type === current.type)
+        const fresh = findRefreshedInboxItem(items, current)
         return fresh && fresh !== current ? fresh : current
       })
     })

@@ -379,7 +379,7 @@ Public surfaces and key files:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
 
 Related specs and issues:
 

@@ -6,7 +6,12 @@ import {
   enrichCopilotToolCatalog,
   type CopilotToolDescriptor,
 } from "../../../src/modules/operatorCopilot/public.js";
-import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceRegistry } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
+import {
+  assertCopilotCapabilityProvenance,
+  assertCopilotCapabilityProvenanceRegistry,
+  copilotCapabilityProvenance,
+} from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
+import { copilotApplicationPrimitiveRegistry } from "../../../src/modules/operatorCopilot/applicationPrimitiveRegistry.js";
 
 const descriptor = (...permissions: CopilotToolDescriptor["requiredPermissions"]): CopilotToolDescriptor => ({
   name: `tool_${permissions.join("_").replaceAll(".", "_")}`,
@@ -144,6 +149,17 @@ describe("enrichCopilotToolCatalog current authorization", () => {
 });
 
 describe("copilot capability governance", () => {
+  it("requires propose_context_variable to name a context-variables owner primitive", () => {
+    const provenance = copilotCapabilityProvenance.propose_context_variable;
+    const ownerPrimitiveIds = (provenance.applicationPrimitiveIds ?? []).filter((primitiveId) => {
+      const metadata = copilotApplicationPrimitiveRegistry[primitiveId as keyof typeof copilotApplicationPrimitiveRegistry];
+      return metadata?.owningModule === "contextVariables";
+    });
+
+    expect(ownerPrimitiveIds).not.toHaveLength(0);
+    expect(provenance.rayOnly?.reason).not.toContain("no owner-module primitive");
+  });
+
   it("rejects provenance entries for descriptors that are no longer assembled", () => {
     const assembled = {
       ...descriptor("workspace.agents.read"),

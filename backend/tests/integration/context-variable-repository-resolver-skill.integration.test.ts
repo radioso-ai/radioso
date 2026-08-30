@@ -5,25 +5,29 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { AgentSkillRepository } from "../../src/modules/agentSkills/repository.js";
+import { ContextVariableService } from "../../src/modules/context-variables/public.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { notFound } from "../../src/shared/domain/errors.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
-// Finding 2 (issue triage, next-ray-epic-issue): a resolver-sourced context-variable
-// enablement's resolverSkillId is validated only when the copilot proposal is drafted
-// (copilotProposalAdapters.ts's resolveProposal). agent_context_variables.resolver_skill_id
-// carries no foreign key (migration 112), and a proposal can sit pending indefinitely, so a
-// skill deleted after drafting and before Apply previously persisted an enablement pointing at
-// nothing - inert at runtime (SkillBackedContextResolver.resolve silently returns null for an
-// id it cannot find), with no error anywhere. This exercises the real Postgres transaction
-// applyProposal now runs the same check inside, so a deleted skill turns Apply into a real
-// conflict instead.
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
-describeIntegration("ContextVariableRepository.applyProposal resolver skill existence (Postgres)", () => {
+describeIntegration("ContextVariableService resolver skill validation (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const contextVariableRepository = new ContextVariableRepository(database.kysely);
   const agentRepository = new AgentRepository(database.kysely);
   const agentSkillRepository = new AgentSkillRepository(database.kysely);
+  const contextVariableService = new ContextVariableService({
+    repository: contextVariableRepository,
+    agentReader: {
+      async get(workspaceId, agentId) {
+        const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+        if (!agent) throw notFound("Agent not found");
+        return agent;
+      },
+    },
+    agentSkillsReader: { list: agentSkillRepository.listByAgent.bind(agentSkillRepository) },
+  });
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -64,7 +68,7 @@ describeIntegration("ContextVariableRepository.applyProposal resolver skill exis
     const skill = await createSkill();
     const variableName = `var_${randomUUID().slice(0, 8)}`;
 
-    const result = await contextVariableRepository.applyProposal({
+    const result = await contextVariableService.applyProposal({
       workspaceId,
       agentId,
       variableId: null,
@@ -78,6 +82,93 @@ describeIntegration("ContextVariableRepository.applyProposal resolver skill exis
     expect(enablements.find((enablement) => enablement.variableId === result.variableId)?.resolverSkillId).toBe(skill.id);
   });
 
+  it("disables active resolver enablements when their skill is disabled", async () => {
+    const skill = await createSkill();
+    const variable = await contextVariableRepository.create({
+      workspaceId,
+      name: `disable_${randomUUID().slice(0, 8)}`,
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+    const enablement = await contextVariableService.upsertEnablement({
+      workspaceId,
+      agentId,
+      variableId: variable.id,
+      source: "resolver",
+      resolverSkillId: skill.id,
+      maxAgeSeconds: null,
+      resolverTimeoutMs: null,
+      surfacing: "always",
+      enabled: true,
+    });
+
+    expect(await agentSkillRepository.update(workspaceId, agentId, skill.id, { enabled: false })).not.toBeNull();
+
+    const updated = (await contextVariableRepository.listByAgent(workspaceId, agentId))
+      .find((candidate) => candidate.id === enablement.id);
+    expect(updated).toMatchObject({
+      enabled: false,
+      resolverSkillId: skill.id,
+      source: "resolver",
+    });
+    expect(updated?.updatedAt.getTime()).toBeGreaterThan(enablement.updatedAt.getTime());
+  });
+
+  it("rejects a direct resolver enablement once its skill is disabled", async () => {
+    const skill = await createSkill();
+    const variable = await contextVariableRepository.create({
+      workspaceId,
+      name: `direct_${randomUUID().slice(0, 8)}`,
+      valueType: "string",
+      trustTier: "unverified",
+      sensitivity: "normal",
+      defaultSurfacing: "always",
+    });
+    expect(await agentSkillRepository.update(workspaceId, agentId, skill.id, { enabled: false })).not.toBeNull();
+
+    await expect(contextVariableRepository.upsertEnablement({
+      agentId,
+      variableId: variable.id,
+      source: "resolver",
+      resolverSkillId: skill.id,
+      maxAgeSeconds: null,
+      resolverTimeoutMs: null,
+      surfacing: "always",
+      enabled: true,
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("reports a direct proposal resolver-skill race as a conflict", async () => {
+    const skill = await createSkill();
+    expect(await agentSkillRepository.remove(workspaceId, agentId, skill.id)).toBe(true);
+
+    await expect(contextVariableRepository.applyProposal({
+      workspaceId,
+      agentId,
+      variableId: null,
+      definition: {
+        name: `proposal_${randomUUID().slice(0, 8)}`,
+        description: null,
+        valueType: "string",
+        trustTier: "unverified",
+        sensitivity: "normal",
+        defaultSurfacing: "always",
+      },
+      expectedVariableUpdatedAt: null,
+      enablement: {
+        source: "resolver",
+        resolverSkillId: skill.id,
+        maxAgeSeconds: null,
+        resolverTimeoutMs: null,
+        surfacing: "always",
+        enabled: true,
+      },
+      expectedEnablementUpdatedAt: null,
+    })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
   it("refuses to apply a resolver enablement once the named skill has been deleted, rather than persisting an inert one", async () => {
     const skill = await createSkill();
     const variableName = `var_${randomUUID().slice(0, 8)}`;
@@ -86,7 +177,7 @@ describeIntegration("ContextVariableRepository.applyProposal resolver skill exis
     // resolver enablement that will never resolve anything.
     expect(await agentSkillRepository.remove(workspaceId, agentId, skill.id)).toBe(true);
 
-    await expect(contextVariableRepository.applyProposal({
+    await expect(contextVariableService.applyProposal({
       workspaceId,
       agentId,
       variableId: null,
@@ -96,26 +187,18 @@ describeIntegration("ContextVariableRepository.applyProposal resolver skill exis
       expectedEnablementUpdatedAt: null,
     })).rejects.toMatchObject({ statusCode: 409 });
 
-    // The whole write rolled back, not just the enablement half: the variable definition this
-    // same transaction would have created never persisted either, so retrying the proposal from
-    // scratch (rather than landing on a half-created, un-enabled variable) is what "stale" means
-    // here.
+    // Proposal preflight reports the changed resolver dependency as stale before the repository
+    // is asked to write, so it cannot leave a definition-only row behind.
     const variables = await database.query(`SELECT id FROM context_variables WHERE workspace_id = $1 AND name = $2`, [workspaceId, variableName]);
     expect(variables).toHaveLength(0);
   });
 
-  // Finding 2 (issue triage, next-ray-epic-issue): SkillBackedContextResolver.resolve silently
-  // returns null for a disabled skill (contextResolverModule.ts checks agentSkill.enabled), and
-  // the skill row itself carries no foreign key, so a skill disabled after drafting and before
-  // Apply previously still passed this existence check and persisted an enablement that would
-  // never resolve anything - the same inert-configuration gap the deleted-skill case above
-  // already covers, just for "disabled" rather than "gone".
   it("refuses to apply a resolver enablement once the named skill has been disabled, rather than persisting an inert one", async () => {
     const skill = await createSkill();
     const variableName = `var_${randomUUID().slice(0, 8)}`;
     expect(await agentSkillRepository.update(workspaceId, agentId, skill.id, { enabled: false })).not.toBeNull();
 
-    await expect(contextVariableRepository.applyProposal({
+    await expect(contextVariableService.applyProposal({
       workspaceId,
       agentId,
       variableId: null,

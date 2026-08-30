@@ -62,3 +62,24 @@ export type {
   ContextVariableValue,
   ContextVariableValueType,
 } from "./domain.js";
+export type {
+  AgentContextVariableEnablementRecord,
+  ApplyContextVariableProposalInput,
+  ApplyContextVariableProposalResult,
+  ContextVariableCreateRecord,
+  ContextVariableDefinitionWrite,
+  ContextVariableEnablementReaderPort,
+  ContextVariableEnablementWrite,
+  ContextVariableRepositoryPort,
+  ContextVariableResolutionReaderPort,
+  ContextVariableResolverRepositoryPort,
+  ContextVariableUpdateRecord,
+} from "./repository.js";
+export {
+  ContextVariableService,
+  assertEnablementIsWellFormed,
+  type ContextVariableAgentReaderPort,
+  type ContextVariableAgentSkillsReaderPort,
+  type ContextVariableServiceOptions,
+} from "./services/contextVariableService.js";
+export * from "./copilotPrimitiveRegistry.js";

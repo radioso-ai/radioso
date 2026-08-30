@@ -16,6 +16,7 @@ import { operationPermissionRequirements } from "../../../src/app/http/openapi/o
 import { agentCopilotPrimitives } from "../../../src/modules/agents/public.js";
 import { agentSkillsCopilotPrimitives } from "../../../src/modules/agentSkills/public.js";
 import { chatCopilotPrimitives } from "../../../src/modules/chat/public.js";
+import { contextVariableCopilotPrimitives } from "../../../src/modules/context-variables/public.js";
 import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../../src/modules/embeddingProfiles/public.js";
 import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
@@ -40,6 +41,7 @@ const ownerExportedPrimitiveIds = new Set([
   ...agentCopilotPrimitives,
   ...agentSkillsCopilotPrimitives,
   ...chatCopilotPrimitives,
+  ...contextVariableCopilotPrimitives,
   ...documentCopilotPrimitives,
   ...embeddingProfileCopilotPrimitives,
   ...evalCopilotPrimitives,

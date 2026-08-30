@@ -82,7 +82,10 @@ import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
 import type { AgentRepositoryPort } from "../../db/repositories/agentRepository.js";
-import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
+import type {
+  ContextVariableResolutionReaderPort,
+  ContextVariableService,
+} from "../../modules/context-variables/public.js";
 import type { IdentityNonceRepositoryPort } from "../../db/repositories/identityNonceRepository.js";
 import type { EmailSkillActivityRepositoryPort } from "../../db/repositories/emailSkillActivityRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../db/repositories/documentSourceRepository.js";
@@ -224,7 +227,8 @@ export interface AppDependencies {
   agentSurfaceExtensions: AgentSurfaceExtensionRegistry;
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;
-  contextVariableRepository: ContextVariableRepositoryPort;
+  contextVariableService: ContextVariableService;
+  contextVariableResolutionReader: ContextVariableResolutionReaderPort;
   identityNonceRepository: IdentityNonceRepositoryPort;
   userRepository: UserRepositoryPort;
   accountRepository: AccountRepositoryPort;

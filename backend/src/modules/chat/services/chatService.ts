@@ -26,13 +26,13 @@ import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilit
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { AgentService } from "../../agents/public.js";
+import type { ContextVariableResolutionReaderPort } from "../../context-variables/public.js";
 import type { ApprovalResumeResult, ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents.js";
@@ -191,7 +191,7 @@ export interface ChatServiceOptions {
   usageLimitPolicy?: UsageLimitPolicy;
   agentService?: Pick<AgentService, "resolve">;
   /** Optional: resolves the agent's enabled host context variables per turn. */
-  contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">;
+  contextVariableRepository?: ContextVariableResolutionReaderPort;
   directiveSteering?: RouteScopedDirectiveRuntime;
   /** Optional: durable per-conversation directive firing memory for lifecycle suppression (#865). */
   directiveStateStore?: DirectiveStateStore;

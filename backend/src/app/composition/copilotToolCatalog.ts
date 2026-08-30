@@ -44,6 +44,7 @@ import { embeddingProfileCopilotPrimitives } from "../../modules/embeddingProfil
 import { evalCopilotPrimitives } from "../../modules/eval/public.js";
 import { routineCopilotPrimitives } from "../../modules/routines/public.js";
 import { settingsCopilotPrimitives } from "../../modules/settings/public.js";
+import { contextVariableCopilotPrimitives } from "../../modules/context-variables/public.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
@@ -93,6 +94,7 @@ export const createCopilotToolCatalog = (deps: {
     ...agentCopilotPrimitives,
     ...agentSkillsCopilotPrimitives,
     ...chatCopilotPrimitives,
+    ...contextVariableCopilotPrimitives,
     ...documentCopilotPrimitives,
     ...embeddingProfileCopilotPrimitives,
     ...evalCopilotPrimitives,

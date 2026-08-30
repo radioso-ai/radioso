@@ -11,7 +11,7 @@ import {
   RoutineTriggerEmbeddingService,
 } from "../../../modules/routines/public.js";
 import { PlatformSettingsService } from "../../../modules/settings/composition.js";
-import type { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
+import type { ContextVariableEnablementReaderPort } from "../../../modules/context-variables/public.js";
 import type {
   ExternalSkillDefinitionService,
 } from "../../../modules/externalSkills/services/externalSkillDefinitionService.js";
@@ -130,7 +130,7 @@ export const buildRoutineAuthoringServices = (input: {
   agentSkillRepository: AgentSkillRepository;
   chatInferencePipeline: ModelInferencePipeline;
   composition: ApplicationComposition;
-  contextVariableRepository: Pick<ContextVariableRepository, "listByAgent">;
+  contextVariableReader: ContextVariableEnablementReaderPort;
   infrastructure: ReturnType<typeof buildInfrastructure>;
   logger: AppLogger;
   repositories: ReturnType<typeof buildRepositories>;
@@ -153,7 +153,7 @@ export const buildRoutineAuthoringServices = (input: {
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     skillAuthoringCatalog: input.skillAuthoringCatalog,
-    contextVariableReader: input.contextVariableRepository,
+    contextVariableReader: input.contextVariableReader,
     additionalRoutineSkillNames: (context) => input.routineInvocableSkillNames.listForAgent(context),
     webhookDestinations: {
       existsByIdAndWorkspace: async (workspaceId, destinationId) =>

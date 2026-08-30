@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-29
+last_updated: 2026-08-30
 ---
 
 # Code Map
@@ -355,6 +355,37 @@ Related docs, specs, and issues:
 - `backend/tests/fixtures/copilot-evals/README.md`
 - `specs/104-in-product-operator-copilot/`
 - Issues `#1036`, `#1041`, `#1043`, `#1044`, and `#1054`
+
+## Context Variables
+
+Owns workspace context-variable definitions, per-agent enablements, pushed
+values, resolver-backed values, and the bounded projections staged into an
+agent turn. `ContextVariableService` is the authoring boundary used by HTTP and
+Ray: it resolves agents and variables inside the workspace, validates resolver
+skills against the target agent, and applies definition and enablement writes.
+The resolver service owns turn-time reads, caching, timeouts, and compatibility
+checks.
+
+Public surfaces and key files:
+
+- `backend/src/modules/context-variables/public.ts`
+- `backend/src/modules/context-variables/repository.ts`
+- `backend/src/modules/context-variables/services/contextVariableService.ts`
+- `backend/src/modules/context-variables/contextVariableResolverService.ts`
+- `backend/src/modules/context-variables/copilotPrimitiveRegistry.ts`
+- `backend/src/db/repositories/contextVariableRepository.ts`
+- `backend/src/app/http/routes/contextVariableRoutes.ts`
+- `backend/src/modules/operatorCopilot/proposalAdapters.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/contract/context-variables.contract.test.ts tests/unit/context-variable-resolver-service.test.ts tests/unit/operatorCopilot/copilotProposalAdapters.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/context-variable-repository.integration.test.ts tests/integration/context-variable-repository-resolver-skill.integration.test.ts tests/integration/context-variable-repository-apply-proposal-conflicts.integration.test.ts tests/integration/context-variable-enablement-references-migration.integration.test.ts`
+
+Related specs and issues:
+
+- `specs/097-visitor-context-variables/`
+- Issues `#1036`, `#1046`, and `#1115`
 
 ## Conversation Engine Contracts
 

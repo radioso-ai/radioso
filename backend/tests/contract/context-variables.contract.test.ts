@@ -185,6 +185,41 @@ describe("context variable HTTP API", () => {
       .expect(404);
   });
 
+  it("refuses an enablement for an agent from another workspace", async () => {
+    const { app } = createTestApp();
+    const first = await issueTestToken(app, "context-vars-foreign-agent-first@example.com");
+    const second = await issueTestToken(app, "context-vars-foreign-agent-second@example.com");
+    const firstAuthorization = `Bearer ${first.token}`;
+    const secondAuthorization = `Bearer ${second.token}`;
+    const agent = await createAgent(app, secondAuthorization);
+    const variable = await createContextVariable(app, firstAuthorization);
+
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}/context-variables/${variable.body.contextVariable.id}`)
+      .set("Authorization", firstAuthorization)
+      .send({ source: "pushed", surfacing: "always", enabled: true })
+      .expect(404);
+  });
+
+  it("refuses an enablement whose resolver skill is not valid for the workspace agent", async () => {
+    const { app } = createTestApp();
+    const { token } = await issueTestToken(app, "context-vars-foreign-resolver@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await createAgent(app, authorization);
+    const variable = await createContextVariable(app, authorization);
+
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}/context-variables/${variable.body.contextVariable.id}`)
+      .set("Authorization", authorization)
+      .send({
+        source: "resolver",
+        resolverSkillId: "11111111-1111-4111-8111-111111111111",
+        surfacing: "always",
+        enabled: true,
+      })
+      .expect(400);
+  });
+
   it("manages pushed values and rejects oversized or cross-workspace value access", async () => {
     const { app } = createTestApp();
     const first = await issueTestToken(app, "context-vars-values-first@example.com");

@@ -484,3 +484,81 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
   await expect(page).toHaveURL(/tab=all/);
   await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
 });
+
+test("the recently-closed strip shows the resolution and when it was closed", async ({ page }) => {
+  const conversationId = "conversation-recently-closed";
+  const assistantMessageId = "assistant-recently-closed";
+  const closedAtIso = "2026-08-26T16:40:00.000Z";
+  const dismissedTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Do you ship internationally?",
+    answerPreview: "We currently only ship within the EU.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 800,
+    createdAt: "2026-08-26T16:00:00.000Z",
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: "2026-08-26T16:05:00.000Z",
+      comments: [{
+        value: "down",
+        comment: "Doesn't mention international shipping timelines.",
+        createdAt: "2026-08-26T16:05:00.000Z",
+        updatedAt: "2026-08-26T16:05:00.000Z",
+      }],
+    },
+    triage: {
+      state: "dismissed",
+      version: 1,
+      resolution: { reason: "expected_behavior", note: null },
+      legacyReason: null,
+      closedAt: closedAtIso,
+      updatedAt: closedAtIso,
+    },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  // The recently-closed strip issues its own query (triageStates:
+  // ['resolved', 'dismissed'], see use-inbox-recently-closed.ts), separate
+  // from the open-feedback query the live queue uses — distinguish them by
+  // the `triage` filter param so only the recently-closed one returns data.
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    // normalizeQualityTurnsRequest sorts the triage-state set alphabetically
+    // (lib/quality-query-state.ts), so ['resolved', 'dismissed'] is sent as
+    // "dismissed,resolved" on the wire.
+    const isRecentlyClosedQuery = url.searchParams.get("triage") === "dismissed,resolved";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isRecentlyClosedQuery ? [dismissedTurn] : [],
+        total: isRecentlyClosedQuery ? 1 : 0,
+        page: 1,
+        pageSize: isRecentlyClosedQuery ? 10 : 25,
+        totalPages: 1,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+
+  const queue = page.getByLabel("Inbox queue");
+  await expect(queue.getByText("Recently closed")).toBeVisible();
+  await expect(queue.getByText("Do you ship internationally?")).toBeVisible();
+  // The resolution label alone used to be all this row showed — the fix
+  // appends when it closed, using the same absolute-timestamp formatter the
+  // All lens's rows use (formatInboxRowTimestamp). The exact rendered string
+  // is locale-dependent, so this checks the fix's shape (a separator
+  // followed by non-empty content) rather than an exact date string.
+  await expect(queue.getByText(/^Dismissed · .+/)).toBeVisible();
+  await expect(queue.getByText("Dismissed", { exact: true })).toHaveCount(0);
+});

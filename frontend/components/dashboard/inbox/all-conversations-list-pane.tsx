@@ -20,10 +20,9 @@ import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conve
 import { matchesConversationSearchText, type ConversationFilterState, type OutcomeFilter } from '@/lib/conversation-filters'
 import { formatConversationLocation } from '@/lib/history-source'
 import { stripTrackingParams } from '@/lib/inbox-response'
+import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
 import { cn } from '@/lib/utils'
 import type { HistoryListItem, SelectedHistoryItem } from '@/components/dashboard/history/history-list'
-
-const rowTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 // Radix Select can't hold an empty-string value for an "all" option.
 const ALL_AGENTS = '__all_agents__'
@@ -128,7 +127,7 @@ function ConversationRow({
     <RowShell selected={selected} onSelect={onSelect}>
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{title}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{rowTimestampFormatter.format(new Date(conversation.updatedAt))}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatInboxRowTimestamp(conversation.updatedAt)}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs text-muted-foreground">
@@ -156,7 +155,7 @@ function SearchEntryRow({
     <RowShell selected={selected} onSelect={onSelect}>
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{search.query}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{rowTimestampFormatter.format(new Date(search.createdAt))}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatInboxRowTimestamp(search.createdAt)}</span>
       </div>
       <span className="truncate text-xs text-muted-foreground">
         Document search · {resultLabel}
@@ -182,7 +181,7 @@ function ContactEntryRow({
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {contact.messagePreview || 'Contact request'}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">{rowTimestampFormatter.format(new Date(contact.sortAt))}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatInboxRowTimestamp(contact.sortAt)}</span>
       </div>
       <span className="truncate text-xs text-muted-foreground">
         {location.text} · {contact.userEmail} · {contact.status}

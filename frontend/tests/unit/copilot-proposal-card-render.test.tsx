@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { applyConfirmationKind, buildCopilotProposalDiff, CopilotProposalCard, targetReference } from '@/components/dashboard/copilot-proposal-card'
-import type { CopilotProposalDetail, CopilotProposalSummary } from '@/lib/api-copilot'
+import { copilotApi, type CopilotProposalDetail, type CopilotProposalSummary } from '@/lib/api-copilot'
 
 beforeAll(() => {
   ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -141,6 +141,49 @@ describe('CopilotProposalCard', () => {
     expect(applyConfirmationKind(base)).toBe('reversible-update')
     expect(applyConfirmationKind({ ...base, removal: true })).toBe('irreversible-removal')
     expect(applyConfirmationKind({ ...base, removal: false })).toBe('reversible-update')
+  })
+
+  it('renders a directive enablement proposal as a reversible update with a single enabled-field preview', async () => {
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-disable-directive',
+      targetType: 'directive',
+      targetLabel: 'Avoid competitors',
+      summary: 'Disable the directive "Avoid competitors" while preserving its configured text.',
+      status: 'pending',
+    }
+    const current = { id: 'directive-1', name: 'Avoid competitors', enabled: true }
+    const proposed = { ...current, enabled: false }
+    const getProposal = vi.spyOn(copilotApi, 'getProposal').mockResolvedValue({
+      ...proposal,
+      targetRef: { agentId: 'agent-1', directiveId: 'directive-1' },
+      preview: { current, proposed },
+      currentVersionMatches: true,
+      evidenceCases: null,
+    })
+
+    act(() => root.render(
+      <CopilotProposalCard proposal={proposal} canApply onOpenEntity={vi.fn()} />,
+    ))
+    await act(async () => {
+      const apply = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Apply')
+      apply?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(applyConfirmationKind(proposal)).toBe('reversible-update')
+    expect(document.body.textContent).toContain('Apply this proposal?')
+    expect(document.body.textContent).not.toContain('Delete Avoid competitors permanently?')
+    await act(async () => {
+      const showChanges = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Show changes'))
+      showChanges?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    const preview = container.querySelector('[aria-label="Proposal changes"]')
+    expect(preview?.textContent).toContain('enabled')
+    expect(preview?.children).toHaveLength(2)
+    expect(getProposal).toHaveBeenCalledWith('proposal-disable-directive')
+    const rows = buildCopilotProposalDiff({ current, proposed })
+    expect(rows).toEqual([expect.objectContaining({ path: '$.enabled', current: true, proposed: false })])
   })
 
   it('renders a directive removal preview as one legible row instead of every field marked blank', () => {

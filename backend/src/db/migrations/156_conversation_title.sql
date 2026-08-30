@@ -12,4 +12,4 @@
 -- Nullable: absent until the summary service's first successful refresh:
 -- callers fall back to the existing first-message preview until then.
 ALTER TABLE conversations
-  ADD COLUMN title TEXT;
+  ADD COLUMN IF NOT EXISTS title TEXT;

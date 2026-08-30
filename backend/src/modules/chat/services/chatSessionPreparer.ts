@@ -35,8 +35,8 @@ import type {
   ResolvedTurnContext,
   ResolvedVariableInput,
   ContextVariableScope,
+  ContextVariableResolutionReaderPort,
 } from "../../context-variables/public.js";
-import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
@@ -212,7 +212,7 @@ export class ChatSessionPreparer {
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findById">,
     private readonly agentService?: Pick<AgentService, "resolve">,
     private readonly bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort,
-    private readonly contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">,
+    private readonly contextVariableRepository?: ContextVariableResolutionReaderPort,
     private readonly conversationSummaryStore?: Pick<ConversationSummaryStore, "load">,
     private readonly logger?: Pick<AppLogger, "warn">,
     /** Optional: when wired, an eligible visitor message enqueues a facet extraction job. */

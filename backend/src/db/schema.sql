@@ -198,6 +198,27 @@ $_$;
 
 
 --
+-- Name: disable_context_variable_enablements_with_resolver_skill(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.disable_context_variable_enablements_with_resolver_skill() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE agent_context_variables
+  SET enabled = FALSE,
+      -- A proposal can hold the skill row lock while this transaction waits. `NOW()` is fixed at
+      -- transaction start and could move the enablement version backwards after that wait.
+      updated_at = clock_timestamp()
+  WHERE resolver_skill_id = NEW.id
+    AND enabled = TRUE;
+
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: enforce_agent_skill_target_reference(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7579,6 +7600,13 @@ CREATE TRIGGER embedding_spaces_identity_immutable BEFORE UPDATE ON public.embed
 
 
 --
+-- Name: agent_skills trg_agent_skills_disable_context_variable_enablements; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_agent_skills_disable_context_variable_enablements AFTER UPDATE OF enabled ON public.agent_skills FOR EACH ROW WHEN (((old.enabled IS TRUE) AND (new.enabled IS FALSE))) EXECUTE FUNCTION public.disable_context_variable_enablements_with_resolver_skill();
+
+
+--
 -- Name: agent_skills trg_agent_skills_target_reference; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -7681,6 +7709,22 @@ ALTER TABLE ONLY public.agent_access_grants
 
 ALTER TABLE ONLY public.agent_access_grants
     ADD CONSTRAINT agent_access_grants_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_context_variables agent_context_variables_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: agent_context_variables agent_context_variables_resolver_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_resolver_skill_id_fkey FOREIGN KEY (resolver_skill_id) REFERENCES public.agent_skills(id) ON DELETE CASCADE NOT VALID;
 
 
 --

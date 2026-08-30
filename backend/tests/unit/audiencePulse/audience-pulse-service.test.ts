@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { AudiencePulseService, hydrateReport } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+import { AudiencePulseService, buildSummaryTopics, hydrateReport } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type {
   AudiencePulseHistorySnapshot,
@@ -64,7 +64,6 @@ const modelResponse = JSON.stringify({
     title: "Document subscription changes",
     rationale: "Questions recur across visitor conversations.",
     questions: ["How can I change my plan?"],
-    evidenceIds: ["evidence-1", "evidence-2"],
   }],
   caveats: [],
 });
@@ -177,6 +176,34 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 };
 
 describe("AudiencePulseService", () => {
+  it("weights shown exemplars toward eligible questions from distinct conversations", () => {
+    const evidenceById = new Map([
+      ["evidence-1", { ...history().evidence[0]!, id: "evidence-1", reference: { messageId: "message-1", conversationId: "conversation-1" }, contentGapEligible: true }],
+      ["evidence-2", { ...history().evidence[1]!, id: "evidence-2", contentGapEligible: false }],
+      ["evidence-3", { ...history().evidence[0]!, id: "evidence-3", reference: { messageId: "message-3", conversationId: "conversation-1" }, contentGapEligible: true }],
+      ["evidence-4", { ...history().evidence[0]!, id: "evidence-4", reference: { messageId: "message-4", conversationId: "conversation-2" }, contentGapEligible: true }],
+      ["evidence-5", { ...history().evidence[0]!, id: "evidence-5", reference: { messageId: "message-5", conversationId: "conversation-3" }, contentGapEligible: true }],
+      ["evidence-6", { ...history().evidence[1]!, id: "evidence-6", reference: { messageId: "message-6", conversationId: "conversation-4" }, contentGapEligible: false }],
+    ]);
+
+    const { shown } = buildSummaryTopics({
+      topics: [{
+        topicId: "topic-1",
+        title: "Topic",
+        description: "Description",
+        memberIds: ["evidence-1", "evidence-2", "evidence-3", "evidence-4", "evidence-5", "evidence-6"],
+        memberCount: 6,
+        share: 1,
+      }],
+      evidenceById,
+    });
+
+    expect(shown[0]?.exemplars.map((item) => item.id)).toEqual([
+      "evidence-1", "evidence-4", "evidence-5", "evidence-2", "evidence-3", "evidence-6",
+    ]);
+    expect(shown[0]?.contentGapQualifies).toBe(true);
+  });
+
   it("presents repeated normalized question text once with its occurrence count", () => {
     const report: AudiencePulseStoredReport = {
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },

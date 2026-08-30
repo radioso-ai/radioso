@@ -30,9 +30,10 @@ restate `coverage`, a topic's `memberCount`, or `share` in a caveat; the interfa
 shows those numbers directly.
 
 `themeIndex` is the zero-based position of a topic in `topics`; a recommendation may
-reference only a topic actually present there. Include a recommendation only when its
-topic's exemplars contain at least two `contentGapEligible: true` items from two
-different `conversationId` values. Each recommendation must cite two or more exemplar
-IDs from that same topic, including those qualifying items. Otherwise, leave that
-topic without a recommendation. When `topics` is empty, return an empty
-recommendations array.
+reference only a topic actually present there. Clustering code has already determined
+which topics show a recurring content gap: visitors repeatedly asked and the assistant
+could not answer from workspace documents. Each topic carries `contentGapQualifies`;
+write exactly one recommendation for every topic where it is true and none for any
+other topic. Draw each recommendation's `questions` from that topic's exemplars,
+especially `contentGapEligible: true` ones. Do not mention evidence IDs. When `topics`
+is empty, return an empty recommendations array.

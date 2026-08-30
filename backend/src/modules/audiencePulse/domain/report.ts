@@ -142,7 +142,8 @@ const evidenceIdsSchema = (minimum: number) => z.array(z.string().trim().min(1).
  * `services/audiencePulseService.ts` bridges the two by mapping `model.themes` onto it
  * until the narrative call described in `topicNamingPrompt.ts` replaces this schema.
  * `recommendations[].themeIndex` resolves against the caller-supplied topics, not
- * `model.themes`, so the field name is a carryover, not a live reference.
+ * `model.themes`, so the field name is a carryover, not a live reference. The model
+ * writes recommendation copy only; the report owns its target eligibility and evidence.
  */
 export const audiencePulseModelOutputSchema = z.object({
   summary: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.summary),
@@ -156,7 +157,6 @@ export const audiencePulseModelOutputSchema = z.object({
     title: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle),
     rationale: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale),
     questions: z.array(boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question)).min(1).max(8),
-    evidenceIds: evidenceIdsSchema(2),
   }).strict()).max(8),
   caveats: z.array(boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.caveat)).max(6),
 }).strict();
@@ -233,14 +233,8 @@ const AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX = 12;
 const requiredEligibleCount = (topicMemberCount: number): number =>
   Math.max(CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE, Math.ceil(topicMemberCount * CONTENT_GAP_MIN_ELIGIBLE_SHARE));
 
-/**
- * `requiredEligible` is the caller's scale basis: the theme-level content-gap check
- * (`contentGaps`) scales it to the topic's real size via {@link requiredEligibleCount};
- * the recommendation-level check evaluates a small, bounded citation set the model
- * chose and keeps the flat floor, since that check is about the citation's own
- * internal quality, not the topic's overall size.
- */
-const recurringGap = (items: AudiencePulseEvidence[], requiredEligible: number): {
+/** Evaluates the recurring content-gap gate against a topic's full membership. */
+export const evaluateTopicContentGap = (items: AudiencePulseEvidence[], memberCount: number): {
   eligibleEvidenceCount: number;
   distinctConversationCount: number;
   qualifies: boolean;
@@ -250,13 +244,15 @@ const recurringGap = (items: AudiencePulseEvidence[], requiredEligible: number):
   return {
     eligibleEvidenceCount: eligible.length,
     distinctConversationCount,
-    qualifies: eligible.length >= requiredEligible && distinctConversationCount >= CONTENT_GAP_MIN_DISTINCT_CONVERSATIONS,
+    qualifies: eligible.length >= requiredEligibleCount(memberCount)
+      && distinctConversationCount >= CONTENT_GAP_MIN_DISTINCT_CONVERSATIONS,
   };
 };
 
 const pickRecurringContentGapEvidenceIds = (
   evidenceIds: readonly string[],
   evidenceById: Map<string, AudiencePulseEvidence>,
+  maximum = 6,
 ): string[] => {
   const conversationIds = new Set<string>();
   const selected: string[] = [];
@@ -265,9 +261,9 @@ const pickRecurringContentGapEvidenceIds = (
     if (!item?.contentGapEligible || conversationIds.has(item.reference.conversationId)) continue;
     selected.push(evidenceId);
     conversationIds.add(item.reference.conversationId);
-    if (selected.length === 2) return selected;
+    if (selected.length === maximum) return selected;
   }
-  return [];
+  return selected;
 };
 
 const resolveEvidence = (
@@ -291,8 +287,9 @@ const resolveEvidence = (
  * `population` is every eligible question in the window, not a sample. Every count,
  * share, weekly bucket, and content-gap decision below is computed here from that
  * membership -- never trusted from the model and never scaled from a subset. `model`
- * still supplies the narrative (summary, recommendations, caveats); its `themes`
- * field is validated but unused (see `audiencePulseModelOutputSchema`).
+ * supplies narrative copy only; this function owns content-gap eligibility and
+ * recommendation evidence. Its `themes` field is validated but unused (see
+ * `audiencePulseModelOutputSchema`).
  */
 export const buildAudiencePulseReport = (input: {
   period: { start: Date; end: Date };
@@ -342,10 +339,7 @@ export const buildAudiencePulseReport = (input: {
 
   const contentGaps = themes.flatMap((theme) => {
     const memberEvidenceIds = memberEvidenceIdsByTopicId.get(theme.id) ?? [];
-    const gap = recurringGap(
-      resolveEvidence(memberEvidenceIds, evidenceById, "Topic"),
-      requiredEligibleCount(theme.memberCount),
-    );
+    const gap = evaluateTopicContentGap(resolveEvidence(memberEvidenceIds, evidenceById, "Topic"), theme.memberCount);
     return gap.qualifies ? [{
       themeId: theme.id,
       eligibleEvidenceCount: gap.eligibleEvidenceCount,
@@ -353,22 +347,19 @@ export const buildAudiencePulseReport = (input: {
     }] : [];
   });
 
+  const qualifyingThemeIds = new Set(contentGaps.map((gap) => gap.themeId));
+  const seenThemeIndexes = new Set<number>();
   const recommendations = model.recommendations.flatMap((recommendation, recommendationIndex): AudiencePulseStoredRecommendation[] => {
     const parentTheme = themes[recommendation.themeIndex];
     if (!parentTheme) {
       throw new AudiencePulseReportValidationError("Recommendation references an unknown topic");
     }
+    if (seenThemeIndexes.has(recommendation.themeIndex)) return [];
+    seenThemeIndexes.add(recommendation.themeIndex);
+    if (!qualifyingThemeIds.has(parentTheme.id)) return [];
     const parentMemberEvidenceIds = memberEvidenceIdsByTopicId.get(parentTheme.id) ?? [];
-    const parentEvidence = new Set(parentMemberEvidenceIds);
-    const items = resolveEvidence(recommendation.evidenceIds, evidenceById, "Recommendation");
-    if (!recommendation.evidenceIds.every((id) => parentEvidence.has(id))) {
-      throw new AudiencePulseReportValidationError("Recommendation evidence must be a subset of its parent topic");
-    }
-    const gap = recurringGap(items, CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE);
-    const evidenceIds = gap.qualifies
-      ? [...recommendation.evidenceIds]
-      : pickRecurringContentGapEvidenceIds(parentMemberEvidenceIds, evidenceById);
-    if (evidenceIds.length === 0) return [];
+    const evidenceIds = pickRecurringContentGapEvidenceIds(parentMemberEvidenceIds, evidenceById);
+    if (evidenceIds.length < CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE) return [];
     return [{
       id: `recommendation-${recommendationIndex + 1}`,
       themeId: parentTheme.id,

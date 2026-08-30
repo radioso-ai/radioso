@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, FileText, PenSquare, RefreshCw, Info, Play } from 'lucide-react'
+import { AlertTriangle, ChevronDown, FileText, PenSquare, RefreshCw, Info, Play } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,11 @@ import {
   type AudiencePulseDraftSeed,
 } from '@/lib/audience-pulse-draft-seed'
 import { writeAudiencePulseEvidenceHandoff } from '@/lib/audience-pulse-evidence-handoff'
+import {
+  getCoverageGapFraction,
+  getSparklinePoints,
+  normalizeTopicShare,
+} from '@/lib/audience-pulse-topic-viz'
 
 interface AudiencePulseViewProps {
   accountId: string
@@ -496,6 +501,7 @@ function ReportContent({
   // here would describe the audience when the truth is that nothing has been computed.
   const awaitingTopicAnalysis = populationSize > 0 && facetReadyQuestionCount === 0
   const partiallyAnalysed = !sampled && facetReadyQuestionCount > 0 && facetReadyQuestionCount < populationSize
+  const maxThemeShare = Math.max(...report.themes.map((theme) => theme.share))
 
   return (
     <div className="flex flex-col gap-4">
@@ -627,16 +633,17 @@ function ReportContent({
               : 'The analysis did not identify any recurring themes.'}
           </p>
         ) : (
-          <div className="flex flex-col gap-3">
+          <Card className="gap-0 py-0">
             {report.themes.map((theme) => (
-              <ThemeCard
+              <TopicRow
                 key={theme.id}
                 theme={theme}
                 gap={contentGapByTheme.get(theme.id) ?? null}
+                maxShare={maxThemeShare}
                 onOpenConversation={onOpenConversation}
               />
             ))}
-          </div>
+          </Card>
         )}
       </section>
 
@@ -664,56 +671,70 @@ function ReportContent({
   )
 }
 
-function ThemeCard({
+function TopicRow({
   theme,
   gap,
+  maxShare,
   onOpenConversation,
 }: {
   theme: AudiencePulseTheme
   gap: AudiencePulseContentGap | null
+  maxShare: number
   onOpenConversation: (evidence: AudiencePulseThemeEvidence) => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const questionCount = theme.distinctQuestionCount
+  const contentId = `audience-pulse-topic-${theme.id}`
+  const normalizedShare = normalizeTopicShare(theme.share, maxShare)
+  const coverageGapFraction = getCoverageGapFraction(
+    theme.grounding.contentGapEligible,
+    theme.memberCount,
+  )
+  const contentGapTitle = gap
+    ? `Not covered · asked ${numberFormat.format(gap.eligibleEvidenceCount)}× in ${numberFormat.format(gap.distinctConversationCount)} conversations`
+    : undefined
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
-          <span>{theme.title}</span>
-          {gap ? (
-            <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100">
-              Not covered · asked {numberFormat.format(gap.eligibleEvidenceCount)}× in{' '}
-              {numberFormat.format(gap.distinctConversationCount)} conversations
-            </Badge>
-          ) : null}
-        </CardTitle>
-        <CardDescription>{theme.description}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {numberFormat.format(questionCount)} {questionCount === 1 ? 'question' : 'questions'}
-            {theme.memberCount > questionCount
-              ? ` · asked ${numberFormat.format(theme.memberCount)}× (${percentFormat.format(theme.share)} of window)`
-              : null}
-          </p>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((prev) => !prev)}
-            className="text-xs font-medium text-foreground underline-offset-2 hover:underline focus:outline-none focus-visible:underline"
-          >
-            {expanded ? 'Hide questions' : 'Show questions'}
-          </button>
-        </div>
+    <div className="border-b last:border-b-0" data-testid="audience-pulse-topic-row">
+      <div className="space-y-2 px-4 py-4 sm:px-6">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex w-full items-center gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground">{theme.title}</span>
+            {gap ? (
+              <Badge
+                variant="outline"
+                title={contentGapTitle}
+                className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+              >
+                Not covered
+              </Badge>
+            ) : null}
+          </span>
+          <TopicSparkline weeklyPulse={theme.weeklyPulse} />
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`}
+            aria-hidden
+          />
+          <span className="sr-only">{expanded ? 'Hide examples' : 'Show examples'}</span>
+        </button>
+        <TopicShareBar normalizedShare={normalizedShare} coverageGapFraction={coverageGapFraction} />
+        <p className="text-xs tabular-nums text-muted-foreground">
+          asked {numberFormat.format(theme.memberCount)}× · {percentFormat.format(theme.share)} of questions
+        </p>
         {expanded ? (
-          <div className="space-y-3">
+          <div id={contentId} className="space-y-3 pt-1">
+            <p className="text-sm text-muted-foreground">{theme.description}</p>
             <GroundingSummaryStrip grounding={theme.grounding} />
             {theme.evidence.length > 0 ? (
               <div>
                 <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  What visitors asked
+                  Examples · {numberFormat.format(theme.evidence.length)} of {numberFormat.format(theme.memberCount)}{' '}
+                  {theme.memberCount === 1 ? 'question' : 'questions'}
                 </p>
                 <ul className="flex flex-col gap-1 text-sm">
                   {theme.evidence.map((evidence) => (
@@ -736,8 +757,86 @@ function ThemeCard({
             ) : null}
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
+  )
+}
+
+function TopicShareBar({
+  normalizedShare,
+  coverageGapFraction,
+}: {
+  normalizedShare: number
+  coverageGapFraction: number
+}) {
+  const hasShare = normalizedShare > 0
+  const hasCoverageGap = hasShare && coverageGapFraction > 0
+  const primaryFraction = 1 - coverageGapFraction
+
+  return (
+    <div className="h-2 w-full rounded-full bg-muted" aria-hidden>
+      {hasShare ? (
+        <div
+          className="relative h-full"
+          style={{ width: `max(2px, ${normalizedShare * 100}%)` }}
+        >
+          {primaryFraction > 0 ? (
+            <span
+              className={`absolute inset-y-0 left-0 bg-primary ${hasCoverageGap ? '' : 'rounded-r-full'}`}
+              style={{ width: `${primaryFraction * 100}%` }}
+            />
+          ) : null}
+          {hasCoverageGap ? (
+            <span
+              className={`absolute inset-y-0 right-0 bg-amber-500 rounded-r-full ${primaryFraction > 0 ? 'border-l-2 border-card' : ''}`}
+              style={{ width: `${coverageGapFraction * 100}%` }}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+// Renders inside the row's expand <button>, so it must stay non-interactive:
+// the quality-tile Sparkline (recharts) adds a tooltip and a focusable
+// accessibility layer, which cannot legally nest inside another control.
+function TopicSparkline({ weeklyPulse }: { weeklyPulse: AudiencePulseTheme['weeklyPulse'] }) {
+  const points = getSparklinePoints(weeklyPulse.map((week) => week.count))
+  if (points.length === 0) return null
+
+  const first = points[0]
+  const last = points.at(-1)
+  if (!first || !last) return null
+
+  return (
+    <span className="shrink-0">
+      <svg
+        viewBox="0 0 72 24"
+        className="h-6 w-[72px] text-muted-foreground"
+        aria-hidden
+        focusable="false"
+      >
+        <polyline
+          points={points.map((point) => `${point.x},${point.y}`).join(' ')}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle
+          cx={last.x}
+          cy={last.y}
+          r="3"
+          className="fill-primary stroke-card"
+          strokeWidth="2"
+        />
+      </svg>
+      <span className="sr-only">
+        Weekly questions trend: {numberFormat.format(first.value)} to {numberFormat.format(last.value)}.
+      </span>
+    </span>
   )
 }
 
@@ -754,7 +853,7 @@ function GroundingSummaryStrip({
   ]
 
   const visible = entries.filter((e) => e.value > 0)
-  if (visible.length <= 1) return null
+  if (visible.length === 0) return null
 
   return (
     <div className="flex flex-wrap gap-2" aria-label="Grounding summary">

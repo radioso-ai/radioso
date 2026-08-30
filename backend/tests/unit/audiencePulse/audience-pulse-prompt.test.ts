@@ -28,6 +28,7 @@ const topic = (overrides: Partial<AudiencePulseSummaryTopic> = {}): AudiencePuls
   description: "Repeated questions about changing a plan.",
   memberCount: 12,
   share: 0.25,
+  contentGapQualifies: false,
   exemplars: [exemplar("How do I change my plan?", 0), exemplar("Can I update my subscription?", 1)],
   ...overrides,
 });
@@ -101,6 +102,7 @@ describe("Audience Pulse summary prompt", () => {
       title: "Billing",
       memberCount: 40,
       share: 0.5,
+      contentGapQualifies: false,
     });
     expect(parsed.topics[0].exemplars).toHaveLength(2);
     expect(parsed.topics[0].exemplars[0].conversationId).toBe("11111111-1111-1111-1111-000000000001");
@@ -123,20 +125,22 @@ describe("Audience Pulse summary prompt", () => {
     expect(prompt).toContain("still being processed");
   });
 
-  it("sizes the response schema's themeIndex range to the topics actually shown, and forces themes empty", () => {
-    const withThreeTopics = buildAudiencePulseResponseFormat(3).schema as {
+  it("allows exactly the qualifying topic indexes in the response schema and forces themes empty", () => {
+    const withThreeTopics = buildAudiencePulseResponseFormat([0, 2]).schema as {
       properties: {
         themes: { maxItems?: number };
-        recommendations: { maxItems?: number; items: { properties: { themeIndex: { type?: string; minimum?: number; maximum?: number } } } };
+        recommendations: { minItems?: number; maxItems?: number; items: { properties: { themeIndex: { enum?: number[] } } } };
       };
     };
 
     expect(withThreeTopics.properties.themes.maxItems).toBe(0);
-    expect(withThreeTopics.properties.recommendations.items.properties.themeIndex).toEqual({ type: "integer", minimum: 0, maximum: 2 });
+    expect(withThreeTopics.properties.recommendations.minItems).toBe(2);
+    expect(withThreeTopics.properties.recommendations.maxItems).toBe(2);
+    expect(withThreeTopics.properties.recommendations.items.properties.themeIndex).toEqual({ enum: [0, 2] });
   });
 
-  it("forbids any recommendation when no topic is shown", () => {
-    const withNoTopics = buildAudiencePulseResponseFormat(0).schema as {
+  it("forbids any recommendation when no shown topic qualifies", () => {
+    const withNoTopics = buildAudiencePulseResponseFormat([]).schema as {
       properties: { recommendations: { maxItems?: number } };
     };
 

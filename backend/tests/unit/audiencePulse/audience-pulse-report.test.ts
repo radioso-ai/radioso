@@ -129,7 +129,6 @@ describe("Audience Pulse report domain", () => {
           title: "Explain subscription changes",
           rationale: "Repeated unsupported questions.",
           questions: ["How can I change my plan?"],
-          evidenceIds: ["evidence-1", "evidence-2"],
         }],
       },
     });
@@ -182,7 +181,6 @@ describe("Audience Pulse report domain", () => {
           title: "Recommendation",
           rationale: "Rationale",
           questions: ["Question"],
-          evidenceIds: ["evidence-1", "evidence-2"],
         }],
       },
     });
@@ -191,7 +189,7 @@ describe("Audience Pulse report domain", () => {
     expect(report.recommendations).toEqual([]);
   });
 
-  it("repairs a recommendation's source evidence from its qualifying parent topic", () => {
+  it("owns qualifying recommendation evidence from its parent topic", () => {
     const report = buildAudiencePulseReport({
       ...baseInput,
       population: [
@@ -224,7 +222,6 @@ describe("Audience Pulse report domain", () => {
           title: "Recommendation",
           rationale: "Rationale",
           questions: ["Question"],
-          evidenceIds: ["evidence-1", "evidence-2"],
         }],
       },
     });
@@ -235,7 +232,7 @@ describe("Audience Pulse report domain", () => {
     }]);
   });
 
-  it("rejects singleton evidence sets before report projection", () => {
+  it("rejects recommendation evidence ids before report projection", () => {
     expect(() => parseAudiencePulseModelOutput({
       summary: "Summary",
       themes: [{ title: "Theme", description: "Description", evidenceIds: ["evidence-1"] }],
@@ -251,7 +248,7 @@ describe("Audience Pulse report domain", () => {
         title: "Recommendation",
         rationale: "Rationale",
         questions: ["Question"],
-        evidenceIds: ["evidence-1"],
+        evidenceIds: ["evidence-1", "evidence-2"],
       }],
       caveats: [],
     })).toThrow();
@@ -266,7 +263,6 @@ describe("Audience Pulse report domain", () => {
         title: "Recommendation",
         rationale: "Rationale",
         questions: ["Question"],
-        evidenceIds: ["evidence-1", "evidence-2"],
       }],
       caveats: ["Caveat"],
     };
@@ -440,6 +436,83 @@ describe("Audience Pulse report domain", () => {
     const gapTopicIds = report.contentGaps.map((gap) => gap.themeId);
     expect(gapTopicIds).not.toContain("topic-large");
     expect(gapTopicIds).toContain("topic-small");
+  });
+
+  it("drops a recommendation aimed at a topic that misses the scaled content-gap gate", () => {
+    const population = buildPopulation(100, (index) => ({
+      contentGapEligible: index < 3,
+      reference: {
+        messageId: `message-${index}`,
+        conversationId: index === 1 ? "conversation-2" : "conversation-1",
+      },
+    }));
+
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 100, sampleSize: 100, sampled: false, facetReadyQuestionCount: 100 },
+      population,
+      topics: [{ id: "topic-large", title: "Large", description: "Description", evidenceIds: population.map((item) => item.id) }],
+      model: {
+        ...emptyModel,
+        recommendations: [{ themeIndex: 0, title: "Recommendation", rationale: "Rationale", questions: ["Question"] }],
+      },
+    });
+
+    expect(report.contentGaps).toEqual([]);
+    expect(report.recommendations).toEqual([]);
+  });
+
+  it("throws for an out-of-range recommendation topic", () => {
+    expect(() => buildAudiencePulseReport({
+      ...baseInput,
+      population: [evidence(), evidence({ id: "evidence-2", reference: { messageId: "message-2", conversationId: "conversation-2" } })],
+      topics: [{ id: "topic-1", title: "Topic", description: "Description", evidenceIds: ["evidence-1", "evidence-2"] }],
+      model: { ...emptyModel, recommendations: [{ themeIndex: 1, title: "Recommendation", rationale: "Rationale", questions: ["Question"] }] },
+    })).toThrow(/unknown topic/i);
+  });
+
+  it("deduplicates recommendations and picks up to six nearest eligible conversations", () => {
+    const population = buildPopulation(8, (index) => ({
+      contentGapEligible: index < 7,
+      reference: { messageId: `message-${index + 1}`, conversationId: index < 2 ? "conversation-1" : `conversation-${index}` },
+    }));
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 8, sampleSize: 8, sampled: false, facetReadyQuestionCount: 8 },
+      population,
+      topics: [{
+        id: "topic-1",
+        title: "Topic",
+        description: "Description",
+        evidenceIds: ["evidence-2", "evidence-1", "evidence-3", "evidence-4", "evidence-5", "evidence-6", "evidence-7", "evidence-8"],
+      }],
+      model: {
+        ...emptyModel,
+        recommendations: [
+          { themeIndex: 0, title: "First", rationale: "Rationale", questions: ["Question"] },
+          { themeIndex: 0, title: "Second", rationale: "Rationale", questions: ["Question"] },
+        ],
+      },
+    });
+
+    expect(report.recommendations).toEqual([expect.objectContaining({
+      title: "First",
+      evidenceIds: ["evidence-2", "evidence-3", "evidence-4", "evidence-5", "evidence-6", "evidence-7"],
+    })]);
+    expect(report.contentGaps.map((gap) => gap.themeId)).toEqual(report.recommendations.map((recommendation) => recommendation.themeId));
+  });
+
+  it("keeps the given nearest-first display evidence order bounded to twelve", () => {
+    const population = buildPopulation(13);
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 13, sampleSize: 13, sampled: false, facetReadyQuestionCount: 13 },
+      population,
+      topics: [{ id: "topic-1", title: "Topic", description: "Description", evidenceIds: population.map((item) => item.id).reverse() }],
+      model: emptyModel,
+    });
+
+    expect(report.themes[0]?.evidenceIds).toEqual(population.map((item) => item.id).reverse().slice(0, 12));
   });
 });
 

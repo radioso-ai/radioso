@@ -15,6 +15,7 @@ import {
   AudiencePulseReportValidationError,
   buildAudiencePulseComputingReport,
   buildAudiencePulseReport,
+  evaluateTopicContentGap,
   parseAudiencePulseModelOutput,
 } from "../domain/report.js";
 import type {
@@ -286,31 +287,48 @@ const censusTopicsFromRun = (input: {
  * `memberCount`/`share` come straight from the census, not from `exemplars.length` --
  * exemplars illustrate a topic, they never resize it.
  */
-const buildSummaryTopics = (input: {
+export const buildSummaryTopics = (input: {
   topics: readonly CensusRunTopicResult[];
   evidenceById: ReadonlyMap<string, AudiencePulseEvidence>;
 }): { shown: AudiencePulseSummaryTopic[]; additionalTopics: { count: number; share: number } } => {
   const ordered = richestFirst(input.topics);
   const shown = ordered.slice(0, AUDIENCE_PULSE_SUMMARY_MAX_TOPICS).map((topic): AudiencePulseSummaryTopic => {
-    const exemplars = topic.memberIds
-      .slice(0, AUDIENCE_PULSE_SUMMARY_MAX_EXEMPLARS_PER_TOPIC)
-      .flatMap((messageId) => {
-        const evidence = input.evidenceById.get(messageId);
-        return evidence ? [{
-          id: evidence.id,
-          conversationId: evidence.reference.conversationId,
-          weekStart: evidence.weekStart,
-          channel: evidence.channel,
-          grounding: evidence.grounding,
-          contentGapEligible: evidence.contentGapEligible,
-          question: evidence.question,
-        }] : [];
-      });
+    const members = topic.memberIds.flatMap((messageId) => {
+      const evidence = input.evidenceById.get(messageId);
+      return evidence ? [evidence] : [];
+    });
+    const selectedIds = new Set<string>();
+    const selectedConversationIds = new Set<string>();
+    for (const member of members) {
+      if (!member.contentGapEligible || selectedConversationIds.has(member.reference.conversationId)) continue;
+      selectedIds.add(member.id);
+      selectedConversationIds.add(member.reference.conversationId);
+      if (selectedIds.size === 3) break;
+    }
+    for (const member of members) {
+      if (selectedIds.size === AUDIENCE_PULSE_SUMMARY_MAX_EXEMPLARS_PER_TOPIC) break;
+      selectedIds.add(member.id);
+    }
+    const exemplars = [...selectedIds]
+      .flatMap((evidenceId) => {
+        const evidence = input.evidenceById.get(evidenceId);
+        return evidence ? [evidence] : [];
+      })
+      .map((evidence) => ({
+        id: evidence.id,
+        conversationId: evidence.reference.conversationId,
+        weekStart: evidence.weekStart,
+        channel: evidence.channel,
+        grounding: evidence.grounding,
+        contentGapEligible: evidence.contentGapEligible,
+        question: evidence.question,
+      }));
     return {
       title: topic.title,
       description: topic.description,
       memberCount: topic.memberCount,
       share: topic.share,
+      contentGapQualifies: evaluateTopicContentGap(members, topic.memberCount).qualifies,
       exemplars,
     };
   });
@@ -548,7 +566,10 @@ export class AudiencePulseService implements AudiencePulsePort {
       };
       const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
       const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
-      const responseFormat = buildAudiencePulseResponseFormat(shown.length);
+      // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
+      const responseFormat = buildAudiencePulseResponseFormat(
+        shown.flatMap((topic, index) => topic.contentGapQualifies ? [index] : []),
+      );
       const modelCallContext = {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -606,6 +627,17 @@ export class AudiencePulseService implements AudiencePulsePort {
             `audience_pulse: report unclassified count (${report.unclassifiedQuestionCount}) does not match `
             + `census unclassified count (${censusResult.unclassifiedCount}) for workspace ${input.workspaceId}`,
           );
+        }
+        const qualifyingThemeIds = report.contentGaps.map((gap) => gap.themeId).sort();
+        const recommendationThemeIds = report.recommendations.map((recommendation) => recommendation.themeId).sort();
+        if (qualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
+          this.deps.logger?.warn?.({
+            workspaceId: input.workspaceId,
+            qualifyingThemeCount: qualifyingThemeIds.length,
+            recommendationThemeCount: recommendationThemeIds.length,
+            qualifyingThemeIds,
+            recommendationThemeIds,
+          }, "audience_pulse_recommendation_divergence");
         }
       } catch (error) {
         if (!isAbortError(error) && !isModelValidationError(error)) throw error;

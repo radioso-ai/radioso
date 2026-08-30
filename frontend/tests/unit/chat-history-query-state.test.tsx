@@ -32,7 +32,7 @@ vi.mock('@/lib/api', async () => {
   }
 })
 
-const response = { items: [], conversations: [], contacts: [], searches: [], total: 0, hasMore: false }
+const response = { items: [], conversations: [], contacts: [], searches: [], total: 0, hasMore: false, nextCursor: null }
 
 describe('history list query', () => {
   afterEach(() => {

@@ -14,6 +14,7 @@ import type { CopilotEvalCase } from "../../support/copilotEvalSuite.js";
 import {
   COPILOT_EVAL_AGENT_ID,
   COPILOT_EVAL_CONVERSATION_ID,
+  COPILOT_EVAL_DOCUMENT_ID,
   COPILOT_EVAL_MESSAGE_ID,
   COPILOT_EVAL_ROUTINE_ID,
 } from "../../support/copilotEvalRunner.js";
@@ -139,6 +140,44 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     assertions: [
       { type: "tool_called", tool: "document_search" },
       { type: "tool_called", tool: "document_status" },
+    ],
+  },
+  {
+    id: "knowledge-chunk-inspection",
+    name: "A retrieval miss inspects the document's actual chunks",
+    description: "The chunk reader closes the gap between finding a document and explaining what retrieval could index from it.",
+    tags: ["tool_selection", "grounding"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("documents"),
+    message: "The shipping rates document exists. Show me how the Italy passage was actually chunked.",
+    requires: ["document"],
+    plan: [
+      { tool: "document_search", input: { query: "shipping rates Italy" } },
+      { tool: "document_chunks", input: { documentId: COPILOT_EVAL_DOCUMENT_ID, startChunkIndex: 0, limit: 3 } },
+    ],
+    finalMessage: "The Italy passage is present in the first indexed chunk.",
+    assertions: [
+      { type: "tool_call_order", tools: ["document_search", "document_chunks"] },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "document-reprocess-act",
+    name: "An explicit document refresh queues the maintenance act",
+    tags: ["tool_selection"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("documents"),
+    message: "Reprocess the shipping rates document from its stored content.",
+    requires: ["document"],
+    plan: [
+      { tool: "document_search", input: { query: "shipping rates" } },
+      { tool: "reprocess_document", input: { documentId: COPILOT_EVAL_DOCUMENT_ID } },
+    ],
+    finalMessage: "I queued the shipping rates document for reprocessing.",
+    assertions: [
+      { type: "tool_call_order", tools: ["document_search", "reprocess_document"] },
+      { type: "no_proposal_drafted" },
+      { type: "turn_outcome", outcome: "completed" },
     ],
   },
   {

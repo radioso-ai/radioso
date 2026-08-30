@@ -17,6 +17,7 @@ import type {
   DocumentProcessingWorker,
   DocumentSearchHistoryService,
   DocumentSearchService,
+  DocumentSourceRecrawlService,
   DocumentSourceReprocessService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
@@ -181,6 +182,7 @@ export interface AppDependencies {
   documentSearchHistoryService: DocumentSearchHistoryService;
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
   embeddingBindingResolver: EmbeddingBindingResolverPort;
+  documentSourceRecrawlService: DocumentSourceRecrawlService;
   documentSourceReprocessService: DocumentSourceReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: JobConsumerPort;

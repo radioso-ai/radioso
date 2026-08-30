@@ -42,5 +42,11 @@ export { DocumentProcessingWorker } from "./services/documentProcessingWorker.js
 export { DocumentSearchHistoryService } from "./services/documentSearchHistoryService.js";
 export { DocumentSearchService } from "./services/documentSearchService.js";
 export { DocumentSourceReprocessService } from "./services/documentSourceReprocessService.js";
+export {
+  DocumentSourceRecrawlService,
+  type DocumentSourceRecrawlCrawlJobsPort,
+  type DocumentSourceRecrawlCrawlerConfig,
+  type DocumentSourceRecrawlResult,
+} from "./services/documentSourceRecrawlService.js";
 export { DocumentSourceContentService } from "./services/documentSourceContentService.js";
 export { WorkspaceIngestionReprocessService } from "./services/workspaceIngestionReprocessService.js";

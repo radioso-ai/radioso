@@ -607,6 +607,84 @@ export class DocumentIngestionService {
     };
   }
 
+  async reprocessEligible(input: {
+    workspaceId: string;
+    documentId: string;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+  }): Promise<{
+    documentId: string;
+    status: "queued" | "noop";
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+  }> {
+    let result: Awaited<ReturnType<DocumentRepositoryPort["requeueEligibleAndQueue"]>>;
+    try {
+      result = await this.documentRepository.requeueEligibleAndQueue(
+        input.documentId,
+        input.workspaceId,
+        buildDocumentProcessingOptions(input),
+      );
+    } catch (error) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.reprocess",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          reason: error instanceof Error ? error.message : "Failed to queue document processing",
+        },
+      });
+      throw error;
+    }
+
+    if (!result.queued) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.reprocess",
+        eventStatus: "success",
+        metadata: {
+          documentId: result.document.id,
+          revision: result.document.revision,
+          status: "noop",
+          skippedDocumentStatus: result.document.status,
+          documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
+        },
+      });
+      return {
+        documentId: result.document.id,
+        status: "noop",
+        queuedDocumentCount: 0,
+        skippedDocumentCount: 1,
+      };
+    }
+
+    this.publishDocumentStatusChanged(input.workspaceId);
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.reprocess",
+      eventStatus: "success",
+      metadata: {
+        documentId: result.document.id,
+        revision: result.document.revision,
+        status: result.document.status,
+        documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
+        ...(await this.queueSnapshotMetadata()),
+      },
+    });
+    await this.dispatchQueuedDocumentJob({
+      documentId: result.document.id,
+      workspaceId: input.workspaceId,
+      revision: result.document.revision,
+    });
+
+    return {
+      documentId: result.document.id,
+      status: "queued",
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+    };
+  }
+
   async getDocument(workspaceId: string, documentId: string): Promise<DocumentDetails> {
     const document = await this.documentRepository.findByIdAndWorkspaceId(documentId, workspaceId);
     if (!document) {

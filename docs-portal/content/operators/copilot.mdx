@@ -25,8 +25,23 @@ authored definition, so questions about overlapping directives or a routine
 that never triggers can start from the agent name rather than an internal id.
 When the answer is a change, Ray drafts it for you to review.
 
-Ray sees document titles, processing status, and failure reasons rather than
-document text. For a skill, it sees every setting's name. It also sees the
+Ray can search the indexed evidence in your documents, then inspect one
+document's chunks when the question is why a passage was missed. One read
+returns up to ten complete chunks in order, including their boundaries,
+metadata, indexed search text, and whether each chunk has an embedding for the
+workspace's active model. Ray follows the next chunk index when it needs another
+page, so chunk text stays intact instead of being clipped to fit one large
+result.
+
+With `workspace.documents.manage`, Ray can reprocess one document or the
+existing documents in one source, and it can recrawl an existing website
+source. These are maintenance acts, so they queue immediately and appear in the
+turn's activity instead of becoming proposal cards. Recrawl uses the source's
+stored URL, page limit, and policy. Creating a source, supplying a different
+URL, and reprocessing the whole workspace stay in the Knowledge Base and
+Settings surfaces.
+
+For a skill, Ray sees every setting's name. It also sees the
 value of a setting only when that skill's capability opts the setting in as
 safe to show — a retrieve skill's source scope, metadata rules, vector top K,
 retrieval strategy, and instruction text; an email skill's draft-or-send mode.
@@ -407,6 +422,12 @@ setup state with a link to **Settings → Providers**.
   running turn to finish.
 - **A tool activity fails** — Ray continues where it can and marks the
   affected turn honestly. The answer identifies the data it could not access.
+- **Document maintenance is unavailable** — your session can read documents
+  but does not hold `workspace.documents.manage`. Chunk inspection remains
+  available; reprocess and recrawl do not appear in Ray's tool set.
+- **A source cannot be recrawled** — recrawl accepts an existing website source
+  with a stored URL. Uploaded, API, and connector sources use their own refresh
+  paths in the Knowledge Base.
 - **A proposal is stale** — the target changed after Ray drafted it. Ask Ray
   to prepare the change again and review the updated diff.
 - **Apply or Dismiss says conflict** — another apply on that proposal is

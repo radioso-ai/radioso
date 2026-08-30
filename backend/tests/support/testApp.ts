@@ -52,6 +52,7 @@ import { DocumentSearchService } from "../../src/modules/documents/services/docu
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
+import { DocumentSourceRecrawlService } from "../../src/modules/documents/services/documentSourceRecrawlService.js";
 import { DocumentSourceReprocessService } from "../../src/modules/documents/services/documentSourceReprocessService.js";
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
@@ -935,6 +936,20 @@ export const createTestDependencies = (overrides: {
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+  const websiteCrawlJobService = {
+    enqueue: async () => ({
+      jobId: "11111111-1111-4111-8111-111111111111",
+      sourceId: null,
+      requestedUrl: "https://example.com",
+      status: "queued" as const,
+    }),
+    cancelJobsForSource: async () => 0,
+  } as any;
+  const documentSourceRecrawlService = new DocumentSourceRecrawlService({
+    sourceRepository: documentSourceRepository,
+    crawlJobs: websiteCrawlJobService,
+    crawlerConfig: { defaultLimit: 1000, maxLimit: 1000 },
+  });
   const documentSourceReprocessService = new DocumentSourceReprocessService(
     documentRepository,
     documentSourceRepository,
@@ -1830,6 +1845,12 @@ export const createTestDependencies = (overrides: {
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
     documentSearchService,
+    documentChunks: chunkRepository,
+    documentMaintenance: {
+      reprocessDocument: documentIngestionService.reprocessEligible.bind(documentIngestionService),
+      reprocessSource: (input) => documentSourceReprocessService.reprocessSource(input),
+      recrawlSource: documentSourceRecrawlService.recrawlSource.bind(documentSourceRecrawlService),
+    },
     evalResultsService: evalCaseService,
     evalCaseCapture: new EvalCaseCaptureService({
       messageCases: evalMessageCaseService,
@@ -2057,17 +2078,10 @@ export const createTestDependencies = (overrides: {
         throw new Error("Embedding binding resolution is not configured in the in-memory test app");
       },
     },
+    documentSourceRecrawlService,
     documentSourceReprocessService,
     documentProcessingWorker,
-    websiteCrawlJobService: {
-      enqueue: async () => ({
-        jobId: "11111111-1111-4111-8111-111111111111",
-        sourceId: null,
-        requestedUrl: "https://example.com",
-        status: "queued" as const,
-      }),
-      cancelJobsForSource: async () => 0,
-    } as any,
+    websiteCrawlJobService,
     websiteCrawlWorker: {
       start: async () => undefined,
       stop: async () => undefined,

@@ -613,6 +613,23 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     });
   });
 
+  it("requeueEligibleAndQueue atomically skips queued and processing documents", async () => {
+    const queued = await repository.create({ ...baseCreateInput(), status: "queued" });
+    const processing = await repository.create({ ...baseCreateInput(), status: "processing" });
+
+    await expect(repository.requeueEligibleAndQueue(queued.id, workspaceId)).resolves.toMatchObject({
+      queued: false,
+      document: { id: queued.id, revision: queued.revision, status: "queued" },
+    });
+    await expect(repository.requeueEligibleAndQueue(processing.id, workspaceId)).resolves.toMatchObject({
+      queued: false,
+      document: { id: processing.id, revision: processing.revision, status: "processing" },
+    });
+
+    expect(await countProcessingJobs(queued.id)).toBe(0);
+    expect(await countProcessingJobs(processing.id)).toBe(0);
+  });
+
   it("requeueAllEligibleAndQueue requeues only non-queued/non-processing documents and reports skipped counts", async () => {
     const ready = await repository.create({ ...baseCreateInput(), status: "ready" });
     const failed = await repository.create({ ...baseCreateInput(), status: "failed" });

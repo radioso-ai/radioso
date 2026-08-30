@@ -105,21 +105,6 @@ export const applyDocumentEnrichmentOverridePatch = (
   documentEnrichmentOverride: parseDocumentSourceEnrichmentOverride(documentEnrichmentOverride),
 });
 
-export const buildWebsiteRecrawlRequest = (config: Record<string, unknown>) => {
-  const url = typeof config.url === "string" ? config.url : null;
-  const crawlerConfig = resolveWebsiteCrawlerConfig();
-  const previousLimit = typeof config.limit === "number" ? config.limit : crawlerConfig.defaultLimit;
-  const policy = config.policy && typeof config.policy === "object" && !Array.isArray(config.policy)
-    ? config.policy as Record<string, unknown>
-    : undefined;
-
-  return {
-    url,
-    limit: Math.min(previousLimit, crawlerConfig.maxLimit),
-    policy,
-  };
-};
-
 export const applyWebsiteCrawlSettingsPatch = (
   currentConfig: Record<string, unknown>,
   input: Partial<WebsiteSourceCrawlSettings>,

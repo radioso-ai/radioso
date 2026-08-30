@@ -98,3 +98,89 @@ read.
 5. Make agent discovery explicitly selectable even on an agent page, model
    list/detail outputs as a discriminated union, and pair bounded directive
    summaries with counts and a targeted full-detail read.
+
+## Wave 3 Knowledge-Base Ownership Slice (#1049 / #1051, 2026-08-30)
+
+### Goal
+
+Close the last read-only gap in the document diagnosis chain and add the first
+low-stakes knowledge-base remediation acts: inspect exactly how an existing
+document was chunked, reprocess one document or one source's existing
+documents, and recrawl one already-configured website source. Record the
+agent-scoped retrieval-probe decision without exposing a misleading tool.
+
+### Knowledge, Ports, And Dependency Direction
+
+- `operatorCopilot/tools/documents.ts` knows the model-facing schemas,
+  chunk-index page limit, safe output projection, tool shape, and permission.
+  It must not know SQL, document queues, crawl configuration parsing, or HTTP
+  route details.
+- A copilot-owned chunk inspection port exposes only the existing
+  workspace-scoped summary/detail reads needed to assemble a page. A copilot
+  action port exposes only document/source reprocess and stored-source recrawl.
+  These are consumer-shaped ports, not borrowed Documents service types.
+- Documents remains the owner of source validation and stored crawl settings.
+  A focused source-recrawl service resolves the source, enforces website-only
+  recrawl, bounds the persisted crawl limit, and delegates enqueueing to the
+  existing crawl job service. REST and Ray call the same application service.
+- `app/composition/copilotToolCatalog.ts` and server assembly bind the narrow
+  ports to the existing chunk repository, ingestion/source-reprocess services,
+  and the Documents-owned recrawl service. Composition owns wiring only.
+- Retrieval remains the owner of effective retrieval settings. This slice
+  records optional agent scoping as the target public-contract design and keeps
+  the workspace-default retrieval operations excluded until that separate API
+  and SDK change ships.
+
+Dependency direction is `operatorCopilot descriptor -> consumer port ->
+Documents application primitive/repository port`; Documents never imports Ray,
+and composition is the only layer that sees both sides.
+
+### Payload And Safety Decisions
+
+- `document_chunks` uses an inclusive starting chunk index plus a strict page
+  limit. It fetches full detail only for that selected page and never runs the
+  result through `payloadCompaction`, because chunk text is the requested
+  evidence. The response states totals, returned indexes, unavailable chunks,
+  and the next index explicitly.
+- `reprocess_document` is one family act that accepts exactly one of a document
+  id or source id; source scope means existing documents belonging to that
+  source, never a whole workspace. `recrawl_source` accepts only a persisted
+  source id and never a caller-supplied URL.
+- All reads and acts remain workspace-scoped and receive the same current-
+  authorization rechecks as every catalog descriptor. Reads require
+  `workspace.documents.read`; acts require `workspace.documents.manage`.
+
+### Constitution And Impact Check
+
+- This is an approved amendment to spec 104 (D8/D9, FR-020..FR-022). Backend
+  work follows red-green TDD with focused tool and source-recrawl tests written
+  before implementation.
+- No new storage, provider, secret, setting, HTTP route, OpenAPI schema, SDK,
+  MCP, connector, or worker payload is introduced. Existing public operations
+  are re-used, so the TypeScript SDK snapshot does not change.
+- Message-queue impact: document/source reprocessing and recrawl retain their
+  existing durable job records, dispatch payloads, retry semantics, and worker
+  consumers. No AMQP payload, queue contract test, or queue documentation
+  change is required.
+- Composition changes are assembly-only. Source validation moves out of the
+  HTTP route into Documents; no product rule moves into composition or Ray.
+- Observability: document/source reprocess retains existing audit and status
+  invalidation, recrawl retains its durable job record, crawl invalidation, and
+  dispatch-failure logging, and Ray already emits generic per-tool activity and
+  failure telemetry. No new log/metric/span is needed; raw chunk text and
+  metadata must never enter logs or audit metadata.
+- Operator documentation changes to describe chunk inspection and maintenance
+  acts. Settings docs do not change because no setting changes.
+
+### Delivery Slices
+
+1. Add failing unit tests for full-text range paging, workspace-scoped port
+   calls, action classification/permissions, document/source action dispatch,
+   and stored-source recrawl validation.
+2. Add the Documents-owned source-recrawl service and make the existing REST
+   route delegate to it without changing the public contract.
+3. Add the three document-family descriptors, consumer ports, production/test
+   wiring, capability provenance, owning primitive, and coverage-map moves.
+4. Update Ray operator documentation and the behavior-eval fixture, run focused
+   tests/build/architecture checks, complete review passes, then record #1051's
+   decision and refresh the epic state.

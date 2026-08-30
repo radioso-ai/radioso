@@ -41,7 +41,9 @@ describe("operator copilot catalog coverage", () => {
   //               per-scope value operations (upsertContextVariableValue/getContextVariableValue/
   //               deleteContextVariableValue) turned out to be a permanent exclusion rather than
   //               deferred scope, since they carry visitor runtime data rather than configuration.
-  const maxDeferredCatalogExclusions = 121;
+  //   121 -> 118  recrawlDocumentSource, reprocessDocumentSource, and reprocessDocument moved to
+  //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
+  const maxDeferredCatalogExclusions = 118;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -161,6 +163,14 @@ describe("operator copilot catalog coverage", () => {
       getGeneralSettings: "workspace_settings",
       listWorkspaceProviderCredentials: "workspace_settings",
       getWorkspaceLlmModels: "workspace_settings",
+    });
+  });
+
+  it("maps document and source remediation operations to the bounded maintenance acts", () => {
+    expect(catalogCoverage).toMatchObject({
+      recrawlDocumentSource: "recrawl_source",
+      reprocessDocumentSource: "reprocess_document",
+      reprocessDocument: "reprocess_document",
     });
   });
 

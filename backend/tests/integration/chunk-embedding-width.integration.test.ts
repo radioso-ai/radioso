@@ -120,4 +120,48 @@ describeIntegration("chunk detail embedding width (Postgres)", () => {
     // Search rejects the old canonical row during that window, so the inspector must too.
     expect(await readWidth()).toBeNull();
   });
+
+  it("pages full chunk records in index order with a bounded continuation", async () => {
+    const fullText = "untruncated evidence ".repeat(200);
+    const chunks = Array.from({ length: 12 }, (_, chunkIndex) => ({
+      id: randomUUID(),
+      documentId,
+      workspaceId,
+      chunkIndex,
+      content: chunkIndex === 4 ? fullText : `Chunk ${chunkIndex}`,
+      searchText: `search ${chunkIndex}`,
+      embedding: [],
+      startOffset: chunkIndex * 100,
+      endOffset: (chunkIndex + 1) * 100,
+      metadata: { chunkIndex },
+      createdAt: new Date(),
+    })).reverse();
+    await chunkRepository.replaceForDocument(documentId, chunks);
+
+    const page = await chunkRepository.listPageForDocument({
+      documentId,
+      workspaceId,
+      startChunkIndex: 3,
+      limit: 4,
+    });
+
+    expect(page.totalChunks).toBe(12);
+    expect(page.chunks.map((chunk) => chunk.chunkIndex)).toEqual([3, 4, 5, 6]);
+    expect(page.chunks[1]?.content).toBe(fullText);
+    expect(page.nextChunkIndex).toBe(7);
+
+    await expect(chunkRepository.listPageForDocument({
+      documentId,
+      workspaceId,
+      startChunkIndex: 10,
+      limit: 4,
+    })).resolves.toMatchObject({
+      totalChunks: 12,
+      nextChunkIndex: null,
+      chunks: [
+        { chunkIndex: 10 },
+        { chunkIndex: 11 },
+      ],
+    });
+  });
 });

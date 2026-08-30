@@ -43,6 +43,7 @@ export const COPILOT_EVAL_OPERATOR_ID = "33333333-3333-4333-8333-333333333333";
 export const COPILOT_EVAL_AGENT_ID = "44444444-4444-4444-8444-444444444444";
 export const COPILOT_EVAL_CONVERSATION_ID = "55555555-5555-4555-8555-555555555555";
 export const COPILOT_EVAL_MESSAGE_ID = "66666666-6666-4666-8666-666666666666";
+export const COPILOT_EVAL_DOCUMENT_ID = "77777777-7777-4777-8777-777777777771";
 export const COPILOT_EVAL_ROUTINE_ID = "88888888-8888-4888-8888-888888888888";
 /** Cases name the routine the way an operator would, so a live run substitutes the real name here. */
 export const COPILOT_EVAL_ROUTINE_NAME = "Order status";
@@ -365,7 +366,38 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       }),
       listConversations: async () => ({ conversations: fixtureConversationSummaries(), total: 1 }),
     },
-    documentSearchService: { search: async () => ({ results: [] }) },
+    documentSearchService: { search: async () => ({ results: [{ id: COPILOT_EVAL_DOCUMENT_ID, title: "Shipping rates", status: "processed" }] }) },
+    documentChunks: {
+      listPageForDocument: async () => ({
+        chunks: [{
+          id: "77777777-7777-4777-8777-777777777772",
+          documentId: COPILOT_EVAL_DOCUMENT_ID,
+          workspaceId: COPILOT_EVAL_WORKSPACE_ID,
+          chunkIndex: 0,
+          content: "Shipping to Italy costs nine euro.",
+          searchText: "shipping italy nine euro",
+          startOffset: 0,
+          endOffset: 34,
+          metadata: { heading: "Europe" },
+          dateFrom: null,
+          dateTo: null,
+          createdAt: evalDate("2026-08-25T12:00:00.000Z"),
+          embeddingDimensions: 1536,
+        }],
+        totalChunks: 1,
+        nextChunkIndex: null,
+      }),
+    },
+    documentMaintenance: {
+      reprocessDocument: async ({ documentId }: { documentId: string }) => ({
+        documentId,
+        status: "queued" as const,
+        queuedDocumentCount: 1,
+        skippedDocumentCount: 0,
+      }),
+      reprocessSource: unusedPort("documentMaintenance.reprocessSource"),
+      recrawlSource: unusedPort("documentMaintenance.recrawlSource"),
+    },
     documentStatusService: {
       summarizeWorkspace: async () => ({ documentCount: 12, readyDocumentCount: 10, pendingDocumentCount: 1, failedDocumentCount: 1 }),
       listByStatuses: async () => [{ id: "99999999-9999-4999-8999-999999999999", title: "Shipping rates", status: "failed", failureReason: "parser_timeout", updatedAt: evalDate("2026-08-25T12:00:00.000Z"), sourceId: null }],

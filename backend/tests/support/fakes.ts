@@ -2800,6 +2800,23 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
+  async requeueEligibleAndQueue(
+    documentId: string,
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<{ document: DocumentRecord; queued: boolean }> {
+    const existing = this.items.get(documentId);
+    if (!existing || existing.workspaceId !== workspaceId) {
+      throw notFound("Document not found");
+    }
+    if (existing.status === "queued" || existing.status === "processing") {
+      return { document: existing, queued: false };
+    }
+
+    const document = await this.requeueAndQueue(documentId, workspaceId, options);
+    return { document, queued: true };
+  }
+
   async updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId || existing.revision !== input.revision) {
@@ -3227,6 +3244,42 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
         dateFrom: typeof chunk.metadata?.dateFrom === "string" ? chunk.metadata.dateFrom : null,
         dateTo: typeof chunk.metadata?.dateTo === "string" ? chunk.metadata.dateTo : null,
       }));
+  }
+
+  async listPageForDocument(input: {
+    documentId: string;
+    workspaceId: string;
+    startChunkIndex: number;
+    limit: number;
+  }) {
+    const matchingChunks = (this.items.get(input.documentId) ?? [])
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex);
+    const rows = matchingChunks
+      .filter((chunk) => chunk.chunkIndex >= input.startChunkIndex)
+      .slice(0, input.limit + 1);
+    const page = rows.slice(0, input.limit);
+
+    return {
+      chunks: page.map((chunk) => ({
+        id: chunk.id,
+        documentId: chunk.documentId,
+        workspaceId: chunk.workspaceId,
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+        searchText: chunk.searchText ?? null,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+        metadata: chunk.metadata ?? {},
+        dateFrom: typeof chunk.metadata?.dateFrom === "string" ? chunk.metadata.dateFrom : null,
+        dateTo: typeof chunk.metadata?.dateTo === "string" ? chunk.metadata.dateTo : null,
+        createdAt: chunk.createdAt,
+        embeddingDimensions: chunk.embedding.length || null,
+      })),
+      totalChunks: matchingChunks.length,
+      nextChunkIndex: rows.length > input.limit ? rows[input.limit]!.chunkIndex : null,
+    };
   }
 
   async findByIdForDocument(input: { chunkId: string; documentId: string; workspaceId: string }) {

@@ -6,7 +6,7 @@ type ProductionDescriptorName =
   | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "document_search" | "document_status"
   | "eval_results" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
-  | "propose_directive_removal" | "propose_routine"
+  | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_lifecycle" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
   | "routine_definition" | "run_eval_suite" | "test_agent_turn" | "turn_trace" | "validate_routine"
@@ -33,6 +33,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   propose_agent_setting: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent service receives a setting mutation.") },
   propose_context_variable: { backingOperationIds: ["createContextVariable", "updateContextVariable", "upsertAgentContextVariable"], applicationPrimitiveIds: ["contextVariables.definition.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the context-variable service applies a definition or enablement mutation.") },
   propose_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive coaching as a pending, operator-confirmed proposal.") },
+  propose_directive_enablement: { backingOperationIds: ["updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a reversible directive enablement change as a pending, operator-confirmed proposal.") },
   propose_directive_removal: { backingOperationIds: ["deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive removal as a pending, operator-confirmed proposal, the same as any other directive change.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; routine lifecycle authority remains in the routine service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine", "reviseAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },

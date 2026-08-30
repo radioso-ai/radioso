@@ -566,6 +566,45 @@ describe("AuthoredDirectiveService", () => {
     });
   });
 
+  it("preserves every stored field when a directive enablement update names only enabled", async () => {
+    const repository = new StubAgentRepository();
+    const existing = persistedDirective(directiveInput({
+      name: "enabled-full-directive",
+      condition: { kind: "contextual", description: "When the customer asks about refunds." },
+      action: "Escalate to a human.",
+      requiredCapabilities: ["custom.capability"],
+      dependsOn: ["some-other-directive"],
+      excludes: ["conflicting-directive"],
+      surfaces: ["answer"],
+      tags: ["tag-a", "tag-b"],
+      description: "A fully populated directive.",
+      binding: { kind: "skill", skillName: "order.lookup" },
+      enabled: false,
+    }), {
+      priority: 42,
+      lifecycle: { kind: "cooldown", turns: 3 },
+      metadata: { source: "operator" },
+    });
+    repository.directives.push(existing);
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(["custom.capability"]),
+      agentSkills,
+    });
+
+    await service.update(workspaceId, agentId, existing.id, { enabled: true });
+
+    const { id: _id, agentId: _agentId, createdAt: _createdAt, updatedAt: _updatedAt, ...carriedForward } = existing;
+    expect(repository.updated.at(-1)?.input).toEqual({
+      ...carriedForward,
+      enabled: true,
+      routes: [],
+    });
+  });
+
   it("clears lifecycle and priority only when the caller explicitly sets them to null, not when they're omitted", async () => {
     const repository = new StubAgentRepository();
     const existing = persistedDirective(directiveInput({ name: "cooldown-rule" }), {

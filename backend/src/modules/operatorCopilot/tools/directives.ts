@@ -83,12 +83,12 @@ export const createDirectiveProposalCopilotTools = (
     },
     {
       name: "propose_directive_removal", shape: "propose", uiLabel: "Proposing directive removal", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Propose permanently removing a directive from an agent, for the operator to review and apply. Drafts nothing; applying the proposal deletes the directive and this cannot be undone.",
+      description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Drafts nothing; applying removal deletes the directive and this cannot be undone.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive_removal",
-        description: "Propose permanently removing a directive from an agent, for operator review. Applying the proposal deletes the directive and this cannot be undone.",
+        description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Applying removal deletes the directive and this cannot be undone.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, evidenceIds }) => {
@@ -115,6 +115,47 @@ export const createDirectiveProposalCopilotTools = (
           });
           await recordProposalCreated(deps.auditService, context, proposal);
           return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: preview.targetLabel, summary, removal: true as const, ...proposalEvidenceOutput(evidence) };
+        },
+      }),
+      describeEntity: (input, context) => describeDirectiveToolAgent(deps, input as { agentId?: string; agentName?: string }, context),
+    },
+    {
+      name: "propose_directive_enablement", shape: "propose", uiLabel: "Proposing directive enablement", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      description: "Propose enabling or disabling an existing directive for operator review. Disabling is reversible and keeps the directive configured; re-enabling validates its binding again before it can fire.",
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, enabled: z.boolean(), evidenceIds: citedEvidenceSchema }).strict(),
+      outputSchema: proposalOutputSchema,
+      createTool: (context) => ({
+        name: "propose_directive_enablement",
+        description: "Propose enabling or disabling an existing directive for operator review. Disabling is reversible and keeps the directive configured; re-enabling validates its binding again before it can fire.",
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, enabled: z.boolean(), evidenceIds: citedEvidenceSchema }).strict(),
+        outputSchema: proposalOutputSchema,
+        invoke: async ({ agentId, directiveId, enabled, evidenceIds }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId };
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          // The version read is also the authoritative target existence and ownership check.
+          const versionToken = await directiveAdapter.readVersionToken(context.workspaceId, targetRef);
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const preview = await directiveAdapter.preview(context.workspaceId, targetRef, { op: "set_enabled", enabled });
+          const currentEnabled = (preview.current as { enabled?: unknown } | null)?.enabled;
+          if (currentEnabled === enabled) {
+            throw new Error(`The directive "${preview.targetLabel}" is already ${enabled ? "enabled" : "disabled"}.`);
+          }
+          const summary = `${enabled ? "Enable" : "Disable"} the directive "${preview.targetLabel}"${enabled ? ". Its binding will be revalidated before it can fire." : ". Its configured text will be preserved and it can be re-enabled later."}`;
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const evidence = await citedProposalEvidence(deps, context, targetRef.agentId, evidenceIds, { targetType: "directive", directiveId, directiveEnabled: enabled });
+          await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
+          const proposal = await deps.proposalRepository.createProposal({
+            workspaceId: context.workspaceId,
+            operatorUserId: context.operatorUserId,
+            conversationId: requiredCopilotConversation(context),
+            targetType: "directive",
+            targetRef,
+            payload: { op: "set_enabled" as const, enabled, name: preview.targetLabel, rationale: summary },
+            versionToken,
+            evidence,
+          });
+          await recordProposalCreated(deps.auditService, context, proposal);
+          return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: preview.targetLabel, summary, ...proposalEvidenceOutput(evidence) };
         },
       }),
       describeEntity: (input, context) => describeDirectiveToolAgent(deps, input as { agentId?: string; agentName?: string }, context),

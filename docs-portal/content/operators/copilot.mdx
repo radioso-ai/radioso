@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, edit and publish routines, test routine drafts, and review linked activity and proposals."
-last_updated: 2026-08-29
+last_updated: 2026-08-30
 ---
 
 # Ray
@@ -134,6 +134,11 @@ A directive removal proposal targets an existing directive by id and drafts
 nothing else. The card shows the directive as it stands on the current side
 and a notice that it will be permanently removed on the proposed side.
 Applying it deletes the directive, and that cannot be undone.
+
+When a directive is misfiring, Ray can instead draft an enablement proposal.
+Disabling takes the directive out of play while keeping its condition, action,
+binding, and other authored settings ready to review or re-enable later. A
+re-enable proposal validates the directive's binding again before it can fire.
 
 A skill config proposal creates a new skill or updates an existing one by the
 same rules the Skills editor enforces: a setting that depends on another stays
@@ -300,8 +305,8 @@ proposal for a different one. A setting proposal has to cite a replay that put
 that exact value under test, and a directive proposal has to cite one that ran
 with directives in place.
 
-A directive removal proposal cites replay evidence the opposite way: ask Ray
-to replay a case with that specific directive excluded. The replay service
+A directive removal or disable proposal cites replay evidence the opposite way:
+ask Ray to replay a case with that specific directive excluded. The replay service
 resolves the directive against the agent's real configuration and drops it
 before running the turn, so the exclusion it records is something Ray cannot
 fake by handing back a directive list that merely looks like it left the
@@ -310,21 +315,23 @@ including one built by hand-editing the directive list — and Ray refuses it,
 because nothing proves that replay ran without the directive in force.
 
 A replay can exclude several directives at once — a fine way to try "what if I
-dropped both of these" — but the evidence it produces only backs a proposal to
-remove that same combination. A proposal to remove one directive by itself
+dropped both of these" — but that evidence does not back a proposal to affect
+one directive by itself. A proposal to affect one directive by itself
 needs a replay that excluded only that directive: a replay that dropped it
 alongside another one measured a configuration where both were gone, and
 removing two directives together can move a case's verdict in a way that
 removing either one alone would not. Ray refuses to cite that replay for a
-single-directive removal and asks for one that excludes just the directive
+single-directive removal or disable and asks for one that excludes just the directive
 being proposed.
 
 That replay also has to be about nothing else. One that also tried a different
 model, different instructions, different retrieval settings, or a routine
 starting position measured that whole combination, not the directive's absence
 on its own, so a passing verdict could be down to any of those other changes
-instead. Ray refuses to cite a replay like that for a directive removal and
-asks for one where excluding the directive is the only override in play.
+instead. Ray refuses to cite a replay like that for a directive removal or
+disable and asks for one where excluding the directive is the only override in
+play. An exclusion replay measures the directive absent from the run, so it
+cannot support a proposal to re-enable it.
 
 Routine proposals do not carry replay evidence. No replay override installs a
 routine, so a passing replay would say nothing about the routine being proposed

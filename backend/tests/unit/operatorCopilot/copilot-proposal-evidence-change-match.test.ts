@@ -123,6 +123,24 @@ describe("cited evidence must be about the change being proposed", () => {
     expect(evidence?.cases).toHaveLength(1);
   });
 
+  it("accepts a directive disable proposal whose replay recorded exactly that directive as excluded", async () => {
+    const evidence = await resolve(
+      { agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] } },
+      { targetType: "directive", directiveId: "removed-directive", directiveEnabled: false },
+      ["removed-directive"],
+    );
+
+    expect(evidence?.cases).toHaveLength(1);
+  });
+
+  it("refuses exclusion replay evidence for a directive re-enable proposal", async () => {
+    await expect(resolve(
+      { agentConfigOverride: { authoredDirectives: [{ id: "kept-directive", action: "Keep answering refunds" }] } },
+      { targetType: "directive", directiveId: "removed-directive", directiveEnabled: true },
+      ["removed-directive"],
+    )).rejects.toThrow(/cannot support re-enabling a directive/i);
+  });
+
   it("refuses a directive removal proposal whose replay did not record the proposed directive as excluded", async () => {
     await expect(resolve(
       { agentConfigOverride: { authoredDirectives: [{ id: "removed-directive", action: "State the refund window" }] } },

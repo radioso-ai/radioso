@@ -372,6 +372,69 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
   await expect(page.getByRole("button", { name: `Open ${targetLabel}`, exact: true })).toBeVisible();
 });
 
+test("reviews and applies a reversible directive disable proposal", async ({ page }) => {
+  const copilotConversationId = "copilot-directive-disable-apply";
+  const proposalId = "proposal-directive-disable-1";
+  const targetLabel = "Avoid competitors";
+  const summary = `Disable the directive "${targetLabel}". Its configured text will be preserved and it can be re-enabled later.`;
+  const detail = {
+    id: proposalId,
+    targetType: "directive",
+    targetLabel,
+    summary,
+    status: "pending",
+    targetRef: { agentId: defaultAgentId, directiveId: "directive-competitors-1" },
+    preview: {
+      current: { name: targetLabel, enabled: true },
+      proposed: { name: targetLabel, enabled: false },
+    },
+    currentVersionMatches: true,
+    evidenceCases: null,
+  };
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Disable a directive", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Disable a directive", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { directiveId: "directive-competitors-1" } } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      messages = [
+        { id: "operator-directive-disable", role: "operator", content: "Make this directive stop", createdAt: nowIso },
+        { id: "answer-directive-disable", role: "copilot", content: "I drafted a reversible disable proposal for review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "directive", targetLabel, summary, status: "pending" }] },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-directive-disable" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "directive", targetLabel, summary })}`,
+          "event: chunk\ndata: {\"text\":\"I drafted a reversible disable proposal for review.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Make this directive stop");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: `Show proposed changes for ${targetLabel}`, exact: true }).click();
+  await expect(page.getByText("enabled", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByText("Apply this proposal?", { exact: true })).toBeVisible();
+  await expect(page.getByText(`Delete ${targetLabel} permanently?`, { exact: true })).not.toBeVisible();
+  await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
+  await expect(page.getByText("Applied", { exact: true })).toBeVisible();
+});
+
 test("states plainly that applying a directive removal proposal deletes it permanently, without requiring the diff to be expanded first", async ({ page }) => {
   const copilotConversationId = "copilot-proposal-removal-apply";
   const proposalId = "proposal-removal-apply-1";

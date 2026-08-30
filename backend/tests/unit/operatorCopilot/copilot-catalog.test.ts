@@ -163,7 +163,7 @@ describe("copilot capability governance", () => {
     const invalidPrimitive = {
       ...descriptor("workspace.agents.read"),
       capabilityProvenance: { applicationPrimitiveIds: ["invented.primitive"] },
-    };
+    } satisfies CopilotToolDescriptor;
     const emptyDisposition = {
       ...descriptor("workspace.agents.read"),
       capabilityProvenance: { rayOnly: { reason: "  " } },
@@ -177,7 +177,7 @@ describe("copilot capability governance", () => {
     const ownerPrimitive = {
       ...descriptor("workspace.agents.read"),
       capabilityProvenance: { applicationPrimitiveIds: ["agents.configuration.read"] },
-    };
+    } satisfies CopilotToolDescriptor;
 
     expect(() => assertCopilotCapabilityProvenance([ownerPrimitive], new Set())).toThrow("not exported by its owning module");
     expect(() => assertCopilotCapabilityProvenance(
@@ -189,7 +189,7 @@ describe("copilot capability governance", () => {
     const weakened = {
       ...descriptor("workspace.agents.read"),
       capabilityProvenance: { backingOperationIds: ["validateAgentRoutine"] },
-    };
+    } satisfies CopilotToolDescriptor;
 
     expect(() => assertCopilotCapabilityProvenance(
       [weakened],
@@ -206,7 +206,7 @@ describe("copilot capability governance", () => {
         applicationPrimitiveIds: ["routines.validation"],
         rayOnly: { reason: "Ray returns bounded diagnostics alongside validation." },
       },
-    };
+    } satisfies CopilotToolDescriptor;
 
     expect(() => assertCopilotCapabilityProvenance(
       [composed],

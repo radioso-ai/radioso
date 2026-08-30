@@ -324,11 +324,14 @@ export function AllConversationsView({
     ? (audiencePulseEvidence?.messageId ?? null)
     : (routeState.historyMessageId ?? null)
 
-  const drawerSelectedItem: SelectedHistoryItem = debugConversationId
-    ? { kind: 'chat', id: debugConversationId }
-    : isAudiencePulseEvidenceSelection && selectedItem?.kind === 'chat'
-      ? selectedItem
-      : (selectedItem && selectedItem.kind !== 'chat' ? selectedItem : null)
+  const drawerSelectedItem: SelectedHistoryItem = useMemo(
+    () => debugConversationId
+      ? { kind: 'chat', id: debugConversationId }
+      : isAudiencePulseEvidenceSelection && selectedItem?.kind === 'chat'
+        ? selectedItem
+        : (selectedItem && selectedItem.kind !== 'chat' ? selectedItem : null),
+    [debugConversationId, isAudiencePulseEvidenceSelection, selectedItem],
+  )
 
   const buildRoutineHref = (agentId: string, routineId: string) =>
     buildDashboardHref(accountId, {

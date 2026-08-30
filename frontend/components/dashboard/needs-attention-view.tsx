@@ -333,7 +333,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
   }, [closeReview, patchLatestQuality])
 
-  const debugSelectedItem: SelectedHistoryItem = debugConversationId ? { kind: 'chat', id: debugConversationId } : null
+  const debugSelectedItem: SelectedHistoryItem = useMemo(
+    () => debugConversationId ? { kind: 'chat', id: debugConversationId } : null,
+    [debugConversationId],
+  )
   // A queue with zero open items still renders the full two-pane shell (the
   // lens toggle lives in the left pane) — only the row list swaps for the
   // confidence message, so the operator can always reach the All lens even

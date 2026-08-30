@@ -13,6 +13,7 @@ import {
   settleQualityInteraction,
   normalizeQualityTurnsRequest,
   ownsQualityInteraction,
+  patchFrozenQualityTriage,
   patchQualityTriage,
   qualityTurnsApiOptions,
   qualityTurnRemainsVisible,
@@ -73,6 +74,32 @@ describe('quality query state', () => {
     expect(client.getQueryData(key)).toMatchObject({ items: [{ triage: { state: 'acknowledged' } }] })
     expect(client.getQueryData(other)).toMatchObject({ items: [{ triage: { state: 'open' } }] })
     expect(frozenQualityPageForKey(frozen, other)).toBeNull()
+  })
+
+  it('patches only a matching frozen page so terminal conflicts can leave the rendered queue', () => {
+    const key = ['workspace', 'workspace-a', 'quality', 'turns', null]
+    const other = ['workspace', 'workspace-b', 'quality', 'turns', null]
+    const triage = {
+      state: 'resolved',
+      version: 2,
+      resolution: { reason: 'other', note: null },
+      legacyReason: null,
+      closedAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: null,
+    } as never
+    const page = {
+      items: [{ assistantMessageId: 'm1', triage: { state: 'open', version: 1 } }],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never
+    const frozen = { queryKey: key, page }
+
+    expect(patchFrozenQualityTriage(frozen, other, 'm1', triage, true)).toBe(frozen)
+    expect(patchFrozenQualityTriage(frozen, key, 'm1', triage, true)).toMatchObject({
+      page: { items: [], total: 0, totalPages: 0 },
+    })
   })
 
   it('removes only an existing row, recomputes totals, and evaluates visibility from the normalized request', () => {

@@ -439,7 +439,7 @@ test("operator sees the expected feedback permission boundary without losing the
     await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({}) });
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
 
   // A 403 on quality data means the empty state must not promise a feedback
   // channel the operator can't load — handoffs/approvals still work.
@@ -459,7 +459,7 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
     });
   });
 
-  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
 
   // Zero open items still renders the two-pane shell with its toggle in the
   // left pane, but there is nothing to search or filter, so those controls

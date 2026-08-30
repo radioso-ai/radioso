@@ -40,6 +40,8 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Activity" })).toHaveCount(0);
   await sidebar.getByRole("link", { name: "Inbox" }).click();
+  await expect(page).toHaveURL(/\/activity/);
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Conversations" })).toHaveCount(0);
 
   // Audience Pulse and Quality are top-level rail items, not nested under Inbox.
@@ -50,6 +52,7 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
 
   // Quality nests its own views (Review / Evals) when active.
   await sidebar.getByRole("link", { name: "Quality", exact: true }).click();
+  await expect(page).toHaveURL(/\/quality/);
   await expect(sidebar.getByRole("link", { name: "Review" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Evals" })).toBeVisible();
 });

@@ -10,11 +10,17 @@ import { getHomeDashboardRedirectHref } from '@/lib/home-dashboard-redirect'
 import { useWorkspace } from '@/lib/workspace-context'
 import { agentsApi } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
+import { useWorkspaceOnboarding } from '@/lib/onboarding'
 
 export default function Home() {
   const router = useRouter()
   const { user, isAuthenticated, isBootstrapping } = useAuth()
-  const { activeWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
+  const { activeWorkspace, workspaces, isLoading: isWorkspaceLoading } = useWorkspace()
+  // The only signal that decides whether this login lands on the Agents chat
+  // tab (first-run onboarding renders only there, see dashboard-shell.tsx's
+  // `isAgentChatView` / `showFirstRun`) or the Inbox (the normal landing
+  // section for every returning workspace).
+  const onboarding = useWorkspaceOnboarding(activeWorkspace?.id ?? null, workspaces.length)
   const [landingAgentState, setLandingAgentState] = useState<{
     workspaceId: string | null
     agentId: string | null
@@ -85,7 +91,8 @@ export default function Home() {
     const isLandingAgentResolved = activeWorkspace
       ? landingAgentState.workspaceId === activeWorkspace.id && landingAgentState.isResolved
       : false
-    if (isAuthenticated && !isWorkspaceLoading && activeWorkspace && !isLandingAgentResolved) {
+    const isOnboardingResolved = activeWorkspace ? !onboarding.isLoading : false
+    if (isAuthenticated && !isWorkspaceLoading && activeWorkspace && (!isLandingAgentResolved || !isOnboardingResolved)) {
       return
     }
 
@@ -94,6 +101,7 @@ export default function Home() {
       isAuthBootstrapping: isBootstrapping,
       isWorkspaceLoading,
       activeWorkspace,
+      section: onboarding.shouldShowFirstRun ? 'agents' : 'activity',
       agentId: landingAgentState.agentId,
     })
 
@@ -106,6 +114,8 @@ export default function Home() {
     isBootstrapping,
     isWorkspaceLoading,
     landingAgentState,
+    onboarding.isLoading,
+    onboarding.shouldShowFirstRun,
     router,
     user?.accountId,
   ])
@@ -116,7 +126,8 @@ export default function Home() {
     activeWorkspace &&
     (
       landingAgentState.workspaceId !== activeWorkspace.id ||
-      !landingAgentState.isResolved
+      !landingAgentState.isResolved ||
+      onboarding.isLoading
     ),
   )
 

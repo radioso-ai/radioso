@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { chatApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
-import { fetchHistory, shouldClampHistoryPage } from '@/components/dashboard/history/history-list-query'
+import { fetchHistory, shouldClampHistoryPage, shouldResetAllLensPageForFilterChange } from '@/components/dashboard/history/history-list-query'
 import { DashboardQueryProvider } from '@/components/providers/dashboard-query-provider'
 import { useHistoryListQuery } from '@/components/dashboard/history/history-list-query'
 
@@ -238,6 +238,47 @@ describe('history list query', () => {
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: undefined, activePage: 3, totalPages: 1 })).toBe(false)
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: 'all', activePage: 3, totalPages: 1 })).toBe(false)
     expect(shouldClampHistoryPage({ activeVariant: 'chat', loadedVariant: 'chat', activePage: 3, totalPages: 1 })).toBe(true)
+  })
+
+  describe('shouldResetAllLensPageForFilterChange', () => {
+    it('does not reset on mount with page 3 and an unchanged fingerprint — the deep-link regression', () => {
+      // Mirrors the hook's own ref seeding: "previous" starts out equal to
+      // "current" on the very first run, so a deep link straight to page 3
+      // must not read as a filter change.
+      expect(shouldResetAllLensPageForFilterChange({
+        activeVariant: 'all',
+        activePage: 3,
+        previousServerSearchParamsFingerprint: '{"q":"refund"}',
+        serverSearchParamsFingerprint: '{"q":"refund"}',
+      })).toBe(false)
+    })
+
+    it('resets to page 1 once the fingerprint actually changes', () => {
+      expect(shouldResetAllLensPageForFilterChange({
+        activeVariant: 'all',
+        activePage: 3,
+        previousServerSearchParamsFingerprint: '{"q":"refund"}',
+        serverSearchParamsFingerprint: '{"q":"shipping"}',
+      })).toBe(true)
+    })
+
+    it('is a no-op while already on page 1, even if the fingerprint changed', () => {
+      expect(shouldResetAllLensPageForFilterChange({
+        activeVariant: 'all',
+        activePage: 1,
+        previousServerSearchParamsFingerprint: '{"q":"refund"}',
+        serverSearchParamsFingerprint: '{"q":"shipping"}',
+      })).toBe(false)
+    })
+
+    it('never resets outside the All lens variant', () => {
+      expect(shouldResetAllLensPageForFilterChange({
+        activeVariant: 'chat',
+        activePage: 3,
+        previousServerSearchParamsFingerprint: '',
+        serverSearchParamsFingerprint: '{"q":"shipping"}',
+      })).toBe(false)
+    })
   })
 
   it('isolates filter switches from late results and retains same-key data on background failure', async () => {

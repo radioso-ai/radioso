@@ -13,7 +13,7 @@ import {
   type DocumentDetails,
   type DocumentSearchResponse,
 } from '@/lib/api'
-import { shouldClampHistoryPage, useHistoryListQuery } from './history-list-query'
+import { shouldClampHistoryPage, shouldResetAllLensPageForFilterChange, useHistoryListQuery } from './history-list-query'
 import type { ConversationSearchParams } from '@/lib/conversation-filters'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -179,13 +179,26 @@ export function useHistoryListState({
   // of the newly filtered set — a page number valid for the old result set can easily
   // exceed the new one. Serialized to a string so the effect only fires when the filter
   // values themselves change, not on every render. The `allPage === 1` guard makes this a
-  // no-op on mount and while already on page 1, so it never fights the clamp effect below.
+  // no-op while already on page 1, so it never fights the clamp effect below.
   const serverSearchParamsFingerprint = filter === 'all' ? JSON.stringify(serverSearchParams ?? {}) : ''
+  // The effect's dependencies are "new" on mount too — without tracking what
+  // this effect last saw, a deep link straight to page 2+ reads as "the
+  // filter just changed" on its very first run and gets reset to page 1
+  // even though nothing changed. Initialized to the fingerprint the first
+  // render already has, so the initial run is always a no-op.
+  const previousServerSearchParamsFingerprintRef = useRef(serverSearchParamsFingerprint)
   useEffect(() => {
-    if (filter !== 'all' || allPage === 1) {
+    const previousFingerprint = previousServerSearchParamsFingerprintRef.current
+    previousServerSearchParamsFingerprintRef.current = serverSearchParamsFingerprint
+
+    if (!shouldResetAllLensPageForFilterChange({
+      activeVariant: filter,
+      activePage: allPage,
+      previousServerSearchParamsFingerprint: previousFingerprint,
+      serverSearchParamsFingerprint,
+    })) {
       return
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Resets local pagination after a filter change invalidates the current page number.
     setAllPage(1)
     pushHistoryRoute({ filter: 'all', page: 1 })
     // eslint-disable-next-line react-hooks/exhaustive-deps -- react only to the filter fingerprint changing, not to allPage/pushHistoryRoute identity (which would re-fire this every render).

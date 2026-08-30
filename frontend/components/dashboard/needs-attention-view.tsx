@@ -26,7 +26,7 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { decideDefaultInboxLens } from '@/lib/inbox-default-lens'
+import { decideDefaultInboxLens, hasBlockingInboxLoadError } from '@/lib/inbox-default-lens'
 import { useInboxAttentionSignal } from '@/hooks/use-inbox-attention-signal'
 import {
   buildInboxModel,
@@ -366,7 +366,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         activityTab: routeState.activityTab,
         alreadyDecided: hasAppliedDefaultLensRef.current,
         isLoading,
-        hasError: Boolean(approvalError || conversationError),
+        hasError: hasBlockingInboxLoadError({
+          approvalError: Boolean(approvalError),
+          conversationError: Boolean(conversationError),
+          qualityLoadFailed: qualityPresentation.hasLoadFailure,
+          qualityPermissionDenied: qualityPresentation.permissionDenied,
+        }),
         isQueueEmpty,
       })
 
@@ -381,7 +386,17 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }, 0)
 
     return () => window.clearTimeout(timeoutId)
-  }, [accountId, approvalError, conversationError, isLoading, isQueueEmpty, routeState, router])
+  }, [
+    accountId,
+    approvalError,
+    conversationError,
+    isLoading,
+    isQueueEmpty,
+    qualityPresentation.hasLoadFailure,
+    qualityPresentation.permissionDenied,
+    routeState,
+    router,
+  ])
 
   return (
     <>

@@ -8,6 +8,7 @@ import {
   readOnlyHandledByLabel,
   resolveReadOnlySource,
   selectSituationBody,
+  shouldShowDoneControl,
   stripTrackingParams,
   visitorIdentityLabel,
   type ReadOnlySourceDetail,
@@ -222,6 +223,35 @@ describe('doneControlTooltip', () => {
   it('describes triage closure for feedback', () => {
     expect(doneControlTooltip({ type: 'negative_feedback' }))
       .toBe('Closes this item once you resolve or dismiss the feedback')
+  })
+})
+
+describe('shouldShowDoneControl', () => {
+  it('never shows Done for an approval', () => {
+    expect(shouldShowDoneControl('approval', null)).toBe(false)
+    expect(shouldShowDoneControl('approval', detail({ ownership: ownership() }))).toBe(false)
+  })
+
+  it('always shows Done for negative feedback, regardless of ownership or load state', () => {
+    expect(shouldShowDoneControl('negative_feedback', null)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: undefined }))).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }))).toBe(true)
+  })
+
+  it('shows Done for a handoff while the detail has not loaded yet — unknown, not "nothing to hand back"', () => {
+    expect(shouldShowDoneControl('handoff', null)).toBe(true)
+  })
+
+  it('shows Done for a handoff once the loaded detail carries an ownership record', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }))).toBe(true)
+  })
+
+  it('hides Done for a handoff once the loaded detail shows no ownership record — a live AI-owned conversation with nothing to hand back', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }))).toBe(false)
+  })
+
+  it('hides Done when there is no effective item at all (undefined type)', () => {
+    expect(shouldShowDoneControl(undefined, detail({ ownership: ownership() }))).toBe(false)
   })
 })
 

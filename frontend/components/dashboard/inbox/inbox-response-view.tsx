@@ -29,6 +29,7 @@ import {
   informativeChannelLabel,
   readOnlyHandledByLabel,
   resolveReadOnlySource,
+  shouldShowDoneControl,
   stripTrackingParams,
   visitorIdentityLabel,
 } from '@/lib/inbox-response'
@@ -210,12 +211,15 @@ export function InboxResponseView({
     }
   }, [conversationDetail, effectiveItem, handBackRunner, onRequestFeedbackClose])
 
+  // See `shouldShowDoneControl` for the visibility rule (only renders when
+  // there's something to wrap up).
+  const showDoneControl = shouldShowDoneControl(effectiveItem?.type, conversationDetail)
   // A handoff selected from the All lens can render its composer immediately
   // from the row's own summary (see `readOnlySource` above), before
-  // `conversationDetail` — the actual source of the hand-back version below —
-  // has loaded. Disabling Done until then avoids a fast click hitting the
-  // "missing ownership version" error for a state that merely hasn't loaded
-  // yet; negative-feedback Done never depends on ownership, so it's unaffected.
+  // `conversationDetail` — the actual source of both the ownership check
+  // above and the hand-back version below — has loaded. Disabling Done until
+  // then avoids a fast click hitting the "missing ownership version" error
+  // for a state that merely hasn't loaded yet.
   const isDoneVersionPending = effectiveItem?.type === 'handoff' && !conversationDetail
 
   // Matched by identity (agentId + handle), not conversation — two pending
@@ -352,7 +356,7 @@ export function InboxResponseView({
           ownership={conversationDetail?.ownership}
           onChanged={handleChanged}
           externalError={handBackRunner.error}
-          trailingActions={effectiveItem.type !== 'approval' ? (
+          trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

@@ -20,6 +20,25 @@ export const shouldClampHistoryPage = (input: {
   totalPages: number
 }) => input.loadedVariant === input.activeVariant && input.activePage > input.totalPages
 
+/**
+ * Whether the All lens's toolbar filter change (search/outcome/agent/site)
+ * should reset pagination back to page 1. True only when the filter fingerprint
+ * genuinely changed from what was last observed — not on a hook's first run,
+ * where "last observed" is seeded with the current fingerprint (see the
+ * caller): without that distinction, a deep link straight to page 2+ would
+ * read as "the filter just changed" on mount and reset itself right back to
+ * page 1 even though nothing changed. Also a no-op while already on page 1,
+ * so it never fights the clamp effect above.
+ */
+export const shouldResetAllLensPageForFilterChange = (input: {
+  activeVariant: HistoryVariant
+  activePage: number
+  previousServerSearchParamsFingerprint: string
+  serverSearchParamsFingerprint: string
+}): boolean => input.activeVariant === 'all'
+  && input.activePage !== 1
+  && input.previousServerSearchParamsFingerprint !== input.serverSearchParamsFingerprint
+
 // Positional tail appended by dashboardQueryKeys.history.list only when `searchParams` was
 // given (see its own comment) — [q, outcome, agentId, sourceOrigin], each optional(...)'d to
 // `null` when absent. Read back here rather than threaded as a separate queryFn argument, so

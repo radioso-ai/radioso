@@ -164,6 +164,33 @@ export const doneControlTooltip = (item: {
   return 'Closes this item once you resolve or dismiss the feedback'
 }
 
+/**
+ * Whether the Done control renders at all: only when there's something to
+ * wrap up. A handoff needs an ownership record — the only state the wire
+ * ever sends non-null `ownership` for, covering both "awaiting a human"
+ * (unclaimed) and "human-owned" (claimed) — or the detail simply hasn't
+ * loaded yet (unknown, not "no ownership"; the composer alone renders
+ * meanwhile and Done stays disabled — see the caller — rather than hidden,
+ * so a fast click can't mistake "not loaded" for "definitely nothing to hand
+ * back"). Negative feedback never depends on ownership. A live AI-owned
+ * conversation with a *loaded* detail showing no ownership record has
+ * nothing to hand back — the composer alone is correct there; Done appears
+ * once the first send claims it and the detail refetch brings the record.
+ * Approvals never render Done (they close when the decision resolves).
+ */
+export const shouldShowDoneControl = (
+  itemType: EscalationType | undefined,
+  conversationDetail: { ownership?: unknown } | null,
+): boolean => {
+  if (itemType === 'negative_feedback') {
+    return true
+  }
+  if (itemType !== 'handoff') {
+    return false
+  }
+  return !conversationDetail || Boolean(conversationDetail.ownership)
+}
+
 // ── Read-only footer (All lens, non-actionable conversations) ──────────────
 
 /**

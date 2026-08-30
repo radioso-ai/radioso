@@ -18,6 +18,25 @@ export type InboxDefaultLensDecision =
   /** Decided: redirect to the given lens (Needs-you is empty). */
   | { kind: 'redirect'; activityTab: ActivityTab }
 
+/**
+ * Whether the Inbox's data sources are in a state that should block the
+ * smart-default-lens decision from treating an empty reading as trustworthy.
+ * An approval/conversation load error, a quality load failure, or a quality
+ * permission-denied state all mean "we don't actually know whether Needs-you
+ * is empty" — redirecting to All in that state would skip straight past the
+ * error/permission message the Needs-you empty state already shows for it
+ * (InboxEmptyState's qualityPermissionDenied / qualityLoadFailed props).
+ */
+export const hasBlockingInboxLoadError = (input: {
+  approvalError: boolean
+  conversationError: boolean
+  qualityLoadFailed: boolean
+  qualityPermissionDenied: boolean
+}): boolean => input.approvalError
+  || input.conversationError
+  || input.qualityLoadFailed
+  || input.qualityPermissionDenied
+
 export function decideDefaultInboxLens(input: {
   /** The URL's current lens choice; undefined means "no explicit preference yet." */
   activityTab: ActivityTab | undefined

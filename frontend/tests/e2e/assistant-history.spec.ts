@@ -657,6 +657,9 @@ test("selecting an in-progress conversation in the All lens shows a composer, an
   // even though nobody has claimed this conversation yet.
   const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
   await expect(replyBox).toBeVisible();
+  // No ownership record yet — there is nothing to hand back, so Done stays
+  // hidden (not just disabled) until the first send claims the conversation.
+  await expect(response.getByRole("button", { name: "Done" })).toHaveCount(0);
   await replyBox.fill("Certo, controllo subito il tuo ordine.");
   await response.getByRole("button", { name: "Send" }).click();
 
@@ -665,6 +668,10 @@ test("selecting an in-progress conversation in the All lens shows a composer, an
   await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
   await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/reply`);
   await expect(replyBox).toHaveValue("");
+
+  // The claim-on-send flow's detail refetch now shows an ownership record —
+  // there's something to wrap up, so Done appears.
+  await expect(response.getByRole("button", { name: "Done" })).toBeVisible();
 });
 
 test("activity drawer continues a conversation in test chat", async ({ page }) => {
@@ -1157,10 +1164,17 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
     nextCursor: null,
     hasMore: false,
   };
+  const historyItems = {
+    items: [],
+    total: 151,
+    nextCursor: null,
+    hasMore: false,
+  };
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     historyList,
+    historyItems,
     requestLog,
     searchHistory,
   });
@@ -1179,6 +1193,18 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   expect(requestLog).toContain("GET /history/search?limit=50&offset=50");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history?limit=50&offset=50");
+
+  // The All lens's own variant (filter=all): a direct deep link to page 3 must
+  // request offset=100 and stay there — the filter-change reset effect used to
+  // also fire on this first render (nothing to compare its fingerprint
+  // against yet) and immediately clobber the route back to page 1.
+  requestLog.length = 0;
+  await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=all&page=3`);
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
+
+  expect(requestLog).toContain("GET /history?limit=50&offset=100");
+  expect(requestLog).not.toContain("GET /history?limit=50&offset=0");
+  await expect(page).toHaveURL(/page=3/);
 });
 
 test("documents direct page links request only the target offset page", async ({ page }) => {

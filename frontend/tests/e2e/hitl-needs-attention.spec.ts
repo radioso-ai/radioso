@@ -448,6 +448,27 @@ test("operator sees the expected feedback permission boundary without losing the
   await expect(page.getByRole("link", { name: /flagged for quality review/ })).toHaveCount(0);
 });
 
+test("the smart default lens stays on Needs-you when quality fails to load, even with an otherwise-empty reading", async ({ page }) => {
+  // No explicit ?tab= — this is the exact path the smart-default-lens
+  // decision runs on. Decisions and human-owned conversations are both
+  // empty (the default mocks), so the only reason a redirect to All would be
+  // wrong is the quality 403: an empty *reading* while quality couldn't load
+  // isn't a trustworthy "genuinely nothing needs you," and the operator must
+  // see the permission-denied state instead of silently landing on All.
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({}) });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+
+  await expect(page.getByText("You don't have permission to view quality feedback.")).toBeVisible();
+  await expect(page).not.toHaveURL(/tab=all/);
+  const toggle = page.getByLabel("Inbox queue").getByRole("group", { name: "Inbox lens" });
+  await expect(toggle.getByRole("button", { name: /Needs you/ })).toHaveAttribute("aria-pressed", "true");
+});
+
 test("an empty Needs-you queue hides the filters, keeps the toggle in the left pane, and puts the confidence message in the reading pane", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);

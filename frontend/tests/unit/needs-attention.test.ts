@@ -22,6 +22,7 @@ import {
   QUALITY_INBOX_ITEM_LIMIT,
   RECENTLY_CLOSED_FEEDBACK_LIMIT,
   selectHumanOwnedConversations,
+  summarizeAiHandledConversations,
   TAKEN_BY_ME,
   TAKEN_BY_UNCLAIMED,
   toHandoffInboxItem,
@@ -123,13 +124,18 @@ describe('toHandoffInboxItem', () => {
 })
 
 describe('deriveInboxResponseHandoffItem', () => {
+  // Fixed reference instant, 5 minutes after the fixture conversations'
+  // default `updatedAt` (2026-06-19T10:00:00.000Z) — inside the 10-minute
+  // in-progress window used by deriveConversationOutcome.
+  const now = new Date('2026-06-19T10:05:00.000Z')
+
   it('returns a handoff item for a conversation awaiting a human', () => {
     const awaitingHuman = conversation({
       id: 'conversation-awaiting',
       ownership: ownership({ conversationId: 'conversation-awaiting', ownerAccountId: null, ownerDisplayName: null }),
     })
 
-    const result = deriveInboxResponseHandoffItem(awaitingHuman)
+    const result = deriveInboxResponseHandoffItem(awaitingHuman, now)
 
     expect(result).toMatchObject({ conversationId: 'conversation-awaiting', type: 'handoff' })
   })
@@ -140,22 +146,30 @@ describe('deriveInboxResponseHandoffItem', () => {
       ownership: ownership({ conversationId: 'conversation-claimed', ownerAccountId: 'account-2', ownerDisplayName: 'Anna' }),
     })
 
-    expect(deriveInboxResponseHandoffItem(claimed)?.takenByDisplayName).toBe('Anna')
+    expect(deriveInboxResponseHandoffItem(claimed, now)?.takenByDisplayName).toBe('Anna')
   })
 
-  it('returns null (read-only) for an AI-owned conversation', () => {
-    const aiOwned = conversation({
-      id: 'conversation-ai-owned',
-      ownership: ownership({ conversationId: 'conversation-ai-owned', state: 'ai_owned', ownerAccountId: null, ownerDisplayName: null }),
-    })
+  it('returns an actionable item (take-over-able) for an AI-owned conversation still in progress', () => {
+    // The list/detail endpoints omit `ownership` entirely for AI-owned
+    // conversations, so a live one arrives with no ownership record and a
+    // recent `updatedAt`. It must still be actionable — sending a reply
+    // claims it, exactly like a handoff.
+    const inProgress = conversation({ id: 'conversation-in-progress', updatedAt: '2026-06-19T10:00:00.000Z' })
 
-    expect(deriveInboxResponseHandoffItem(aiOwned)).toBeNull()
+    const result = deriveInboxResponseHandoffItem(inProgress, now)
+
+    expect(result).toMatchObject({ conversationId: 'conversation-in-progress', type: 'handoff' })
+    // No ownership record exists yet for a live, unclaimed conversation — the
+    // composer's own claim-on-send flow creates it once the operator sends.
+    expect(result?.takenByAccountId).toBeUndefined()
+    expect(result?.takenByDisplayName).toBeUndefined()
   })
 
-  it('returns null (read-only) for a conversation with no ownership record at all', () => {
-    const neverEscalated = conversation({ id: 'conversation-plain' })
+  it('returns null (read-only) for a conversation with no ownership record that has gone quiet', () => {
+    const completed = conversation({ id: 'conversation-plain', updatedAt: '2026-06-19T10:00:00.000Z' })
+    const wellAfterTheWindow = new Date('2026-06-19T10:20:00.000Z')
 
-    expect(deriveInboxResponseHandoffItem(neverEscalated)).toBeNull()
+    expect(deriveInboxResponseHandoffItem(completed, wellAfterTheWindow)).toBeNull()
   })
 
   it('accepts a conversation known only by its detail response (no preview, no anonymousSessionId) — the All lens deep-link path', () => {
@@ -173,10 +187,31 @@ describe('deriveInboxResponseHandoffItem', () => {
       agentInternalName: null,
     }
 
-    const result = deriveInboxResponseHandoffItem(detailShaped)
+    const result = deriveInboxResponseHandoffItem(detailShaped, now)
 
     expect(result).toMatchObject({ conversationId: 'conversation-from-detail', type: 'handoff', agentName: 'Marta' })
     expect(result?.anonymousSessionId).toBeUndefined()
+  })
+
+  it('accepts a detail-shaped conversation with no ownership field, deriving from recency alone', () => {
+    // Same narrow detail shape as above, but for a live AI-owned
+    // conversation the detail endpoint also omits `ownership` — the
+    // in-progress/completed split must still work without it.
+    const detailShaped = {
+      id: 'conversation-detail-in-progress',
+      updatedAt: '2026-06-19T10:00:00.000Z',
+      agentId: 'agent-1',
+      agentName: 'Marta',
+      agentInternalName: null,
+    }
+
+    expect(deriveInboxResponseHandoffItem(detailShaped, now)).toMatchObject({
+      conversationId: 'conversation-detail-in-progress',
+      type: 'handoff',
+    })
+    expect(
+      deriveInboxResponseHandoffItem(detailShaped, new Date('2026-06-19T10:20:00.000Z')),
+    ).toBeNull()
   })
 })
 
@@ -1201,5 +1236,37 @@ describe('countAiHandledConversationsByAgent', () => {
     ])
 
     expect(counts).toEqual([])
+  })
+})
+
+describe('summarizeAiHandledConversations', () => {
+  it('rolls up a single agent as singular ("agent")', () => {
+    expect(summarizeAiHandledConversations([
+      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Gioia' }),
+      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Gioia' }),
+    ])).toEqual({ totalCount: 2, agentCount: 1 })
+  })
+
+  it('sums across every agent as plural ("agents") — the Inbox speaks for the workspace, not one named agent', () => {
+    expect(summarizeAiHandledConversations([
+      conversation({ id: 'c-1', agentId: 'agent-1', agentName: 'Gioia' }),
+      conversation({ id: 'c-2', agentId: 'agent-1', agentName: 'Gioia' }),
+      conversation({ id: 'c-3', agentId: 'agent-2', agentName: 'Claudio' }),
+    ])).toEqual({ totalCount: 3, agentCount: 2 })
+  })
+
+  it('excludes conversations handed to a human from the total', () => {
+    expect(summarizeAiHandledConversations([
+      conversation({ id: 'c-1', agentId: 'agent-1' }),
+      conversation({
+        id: 'c-2',
+        agentId: 'agent-1',
+        ownership: ownership({ conversationId: 'c-2', state: 'human_owned', ownerAccountId: 'account-1', ownerDisplayName: 'Anna' }),
+      }),
+    ])).toEqual({ totalCount: 1, agentCount: 1 })
+  })
+
+  it('returns zero counts for an empty or fully-escalated window', () => {
+    expect(summarizeAiHandledConversations([])).toEqual({ totalCount: 0, agentCount: 0 })
   })
 })

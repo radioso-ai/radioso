@@ -6,6 +6,7 @@ import type {
   QualityTriageRecord,
   QualityTriageState,
 } from '@/lib/api'
+import { deriveConversationOutcome } from '@/lib/conversation-outcome'
 import { formatApprovalCreatedAt } from '@/lib/needs-attention-format'
 
 export type HumanOwnedConversationSummary = ChatConversationSummary & {
@@ -253,48 +254,60 @@ export interface HandoffCandidateSource {
 }
 
 /**
- * Maps a human-owned conversation to its handoff inbox-item shape. Extracted
- * out of `buildInboxModel` so the "All" lens's response view can build the
- * same handoff item for a conversation it selects directly (a conversation
+ * Maps a conversation to its actionable ("handoff") inbox-item shape.
+ * Extracted out of `buildInboxModel` so the "All" lens's response view can
+ * build the same item for a conversation it selects directly (a conversation
  * row, not a queue row) and get identical actionable behavior — composer,
  * waiting-time presentation, Done semantics — without a second mapping to
  * drift from this one.
+ *
+ * `ownership` is optional: a human-owned conversation carries the full
+ * record (claimed-by, waiting-since, taken-over-at), which populates the
+ * corresponding fields below. A live ai-owned conversation the operator
+ * hasn't claimed yet (still "in progress", not yet a handoff) has no
+ * ownership record at all — those fields simply stay unset rather than
+ * guessing, and the composer's own claim-on-send flow (see
+ * `OperatorComposer`) is what creates the record once the operator sends.
  */
-export const toHandoffInboxItem = (
-  conversation: HandoffCandidateSource & { ownership: ConversationOwnership },
-): InboxItem => ({
-  key: `handoff:${conversation.id}:${conversation.ownership.version}`,
+export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxItem => ({
+  key: conversation.ownership
+    ? `handoff:${conversation.id}:${conversation.ownership.version}`
+    : `live:${conversation.id}`,
   conversationId: conversation.id,
   type: 'handoff',
   severity: ESCALATION_SEVERITY.handoff,
   title: conversation.preview || 'Untitled conversation',
-  detail: ownershipLabel(conversation.ownership),
+  detail: conversation.ownership ? ownershipLabel(conversation.ownership) : 'In progress',
   timestamp: conversation.updatedAt,
-  escalatedAt: conversation.ownership.updatedAt,
-  takenOverAt: conversation.ownership.takenOverAt,
+  escalatedAt: conversation.ownership?.updatedAt,
+  takenOverAt: conversation.ownership?.takenOverAt ?? null,
   agentId: conversation.agentId,
   agentName: conversation.agentName,
   agentInternalName: conversation.agentInternalName,
   lastMessageAt: conversation.updatedAt,
-  takenByAccountId: conversation.ownership.ownerAccountId,
-  takenByDisplayName: conversation.ownership.ownerDisplayName,
+  takenByAccountId: conversation.ownership?.ownerAccountId,
+  takenByDisplayName: conversation.ownership?.ownerDisplayName,
   anonymousSessionId: conversation.anonymousSessionId,
 })
 
 /**
- * The All lens's actionable/read-only split for a selected conversation
- * (spec 1116 unification): a conversation currently awaiting a human is
- * actionable — same handoff item, same composer, same Done control as a
- * Needs-you queue row — everything else (ai-owned, whether still in progress
- * or already completed) is read-only. Returns `null` for read-only so the
+ * The All lens's actionable/read-only split for a selected conversation: any
+ * *live* conversation — awaiting a human, human-owned, or still in progress
+ * with the agent — is actionable, with the same composer, claim-on-send, and
+ * Done control as a Needs-you queue row; only a *completed* conversation is
+ * read-only. Sending a reply on a live-but-unclaimed conversation claims it
+ * exactly like a handoff (`OperatorComposer` already takes over before
+ * sending whenever the conversation isn't already owned by a specific
+ * human — see `deriveOperatorActions`). Returns `null` for read-only so the
  * response view can treat "no handoff item" as its one read-only signal.
  */
 export const deriveInboxResponseHandoffItem = (
   conversation: HandoffCandidateSource,
+  now: Date,
 ): InboxItem | null =>
-  conversation.ownership?.state === 'human_owned'
-    ? toHandoffInboxItem({ ...conversation, ownership: conversation.ownership })
-    : null
+  deriveConversationOutcome(conversation, now).kind === 'completed'
+    ? null
+    : toHandoffInboxItem(conversation)
 
 export const buildInboxItems = (
   input: Parameters<typeof buildInboxModel>[0],
@@ -607,4 +620,27 @@ export const countAiHandledConversationsByAgent = (
     }
   }
   return [...byAgent.values()].sort((left, right) => right.count - left.count)
+}
+
+export interface AiHandledSummary {
+  /** Total AI-handled conversations across every agent in the window. */
+  totalCount: number
+  /** Distinct agents that handled at least one — drives "agent" vs "agents" copy. */
+  agentCount: number
+}
+
+/**
+ * Workspace-level rollup of `countAiHandledConversationsByAgent`. The Inbox's
+ * empty-state confidence line speaks for the whole workspace, not one named
+ * agent — a workspace commonly runs several — so it needs the total across
+ * every agent and how many distinct agents contributed, not just the top one.
+ */
+export const summarizeAiHandledConversations = (
+  conversations: readonly ChatConversationSummary[],
+): AiHandledSummary => {
+  const byAgent = countAiHandledConversationsByAgent(conversations)
+  return {
+    totalCount: byAgent.reduce((sum, agent) => sum + agent.count, 0),
+    agentCount: byAgent.length,
+  }
 }

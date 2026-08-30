@@ -178,12 +178,13 @@ export function InboxResponseView({
     }
   }, [readOnlySelection, conversationDetail])
   // A conversation selected from the All lens gets exactly the same actionable
-  // treatment as a Needs-you queue item once it turns out to be awaiting a
-  // human — same composer, same waiting-time presentation, same Done control —
-  // by reusing the identical handoff mapping the queue itself builds from.
+  // treatment as a Needs-you queue item once it turns out to be live — awaiting
+  // a human, human-owned, or still in progress with the agent — same composer,
+  // same Done control, by reusing the identical handoff mapping the queue
+  // itself builds from. Only a completed conversation stays read-only.
   const derivedHandoffItem = useMemo(
-    () => (readOnlySource ? deriveInboxResponseHandoffItem(readOnlySource) : null),
-    [readOnlySource],
+    () => (readOnlySource ? deriveInboxResponseHandoffItem(readOnlySource, now) : null),
+    [readOnlySource, now],
   )
   const effectiveItem = item ?? derivedHandoffItem
 
@@ -244,16 +245,20 @@ export function InboxResponseView({
     )
   }
 
-  // A read-only conversation that turned out to be awaiting a human is
-  // actionable via `derivedHandoffItem` (folded into `effectiveItem` above);
-  // this is only true once the row's own ownership rules it out.
+  // A read-only conversation that turned out to be live (awaiting a human,
+  // human-owned, or still in progress) is actionable via `derivedHandoffItem`
+  // (folded into `effectiveItem` above); this is only reached once the row's
+  // own outcome rules it out, i.e. it's completed.
   const readOnlyOutcome = readOnlySource && !effectiveItem
     ? deriveConversationOutcome(readOnlySource, now)
     : null
 
   const entryUrl = conversationDetail?.entryPageUrl ? stripTrackingParams(conversationDetail.entryPageUrl) : null
   const channelLabel = informativeChannelLabel(conversationDetail?.channelContext)
-  const waiting = effectiveItem ? inboxWaitingPresentation(effectiveItem, now) : null
+  // Only a genuine escalation has a wait to report — a live conversation the
+  // operator hasn't claimed yet (still ai-owned, no ownership record) has no
+  // "waiting since" or "with them since" to show.
+  const waiting = effectiveItem?.escalatedAt ? inboxWaitingPresentation(effectiveItem, now) : null
   const identity = visitorIdentityLabel({
     anonymousSessionId: effectiveItem ? effectiveItem.anonymousSessionId : readOnlySource?.anonymousSessionId,
   })

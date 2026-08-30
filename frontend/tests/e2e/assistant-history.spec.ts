@@ -379,6 +379,218 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
   await expect(list.getByRole("button").filter({ hasText: "Disponibilità" })).toHaveCount(0);
 });
 
+test("selecting a completed conversation in the All lens opens the reading pane, read-only", async ({ page }) => {
+  const conversationId = "conversation-completed-1";
+  // No `ownership` field at all — matches the real list endpoint, which omits
+  // it entirely for ai-owned rows — and an updatedAt far enough in the past
+  // (relative to real wall-clock time, since the response view's `now` comes
+  // from `new Date()`, not a mocked clock) that deriveConversationOutcome
+  // lands on "completed" rather than "in_progress".
+  const conversation = {
+    id: conversationId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Dove trovo il libro in inglese",
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    channelContext: null,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      { id: "user-message-completed", role: "user" as const, source: "customer" as const, content: "Dove trovo il libro in inglese", createdAt: nowIso },
+      { id: "assistant-message-completed", role: "assistant" as const, source: "ai_agent" as const, content: "Lo trovi nella sezione lingue.", createdAt: nowIso },
+    ],
+  };
+  const recentIso = new Date().toISOString();
+  const secondConversationId = "conversation-in-progress-1";
+  const secondConversation = {
+    id: secondConversationId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: null,
+    createdAt: recentIso,
+    updatedAt: recentIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Reclamo per un ordine",
+  };
+  const secondConversationDetail = {
+    conversationId: secondConversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    channelContext: null,
+    createdAt: recentIso,
+    updatedAt: recentIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      { id: "user-message-in-progress", role: "user" as const, source: "customer" as const, content: "Reclamo per un ordine", createdAt: recentIso },
+      { id: "assistant-message-in-progress", role: "assistant" as const, source: "ai_agent" as const, content: "Posso aiutarti con questo.", createdAt: recentIso },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyItems: {
+      items: [
+        { kind: "chat", id: secondConversation.id, sortAt: recentIso, conversation: secondConversation },
+        { kind: "chat", id: conversation.id, sortAt: nowIso, conversation },
+      ],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+    conversationDetail,
+    conversationDetails: {
+      [conversationId]: conversationDetail,
+      [secondConversationId]: secondConversationDetail,
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  const secondRow = page.getByRole("button", { name: /Reclamo per un ordine/ });
+  const row = page.getByRole("button", { name: /Dove trovo il libro in inglese/ });
+  await expect(row).toContainText("Completed");
+  await expect(secondRow).toContainText("In progress");
+
+  // Select the in-progress conversation first, then switch to the completed
+  // one — the reported repro (clicking a completed row does nothing) may
+  // depend on switching selection away from a live/actionable conversation.
+  await secondRow.click();
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Posso aiutarti con questo.")).toBeVisible();
+
+  await row.click();
+  await expect(response.getByText("Verified visitor")).toBeVisible();
+  await expect(response.getByText("Lo trovi nella sezione lingue.")).toBeVisible();
+  await expect(response.getByText("Completed", { exact: true })).toBeVisible();
+  // Read-only: no reply composer for a completed conversation.
+  await expect(response.getByRole("textbox", { name: "Reply to the visitor" })).toHaveCount(0);
+});
+
+test("selecting an in-progress conversation in the All lens shows a composer, and sending claims it", async ({ page }) => {
+  const conversationId = "conversation-in-progress-claim";
+  const requestLog: string[] = [];
+  // No `ownership` field at all — matches the real list/detail endpoints,
+  // which omit it entirely for ai-owned rows — and an `updatedAt` at real
+  // wall-clock time (the response view's `now` comes from `new Date()`, not a
+  // mocked clock) so deriveConversationOutcome lands on "in_progress".
+  const recentIso = new Date().toISOString();
+  const conversation = {
+    id: conversationId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    entryPageUrl: null,
+    channelContext: null,
+    anonymousSessionId: null,
+    createdAt: recentIso,
+    updatedAt: recentIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    preview: "Reclamo per un ordine",
+  };
+  const conversationDetail = {
+    conversationId,
+    workspaceId,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    sourceChannel: "website_embed",
+    sourceOrigin: "https://www.example.test",
+    channelContext: null,
+    createdAt: recentIso,
+    updatedAt: recentIso,
+    messageCount: 2,
+    userMessageCount: 1,
+    assistantMessageCount: 1,
+    messagesTotal: 2,
+    messageWindowOffset: 0,
+    messageWindowLimit: 50,
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages: [
+      { id: "user-message-claim", role: "user" as const, source: "customer" as const, content: "Reclamo per un ordine", createdAt: recentIso },
+      { id: "assistant-message-claim", role: "assistant" as const, source: "ai_agent" as const, content: "Posso aiutarti con questo.", createdAt: recentIso },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyItems: {
+      items: [{ kind: "chat", id: conversation.id, sortAt: recentIso, conversation }],
+      total: 1,
+      nextCursor: null,
+      hasMore: false,
+    },
+    conversationDetail,
+    requestLog,
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=all`);
+  const row = page.getByRole("button", { name: /Reclamo per un ordine/ });
+  await expect(row).toContainText("In progress");
+
+  await row.click();
+  const response = page.getByLabel("Response", { exact: true });
+  await expect(response.getByText("Posso aiutarti con questo.")).toBeVisible();
+
+  // Live and take-over-able, exactly like a handoff: the composer is present
+  // even though nobody has claimed this conversation yet.
+  const replyBox = response.getByRole("textbox", { name: "Reply to the visitor" });
+  await expect(replyBox).toBeVisible();
+  await replyBox.fill("Certo, controllo subito il tuo ordine.");
+  await response.getByRole("button", { name: "Send" }).click();
+
+  // Sending claims the conversation before replying — the same claim-on-send
+  // flow a handoff uses (OperatorComposer.handleSend), never a separate step.
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/takeover`);
+  await expect.poll(() => requestLog).toContainEqual(`POST /conversations/${conversationId}/reply`);
+  await expect(replyBox).toHaveValue("");
+});
+
 test("activity drawer continues a conversation in test chat", async ({ page }) => {
   const conversationId = "conversation-continue-1";
   const forkConversationId = "11111111-1111-4111-8111-111111111111";

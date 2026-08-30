@@ -1,6 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { ConversationDrawer } from './conversation-drawer'
@@ -25,6 +26,7 @@ import {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { decideDefaultInboxLens } from '@/lib/inbox-default-lens'
 import { useInboxAttentionSignal } from '@/hooks/use-inbox-attention-signal'
 import {
   buildInboxModel,
@@ -58,6 +60,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceId = routeState.workspaceId ?? ''
   const attentionQueries = useNeedsAttentionQueries(workspaceId)
   const queryClient = useQueryClient()
+  const router = useRouter()
+  const hasAppliedDefaultLensRef = useRef(false)
   const invalidateDashboardQueries = useDashboardQueryInvalidation()
 
   const [qualitySnapshot, setQualitySnapshot] = useState<QualityInboxSnapshot>(createEmptyQualityInboxSnapshot)
@@ -336,6 +340,45 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // when nothing needs them (spec 1116 unification, fix for issue #6).
   const isQueueEmpty = !isLoading && !approvalError && !conversationError && items.length === 0
   const showNoFilterMatches = !isQueueEmpty && filteredItems.length === 0 && !selectedInboxItem
+
+  // Smart default lens (see lib/inbox-default-lens.ts for the decision rule
+  // and its rationale): routeState.activityTab is undefined only when the
+  // operator arrived with no explicit lens choice — an explicit
+  // `?tab=needs-attention` (see buildActivityTabHref) always short-circuits
+  // this effect entirely.
+  //
+  // The quality snapshot above promotes on a queued microtask (see that
+  // effect's comment), so the render where `isLoading` first flips false can
+  // still read a stale, too-small `items` — a queue that actually has an open
+  // feedback item can render as transiently empty for one pass. Deciding on
+  // that render would fire a real navigation from a reading that a moment
+  // later turns out to be wrong, and `hasAppliedDefaultLensRef` intentionally
+  // never reconsiders once decided. Debouncing behind a zero-delay timeout —
+  // cancelled and rescheduled by the dependency array below whenever any
+  // input changes — only lets the decision run once the inputs have gone a
+  // full tick without changing, i.e. once they've actually settled.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const decision = decideDefaultInboxLens({
+        activityTab: routeState.activityTab,
+        alreadyDecided: hasAppliedDefaultLensRef.current,
+        isLoading,
+        hasError: Boolean(approvalError || conversationError),
+        isQueueEmpty,
+      })
+
+      if (decision.kind === 'wait') {
+        return
+      }
+
+      hasAppliedDefaultLensRef.current = true
+      if (decision.kind === 'redirect') {
+        router.replace(buildDashboardHref(accountId, { ...routeState, section: 'activity', activityTab: decision.activityTab }))
+      }
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [accountId, approvalError, conversationError, isLoading, isQueueEmpty, routeState, router])
 
   return (
     <>

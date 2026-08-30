@@ -288,6 +288,39 @@ const isContextVariableNameConflict = (error: unknown): boolean => {
     );
 };
 
+type ResolverSkillLockState = "missing" | "disabled" | "enabled";
+
+const lockResolverSkillForProposal = async (
+  db: Db,
+  input: { workspaceId: string; agentId: string; resolverSkillId: string },
+): Promise<ResolverSkillLockState> => {
+  const skill = await db
+    .selectFrom("agent_skills")
+    .select("enabled")
+    .where("id", "=", input.resolverSkillId)
+    .where("agent_id", "=", input.agentId)
+    .where("workspace_id", "=", input.workspaceId)
+    .forUpdate()
+    .executeTakeFirst();
+  return !skill ? "missing" : skill.enabled ? "enabled" : "disabled";
+};
+
+const lockResolverSkillForEnablement = async (
+  db: Db,
+  input: { agentId: string; variableId: string; resolverSkillId: string },
+): Promise<ResolverSkillLockState> => {
+  const skill = await db
+    .selectFrom("agent_skills")
+    .innerJoin("context_variables", "context_variables.workspace_id", "agent_skills.workspace_id")
+    .select("agent_skills.enabled")
+    .where("agent_skills.id", "=", input.resolverSkillId)
+    .where("agent_skills.agent_id", "=", input.agentId)
+    .where("context_variables.id", "=", input.variableId)
+    .forUpdate()
+    .executeTakeFirst();
+  return !skill ? "missing" : skill.enabled ? "enabled" : "disabled";
+};
+
 export class ContextVariableRepository implements ContextVariableRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -358,7 +391,21 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
   }
 
   async upsertEnablement(input: AgentContextVariableEnablementRecord): Promise<AgentContextVariableEnablement> {
-    const row = await this.db
+    return this.db.transaction().execute(async (trx) => {
+      if (input.source === "resolver" && input.resolverSkillId) {
+        const state = await lockResolverSkillForEnablement(trx, {
+          agentId: input.agentId,
+          variableId: input.variableId,
+          resolverSkillId: input.resolverSkillId,
+        });
+        if (state === "missing") {
+          throw badRequest(`resolverSkillId "${input.resolverSkillId}" does not name an enabled skill on this agent`);
+        }
+        if (state === "disabled") {
+          throw badRequest(`resolverSkillId "${input.resolverSkillId}" names a skill that is disabled on this agent`);
+        }
+      }
+      const row = await trx
       .insertInto("agent_context_variables")
       .values({
         id: randomUUID(),
@@ -384,7 +431,8 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
       )
       .returning(agentContextVariableColumns)
       .executeTakeFirstOrThrow();
-    return mapAgentContextVariableRow(row as AgentContextVariableRow);
+      return mapAgentContextVariableRow(row as AgentContextVariableRow);
+    });
   }
 
   async deleteEnablement(agentId: string, variableId: string): Promise<boolean> {
@@ -604,8 +652,8 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           // easily be deleted between draft and Apply as the resolver skill below can, so without
           // this the insert below would raise a raw agent_context_variables_variable_id_fkey
           // violation instead of the same stale-proposal contract every other check here upholds.
-          // Locked (SELECT ... FOR UPDATE), matching the resolver-skill check immediately below,
-          // so a concurrent delete cannot land between this check and the insert.
+          // Locked (SELECT ... FOR UPDATE), so a concurrent delete cannot land between this
+          // check and the insert.
           const variableRow = await trx
             .selectFrom("context_variables")
             .select("id")
@@ -618,27 +666,15 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
           }
         }
         if (input.enablement.source === "resolver" && input.enablement.resolverSkillId) {
-          // Verified - and locked, so a concurrent delete or disable of this skill cannot land
-          // between the check and the write below - fresh inside this same transaction, not only
-          // at draft time. A proposal can sit pending indefinitely, resolver_skill_id carries no
-          // foreign key (migration 112), and a resolver-sourced enablement whose skill is gone or
-          // disabled resolves nothing at runtime with no error anywhere
-          // (SkillBackedContextResolver.resolve silently returns null for an id it cannot find or
-          // whose agentSkill.enabled is false), so nothing else catches a skill deleted or
-          // disabled between draft and Apply. Turning that into a conflict here - not a silent
-          // insert - is what lets applyIfVersionMatches report the proposal stale instead.
-          const resolverSkill = await trx
-            .selectFrom("agent_skills")
-            .select(["id", "enabled"])
-            .where("id", "=", input.enablement.resolverSkillId)
-            .where("agent_id", "=", input.agentId)
-            .where("workspace_id", "=", input.workspaceId)
-            .forUpdate()
-            .executeTakeFirst();
-          if (!resolverSkill) {
+          const state = await lockResolverSkillForProposal(trx, {
+            workspaceId: input.workspaceId,
+            agentId: input.agentId,
+            resolverSkillId: input.enablement.resolverSkillId,
+          });
+          if (state === "missing") {
             throw conflict(`Resolver skill "${input.enablement.resolverSkillId}" no longer exists on this agent`);
           }
-          if (!resolverSkill.enabled) {
+          if (state === "disabled") {
             throw conflict(`Resolver skill "${input.enablement.resolverSkillId}" is disabled on this agent`);
           }
         }

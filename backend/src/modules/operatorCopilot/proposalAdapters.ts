@@ -38,7 +38,7 @@ import type {
   CopilotRoutineProposalAdapter,
 } from "./contracts.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
-import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
+import type { ContextVariableService } from "../context-variables/public.js";
 import { badRequest, conflict, notFound, AppError } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
@@ -120,10 +120,8 @@ const skillConfigStoredPayloadSchema = z.object({
   rationale: z.string().optional(),
 }).strict();
 
-// Mirrors contextVariableRoutes.ts's own literal arrays and superRefine business rules. The
-// context-variables module has no service layer to validate against — the route is the only other
-// place these rules are enforced, so this adapter re-states them the way skillConfigPayloadSchema
-// re-states the capability registry's own shape rather than importing the route's zod schema.
+// Proposal shape remains Ray-owned; the context-variable module validates the
+// resulting full enablement before drafts and applies can persist it.
 const contextVariableValueTypes = ["string", "json"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
 const contextVariableSensitivities = ["normal", "sensitive"] as const;
@@ -1025,41 +1023,14 @@ interface NormalizedContextVariableEnablement {
 }
 
 const findAgentContextVariableEnablement = async (
-  contextVariableRepository: Pick<ContextVariableRepositoryPort, "listByAgent">,
+  contextVariables: Pick<ContextVariableService, "listByAgent">,
   workspaceId: string,
   agentId: string,
   variableId: string | null,
 ): Promise<AgentContextVariableEnablement | null> => {
   if (!variableId) return null;
-  const enablements = await contextVariableRepository.listByAgent(workspaceId, agentId);
+  const enablements = await contextVariables.listByAgent(workspaceId, agentId);
   return enablements.find((enablement) => enablement.variableId === variableId) ?? null;
-};
-
-/**
- * Mirrors contextVariableRoutes.ts's own superRefine: browser-sourced variables have no resolver
- * pipeline yet, a resolver source must name the skill that supplies the value, and every other
- * source must not carry resolver-only fields — an enablement combining those would be inert or
- * contradictory once persisted.
- */
-const assertEnablementIsWellFormed = (enablement: z.infer<typeof contextVariableEnablementInputSchema>): void => {
-  if (enablement.source === "browser") {
-    throw badRequest("browser-sourced context variables are not yet supported");
-  }
-  if (enablement.source === "resolver") {
-    if (!enablement.resolverSkillId) {
-      throw badRequest("resolverSkillId is required when source is resolver");
-    }
-    return;
-  }
-  if (enablement.resolverSkillId !== undefined && enablement.resolverSkillId !== null) {
-    throw badRequest("resolverSkillId is only allowed when source is resolver");
-  }
-  if (enablement.maxAgeSeconds !== undefined && enablement.maxAgeSeconds !== null) {
-    throw badRequest("maxAgeSeconds is only allowed when source is resolver");
-  }
-  if (enablement.resolverTimeoutMs !== undefined && enablement.resolverTimeoutMs !== null) {
-    throw badRequest("resolverTimeoutMs is only allowed when source is resolver");
-  }
 };
 
 /**
@@ -1070,15 +1041,13 @@ const assertEnablementIsWellFormed = (enablement: z.infer<typeof contextVariable
  * same shape as propose_skill_config.
  */
 export const createContextVariableCopilotProposalAdapter = (deps: {
-  readonly agentService: Pick<AgentService, "get">;
-  readonly contextVariableRepository: Pick<ContextVariableRepositoryPort, "get" | "listByAgent" | "listByWorkspace" | "applyProposal">;
-  readonly agentSkillsService: Pick<AgentSkillsService, "list">;
+  readonly contextVariables: Pick<ContextVariableService, "get" | "listByAgent" | "listByWorkspace" | "requireAgent" | "assertEnablementReferences" | "applyProposal">;
 }): CopilotContextVariableProposalAdapter => {
   const findEnablement = (workspaceId: string, agentId: string, variableId: string | null) =>
-    findAgentContextVariableEnablement(deps.contextVariableRepository, workspaceId, agentId, variableId);
+    findAgentContextVariableEnablement(deps.contextVariables, workspaceId, agentId, variableId);
 
   const findBlockingVariable = async (workspaceId: string, name: string): Promise<ContextVariable | null> => {
-    const variables = await deps.contextVariableRepository.listByWorkspace(workspaceId);
+    const variables = await deps.contextVariables.listByWorkspace(workspaceId);
     return variables.find((variable) => variable.name === name) ?? null;
   };
 
@@ -1113,12 +1082,10 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
     workspaceId: string,
     targetRef: { agentId: string; variableId: string },
   ): Promise<{ variableUpdatedAt: Date; enablementUpdatedAt: Date | null }> => {
-    // agent_context_variables.agent_id carries no foreign key (see migration 112), so resolving
-    // the agent through the workspace here is the only thing standing between a hallucinated or
-    // cross-workspace agent id and an orphan enablement row. Matches the requireAgent check
-    // contextVariableRoutes.ts runs on every write.
-    await deps.agentService.get(workspaceId, targetRef.agentId);
-    const variable = await deps.contextVariableRepository.get(workspaceId, targetRef.variableId);
+    // The module service resolves the agent through its workspace before reading the
+    // version parts, preserving tenant ownership independently of the database FK.
+    await deps.contextVariables.requireAgent(workspaceId, targetRef.agentId);
+    const variable = await deps.contextVariables.get(workspaceId, targetRef.variableId);
     if (!variable) throw notFound("Context variable no longer exists");
     const enablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
     return { variableUpdatedAt: variable.updatedAt, enablementUpdatedAt: enablement?.updatedAt ?? null };
@@ -1130,8 +1097,8 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
     // one), so an unresolvable agent id must fail here rather than only surfacing once the
     // enablement write is attempted. Not used for the version token below - see the comment on
     // contextVariableCreateToken for what a create's half is derived from instead.
-    await deps.agentService.get(workspaceId, targetRef.agentId);
-    const existing = targetRef.variableId ? await deps.contextVariableRepository.get(workspaceId, targetRef.variableId) : null;
+    await deps.contextVariables.requireAgent(workspaceId, targetRef.agentId);
+    const existing = targetRef.variableId ? await deps.contextVariables.get(workspaceId, targetRef.variableId) : null;
     if (targetRef.variableId && !existing) throw notFound("Context variable not found");
     // Read in the same pass as `existing`, both to close the same stale-read window Finding 1
     // closes for the definition side, and because it doubles as the version-token anchor for an
@@ -1230,28 +1197,14 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       // `resolverSkillId` in the resolver-inheritance branch above is legitimately incomplete on
       // its own (it relies on a still-resolver stored source to fill the rest in), so asserting
       // the raw payload here would reject a merge this function is meant to allow. Any way the
-      // merge could still produce a contradictory/inert combination is caught here instead.
-      assertEnablementIsWellFormed(mergedEnablement);
-      if (mergedSource === "resolver" && mergedResolverSkillId) {
-        // agent_context_variables.resolver_skill_id carries no foreign key either (same
-        // migration 112 gap as agent_id), and SkillBackedContextResolver.resolve silently
-        // returns null for an id it cannot find, that belongs to another agent, or that is
-        // disabled - so a hallucinated or cross-workspace skill id, or one an operator has
-        // simply turned off, would persist as an enablement that never resolves, with no error
-        // anywhere. Resolving it through this agent's own enabled skills here mirrors the
-        // agent-id resolution above. Checked against the EFFECTIVE (merged) id, not the raw
-        // payload's, since that is the id that actually gets persisted below - including when a
-        // proposal omits resolverSkillId and inherits one whose skill has since been deleted or
-        // disabled, which must be refused here rather than silently persisted.
-        const agentSkills = await deps.agentSkillsService.list(workspaceId, targetRef.agentId);
-        const resolverSkill = agentSkills.find((skill) => skill.id === mergedResolverSkillId);
-        if (!resolverSkill) {
-          throw badRequest(`resolverSkillId "${mergedResolverSkillId}" does not name a skill on this agent`);
-        }
-        if (!resolverSkill.enabled) {
-          throw badRequest(`resolverSkillId "${mergedResolverSkillId}" names a skill that is disabled on this agent`);
-        }
-      }
+      // merge could still produce a contradictory/inert combination is caught by the
+      // context-variable service here instead.
+      await deps.contextVariables.assertEnablementReferences(
+        workspaceId,
+        targetRef.agentId,
+        targetRef.variableId,
+        mergedEnablement,
+      );
       enablement = mergedEnablement;
     }
 
@@ -1292,7 +1245,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
         // resolved for its own sake (an unresolvable id must fail here, not only once Apply's
         // write is attempted). A create's enablement half is always null - see resolveProposal's
         // token computation for why.
-        await deps.agentService.get(workspaceId, targetRef.agentId);
+        await deps.contextVariables.requireAgent(workspaceId, targetRef.agentId);
         const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
         if (!payload.definition) throw new Error("A new context variable proposal has no definition to check for a conflict against");
         const blocking = await findBlockingVariable(workspaceId, payload.definition.name);
@@ -1312,7 +1265,7 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
     async preview(workspaceId, rawTargetRef, rawPayload) {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
-      const existing = targetRef.variableId ? await deps.contextVariableRepository.get(workspaceId, targetRef.variableId) : null;
+      const existing = targetRef.variableId ? await deps.contextVariables.get(workspaceId, targetRef.variableId) : null;
       const existingEnablement = await findEnablement(workspaceId, targetRef.agentId, targetRef.variableId);
       const currentDefinition = existing ? projectDefinitionForPreview(existing) : null;
       const currentEnablement = existingEnablement ? projectEnablementForPreview(existingEnablement) : null;
@@ -1331,21 +1284,20 @@ export const createContextVariableCopilotProposalAdapter = (deps: {
       const targetRef = contextVariableTargetRefSchema.parse(rawTargetRef);
       const payload = contextVariableStoredPayloadSchema.parse(rawPayload);
       try {
-        // agent_context_variables.agent_id carries no foreign key; resolved unconditionally and
-        // before any write, matching the requireAgent check contextVariableRoutes.ts runs on
-        // every write (see readCurrentVersionParts's comment). Not used to gate on updatedAt: a
+        // The context-variable service resolves the agent again inside applyProposal. That check
+        // is not used to gate on updatedAt: a
         // create never touches the agent row, so comparing timestamps here could only ever
         // produce a false "stale" from an unrelated agent edit - never real protection against
         // replaying an apply that already succeeded. That protection comes from applyProposal's
         // own name-uniqueness violation below, translated into a real conflict.
-        await deps.agentService.get(workspaceId, targetRef.agentId);
+        await deps.contextVariables.requireAgent(workspaceId, targetRef.agentId);
         const decoded = decodeContextVariableVersionToken(token);
 
         // Every version check is enforced inside applyProposal's own transaction (each write
         // gated by its own predicate, and only for the row its own input actually supplies), not
         // by a read-then-compare here: a pre-read leaves a window where a concurrent edit lands
         // between the check and the write.
-        const result = await deps.contextVariableRepository.applyProposal({
+        const result = await deps.contextVariables.applyProposal({
           workspaceId,
           agentId: targetRef.agentId,
           variableId: targetRef.variableId,

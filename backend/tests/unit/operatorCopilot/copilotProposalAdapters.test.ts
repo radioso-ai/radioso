@@ -4,14 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createAgentSkillCopilotProposalAdapter,
-  createContextVariableCopilotProposalAdapter,
+  createContextVariableCopilotProposalAdapter as createProductionContextVariableCopilotProposalAdapter,
 } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { AgentSkillsService } from "../../../src/modules/agentSkills/public.js";
 import { createDefaultSkillCapabilityRegistry } from "../../../src/modules/skills/public.js";
 import { badRequest, conflict, notFound } from "../../../src/shared/domain/errors.js";
 import { InMemoryAgentSkillRepository } from "../../support/inMemoryAgentSkills.js";
-import type { AgentContextVariableEnablement, ContextVariable } from "../../../src/modules/context-variables/public.js";
-import type { AgentContextVariableEnablementRecord, ApplyContextVariableProposalInput, ApplyContextVariableProposalResult } from "../../../src/db/repositories/contextVariableRepository.js";
+import { ContextVariableService, type AgentContextVariableEnablement, type ContextVariable } from "../../../src/modules/context-variables/public.js";
+import type { AgentContextVariableEnablementRecord, ApplyContextVariableProposalInput, ApplyContextVariableProposalResult, ContextVariableRepositoryPort } from "../../../src/db/repositories/contextVariableRepository.js";
 
 // Minimal stand-in for AgentService.get: throws not-found for any agent id the caller never
 // registered as belonging to the given workspace, matching how the real service resolves an
@@ -132,6 +132,18 @@ const makeVariable = (overrides: Partial<ContextVariable> = {}): ContextVariable
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   ...overrides,
+});
+
+const createContextVariableCopilotProposalAdapter = (deps: {
+  agentService: ReturnType<typeof makeAgentService>;
+  contextVariableRepository: ReturnType<typeof makeContextVariableRepository>;
+  agentSkillsService: ReturnType<typeof makeAgentSkillsPort>;
+}) => createProductionContextVariableCopilotProposalAdapter({
+  contextVariables: new ContextVariableService({
+    repository: deps.contextVariableRepository as unknown as ContextVariableRepositoryPort,
+    agentReader: deps.agentService,
+    agentSkillsReader: deps.agentSkillsService,
+  }),
 });
 
 describe("createContextVariableCopilotProposalAdapter", () => {
@@ -290,6 +302,70 @@ describe("createContextVariableCopilotProposalAdapter", () => {
       name: "loyalty_tier", valueType: "string", trustTier: "unverified", sensitivity: "normal", defaultSurfacing: "on_reference",
       enablement: { source: "resolver", resolverSkillId: foreignSkillId, surfacing: "operator_only" },
     })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("never applies a resolver enablement whose skill is no longer valid for this agent", async () => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variable = makeVariable({ workspaceId });
+    const foreignSkillId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository([variable]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService,
+      contextVariableRepository,
+      // A stored proposal can outlive the skill it was drafted against, so apply must not trust
+      // the payload merely because the target agent still belongs to this workspace.
+      agentSkillsService: makeAgentSkillsPort([]),
+    });
+
+    const outcome = await adapter.applyIfVersionMatches(workspaceId, { agentId, variableId: variable.id }, {
+      name: variable.name,
+      definition: null,
+      enablement: {
+        source: "resolver",
+        resolverSkillId: foreignSkillId,
+        maxAgeSeconds: null,
+        resolverTimeoutMs: null,
+        surfacing: "on_reference",
+        enabled: true,
+      },
+    }, `${variable.updatedAt.toISOString()}|`);
+
+    expect(outcome.outcome).not.toBe("applied");
+    expect(contextVariableRepository.applyProposal).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", []],
+    ["disabled", [{ enabled: false }]],
+  ] as const)("reports a resolver skill that became %s after drafting as stale, not failed", async (_state, replacement) => {
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const variable = makeVariable({ workspaceId });
+    const resolverSkillId = randomUUID();
+    const contextVariableRepository = makeContextVariableRepository([variable]);
+    const agentService = makeAgentService({ [workspaceId]: [agentId] });
+    const skillStates: Array<string | { id: string; enabled: boolean }> = [resolverSkillId];
+    const agentSkillsService = makeAgentSkillsPort(skillStates);
+    const adapter = createContextVariableCopilotProposalAdapter({
+      agentService,
+      contextVariableRepository,
+      agentSkillsService,
+    });
+    const targetRef = { agentId, variableId: variable.id };
+
+    // Draft validation sees the resolver skill as enabled and therefore creates a valid stored
+    // proposal. The skill can disappear or be disabled while that proposal is pending.
+    const validated = await adapter.validatePayload(workspaceId, targetRef, {
+      enablement: { source: "resolver", resolverSkillId, surfacing: "on_reference" },
+    });
+    skillStates.splice(0, skillStates.length, ...replacement.map((entry) => ({ id: resolverSkillId, ...entry })));
+
+    const outcome = await adapter.applyIfVersionMatches(workspaceId, targetRef, validated.payload, validated.versionToken);
+
+    expect(outcome).toEqual({ outcome: "stale" });
+    expect(contextVariableRepository.applyProposal).not.toHaveBeenCalled();
   });
 
   // Finding 2 (issue triage, next-ray-epic-issue): SkillBackedContextResolver.resolve silently

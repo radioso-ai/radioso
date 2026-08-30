@@ -49,6 +49,7 @@ import { buildAudiencePulseService } from "./builders/audiencePulse.js";
 import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
+import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
@@ -309,6 +310,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     registry: connectorRegistry,
   });
   const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
+  const contextVariableService = new ContextVariableService({
+    repository: contextVariableRepository,
+    agentReader: { get: agentService.get.bind(agentService) },
+    agentSkillsReader: { list: agentSkillsService.list.bind(agentSkillsService) },
+  });
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
   // the connector ingestion port for HTML-to-text normalisation.
@@ -415,7 +421,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
-    createContextVariableCopilotProposalAdapter({ agentService, contextVariableRepository, agentSkillsService }),
+    createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
   ] as const;
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(repositories.conversationRepository),
@@ -557,7 +563,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSourceStatusService: documents.documentIngestionService,
     agentSkillsService,
     skillCapabilityRegistry,
-    contextVariables: contextVariableRepository,
+    contextVariables: contextVariableService,
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
@@ -720,6 +726,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
     contextVariableRepository,
+    contextVariableService,
     identityNonceRepository: repositories.identityNonceRepository,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     conversationRepository: repositories.conversationRepository,

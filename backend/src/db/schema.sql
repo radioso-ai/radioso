@@ -7684,6 +7684,22 @@ ALTER TABLE ONLY public.agent_access_grants
 
 
 --
+-- Name: agent_context_variables agent_context_variables_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE NOT VALID;
+
+
+--
+-- Name: agent_context_variables agent_context_variables_resolver_skill_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_context_variables
+    ADD CONSTRAINT agent_context_variables_resolver_skill_id_fkey FOREIGN KEY (resolver_skill_id) REFERENCES public.agent_skills(id) ON DELETE CASCADE NOT VALID;
+
+
+--
 -- Name: agent_context_variables agent_context_variables_variable_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 

@@ -15,15 +15,14 @@ import {
 import { getAgentOperatorLabel } from '@/lib/agent-label'
 import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
 import { useCopilotEntity } from '@/lib/copilot-context'
+import { resolveConversationDisplayTitle } from '@/lib/conversation-title'
 import { deriveConversationOutcome, type ConversationOutcome } from '@/lib/conversation-outcome'
 import { matchesConversationSearchText, type ConversationFilterState, type OutcomeFilter } from '@/lib/conversation-filters'
 import { formatConversationLocation } from '@/lib/history-source'
 import { stripTrackingParams } from '@/lib/inbox-response'
-import { stripMarkdownSyntax } from '@/lib/markdown-preview'
+import { formatInboxRowTimestamp } from '@/lib/needs-attention-format'
 import { cn } from '@/lib/utils'
 import type { HistoryListItem, SelectedHistoryItem } from '@/components/dashboard/history/history-list'
-
-const rowTimestampFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
 // Radix Select can't hold an empty-string value for an "all" option.
 const ALL_AGENTS = '__all_agents__'
@@ -97,11 +96,12 @@ function ConversationRow({
   onSelect: () => void
 }) {
   const outcome = deriveConversationOutcome(conversation, now)
-  const title = stripMarkdownSyntax(conversation.preview || '') || 'Untitled conversation'
+  const title = resolveConversationDisplayTitle(conversation)
   // Ambient page context for Ray (spec 087): the same registration the old
   // history table's ConversationRow made, so asking Ray about the page still
-  // resolves this row's conversation and agent.
-  useCopilotEntity('conversation', conversation.id, conversation.preview || 'Untitled conversation')
+  // resolves this row's conversation and agent. Uses the same title the row
+  // displays, so Ray's ambient label never disagrees with what's on screen.
+  useCopilotEntity('conversation', conversation.id, title)
   useCopilotEntity(
     'agent',
     conversation.agentId,
@@ -127,7 +127,7 @@ function ConversationRow({
     <RowShell selected={selected} onSelect={onSelect}>
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{title}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{rowTimestampFormatter.format(new Date(conversation.updatedAt))}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatInboxRowTimestamp(conversation.updatedAt)}</span>
       </div>
       <div className="flex items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs text-muted-foreground">
@@ -155,7 +155,7 @@ function SearchEntryRow({
     <RowShell selected={selected} onSelect={onSelect}>
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">{search.query}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{rowTimestampFormatter.format(new Date(search.createdAt))}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatInboxRowTimestamp(search.createdAt)}</span>
       </div>
       <span className="truncate text-xs text-muted-foreground">
         Document search · {resultLabel}
@@ -181,7 +181,7 @@ function ContactEntryRow({
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {contact.messagePreview || 'Contact request'}
         </span>
-        <span className="shrink-0 text-xs text-muted-foreground">{rowTimestampFormatter.format(new Date(contact.sortAt))}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{formatInboxRowTimestamp(contact.sortAt)}</span>
       </div>
       <span className="truncate text-xs text-muted-foreground">
         {location.text} · {contact.userEmail} · {contact.status}
@@ -245,7 +245,7 @@ export const filterAllLensItems = (
   }
 
   const search = filters.search.trim().toLowerCase()
-  if (search && !stripMarkdownSyntax(entry.conversation.preview || '').toLowerCase().includes(search)) {
+  if (search && !resolveConversationDisplayTitle(entry.conversation).toLowerCase().includes(search)) {
     return false
   }
   if (filters.outcome !== 'all' && deriveConversationOutcome(entry.conversation, now).kind !== filters.outcome) {

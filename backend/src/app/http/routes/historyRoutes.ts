@@ -14,6 +14,7 @@ import {
   conversationWindowQuerySchema,
   historySearchParamsSchema,
   historyItemsPageQuerySchema,
+  historyItemsListQuerySchema,
 } from "./conversationRouteSchemas.js";
 
 type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
@@ -29,7 +30,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
   router.get("/", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const parsedQuery = historyItemsPageQuerySchema.safeParse(req.query);
+      const parsedQuery = historyItemsListQuerySchema.safeParse(req.query);
       if (!parsedQuery.success) {
         next(badRequest("Invalid request query", parsedQuery.error.flatten()));
         return;

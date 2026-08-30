@@ -1,14 +1,63 @@
 import { describe, expect, it } from 'vitest'
 
+import type { ChatConversationSummary, ConversationOwnership } from '@/lib/api'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
   informativeChannelLabel,
   readOnlyHandledByLabel,
+  resolveReadOnlySource,
   selectSituationBody,
+  shouldShowDoneControl,
   stripTrackingParams,
   visitorIdentityLabel,
+  type ReadOnlySourceDetail,
 } from '@/lib/inbox-response'
+
+const ownership = (overrides: Partial<ConversationOwnership> = {}): ConversationOwnership => ({
+  conversationId: 'conversation-1',
+  workspaceId: 'workspace-1',
+  state: 'human_owned',
+  ownerAccountId: 'account-1',
+  ownerDisplayName: 'Anna',
+  reason: null,
+  version: 1,
+  takenOverAt: '2026-06-19T10:00:00.000Z',
+  createdAt: '2026-06-19T10:00:00.000Z',
+  updatedAt: '2026-06-19T10:00:00.000Z',
+  ...overrides,
+})
+
+const rowSummary = (overrides: Partial<ChatConversationSummary> = {}): ChatConversationSummary => ({
+  id: 'conversation-1',
+  agentId: 'agent-1',
+  agentName: 'Marta',
+  agentInternalName: null,
+  sourceChannel: 'authenticated_chat',
+  sourceOrigin: null,
+  channelContext: null,
+  anonymousSessionId: 'session-1',
+  entryPageUrl: null,
+  title: null,
+  createdAt: '2026-06-19T10:00:00.000Z',
+  updatedAt: '2026-06-19T10:00:00.000Z',
+  messageCount: 2,
+  userMessageCount: 1,
+  assistantMessageCount: 1,
+  preview: 'Please help with this order',
+  ...overrides,
+})
+
+const detail = (overrides: Partial<ReadOnlySourceDetail> = {}): ReadOnlySourceDetail => ({
+  conversationId: 'conversation-1',
+  ownership: undefined,
+  title: null,
+  updatedAt: '2026-06-19T10:05:00.000Z',
+  agentId: 'agent-1',
+  agentName: 'Marta',
+  agentInternalName: null,
+  ...overrides,
+})
 
 describe('visitorIdentityLabel', () => {
   it('labels a session-backed visitor as anonymous', () => {
@@ -174,5 +223,86 @@ describe('doneControlTooltip', () => {
   it('describes triage closure for feedback', () => {
     expect(doneControlTooltip({ type: 'negative_feedback' }))
       .toBe('Closes this item once you resolve or dismiss the feedback')
+  })
+})
+
+describe('shouldShowDoneControl', () => {
+  it('never shows Done for an approval', () => {
+    expect(shouldShowDoneControl('approval', null)).toBe(false)
+    expect(shouldShowDoneControl('approval', detail({ ownership: ownership() }))).toBe(false)
+  })
+
+  it('always shows Done for negative feedback, regardless of ownership or load state', () => {
+    expect(shouldShowDoneControl('negative_feedback', null)).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: undefined }))).toBe(true)
+    expect(shouldShowDoneControl('negative_feedback', detail({ ownership: ownership() }))).toBe(true)
+  })
+
+  it('shows Done for a handoff while the detail has not loaded yet — unknown, not "nothing to hand back"', () => {
+    expect(shouldShowDoneControl('handoff', null)).toBe(true)
+  })
+
+  it('shows Done for a handoff once the loaded detail carries an ownership record', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: ownership() }))).toBe(true)
+  })
+
+  it('hides Done for a handoff once the loaded detail shows no ownership record — a live AI-owned conversation with nothing to hand back', () => {
+    expect(shouldShowDoneControl('handoff', detail({ ownership: undefined }))).toBe(false)
+  })
+
+  it('hides Done when there is no effective item at all (undefined type)', () => {
+    expect(shouldShowDoneControl(undefined, detail({ ownership: ownership() }))).toBe(false)
+  })
+})
+
+describe('resolveReadOnlySource', () => {
+  it('falls back to the row summary before the detail has loaded', () => {
+    const row = rowSummary({ ownership: ownership() })
+
+    expect(resolveReadOnlySource(row, null)).toBe(row)
+  })
+
+  it('returns null when neither the row summary nor the detail is available', () => {
+    expect(resolveReadOnlySource(undefined, null)).toBeNull()
+  })
+
+  it('prefers a loaded detail that shows the conversation was just claimed, over a stale unowned row summary', () => {
+    // The row summary was fetched before the handoff was claimed (no
+    // ownership); the detail, fetched after, reflects the claim. The stale
+    // hint must not keep this rendering read-only.
+    const row = rowSummary({ ownership: undefined })
+    const loaded = detail({ ownership: ownership({ ownerAccountId: 'account-2', ownerDisplayName: 'Ben' }) })
+
+    expect(resolveReadOnlySource(row, loaded)?.ownership?.ownerDisplayName).toBe('Ben')
+  })
+
+  it('prefers a loaded detail that shows the conversation was handed back, over a stale owned row summary', () => {
+    // The reverse case: the row summary still shows the old human owner: the
+    // detail, fetched after a hand-back, carries no ownership at all. The
+    // stale hint must not keep this rendering actionable as if still owned.
+    const row = rowSummary({ ownership: ownership() })
+    const loaded = detail({ ownership: undefined })
+
+    expect(resolveReadOnlySource(row, loaded)?.ownership).toBeUndefined()
+  })
+
+  it('carries anonymousSessionId and preview over from the row summary once detail loads, since the detail response has neither', () => {
+    const row = rowSummary({ anonymousSessionId: 'session-42', preview: 'Where is my order?' })
+    const loaded = detail()
+
+    const resolved = resolveReadOnlySource(row, loaded)
+    expect(resolved?.anonymousSessionId).toBe('session-42')
+    expect(resolved?.preview).toBe('Where is my order?')
+  })
+
+  it('resolves the detail-derived source even with no row summary at all (a deep link)', () => {
+    const loaded = detail({ ownership: ownership() })
+
+    expect(resolveReadOnlySource(undefined, loaded)).toMatchObject({
+      id: 'conversation-1',
+      ownership: loaded.ownership,
+      anonymousSessionId: undefined,
+      preview: undefined,
+    })
   })
 })

@@ -4,7 +4,7 @@ import { RoutineDefinitionRepository } from "../../../db/repositories/routineDef
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
 import { DirectiveStateRepository } from "../../../db/repositories/directiveStateRepository.js";
 import { ConversationSummaryRepository } from "../../../db/repositories/conversationSummaryRepository.js";
-import { ConversationSummaryService, ModelConversationSummaryGenerator } from "../../../modules/chat/composition.js";
+import { ConversationSummaryService, ModelConversationSummaryGenerator, ModelConversationEarlyTitleGenerator } from "../../../modules/chat/composition.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine } from "@radioso/conversation-engine";
@@ -651,11 +651,20 @@ export const buildChatServices = (input: {
   const conversationSummaryRepository = new ConversationSummaryRepository(input.database.kysely);
   // Rolling per-conversation summary (#866): read at prepare, regenerated
   // fire-and-forget post-turn on the cheap rewrite-tier inference (a background
-  // summarization pass, never on the answer latency budget).
+  // summarization pass, never on the answer latency budget). The same call also
+  // produces a short topic title (#1114), written through the conversation
+  // repository — never the expiring summary row (see migration 154). Below the
+  // summary threshold, a separate lifetime-once early-title call (#1129) still
+  // titles the conversation as soon as it has a reply, on the same rewrite-tier
+  // inference and the same fire-and-forget seam.
   const conversationSummaryService = new ConversationSummaryService(
     conversationSummaryRepository,
     input.messageRepository,
     new ModelConversationSummaryGenerator(
+      input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
+    ),
+    input.conversationRepository,
+    new ModelConversationEarlyTitleGenerator(
       input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
     ),
     input.logger,

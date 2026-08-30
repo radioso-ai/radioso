@@ -40,6 +40,8 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Activity" })).toHaveCount(0);
   await sidebar.getByRole("link", { name: "Inbox" }).click();
+  await expect(page).toHaveURL(/\/activity/);
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Conversations" })).toHaveCount(0);
 
   // Audience Pulse and Quality are top-level rail items, not nested under Inbox.
@@ -50,6 +52,7 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
 
   // Quality nests its own views (Review / Evals) when active.
   await sidebar.getByRole("link", { name: "Quality", exact: true }).click();
+  await expect(page).toHaveURL(/\/quality/);
   await expect(sidebar.getByRole("link", { name: "Review" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Evals" })).toBeVisible();
 });
@@ -67,4 +70,83 @@ test("Inbox is promoted with a needs-attention badge reflecting the inbox count"
   await expect(links.nth(1)).toContainText("Agents");
 
   await expect(sidebar.getByLabel("3 items need attention")).toHaveText("3");
+});
+
+test("the Inbox badge counts commented negative feedback too, matching the tab title and lens toggle count", async ({ page }) => {
+  // A feedback-only workspace: zero pending decisions, zero human-owned
+  // conversations, but one open commented-negative-feedback turn — an open
+  // inbox item the badge previously ignored entirely (it only summed
+  // decisions + human-owned conversations).
+  const feedbackTurn = {
+    assistantMessageId: "assistant-badge-feedback",
+    conversationId: "conversation-badge-feedback",
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Do you offer gift wrapping?",
+    answerPreview: "We don't offer gift wrapping at checkout.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 700,
+    createdAt: nowIso,
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: nowIso,
+      comments: [{
+        value: "down",
+        comment: "Doesn't mention holiday wrapping options.",
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      }],
+    },
+    triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const isCommentedFeedbackQuery =
+      url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isCommentedFeedbackQuery ? [feedbackTurn] : [],
+        total: isCommentedFeedbackQuery ? 1 : 0,
+        page: 1,
+        pageSize: isCommentedFeedbackQuery ? 25 : 1,
+        totalPages: 1,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+
+  const sidebar = page.locator('[data-slot="sidebar-container"]');
+  await expect(sidebar.getByLabel("1 items need attention")).toHaveText("1");
+});
+
+test("an established workspace lands on the Inbox after login, not the agent chat surface", async ({ page }) => {
+  // At least one prior conversation — an established workspace, not a
+  // genuinely first-run one, so onboarding must not activate and hijack the
+  // landing section (see app/page.tsx's onboarding.shouldShowFirstRun gate).
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [], total: 1, nextCursor: null, hasMore: false },
+  });
+
+  await page.goto("/");
+
+  // Landing here resolves auth bootstrap, workspace, the agent list, and the
+  // onboarding summary in sequence before app/page.tsx redirects — a longer
+  // chain than a direct section navigation, so this gets a longer timeout
+  // than the default 5s.
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/activity(\\?|$)`), { timeout: 15000 });
+  await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
+  const sidebar = page.locator('[data-slot="sidebar-container"]');
+  await expect(sidebar.getByRole("link", { name: "Inbox" })).toBeVisible();
 });

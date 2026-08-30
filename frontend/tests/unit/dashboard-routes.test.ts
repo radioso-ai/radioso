@@ -108,10 +108,19 @@ describe('dashboard route state', () => {
   })
 
   it('round-trips activity tab state while preserving activity deep links', () => {
+    // An explicit 'needs-attention' is preserved (not normalized away as "the
+    // default"), so the URL can tell "operator has no lens preference yet"
+    // (activityTab undefined — Inbox smart default applies) apart from
+    // "operator chose Needs-you" (always honored, even when empty).
     expect(buildDashboardHref('account-1', {
       section: 'activity',
       workspacePublicRouteKey: 'support-abc123',
       activityTab: 'needs-attention',
+    })).toBe('/w/support-abc123/activity?tab=needs-attention')
+
+    expect(buildDashboardHref('account-1', {
+      section: 'activity',
+      workspacePublicRouteKey: 'support-abc123',
     })).toBe('/w/support-abc123/activity')
 
     expect(buildDashboardHref('account-1', {
@@ -130,7 +139,7 @@ describe('dashboard route state', () => {
 
     expect(parsed).toEqual({
       section: 'activity',
-      // 'needs-attention' is the default tab, so it normalizes out of the parsed state.
+      activityTab: 'needs-attention',
       historyFilter: 'chat',
       historyItemKind: 'chat',
       historyItemId: 'conversation-1',
@@ -140,7 +149,7 @@ describe('dashboard route state', () => {
     expect(buildDashboardHref('account-1', {
       ...parsed!,
       workspacePublicRouteKey: 'support-abc123',
-    })).toBe('/w/support-abc123/activity?filter=chat&itemKind=chat&itemId=conversation-1&itemMessageId=message-1')
+    })).toBe('/w/support-abc123/activity?tab=needs-attention&filter=chat&itemKind=chat&itemId=conversation-1&itemMessageId=message-1')
   })
 
   it('builds activity tab hrefs without discarding active surface filters', () => {
@@ -156,8 +165,11 @@ describe('dashboard route state', () => {
     expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'all')).toBe(
       '/w/support-abc123/activity?tab=all&filter=chat&itemKind=chat&itemId=conversation-1',
     )
+    // Switching lenses always writes the target explicitly, even to
+    // 'needs-attention' — a deliberate tab switch is never indistinguishable
+    // from "no preference" (see the smart-default test above).
     expect(buildActivityTabHref('account-1', filteredActivity, 'all', 'needs-attention')).toBe(
-      '/w/support-abc123/activity',
+      '/w/support-abc123/activity?tab=needs-attention',
     )
   })
 

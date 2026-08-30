@@ -46,6 +46,30 @@ describe('dashboard query keys', () => {
     ]) expect(key).not.toEqual(stats)
   })
 
+  it('omits searchParams entirely from the history key when not given, matching the pre-filter shape exactly', () => {
+    const withoutSearchParams = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50 })
+    expect(withoutSearchParams).toEqual(['workspace', workspaceId, 'history', 'list', 'all', 1, 50])
+  })
+
+  it('distinguishes history keys by searchParams once one is given, and treats an empty object as its own key', () => {
+    const noFilters = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: {} })
+    const withQ = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { q: 'refund' } })
+    const withOutcome = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { outcome: 'completed' } })
+    const withAgent = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { agentId: 'agent-a' } })
+    const withSite = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50, searchParams: { sourceOrigin: 'https://example.com' } })
+
+    // Passing an (empty) searchParams object is itself a different key from omitting it —
+    // the two are handled by different react-query cache entries even though they'd
+    // currently produce the same server request.
+    const withoutSearchParams = dashboardQueryKeys.history.list(workspaceId, { variant: 'all', page: 1, pageSize: 50 })
+    expect(noFilters).not.toEqual(withoutSearchParams);
+    [withQ, withOutcome, withAgent, withSite].forEach((key) => {
+      expect(key).not.toEqual(noFilters)
+    })
+    expect(withQ).not.toEqual(withOutcome)
+    expect(withAgent).not.toEqual(withSite)
+  })
+
   it('normalizes scalar-or-array and all set-like quality filters, including action objects', () => {
     const first = qualityTurns({
       actions: [

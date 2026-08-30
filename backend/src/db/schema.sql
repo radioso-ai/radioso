@@ -1729,7 +1729,8 @@ CREATE TABLE public.conversations (
     agent_id uuid,
     channel_context jsonb,
     verified_customer_id text,
-    entry_page_url text
+    entry_page_url text,
+    title text
 );
 
 

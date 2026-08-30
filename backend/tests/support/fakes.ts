@@ -3684,6 +3684,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       anonymousSessionId,
       verifiedCustomerId,
       entryPageUrl: options?.entryPageUrl ?? null,
+      title: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -3865,6 +3866,18 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     if (item && item.workspaceId === workspaceId && !item.verifiedCustomerId) {
       this.items.set(conversationId, { ...item, verifiedCustomerId: customerId, updatedAt: new Date() });
     }
+  }
+
+  async setTitle(conversationId: string, workspaceId: string, title: string): Promise<void> {
+    const item = this.items.get(conversationId);
+    if (item && item.workspaceId === workspaceId && item.title !== title) {
+      this.items.set(conversationId, { ...item, title });
+    }
+  }
+
+  async getTitle(conversationId: string, workspaceId: string): Promise<string | null> {
+    const item = this.items.get(conversationId);
+    return item && item.workspaceId === workspaceId ? (item.title ?? null) : null;
   }
 }
 

@@ -40,6 +40,7 @@ const buildSession = (): PreparedSession => {
     anonymousSessionId: null,
   verifiedCustomerId: null,
   entryPageUrl: null,
+  title: null,
     createdAt: new Date(),
     updatedAt: new Date(),
   };

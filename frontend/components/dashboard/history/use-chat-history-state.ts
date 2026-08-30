@@ -13,7 +13,8 @@ import {
   type DocumentDetails,
   type DocumentSearchResponse,
 } from '@/lib/api'
-import { shouldClampHistoryPage, useHistoryListQuery } from './history-list-query'
+import { shouldClampHistoryPage, shouldResetAllLensPageForFilterChange, useHistoryListQuery } from './history-list-query'
+import type { ConversationSearchParams } from '@/lib/conversation-filters'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   audiencePulseApi,
@@ -38,9 +39,16 @@ type PushHistoryRoute = (next: {
 export function useHistoryListState({
   accountId,
   routeState,
+  serverSearchParams,
 }: {
   accountId: string
   routeState: DashboardRouteState
+  /**
+   * The All lens's toolbar search/outcome/agent/site filters (issue #1126), already
+   * debounced by the caller. Only applied to the `filter === 'all'` query — the other
+   * variants keep filtering client-side (see `all-conversations-list-pane.tsx`).
+   */
+  serverSearchParams?: ConversationSearchParams
 }) {
   const router = useRouter()
   const [filter, setFilter] = useState<HistoryFilter>(editionController.normalizeHistoryFilter(routeState.historyFilter ?? 'all'))
@@ -69,6 +77,7 @@ export function useHistoryListState({
     variant: filter,
     page: activePage,
     pageSize: HISTORY_PAGE_SIZE,
+    searchParams: serverSearchParams,
   })
   const hasActiveQueryData = historyQuery.data?.variant === filter
   const isListLoading = historyQuery.isPending && !hasActiveQueryData
@@ -165,6 +174,35 @@ export function useHistoryListState({
   const allTotal = historyItemsTotal
   const allTotalPages = Math.max(1, Math.ceil(allTotal / HISTORY_PAGE_SIZE))
   const allHasNextPage = hasHistoryItemsNextPage
+
+  // Changing any All-lens toolbar filter (search/outcome/agent/site) starts back at page 1
+  // of the newly filtered set — a page number valid for the old result set can easily
+  // exceed the new one. Serialized to a string so the effect only fires when the filter
+  // values themselves change, not on every render. The `allPage === 1` guard makes this a
+  // no-op while already on page 1, so it never fights the clamp effect below.
+  const serverSearchParamsFingerprint = filter === 'all' ? JSON.stringify(serverSearchParams ?? {}) : ''
+  // The effect's dependencies are "new" on mount too — without tracking what
+  // this effect last saw, a deep link straight to page 2+ reads as "the
+  // filter just changed" on its very first run and gets reset to page 1
+  // even though nothing changed. Initialized to the fingerprint the first
+  // render already has, so the initial run is always a no-op.
+  const previousServerSearchParamsFingerprintRef = useRef(serverSearchParamsFingerprint)
+  useEffect(() => {
+    const previousFingerprint = previousServerSearchParamsFingerprintRef.current
+    previousServerSearchParamsFingerprintRef.current = serverSearchParamsFingerprint
+
+    if (!shouldResetAllLensPageForFilterChange({
+      activeVariant: filter,
+      activePage: allPage,
+      previousServerSearchParamsFingerprint: previousFingerprint,
+      serverSearchParamsFingerprint,
+    })) {
+      return
+    }
+    setAllPage(1)
+    pushHistoryRoute({ filter: 'all', page: 1 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- react only to the filter fingerprint changing, not to allPage/pushHistoryRoute identity (which would re-fire this every render).
+  }, [serverSearchParamsFingerprint, filter])
 
   useEffect(() => {
     const activeTotalPages = filter === 'all'

@@ -1,6 +1,6 @@
-import type { ConversationChannelContext, ConversationOwnership } from '@/lib/api'
+import type { ChatConversationDetail, ChatConversationSummary, ConversationChannelContext, ConversationOwnership } from '@/lib/api'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
-import type { EscalationType } from '@/lib/needs-attention'
+import type { EscalationType, HandoffCandidateSource } from '@/lib/needs-attention'
 
 /**
  * Pure presentation helpers for the operator inbox's response view (spec
@@ -55,6 +55,45 @@ export const stripTrackingParams = (url: string): string => {
     // Not a parseable absolute URL (e.g. already a bare path) — show it as-is.
     return url
   }
+}
+
+// ── Actionable/read-only source resolution (All lens) ───────────────────────
+
+export type ReadOnlySourceDetail = Pick<
+  ChatConversationDetail,
+  'conversationId' | 'ownership' | 'title' | 'updatedAt' | 'agentId' | 'agentName' | 'agentInternalName'
+>
+
+/**
+ * Resolves the All lens's actionable/read-only source for a selected
+ * conversation. `conversationDetail` — the independently-fetched, freshest
+ * ownership signal — always wins once loaded; the row's own summary
+ * (`conversation`, an immediate hint with no fetch) is only used before the
+ * detail has loaded. A page left open long enough for ownership to change (a
+ * handoff claimed, or handed back) would otherwise keep rendering the stale
+ * hint's actionable/read-only state forever. `anonymousSessionId` and
+ * `preview` have no equivalent on the detail response, so those two carry
+ * over from the row summary when available — they're static per-conversation
+ * metadata that never goes stale the way ownership does.
+ */
+export const resolveReadOnlySource = (
+  conversation: ChatConversationSummary | undefined,
+  conversationDetail: ReadOnlySourceDetail | null,
+): HandoffCandidateSource | null => {
+  if (conversationDetail) {
+    return {
+      id: conversationDetail.conversationId,
+      ownership: conversationDetail.ownership,
+      title: conversationDetail.title,
+      preview: conversation?.preview,
+      updatedAt: conversationDetail.updatedAt,
+      agentId: conversationDetail.agentId,
+      agentName: conversationDetail.agentName ?? null,
+      agentInternalName: conversationDetail.agentInternalName ?? null,
+      anonymousSessionId: conversation?.anonymousSessionId,
+    }
+  }
+  return conversation ?? null
 }
 
 // ── Channel label (FR-006) ──────────────────────────────────────────────────
@@ -123,6 +162,33 @@ export const doneControlTooltip = (item: {
     return `Closes this item and hands the conversation back to ${agentLabel}`
   }
   return 'Closes this item once you resolve or dismiss the feedback'
+}
+
+/**
+ * Whether the Done control renders at all: only when there's something to
+ * wrap up. A handoff needs an ownership record — the only state the wire
+ * ever sends non-null `ownership` for, covering both "awaiting a human"
+ * (unclaimed) and "human-owned" (claimed) — or the detail simply hasn't
+ * loaded yet (unknown, not "no ownership"; the composer alone renders
+ * meanwhile and Done stays disabled — see the caller — rather than hidden,
+ * so a fast click can't mistake "not loaded" for "definitely nothing to hand
+ * back"). Negative feedback never depends on ownership. A live AI-owned
+ * conversation with a *loaded* detail showing no ownership record has
+ * nothing to hand back — the composer alone is correct there; Done appears
+ * once the first send claims it and the detail refetch brings the record.
+ * Approvals never render Done (they close when the decision resolves).
+ */
+export const shouldShowDoneControl = (
+  itemType: EscalationType | undefined,
+  conversationDetail: { ownership?: unknown } | null,
+): boolean => {
+  if (itemType === 'negative_feedback') {
+    return true
+  }
+  if (itemType !== 'handoff') {
+    return false
+  }
+  return !conversationDetail || Boolean(conversationDetail.ownership)
 }
 
 // ── Read-only footer (All lens, non-actionable conversations) ──────────────

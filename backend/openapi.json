@@ -11250,6 +11250,13 @@
               "null"
             ]
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short LLM-generated topic label refreshed alongside the rolling conversation summary. Null until the first successful regeneration; the dashboard falls back to `preview` until then."
+          },
           "ownership": {
             "$ref": "#/components/schemas/ConversationOwnership"
           }
@@ -11269,7 +11276,8 @@
           "messageCount",
           "userMessageCount",
           "assistantMessageCount",
-          "preview"
+          "preview",
+          "title"
         ]
       },
       "ChatHistoryListResponse": {
@@ -12148,6 +12156,13 @@
               "null"
             ]
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "See ChatConversationSummary.title."
+          },
           "channelContext": {
             "anyOf": [
               {
@@ -12225,6 +12240,7 @@
           "agentId",
           "sourceChannel",
           "sourceOrigin",
+          "title",
           "channelContext",
           "createdAt",
           "updatedAt",
@@ -12321,6 +12337,13 @@
               "null"
             ]
           },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "See ChatConversationSummary.title."
+          },
           "channelContext": {
             "anyOf": [
               {
@@ -12395,6 +12418,7 @@
           "agentId",
           "sourceChannel",
           "sourceOrigin",
+          "title",
           "channelContext",
           "createdAt",
           "updatedAt",
@@ -32647,6 +32671,52 @@
             },
             "required": false,
             "name": "sourceScope",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither)."
+            },
+            "required": false,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Narrows to conversations handled by this agent. Narrows results to chat rows only."
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "description": "Exact match on the conversation's site origin. Narrows results to chat rows only."
+            },
+            "required": false,
+            "name": "sourceOrigin",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "in_progress",
+                "completed",
+                "handed_off"
+              ],
+              "description": "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only."
+            },
+            "required": false,
+            "name": "outcome",
             "in": "query"
           }
         ],

@@ -52,8 +52,12 @@ export function ResetPasswordScreen({ token }: { token?: string }) {
       const response = await authApi.confirmPasswordReset({ token: token ?? '', password })
       seedWorkspaceSession(response.workspaceId, response.workspacePublicRouteKey)
       await login(response.email, response.userId, response.accountId, response.organizationName)
+      // Resetting a password only happens for an account that already
+      // exists — never a genuinely first-run workspace — so the Inbox is
+      // the normal landing surface here, same as any other authenticated
+      // entry (see app/page.tsx).
       router.replace(buildDashboardHref(response.accountId, {
-        section: 'agents',
+        section: 'activity',
         workspaceId: response.workspaceId,
         workspacePublicRouteKey: response.workspacePublicRouteKey,
       }))

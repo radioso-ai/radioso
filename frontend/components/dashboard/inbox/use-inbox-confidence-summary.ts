@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 
 import { chatApi } from '@/lib/api-chat'
-import { countAiHandledConversationsByAgent, withinLastDays, type AgentHandledCount } from '@/lib/needs-attention'
+import { summarizeAiHandledConversations, withinLastDays } from '@/lib/needs-attention'
 
 const CONFIDENCE_WINDOW_DAYS = 7
 /**
@@ -16,12 +16,22 @@ const CONFIDENCE_SAMPLE_SIZE = 100
 
 export interface InboxConfidenceSummary {
   status: 'loading' | 'ready' | 'error'
-  topAgent: AgentHandledCount | null
+  /** Total AI-handled conversations across every agent in the window; null while loading or on error. */
+  totalCount: number | null
+  /** Distinct agents that handled at least one; null while loading or on error. */
+  agentCount: number | null
 }
 
-/** The empty-queue confidence summary's data source (FR-014): the agent that handled the most conversations without a human in the last 7 days, from a bounded recent-history sample. */
+const EMPTY_SUMMARY = { totalCount: null, agentCount: null }
+
+/**
+ * The empty-queue confidence summary's data source (FR-014): the workspace-level
+ * total of conversations handled without a human in the last 7 days (and how many
+ * distinct agents contributed), from a bounded recent-history sample. Workspace-level
+ * rather than naming one agent — the Inbox spans every agent, not just the busiest one.
+ */
 export const useInboxConfidenceSummary = (enabled: boolean): InboxConfidenceSummary => {
-  const [state, setState] = useState<InboxConfidenceSummary>({ status: 'loading', topAgent: null })
+  const [state, setState] = useState<InboxConfidenceSummary>({ status: 'loading', ...EMPTY_SUMMARY })
 
   useEffect(() => {
     if (!enabled) {
@@ -30,7 +40,7 @@ export const useInboxConfidenceSummary = (enabled: boolean): InboxConfidenceSumm
     let cancelled = false
     void Promise.resolve().then(() => {
       if (!cancelled) {
-        setState({ status: 'loading', topAgent: null })
+        setState({ status: 'loading', ...EMPTY_SUMMARY })
       }
     })
 
@@ -43,12 +53,12 @@ export const useInboxConfidenceSummary = (enabled: boolean): InboxConfidenceSumm
         const windowed = response.conversations.filter(
           (conversation) => withinLastDays(conversation.createdAt, CONFIDENCE_WINDOW_DAYS, now),
         )
-        const counts = countAiHandledConversationsByAgent(windowed)
-        setState({ status: 'ready', topAgent: counts[0] ?? null })
+        const summary = summarizeAiHandledConversations(windowed)
+        setState({ status: 'ready', totalCount: summary.totalCount, agentCount: summary.agentCount })
       })
       .catch(() => {
         if (!cancelled) {
-          setState({ status: 'error', topAgent: null })
+          setState({ status: 'error', ...EMPTY_SUMMARY })
         }
       })
 

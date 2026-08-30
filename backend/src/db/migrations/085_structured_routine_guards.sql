@@ -23,9 +23,10 @@ BEGIN
   END IF;
 END $$;
 
--- 'default' is tolerated here so this file stays re-runnable after migration 089
--- rewrites always/fallback rows to 'default' (the test harness re-runs all files;
--- 089 re-establishes the strict final constraint either way).
+-- 'default' and 'field' are tolerated here so this file stays re-runnable after
+-- migrations 089 and 107 rewrite legacy rows and add field guards (the test harness
+-- can run current migration files against an already-migrated local database; later
+-- migrations re-establish the strict final constraint either way).
 ALTER TABLE routine_transition
-  ADD CHECK (guard_kind IN ('llm', 'always', 'fallback', 'default', 'slot_filled', 'outcome', 'counter')),
+  ADD CHECK (guard_kind IN ('llm', 'always', 'fallback', 'default', 'slot_filled', 'outcome', 'counter', 'field')),
   ADD CHECK (counter_limit IS NULL OR counter_limit > 0);

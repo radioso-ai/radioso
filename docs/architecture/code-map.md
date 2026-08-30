@@ -369,6 +369,7 @@ checks.
 Public surfaces and key files:
 
 - `backend/src/modules/context-variables/public.ts`
+- `backend/src/modules/context-variables/repository.ts`
 - `backend/src/modules/context-variables/services/contextVariableService.ts`
 - `backend/src/modules/context-variables/contextVariableResolverService.ts`
 - `backend/src/modules/context-variables/copilotPrimitiveRegistry.ts`

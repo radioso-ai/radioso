@@ -193,7 +193,11 @@ one agent:
 - `enabled`
 
 The dashboard exposes the `pushed` source. Resolver-backed variables
-are part of the API contract; the operator UI does not configure them.
+are part of the API contract; the operator UI does not configure them. A
+resolver enablement also supplies `resolverSkillId`, which must name an enabled
+skill on the same agent. Disabling that skill disables its resolver enablements;
+re-enabling the skill does not opt those variables back in automatically.
+Deleting the skill removes its resolver enablements.
 
 Host backends push runtime values through
 `PUT /api/v1/context-variables/{id}/values`. The request identifies the scope:

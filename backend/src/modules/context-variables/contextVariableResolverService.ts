@@ -1,4 +1,4 @@
-import type { ContextVariableRepositoryPort } from "../../db/repositories/contextVariableRepository.js";
+import type { ContextVariableResolverRepositoryPort } from "./repository.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type {
@@ -22,7 +22,7 @@ export interface ContextResolverPort {
 }
 
 export interface ContextVariableResolverServiceOptions {
-  repository: ContextVariableRepositoryPort;
+  repository: ContextVariableResolverRepositoryPort;
   resolver: ContextResolverPort;
   logger?: Pick<AppLogger, "info" | "warn">;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
@@ -36,7 +36,7 @@ const RESOLVE_METRIC_HELP = "Context variable resolver outcomes.";
 const RESOLVE_LATENCY_HELP = "Context variable resolver latency in milliseconds.";
 
 export class ContextVariableResolverService {
-  private readonly repository: ContextVariableRepositoryPort;
+  private readonly repository: ContextVariableResolverRepositoryPort;
   private readonly resolver: ContextResolverPort;
   private readonly logger?: Pick<AppLogger, "info" | "warn">;
   private readonly metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;

@@ -20,19 +20,8 @@ BEGIN
 END;
 $$;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_trigger
-    WHERE tgrelid = 'agent_skills'::regclass
-      AND tgname = 'trg_agent_skills_disable_context_variable_enablements'
-  ) THEN
-    CREATE TRIGGER trg_agent_skills_disable_context_variable_enablements
-    AFTER UPDATE OF enabled ON agent_skills
-    FOR EACH ROW
-    WHEN (OLD.enabled IS TRUE AND NEW.enabled IS FALSE)
-    EXECUTE FUNCTION disable_context_variable_enablements_with_resolver_skill();
-  END IF;
-END;
-$$;
+CREATE TRIGGER trg_agent_skills_disable_context_variable_enablements
+AFTER UPDATE OF enabled ON agent_skills
+FOR EACH ROW
+WHEN (OLD.enabled IS TRUE AND NEW.enabled IS FALSE)
+EXECUTE FUNCTION disable_context_variable_enablements_with_resolver_skill();

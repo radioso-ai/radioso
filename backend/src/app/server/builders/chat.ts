@@ -907,6 +907,7 @@ export const buildChatServices = (input: {
     chatHistoryService,
     conversationForkService,
     chatService,
+    contextVariableResolutionReader: contextVariableResolver,
     workbenchReplayRunner,
     contactHistoryProvider,
     retrievalAnswerService,

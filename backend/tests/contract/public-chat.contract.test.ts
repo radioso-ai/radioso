@@ -302,7 +302,7 @@ describe("public chat contract", () => {
     expect(settings.status).toBe(200);
     const embedToken = settings.body.websiteEmbedToken as string;
     const agent = await dependencies.agentService.resolve(session.workspaceId);
-    const resolveForAgent = vi.spyOn(dependencies.contextVariableRepository, "resolveForAgent")
+    const resolveForAgent = vi.spyOn(dependencies.contextVariableResolutionReader, "resolveForAgent")
       .mockImplementation(async (_workspaceId, _agentId, scopes) =>
         scopes.some((scope) => scope.type === "customer" && scope.id === "customer-123")
           ? [{

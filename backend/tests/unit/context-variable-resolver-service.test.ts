@@ -7,15 +7,16 @@ import type {
   ContextVariableValue,
   ResolvedVariableInput,
 } from "../../src/modules/context-variables/public.js";
-import { ContextVariableResolverService, type ContextResolverPort } from "../../src/modules/context-variables/public.js";
-import type {
-  AgentContextVariableEnablementRecord,
-  ApplyContextVariableProposalInput,
-  ApplyContextVariableProposalResult,
-  ContextVariableCreateRecord,
-  ContextVariableRepositoryPort,
-  ContextVariableUpdateRecord,
-} from "../../src/db/repositories/contextVariableRepository.js";
+import {
+  ContextVariableResolverService,
+  type ContextResolverPort,
+  type AgentContextVariableEnablementRecord,
+  type ApplyContextVariableProposalInput,
+  type ApplyContextVariableProposalResult,
+  type ContextVariableCreateRecord,
+  type ContextVariableRepositoryPort,
+  type ContextVariableUpdateRecord,
+} from "../../src/modules/context-variables/public.js";
 
 const workspaceId = "workspace-1";
 const agentId = "agent-1";

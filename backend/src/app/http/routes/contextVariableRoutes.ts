@@ -7,9 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ContextVariableScope } from "../../../modules/context-variables/public.js";
-import { deriveVisitorIdentitySigningKey, isValueCompatibleWithType } from "../../../modules/context-variables/public.js";
-
-const MAX_CONTEXT_VARIABLE_VALUE_BYTES = 32 * 1024;
+import { deriveVisitorIdentitySigningKey } from "../../../modules/context-variables/public.js";
 
 const contextVariableValueTypes = ["string", "json"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;
@@ -121,7 +119,7 @@ const agentContextVariableEnablementBodySchema = z.object({
 
 type ContextVariableRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "accountAccessService" | "agentRepository" | "contextVariableRepository" | "env"
+  "accountAccessService" | "contextVariableService" | "env"
 >;
 
 const parseParams = <T extends z.AnyZodObject>(schema: T, params: unknown): z.infer<T> => {
@@ -140,41 +138,6 @@ const parseQuery = <T extends z.AnyZodObject>(schema: T, query: unknown): z.infe
   return parsed.data;
 };
 
-const serializedJsonSize = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), "utf8");
-
-const assertValueSize = (value: unknown): void => {
-  const size = serializedJsonSize(value);
-  if (size > MAX_CONTEXT_VARIABLE_VALUE_BYTES) {
-    throw badRequest("Context variable value exceeds maximum serialized size", {
-      maxBytes: MAX_CONTEXT_VARIABLE_VALUE_BYTES,
-      actualBytes: size,
-    });
-  }
-};
-
-const requireAgent = async (
-  dependencies: ContextVariableRouteDependencies,
-  workspaceId: string,
-  agentId: string,
-): Promise<void> => {
-  const agent = await dependencies.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-  if (!agent) {
-    throw notFound("Agent not found");
-  }
-};
-
-const requireVariable = async (
-  dependencies: ContextVariableRouteDependencies,
-  workspaceId: string,
-  variableId: string,
-) => {
-  const variable = await dependencies.contextVariableRepository.get(workspaceId, variableId);
-  if (!variable) {
-    throw notFound("Context variable not found");
-  }
-  return variable;
-};
-
 export const createContextVariableRoutes = (dependencies: ContextVariableRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
@@ -189,7 +152,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     async (req, res, next) => {
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
-        const contextVariable = await dependencies.contextVariableRepository.create({
+        const contextVariable = await dependencies.contextVariableService.create({
           workspaceId,
           ...req.body,
         });
@@ -203,7 +166,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
   router.get("/context-variables", workspaceSession, contextRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const contextVariables = await dependencies.contextVariableRepository.listByWorkspace(workspaceId);
+      const contextVariables = await dependencies.contextVariableService.listByWorkspace(workspaceId);
       res.status(200).json({ contextVariables });
     } catch (error) {
       next(error);
@@ -214,7 +177,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { id } = parseParams(contextVariableParamsSchema, req.params);
-      const contextVariable = await requireVariable(dependencies, workspaceId, id);
+      const contextVariable = await dependencies.contextVariableService.requireVariable(workspaceId, id);
       res.status(200).json({ contextVariable });
     } catch (error) {
       next(error);
@@ -230,7 +193,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        const contextVariable = await dependencies.contextVariableRepository.update(workspaceId, id, req.body);
+        const contextVariable = await dependencies.contextVariableService.update(workspaceId, id, req.body);
         if (!contextVariable) {
           throw notFound("Context variable not found");
         }
@@ -245,7 +208,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { id } = parseParams(contextVariableParamsSchema, req.params);
-      const deleted = await dependencies.contextVariableRepository.delete(workspaceId, id);
+      const deleted = await dependencies.contextVariableService.delete(workspaceId, id);
       if (!deleted) {
         throw notFound("Context variable not found");
       }
@@ -259,8 +222,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { agentId } = parseParams(z.object({ agentId: z.string().uuid() }), req.params);
-      await requireAgent(dependencies, workspaceId, agentId);
-      const enablements = await dependencies.contextVariableRepository.listByAgent(workspaceId, agentId);
+      const enablements = await dependencies.contextVariableService.listByAgent(workspaceId, agentId);
       res.status(200).json({ enablements });
     } catch (error) {
       next(error);
@@ -271,7 +233,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { agentId } = parseParams(z.object({ agentId: z.string().uuid() }), req.params);
-      await requireAgent(dependencies, workspaceId, agentId);
+      await dependencies.contextVariableService.requireAgent(workspaceId, agentId);
       if (!dependencies.env.WORKSPACE_TOKEN_SECRET) {
         throw badRequest("Workspace token signing is not configured");
       }
@@ -296,9 +258,8 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const { agentId, variableId } = parseParams(agentContextVariableParamsSchema, req.params);
-        await requireAgent(dependencies, workspaceId, agentId);
-        await requireVariable(dependencies, workspaceId, variableId);
-        const enablement = await dependencies.contextVariableRepository.upsertEnablement({
+        const enablement = await dependencies.contextVariableService.upsertEnablement({
+          workspaceId,
           agentId,
           variableId,
           source: req.body.source,
@@ -319,9 +280,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { agentId, variableId } = parseParams(agentContextVariableParamsSchema, req.params);
-      await requireAgent(dependencies, workspaceId, agentId);
-      await requireVariable(dependencies, workspaceId, variableId);
-      const deleted = await dependencies.contextVariableRepository.deleteEnablement(agentId, variableId);
+      const deleted = await dependencies.contextVariableService.deleteEnablement(workspaceId, agentId, variableId);
       if (!deleted) {
         throw notFound("Context variable enablement not found");
       }
@@ -340,12 +299,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        const variable = await requireVariable(dependencies, workspaceId, id);
-        if (!isValueCompatibleWithType(variable.valueType, req.body.data)) {
-          throw badRequest(`Context variable value must match declared valueType '${variable.valueType}'`);
-        }
-        assertValueSize(req.body.data);
-        const value = await dependencies.contextVariableRepository.upsertValue(id, req.body.scope, req.body.data);
+        const value = await dependencies.contextVariableService.upsertValue(workspaceId, id, req.body.scope, req.body.data);
         res.status(200).json({ value });
       } catch (error) {
         next(error);
@@ -358,9 +312,8 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       const { workspaceId } = res.locals as { workspaceId: string };
       const { id } = parseParams(contextVariableParamsSchema, req.params);
       const query = parseQuery(contextVariableValueQuerySchema, req.query);
-      await requireVariable(dependencies, workspaceId, id);
       const scope: ContextVariableScope = { type: query.scopeType, id: query.scopeId };
-      const value = await dependencies.contextVariableRepository.readValue(id, scope);
+      const value = await dependencies.contextVariableService.readValue(workspaceId, id, scope);
       if (!value) {
         throw notFound("Context variable value not found");
       }
@@ -379,8 +332,7 @@ export const createContextVariableRoutes = (dependencies: ContextVariableRouteDe
       try {
         const { workspaceId } = res.locals as { workspaceId: string };
         const { id } = parseParams(contextVariableParamsSchema, req.params);
-        await requireVariable(dependencies, workspaceId, id);
-        const deleted = await dependencies.contextVariableRepository.deleteValue(id, req.body.scope);
+        const deleted = await dependencies.contextVariableService.deleteValue(workspaceId, id, req.body.scope);
         if (!deleted) {
           throw notFound("Context variable value not found");
         }

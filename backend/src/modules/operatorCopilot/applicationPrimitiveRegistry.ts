@@ -17,6 +17,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "chat.conversation.trace.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
   "chat.conversation.identity.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
   "documents.status.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
+  "contextVariables.definition.propose": { owningModule: "contextVariables", exportedPort: "ContextVariableService" },
   "documents.source-status.read": { owningModule: "documents", exportedPort: "DocumentSourceStatusPort" },
   "embedding.coverage.read": { owningModule: "embeddingProfiles", exportedPort: "EmbeddingCoverageReadPort" },
   "eval.case.capture": { owningModule: "eval", exportedPort: "EvalMessageCaseService" },

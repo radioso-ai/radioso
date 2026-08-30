@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
+import { AgentSkillRepository } from "../../src/modules/agentSkills/repository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { AppError } from "../../src/shared/domain/errors.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -12,6 +13,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("ContextVariableRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new ContextVariableRepository(database.kysely);
+  const agentSkillRepository = new AgentSkillRepository(database.kysely);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const agentId = randomUUID();
@@ -225,6 +227,14 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       sensitivity: "normal",
       defaultSurfacing: "always",
     });
+    const resolverSkill = await agentSkillRepository.create({
+      workspaceId,
+      agentId: isolatedAgentId,
+      skillName: `resolver_${randomUUID().slice(0, 8)}`,
+      kind: "retrieve",
+      invocationMode: "routine_named",
+      config: {},
+    });
 
     await repository.upsertEnablement({ agentId: isolatedAgentId, variableId: active.id, source: "pushed", surfacing: "always" });
     await repository.upsertEnablement({ agentId: isolatedAgentId, variableId: valueless.id, source: "pushed", surfacing: "always" });
@@ -240,7 +250,7 @@ describeIntegration("ContextVariableRepository (Postgres)", () => {
       agentId: isolatedAgentId,
       variableId: resolver.id,
       source: "resolver",
-      resolverSkillId: randomUUID(),
+      resolverSkillId: resolverSkill.id,
       maxAgeSeconds: 60,
       resolverTimeoutMs: 1000,
       surfacing: "always",

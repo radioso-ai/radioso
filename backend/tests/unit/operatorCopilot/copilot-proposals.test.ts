@@ -991,7 +991,7 @@ describe("agent skill config proposal adapter", () => {
     const list = vi.fn(async () => overrides.agentSkills ?? []);
     const create = overrides.create ?? vi.fn(async () => ({ id: "created-skill-1" }));
     const update = overrides.update ?? vi.fn(async () => ({ id: existingSkillId }));
-    const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
+    const agentService = { get: vi.fn(async () => ({ id: agentSkillAgentId, updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
     const capabilities = createDefaultSkillCapabilityRegistry();
     // dryRunValidate is the real module-owned validation (target-kind match, invocation-mode
     // support, capability config schema, name/shape) - these tests exercise it for real rather
@@ -1026,7 +1026,7 @@ describe("agent skill config proposal adapter", () => {
 
     // Something unrelated to this skill has since touched the agent row - create never touches
     // it, so this must not block a legitimate first-time create.
-    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
+    agentService.get.mockResolvedValueOnce({ id: agentSkillAgentId, updatedAt: new Date(1) });
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: agentSkillAgentId, skillId: "created-skill-1" } });
     expect(create).toHaveBeenCalledWith("workspace-1", agentSkillAgentId, expect.objectContaining({ name: "faq_search", capability: "retrieve" }));
@@ -1217,21 +1217,29 @@ describe("context variable proposal adapter", () => {
     applyProposal?: ReturnType<typeof vi.fn>;
     agentSkillIds?: string[];
   } = {}) => {
-    const { createContextVariableCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
+    const [
+      { createContextVariableCopilotProposalAdapter },
+      { ContextVariableService },
+    ] = await Promise.all([
+      import("../../../src/modules/operatorCopilot/proposalAdapters.js"),
+      import("../../../src/modules/context-variables/public.js"),
+    ]);
     const get = vi.fn(async () => overrides.variable ?? null);
     const listByWorkspace = vi.fn(async () => overrides.workspaceVariables ?? (overrides.variable ? [overrides.variable] : []));
     const listByAgent = vi.fn(async () => overrides.enablements ?? []);
     const applyProposal = overrides.applyProposal ?? vi.fn(async () => ({ variableId: overrides.variable?.id ?? "created-variable-1" }));
-    const agentService = { get: vi.fn(async () => ({ updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
+    const agentService = { get: vi.fn(async () => ({ id: contextVariableAgentId, updatedAt: overrides.agentUpdatedAt ?? new Date(0) })) };
     // Finding 2 (issue triage, next-ray-epic-issue): validatePayload now refuses a disabled
     // resolver skill too, not just one that does not exist - so this fixture's ids must carry an
     // enabled flag the way the real AgentSkillsService.list result does. Every id this helper's
     // callers register is meant to resolve cleanly, so it defaults to enabled: true.
     const agentSkillsService = { list: vi.fn(async () => (overrides.agentSkillIds ?? []).map((id) => ({ id, enabled: true }))) };
     const adapter = createContextVariableCopilotProposalAdapter({
-      agentService: agentService as never,
-      contextVariableRepository: { get, listByWorkspace, listByAgent, applyProposal } as never,
-      agentSkillsService: agentSkillsService as never,
+      contextVariables: new ContextVariableService({
+        repository: { get, listByWorkspace, listByAgent, applyProposal } as never,
+        agentReader: agentService,
+        agentSkillsReader: agentSkillsService,
+      }),
     });
     return { adapter, get, listByWorkspace, listByAgent, applyProposal, agentService, agentSkillsService };
   };
@@ -1262,7 +1270,7 @@ describe("context variable proposal adapter", () => {
 
     // Something unrelated to this variable has since touched the agent row - applyProposal's
     // create branch never touches it, so this must not block a legitimate first-time create.
-    agentService.get.mockResolvedValueOnce({ updatedAt: new Date(1) });
+    agentService.get.mockResolvedValueOnce({ id: contextVariableAgentId, updatedAt: new Date(1) });
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, validated.versionToken);
     expect(applied).toEqual({ outcome: "applied", appliedRef: { agentId: contextVariableAgentId, variableId: "created-variable-1" } });
     expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({

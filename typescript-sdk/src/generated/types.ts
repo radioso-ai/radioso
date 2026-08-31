@@ -11634,6 +11634,24 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The agentId supplied does not resolve to an agent in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Expensive authenticated request rate limit exceeded */
             429: {
                 headers: {
@@ -15622,6 +15640,24 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The agentId supplied does not resolve to an agent in this workspace */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

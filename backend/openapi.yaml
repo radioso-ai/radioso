@@ -14889,6 +14889,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The agentId supplied does not resolve to an agent in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Expensive authenticated request rate limit exceeded
           content:
@@ -19842,6 +19854,18 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The agentId supplied does not resolve to an agent in this workspace
           content:
             application/json:
               schema:

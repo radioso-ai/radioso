@@ -215,4 +215,17 @@ describe("retrieval search contract", () => {
     expect(spec).toContain("RetrievalSearchRequest:");
     expect(spec).toContain("RetrievalSearchResponse:");
   });
+
+  it("documents the statuses an agent-scoped call can return", () => {
+    // The SDK and MCP type snapshots are generated from this spec, so an
+    // undocumented status is a status their callers cannot see coming.
+    const spec = JSON.parse(
+      readFileSync(new URL("../../openapi.json", import.meta.url), "utf8"),
+    ) as { paths: Record<string, Record<string, { responses: Record<string, unknown> }>> };
+
+    for (const path of ["/api/v1/retrieval/search", "/api/v1/retrieval/answer"]) {
+      expect(Object.keys(spec.paths[path]!.post!.responses).sort())
+        .toEqual(["200", "400", "401", "403", "404", "429"]);
+    }
+  });
 });

@@ -21,6 +21,23 @@ describeIntegration("CopilotRepository retention sweep (Postgres)", () => {
     return conversation.id;
   };
 
+  /**
+   * Holds until the sweep's DELETE is actually waiting on the row lock. Without this the test
+   * could commit first, leaving the sweep to take a snapshot that never saw the expired row — it
+   * would pass for the wrong reason, and pass against the bug too.
+   */
+  const waitForBlockedDelete = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const blocked = await database.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM pg_stat_activity
+         WHERE wait_event_type = 'Lock' AND query ILIKE 'delete from%copilot_conversations%'`,
+      );
+      if (Number(blocked[0]?.count ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error("The retention delete never blocked on the revived row; the race window never opened");
+  };
+
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [
       accountId,
@@ -87,6 +104,37 @@ describeIntegration("CopilotRepository retention sweep (Postgres)", () => {
     const proposals = await database.query(`SELECT id FROM copilot_proposals WHERE id = $1`, [proposal.id]);
     expect(messages).toHaveLength(0);
     expect(proposals).toHaveLength(0);
+  });
+
+  // The bug this pins: the delete selects expired ids in a subquery, and if the outer statement
+  // only matched on those ids, a conversation an operator revived after the snapshot was taken
+  // would still be deleted — mid-turn, with its messages and proposals cascading away. Postgres
+  // rechecks the outer qual against the updated row, so the cutoff has to be part of it.
+  it("leaves a conversation an operator revived while the sweep was already running", async () => {
+    const conversationId = await seedConversation(new Date("2026-01-01T00:00:00.000Z"));
+    const cutoff = new Date("2026-06-01T00:00:00.000Z");
+    const reviver = await database.pool.connect();
+
+    try {
+      // Uncommitted, so the sweep's snapshot still sees the row as expired and selects it, then
+      // blocks trying to lock it — which is exactly the window the race needs.
+      await reviver.query("BEGIN");
+      await reviver.query(`UPDATE copilot_conversations SET updated_at = now() WHERE id = $1`, [conversationId]);
+
+      const sweep = repository.deleteConversationsUpdatedBefore({ cutoff, limit: 100 });
+      await waitForBlockedDelete();
+      await reviver.query("COMMIT");
+
+      expect(await sweep).toBe(0);
+    } finally {
+      reviver.release();
+    }
+
+    const surviving = await database.query<{ id: string }>(
+      `SELECT id FROM copilot_conversations WHERE id = $1`,
+      [conversationId],
+    );
+    expect(surviving).toHaveLength(1);
   });
 
   it("honours the batch limit so one sweep statement stays bounded", async () => {

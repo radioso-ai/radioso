@@ -54,10 +54,18 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
    * Deletes by id from a bounded, ordered subquery rather than by predicate: an unqualified
    * `DELETE ... WHERE updated_at < cutoff` locks every matching row in one statement, and the
    * first sweep after this ships is the largest one the deployment will ever run.
+   *
+   * The cutoff is repeated on the outer delete, not left to the subquery. The subquery chooses
+   * which rows this batch considers; the predicate is the policy, and Postgres rechecks the outer
+   * qual against the current row version when a concurrent transaction updated it. Without the
+   * repeat, an operator who resumed a long-idle conversation in the moment between the subquery's
+   * snapshot and the delete acquiring its row lock would have it deleted mid-turn, taking its
+   * messages and proposals with it.
    */
   async deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
     const result = await this.db
       .deleteFrom("copilot_conversations")
+      .where("updated_at", "<", input.cutoff)
       .where("id", "in", (eb) => eb
         .selectFrom("copilot_conversations")
         .select("id")

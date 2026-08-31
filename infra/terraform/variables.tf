@@ -280,6 +280,17 @@ variable "action_dispatch_recovery_max_jobs" {
   }
 }
 
+variable "copilot_probe_budget_per_turn" {
+  description = "Replayed turns one Ray turn may spend across its verification tools. A suite run is charged one per case, so this is a ceiling on model-backed work per turn rather than on tool calls."
+  type        = number
+  default     = 6
+
+  validation {
+    condition     = var.copilot_probe_budget_per_turn >= 1
+    error_message = "copilot_probe_budget_per_turn must be at least 1."
+  }
+}
+
 variable "copilot_conversation_retention_days" {
   description = "Days a Ray conversation is kept after its last activity before the worker sweep removes it, along with its messages and proposals. 0 keeps conversations indefinitely."
   type        = number

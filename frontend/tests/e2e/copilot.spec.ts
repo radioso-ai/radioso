@@ -486,6 +486,61 @@ test("states plainly that applying a directive removal proposal deletes it perma
   await expect(page.getByText("Applied", { exact: true })).toBeVisible();
 });
 
+test("offers Apply only on the proposals this operator may apply, and Dismiss on all of them", async ({ page }) => {
+  // An operator who manages knowledge but not agents. Apply belongs on the document card and not on
+  // the directive card; a single workspace-wide permission flag would have shown both or neither.
+  const copilotConversationId = "copilot-proposal-mixed-permissions";
+  const nowIso = new Date("2026-08-31T10:00:00.000Z").toISOString();
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") {
+      return route.fulfill({ json: { available: true, reason: "ok", canManage: false, applyableProposalTargets: ["document", "ingestion_settings", "website_crawl"] } });
+    }
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: [] } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      messages = [
+        { id: "operator-mixed", role: "operator", content: "What should change?", createdAt: nowIso },
+        {
+          id: "answer-mixed", role: "copilot", content: "Two drafts.", createdAt: nowIso, outcome: "completed", activity: [],
+          proposals: [
+            { id: "proposal-doc-1", targetType: "document", targetLabel: "Refund policy", summary: "Add the document \"Refund policy\".", status: "pending" },
+            { id: "proposal-directive-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft a directive.", status: "pending" },
+          ],
+        },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-mixed" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId: "proposal-doc-1", targetType: "document", targetLabel: "Refund policy", summary: "Add the document \"Refund policy\"." })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId: "proposal-directive-1", targetType: "directive", targetLabel: "Avoid competitors", summary: "Draft a directive." })}`,
+          "event: chunk\ndata: {\"text\":\"Two drafts.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("What should change?");
+  await page.getByRole("button", { name: "Send question" }).click();
+
+  const documentCard = page.locator("[data-slot=card]").filter({ hasText: "Refund policy" });
+  const directiveCard = page.locator("[data-slot=card]").filter({ hasText: "Avoid competitors" });
+  await expect(documentCard.getByRole("button", { name: "Apply", exact: true })).toBeVisible();
+  await expect(directiveCard.getByRole("button", { name: "Apply", exact: true })).toHaveCount(0);
+  await expect(documentCard.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
+  await expect(directiveCard.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
+});
+
 test("applies a routine proposal and opens the routine editor", async ({ page }) => {
   const copilotConversationId = "copilot-routine-proposal-apply";
   const proposalId = "proposal-routine-apply-1";

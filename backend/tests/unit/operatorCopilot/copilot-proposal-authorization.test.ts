@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { notFound } from "../../../src/shared/domain/errors.js";
+
 import { copilotProposalPermissions } from "../../../src/modules/operatorCopilot/contracts.js";
 import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
@@ -9,6 +11,7 @@ import { createIngestionSettingsProposalCopilotTools } from "../../../src/module
 import { createIngestionSettingsCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWebsiteCrawlProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/websiteCrawlProposals.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
+import { createCopilotDocumentAuthoringPort } from "../../../src/app/composition/copilotToolCatalog.js";
 
 const proposalRow = (overrides: Record<string, unknown> = {}) => ({
   id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -210,5 +213,99 @@ describe("live and reloaded cards state the same thing", () => {
 
     expect(reloaded.summary).toBe(live.summary);
     expect(reloaded.targetLabel).toBe(live.targetLabel);
+  });
+});
+
+describe("failure modes the adapters must tell apart", () => {
+  const storedDocument = {
+    id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", title: "Refund policy", status: "ready",
+    metadata: {}, retrievalEnabled: true, retrievalExpiresAt: null, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+  };
+  const documentAdapter = (getDocument: () => Promise<typeof storedDocument>) => createDocumentCopilotProposalAdapter({
+    documentAuthoring: { getDocument, ingest: vi.fn(), updateMetadata: vi.fn(), updateRetrievalEligibility: vi.fn() },
+    documentDeletion: { delete: vi.fn() },
+    workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
+  });
+  const deletePayload = { op: "delete" as const, name: "Refund policy", removesTarget: true as const };
+
+  it("reads a deleted document as a stale proposal", async () => {
+    const adapter = documentAdapter(async () => { throw notFound("Document not found"); });
+
+    await expect(adapter.applyIfVersionMatches("workspace-1", { documentId: storedDocument.id }, deletePayload, "2026-08-30T10:00:00.000Z"))
+      .resolves.toEqual({ outcome: "stale" });
+  });
+
+  it("reads a database failure as a failure, not as a document someone deleted", async () => {
+    const adapter = documentAdapter(async () => { throw new Error("connection terminated unexpectedly"); });
+
+    const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: storedDocument.id }, deletePayload, "2026-08-30T10:00:00.000Z");
+
+    expect(outcome).toEqual({ outcome: "failed", reason: "connection terminated unexpectedly" });
+  });
+
+  it("lets a database failure surface from preview instead of showing an empty current state", async () => {
+    const adapter = documentAdapter(async () => { throw new Error("connection terminated unexpectedly"); });
+
+    await expect(adapter.preview("workspace-1", { documentId: storedDocument.id }, deletePayload))
+      .rejects.toThrow("connection terminated unexpectedly");
+  });
+
+  it("refuses an ingestion change whose merged result the settings domain rejects", async () => {
+    // Each field is individually in range; the combination is not, and only the domain knows that.
+    const adapter = createIngestionSettingsCopilotProposalAdapter({
+      ingestionSettings: {
+        getForWorkspace: vi.fn(async () => ({
+          chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_000, fixedWindowChunkOverlap: 100,
+          structuredMinChunkSize: 200, structuredMaxChunkSize: 2_000, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+        })),
+        updateForWorkspace: vi.fn(),
+      },
+    });
+
+    await expect(adapter.validatePayload("workspace-1", {}, { fixedWindowChunkOverlap: 900, fixedWindowChunkSize: 500 }))
+      .rejects.toThrow(/smaller than/i);
+  });
+
+  it("applies a crawl under the policy in force at apply, not the one it was drafted under", async () => {
+    const enqueue = vi.fn(async () => ({ jobId: "job-1", sourceId: "source-1" }));
+    let policy = { enabled: true, defaultLimit: 50, maxLimit: 200 };
+    const adapter = createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), enqueue },
+      workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
+      crawlPolicy: () => policy,
+    });
+
+    const drafted = await adapter.validatePayload("workspace-1", { url: "https://help.example.com" }, { url: "https://help.example.com", limit: 200 });
+    policy = { enabled: true, defaultLimit: 10, maxLimit: 25 };
+    await adapter.applyIfVersionMatches("workspace-1", drafted.targetRef, drafted.payload, drafted.versionToken);
+
+    expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ limit: 25 }));
+  });
+});
+
+describe("the composed document port", () => {
+  it("hands the adapter a document with no body, whatever the ingestion service returned", async () => {
+    // The port's type omits `content`, but a type is a compile-time claim. This proves the object
+    // itself has no body, so a widening cast or a JSON dump downstream cannot leak one.
+    const port = createCopilotDocumentAuthoringPort({
+      getDocument: async () => ({
+        id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        title: "Refund policy",
+        status: "ready",
+        metadata: {},
+        retrievalEnabled: true,
+        retrievalExpiresAt: null,
+        updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+        content: "The entire stored body of the document.",
+      }) as never,
+      ingest: vi.fn(),
+      updateMetadata: vi.fn(),
+      updateRetrievalEligibility: vi.fn(),
+    });
+
+    const document = await port.getDocument("workspace-1", "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+
+    expect(Object.keys(document)).not.toContain("content");
+    expect(JSON.stringify(document)).not.toContain("entire stored body");
   });
 });

@@ -59,7 +59,7 @@ export const createIngestionSettingsProposalCopilotTools = (
           conversationId: requiredCopilotConversation(context),
           targetType: "ingestion_settings",
           targetRef: validated.targetRef,
-          payload,
+          payload: { ...payload, summary },
           versionToken: validated.versionToken,
           // Ingestion settings install through no agent config override, so no replay measures them.
           evidence: null,

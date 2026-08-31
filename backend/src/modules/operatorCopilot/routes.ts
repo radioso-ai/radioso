@@ -47,7 +47,6 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
-  const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
   const sessionOnly = rejectBearer();
   router.use(workspaceSession, sessionOnly, agentRead);
 
@@ -87,7 +86,10 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       });
     } catch (error) { next(error); }
   });
-  router.post("/proposals/:proposalId/apply", agentManage, async (req, res, next) => {
+  // No permission middleware here on purpose: what an operator must hold to apply a proposal depends
+  // on what that proposal changes, and only the stored row says which domain that is. The service
+  // reads it and authorizes against copilotProposalPermissions, answering 403 the same way.
+  router.post("/proposals/:proposalId/apply", async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);

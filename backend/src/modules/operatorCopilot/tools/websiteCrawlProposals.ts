@@ -53,13 +53,14 @@ export const createWebsiteCrawlProposalCopilotTools = (
         const validated = await adapter.validatePayload(context.workspaceId, { url: change.url }, change);
         const payload = validated.payload as CopilotWebsiteCrawlPayload;
         await requireCurrentCopilotPermissions(context, [...MANAGE_DOCUMENTS]);
+        const summary = summarize(payload);
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
           conversationId: requiredCopilotConversation(context),
           targetType: "website_crawl",
           targetRef: validated.targetRef,
-          payload,
+          payload: { ...payload, summary },
           versionToken: validated.versionToken,
           // A crawl installs through no agent config override, so no replay measures it.
           evidence: null,
@@ -69,7 +70,7 @@ export const createWebsiteCrawlProposalCopilotTools = (
           proposalId: proposal.id,
           targetType: "website_crawl" as const,
           targetLabel: payload.url,
-          summary: summarize(payload),
+          summary,
         };
       },
     }),

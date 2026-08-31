@@ -30,6 +30,8 @@ export const copilotDocumentCreatePayloadSchema = z.object({
   content: z.string().trim().min(1).max(MAX_COPILOT_DOCUMENT_CONTENT),
   metadata: documentMetadataRecordSchema.optional(),
   rationale: rationaleSchema.optional(),
+  /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
+  summary: z.string().min(1).max(2_000).optional(),
 }).strict();
 
 /**
@@ -60,8 +62,10 @@ export const copilotDocumentDeleteChangeSchema = z.object({
  * What a tool asks for. A change to a stored document names no title: the card must show the title
  * the document actually has at draft time, which only the adapter's own read can supply.
  */
+const copilotDocumentCreateChangeSchema = copilotDocumentCreatePayloadSchema.omit({ summary: true });
+
 export const copilotDocumentChangeSchema = z.discriminatedUnion("op", [
-  copilotDocumentCreatePayloadSchema,
+  copilotDocumentCreateChangeSchema,
   copilotDocumentRetrievalChangeSchema,
   copilotDocumentDeleteChangeSchema,
 ]);
@@ -72,6 +76,8 @@ export const copilotDocumentRetrievalPayloadSchema = z.object({
   name: titleSchema,
   ...retrievalChangeFields,
   rationale: rationaleSchema.optional(),
+  /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
+  summary: z.string().min(1).max(2_000).optional(),
 }).strict();
 
 export const copilotDocumentDeletePayloadSchema = z.object({
@@ -81,6 +87,8 @@ export const copilotDocumentDeletePayloadSchema = z.object({
    * without the reader knowing each target type's word for deletion. */
   removesTarget: z.literal(true),
   rationale: rationaleSchema.optional(),
+  /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
+  summary: z.string().min(1).max(2_000).optional(),
 }).strict();
 
 /** What is stored on the proposal and read back by preview and apply. */

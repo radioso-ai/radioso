@@ -34,6 +34,8 @@ export const copilotWebsiteCrawlPayloadSchema = z.object({
   excludeUrlPatterns: crawlPatternSchema,
   preserveContentLinks: z.boolean(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
+  /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
+  summary: z.string().min(1).max(2_000).optional(),
 }).strict();
 
 export const copilotWebsiteCrawlTargetRefSchema = z.object({ url: httpUrlSchema }).strict();

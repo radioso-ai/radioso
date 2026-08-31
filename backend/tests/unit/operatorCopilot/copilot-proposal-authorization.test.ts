@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import { copilotProposalPermissions } from "../../../src/modules/operatorCopilot/contracts.js";
 import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
+import { createDocumentProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/documentProposals.js";
+import { createDocumentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/documentProposalAdapter.js";
+import { createIngestionSettingsProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/ingestionSettingsProposals.js";
+import { createIngestionSettingsCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWebsiteCrawlProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/websiteCrawlProposals.js";
+import { createWebsiteCrawlCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 
 const proposalRow = (overrides: Record<string, unknown> = {}) => ({
   id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
@@ -121,5 +127,88 @@ describe("reloaded proposal cards", () => {
     expect(card.targetLabel).toBe("Do not guess");
     expect(card.removal).toBe(true);
     expect(card.summary).toBe("Superseded.");
+  });
+});
+
+/**
+ * The sentence a card states has two producers: the tool's own output drives the live card, and
+ * `presentProposalCard` re-derives one from the stored payload after a reload. They drifted apart
+ * once already, so this holds them to the same string per target type.
+ */
+describe("live and reloaded cards state the same thing", () => {
+  const toolContext = {
+    workspaceId: "workspace-1",
+    accountId: "account-1",
+    operatorUserId: "operator-1",
+    currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
+    copilotConversationId: "conversation-1",
+    pageContext: { view: "documents" as const, agentId: null, conversationId: null, selection: null, entities: [] },
+  };
+
+  const drafted = async (
+    descriptors: ReadonlyArray<{ name: string; createTool: (context: never) => { invoke: (input: unknown, extra: never) => Promise<unknown> } }>,
+    name: string,
+    input: unknown,
+    createProposal: { mock: { calls: unknown[][] } },
+  ) => {
+    const descriptor = descriptors.find((candidate) => candidate.name === name);
+    if (!descriptor) throw new Error(`No descriptor named ${name}`);
+    const live = await descriptor.createTool(toolContext as never).invoke(input, {} as never) as { targetLabel: string; summary: string; removal?: boolean };
+    const persisted = createProposal.mock.calls[0]![0] as Record<string, unknown>;
+    const reloaded = presentProposalCard({ ...persisted, id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", status: "pending", reason: null, appliedRef: null, messageId: null, createdAt: new Date(), updatedAt: new Date(), evidence: null } as never);
+    return { live, reloaded };
+  };
+
+  const recorder = () => {
+    const createProposal = vi.fn(async (input: Record<string, unknown>) => ({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", ...input }) as never);
+    return { createProposal, deps: { proposalRepository: { createProposal }, auditService: { record: vi.fn(async () => undefined) } } };
+  };
+
+  const documentPorts = () => ({
+    getDocument: vi.fn(async () => ({
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", title: "Refund policy", status: "ready",
+      metadata: {}, retrievalEnabled: true, retrievalExpiresAt: null, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    })),
+    ingest: vi.fn(), updateMetadata: vi.fn(), updateRetrievalEligibility: vi.fn(),
+  });
+
+  it("agrees for a document removal", async () => {
+    const { createProposal, deps } = recorder();
+    const adapter = createDocumentCopilotProposalAdapter({ documentAuthoring: documentPorts(), documentDeletion: { delete: vi.fn() }, workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") } });
+    const { live, reloaded } = await drafted(createDocumentProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_document_removal", { documentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd" }, createProposal);
+
+    expect(reloaded.summary).toBe(live.summary);
+    expect(reloaded.targetLabel).toBe(live.targetLabel);
+    expect(reloaded.removal).toBe(true);
+  });
+
+  it("agrees for an ingestion settings change", async () => {
+    const { createProposal, deps } = recorder();
+    const adapter = createIngestionSettingsCopilotProposalAdapter({
+      ingestionSettings: {
+        getForWorkspace: vi.fn(async () => ({
+          chunkingStrategy: "fixed_window", fixedWindowChunkSize: 1_000, fixedWindowChunkOverlap: 100,
+          structuredMinChunkSize: 200, structuredMaxChunkSize: 2_000, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+        })),
+        updateForWorkspace: vi.fn(),
+      },
+    });
+    const { live, reloaded } = await drafted(createIngestionSettingsProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_ingestion_settings", { fixedWindowChunkSize: 1_500 }, createProposal);
+
+    expect(reloaded.summary).toBe(live.summary);
+    expect(reloaded.targetLabel).toBe(live.targetLabel);
+  });
+
+  it("agrees for a website crawl", async () => {
+    const { createProposal, deps } = recorder();
+    const adapter = createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), enqueue: vi.fn() },
+      workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
+      crawlPolicy: () => ({ enabled: true, defaultLimit: 50, maxLimit: 200 }),
+    });
+    const { live, reloaded } = await drafted(createWebsiteCrawlProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "start_crawl", { url: "https://help.example.com" }, createProposal);
+
+    expect(reloaded.summary).toBe(live.summary);
+    expect(reloaded.targetLabel).toBe(live.targetLabel);
   });
 });

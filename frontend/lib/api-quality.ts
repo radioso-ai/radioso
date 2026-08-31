@@ -288,7 +288,7 @@ export const qualityApi = {
       limit: options.limit === undefined ? undefined : String(options.limit),
     }
     const path = withQuery('/quality/turns', query)
-    return request<LowQualityTurnsPage>(path, { method: 'GET', ...(signal ? { signal } : {}) }, { withApiToken: true })
+    return request<LowQualityTurnsPage>(path, { method: 'GET', ...(signal ? { signal } : {}) }, { withSession: true })
   },
 
   async getStats(options: GetQualityStatsOptions = {}, signal?: AbortSignal): Promise<QualityStats> {
@@ -297,7 +297,7 @@ export const qualityApi = {
       agentId: options.agentId,
       channel: options.channel,
     })
-    return request<QualityStats>(path, { method: 'GET', ...(signal ? { signal } : {}) }, { withApiToken: true })
+    return request<QualityStats>(path, { method: 'GET', ...(signal ? { signal } : {}) }, { withSession: true })
   },
 
   async setTriageState(
@@ -313,7 +313,7 @@ export const qualityApi = {
     return request<QualityTriageRecord>(
       `/quality/turns/${encodeURIComponent(assistantMessageId)}/triage`,
       { method: 'PUT', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

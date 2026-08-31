@@ -1,58 +1,38 @@
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
-import { MCP_CONTEXT_VERSION } from "../../src/app/http/mcpContextSupport.js";
-import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("workspace MCP context contract", () => {
-  it("returns workspace identity plus MCP capability metadata for a valid bearer token", async () => {
-    const { app } = createTestApp();
-    const token = await issueTestToken(app, "workspace-mcp-context@example.com");
-
-    const response = await request(app)
-      .get("/api/v1/workspace/mcp/context")
-      .set("authorization", `Bearer ${token.token}`);
-
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      apiVersion: "0.1.0",
-      mcpContextVersion: MCP_CONTEXT_VERSION,
-      supportedTools: expect.arrayContaining([
-        "answer_grounded",
-        "create_document",
-        "describe_capabilities",
-        "get_document",
-        "list_documents",
-        "reprocess_document",
-        "search_documents",
-        "update_document",
-      ]),
-      workspaceId: token.workspaceId,
-      workspaceName: "Default",
-    });
-  });
-
-  it("scopes supported MCP tools to the authenticated token permissions", async () => {
+  it("rejects personal and service API credentials while MCP credential support is deferred", async () => {
     const { app, dependencies } = createTestApp();
-    const token = await issueTestToken(app, "workspace-mcp-context-scoped@example.com");
-    vi.spyOn(dependencies.accountAccessService, "hasPermission").mockImplementation(async (input) =>
-      input.permission === "workspace.documents.read" ||
-      input.permission === "workspace.retrieval.query",
-    );
+    const session = await issueTestSession(app, "workspace-mcp-context@example.com");
+    const personal = await dependencies.personalCredentialService.issue({
+      accountId: session.accountId,
+      workspaceId: session.workspaceId,
+      userId: session.userId,
+      label: "MCP context personal",
+      roleCeiling: "admin",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    });
+    const service = await dependencies.serviceAccountService.createWithCredential({
+      accountId: session.accountId,
+      workspaceId: session.workspaceId,
+      actorUserId: session.userId,
+      displayName: "MCP context service",
+      role: "admin",
+      credentialLabel: "MCP context credential",
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    });
 
-    const response = await request(app)
-      .get("/api/v1/workspace/mcp/context")
-      .set("authorization", `Bearer ${token.token}`);
+    for (const token of [personal.secret, service.secret]) {
+      const response = await request(app)
+        .get("/api/v1/workspace/mcp/context")
+        .set("authorization", `Bearer ${token}`);
 
-    expect(response.status).toBe(200);
-    expect(response.body.supportedTools).toEqual([
-      "answer_grounded",
-      "describe_capabilities",
-      "get_document",
-      "list_documents",
-      "search_documents",
-    ]);
-    expect(response.body.supportedTools).not.toContain("create_document");
+      expect(response.status).toBe(401);
+      expect(response.body.error.code).toBe("unauthorized");
+    }
   });
 
   it("rejects unauthenticated MCP context requests", async () => {
@@ -69,21 +49,17 @@ describe("workspace MCP context contract", () => {
     });
   });
 
-  it("fails closed when the workspace token no longer resolves to an active workspace", async () => {
-    const { app, dependencies } = createTestApp();
-    const token = await issueTestToken(app, "workspace-mcp-context-deleted@example.com");
-    await dependencies.workspaceRepository.deleteByIdAndAccountId(token.workspaceId, token.accountId);
+  it("returns context only to the signed-in session for its selected workspace", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "workspace-mcp-context-session@example.com");
 
     const response = await request(app)
       .get("/api/v1/workspace/mcp/context")
-      .set("authorization", `Bearer ${token.token}`);
+      .set("Cookie", session.cookie)
+      .set("X-Workspace-Id", session.workspaceId);
 
-    expect(response.status).toBe(403);
-    expect(response.body).toMatchObject({
-      error: {
-        code: "forbidden",
-        message: "Workspace token no longer resolves to an active workspace.",
-      },
-    });
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ workspaceId: session.workspaceId });
   });
+
 });

@@ -85,7 +85,6 @@ const wave5WorkspaceConfig = deferred("Deferred to Wave 5 workspace configuratio
 const secretBearingRead = permanent("Permanent exclusion: the response carries secret material itself, so it must never enter a model context.");
 const identityAdministration = permanent("Permanent exclusion: Ray does not administer identity, accounts, or authorization.");
 const accountScope = permanent("Permanent exclusion: this is account-scoped rather than workspace-scoped, and Ray operates on one workspace.");
-const tokenIntegrationSurface = permanent("Permanent exclusion: this serves workspace-token integration clients, not the operator dashboard surface Ray runs on.");
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
@@ -117,9 +116,28 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "acceptAccountInvitation",
   ], authOrRegistration),
   ...coverage([
-    "getWorkspaceApiToken",
     "getAgentContextVariableSigningKey",
   ], secretBearingRead),
+  ...coverage([
+    "getApiAccessSummary",
+    "listPersonalApiTokens",
+    "issuePersonalApiToken",
+    "relabelPersonalApiToken",
+    "rotatePersonalApiToken",
+    "revokePersonalApiToken",
+    "listServiceAccounts",
+    "createServiceAccount",
+    "getServiceAccount",
+    "updateServiceAccount",
+    "disableServiceAccount",
+    "enableServiceAccount",
+    "archiveServiceAccount",
+    "listServiceAccountCredentials",
+    "issueServiceAccountCredential",
+    "relabelServiceAccountCredential",
+    "rotateServiceAccountCredential",
+    "revokeServiceAccountCredential",
+  ], neverListExclusion("machine_access")),
   ...coverage([
     "createAdditionalOrganization",
     "switchAccount",
@@ -128,7 +146,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "listAccessibleAccounts",
     "listAccountUsers",
   ], accountScope),
-  ...coverage(["getWorkspaceMcpContext"], tokenIntegrationSurface),
+  ...coverage(["getWorkspaceMcpContext"], accountScope),
   // Grant metadata, not grant tokens: this endpoint documents its own response as "returned without
   // token material". Its siblings listMcpConnections and getMcpConnection are already agent_skills
   // reads, so treating the grants as a permanent secret boundary was inconsistent on its face.
@@ -148,7 +166,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "revokeAgentMcpConverseGrant",
   ], neverListExclusion("access_grants")),
   ...coverage([
-    "rotateWorkspaceApiToken",
     "rotateWebhookDestinationSecret",
     "rotateAnonymousChatToken",
     "rotateWebsiteEmbedToken",

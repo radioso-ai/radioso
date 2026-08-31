@@ -40,7 +40,7 @@ You control the tone with directives rather than a wall of prompt text: what the
 
 The same agent answers your team, not only your customers. Engineers reach it from an MCP client in their editor; a support lead queries it from the API behind an internal dashboard; anyone can open the public chat link.
 
-Radioso's [MCP server](/guides/mcp-server) exposes two surfaces with different scopes. Workspace document tools (`search_documents`, `answer_grounded`, `create_document`, and the rest) authenticate with a workspace API token and work across the whole workspace, retrieval-only, with no agent persona attached. The agent converse surface binds a client to one agent — its persona, directives, and routines — through a per-agent grant, so a tool like Cursor can hold an actual conversation instead of just querying documents.
+Radioso's [MCP server](/guides/mcp-server) exposes two surfaces with different scopes. Workspace document tools (`search_documents`, `answer_grounded`, `create_document`, and the rest) currently reject personal and service API credentials. The agent converse surface binds a client to one agent — its persona, directives, and routines — through a per-agent grant created from the signed-in dashboard session, so a tool like Cursor can hold an actual conversation instead of just querying documents.
 
 Internal help is where the "one agent" part pays off. The onboarding routine you wrote for customers is the one your solutions engineer walks a prospect through. The refund policy your support agent cites is the same document, with the same citation, in every one of those places.
 

@@ -304,7 +304,6 @@ export interface OpenApiSchemaCatalog {
   WorkspaceRouteResolutionResponseSchema: z.ZodTypeAny;
   WorkspaceSchema: z.ZodTypeAny;
   WorkspaceSummaryResponseSchema: z.ZodTypeAny;
-  WorkspaceTokenResponseSchema: z.ZodTypeAny;
   WorkspaceEventInvalidateDataSchema: z.ZodTypeAny;
   WorkspaceEventReadyDataSchema: z.ZodTypeAny;
   WorkspaceEventResyncDataSchema: z.ZodTypeAny;
@@ -316,6 +315,7 @@ export const createOpenApiRegistry = () => {
   const registry = new OpenAPIRegistry();
 
   const sessionCookieScheme = registry.registerComponent("securitySchemes", "sessionCookie", {
+    description: "Interactive Radioso dashboard session. Session-only operations also require the selected workspace header when specified.",
     type: "apiKey",
     in: "cookie",
     name: "radioso_session",
@@ -328,6 +328,7 @@ export const createOpenApiRegistry = () => {
   });
 
   const bearerAuthScheme = registry.registerComponent("securitySchemes", "bearerAuth", {
+    description: "Personal API tokens and service-account credentials for eligible REST API operations. MCP, public launch, agent-converse, and session-only operations use separate credentials or a signed-in session.",
     type: "http",
     scheme: "bearer",
     bearerFormat: "APIKey",

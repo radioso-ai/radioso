@@ -306,7 +306,7 @@ describe("auth contract", () => {
     expect(response.body.token).toBeUndefined();
   });
 
-  it("requires a session workspace selection for cookie auth and still accepts valid bearer tokens", async () => {
+  it("requires a session workspace selection for cookie auth and keeps public-launch settings session-only", async () => {
     const { app } = createTestApp();
     const registration = await issueTestSession(app, "session-workspace@example.com");
     const cookie = registration.cookie;
@@ -333,11 +333,11 @@ describe("auth contract", () => {
       .set("Authorization", `Bearer ${token}`)
       .set("X-Workspace-Id", workspaceId);
 
-    expect(bearerRequest.status).toBe(200);
-    expect(bearerRequest.body.anonymousChatEnabled).toBe(false);
+    expect(bearerRequest.status).toBe(401);
+    expect(bearerRequest.body.error.code).toBe("unauthorized");
   });
 
-  it("falls back to a valid bearer token when a stale session cookie is present", async () => {
+  it("does not fall back to a valid bearer token for public-launch settings when a session is stale", async () => {
     const { app } = createTestApp();
     const registration = await issueTestSession(app, "stale-cookie@example.com");
     const workspaceId = registration.workspaceId;
@@ -349,11 +349,11 @@ describe("auth contract", () => {
       .set("Authorization", `Bearer ${token}`)
       .set("X-Workspace-Id", workspaceId);
 
-    expect(response.status).toBe(200);
-    expect(response.body.anonymousChatEnabled).toBe(false);
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe("unauthorized");
   });
 
-  it("reveals a workspace token through an explicit session-authenticated account route", async () => {
+  it("does not expose the removed shared workspace-token reveal route", async () => {
     const { app } = createTestApp();
 
     const registration = await issueTestSession(app, "token-route-restored@example.com");
@@ -363,11 +363,10 @@ describe("auth contract", () => {
       .get(`/api/v1/account/workspaces/${registration.workspaceId}/token`)
       .set("Cookie", cookie);
 
-    expect(response.status).toBe(200);
-    expect(response.body.token).toMatch(/^radioso_[a-f0-9]+$/);
+    expect(response.status).toBe(404);
   });
 
-  it("rotates a workspace token through an explicit session-authenticated account route", async () => {
+  it("does not expose the removed shared workspace-token rotation route", async () => {
     const { app } = createTestApp();
 
     const registration = await issueTestSession(app, "rotate-token-route@example.com");
@@ -381,10 +380,8 @@ describe("auth contract", () => {
       .post(`/api/v1/account/workspaces/${registration.workspaceId}/token/rotate`)
       .set("Cookie", cookie);
 
-    expect(revealed.status).toBe(200);
-    expect(rotated.status).toBe(200);
-    expect(rotated.body.token).toMatch(/^radioso_[a-f0-9]+$/);
-    expect(rotated.body.token).not.toBe(revealed.body.token);
+    expect(revealed.status).toBe(404);
+    expect(rotated.status).toBe(404);
   });
 
   it("creates and accepts account invitations", async () => {
@@ -422,7 +419,7 @@ describe("auth contract", () => {
     expect(accepted.body.userId).not.toBe(owner.userId);
   });
 
-  it("does not share the brute-force auth limit for repeated workspace token reveal requests", async () => {
+  it("keeps the removed workspace-token route absent under repeated requests", async () => {
     const { app } = createTestApp({
       envOverrides: {
         AUTH_RATE_LIMIT_MAX_ATTEMPTS: 1,
@@ -438,8 +435,7 @@ describe("auth contract", () => {
         .get(tokenRoute)
         .set("Cookie", cookie);
 
-      expect(response.status).toBe(200);
-      expect(response.body.token).toMatch(/^radioso_[a-f0-9]+$/);
+      expect(response.status).toBe(404);
     }
   });
 

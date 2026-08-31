@@ -173,25 +173,28 @@ curl -sS -c cookies.txt \
   http://localhost:8080/api/v1/auth/login
 ```
 
-The login response also includes `workspacePublicRouteKey`. Browser URLs use that public route key, while backend workspace APIs and token reveal flows continue to use the internal `workspaceId`.
+The login response also includes `workspacePublicRouteKey`. Browser URLs use that public route key, while backend workspace and API-access routes continue to use the internal `workspaceId`.
 
-List workspaces or reveal the workspace API token with the session cookie:
+List workspaces and inspect API-access capabilities with the session cookie:
 
 ```bash
 curl -sS -b cookies.txt \
   http://localhost:8080/api/v1/workspace
 
 curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+  -H 'X-Workspace-Id: <workspace-id>' \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/api-access
 ```
 
-Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
+Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL.
+
+Create a personal token for automation you run as yourself, or a service account for CI and unattended workloads. The secret is returned once and cannot be recovered later. Personal authority is capped by the token's selected role and the user's live workspace role; service credentials use the service account's live role. See [API access credential upgrade](./docs/api-access-migration.md) before upgrading an installation that uses a shared workspace token.
 
 **Agents, assistant, and retrieval.** Use agents to configure agent identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Date-aware event behavior is also configured there through temporal structured lookup, upcoming boost, and deterministic temporal sort settings. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   http://localhost:8080/api/v1/agents
 ```
 
@@ -199,7 +202,7 @@ Use the assistant API for human-facing chat. Each turn runs through the [convers
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"message":"What does the FAQ say about refunds?","stream":false}' \
   http://localhost:8080/api/v1/assistant/chat
@@ -209,13 +212,13 @@ Use retrieval APIs when you want grounded search or answer generation over works
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"query":"refund policy"}' \
   http://localhost:8080/api/v1/retrieval/search
 
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"query":"What does the FAQ say about refunds?"}' \
   http://localhost:8080/api/v1/retrieval/answer
@@ -225,7 +228,7 @@ The read-only skills catalog lists the skills the conversation engine can select
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   http://localhost:8080/api/v1/skills
 ```
 
@@ -302,9 +305,9 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 
 ### MCP server
 
-Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. It uses a per-agent converse grant, minted by a workspace admin at `POST /api/v1/agents/{agentId}/mcp-converse-grants` and exchanged for a short-lived session. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) are scoped to a whole workspace and use the workspace API token. The two surfaces do not share credentials.
+Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. A workspace admin creates its per-agent converse grant from the signed-in dashboard session (the dashboard uses `POST /api/v1/agents/{agentId}/mcp-converse-grants`); the client exchanges that grant for a short-lived session. A personal or service API bearer cannot create the grant. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) are scoped to a whole workspace, but personal tokens and service-account credentials are not accepted by MCP. The two surfaces do not share credentials.
 
-Radioso supports MCP in two deployment shapes. Self-hosted operators can set `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` and serve MCP from the backend at `/mcp`, using the workspace API token directly. Operators who need a separate public connector surface can keep backend MCP disabled and use the standalone `packages/radioso-mcp-server/` process with its token exchange flow.
+The MCP package supports same-host merged and standalone deployment shapes. The supported authenticated client flow is agent converse. Workspace-document MCP has no accepted personal or service credential class; do not put a REST API credential into MCP configuration.
 
 Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. Public connectors use a session token minted through the grant exchange; there is no standard MCP OAuth front door for the converse surface.
 
@@ -312,7 +315,7 @@ Cursor can use either same-host merged mode or a local standalone server. Claude
 
 Embed a Radioso chat widget on any website. One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control. The widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
 
-The **Web chat** page under an agent's Channels section holds both placements — the public link and the website widget — and shows whether each launch credential is active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
+The **Web chat** page under an agent's Channels section holds both placements — the public link and the website widget — and shows whether each launch credential is active, plus when each was last used. If a public link or install code is exposed, rotate its public launch credential from the signed-in dashboard: the old value stops launching new sessions when the token changes. This rotation is separate from personal and service API credentials.
 
 ---
 
@@ -326,17 +329,17 @@ List configured providers, store a key, or remove one:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   http://localhost:8080/api/v1/settings/credentials
 
 curl -sS -X PUT \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"apiKey":"sk-..."}' \
   http://localhost:8080/api/v1/settings/credentials/claude
 
 curl -sS -X DELETE \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   http://localhost:8080/api/v1/settings/credentials/claude
 ```
 
@@ -344,11 +347,11 @@ Read or update the per-workspace chat / rewrite / rerank model preference. A `nu
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   http://localhost:8080/api/v1/settings/llm-models
 
 curl -sS -X PUT \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"chat":{"provider":"claude","model":"claude-sonnet-4-5"},"rerank":null}' \
   http://localhost:8080/api/v1/settings/llm-models
@@ -412,13 +415,13 @@ Workspace-level `anonymousRateLimit` and `messagesPerMinute` settings have no ef
 
 Authenticated assistant chat and retrieval answer/search routes share a durable rate limit because they can trigger model or retrieval work. Operators can tune it with `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS` and `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS`. The default is 60 requests per 60 seconds.
 
-The limit is scoped by account and workspace for browser sessions. Workspace API tokens get separate token-specific buckets within the same account and workspace.
+The limit is scoped by account and workspace for browser sessions. Personal and service-account credentials get separate credential-specific buckets within the same account and workspace.
 
 ### Audience Pulse refresh limits
 
 Audience Pulse is an on-demand dashboard analysis, so loading a saved report does not consume its refresh budget. Each account and workspace can make three explicit refresh attempts every 15 minutes.
 
-This limit applies only to cookie-authenticated dashboard sessions. Workspace API tokens and bearer requests cannot access Audience Pulse.
+This limit applies only to cookie-authenticated dashboard sessions. Personal and service-account bearer credentials cannot access Audience Pulse.
 
 ---
 

@@ -48,7 +48,7 @@ Build the backend, then run the dedicated process with `pnpm --dir backend run s
 
 Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private base URL, for example `http://realtime:8080`. Browsers connect to the same-origin `/backend/api/v1/events` route; the frontend forwards that request to the internal stream without exposing the realtime service publicly.
 
-The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so workspace API tokens, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
+The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so personal/service API credentials, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
 Radioso's own MCP server is a deployment-level setting: set `RADIOSO_MCP_ENABLED` to turn it on, and set `RADIOSO_MCP_STANDALONE` depending on whether MCP should run merged into the backend or as its own process. See [MCP server](/guides/mcp-server) for both deployment shapes and the credentials each one needs.
 
@@ -79,7 +79,7 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 `PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
 
-`WORKSPACE_TOKEN_SECRET` signs workspace API tokens and derives the per-agent signing key a workspace admin can reveal so their website's own backend can prove [signed visitor identity](/operators/context-variables#signed-visitor-identity) for embedded chat.
+`WORKSPACE_TOKEN_SECRET` derives the per-agent signing key a workspace admin can reveal so their website's own backend can prove [signed visitor identity](/operators/context-variables#signed-visitor-identity) for embedded chat. It is not a signer for personal or service API credentials.
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
 

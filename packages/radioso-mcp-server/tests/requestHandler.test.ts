@@ -5,8 +5,10 @@ import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
 import { hashToken } from "../src/auth/token.js";
 import { createMcpRequestHandler } from "../src/http/requestHandler.js";
+import { createMcpHttpRuntime } from "../src/http/publicRuntime.js";
 import { createSessionMcpServerManager } from "../src/http/sessionServerManager.js";
 import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
+import { createRuntimeStoreReadiness } from "../src/state/runtimeStores.js";
 
 const config = {
   accessTokenTtlSeconds: 900,
@@ -72,6 +74,73 @@ const request = (accessToken: string | null, payload: unknown) =>
   });
 
 describe("MCP request handler", () => {
+  it.each(["personal_api", "service_account_credential"] as const)(
+    "rejects a %s credential from the merged runtime verifier",
+    async (credentialClass) => {
+      const runtime = await createMcpHttpRuntime({
+        auditSinks: [],
+        config,
+        verifyBearerToken: async () => ({
+          credentialClass,
+          upstreamApiToken: "new-credential",
+          workspaceId: "workspace-1",
+        }),
+      });
+
+      try {
+        await runtime.readiness.waitUntilReady();
+        const response = await runtime.handler(request("new-credential", {
+          id: "1",
+          jsonrpc: "2.0",
+          method: "tools/list",
+          params: {},
+        }));
+
+        expect(response.status).toBe(401);
+        await expect(response.json()).resolves.toMatchObject({
+          error: {
+            code: -32001,
+            data: { code: "invalid_access_token" },
+          },
+        });
+      } finally {
+        await runtime.close();
+      }
+    },
+  );
+
+  it("fails closed until runtime-store purge readiness is established", async () => {
+    const verifyBearerToken = vi.fn(async () => null);
+    const readiness = createRuntimeStoreReadiness({
+      purge: vi.fn<() => Promise<void>>().mockRejectedValue(new Error("Redis unavailable")),
+      retryDelayMs: 50,
+    });
+    const handler = createMcpRequestHandler({
+      config,
+      readiness,
+      serverManager: createSessionMcpServerManager({ config }),
+      verifyBearerToken,
+    });
+    readiness.start();
+
+    const response = await handler(request("unavailable", {
+      id: "1",
+      jsonrpc: "2.0",
+      method: "tools/list",
+      params: {},
+    }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: -32002,
+        data: { code: "mcp_runtime_unavailable" },
+      },
+    });
+    expect(verifyBearerToken).not.toHaveBeenCalled();
+    readiness.stop();
+  });
+
   it("serves MCP requests through a pluggable bearer verifier", async () => {
     const { exchanged, handler } = await createHandler();
 

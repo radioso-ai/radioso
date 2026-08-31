@@ -1,17 +1,17 @@
 ---
 title: "MCP Client Setup"
 description: "Setup guide covering the agent converse surface, the workspace document tools, MCP deployment modes, and authentication flows."
-last_updated: 2026-07-27
+last_updated: 2026-08-31
 ---
 
 # MCP Client Setup
 
-Radioso exposes two MCP surfaces. They serve different needs and use different credentials.
+Radioso exposes an agent-converse MCP surface for clients that need to talk to one configured agent.
 
 - **Agent converse surface**: an MCP client talks to one specific agent, with that agent's persona, directives, routines, history, and configured retrieval. It authenticates with a per-agent converse grant. Use this when the client should behave like the agent.
-- **Workspace document tools**: retrieval-first tools (`search_documents`, `answer_grounded`, document read/write) scoped to a whole workspace. They authenticate with a workspace API token and do not use any agent's persona or configuration. The rest of this guide, from "Deployment Modes" onward, describes this surface.
+- **Workspace document work**: use the REST document routes with a personal token or service-account credential. MCP rejects those REST credentials.
 
-The two surfaces do not share credentials. A converse grant is rejected by the workspace tools, and a workspace API token is rejected by the converse surface.
+An agent-converse grant is a per-agent MCP credential. REST credentials are rejected by the MCP context route, standalone exchange, merged MCP route, and stdio preflight.
 
 ## Agent Converse Surface
 
@@ -21,11 +21,12 @@ A converse credential authorizes exactly one agent, and its reach ends there.
 
 ### Mint a converse grant
 
-A converse grant is the per-agent credential a client uses. A workspace admin creates it with the workspace API token. The plaintext token is returned once, on creation. Store it as a secret.
+A converse grant is the per-agent credential a client uses. A workspace admin creates it through a signed-in dashboard session. The plaintext token is returned once, on creation. Store it as a secret.
 
 ```http
 POST /api/v1/agents/{agentId}/mcp-converse-grants
-Authorization: Bearer <workspace API token>
+Cookie: <signed-in dashboard session>
+X-Workspace-Id: <workspace UUID>
 Content-Type: application/json
 
 { "label": "Cursor on my laptop" }
@@ -110,57 +111,50 @@ Authorization: Bearer <session token>
 
 ### Authentication boundaries
 
-- The converse surface accepts only converse grants. A workspace API token is rejected.
+- The converse surface accepts only converse grants. Personal tokens, service-account credentials, and removed shared workspace tokens are rejected.
 - A converse grant is bound to the `mcp-converse` channel. Embed and public-chat launch tokens are rejected, so a public website token cannot be used to converse over MCP.
 - A converse grant is a secret. Unlike an embed token, it is never exposed in client-side surfaces.
 
 ### Authentication limits
 
-The converse surface uses the grant-for-session exchange described above. This fits self-hosted setups and applications that hold the grant on a server. There is no standard MCP OAuth 2.1 front door for public connectors such as Claude or ChatGPT; public connectors authenticate with a session token minted through the exchange flow.
+The converse surface uses the grant-for-session exchange described above. MCP authentication in this feature is based on the per-agent converse grant and its session token. Personal and service-account REST credentials do not authorize MCP, and the package does not add an OAuth front door.
 
 ## Deployment Modes
 
 Radioso supports three MCP deployment modes:
 
-- **Same-host backend MCP**: set `RADIOSO_MCP_ENABLED=true` and leave `RADIOSO_MCP_STANDALONE=false`. The backend serves MCP at `RADIOSO_MCP_MOUNT_PATH` (default `/mcp`). Clients use the workspace API token directly as the bearer token.
-- **Standalone-only**: run `packages/radioso-mcp-server` as a separate HTTP process. Clients first exchange a workspace API token for a short-lived MCP access token.
-- **Hybrid**: enable merged mode on the backend and also run a standalone MCP server for public connector traffic. Use `RADIOSO_MCP_REDIS_URL` on both when approval and session state must be shared.
+- **Same-host backend MCP**: set `RADIOSO_MCP_ENABLED=true` and leave `RADIOSO_MCP_STANDALONE=false`. The backend serves MCP at `RADIOSO_MCP_MOUNT_PATH` (default `/mcp`). Personal and service-account REST credentials receive a generic unauthorized response at this route.
+- **Standalone-only**: run `packages/radioso-mcp-server` as a separate HTTP process. Personal and service-account REST credentials receive a generic unauthorized response from `/v1/auth/exchange`; agent-converse grants use the separate converse session flow.
+- **Hybrid**: enable merged mode on the backend and also run a standalone MCP server for separate traffic. Use `RADIOSO_MCP_REDIS_URL` on both when runtime session state must be shared.
 
-Use merged mode for simple self-hosted installs where the backend and MCP endpoint have the same exposure. Use standalone mode when MCP is public but the main backend should stay internal or behind a different network policy.
+Every controlled runtime store purges sessions containing legacy upstream verifier material before MCP readiness. An unavailable configured store leaves the runtime unavailable while purge retries; it does not switch to an in-memory store. During an upgrade, the backend destroys the legacy verifier material. A stale copy held by another deployment fails when upstream validation rejects it, and cached sessions are removed after that rejection.
 
 ## Cursor On Localhost
 
 Cursor can connect to Radioso in two ways:
 
-- **Same-host merged mode**: Cursor connects to the backend MCP route, such as `http://localhost:8080/mcp`, and sends `Authorization: Bearer <workspace API token>`.
-- **Remote HTTP (URL mode)**: Cursor connects to a local HTTP MCP server at `http://127.0.0.1:8787/mcp`. Point your local Cursor MCP config at that URL and pass a short-lived bearer token in `RADIOSO_MCP_ACCESS_TOKEN`.
-- **Local stdio (stdio mode)**: Cursor launches the MCP server process itself (no separate HTTP daemon). This uses `RADIOSO_BASE_URL` and `RADIOSO_API_TOKEN` directly.
+- **Same-host merged mode**: Cursor connects to the backend MCP route, such as `http://localhost:8080/mcp`. Personal and service-account REST credentials receive a generic unauthorized response there.
+- **Remote HTTP (URL mode)**: Cursor connects to a local HTTP MCP server at `http://127.0.0.1:8787/mcp`. Point your local Cursor MCP config at that URL and pass an agent-converse bearer in `RADIOSO_MCP_ACCESS_TOKEN`.
+- **Local stdio (stdio mode)**: Cursor launches the MCP server process itself. The process preflights `RADIOSO_API_TOKEN`; personal and service-account REST credentials are rejected before startup.
 
 ### Same-Host Merged Mode
 
 1. Start the backend with `RADIOSO_MCP_ENABLED=true` and `RADIOSO_MCP_STANDALONE=false`.
 2. Configure Cursor to connect to `http://localhost:8080/mcp`, or your deployed backend origin plus `/mcp`.
-3. Use the workspace API token directly in `Authorization: Bearer <workspace API token>`.
-4. Ask Cursor to list tools or query workspace documents.
+3. Personal and service-account REST credentials receive a generic unauthorized response at this route.
+4. Use the separate agent-converse MCP surface and its grant/session bearer to talk to an agent.
 
-No `/v1/auth/exchange` call is needed in merged mode.
+REST credentials are not accepted as merged MCP bearers.
 
 ### Standalone HTTP Mode
 
 1. Start the Radioso backend and the remote MCP server.
-2. Exchange a Radioso workspace API token for an MCP access token:
-
-```bash
-source <(
-  RADIOSO_WORKSPACE_TOKEN=radioso_example \
-  pnpm --dir packages/radioso-mcp-server run -s token:exchange
-)
-```
+2. Obtain an agent-converse grant and exchange it through the converse session endpoint described above.
 
 3. Configure Cursor to connect to `http://127.0.0.1:8787/mcp` with `Authorization: Bearer ${env:RADIOSO_MCP_ACCESS_TOKEN}`, then open this repo in Cursor.
-4. Ask Cursor to list tools or query workspace documents.
+4. Ask Cursor to talk to the bound agent.
 
-The exchange helper emits a short-lived token. Rerun it when the MCP session expires.
+The converse session expires according to the response from the converse session endpoint. A REST credential sent to `/v1/auth/exchange` receives a generic unauthorized response.
 
 ## Security Notes
 
@@ -170,74 +164,25 @@ Standalone mode keeps a separate public surface. It is the better fit when cloud
 
 The merged route has separate CORS configuration through `RADIOSO_MCP_MERGED_CORS_ORIGINS`. The default is `*` without credentials, because MCP clients use bearer tokens rather than dashboard cookies.
 
-Workspace API tokens are secret bearer credentials bound to one workspace. Public chat and website embed launch credentials are not API tokens and are never accepted by MCP or other workspace API bearer-authenticated routes.
+Agent-converse grants are secret bearer credentials bound to one agent. Public chat and website embed launch credentials are separate credential types and are not accepted by the converse MCP surface. Personal and service-account REST credentials are rejected by merged MCP, standalone exchange, and stdio preflight.
 
 ## Endpoint Model
 
-MCP is retrieval-first by default. Tools such as `search_documents` and `answer_grounded` call Radioso retrieval and document endpoints directly. They do not create assistant conversations and they do not inherit assistant persona, greeting, or social-reply behavior.
+The MCP endpoint serves the agent-converse surface. `ask_agent` runs the bound agent's turn loop, `answer_grounded` uses that agent's retrieval settings, and MCP resources expose the agent's documents. The converse grant fixes the agent and its authorization boundary.
 
-In practice:
+Workspace retrieval and document operations remain REST surfaces. Personal and service-account REST credentials receive a generic unauthorized response from merged MCP, standalone exchange, and stdio preflight; they do not become MCP tool credentials.
 
-- Use MCP `answer_grounded` when a client wants a grounded answer from workspace documents.
-- Use MCP document tools when a client wants document capability access.
-- Use `POST /api/v1/assistant/chat` only when the integration explicitly wants the customer-facing assistant chat product.
-
-The retrieval answer endpoint accepts optional `conversationContext` hints for rewrite continuity. The caller owns those hints. Radioso retrieval uses them to improve the search query, but retrieval does not become the owner of assistant chat history.
-
-Direct REST and SDK clients receive retrieval diagnostics only on request. Set `includeDebug: true` and read `debug.activitySummary`, `debug.activityTrace`, and, for grounded answers, `debug.evidence`. The MCP server opts into debug responses for retrieval tools by default, so operators can inspect grounded-answer traces from MCP clients.
-
-For debugging, MCP grounded-answer calls request diagnostic metadata from the retrieval API and are marked as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
-
-Grounded-answer diagnostics also include retrieval shape metadata in `debug.activityTrace` and `debug.activitySummary`. Look for the `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. These fields explain which resolved retrieval shape and step overrides were applied.
-
-## Reprocess Documents
-
-The workspace document tools include `reprocess_document`. It requeues an existing document through the backend document processing path.
-
-The tool accepts an optional `documentEnrichmentOverride` argument:
-
-```json
-{
-  "documentId": "document-id",
-  "documentEnrichmentOverride": "on"
-}
-```
-
-Values are `on` and `off`. The override applies only to the processing job created by this tool call. It does not change the workspace ingestion setting or the source-level enrichment override.
-
-## Skills Catalog
-
-Radioso also exposes a read-only skills catalog through the main API:
-
-```http
-GET /api/v1/skills
-GET /api/v1/skills/{skillName}
-```
-
-MCP clients can use the catalog to understand the shared skill vocabulary without changing how tools execute. For example, `retrieval.answer` points to the retrieval answer API and the MCP `answer_grounded` tool, while `mcp.describe_capabilities` points to the MCP capability discovery tool.
-
-The catalog does not force MCP traffic through assistant chat. MCP tools remain retrieval-first and document-capability-oriented unless an integration explicitly chooses the assistant chat API.
+The MCP credential migration covers eligibility checks, controlled runtime-store purge, readiness, and upstream revalidation. It adds no OAuth flow, MCP tool-filtering surface, skills catalogue, or Ray access.
 
 ### macOS GUI Launches
 
-If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop launcher, use the macOS helper instead:
-
-```bash
-RADIOSO_WORKSPACE_TOKEN=radioso_example \
-pnpm --dir packages/radioso-mcp-server run -s cursor:prepare -- --open
-```
-
-That exchanges the token, installs `RADIOSO_MCP_ACCESS_TOKEN` into the macOS GUI app environment with `launchctl`, and opens a fresh Cursor instance for this repo.
+If you normally open Cursor from the Dock, Spotlight, Raycast, or a desktop launcher, install the agent-converse bearer into the app environment with your platform's environment manager, then open a fresh Cursor instance.
 
 If Cursor is already open, fully quit it first so the relaunched app picks up the new token.
 
 ### Cursor With Stdio (No Local HTTP Server)
 
-If you prefer Cursor to spawn the MCP server directly:
-
-- Set `RADIOSO_BASE_URL` (for example `http://localhost:8080`)
-- Set `RADIOSO_API_TOKEN` (your workspace API token, `radioso_...`)
-- Ensure `pnpm install --filter @radioso/mcp-server...` has been run so the `cursor:mcp-stdio` entrypoint can run.
+The legacy stdio workspace-credential flow has no eligible credential in this release. The removed shared credential, personal tokens, and service-account credentials all fail its preflight. Use the HTTP agent-converse setup above; an agent-converse grant is intentionally not accepted as `RADIOSO_API_TOKEN` by the stdio workspace flow.
 
 ## Claude And Claude Desktop Remote Connectors
 
@@ -246,16 +191,15 @@ Claude custom connectors are true remote connectors. Anthropic connects to your 
 To use Radioso from Claude or Claude Desktop as a remote connector:
 
 1. Deploy the MCP server to a public HTTPS URL such as `https://mcp.example.com/mcp`.
-2. Add connector-compatible authentication in front of that public deployment. The package ships its own `/v1/auth/exchange` flow, which works for local and API-driven clients but is not a native Claude connector auth flow.
+2. Configure the connector to send an agent-converse grant/session bearer.
 3. In Claude, open `Customize -> Connectors` and add a custom connector with that remote URL.
-4. If your hosted server uses OAuth, provide the client ID and client secret in Claude's advanced settings.
-5. Authenticate the connector, then enable it in a conversation.
+4. The package does not provide OAuth onboarding for the connector.
 
 If you want localhost-only Claude Desktop access, use the stdio compatibility entrypoint instead of the remote connector flow.
 
 ### Anthropic Messages API
 
-For direct API testing, Anthropic's Messages API can connect to a public remote MCP server and inject a bearer token per request. That makes the current Radioso auth flow usable for ad hoc API calls once you mint a short-lived access token first.
+For direct API testing, Anthropic's Messages API can connect to a public remote MCP server and inject an agent-converse bearer per request.
 
 ```json
 {
@@ -291,10 +235,9 @@ ChatGPT custom apps and OpenAI API integrations also require a public remote MCP
 ### ChatGPT App
 
 1. Deploy the MCP server to a public HTTPS URL.
-2. Add app-compatible authentication. In practice that means OAuth or OpenID Connect with refresh-token support. The package's `/v1/auth/exchange` flow is not enough for native ChatGPT app onboarding by itself.
+2. Supply an agent-converse grant/session bearer through the host's static bearer configuration.
 3. In ChatGPT workspace settings, enable developer mode and create a custom app from that MCP server URL.
-4. If your deployment uses OAuth or OpenID Connect, configure refresh-token-capable auth before publishing.
-5. Connect the app in ChatGPT and test read and write paths. ChatGPT will prompt the user before any tool advertised with `requiresApproval: true`; that is the host-side approval gate for writes.
+4. The package does not provide OAuth onboarding or REST-credential tool access for the app.
 
 ### OpenAI Responses API
 
@@ -305,15 +248,8 @@ The Responses API can call a remote MCP server directly. A typical tool stanza l
   "type": "mcp",
   "server_label": "radioso",
   "server_url": "https://mcp.example.com/mcp",
-  "allowed_tools": [
-    "describe_capabilities",
-    "list_documents",
-    "get_document",
-    "search_documents",
-    "answer_grounded"
-  ],
   "require_approval": "never"
 }
 ```
 
-`require_approval: "never"` skips the host-side prompt. The Radioso MCP server has no server-side approval gate — authorization is the workspace API token and the tools the MCP session was granted at exchange time, with the underlying workspace permission enforced at the upstream Radioso REST API. If you want a human-in-the-loop step for writes, run the integration through a host that honors the per-tool `requiresApproval: true` advertisement (such as Cursor, Claude Desktop, or the ChatGPT app UI) instead of through the headless Responses API. If your hosted Radioso MCP endpoint is not public and unauthenticated, you will also need an OpenAI-compatible auth layer before this can be used from ChatGPT apps or OpenAI-hosted flows.
+`require_approval: "never"` skips the host-side prompt. The MCP surface in this feature is the agent-converse surface; the package does not add OAuth onboarding, REST-credential tool filtering, a skills catalogue, or Ray access.

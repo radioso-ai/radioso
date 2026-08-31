@@ -37,7 +37,7 @@ describe('workbench replay API', () => {
           },
         }),
       },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 
@@ -65,7 +65,7 @@ describe('workbench replay API', () => {
           },
         }),
       },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 })

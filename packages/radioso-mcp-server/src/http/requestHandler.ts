@@ -3,11 +3,13 @@ import type { RadiosoMcpConfig } from "../config.js";
 
 import { toInternalAuthInfo } from "./sessionServerManager.js";
 import type { SessionMcpServerManager } from "./types.js";
+import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
 
 export type McpBearerTokenVerifier = (accessToken: string) => Promise<AccessSessionRecord | null>;
 
 export interface McpRequestHandlerDependencies {
   config: Pick<RadiosoMcpConfig, "bindHost" | "bindPort">;
+  readiness?: RuntimeStoreReadiness;
   serverManager: SessionMcpServerManager;
   verifyBearerToken: McpBearerTokenVerifier;
 }
@@ -59,10 +61,17 @@ const withMcpAcceptHeader = (request: Request): Request => {
 };
 
 export const createMcpRequestHandler = ({
+  readiness,
   serverManager,
   verifyBearerToken,
 }: McpRequestHandlerDependencies): McpRequestHandler => {
   return async (request: Request): Promise<Response> => {
+    if (readiness && !readiness.isReady()) {
+      return jsonRpcError(503, -32002, "MCP runtime is unavailable.", {
+        code: "mcp_runtime_unavailable",
+      });
+    }
+
     const accessToken = readBearerToken(request);
     if (!accessToken) {
       return jsonRpcError(401, -32001, "MCP access token is invalid or expired.", {

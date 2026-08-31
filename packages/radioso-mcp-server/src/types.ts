@@ -9,7 +9,10 @@ export type JsonRecord = Record<string, JsonPrimitive>;
 
 export type DocumentListResult = components["schemas"]["DocumentListResponse"];
 
-export type WorkspaceMcpContextRecord = components["schemas"]["WorkspaceMcpContextResponse"];
+export type WorkspaceMcpContextRecord = components["schemas"]["WorkspaceMcpContextResponse"] & {
+  /** Added by the API credential migration; optional for older backends. */
+  credentialClass?: "legacy_workspace_api" | "personal_api" | "service_account_credential" | "agent_converse";
+};
 
 export interface ToolExecutionResult {
   summary: string;

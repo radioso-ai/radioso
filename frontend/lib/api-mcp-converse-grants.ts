@@ -20,7 +20,7 @@ export const mcpConverseGrantsApi = {
     return request<{ grants: McpConverseGrant[] }>(
       `/agents/${agentId}/mcp-converse-grants`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -31,7 +31,7 @@ export const mcpConverseGrantsApi = {
         method: 'POST',
         body: JSON.stringify(data),
       },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -39,7 +39,7 @@ export const mcpConverseGrantsApi = {
     return request<McpConverseGrantWithToken>(
       `/agents/${agentId}/mcp-converse-grants/${grantId}/rotate`,
       { method: 'POST' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -47,7 +47,7 @@ export const mcpConverseGrantsApi = {
     await request<void>(
       `/agents/${agentId}/mcp-converse-grants/${grantId}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

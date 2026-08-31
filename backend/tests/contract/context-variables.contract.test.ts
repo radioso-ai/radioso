@@ -28,13 +28,14 @@ const createContextVariable = async (app: ReturnType<typeof createTestApp>["app"
 describe("context variable HTTP API", () => {
   it("reveals the per-agent visitor identity signing key to workspace admins", async () => {
     const { app, dependencies } = createTestApp();
-    const { token, workspaceId } = await issueTestToken(app, "context-vars-signing-key@example.com");
+    const { cookie, token, workspaceId } = await issueTestToken(app, "context-vars-signing-key@example.com");
     const authorization = `Bearer ${token}`;
     const agent = await createAgent(app, authorization);
 
     const response = await request(app)
       .get(`/api/v1/agents/${agent.body.id}/context-variables/signing-key`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
 
     expect(response.body).toEqual({

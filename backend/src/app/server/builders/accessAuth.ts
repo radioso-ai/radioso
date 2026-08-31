@@ -23,25 +23,62 @@ import { Database } from "../../../shared/infra/database.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
+import {
+  ApiPrincipalAuthenticator,
+  CredentialExpiryWarningService,
+  PersonalCredentialService,
+  PersonalCredentialTenureService,
+  ServiceAccountService,
+  type MachineAccessSecurityObserver,
+} from "../../../modules/machineAccess/public.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 
 export const buildAccessServices = (input: {
   auditService: AuditService;
   env: Pick<Env, "WORKSPACE_TOKEN_SECRET">;
+  logger: Pick<AppLogger, "warn">;
+  metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
-  const { auditService, env, repositories } = input;
+  const { auditService, env, logger, metricsRegistry, repositories } = input;
+  const machineAccessSecurityObserver: MachineAccessSecurityObserver = {
+    recordAuthentication(event) {
+      metricsRegistry?.incrementCounter("machine_access_authentication_total", {
+        help: "Machine API credential authentication outcomes",
+        labels: {
+          outcome: event.outcome,
+          principal_kind: event.principalKind,
+          reason: event.reason,
+        },
+      });
+    },
+    recordAuthorizationDenial(event) {
+      metricsRegistry?.incrementCounter("machine_access_authorization_denials_total", {
+        help: "Machine API credential authorization denials",
+        labels: {
+          principal_kind: event.principalKind,
+          reason: event.reason,
+        },
+      });
+    },
+  };
   const accessGrantService = new AccessGrantService({
     repository: repositories.accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
     auditService,
   });
+  const personalCredentialTenureService = new PersonalCredentialTenureService({
+    repository: repositories.machineAccessRepository,
+    audit: auditService,
+  });
   const accountAccessService = new AccountAccessService(
     repositories.accountMembershipRepository,
     auditService,
     repositories.workspaceGrantRepository,
     repositories.workspaceRepository,
+    personalCredentialTenureService,
   );
   const accountInvitationService = new AccountInvitationService(
     repositories.accountInvitationRepository,
@@ -54,6 +91,28 @@ export const buildAccessServices = (input: {
     accessGrantService,
     accountAccessService,
     accountInvitationService,
+    apiPrincipalAuthenticator: new ApiPrincipalAuthenticator({
+      repository: repositories.machineAccessRepository,
+      accountAccess: accountAccessService,
+      authenticationObserver: machineAccessSecurityObserver,
+    }),
+    machineAccessSecurityObserver,
+    personalCredentialTenureService,
+    credentialExpiryWarningLifecycle: new CredentialExpiryWarningService({
+      repository: repositories.machineAccessRepository,
+      audit: auditService,
+      logger,
+    }),
+    personalCredentialService: new PersonalCredentialService({
+      repository: repositories.machineAccessRepository,
+      accountAccess: accountAccessService,
+      audit: auditService,
+    }),
+    serviceAccountService: new ServiceAccountService({
+      repository: repositories.machineAccessRepository,
+      accountAccess: accountAccessService,
+      audit: auditService,
+    }),
   };
 };
 
@@ -97,12 +156,14 @@ export const buildWorkspaceServices = (input: {
   conversationRepository: ConversationRepository;
   documentRepository: DocumentRepository;
   env: Env;
+  personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   workspaceRepository: WorkspaceRepository;
 }) => {
   const workspaceService = new WorkspaceService(
     input.workspaceRepository,
     input.auditService,
     input.accountMembershipRepository,
+    input.personalCredentialTermination,
   );
   return {
     workspaceService,
@@ -128,7 +189,6 @@ export const buildAuthService = (input: {
     accountRepository: input.repositories.accountRepository,
     userRepository: input.repositories.userRepository,
     sessionRepository: input.repositories.sessionRepository,
-    workspaceTokenRepository: input.repositories.workspaceTokenRepository,
     workspaceService: input.workspaceService,
     accountAccessService: input.access.accountAccessService,
     accountInvitationService: input.access.accountInvitationService,
@@ -136,6 +196,8 @@ export const buildAuthService = (input: {
     organizationCreationGuard: input.organizationCreationGuard,
     organizationProvisioner: new PostgresOrganizationProvisioner(input.database, input.auditService),
     auditService: input.auditService,
+    apiPrincipalAuthenticator: input.access.apiPrincipalAuthenticator,
+    personalCredentialTermination: input.access.personalCredentialTenureService,
   });
 
 export const buildPasswordResetService = (input: {

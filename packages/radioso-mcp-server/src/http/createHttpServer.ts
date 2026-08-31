@@ -12,7 +12,7 @@ export interface RadiosoRemoteHttpServer {
   server: Server;
 }
 
-export const createHttpServer = ({ authService, auditLogger, config }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+export const createHttpServer = ({ authService, auditLogger, config, readiness }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
   const sessionServerManager = createSessionMcpServerManager({
     auditLogger,
     config,
@@ -22,6 +22,7 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
   const handleMcp = createMcpRouteHandler({
     authService,
     config,
+    readiness,
     serverManager: sessionServerManager,
   });
 
@@ -96,6 +97,10 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
 
   return {
     async close() {
+      if (!server.listening) {
+        return;
+      }
+
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {

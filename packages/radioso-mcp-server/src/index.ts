@@ -11,8 +11,18 @@ export { createHttpServer } from "./http/createHttpServer.js";
 export { createMcpRequestHandler } from "./http/requestHandler.js";
 export { createExpressMcpMiddleware } from "./http/expressAdapter.js";
 export { createMcpExpressRuntime, createMcpHttpRuntime } from "./http/publicRuntime.js";
+export { createRuntimeStoreReadiness } from "./state/runtimeStores.js";
 export type { RadiosoApiAdapter } from "./radiosoApiAdapter.js";
 export type { RadiosoMcpConfig } from "./config.js";
+export type { McpCredentialClass } from "./auth/credentialPreflight.js";
+export type { LegacySessionPurger, SessionStore } from "./auth/sessionStore.js";
+export type {
+  LegacySessionPurgeReadinessEvent,
+  LegacySessionPurgeReadinessObserver,
+  RuntimeStoreHandle,
+  RuntimeStoreHandleOptions,
+  RuntimeStoreReadiness,
+} from "./state/runtimeStores.js";
 export type { McpBearerTokenVerifier, McpRequestHandler } from "./http/requestHandler.js";
 export type {
   CreateMcpHttpRuntimeOptions,

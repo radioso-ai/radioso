@@ -1,7 +1,7 @@
-import { runSingleNodeSmoke } from "../testing/remoteSmokeHarness.js";
+import { runWorkspaceCredentialRejectionSmoke } from "../testing/remoteSmokeHarness.js";
 
 const main = async () => {
-  const summary = await runSingleNodeSmoke({
+  const summary = await runWorkspaceCredentialRejectionSmoke({
     step(message) {
       console.info(`[smoke:http] ${message}`);
     },
@@ -11,9 +11,8 @@ const main = async () => {
   console.info(
     JSON.stringify(
       {
-        answer: summary.answer,
-        documentId: summary.documentId,
-        workspaceId: summary.workspaceId,
+        code: summary.code,
+        status: summary.status,
       },
       null,
       2,

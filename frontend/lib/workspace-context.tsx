@@ -11,8 +11,8 @@ import {
 import {
   accountApi,
   workspaceApi,
-  activateWorkspaceToken,
-  removeWorkspaceToken,
+  activateWorkspaceSession,
+  removeWorkspaceSession,
   getStoredActiveWorkspaceId,
   type AccessibleAccountSummary,
   type Workspace,
@@ -114,7 +114,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         if (targetId) {
           const targetWorkspace = list.find((workspace) => workspace.id === targetId) ?? null
-          activateWorkspaceToken(targetId, targetWorkspace?.publicRouteKey)
+          activateWorkspaceSession(targetId, targetWorkspace?.publicRouteKey)
           setActiveWorkspaceId(targetId)
         }
       } catch {
@@ -133,14 +133,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     const workspace = workspaces.find((candidate) => candidate.id === workspaceId) ?? null
-    activateWorkspaceToken(workspaceId, workspace?.publicRouteKey)
+    activateWorkspaceSession(workspaceId, workspace?.publicRouteKey)
     setActiveWorkspaceId(workspaceId)
   }, [workspaces])
 
   const createWorkspace = useCallback(async (name: string) => {
     const workspace = await workspaceApi.create(name)
     setWorkspaces((prev) => [...prev, workspace])
-    activateWorkspaceToken(workspace.id, workspace.publicRouteKey)
+    activateWorkspaceSession(workspace.id, workspace.publicRouteKey)
     setActiveWorkspaceId(workspace.id)
     return workspace
   }, [])
@@ -153,7 +153,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const deleteWorkspace = useCallback(async (workspaceId: string) => {
     await workspaceApi.delete(workspaceId)
-    removeWorkspaceToken(workspaceId)
+    removeWorkspaceSession(workspaceId)
     const remaining = workspaces.filter((w) => w.id !== workspaceId)
     setWorkspaces(remaining)
     if (workspaceId === activeWorkspaceId && remaining.length > 0) {

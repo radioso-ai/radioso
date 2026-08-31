@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-08-18
+last_updated: 2026-08-31
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -184,7 +184,7 @@ await client.settings.updateGeneral({
 
 The SDK exposes the read-only product skills catalog. Agent skills are named
 capability instances such as `retrieve`, `email`, `slack_post`, `webhook_call`,
-`mcp_tool`, and `notify`. Authoring those agent skills with an API token is
+`mcp_tool`, and `notify`. Authoring those agent skills with a personal token or service-account credential is
 covered in [Agent authoring](#agent-authoring).
 
 List skills:
@@ -247,7 +247,7 @@ instructions and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Agent authoring
 
-Authoring surfaces are available with a workspace API token. You can build and
+Authoring surfaces are available with a role-eligible personal token or service-account credential. You can build and
 configure an agent the same way the dashboard does: write routines, directives,
 and context variables, and bind skills. All authoring calls are namespaced under
 `client.agents.*` and take the agent id as the first argument.
@@ -454,7 +454,7 @@ try {
 } catch (error) {
   if (error instanceof RadiosoError) {
     if (error.status === 401) {
-      // refresh or replace the API token
+      // rotate or replace the API credential
     }
   } else {
     throw error;
@@ -464,8 +464,8 @@ try {
 
 ## Notes
 
-- `baseUrl` defaults to `https://api.radioso.ai`, exported as `DEFAULT_BASE_URL`. Set it to `https://api-us.radioso.ai` or your own origin for a self-hosted deployment — a workspace API token only works against the instance that issued it.
-- The SDK sends the workspace API token as `Authorization: Bearer <token>`.
+- `baseUrl` defaults to `https://api.radioso.ai`, exported as `DEFAULT_BASE_URL`. Set it to `https://api-us.radioso.ai` or your own origin for a self-hosted deployment — an API credential only works against the instance that issued it.
+- The SDK sends the personal token or service-account credential as `Authorization: Bearer <token>`.
 - Public chat and website embed launch credentials are intentionally public and are not accepted as SDK API tokens.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.

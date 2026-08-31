@@ -54,10 +54,10 @@ describe("operator copilot catalog coverage", () => {
       return typeof entry === "string" ? "" : entry.reason;
     };
 
-    expect(reasonFor("getWorkspaceApiToken")).toContain("carries secret material");
+    expect(reasonFor("getApiAccessSummary")).toContain("identity and authorization administration");
     expect(reasonFor("switchAccount")).toContain("does not administer identity");
     expect(reasonFor("listAccountUsers")).toContain("account-scoped");
-    expect(reasonFor("getWorkspaceMcpContext")).toContain("workspace-token integration clients");
+    expect(reasonFor("getWorkspaceMcpContext")).toContain("account-scoped");
     // The signing key derives the secret an embed uses to sign visitor identity; it must never
     // become readable, and the context_variables reader and propose_context_variable must never
     // grow a path to it.
@@ -205,7 +205,8 @@ describe("operator copilot catalog coverage", () => {
       deleteWorkspace: { disposition: "permanent", neverListEntry: "workspace_delete" },
       createAccountInvitation: { disposition: "permanent", neverListEntry: "member_management" },
       setWorkspaceGrant: { disposition: "permanent", neverListEntry: "access_grants" },
-      rotateWorkspaceApiToken: { disposition: "permanent", neverListEntry: "secret_rotation" },
+      rotatePersonalApiToken: { disposition: "permanent", neverListEntry: "machine_access" },
+      rotateServiceAccountCredential: { disposition: "permanent", neverListEntry: "machine_access" },
       setWorkspaceProviderCredential: { disposition: "permanent", neverListEntry: "provider_credential_writes" },
       replyToConversation: { disposition: "permanent", neverListEntry: "unattended_live_customer_reply" },
     });

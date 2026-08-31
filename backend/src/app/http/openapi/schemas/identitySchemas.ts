@@ -129,13 +129,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
-  const WorkspaceTokenResponseSchema = registry.register(
-    "WorkspaceTokenResponse",
-    z.object({
-      token: z.string(),
-    }),
-  );
-
   const WorkspaceMcpContextResponseSchema = registry.register(
     "WorkspaceMcpContextResponse",
     workspaceMcpContextSchema,
@@ -253,7 +246,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     WorkspaceRouteResolutionResponseSchema,
     WorkspaceListResponseSchema,
     WorkspaceSummaryResponseSchema,
-    WorkspaceTokenResponseSchema,
     WorkspaceMcpContextResponseSchema,
     RegisterRequestSchema,
     CreateAccountRequestSchema,

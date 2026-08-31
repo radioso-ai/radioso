@@ -18,6 +18,7 @@ describeIntegration("chunk embedding repository (Postgres)", () => {
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
+  const ownedEmbeddingSpaceIds = new Set<string>();
 
   beforeAll(async () => {
     await database.query(
@@ -30,7 +31,7 @@ describeIntegration("chunk embedding repository (Postgres)", () => {
     );
   });
 
-  beforeEach(async () => {
+  const clearWorkspaceFixtures = async () => {
     await database.query("DELETE FROM vector_index_work WHERE workspace_id = $1", [workspaceId]);
     await database.query("DELETE FROM vector_index_checkpoints WHERE workspace_id = $1", [workspaceId]);
     await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]);
@@ -40,24 +41,30 @@ describeIntegration("chunk embedding repository (Postgres)", () => {
     await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [
       workspaceId,
     ]);
-    await database.query(
-      `DELETE FROM embedding_spaces
-       WHERE id NOT IN (
-         SELECT active_embedding_space_id FROM workspace_embedding_profiles
-         UNION
-         SELECT pending_embedding_space_id FROM workspace_embedding_profiles
-         WHERE pending_embedding_space_id IS NOT NULL
-       )`,
-    );
+  };
+
+  const clearOwnedEmbeddingSpaces = async () => {
+    if (ownedEmbeddingSpaceIds.size === 0) return;
+    await database.query("DELETE FROM embedding_spaces WHERE id = ANY($1::uuid[])", [
+      [...ownedEmbeddingSpaceIds],
+    ]);
+    ownedEmbeddingSpaceIds.clear();
+  };
+
+  beforeEach(async () => {
+    await clearWorkspaceFixtures();
+    await clearOwnedEmbeddingSpaces();
   });
 
   afterAll(async () => {
+    await clearWorkspaceFixtures().catch(() => undefined);
+    await clearOwnedEmbeddingSpaces().catch(() => undefined);
     await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
     await database.close().catch(() => undefined);
   });
 
-  const createSpace = async (dimensions: number) =>
-    profileRepository.createEmbeddingSpace({
+  const createSpace = async (dimensions: number) => {
+    const space = await profileRepository.createEmbeddingSpace({
       identityFingerprint: `canonical-space-${workspaceId}-${dimensions}`,
       provider: "openai",
       endpointScopeFingerprint: "canonical-endpoint-scope",
@@ -70,6 +77,9 @@ describeIntegration("chunk embedding repository (Postgres)", () => {
       vectorOptions: {},
       modelVersion: null,
     });
+    ownedEmbeddingSpaceIds.add(space.id);
+    return space;
+  };
 
   const insertDocumentAndChunk = async () => {
     const documentId = randomUUID();

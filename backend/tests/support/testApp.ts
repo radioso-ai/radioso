@@ -97,6 +97,12 @@ import type { ChunkCandidateHydratorPort } from "../../src/modules/retrieval/inf
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
+import {
+  ApiPrincipalAuthenticator,
+  CredentialExpiryWarningService,
+  PersonalCredentialService,
+  ServiceAccountService,
+} from "../../src/modules/machineAccess/public.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { ConnectorManagementService } from "../../src/modules/connectors/services/connectorManagementService.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
@@ -242,7 +248,6 @@ import {
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceGrantRepository,
-  InMemoryWorkspaceTokenRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
@@ -267,6 +272,7 @@ import {
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
 import { InMemoryCopilotRepository } from "./inMemoryCopilotRepository.js";
+import { InMemoryMachineAccessRepository } from "./inMemoryMachineAccess.js";
 import { InMemoryOrganizationProvisioner } from "./organizationProvisioner.js";
 import {
   bindClusteringEmbeddingPort,
@@ -391,6 +397,7 @@ interface TestRepositories {
   agentRepository: InMemoryAgentRepository;
   agentSkillRepository: InMemoryAgentSkillRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
+  machineAccessRepository: InMemoryMachineAccessRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -739,7 +746,7 @@ export const createTestDependencies = (overrides: {
     auditService,
   );
   const sessionRepository = new InMemorySessionRepository();
-  const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
+  const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
@@ -1982,10 +1989,48 @@ export const createTestDependencies = (overrides: {
         }),
     },
   });
+  const apiPrincipalAuthenticator = new ApiPrincipalAuthenticator({
+    repository: machineAccessRepository,
+    accountAccess: accountAccessService,
+  });
+  const personalCredentialService = new PersonalCredentialService({
+    repository: machineAccessRepository,
+    accountAccess: accountAccessService,
+    audit: auditService,
+  });
+  const serviceAccountService = new ServiceAccountService({
+    repository: machineAccessRepository,
+    accountAccess: accountAccessService,
+    audit: auditService,
+  });
+  const credentialExpiryWarningLifecycle = new CredentialExpiryWarningService({
+    repository: machineAccessRepository,
+    audit: auditService,
+    logger,
+  });
+  const authService = new AuthService({
+    env,
+    auditService,
+    accountRepository,
+    userRepository,
+    sessionRepository,
+    workspaceService,
+    accountAccessService,
+    accountInvitationService,
+    apiPrincipalAuthenticator,
+    organizationCreationGuard,
+    organizationProvisioner: new InMemoryOrganizationProvisioner(
+      accountRepository,
+      userRepository,
+      accountAccessService,
+      workspaceService,
+    ),
+  });
   const dependencies: AppDependencies = {
     env,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
+    credentialExpiryWarningLifecycle,
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,
@@ -2038,24 +2083,10 @@ export const createTestDependencies = (overrides: {
         throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
       },
     },
-    authService: new AuthService({
-      env,
-      auditService,
-      accountRepository,
-      userRepository,
-      sessionRepository,
-      workspaceTokenRepository,
-      workspaceService,
-      accountAccessService,
-      accountInvitationService,
-      organizationCreationGuard,
-      organizationProvisioner: new InMemoryOrganizationProvisioner(
-        accountRepository,
-        userRepository,
-        accountAccessService,
-        workspaceService,
-      ),
-    }),
+    authService,
+    apiPrincipalAuthenticator,
+    personalCredentialService,
+    serviceAccountService,
     accessGrantService,
     passwordResetService: new PasswordResetService({
       env,
@@ -2199,6 +2230,7 @@ export const createTestDependencies = (overrides: {
       agentRepository,
       agentSkillRepository,
       routineDefinitionRepository,
+      machineAccessRepository,
     },
   };
 };
@@ -2240,14 +2272,14 @@ export const createTestApp = (overrides: {
 };
 
 /**
- * Registers, verifies, and signs in a test user before issuing a workspace token.
+ * Registers, verifies, and signs in a test user before issuing a personal API token.
  * Returns both the bearer token and the session cookie.
  */
 export const issueTestToken = async (
   app: ReturnType<typeof createTestApp>["app"],
   email = `test-${randomUUID()}@example.com`,
 ): Promise<{ token: string; cookie: string; workspaceId: string; accountId: string }> => {
-  const { cookie, workspaceId, accountId } = await issueTestSession(app, email);
+  const { cookie, workspaceId, userId, accountId } = await issueTestSession(app, email);
 
   const workspaces = await request(app)
     .get("/api/v1/workspace")
@@ -2258,9 +2290,16 @@ export const issueTestToken = async (
     throw new Error("Test app dependencies were not registered for token issuance");
   }
 
-  const tokenResponse = await dependencies.authService.getTokenForWorkspace(resolvedWorkspaceId, accountId);
+  const issued = await dependencies.personalCredentialService.issue({
+    accountId,
+    workspaceId: resolvedWorkspaceId,
+    userId,
+    label: "Test API token",
+    roleCeiling: "admin",
+    expiresAt: new Date(Date.now() + 89 * 24 * 60 * 60 * 1_000),
+  });
 
-  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId, accountId };
+  return { token: issued.secret, cookie, workspaceId: resolvedWorkspaceId, accountId };
 };
 
 export const issueTestSession = async (

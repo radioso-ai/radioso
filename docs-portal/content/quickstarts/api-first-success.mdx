@@ -1,7 +1,7 @@
 ---
 title: API first success
-description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking an agent a grounded question.
-last_updated: 2026-08-17
+description: Reach first success with plain HTTP by registering, issuing an API credential, uploading content, and asking an agent a grounded question.
+last_updated: 2026-08-31
 ---
 
 import { Steps } from 'nextra/components'
@@ -12,7 +12,7 @@ You can reach a grounded answer without opening the web app once. This path is f
 
 ## Before you start
 
-Every call below needs a Radioso host to talk to. Use the hosted EU API at `https://api.radioso.ai`, the hosted US API at `https://api-us.radioso.ai`, or your own origin if you're self-hosting — start the stack first with [Run locally in 5 minutes](/quickstarts/run-locally), then swap in `http://localhost:8080`. Pick one host and stay on it for every step below: a workspace token only works against the instance that issued it.
+Every call below needs a Radioso host to talk to. Use the hosted EU API at `https://api.radioso.ai`, the hosted US API at `https://api-us.radioso.ai`, or your own origin if you're self-hosting — start the stack first with [Run locally in 5 minutes](/quickstarts/run-locally), then swap in `http://localhost:8080`. Pick one host and stay on it for every step below: an API credential only works against the instance that issued it.
 
 The examples on this page call `https://api.radioso.ai`.
 
@@ -23,7 +23,7 @@ From nothing to a grounded answer takes six calls:
 1. check whether registration is available
 2. create or access an account
 3. establish a session
-4. reveal a workspace token
+4. issue a personal API credential
 5. upload one document
 6. ask one agent question whose answer should obviously come from that document
 
@@ -40,13 +40,13 @@ Register the first user on an empty open-source server, log in with an existing 
 
 Production registration sends a verification email and does not return a session cookie. The documented development stack verifies new password registrations and returns a session immediately. Login and invitation acceptance also establish sessions.
 
-### Reveal the workspace token
+### Issue a personal API credential
 
-Use the session-authenticated workspace route to get the bearer token.
+Use the session-authenticated API-access route to create a role-bounded personal token. Its secret is shown once; inventory responses cannot recover it later. For unattended workloads, create a service-account credential instead from the same dashboard API-access area.
 
 ### Upload content and ask a grounded agent question
 
-Use the workspace token for document and chat routes.
+Use the personal token, or the service-account credential, for eligible document and chat routes.
 </Steps>
 
 ## One concrete example
@@ -91,11 +91,19 @@ curl -sS -c cookies.txt \
   https://api.radioso.ai/api/v1/auth/login
 ```
 
-## Reveal the workspace token
+## Issue a personal API credential
 
 ```bash
-curl -sS -b cookies.txt \
-  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/token
+curl -sS -b cookies.txt -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-Radioso-CSRF: 1' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -d '{
+    "label":"First API client",
+    "roleCeiling":"member",
+    "expiresAt":"2026-11-29T12:00:00Z"
+  }' \
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 
 If you need to list workspaces first:
@@ -105,17 +113,17 @@ curl -sS -b cookies.txt \
   https://api.radioso.ai/api/v1/workspace
 ```
 
-The token response looks like:
+The issue response contains safe metadata and the one-time secret:
 
 ```json
-{"token":"radioso_..."}
+{"credential":{"id":"...","prefix":"radioso_pat_ab12"},"secret":"radioso_pat_..."}
 ```
 
-The same token is available in the dashboard under Settings, in the API access panel. Reveal it there when you want to copy it into another client, and note that the panel also shows a ready-made `curl` example against your own host.
+The dashboard provides the same flow under **Settings → API access**. Copy the secret into your client's secret manager before acknowledging it; later inventory responses cannot recover it.
 
-![Workspace Settings showing the organization name, workspace name, an API access panel with a Reveal API token button and curl example, and webhook destinations](/screenshots/dashboard-settings.png)
+![Workspace Settings with separate personal-token and service-account sections in API access](/screenshots/dashboard-settings.png)
 
-If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable and re-enable toggles.
+If the credential is exposed, rotate or revoke it from API access settings. Use a service account instead when the client should keep working independently of your membership.
 
 ## Upload one document
 
@@ -205,7 +213,7 @@ Either way, the response is the grounded answer plus the citations that support 
 
 ## What success looks like
 
-- you can establish a session and reveal a workspace token
+- you can establish a session and issue a personal token
 - the document is accepted and processed
 - the answer is about your uploaded document, not a generic policy guess
 - if citations are enabled for the workspace, the answer points back to the supporting content

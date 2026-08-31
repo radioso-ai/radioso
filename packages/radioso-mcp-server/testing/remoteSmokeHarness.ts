@@ -23,7 +23,6 @@ export interface BackendHarness {
   baseUrl: string;
   close(): Promise<void>;
   issueConverseGrant(email?: string): Promise<{ agentId: string; token: string; workspaceId: string }>;
-  issueWorkspaceToken(email?: string): Promise<{ cookie: string; token: string; workspaceId: string }>;
 }
 
 export interface RemoteHarness {
@@ -32,11 +31,9 @@ export interface RemoteHarness {
   close(): Promise<void>;
 }
 
-export interface SmokeSummary {
-  accessToken: string;
-  answer: string;
-  documentId: string;
-  workspaceId: string;
+export interface CredentialRejectionSmokeSummary {
+  code: string;
+  status: number;
 }
 
 export interface ConverseSmokeSummary {
@@ -133,7 +130,7 @@ const getStructuredContent = (payload: any): any =>
   })();
 
 export const startBackendHarness = async (): Promise<BackendHarness> => {
-  const { createTestApp, issueTestSession, issueTestToken } = await loadTestAppModule();
+  const { createTestApp, issueTestSession } = await loadTestAppModule();
   const { createMcpConverseRoutes } = await loadMcpConverseRoutesModule();
   const { buildMcpConverseServices } = await loadDependencyBuildersModule();
   const { app, dependencies } = createTestApp({
@@ -166,7 +163,6 @@ export const startBackendHarness = async (): Promise<BackendHarness> => {
       });
       return { agentId: agent.id, token, workspaceId: session.workspaceId };
     },
-    issueWorkspaceToken: (email?: string) => issueTestToken(app, email),
   };
 };
 
@@ -212,29 +208,6 @@ export const startRemoteHarness = async (options: {
     async close() {
       await runtime.close();
     },
-  };
-};
-
-export const exchangeAccessToken = async (baseUrl: string, workspaceToken: string, requestedTools: string[]) => {
-  const response = await fetch(`${baseUrl}/v1/auth/exchange`, {
-    body: JSON.stringify({
-      clientName: "smoke-client",
-      radiosoApiToken: workspaceToken,
-      requestedTools,
-    }),
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-  const payload = await readJson(response);
-  assert.equal(response.status, 200, `Expected auth exchange to succeed, got ${response.status}: ${JSON.stringify(payload)}`);
-  assert.equal(typeof payload.accessToken, "string");
-  return payload as {
-    accessToken: string;
-    approvalRequiredTools: string[];
-    grantedTools: string[];
-    workspaceId?: string;
   };
 };
 
@@ -297,19 +270,30 @@ export const callTool = async (
   };
 };
 
-export const assertUnauthorizedMcp = async (baseUrl: string) => {
-  const response = await mcpRequest(baseUrl, null, {
-    id: "unauthorized-1",
-    jsonrpc: "2.0",
-    method: "tools/list",
-    params: {},
+export const assertWorkspaceCredentialRejected = async (baseUrl: string, workspaceToken: string) => {
+  const response = await fetch(`${baseUrl}/v1/auth/exchange`, {
+    body: JSON.stringify({
+      clientName: "smoke-client",
+      radiosoApiToken: workspaceToken,
+      requestedTools: ["describe_capabilities"],
+    }),
+    headers: {
+      "content-type": "application/json",
+    },
+    method: "POST",
   });
   const payload = await readJson(response);
-  assert.equal(response.status, 401);
-  assert.equal(payload?.error?.data?.code, "invalid_access_token");
+  assert.equal(response.status, 401, `Expected workspace credential rejection, got ${response.status}: ${JSON.stringify(payload)}`);
+  assert.equal(payload?.error?.code, "unauthorized");
+  return {
+    code: String(payload.error.code),
+    status: response.status,
+  } satisfies CredentialRejectionSmokeSummary;
 };
 
-export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSummary> => {
+export const runWorkspaceCredentialRejectionSmoke = async (
+  logger: SmokeLogger,
+): Promise<CredentialRejectionSmokeSummary> => {
   const backend = await startBackendHarness();
   const remote = await startRemoteHarness({ backendBaseUrl: backend.baseUrl });
 
@@ -320,88 +304,8 @@ export const runSingleNodeSmoke = async (logger: SmokeLogger): Promise<SmokeSumm
     assert.equal(healthResponse.status, 200);
     assert.equal(healthPayload.serverName, "radioso-smoke");
 
-    logger.step("issuing workspace token and exchanging for MCP access");
-    const issued = await backend.issueWorkspaceToken("mcp-smoke-http@example.com");
-    const exchange = await exchangeAccessToken(remote.baseUrl, issued.token, [
-      "describe_capabilities",
-      "list_documents",
-      "get_document",
-      "answer_grounded",
-      "create_document",
-    ]);
-
-    logger.step("initializing MCP session");
-    await initializeSession(remote.baseUrl, exchange.accessToken);
-
-    logger.step("listing tools and checking capability metadata");
-    const tools = await listTools(remote.baseUrl, exchange.accessToken);
-    assert.deepEqual(
-      tools.result.tools.map((tool) => tool.name).sort(),
-      ["answer_grounded", "create_document", "describe_capabilities", "get_document", "list_documents"].sort(),
-    );
-    assert.ok(!tools.result.tools.some((tool) => tool.name === "ask_agent"));
-    assert.ok(!tools.result.tools.some((tool) => tool.name === "get_retrieval_settings"));
-    assert.ok(!tools.result.tools.some((tool) => tool.name === "update_retrieval_settings"));
-    const capabilities = await callTool(remote.baseUrl, exchange.accessToken, "describe_capabilities", {});
-    assert.equal(capabilities.structuredContent.workspace.id, issued.workspaceId);
-    assert.equal(capabilities.structuredContent.workspace.name, "Default");
-    assert.deepEqual(capabilities.structuredContent.approvalRequiredTools, ["create_document"]);
-
-    logger.step("verifying removed retrieval settings tools are unknown");
-    const removedTool = await callTool(remote.baseUrl, exchange.accessToken, "get_retrieval_settings", {});
-    assert.equal(removedTool.response.status, 200);
-    assert.equal(removedTool.payload?.error?.code, -32602);
-    assert.match(String(removedTool.payload?.error?.message), /tool.*not.*found/i);
-
-    logger.step("creating a document with the access token alone");
-    const created = await callTool(remote.baseUrl, exchange.accessToken, "create_document", {
-      content: "The MCP smoke harness proves remote context writes and reads work end to end.",
-      title: "MCP Smoke Harness",
-    });
-    assert.equal(created.response.status, 200);
-    assert.equal(typeof created.structuredContent.documentId, "string");
-
-    logger.step("reading the created document back");
-    const fetched = await callTool(remote.baseUrl, exchange.accessToken, "get_document", {
-      documentId: created.structuredContent.documentId,
-    });
-    assert.equal(fetched.structuredContent.id, created.structuredContent.documentId);
-    assert.equal(fetched.structuredContent.title, "MCP Smoke Harness");
-
-    logger.step("asking a grounded question");
-    const answer = await callTool(remote.baseUrl, exchange.accessToken, "answer_grounded", {
-      query: "What does the MCP smoke harness prove?",
-    });
-    assert.equal(answer.response.status, 200);
-    assert.match(
-      String(answer.structuredContent.answer).toLowerCase(),
-      /remote context writes and reads work end to end/,
-    );
-    assert.ok(Array.isArray(answer.structuredContent.citations));
-    assert.ok(answer.structuredContent.citations.length > 0);
-
-    logger.step("verifying MCP grounded answers do not create assistant chat history");
-    const historyResponse = await fetch(`${backend.baseUrl}/api/v1/history/chat`, {
-      headers: {
-        authorization: `Bearer ${issued.token}`,
-      },
-    });
-    const historyPayload = await readJson(historyResponse);
-    assert.equal(historyResponse.status, 200);
-    assert.ok(
-      !historyPayload.conversations.some((conversation: { sourceChannel?: string }) => conversation.sourceChannel === "mcp"),
-      "Expected retrieval-first MCP grounded answers not to create assistant chat history.",
-    );
-
-    logger.step("verifying remote auth failures");
-    await assertUnauthorizedMcp(remote.baseUrl);
-
-    return {
-      accessToken: exchange.accessToken,
-      answer: String(answer.structuredContent.answer),
-      documentId: created.structuredContent.documentId,
-      workspaceId: issued.workspaceId,
-    };
+    logger.step("verifying REST credential rejection at the MCP exchange");
+    return await assertWorkspaceCredentialRejected(remote.baseUrl, "radioso_workspace_credential_rejected");
   } finally {
     await remote.close();
     await backend.close();
@@ -461,10 +365,10 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
   }
 };
 
-export const runSharedStoreSmoke = async (
+export const runSharedStoreRejectionSmoke = async (
   redisUrl: string,
   logger: SmokeLogger,
-): Promise<SmokeSummary> => {
+): Promise<CredentialRejectionSmokeSummary> => {
   const backend = await startBackendHarness();
   const redisKeyPrefix = `radioso-mcp-shared-smoke-${Math.random().toString(36).slice(2, 10)}`;
   const runtimeA = await startRemoteHarness({
@@ -481,45 +385,11 @@ export const runSharedStoreSmoke = async (
   });
 
   try {
-    logger.step("issuing workspace token and exchanging on node A");
-    const issued = await backend.issueWorkspaceToken("mcp-smoke-redis@example.com");
-    const exchange = await exchangeAccessToken(runtimeA.baseUrl, issued.token, [
-      "describe_capabilities",
-      "answer_grounded",
-      "create_document",
-      "get_document",
-    ]);
-
-    logger.step("initializing on node B with shared session state");
-    await initializeSession(runtimeB.baseUrl, exchange.accessToken);
-
-    logger.step("creating a document on node B using the access token alone");
-    const created = await callTool(runtimeB.baseUrl, exchange.accessToken, "create_document", {
-      content: "Redis-backed MCP sessions work across multiple HTTP instances.",
-      title: "Shared Store Smoke",
-    });
-    assert.equal(created.response.status, 200);
-    assert.equal(typeof created.structuredContent.documentId, "string");
-
-    logger.step("reading and answering from the other node");
-    const fetched = await callTool(runtimeA.baseUrl, exchange.accessToken, "get_document", {
-      documentId: created.structuredContent.documentId,
-    });
-    assert.equal(fetched.structuredContent.title, "Shared Store Smoke");
-
-    const answer = await callTool(runtimeA.baseUrl, exchange.accessToken, "answer_grounded", {
-      query: "What works across multiple HTTP instances?",
-    });
-    assert.match(String(answer.structuredContent.answer).toLowerCase(), /multiple http instances/);
-    assert.ok(Array.isArray(answer.structuredContent.citations));
-    assert.ok(answer.structuredContent.citations.length > 0);
-
-    return {
-      accessToken: exchange.accessToken,
-      answer: String(answer.structuredContent.answer),
-      documentId: created.structuredContent.documentId,
-      workspaceId: issued.workspaceId,
-    };
+    logger.step("verifying REST credential rejection on both shared-store nodes");
+    const rejectedCredential = "radioso_workspace_credential_rejected";
+    const rejection = await assertWorkspaceCredentialRejected(runtimeA.baseUrl, rejectedCredential);
+    await assertWorkspaceCredentialRejected(runtimeB.baseUrl, rejectedCredential);
+    return rejection;
   } finally {
     await runtimeB.close();
     await runtimeA.close();

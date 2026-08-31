@@ -21,12 +21,10 @@
   },
   "scripts": {
     "build": "pnpm run sync:openapi && tsc -p tsconfig.build.json",
-    "cursor:prepare": "node --import tsx ./scripts/prepareCursorSession.ts",
     "cursor:mcp-stdio": "node --import tsx ./src/cli/stdio.ts",
     "smoke:all": "pnpm run smoke:http && pnpm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
-    "token:exchange": "node --import tsx ./scripts/exchangeAccessToken.ts",
     "sync:openapi": "node ./scripts/sync-openapi-types.mjs",
     "test": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm run build && vitest run"
   },

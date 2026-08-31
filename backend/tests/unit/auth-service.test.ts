@@ -7,7 +7,6 @@ import {
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceRepository,
-  InMemoryWorkspaceTokenRepository,
 } from "../support/fakes.js";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
@@ -178,6 +177,7 @@ const createAuthService = (options: {
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner?: OrganizationCoreProvisioner;
+  personalCredentialTermination?: { endAccount(input: { accountId: string; actorUserId?: string | null }): Promise<void> };
   envOverrides?: Partial<ReturnType<typeof createTestEnv>>;
 }) => {
   const env = { ...createTestEnv(), ...options.envOverrides };
@@ -203,7 +203,6 @@ const createAuthService = (options: {
       accountRepository,
       userRepository,
       sessionRepository: options.sessionRepository ?? new FailingSessionRepository(),
-      workspaceTokenRepository: new InMemoryWorkspaceTokenRepository(),
       workspaceService,
       accountAccessService,
       accountInvitationService,
@@ -215,6 +214,7 @@ const createAuthService = (options: {
         accountAccessService,
         workspaceService,
       ),
+      personalCredentialTermination: options.personalCredentialTermination,
     }),
     accountRepository,
     userRepository,
@@ -575,6 +575,22 @@ describe("AuthService rollback", () => {
       committed: true,
       released: false,
     });
+  });
+
+  it("ends personal credential access before deleting an organization", async () => {
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({ id: "user-1", email: "delete-org@example.com", passwordHash: "hash" });
+    const ended: string[] = [];
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      personalCredentialTermination: { endAccount: async ({ accountId }) => { ended.push(accountId); } },
+    });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(ended).toEqual([accountId]);
   });
 
   it("calls the account-created hook when registering a new account", async () => {

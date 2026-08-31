@@ -30,7 +30,6 @@ describe('directivesApi', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_cached_token' }),
       }),
     })
   })
@@ -59,10 +58,10 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives',
       expect.objectContaining({
         method: 'GET',
-        credentials: 'omit',
+        credentials: 'include',
       }),
     )
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull()
   })
 
   it('creates agent directives with the request body', async () => {
@@ -82,7 +81,7 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives',
       expect.objectContaining({
         method: 'POST',
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           name: 'handoff-tone',
           condition: { kind: 'always' },
@@ -118,7 +117,7 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives/draft',
       expect.objectContaining({
         method: 'POST',
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           coachingText: 'Be more specific about the release.',
           turn: {
@@ -148,7 +147,7 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives',
       expect.objectContaining({
         method: 'POST',
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           name: 'Override: inline-supported-links',
           condition: { kind: 'always' },
@@ -174,7 +173,7 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives/directive-1',
       expect.objectContaining({
         method: 'PATCH',
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           action: 'Use the account tier when escalating.',
         }),
@@ -197,7 +196,7 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives/directive-1',
       expect.objectContaining({
         method: 'PATCH',
-        credentials: 'omit',
+        credentials: 'include',
         body: JSON.stringify({
           enabled: false,
         }),
@@ -221,7 +220,7 @@ describe('directivesApi', () => {
       '/backend/api/v1/agents/agent-1/directives/directive-1',
       expect.objectContaining({
         method: 'DELETE',
-        credentials: 'omit',
+        credentials: 'include',
       }),
     )
   })

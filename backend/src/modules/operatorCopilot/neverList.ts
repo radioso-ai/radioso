@@ -10,6 +10,7 @@ export const copilotNeverList = {
   agent_delete: { reason: "Agent deletion is destructive and requires an operator outside the copilot.", dashboardSubject: { type: "agent" } },
   member_management: { reason: "Adding, removing, or changing a member's role is identity administration, not a copilot action.", dashboardSubject: { type: "workspace_settings" } },
   access_grants: { reason: "Access grants change authorization and must not be managed by the copilot.", dashboardSubject: { type: "workspace_settings" } },
+  machine_access: { reason: "Users, service accounts, and API credentials are identity and authorization administration that the copilot must not manage or inspect.", dashboardSubject: { type: "workspace_settings" } },
   secret_rotation: { reason: "Tokens and webhook secrets must never be rotated by the copilot.", dashboardSubject: { type: "workspace_settings" } },
   provider_credential_writes: { reason: "Provider credentials are secrets and must never be written by the copilot.", dashboardSubject: { type: "workspace_settings" } },
   embedding_model_switch_without_typed_confirmation: { reason: "Embedding-model changes require a typed operator confirmation outside the copilot.", dashboardSubject: { type: "workspace_settings" } },

@@ -10,7 +10,11 @@ import type { RadiosoMcpConfig } from "../config.js";
 import { createConverseApiAdapter } from "../converseApiAdapter.js";
 import { createCapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../policy/workspacePolicy.js";
-import { createRuntimeStoreHandle, type RuntimeStoreHandle } from "../state/runtimeStores.js";
+import {
+  createRuntimeStoreHandle,
+  type LegacySessionPurgeReadinessObserver,
+  type RuntimeStoreHandle,
+} from "../state/runtimeStores.js";
 
 import { createHttpServer, type RadiosoRemoteHttpServer } from "./createHttpServer.js";
 import { validateWorkspaceToken } from "./validateWorkspaceToken.js";
@@ -19,6 +23,7 @@ export interface CreateRemoteHttpRuntimeOptions {
   auditLogger?: AuditLogger;
   auditSinks?: AuditSink[];
   config: RadiosoMcpConfig;
+  legacySessionPurgeReadinessObserver?: LegacySessionPurgeReadinessObserver;
   runtimeStores?: RuntimeStoreHandle;
   workspacePolicyOverrides?: Record<
     string,
@@ -42,6 +47,7 @@ export const createRemoteHttpRuntime = async ({
   auditLogger,
   auditSinks,
   config,
+  legacySessionPurgeReadinessObserver,
   runtimeStores,
   workspacePolicyOverrides,
 }: CreateRemoteHttpRuntimeOptions): Promise<RemoteHttpRuntime> => {
@@ -64,7 +70,10 @@ export const createRemoteHttpRuntime = async ({
     basePolicyConfig,
     workspacePolicyOverrides ?? loadWorkspacePolicyOverrides(config.workspacePoliciesPath),
   );
-  const resolvedRuntimeStores = runtimeStores ?? await createRuntimeStoreHandle(config);
+  const resolvedRuntimeStores = runtimeStores ?? await createRuntimeStoreHandle(config, {
+    legacySessionPurgeReadinessObserver,
+  });
+  resolvedRuntimeStores.readiness.start();
   const authService = createAuthService({
     accessTokenTtlSeconds: config.accessTokenTtlSeconds,
     auditLogger: resolvedAuditLogger,
@@ -82,6 +91,7 @@ export const createRemoteHttpRuntime = async ({
     authService,
     auditLogger: resolvedAuditLogger,
     config,
+    readiness: resolvedRuntimeStores.readiness,
   });
 
   return {
@@ -91,6 +101,7 @@ export const createRemoteHttpRuntime = async ({
       await resolvedRuntimeStores.close();
     },
     async listen() {
+      await resolvedRuntimeStores.readiness.waitUntilReady();
       await server.listen();
     },
     mode: resolvedRuntimeStores.mode,

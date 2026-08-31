@@ -4,7 +4,6 @@ import {
   buildError,
   persistAnonymousSessionHeader,
   request,
-  storeWorkspaceToken,
 } from './api-client'
 import { withQuery } from './api-query'
 import type {
@@ -23,7 +22,6 @@ import type {
   RenameOrganizationResponse,
   WorkspaceGrantRole,
   WorkspaceGrantSummary,
-  WorkspaceTokenResponse,
 } from './api-types'
 
 export const enterpriseUsageApi = {
@@ -154,21 +152,6 @@ export const accountApi = {
     }, { withSession: true })
   },
 
-  async getWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
-    const response = await request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token`, {
-      method: 'GET',
-    }, { withSession: true })
-    storeWorkspaceToken(workspaceId, response.token)
-    return response
-  },
-
-  async rotateWorkspaceToken(workspaceId: string): Promise<WorkspaceTokenResponse> {
-    const response = await request<WorkspaceTokenResponse>(`/account/workspaces/${workspaceId}/token/rotate`, {
-      method: 'POST',
-    }, { withSession: true })
-    storeWorkspaceToken(workspaceId, response.token)
-    return response
-  },
 }
 
 export const answerFeedbackApi = {
@@ -181,13 +164,13 @@ export const answerFeedbackApi = {
         value: input.value,
         comment: input.comment ?? undefined,
       }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async clear(assistantMessageId: string): Promise<{ cleared: boolean }> {
     return request<{ cleared: boolean }>(`/answer-feedback/messages/${assistantMessageId}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async submitPublic(

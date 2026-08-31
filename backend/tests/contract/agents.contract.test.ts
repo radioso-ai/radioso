@@ -1343,8 +1343,7 @@ describe("agents contract", () => {
 
   it("rejects website embed copy packs above the locale cap", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-copy-locale-cap@example.com");
-    const authorization = `Bearer ${token}`;
+    const session = await issueTestToken(app, "agents-copy-locale-cap@example.com");
     const copy = Object.fromEntries(
       ["en-US", "fr-FR", "de-DE", "es-ES", "it-IT", "pt-BR", "nl-NL", "sv-SE", "da-DK", "fi-FI", "pl-PL"]
         .map((locale) => [locale, { startPrompt: "Hello" }]),
@@ -1352,7 +1351,7 @@ describe("agents contract", () => {
 
     const response = await request(app)
       .post("/api/v1/agents")
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         name: "Locale-heavy agent",
         surfaceSettings: {
@@ -1489,7 +1488,6 @@ describe("agents contract", () => {
       surfaceSettings: {
         anonymousChat: {
           enabled: false,
-          token: null,
         },
       },
     });
@@ -1497,7 +1495,7 @@ describe("agents contract", () => {
 
   it("keeps per-agent public surface tokens isolated", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-surface-tokens@example.com");
+    const { cookie, token, workspaceId } = await issueTestToken(app, "agents-surface-tokens@example.com");
     const authorization = `Bearer ${token}`;
 
     const list = await request(app)
@@ -1508,7 +1506,7 @@ describe("agents contract", () => {
 
     await request(app)
       .put(`/api/v1/agents/${defaultAgentId}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
       .send({
         surfaceSettings: {
           anonymousChat: { enabled: true },
@@ -1521,11 +1519,13 @@ describe("agents contract", () => {
       .expect(200);
     const defaultAnonymousToken = await request(app)
       .post(`/api/v1/agents/${defaultAgentId}/anonymous-chat-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
     const defaultEmbedToken = await request(app)
       .post(`/api/v1/agents/${defaultAgentId}/website-embed-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
 
     const sideAgent = await request(app)
@@ -1535,7 +1535,7 @@ describe("agents contract", () => {
       .expect(201);
     const updatedSideAgent = await request(app)
       .put(`/api/v1/agents/${sideAgent.body.id}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
       .send({
         surfaceSettings: {
           anonymousChat: { enabled: true },
@@ -1548,11 +1548,13 @@ describe("agents contract", () => {
       .expect(200);
     const sideAnonymousToken = await request(app)
       .post(`/api/v1/agents/${sideAgent.body.id}/anonymous-chat-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
     const sideEmbedToken = await request(app)
       .post(`/api/v1/agents/${sideAgent.body.id}/website-embed-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
 
     expect(sideAnonymousToken.body.surfaceSettings.anonymousChat.token).not.toBe(defaultAnonymousToken.body.surfaceSettings.anonymousChat.token);
@@ -1580,7 +1582,7 @@ describe("agents contract", () => {
 
   it("preserves enabled website embed settings with empty listed origins as allow-none", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-embed-validation@example.com");
+    const { cookie, token, workspaceId } = await issueTestToken(app, "agents-embed-validation@example.com");
     const authorization = `Bearer ${token}`;
 
     const agent = await request(app)
@@ -1591,7 +1593,7 @@ describe("agents contract", () => {
 
     await request(app)
       .put(`/api/v1/agents/${agent.body.id}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
       .send({
         surfaceSettings: {
           websiteEmbed: {
@@ -1605,7 +1607,7 @@ describe("agents contract", () => {
 
   it("preserves an explicitly empty website embed launcher label in public config", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-empty-embed-label@example.com");
+    const { cookie, token, workspaceId } = await issueTestToken(app, "agents-empty-embed-label@example.com");
     const authorization = `Bearer ${token}`;
 
     const list = await request(app)
@@ -1616,7 +1618,7 @@ describe("agents contract", () => {
 
     const updated = await request(app)
       .put(`/api/v1/agents/${agentId}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
       .send({
         name: "Claudio",
         surfaceSettings: {
@@ -1634,7 +1636,8 @@ describe("agents contract", () => {
 
     const tokenResponse = await request(app)
       .post(`/api/v1/agents/${agentId}/website-embed-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
     const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
 
@@ -1649,7 +1652,7 @@ describe("agents contract", () => {
 
   it("serves a cacheable, per-origin website embed config and rejects strangers", async () => {
     const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-embed-config-cache@example.com");
+    const { cookie, token, workspaceId } = await issueTestToken(app, "agents-embed-config-cache@example.com");
     const authorization = `Bearer ${token}`;
 
     const list = await request(app)
@@ -1660,7 +1663,7 @@ describe("agents contract", () => {
 
     await request(app)
       .put(`/api/v1/agents/${agentId}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders({ cookie, workspaceId }))
       .send({
         theme: {
           brand: "#123456",
@@ -1685,7 +1688,8 @@ describe("agents contract", () => {
 
     const tokenResponse = await request(app)
       .post(`/api/v1/agents/${agentId}/website-embed-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", cookie)
+      .set("X-Workspace-Id", workspaceId)
       .expect(200);
     const embedToken = tokenResponse.body.surfaceSettings.websiteEmbed.token as string;
 

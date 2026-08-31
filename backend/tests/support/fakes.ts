@@ -31,8 +31,6 @@ import type {
   AccountRepositoryPort,
   SessionRecord,
   SessionRepositoryPort,
-  WorkspaceTokenRecord,
-  WorkspaceTokenRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type { UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
@@ -155,6 +153,7 @@ import type {
   WorkspaceLlmCapabilityPreferencesRepositoryPort,
 } from "../../src/modules/settings/contracts/services.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import { requestAuditMetadata } from "../../src/modules/audit/requestAuditContext.js";
 import type {
   DocumentStorageDeleteInput,
   DocumentStoragePort,
@@ -791,49 +790,6 @@ export class InMemoryWorkspaceGrantRepository implements WorkspaceGrantRepositor
       return false;
     }
     return this.items.delete(existing.id);
-  }
-}
-
-export class InMemoryWorkspaceTokenRepository implements WorkspaceTokenRepositoryPort {
-  private readonly items = new Map<string, WorkspaceTokenRecord>();
-
-  async findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null> {
-    return [...this.items.values()].find((item) => item.workspaceId === workspaceId && item.revokedAt === null) ?? null;
-  }
-
-  async findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null> {
-    return [...this.items.values()].find((item) => item.tokenHash === tokenHash && item.revokedAt === null) ?? null;
-  }
-
-  async save(params: {
-    workspaceId: string;
-    accountId: string;
-    tokenPrefix: string;
-    tokenHash: string;
-    encryptedToken: string;
-  }): Promise<WorkspaceTokenRecord> {
-    const existing = [...this.items.values()].find((item) => item.workspaceId === params.workspaceId);
-    const record: WorkspaceTokenRecord = {
-      id: existing?.id ?? randomUUID(),
-      workspaceId: params.workspaceId,
-      accountId: params.accountId,
-      tokenPrefix: params.tokenPrefix,
-      tokenHash: params.tokenHash,
-      encryptedToken: params.encryptedToken,
-      createdAt: existing?.createdAt ?? new Date(),
-      lastUsedAt: existing?.lastUsedAt ?? null,
-      revokedAt: null,
-    };
-
-    this.items.set(record.id, record);
-    return record;
-  }
-
-  async touch(workspaceId: string, lastUsedAt: Date): Promise<void> {
-    const item = [...this.items.values()].find((i) => i.workspaceId === workspaceId && i.revokedAt === null);
-    if (item) {
-      item.lastUsedAt = lastUsedAt;
-    }
   }
 }
 
@@ -4431,7 +4387,10 @@ export class InMemoryAuditService extends AuditService {
   readonly events: AuditEventInput[] = [];
 
   async record(event: AuditEventInput): Promise<void> {
-    this.events.push(event);
+    const contextualMetadata = requestAuditMetadata(event.eventType);
+    this.events.push(contextualMetadata
+      ? { ...event, metadata: { ...event.metadata, ...contextualMetadata } }
+      : event);
     await super.record(event);
   }
 }

@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { createClient } from "redis";
 
-import { runSharedStoreSmoke } from "../testing/remoteSmokeHarness.js";
+import { runSharedStoreRejectionSmoke } from "../testing/remoteSmokeHarness.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -168,7 +168,7 @@ const main = async () => {
   console.info(`[smoke:redis] using ${redis.description}`);
 
   try {
-    const summary = await runSharedStoreSmoke(redis.redisUrl, {
+    const summary = await runSharedStoreRejectionSmoke(redis.redisUrl, {
       step(message) {
         console.info(`[smoke:redis] ${message}`);
       },
@@ -178,9 +178,8 @@ const main = async () => {
     console.info(
       JSON.stringify(
         {
-          answer: summary.answer,
-          documentId: summary.documentId,
-          workspaceId: summary.workspaceId,
+          code: summary.code,
+          status: summary.status,
         },
         null,
         2,

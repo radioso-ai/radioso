@@ -786,7 +786,7 @@ describe("public chat session contract", () => {
 
     await request(app)
       .put(`/api/v1/agents/${defaultAgentId}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         surfaceSettings: {
           anonymousChat: { enabled: true },
@@ -795,7 +795,8 @@ describe("public chat session contract", () => {
       .expect(200);
     const defaultAgent = await request(app)
       .post(`/api/v1/agents/${defaultAgentId}/anonymous-chat-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", session.cookie)
+      .set("X-Workspace-Id", session.workspaceId)
       .expect(200);
     const sideAgent = await request(app)
       .post("/api/v1/agents")
@@ -804,7 +805,7 @@ describe("public chat session contract", () => {
       .expect(201);
     await request(app)
       .put(`/api/v1/agents/${sideAgent.body.id}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({
         surfaceSettings: {
           anonymousChat: { enabled: true },
@@ -813,7 +814,8 @@ describe("public chat session contract", () => {
       .expect(200);
     const sideAgentWithToken = await request(app)
       .post(`/api/v1/agents/${sideAgent.body.id}/anonymous-chat-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", session.cookie)
+      .set("X-Workspace-Id", session.workspaceId)
       .expect(200);
 
     const defaultToken = defaultAgent.body.surfaceSettings.anonymousChat.token as string;

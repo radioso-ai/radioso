@@ -28,6 +28,7 @@ tags:
 components:
   securitySchemes:
     sessionCookie:
+      description: Interactive Radioso dashboard session. Session-only operations also require the selected workspace header when specified.
       type: apiKey
       in: cookie
       name: radioso_session
@@ -36,6 +37,7 @@ components:
       in: header
       name: X-Workspace-Id
     bearerAuth:
+      description: Personal API tokens and service-account credentials for eligible REST API operations. MCP, public launch, agent-converse, and session-only operations use separate credentials or a signed-in session.
       type: http
       scheme: bearer
       bearerFormat: APIKey
@@ -282,13 +284,6 @@ components:
         - hasCompletedChat
         - sampleDocumentsImported
         - websiteCrawlerEnabled
-    WorkspaceTokenResponse:
-      type: object
-      properties:
-        token:
-          type: string
-      required:
-        - token
     WorkspaceMcpContextResponse:
       type: object
       properties:
@@ -1574,7 +1569,7 @@ components:
       properties:
         provider:
           type: string
-          enum: &a53
+          enum: &a57
             - openai
             - openai-compatible
             - gemini
@@ -9810,7 +9805,7 @@ components:
       properties:
         type:
           type: string
-          enum: &a54
+          enum: &a58
             - session
             - customer
             - agent
@@ -12047,13 +12042,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/account/workspaces/{workspaceId}/token:
+  /api/v1/account/workspaces/{workspaceId}/api-access:
     get:
       tags:
-        - Account
-      summary: Reveal the workspace API token for manual SDK or CLI use
-      operationId: getWorkspaceApiToken
-      security:
+        - API Access
+      summary: Read API-access capabilities and limits
+      operationId: getApiAccessSummary
+      security: &a52
         - sessionCookie: []
       parameters:
         - schema:
@@ -12064,43 +12059,324 @@ paths:
           in: path
       responses:
         "200":
-          description: Workspace token returned
+          description: API-access capabilities
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkspaceTokenResponse"
+                type: object
+                properties:
+                  effectiveRole:
+                    type: string
+                    enum:
+                      - member
+                      - admin
+                      - owner
+                  capabilities:
+                    type: object
+                    properties:
+                      manageOwnPersonalTokens:
+                        type: boolean
+                      auditWorkspacePersonalTokens:
+                        type: boolean
+                      manageServiceAccounts:
+                        type: boolean
+                    required:
+                      - manageOwnPersonalTokens
+                      - auditWorkspacePersonalTokens
+                      - manageServiceAccounts
+                  defaults:
+                    type: object
+                    properties:
+                      personalTokenLifetimeDays:
+                        type: number
+                        enum:
+                          - 90
+                      serviceCredentialLifetimeDays:
+                        type: number
+                        enum:
+                          - 365
+                    required:
+                      - personalTokenLifetimeDays
+                      - serviceCredentialLifetimeDays
+                  limits:
+                    type: object
+                    properties:
+                      personalTokensPerUser:
+                        type: number
+                        enum:
+                          - 10
+                      serviceAccountsPerWorkspace:
+                        type: number
+                        enum:
+                          - 50
+                      credentialsPerServiceAccount:
+                        type: number
+                        enum:
+                          - 5
+                      maximumPageSize:
+                        type: number
+                        enum:
+                          - 100
+                    required:
+                      - personalTokensPerUser
+                      - serviceAccountsPerWorkspace
+                      - credentialsPerServiceAccount
+                      - maximumPageSize
+                  legacyCredentialMigration:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum:
+                          - destroyed
+                          - not_applicable
+                      migratedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                    required:
+                      - status
+                      - migratedAt
+                  mcpCredentialSupport:
+                    type: string
+                    enum:
+                      - unsupported
+                required:
+                  - effectiveRole
+                  - capabilities
+                  - defaults
+                  - limits
+                  - legacyCredentialMigration
+                  - mcpCredentialSupport
         "400":
-          description: Invalid workspace id
+          description: Invalid lifecycle request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Authentication required
+          description: Interactive session required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Workspace token no longer resolves to an active workspace
+          description: Workspace capability required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "429":
-          description: Token reveal temporarily rate limited
+        "404":
+          description: Resource not available in this workspace or ownership boundary
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RateLimitExceededResponse"
-  /api/v1/account/workspaces/{workspaceId}/token/rotate:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens:
+    get:
+      tags:
+        - API Access
+      summary: List personal-token metadata
+      operationId: listPersonalApiTokens
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+            enum:
+              - mine
+              - workspace
+          required: false
+          name: view
+          in: query
+      responses:
+        "200":
+          description: Safe personal-token metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        kind:
+                          type: string
+                          enum: &a54
+                            - personal
+                            - service
+                        label:
+                          type: string
+                          minLength: 1
+                          maxLength: 80
+                        prefix:
+                          type: string
+                        roleCeiling:
+                          type:
+                            - string
+                            - "null"
+                          enum: &a53
+                            - member
+                            - admin
+                        ownerUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        serviceAccountId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        createdByUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        createdAt:
+                          type: string
+                          format: date-time
+                        expiresAt:
+                          type: string
+                          format: date-time
+                        expiryWarningDays:
+                          anyOf:
+                            - type: number
+                              enum:
+                                - 30
+                            - type: number
+                              enum:
+                                - 7
+                            - type: number
+                              enum:
+                                - 1
+                            - type: "null"
+                        lastUsedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        revokedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        revokedByUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        revocationReason:
+                          type:
+                            - string
+                            - "null"
+                        rotatedFromCredentialId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        revision:
+                          type: integer
+                          exclusiveMinimum: 0
+                      required:
+                        - id
+                        - kind
+                        - label
+                        - prefix
+                        - roleCeiling
+                        - ownerUserId
+                        - serviceAccountId
+                        - createdByUserId
+                        - createdAt
+                        - expiresAt
+                        - expiryWarningDays
+                        - lastUsedAt
+                        - revokedAt
+                        - revokedByUserId
+                        - revocationReason
+                        - rotatedFromCredentialId
+                        - revision
+                  page:
+                    type: integer
+                    minimum: 1
+                  limit:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                  total:
+                    type: integer
+                    minimum: 0
+                required:
+                  - items
+                  - page
+                  - limit
+                  - total
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     post:
       tags:
-        - Account
-      summary: Rotate the workspace API token
-      operationId: rotateWorkspaceApiToken
-      security:
-        - sessionCookie: []
+        - API Access
+      summary: Issue a personal API token
+      operationId: issuePersonalApiToken
+      security: *a52
       parameters:
         - schema:
             type: string
@@ -12108,39 +12384,2668 @@ paths:
           required: true
           name: workspaceId
           in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                roleCeiling:
+                  type: string
+                  enum: *a53
+                expiresAt:
+                  type: string
+                  format: date-time
+              required:
+                - label
+                - roleCeiling
+                - expiresAt
       responses:
-        "200":
-          description: Workspace token rotated
+        "201":
+          description: One-time personal-token secret
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/WorkspaceTokenResponse"
+                type: object
+                properties:
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a54
+                      label:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      prefix:
+                        type: string
+                      roleCeiling:
+                        type:
+                          - string
+                          - "null"
+                        enum: *a53
+                      ownerUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      serviceAccountId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdAt:
+                        type: string
+                        format: date-time
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      expiryWarningDays:
+                        anyOf:
+                          - type: number
+                            enum:
+                              - 30
+                          - type: number
+                            enum:
+                              - 7
+                          - type: number
+                            enum:
+                              - 1
+                          - type: "null"
+                      lastUsedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revocationReason:
+                        type:
+                          - string
+                          - "null"
+                      rotatedFromCredentialId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revision:
+                        type: integer
+                        exclusiveMinimum: 0
+                    required:
+                      - id
+                      - kind
+                      - label
+                      - prefix
+                      - roleCeiling
+                      - ownerUserId
+                      - serviceAccountId
+                      - createdByUserId
+                      - createdAt
+                      - expiresAt
+                      - expiryWarningDays
+                      - lastUsedAt
+                      - revokedAt
+                      - revokedByUserId
+                      - revocationReason
+                      - rotatedFromCredentialId
+                      - revision
+                  secret:
+                    type: string
+                required:
+                  - credential
+                  - secret
         "400":
-          description: Invalid workspace id
+          description: Invalid lifecycle request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
-          description: Authentication required
+          description: Interactive session required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
-          description: Workspace does not belong to the current account
+          description: Workspace capability required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "429":
-          description: Too many rotate attempts
+        "404":
+          description: Resource not available in this workspace or ownership boundary
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "503":
-          description: Workspace token secret is not configured
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}:
+    patch:
+      tags:
+        - API Access
+      summary: Relabel an owned personal token
+      operationId: relabelPersonalApiToken
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: credentialId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - label
+                - revision
+      responses:
+        "200":
+          description: Updated safe credential metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  kind:
+                    type: string
+                    enum: *a54
+                  label:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  prefix:
+                    type: string
+                  roleCeiling:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a53
+                  ownerUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  serviceAccountId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  expiryWarningDays:
+                    anyOf:
+                      - type: number
+                        enum:
+                          - 30
+                      - type: number
+                        enum:
+                          - 7
+                      - type: number
+                        enum:
+                          - 1
+                      - type: "null"
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revocationReason:
+                    type:
+                      - string
+                      - "null"
+                  rotatedFromCredentialId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - kind
+                  - label
+                  - prefix
+                  - roleCeiling
+                  - ownerUserId
+                  - serviceAccountId
+                  - createdByUserId
+                  - createdAt
+                  - expiresAt
+                  - expiryWarningDays
+                  - lastUsedAt
+                  - revokedAt
+                  - revokedByUserId
+                  - revocationReason
+                  - rotatedFromCredentialId
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/rotate:
+    post:
+      tags:
+        - API Access
+      summary: Immediately rotate an owned personal token
+      operationId: rotatePersonalApiToken
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: credentialId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - revision
+      responses:
+        "201":
+          description: One-time replacement secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a54
+                      label:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      prefix:
+                        type: string
+                      roleCeiling:
+                        type:
+                          - string
+                          - "null"
+                        enum: *a53
+                      ownerUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      serviceAccountId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdAt:
+                        type: string
+                        format: date-time
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      expiryWarningDays:
+                        anyOf:
+                          - type: number
+                            enum:
+                              - 30
+                          - type: number
+                            enum:
+                              - 7
+                          - type: number
+                            enum:
+                              - 1
+                          - type: "null"
+                      lastUsedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revocationReason:
+                        type:
+                          - string
+                          - "null"
+                      rotatedFromCredentialId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revision:
+                        type: integer
+                        exclusiveMinimum: 0
+                    required:
+                      - id
+                      - kind
+                      - label
+                      - prefix
+                      - roleCeiling
+                      - ownerUserId
+                      - serviceAccountId
+                      - createdByUserId
+                      - createdAt
+                      - expiresAt
+                      - expiryWarningDays
+                      - lastUsedAt
+                      - revokedAt
+                      - revokedByUserId
+                      - revocationReason
+                      - rotatedFromCredentialId
+                      - revision
+                  secret:
+                    type: string
+                required:
+                  - credential
+                  - secret
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/revoke:
+    post:
+      tags:
+        - API Access
+      summary: Revoke a personal token
+      operationId: revokePersonalApiToken
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: credentialId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      responses:
+        "200":
+          description: Revoked safe credential metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  kind:
+                    type: string
+                    enum: *a54
+                  label:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  prefix:
+                    type: string
+                  roleCeiling:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a53
+                  ownerUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  serviceAccountId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  expiryWarningDays:
+                    anyOf:
+                      - type: number
+                        enum:
+                          - 30
+                      - type: number
+                        enum:
+                          - 7
+                      - type: number
+                        enum:
+                          - 1
+                      - type: "null"
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revocationReason:
+                    type:
+                      - string
+                      - "null"
+                  rotatedFromCredentialId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - kind
+                  - label
+                  - prefix
+                  - roleCeiling
+                  - ownerUserId
+                  - serviceAccountId
+                  - createdByUserId
+                  - createdAt
+                  - expiresAt
+                  - expiryWarningDays
+                  - lastUsedAt
+                  - revokedAt
+                  - revokedByUserId
+                  - revocationReason
+                  - rotatedFromCredentialId
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts:
+    get:
+      tags:
+        - API Access
+      summary: List workspace service accounts
+      operationId: listServiceAccounts
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+      responses:
+        "200":
+          description: Service-account inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        displayName:
+                          type: string
+                          minLength: 1
+                          maxLength: 80
+                        role:
+                          type: string
+                          enum: *a53
+                        status:
+                          type: string
+                          enum: &a55
+                            - enabled
+                            - disabled
+                            - archived
+                        createdByUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        createdAt:
+                          type: string
+                          format: date-time
+                        updatedAt:
+                          type: string
+                          format: date-time
+                        disabledAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        archivedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        lastUsedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        activeCredentialCount:
+                          type: integer
+                          minimum: 0
+                        revision:
+                          type: integer
+                          exclusiveMinimum: 0
+                      required:
+                        - id
+                        - displayName
+                        - role
+                        - status
+                        - createdByUserId
+                        - createdAt
+                        - updatedAt
+                        - disabledAt
+                        - archivedAt
+                        - lastUsedAt
+                        - activeCredentialCount
+                        - revision
+                  page:
+                    type: integer
+                    minimum: 1
+                  limit:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                  total:
+                    type: integer
+                    minimum: 0
+                required:
+                  - items
+                  - page
+                  - limit
+                  - total
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - API Access
+      summary: Create a service account and first credential
+      operationId: createServiceAccount
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                role:
+                  type: string
+                  enum: *a53
+                initialCredential:
+                  type: object
+                  properties:
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 80
+                    expiresAt:
+                      type: string
+                      format: date-time
+                  required:
+                    - label
+                    - expiresAt
+              required:
+                - displayName
+                - role
+                - initialCredential
+      responses:
+        "201":
+          description: Service account and one-time credential secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serviceAccount:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      displayName:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      role:
+                        type: string
+                        enum: *a53
+                      status:
+                        type: string
+                        enum: *a55
+                      createdByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+                      disabledAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      archivedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      lastUsedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      activeCredentialCount:
+                        type: integer
+                        minimum: 0
+                      revision:
+                        type: integer
+                        exclusiveMinimum: 0
+                    required:
+                      - id
+                      - displayName
+                      - role
+                      - status
+                      - createdByUserId
+                      - createdAt
+                      - updatedAt
+                      - disabledAt
+                      - archivedAt
+                      - lastUsedAt
+                      - activeCredentialCount
+                      - revision
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a54
+                      label:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      prefix:
+                        type: string
+                      roleCeiling:
+                        type:
+                          - string
+                          - "null"
+                        enum: *a53
+                      ownerUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      serviceAccountId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdAt:
+                        type: string
+                        format: date-time
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      expiryWarningDays:
+                        anyOf:
+                          - type: number
+                            enum:
+                              - 30
+                          - type: number
+                            enum:
+                              - 7
+                          - type: number
+                            enum:
+                              - 1
+                          - type: "null"
+                      lastUsedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revocationReason:
+                        type:
+                          - string
+                          - "null"
+                      rotatedFromCredentialId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revision:
+                        type: integer
+                        exclusiveMinimum: 0
+                    required:
+                      - id
+                      - kind
+                      - label
+                      - prefix
+                      - roleCeiling
+                      - ownerUserId
+                      - serviceAccountId
+                      - createdByUserId
+                      - createdAt
+                      - expiresAt
+                      - expiryWarningDays
+                      - lastUsedAt
+                      - revokedAt
+                      - revokedByUserId
+                      - revocationReason
+                      - rotatedFromCredentialId
+                      - revision
+                  secret:
+                    type: string
+                required:
+                  - serviceAccount
+                  - credential
+                  - secret
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}:
+    get:
+      tags:
+        - API Access
+      summary: Read a service account
+      operationId: getServiceAccount
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+      responses:
+        "200":
+          description: Service-account metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  displayName:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  role:
+                    type: string
+                    enum: *a53
+                  status:
+                    type: string
+                    enum: *a55
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  disabledAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  archivedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  activeCredentialCount:
+                    type: integer
+                    minimum: 0
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - displayName
+                  - role
+                  - status
+                  - createdByUserId
+                  - createdAt
+                  - updatedAt
+                  - disabledAt
+                  - archivedAt
+                  - lastUsedAt
+                  - activeCredentialCount
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - API Access
+      summary: Rename or change a service-account role
+      operationId: updateServiceAccount
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                role:
+                  type: string
+                  enum: *a53
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - revision
+      responses:
+        "200":
+          description: Updated service-account metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  displayName:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  role:
+                    type: string
+                    enum: *a53
+                  status:
+                    type: string
+                    enum: *a55
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  disabledAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  archivedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  activeCredentialCount:
+                    type: integer
+                    minimum: 0
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - displayName
+                  - role
+                  - status
+                  - createdByUserId
+                  - createdAt
+                  - updatedAt
+                  - disabledAt
+                  - archivedAt
+                  - lastUsedAt
+                  - activeCredentialCount
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/disable:
+    post:
+      tags:
+        - API Access
+      summary: Disable a service account
+      operationId: disableServiceAccount
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - revision
+      responses:
+        "200":
+          description: Updated service-account metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  displayName:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  role:
+                    type: string
+                    enum: *a53
+                  status:
+                    type: string
+                    enum: *a55
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  disabledAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  archivedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  activeCredentialCount:
+                    type: integer
+                    minimum: 0
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - displayName
+                  - role
+                  - status
+                  - createdByUserId
+                  - createdAt
+                  - updatedAt
+                  - disabledAt
+                  - archivedAt
+                  - lastUsedAt
+                  - activeCredentialCount
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/enable:
+    post:
+      tags:
+        - API Access
+      summary: Enable a service account
+      operationId: enableServiceAccount
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - revision
+      responses:
+        "200":
+          description: Updated service-account metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  displayName:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  role:
+                    type: string
+                    enum: *a53
+                  status:
+                    type: string
+                    enum: *a55
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  disabledAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  archivedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  activeCredentialCount:
+                    type: integer
+                    minimum: 0
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - displayName
+                  - role
+                  - status
+                  - createdByUserId
+                  - createdAt
+                  - updatedAt
+                  - disabledAt
+                  - archivedAt
+                  - lastUsedAt
+                  - activeCredentialCount
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/archive:
+    post:
+      tags:
+        - API Access
+      summary: Archive a service account
+      operationId: archiveServiceAccount
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - revision
+      responses:
+        "200":
+          description: Updated service-account metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  displayName:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  role:
+                    type: string
+                    enum: *a53
+                  status:
+                    type: string
+                    enum: *a55
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  disabledAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  archivedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  activeCredentialCount:
+                    type: integer
+                    minimum: 0
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - displayName
+                  - role
+                  - status
+                  - createdByUserId
+                  - createdAt
+                  - updatedAt
+                  - disabledAt
+                  - archivedAt
+                  - lastUsedAt
+                  - activeCredentialCount
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials:
+    get:
+      tags:
+        - API Access
+      summary: List service-account credentials
+      operationId: listServiceAccountCredentials
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+          required: false
+          name: page
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          required: false
+          name: limit
+          in: query
+      responses:
+        "200":
+          description: Safe service-credential metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        kind:
+                          type: string
+                          enum: *a54
+                        label:
+                          type: string
+                          minLength: 1
+                          maxLength: 80
+                        prefix:
+                          type: string
+                        roleCeiling:
+                          type:
+                            - string
+                            - "null"
+                          enum: *a53
+                        ownerUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        serviceAccountId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        createdByUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        createdAt:
+                          type: string
+                          format: date-time
+                        expiresAt:
+                          type: string
+                          format: date-time
+                        expiryWarningDays:
+                          anyOf:
+                            - type: number
+                              enum:
+                                - 30
+                            - type: number
+                              enum:
+                                - 7
+                            - type: number
+                              enum:
+                                - 1
+                            - type: "null"
+                        lastUsedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        revokedAt:
+                          type:
+                            - string
+                            - "null"
+                          format: date-time
+                        revokedByUserId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        revocationReason:
+                          type:
+                            - string
+                            - "null"
+                        rotatedFromCredentialId:
+                          type:
+                            - string
+                            - "null"
+                          format: uuid
+                        revision:
+                          type: integer
+                          exclusiveMinimum: 0
+                      required:
+                        - id
+                        - kind
+                        - label
+                        - prefix
+                        - roleCeiling
+                        - ownerUserId
+                        - serviceAccountId
+                        - createdByUserId
+                        - createdAt
+                        - expiresAt
+                        - expiryWarningDays
+                        - lastUsedAt
+                        - revokedAt
+                        - revokedByUserId
+                        - revocationReason
+                        - rotatedFromCredentialId
+                        - revision
+                  page:
+                    type: integer
+                    minimum: 1
+                  limit:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                  total:
+                    type: integer
+                    minimum: 0
+                required:
+                  - items
+                  - page
+                  - limit
+                  - total
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - API Access
+      summary: Issue another service-account credential
+      operationId: issueServiceAccountCredential
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                expiresAt:
+                  type: string
+                  format: date-time
+              required:
+                - label
+                - expiresAt
+      responses:
+        "201":
+          description: One-time service credential secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a54
+                      label:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      prefix:
+                        type: string
+                      roleCeiling:
+                        type:
+                          - string
+                          - "null"
+                        enum: *a53
+                      ownerUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      serviceAccountId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdAt:
+                        type: string
+                        format: date-time
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      expiryWarningDays:
+                        anyOf:
+                          - type: number
+                            enum:
+                              - 30
+                          - type: number
+                            enum:
+                              - 7
+                          - type: number
+                            enum:
+                              - 1
+                          - type: "null"
+                      lastUsedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revocationReason:
+                        type:
+                          - string
+                          - "null"
+                      rotatedFromCredentialId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revision:
+                        type: integer
+                        exclusiveMinimum: 0
+                    required:
+                      - id
+                      - kind
+                      - label
+                      - prefix
+                      - roleCeiling
+                      - ownerUserId
+                      - serviceAccountId
+                      - createdByUserId
+                      - createdAt
+                      - expiresAt
+                      - expiryWarningDays
+                      - lastUsedAt
+                      - revokedAt
+                      - revokedByUserId
+                      - revocationReason
+                      - rotatedFromCredentialId
+                      - revision
+                  secret:
+                    type: string
+                required:
+                  - credential
+                  - secret
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}:
+    patch:
+      tags:
+        - API Access
+      summary: Relabel a service-account credential
+      operationId: relabelServiceAccountCredential
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: credentialId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - label
+                - revision
+      responses:
+        "200":
+          description: Updated safe credential metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  kind:
+                    type: string
+                    enum: *a54
+                  label:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  prefix:
+                    type: string
+                  roleCeiling:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a53
+                  ownerUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  serviceAccountId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  expiryWarningDays:
+                    anyOf:
+                      - type: number
+                        enum:
+                          - 30
+                      - type: number
+                        enum:
+                          - 7
+                      - type: number
+                        enum:
+                          - 1
+                      - type: "null"
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revocationReason:
+                    type:
+                      - string
+                      - "null"
+                  rotatedFromCredentialId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - kind
+                  - label
+                  - prefix
+                  - roleCeiling
+                  - ownerUserId
+                  - serviceAccountId
+                  - createdByUserId
+                  - createdAt
+                  - expiresAt
+                  - expiryWarningDays
+                  - lastUsedAt
+                  - revokedAt
+                  - revokedByUserId
+                  - revocationReason
+                  - rotatedFromCredentialId
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/rotate:
+    post:
+      tags:
+        - API Access
+      summary: Immediately rotate a service-account credential
+      operationId: rotateServiceAccountCredential
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: credentialId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: integer
+                  exclusiveMinimum: 0
+              required:
+                - revision
+      responses:
+        "201":
+          description: One-time replacement secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  credential:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      kind:
+                        type: string
+                        enum: *a54
+                      label:
+                        type: string
+                        minLength: 1
+                        maxLength: 80
+                      prefix:
+                        type: string
+                      roleCeiling:
+                        type:
+                          - string
+                          - "null"
+                        enum: *a53
+                      ownerUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      serviceAccountId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      createdAt:
+                        type: string
+                        format: date-time
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      expiryWarningDays:
+                        anyOf:
+                          - type: number
+                            enum:
+                              - 30
+                          - type: number
+                            enum:
+                              - 7
+                          - type: number
+                            enum:
+                              - 1
+                          - type: "null"
+                      lastUsedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedAt:
+                        type:
+                          - string
+                          - "null"
+                        format: date-time
+                      revokedByUserId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revocationReason:
+                        type:
+                          - string
+                          - "null"
+                      rotatedFromCredentialId:
+                        type:
+                          - string
+                          - "null"
+                        format: uuid
+                      revision:
+                        type: integer
+                        exclusiveMinimum: 0
+                    required:
+                      - id
+                      - kind
+                      - label
+                      - prefix
+                      - roleCeiling
+                      - ownerUserId
+                      - serviceAccountId
+                      - createdByUserId
+                      - createdAt
+                      - expiresAt
+                      - expiryWarningDays
+                      - lastUsedAt
+                      - revokedAt
+                      - revokedByUserId
+                      - revocationReason
+                      - rotatedFromCredentialId
+                      - revision
+                  secret:
+                    type: string
+                required:
+                  - credential
+                  - secret
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/revoke:
+    post:
+      tags:
+        - API Access
+      summary: Revoke a service-account credential
+      operationId: revokeServiceAccountCredential
+      security: *a52
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: workspaceId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: serviceAccountId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: credentialId
+          in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated API-access mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
+      responses:
+        "200":
+          description: Revoked safe credential metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  kind:
+                    type: string
+                    enum: *a54
+                  label:
+                    type: string
+                    minLength: 1
+                    maxLength: 80
+                  prefix:
+                    type: string
+                  roleCeiling:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a53
+                  ownerUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  serviceAccountId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  createdAt:
+                    type: string
+                    format: date-time
+                  expiresAt:
+                    type: string
+                    format: date-time
+                  expiryWarningDays:
+                    anyOf:
+                      - type: number
+                        enum:
+                          - 30
+                      - type: number
+                        enum:
+                          - 7
+                      - type: number
+                        enum:
+                          - 1
+                      - type: "null"
+                  lastUsedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedAt:
+                    type:
+                      - string
+                      - "null"
+                    format: date-time
+                  revokedByUserId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revocationReason:
+                    type:
+                      - string
+                      - "null"
+                  rotatedFromCredentialId:
+                    type:
+                      - string
+                      - "null"
+                    format: uuid
+                  revision:
+                    type: integer
+                    exclusiveMinimum: 0
+                required:
+                  - id
+                  - kind
+                  - label
+                  - prefix
+                  - roleCeiling
+                  - ownerUserId
+                  - serviceAccountId
+                  - createdByUserId
+                  - createdAt
+                  - expiresAt
+                  - expiryWarningDays
+                  - lastUsedAt
+                  - revokedAt
+                  - revokedByUserId
+                  - revocationReason
+                  - rotatedFromCredentialId
+                  - revision
+        "400":
+          description: Invalid lifecycle request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Interactive session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace capability required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Resource not available in this workspace or ownership boundary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Stale revision, quota, or invalid lifecycle transition
           content:
             application/json:
               schema:
@@ -12149,10 +15054,12 @@ paths:
     get:
       tags:
         - Workspace
-      summary: Get workspace MCP context for a bearer-authenticated workspace token
+      summary: Get workspace MCP context for a signed-in workspace session
       operationId: getWorkspaceMcpContext
-      security:
-        - bearerAuth: []
+      security: &a56
+        - &a59
+          sessionCookie: []
+          workspaceSelection: []
       responses:
         "200":
           description: Workspace MCP context returned
@@ -12161,13 +15068,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/WorkspaceMcpContextResponse"
         "401":
-          description: Authentication required
+          description: Signed-in workspace session required
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Workspace token no longer resolves to an active workspace
+        "404":
+          description: Workspace is not available in the signed-in account
           content:
             application/json:
               schema:
@@ -12369,10 +15276,7 @@ paths:
         - Settings
       summary: List workspace webhook destinations
       operationId: listWebhookDestinations
-      security: &a52
-        - &a55
-          sessionCookie: []
-          workspaceSelection: []
+      security: *a56
       responses:
         "200":
           description: Webhook destinations returned
@@ -12391,7 +15295,7 @@ paths:
         - Settings
       summary: Create a workspace webhook destination
       operationId: createWebhookDestination
-      security: *a52
+      security: *a56
       requestBody:
         required: true
         content:
@@ -12429,7 +15333,7 @@ paths:
         - Settings
       summary: Get a workspace webhook destination
       operationId: getWebhookDestination
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -12461,7 +15365,7 @@ paths:
         - Settings
       summary: Update a workspace webhook destination
       operationId: updateWebhookDestination
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -12511,7 +15415,7 @@ paths:
         - Settings
       summary: Delete a workspace webhook destination
       operationId: deleteWebhookDestination
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -12546,7 +15450,7 @@ paths:
         - Settings
       summary: Rotate a workspace webhook destination secret
       operationId: rotateWebhookDestinationSecret
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13033,7 +15937,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a53
+            enum: *a57
           required: true
           name: provider
           in: path
@@ -13074,7 +15978,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a53
+            enum: *a57
           required: true
           name: provider
           in: path
@@ -14751,7 +17655,7 @@ paths:
           in: path
         - schema:
             type: string
-            enum: *a54
+            enum: *a58
           required: true
           name: scopeType
           in: query
@@ -14873,7 +17777,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - *a55
+        - *a59
       responses:
         "200":
           description: Skills catalog returned
@@ -14895,7 +17799,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a55
+        - *a59
       parameters:
         - schema:
             type: string
@@ -14924,11 +17828,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections:
     get:
-      tags: &a56
+      tags: &a60
         - External Skills
       summary: List an agent's MCP connections
       operationId: listMcpConnections
-      security: &a57
+      security: &a61
         - bearerAuth: []
       parameters:
         - schema:
@@ -14990,10 +17894,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a56
+      tags: *a60
       summary: Create an MCP connection
       operationId: createMcpConnection
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15102,10 +18006,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/discover:
     post:
-      tags: *a56
+      tags: *a60
       summary: Discover a connection's tools
       operationId: discoverMcpConnectionTools
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15155,10 +18059,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}:
     delete:
-      tags: *a56
+      tags: *a60
       summary: Delete an MCP connection
       operationId: deleteMcpConnection
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15194,10 +18098,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a56
+      tags: *a60
       summary: Get an MCP connection
       operationId: getMcpConnection
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15257,10 +18161,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a56
+      tags: *a60
       summary: Update an MCP connection (rename / rotate token)
       operationId: updateMcpConnection
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15339,10 +18243,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills:
     get:
-      tags: *a56
+      tags: *a60
       summary: List an agent's external skill definitions
       operationId: listExternalSkills
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15422,10 +18326,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a56
+      tags: *a60
       summary: Define an external skill (bind a discovered tool)
       operationId: createExternalSkill
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15551,10 +18455,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills/{skillId}:
     delete:
-      tags: *a56
+      tags: *a60
       summary: Delete an external skill definition
       operationId: deleteExternalSkill
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15584,10 +18488,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a56
+      tags: *a60
       summary: Get an external skill definition
       operationId: getExternalSkill
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15666,10 +18570,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a56
+      tags: *a60
       summary: Update an external skill definition (enable / update bindings)
       operationId: updateExternalSkill
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15784,10 +18688,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize:
     post:
-      tags: *a56
+      tags: *a60
       summary: Start the OAuth authorization flow for a connection
       operationId: startMcpConnectionOauth
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15840,10 +18744,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete:
     post:
-      tags: *a56
+      tags: *a60
       summary: Complete the OAuth authorization flow
       operationId: completeMcpConnectionOauth
-      security: *a57
+      security: *a61
       parameters:
         - schema:
             type: string
@@ -15926,11 +18830,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections:
     post:
-      tags: &a58
+      tags: &a62
         - OAuth Connections
       summary: Create and start a workspace OAuth connection
       operationId: createWorkspaceOauthConnection
-      security: &a59
+      security: &a63
         - bearerAuth: []
       parameters:
         - schema:
@@ -16003,10 +18907,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a58
+      tags: *a62
       summary: List non-secret workspace OAuth connection statuses
       operationId: listWorkspaceOauthConnections
-      security: *a59
+      security: *a63
       parameters:
         - schema:
             type: string
@@ -16036,7 +18940,7 @@ paths:
                           type: string
                         status:
                           type: string
-                          enum: &a60
+                          enum: &a64
                             - pending
                             - authorized
                             - needs_reauth
@@ -16076,10 +18980,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}:
     get:
-      tags: *a58
+      tags: *a62
       summary: Get a non-secret workspace OAuth connection status
       operationId: getWorkspaceOauthConnection
-      security: *a59
+      security: *a63
       parameters:
         - schema:
             type: string
@@ -16113,7 +19017,7 @@ paths:
                         type: string
                       status:
                         type: string
-                        enum: *a60
+                        enum: *a64
                       grantedScopes:
                         type: array
                         items:
@@ -16154,10 +19058,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}/reauthorize:
     post:
-      tags: *a58
+      tags: *a62
       summary: Restart authorization for a workspace OAuth connection
       operationId: reauthorizeWorkspaceOauthConnection
-      security: *a59
+      security: *a63
       parameters:
         - schema:
             type: string
@@ -16218,7 +19122,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/oauth/callback/{provider}:
     get:
-      tags: *a58
+      tags: *a62
       summary: Complete a provider OAuth callback
       operationId: completeWorkspaceOauthCallback
       parameters:
@@ -16264,7 +19168,7 @@ paths:
         - Customer Email Activity
       summary: List sanitized workspace customer email skill activity
       operationId: listWorkspaceEmailSkillActivity
-      security: &a61
+      security: &a65
         - bearerAuth: []
       parameters:
         - schema:
@@ -16366,12 +19270,12 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: &a65
+                          enum: &a69
                             - draft
                             - send
                         outcome:
                           type: string
-                          enum: &a66
+                          enum: &a70
                             - drafted
                             - sent
                             - missing_input
@@ -16448,11 +19352,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections:
     get:
-      tags: &a62
+      tags: &a66
         - Customer Email Connections
       summary: List workspace customer email connections
       operationId: listWorkspaceEmailConnections
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -16497,7 +19401,7 @@ paths:
                             - "null"
                         status:
                           type: string
-                          enum: &a63
+                          enum: &a67
                             - authorized
                             - disabled
                             - needs_reauth
@@ -16506,7 +19410,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: &a64
+                          enum: &a68
                             - ok
                             - failed
                             - unknown
@@ -16549,10 +19453,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a62
+      tags: *a66
       summary: Create a workspace customer email connection
       operationId: createWorkspaceEmailConnection
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -16623,12 +19527,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a63
+                        enum: *a67
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a68
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -16681,10 +19585,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-oauth-connections:
     get:
-      tags: *a62
+      tags: *a66
       summary: List OAuth connections eligible to back a customer email connection
       operationId: listWorkspaceEmailOauthConnections
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -16754,10 +19658,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}:
     patch:
-      tags: *a62
+      tags: *a66
       summary: Update or enable/disable a workspace customer email connection
       operationId: updateWorkspaceEmailConnection
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -16829,12 +19733,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a63
+                        enum: *a67
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a68
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -16886,10 +19790,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a62
+      tags: *a66
       summary: Delete a workspace customer email connection
       operationId: deleteWorkspaceEmailConnection
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -16932,10 +19836,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check:
     post:
-      tags: *a62
+      tags: *a66
       summary: Check customer email connection health
       operationId: checkWorkspaceEmailConnectionHealth
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -16984,12 +19888,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a63
+                        enum: *a67
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a68
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -17036,11 +19940,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills:
     get:
-      tags: &a67
+      tags: &a71
         - Customer Email Skills
       summary: List agent customer email skills
       operationId: listAgentEmailSkills
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -17077,7 +19981,7 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: *a65
+                          enum: *a69
                         boundInputs:
                           type: object
                           additionalProperties: {}
@@ -17096,7 +20000,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: *a66
+                            enum: *a70
                         createdAt:
                           type: string
                         updatedAt:
@@ -17135,10 +20039,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a67
+      tags: *a71
       summary: Create an agent customer email skill
       operationId: createAgentEmailSkill
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -17160,7 +20064,7 @@ paths:
                   format: uuid
                 mode:
                   type: string
-                  enum: *a65
+                  enum: *a69
                   default: draft
                 boundInputs:
                   type: object
@@ -17209,7 +20113,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a65
+                        enum: *a69
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -17228,7 +20132,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a66
+                          enum: *a70
                       createdAt:
                         type: string
                       updatedAt:
@@ -17280,10 +20184,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills/{skillId}:
     get:
-      tags: *a67
+      tags: *a71
       summary: Get an agent customer email skill
       operationId: getAgentEmailSkill
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -17324,7 +20228,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a65
+                        enum: *a69
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -17343,7 +20247,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a66
+                          enum: *a70
                       createdAt:
                         type: string
                       updatedAt:
@@ -17382,10 +20286,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a67
+      tags: *a71
       summary: Update an agent customer email skill
       operationId: updateAgentEmailSkill
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -17408,7 +20312,7 @@ paths:
               properties:
                 mode:
                   type: string
-                  enum: *a65
+                  enum: *a69
                 boundInputs:
                   type: object
                   additionalProperties: {}
@@ -17450,7 +20354,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a65
+                        enum: *a69
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -17469,7 +20373,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a66
+                          enum: *a70
                       createdAt:
                         type: string
                       updatedAt:
@@ -17514,10 +20418,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a67
+      tags: *a71
       summary: Delete an agent customer email skill
       operationId: deleteAgentEmailSkill
-      security: *a61
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -17554,11 +20458,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/start:
     post:
-      tags: &a68
+      tags: &a72
         - Slack
       summary: Start Slack OAuth installation
       operationId: startWorkspaceSlackInstall
-      security: &a69
+      security: &a73
         - bearerAuth: []
       parameters:
         - schema:
@@ -17615,10 +20519,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/status:
     get:
-      tags: *a68
+      tags: *a72
       summary: Get Slack installation status
       operationId: getWorkspaceSlackInstallStatus
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -17682,10 +20586,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/manifest:
     get:
-      tags: *a68
+      tags: *a72
       summary: Get self-host Slack app manifest
       operationId: getWorkspaceSlackManifest
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -17811,10 +20715,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/binding:
     get:
-      tags: *a68
+      tags: *a72
       summary: Get Slack answering binding
       operationId: getWorkspaceSlackBinding
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -17863,10 +20767,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     put:
-      tags: *a68
+      tags: *a72
       summary: Set Slack answering binding
       operationId: setWorkspaceSlackBinding
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -17949,10 +20853,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a68
+      tags: *a72
       summary: Remove a Slack channel answering binding
       operationId: deleteWorkspaceSlackChannelBinding
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -17989,10 +20893,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/bindings:
     get:
-      tags: *a68
+      tags: *a72
       summary: List Slack answering bindings
       operationId: listWorkspaceSlackBindings
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -18049,10 +20953,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/installation:
     delete:
-      tags: *a68
+      tags: *a72
       summary: Disconnect Slack installation
       operationId: disconnectWorkspaceSlackInstallation
-      security: *a69
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -18081,7 +20985,7 @@ paths:
         - Webhook Skills
       summary: List agent webhook skills
       operationId: listAgentWebhookSkills
-      security: &a70
+      security: &a74
         - bearerAuth: []
       parameters:
         - schema:
@@ -18138,7 +21042,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a71
+                            enum: &a75
                               - delivered
                               - missing_input
                               - destination_not_found
@@ -18184,7 +21088,7 @@ paths:
         - Webhook Skills
       summary: Create an agent webhook skill
       operationId: createAgentWebhookSkill
-      security: *a70
+      security: *a74
       parameters:
         - schema:
             type: string
@@ -18273,7 +21177,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a71
+                          enum: *a75
                       createdAt:
                         type: string
                       updatedAt:
@@ -18328,7 +21232,7 @@ paths:
         - Webhook Skills
       summary: Get an agent webhook skill
       operationId: getAgentWebhookSkill
-      security: *a70
+      security: *a74
       parameters:
         - schema:
             type: string
@@ -18388,7 +21292,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a71
+                          enum: *a75
                       createdAt:
                         type: string
                       updatedAt:
@@ -18430,7 +21334,7 @@ paths:
         - Webhook Skills
       summary: Update an agent webhook skill
       operationId: updateAgentWebhookSkill
-      security: *a70
+      security: *a74
       parameters:
         - schema:
             type: string
@@ -18514,7 +21418,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a71
+                          enum: *a75
                       createdAt:
                         type: string
                       updatedAt:
@@ -18562,7 +21466,7 @@ paths:
         - Webhook Skills
       summary: Delete an agent webhook skill
       operationId: deleteAgentWebhookSkill
-      security: *a70
+      security: *a74
       parameters:
         - schema:
             type: string
@@ -18603,7 +21507,7 @@ paths:
         - Slack Skills
       summary: List agent Slack skills
       operationId: listAgentSlackSkills
-      security: &a74
+      security: &a78
         - bearerAuth: []
       parameters:
         - schema:
@@ -18642,13 +21546,13 @@ paths:
                         boundInputs:
                           type: object
                           properties:
-                            channelId: &a72 {}
-                            text: *a72
-                            threadTs: *a72
+                            channelId: &a76 {}
+                            text: *a76
+                            threadTs: *a76
                         exposedInputs:
                           type: object
                           properties:
-                            channelId: &a73
+                            channelId: &a77
                               type: object
                               properties:
                                 description:
@@ -18658,15 +21562,15 @@ paths:
                                 required:
                                   type: boolean
                                   default: true
-                            text: *a73
-                            threadTs: *a73
+                            text: *a77
+                            threadTs: *a77
                         enabled:
                           type: boolean
                         outcomes:
                           type: array
                           items:
                             type: string
-                            enum: &a79
+                            enum: &a83
                               - enqueued
                               - missing_input
                               - failed
@@ -18711,7 +21615,7 @@ paths:
         - Slack Skills
       summary: Create an agent Slack skill
       operationId: createAgentSlackSkill
-      security: *a74
+      security: *a78
       parameters:
         - schema:
             type: string
@@ -18734,14 +21638,14 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a75 {}
-                    text: *a75
-                    threadTs: *a75
+                    channelId: &a79 {}
+                    text: *a79
+                    threadTs: *a79
                   default: {}
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a76
+                    channelId: &a80
                       type: object
                       properties:
                         description:
@@ -18751,8 +21655,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a76
-                    threadTs: *a76
+                    text: *a80
+                    threadTs: *a80
                   default: {}
                 enabled:
                   type: boolean
@@ -18788,13 +21692,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a77 {}
-                          text: *a77
-                          threadTs: *a77
+                          channelId: &a81 {}
+                          text: *a81
+                          threadTs: *a81
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a78
+                          channelId: &a82
                             type: object
                             properties:
                               description:
@@ -18804,15 +21708,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a78
-                          threadTs: *a78
+                          text: *a82
+                          threadTs: *a82
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a79
+                          enum: *a83
                       createdAt:
                         type: string
                       updatedAt:
@@ -18867,7 +21771,7 @@ paths:
         - Slack Skills
       summary: Get an agent Slack skill
       operationId: getAgentSlackSkill
-      security: *a74
+      security: *a78
       parameters:
         - schema:
             type: string
@@ -18881,144 +21785,6 @@ paths:
           required: true
           name: skillId
           in: path
-      responses:
-        "200":
-          description: Slack skill definition
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  skill:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-                      workspaceId:
-                        type: string
-                        format: uuid
-                      agentId:
-                        type: string
-                        format: uuid
-                      installationId:
-                        type: string
-                        format: uuid
-                      skillName:
-                        type: string
-                      boundInputs:
-                        type: object
-                        properties:
-                          channelId: &a80 {}
-                          text: *a80
-                          threadTs: *a80
-                      exposedInputs:
-                        type: object
-                        properties:
-                          channelId: &a81
-                            type: object
-                            properties:
-                              description:
-                                type: string
-                              slotBinding:
-                                type: string
-                              required:
-                                type: boolean
-                                default: true
-                          text: *a81
-                          threadTs: *a81
-                      enabled:
-                        type: boolean
-                      outcomes:
-                        type: array
-                        items:
-                          type: string
-                          enum: *a79
-                      createdAt:
-                        type: string
-                      updatedAt:
-                        type: string
-                    required:
-                      - id
-                      - workspaceId
-                      - agentId
-                      - installationId
-                      - skillName
-                      - boundInputs
-                      - exposedInputs
-                      - enabled
-                      - outcomes
-                      - createdAt
-                      - updatedAt
-                required:
-                  - skill
-        "401":
-          description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Agent read permission required
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Agent or Slack skill not found
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-    patch:
-      tags:
-        - Slack Skills
-      summary: Update an agent Slack skill
-      operationId: updateAgentSlackSkill
-      security: *a74
-      parameters:
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: agentId
-          in: path
-        - schema:
-            type: string
-            format: uuid
-          required: true
-          name: skillId
-          in: path
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                boundInputs:
-                  type: object
-                  properties:
-                    channelId: &a82 {}
-                    text: *a82
-                    threadTs: *a82
-                exposedInputs:
-                  type: object
-                  properties:
-                    channelId: &a83
-                      type: object
-                      properties:
-                        description:
-                          type: string
-                        slotBinding:
-                          type: string
-                        required:
-                          type: boolean
-                          default: true
-                    text: *a83
-                    threadTs: *a83
-                enabled:
-                  type: boolean
       responses:
         "200":
           description: Slack skill definition
@@ -19071,7 +21837,145 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a79
+                          enum: *a83
+                      createdAt:
+                        type: string
+                      updatedAt:
+                        type: string
+                    required:
+                      - id
+                      - workspaceId
+                      - agentId
+                      - installationId
+                      - skillName
+                      - boundInputs
+                      - exposedInputs
+                      - enabled
+                      - outcomes
+                      - createdAt
+                      - updatedAt
+                required:
+                  - skill
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent read permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or Slack skill not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Slack Skills
+      summary: Update an agent Slack skill
+      operationId: updateAgentSlackSkill
+      security: *a78
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: skillId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                boundInputs:
+                  type: object
+                  properties:
+                    channelId: &a86 {}
+                    text: *a86
+                    threadTs: *a86
+                exposedInputs:
+                  type: object
+                  properties:
+                    channelId: &a87
+                      type: object
+                      properties:
+                        description:
+                          type: string
+                        slotBinding:
+                          type: string
+                        required:
+                          type: boolean
+                          default: true
+                    text: *a87
+                    threadTs: *a87
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Slack skill definition
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skill:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      workspaceId:
+                        type: string
+                        format: uuid
+                      agentId:
+                        type: string
+                        format: uuid
+                      installationId:
+                        type: string
+                        format: uuid
+                      skillName:
+                        type: string
+                      boundInputs:
+                        type: object
+                        properties:
+                          channelId: &a88 {}
+                          text: *a88
+                          threadTs: *a88
+                      exposedInputs:
+                        type: object
+                        properties:
+                          channelId: &a89
+                            type: object
+                            properties:
+                              description:
+                                type: string
+                              slotBinding:
+                                type: string
+                              required:
+                                type: boolean
+                                default: true
+                          text: *a89
+                          threadTs: *a89
+                      enabled:
+                        type: boolean
+                      outcomes:
+                        type: array
+                        items:
+                          type: string
+                          enum: *a83
                       createdAt:
                         type: string
                       updatedAt:
@@ -19119,7 +22023,7 @@ paths:
         - Slack Skills
       summary: Delete an agent Slack skill
       operationId: deleteAgentSlackSkill
-      security: *a74
+      security: *a78
       parameters:
         - schema:
             type: string
@@ -19160,7 +22064,7 @@ paths:
         - Agent Skills
       summary: List agent skill capabilities
       operationId: listAgentSkillCapabilities
-      security: &a87
+      security: &a91
         - bearerAuth: []
       parameters:
         - schema:
@@ -19184,7 +22088,7 @@ paths:
                       properties:
                         id:
                           type: string
-                          enum: &a88
+                          enum: &a92
                             - retrieve
                             - mcp_tool
                             - email
@@ -19280,13 +22184,13 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a86
+                            enum: &a90
                               - default_answer
                               - routine_named
                               - agent_selectable
                         defaultInvocationMode:
                           type: string
-                          enum: *a86
+                          enum: *a90
                         executorAdapter:
                           type: string
                         targets:
@@ -19350,7 +22254,7 @@ paths:
         - Agent Skills
       summary: List agent skills
       operationId: listAgentSkills
-      security: *a87
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -19384,7 +22288,7 @@ paths:
                           type: string
                         capability:
                           type: string
-                          enum: *a88
+                          enum: *a92
                         storedKind:
                           type: string
                         target:
@@ -19405,7 +22309,7 @@ paths:
                           additionalProperties: {}
                         invocationMode:
                           type: string
-                          enum: *a86
+                          enum: *a90
                         enabled:
                           type: boolean
                         createdAt:
@@ -19450,7 +22354,7 @@ paths:
         - Agent Skills
       summary: Create an agent skill
       operationId: createAgentSkill
-      security: *a87
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -19469,7 +22373,7 @@ paths:
                   type: string
                 capability:
                   type: string
-                  enum: *a88
+                  enum: *a92
                 target:
                   type: object
                   properties:
@@ -19489,7 +22393,7 @@ paths:
                   default: {}
                 invocationMode:
                   type: string
-                  enum: *a86
+                  enum: *a90
                   default: routine_named
                 enabled:
                   type: boolean
@@ -19522,7 +22426,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a88
+                        enum: *a92
                       storedKind:
                         type: string
                       target:
@@ -19543,7 +22447,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a86
+                        enum: *a90
                       enabled:
                         type: boolean
                       createdAt:
@@ -19601,7 +22505,7 @@ paths:
         - Agent Skills
       summary: Update an agent skill
       operationId: updateAgentSkill
-      security: *a87
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -19643,7 +22547,7 @@ paths:
                   additionalProperties: {}
                 invocationMode:
                   type: string
-                  enum: *a86
+                  enum: *a90
                 enabled:
                   type: boolean
       responses:
@@ -19670,7 +22574,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a88
+                        enum: *a92
                       storedKind:
                         type: string
                       target:
@@ -19691,7 +22595,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a86
+                        enum: *a90
                       enabled:
                         type: boolean
                       createdAt:
@@ -19748,7 +22652,7 @@ paths:
         - Agent Skills
       summary: Delete an agent skill
       operationId: deleteAgentSkill
-      security: *a87
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -21415,7 +24319,7 @@ paths:
         - Conversation Ownership
       summary: Take human ownership of a conversation
       operationId: takeOverConversation
-      security: &a89
+      security: &a93
         - bearerAuth: []
       parameters:
         - schema:
@@ -21479,7 +24383,7 @@ paths:
         - Conversation Ownership
       summary: Reply to a conversation as a human operator
       operationId: replyToConversation
-      security: *a89
+      security: *a93
       parameters:
         - schema:
             type: string
@@ -21548,7 +24452,7 @@ paths:
         - Conversation Ownership
       summary: Transfer human ownership of a conversation
       operationId: transferConversationOwnership
-      security: *a89
+      security: *a93
       parameters:
         - schema:
             type: string
@@ -21616,7 +24520,7 @@ paths:
         - Conversation Ownership
       summary: Return a human-owned conversation to AI ownership
       operationId: handBackConversation
-      security: *a89
+      security: *a93
       parameters:
         - schema:
             type: string
@@ -21681,7 +24585,7 @@ paths:
       summary: Fork a conversation into a dashboard test session
       description: Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
       operationId: forkConversation
-      security: *a89
+      security: *a93
       parameters:
         - schema:
             type: string
@@ -22433,7 +25337,7 @@ paths:
       summary: Read the saved Audience Pulse report
       description: Returns the one saved workspace report without invoking an AI provider. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
       operationId: getAudiencePulse
-      security: *a52
+      security: *a56
       responses:
         "200":
           description: Saved report or no saved report
@@ -22459,7 +25363,7 @@ paths:
       summary: Analyze the last 30 days of visitor questions
       description: Explicitly refreshes one bounded saved workspace report. This route has a dedicated durable rate limit and accepts only a browser dashboard session, never bearer/API authentication.
       operationId: refreshAudiencePulse
-      security: *a52
+      security: *a56
       responses:
         "200":
           description: Completed, no-traffic, or retryable inference result
@@ -22504,7 +25408,7 @@ paths:
       summary: Read pending Audience Pulse preparation work
       description: Reports whether the durable facet queue still has work for this workspace. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
       operationId: getAudiencePulseRefreshStatus
-      security: *a52
+      security: *a56
       responses:
         "200":
           description: Facet preparation status
@@ -22531,7 +25435,7 @@ paths:
       summary: Read a bounded authorized source window
       description: Reads one workspace-authorized source message and, when it occurs before the next visitor turn, its next assistant reply. Source identifiers are supplied only in the JSON request body. Requires a browser dashboard session and workspace.history.read; bearer/API authentication is intentionally not accepted.
       operationId: getAudiencePulseEvidenceAnchor
-      security: *a52
+      security: *a56
       requestBody:
         required: true
         content:
@@ -22576,7 +25480,7 @@ paths:
       summary: Check operator copilot availability
       description: Dashboard session only; bearer API tokens are rejected.
       operationId: getCopilotAvailability
-      security: *a52
+      security: *a56
       responses:
         "200":
           description: Availability
@@ -22606,7 +25510,7 @@ paths:
         - Copilot
       summary: List an operator's copilot conversations
       operationId: listCopilotConversations
-      security: *a52
+      security: *a56
       responses:
         "200":
           description: Conversations
@@ -22650,7 +25554,7 @@ paths:
         - Copilot
       summary: Read a copilot conversation
       operationId: getCopilotConversation
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -22754,7 +25658,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: &a90
+                                    enum: &a94
                                       - directive
                                       - agent_setting
                                       - routine
@@ -22821,7 +25725,7 @@ paths:
         - Copilot
       summary: Delete a copilot conversation
       operationId: deleteCopilotConversation
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -22841,7 +25745,7 @@ paths:
       summary: Start a streaming operator copilot turn
       description: Returns the fixed copilot SSE event stream. A turn may persist Ray-owned evaluation records and pending proposals; applying a proposal remains a separately authorized operation. Dashboard session only; bearer API tokens are rejected.
       operationId: createCopilotTurn
-      security: *a52
+      security: *a56
       requestBody:
         required: true
         content:
@@ -22941,7 +25845,7 @@ paths:
         - Copilot
       summary: Read a copilot proposal preview
       operationId: getCopilotProposal
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -22962,14 +25866,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a90
+                    enum: *a94
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a90
+                        enum: *a94
                       ref: {}
                     required:
                       - type
@@ -23073,7 +25977,7 @@ paths:
         - Copilot
       summary: Apply a pending copilot proposal
       operationId: applyCopilotProposal
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -23112,7 +26016,7 @@ paths:
         - Copilot
       summary: Dismiss a pending copilot proposal
       operationId: dismissCopilotProposal
-      security: *a52
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -23144,7 +26048,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a91
+      security: &a95
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -23200,7 +26104,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a91
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -23245,7 +26149,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a91
+      security: *a95
       requestBody:
         required: true
         content:
@@ -23450,7 +26354,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a91
+      security: *a95
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -23616,7 +26520,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a91
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -23660,7 +26564,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a91
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -23718,7 +26622,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a91
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -23922,7 +26826,7 @@ paths:
         - Evals
       summary: Run an Eval case
       operationId: createEvalCaseRun
-      security: *a91
+      security: *a95
       parameters:
         - schema:
             type: string
@@ -23951,7 +26855,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a92
+                          enum: &a96
                             - openai
                             - openai-compatible
                             - gemini
@@ -24009,7 +26913,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a93
+                              enum: &a97
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -24044,7 +26948,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a94
+                          enum: &a98
                             - active
                             - suspended
                             - completed
@@ -24248,7 +27152,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a92
+                          enum: *a96
                         model:
                           type: string
                       required:
@@ -24302,7 +27206,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a93
+                              enum: *a97
                             model:
                               type: string
                           required:
@@ -24333,7 +27237,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a94
+                          enum: *a98
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -24384,7 +27288,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a93
+                          enum: *a97
                         model:
                           type: string
                       required:
@@ -25228,7 +28132,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a95
+          headers: &a99
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -25240,7 +28144,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a95
+          headers: *a99
           content:
             application/json:
               schema:

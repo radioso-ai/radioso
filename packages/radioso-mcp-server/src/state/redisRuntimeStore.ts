@@ -12,6 +12,12 @@ interface RuntimeRedisStoreOptions {
   signingSecret: string;
 }
 
+interface RedisSessionPurgeClient {
+  scanIterator(options: { COUNT?: number; MATCH: string }): AsyncIterable<string>;
+  get(key: string): Promise<string | null>;
+  del(keys: string[]): Promise<number>;
+}
+
 const ttlSecondsFromDate = (expiresAt: Date, now = new Date()): number =>
   Math.max(1, Math.ceil((expiresAt.getTime() - now.getTime()) / 1000));
 
@@ -121,6 +127,75 @@ const ensureConnected = async (client: { connect(): Promise<unknown>; isOpen: bo
   }
 };
 
+/**
+ * Remove persisted sessions that contain an upstream API credential. Converse
+ * sessions do not contain `upstreamApiToken` and remain usable. The scan is
+ * namespace-bound and also removes orphaned token indexes left by interrupted
+ * writes or an earlier purge.
+ */
+export const purgeLegacyApiTokenSessions = async (
+  client: RedisSessionPurgeClient,
+  keyPrefix: string,
+  _signingSecret: string,
+): Promise<{ purgedSessionCount: number }> => {
+  const deletedSessionIds = new Set<string>();
+  let purgedSessionCount = 0;
+
+  for await (const key of client.scanIterator({
+    COUNT: 100,
+    MATCH: `${keyPrefix}:session:id:*`,
+  })) {
+    const stored = await client.get(key);
+    if (!stored) {
+      continue;
+    }
+
+    let parsed: { accessTokenHash?: unknown; sessionId?: unknown; upstreamApiToken?: unknown; upstreamApiTokenEncrypted?: unknown };
+    try {
+      parsed = JSON.parse(stored) as typeof parsed;
+    } catch {
+      // An unreadable record cannot be proven free of a legacy secret. Delete
+      // it as part of the destructive purge rather than retain it indefinitely.
+      await client.del([key]);
+      continue;
+    }
+
+    if (!("upstreamApiToken" in parsed || "upstreamApiTokenEncrypted" in parsed)) {
+      continue;
+    }
+
+    const sessionId = typeof parsed.sessionId === "string"
+      ? parsed.sessionId
+      : key.slice(`${keyPrefix}:session:id:`.length);
+    const accessTokenHash = typeof parsed.accessTokenHash === "string" ? parsed.accessTokenHash : null;
+    const keys = [key];
+    if (accessTokenHash) {
+      keys.push(sessionTokenKey(keyPrefix, accessTokenHash));
+    }
+    await client.del(keys);
+    deletedSessionIds.add(sessionId);
+    purgedSessionCount += 1;
+  }
+
+  for await (const key of client.scanIterator({
+    COUNT: 100,
+    MATCH: `${keyPrefix}:session:token:*`,
+  })) {
+    const sessionId = await client.get(key);
+    if (!sessionId || deletedSessionIds.has(sessionId)) {
+      await client.del([key]);
+      continue;
+    }
+
+    const sessionKey = sessionIdKey(keyPrefix, sessionId);
+    if (!(await client.get(sessionKey))) {
+      await client.del([key]);
+    }
+  }
+
+  return { purgedSessionCount };
+};
+
 export const createRedisClientHandle = async ({
   keyPrefix,
   redisUrl,
@@ -129,11 +204,20 @@ export const createRedisClientHandle = async ({
   close(): Promise<void>;
   sessionStore: SessionStore;
 }> => {
-  const client = createClient({ url: redisUrl });
-  await ensureConnected(client);
+  const client = createClient({
+    socket: {
+      reconnectStrategy: false,
+    },
+    url: redisUrl,
+  });
+  // Redis connection failures are surfaced by the readiness retry loop. The
+  // listener prevents node-redis from treating a transient failure as an
+  // unhandled EventEmitter error.
+  client.on("error", () => undefined);
 
   const sessionStore: SessionStore = {
     async delete(sessionId) {
+      await ensureConnected(client);
       const stored = await client.get(sessionIdKey(keyPrefix, sessionId));
       if (!stored) {
         return false;
@@ -147,6 +231,7 @@ export const createRedisClientHandle = async ({
       return true;
     },
     async getByAccessToken(accessToken, now = new Date()) {
+      await ensureConnected(client);
       const accessTokenHash = hashToken(accessToken);
       const sessionId = await client.get(sessionTokenKey(keyPrefix, accessTokenHash));
       if (!sessionId) {
@@ -170,6 +255,7 @@ export const createRedisClientHandle = async ({
       return cloneSession(session);
     },
     async getById(sessionId) {
+      await ensureConnected(client);
       const stored = await client.get(sessionIdKey(keyPrefix, sessionId));
       if (!stored) {
         return null;
@@ -177,7 +263,12 @@ export const createRedisClientHandle = async ({
 
       return cloneSession(deserializeSession(stored, signingSecret));
     },
+    async purgeLegacyApiTokenSessions() {
+      await ensureConnected(client);
+      return purgeLegacyApiTokenSessions(client, keyPrefix, signingSecret);
+    },
     async save(input) {
+      await ensureConnected(client);
       const session: AccessSessionRecord = {
         accessTokenHash: hashToken(input.accessToken),
         approvalRequiredTools: input.approvalRequiredTools ? [...input.approvalRequiredTools] : undefined,

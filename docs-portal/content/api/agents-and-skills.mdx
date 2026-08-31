@@ -5,7 +5,7 @@ description: Configure workspace agents, directives, named agent skills, and ins
 
 # Agents and skills
 
-This page configures three linked concepts: [agents](/concepts), the [directives](/concepts) that steer them turn by turn, and the named [skills](/concepts) an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts. The host that issued your workspace token is the host these routes answer on — see [Workspaces and tokens](/api/workspaces-and-tokens).
+This page configures three linked concepts: [agents](/concepts), the [directives](/concepts) that steer them turn by turn, and the named [skills](/concepts) an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts. Use a personal token or service credential for eligible authoring routes; lifecycle settings and credential management use the signed-in dashboard session. See [Personal tokens and service accounts](/api/workspaces-and-tokens).
 
 Authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
 
@@ -318,7 +318,7 @@ GET    /api/v1/skills/{skillName}
 ## Common failure modes
 
 - `400` on agent create or update usually means a field failed validation.
-- `401` means the workspace token is missing or invalid.
+- `401` means the personal or service credential is missing, invalid, expired, or outside the route's accepted credential scope.
 - `404` means the agent or skill name does not exist in the current workspace context.
 - A skill can be listed even when the work is executed through another route. Use `contractReferences` to find the stable execution path.
 

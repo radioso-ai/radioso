@@ -99,7 +99,6 @@ describe('auth session bootstrap', () => {
       'radioso.authUser': '{not-json',
       'radioso.lastAccountId': 'account-stale',
       'radioso.apiToken': 'radioso_legacy_token',
-      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_workspace_token' }),
       'radioso.activeWorkspaceId': 'workspace-1',
     })
     vi.stubGlobal('window', { localStorage })
@@ -108,7 +107,6 @@ describe('auth session bootstrap', () => {
     expect(localStorage.getItem('radioso.authUser')).toBeNull()
     expect(localStorage.getItem('radioso.lastAccountId')).toBeNull()
     expect(localStorage.getItem('radioso.apiToken')).toBeNull()
-    expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
     expect(localStorage.getItem('radioso.activeWorkspaceId')).toBeNull()
   })
 })

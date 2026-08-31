@@ -5,7 +5,7 @@ description: "Read connector state, save connector config, enable or disable con
 
 # Connectors and webhooks
 
-Connectors link a workspace to external systems. The exact config shape depends on the connector type. The connector routes take a workspace token and answer on the host that issued it — see [Workspaces and tokens](/api/workspaces-and-tokens).
+Connectors link a workspace to external systems. The exact config shape depends on the connector type. Connector configuration, provider-secret storage, enable/disable, and sync controls are dashboard-session operations; open the workspace on the host where you signed in. Personal and service API credentials are for eligible automation routes and cannot manage connector or provider secrets.
 
 ## How it works
 

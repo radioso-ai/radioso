@@ -4,11 +4,17 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
 
+/** A narrow outbound signal; workspace lifecycle does not know credential storage. */
+export interface WorkspacePersonalCredentialTerminationPort {
+  endWorkspace(input: { accountId: string; workspaceId: string; actorUserId?: string | null }): Promise<void>;
+}
+
 export class WorkspaceService {
   constructor(
     private readonly workspaceRepository: WorkspaceRepositoryPort,
     private readonly auditService: AuditService,
     private readonly accountMembershipRepository?: AccountMembershipRepositoryPort,
+    private readonly personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort,
   ) {}
 
   private async createWorkspaceWithPublicRouteKey(accountId: string, name: string): Promise<WorkspaceRecord> {
@@ -113,13 +119,15 @@ export class WorkspaceService {
     return updated;
   }
 
-  async delete(workspaceId: string, accountId: string): Promise<void> {
+  async delete(workspaceId: string, accountId: string, actorUserId?: string): Promise<void> {
     const workspace = await this.validateOwnership(workspaceId, accountId);
 
     const count = await this.workspaceRepository.countByAccountId(accountId);
     if (count <= 1) {
       throw badRequest("Cannot delete the last workspace");
     }
+
+    await this.personalCredentialTermination?.endWorkspace({ accountId, workspaceId, actorUserId });
 
     await this.auditService.record({
       accountId,

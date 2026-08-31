@@ -47,7 +47,7 @@ export const slackApi = {
     return request<SlackInstallStartResponse>(
       workspaceSlackPath(workspaceId, 'install/start'),
       { method: 'POST' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -56,7 +56,7 @@ export const slackApi = {
     return request<SlackInstallStatusResponse>(
       workspaceSlackPath(workspaceId, 'install/status'),
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -65,7 +65,7 @@ export const slackApi = {
     return request<SlackBinding>(
       workspaceSlackPath(workspaceId, 'binding'),
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -74,7 +74,7 @@ export const slackApi = {
     return request<{ bindings: SlackBinding[] }>(
       workspaceSlackPath(workspaceId, 'bindings'),
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -83,7 +83,7 @@ export const slackApi = {
     return request<SlackManifestResponse>(
       workspaceSlackPath(workspaceId, 'manifest'),
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -92,7 +92,7 @@ export const slackApi = {
     return request<SlackBinding>(
       workspaceSlackPath(workspaceId, 'binding'),
       { method: 'PUT', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -101,7 +101,7 @@ export const slackApi = {
     await request<void>(
       `${workspaceSlackPath(workspaceId, 'binding')}?channelId=${encodeURIComponent(channelId)}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -110,7 +110,7 @@ export const slackApi = {
     await request<void>(
       workspaceSlackPath(workspaceId, 'installation'),
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

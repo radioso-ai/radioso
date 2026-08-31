@@ -1,6 +1,6 @@
 # Radioso TypeScript SDK
 
-Talk to a Radioso agent from TypeScript or JavaScript, and author what it runs under — the directives that steer it, the routines that carry a flow across turns, the skills it dispatches, and the documents it answers from. One typed client, authenticated with a workspace API token.
+Talk to a Radioso agent from TypeScript or JavaScript, and author what it runs under — the directives that steer it, the routines that carry a flow across turns, the skills it dispatches, and the documents it answers from. One typed client, authenticated with a personal token or service-account credential.
 
 ## Install
 
@@ -28,12 +28,12 @@ const documents = await client.documents.list({ limit: 10 });
 - `https://api-us.radioso.ai` — the US-hosted instance
 - your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`)
 
-A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
+An API credential only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives. Create it from **Settings → API access** and store the one-time secret outside your source tree.
 
 ## Status
 
-- v1 is token-first.
-- Agent authoring (routines, directives, context variables, skills) is available with a workspace API token.
+- v1 is bearer-credential-first.
+- Agent authoring (routines, directives, context variables, skills) is available when the personal or service principal's live role permits it.
 - Session-only and browser-admin workflows are out of scope.
 - Workspace create/rename/delete stays session-authenticated and is not part of the SDK.
 - The SDK contract snapshot is synced from `../backend/openapi.json` and `../backend/openapi.yaml`.
@@ -68,10 +68,10 @@ pnpm run build
 
 - `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, skillCatalog
 - `client.agents.directives.*` — list, draft, create, update, delete
-- `client.agents.contextVariables.*` — list, upsert, delete, getSigningKey (per-agent enablement)
+- `client.agents.contextVariables.*` — list, upsert, delete (per-agent enablement); signing-key reveal remains session-only
 - `client.contextVariables.*` — list, create, get, update, delete, getValue, upsertValue, deleteValue (workspace definitions and values)
 - `client.agents.skills.*` and `client.agents.{emailSkills,externalSkills,webhookSkills,slackSkills}.*` — skill bindings per capability
-- `client.agents.mcpConnections.*` and `client.agents.mcpConverseGrants.*` — external MCP connections and converse grants
+- `client.agents.mcpConnections.*` — external MCP connections; MCP converse-grant lifecycle remains session-only
 
 ### Documents and settings
 

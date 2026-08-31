@@ -5,6 +5,7 @@ import type { Env } from "../../config/env.js";
 import type { AccountAccessService } from "../../../modules/account/services/accountAccessService.js";
 import type { AuthService } from "../../../modules/auth/services/authService.js";
 import type { WorkspaceSessionService } from "../../../modules/auth/services/workspaceSessionService.js";
+import { markApiPrincipalAuthenticator } from "../apiPrincipalRoutePolicy.js";
 
 const WORKSPACE_HEADER = "x-workspace-id";
 const isBearerAuthorization = (value: string | undefined): boolean =>
@@ -24,7 +25,7 @@ export interface DashboardWorkspaceSessionDependencies {
 export const requireDashboardWorkspaceSession = (
   dependencies: DashboardWorkspaceSessionDependencies,
 ): RequestHandler => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return markApiPrincipalAuthenticator(async (req: Request, res: Response, next: NextFunction) => {
     try {
       const authorization = req.header("authorization");
       if (isBearerAuthorization(authorization)) {
@@ -55,5 +56,5 @@ export const requireDashboardWorkspaceSession = (
     } catch (error) {
       next(error);
     }
-  };
+  }, "session_only");
 };

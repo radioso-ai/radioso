@@ -1,7 +1,7 @@
 ---
 title: "Close the Quality Loop with Evals"
 description: "Close answer-quality reviews, optionally classify the outcome, preserve weak turns as Eval cases, and verify the fix."
-last_updated: 2026-08-29
+last_updated: 2026-08-31
 ---
 
 # Close the Quality Loop with Evals
@@ -91,11 +91,35 @@ Terminal states may also omit `resolution`:
 That closes the review without classification. The response returns
 `resolution: null`.
 
+`GET /api/v1/quality/turns` accepts a `signal` filter that narrows the list to
+one or more classes of issue: `negative_feedback`, `grounding_gaps`, or
+`skill_failures`. Pass several as a comma-separated list or repeat the
+parameter; the result is the union, and a turn matching more than one signal is
+listed once. The other filters apply on top of the signal match. The
+dashboard's queue asks for every signal in an `open` or `acknowledged` state by
+default, so the table holds the backlog rather than every answer the agent has
+ever given; its **All answers** toggle drops both defaults.
+
+For an active thumbs-down queue, combine `sort=negative_feedback_updated_at`
+with `activeNegativeFeedbackOnly=true`. Results are ordered by the latest
+feedback creation or edit, feedback newer than an earlier resolved or dismissed
+decision is treated as open, and each turn carries
+`feedback.latestDownUpdatedAt`.
+
 Use `resolutionReason` to filter turns by one or more reasons. `unspecified`
 selects terminal records without a structured reason. `resolutionFrom` and `resolutionTo` filter the
 terminal closure timestamp; they are distinct from `from` and `to`, which filter
-assistant-turn creation time. `GET /api/v1/quality/stats` includes
-`resolutionBreakdown`.
+assistant-turn creation time.
+
+`GET /api/v1/quality/stats` returns the rates behind those turns plus a
+current-window structured `resolutionBreakdown`: a rolling `7d` or `30d`
+window, the equal-length window before it for comparison, one bucket per UTC
+day, and the all-time count of turns still awaiting triage for each signal.
+Every rate ships with the population it is measured over and reports `null`
+instead of a rate when that population is empty. Both quality endpoints read
+the same turns, and both exclude operator activity — dashboard test chats,
+workbench replays, Ray's agent-turn probes, and replies a human teammate wrote
+during a takeover — so operator work does not distort the numbers.
 
 The Eval convenience endpoints are workspace-scoped:
 

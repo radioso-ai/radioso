@@ -106,6 +106,25 @@ describe("application modules", () => {
     expect(registry.publicChatActionAdvertiserRegistrations).toEqual([firstProvider, secondProvider]);
   });
 
+  it("collects copilot tool registrations, keeping factories unresolved until dependencies exist", () => {
+    // A contributed descriptor usually needs the constructed database and audit sink, which do not
+    // exist while modules register. Resolving the factory here would force an EE module to build
+    // its services before composition has any.
+    const logger = createLogger();
+    const registry = createApplicationExtensionRegistry();
+    const coordinator = new ApplicationModuleCoordinator({ logger, registry });
+    const contribution = { moduleId: "direct", descriptors: [] };
+    const factory = vi.fn(() => ({ moduleId: "deferred", descriptors: [] }));
+
+    coordinator.apply([
+      { id: "first-module", register(context) { context.registerCopilotTools(contribution); } },
+      { id: "second-module", register(context) { context.registerCopilotTools(factory); } },
+    ]);
+
+    expect(registry.copilotToolRegistrations).toEqual([contribution, factory]);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
   it("collects multiple skill executor registrations keyed by kind and adapter", () => {
     const logger = createLogger();
     const registry = createApplicationExtensionRegistry();

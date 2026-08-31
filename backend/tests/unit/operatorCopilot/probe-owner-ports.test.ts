@@ -18,6 +18,7 @@ describe("operator probe owner ports", () => {
       anonymousSessionId: null,
       verifiedCustomerId: null,
       entryPageUrl: null,
+      title: null,
       createdAt: new Date("2026-08-30T00:00:00.000Z"),
       updatedAt: new Date("2026-08-30T00:00:00.000Z"),
     }));

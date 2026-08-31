@@ -117,6 +117,7 @@ export interface ApplicationComposition {
   skillExecutorRegistry: SkillExecutorRegistry;
   chatActionSuggestionProviders: ReturnType<typeof createApplicationExtensionRegistry>["chatActionSuggestionProviders"];
   oauthProviders: ReturnType<typeof createApplicationExtensionRegistry>["oauthProviders"];
+  copilotToolRegistrations: ReturnType<typeof createApplicationExtensionRegistry>["copilotToolRegistrations"];
   lifecycle: ApplicationModuleCoordinator;
   modules: ApplicationModule[];
 }
@@ -197,6 +198,7 @@ export const createDefaultApplicationComposition = (options: {
     skillExecutorRegistry: new SkillExecutorRegistry(registry.skillExecutors),
     chatActionSuggestionProviders: registry.chatActionSuggestionProviders,
     oauthProviders: registry.oauthProviders,
+    copilotToolRegistrations: registry.copilotToolRegistrations,
     lifecycle: coordinator,
     modules: coordinator.registeredModules,
   };

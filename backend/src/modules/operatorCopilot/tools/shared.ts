@@ -1,6 +1,16 @@
 import { z } from "zod";
 
-import { copilotProposalTargetTypes, type CopilotAuditPort, type CopilotEntityDescription, type CopilotProposal, type CopilotProposalEvidence } from "../contracts.js";
+import {
+  copilotProposalTargetTypes,
+  type CopilotAnyProposalAdapter,
+  type CopilotAuditPort,
+  type CopilotEntityDescription,
+  type CopilotProposal,
+  type CopilotProposalAdapterRegistry,
+  type CopilotProposalEvidence,
+  type CopilotProposalTargetType,
+} from "../contracts.js";
+import type { CopilotRepositoryPort } from "../service.js";
 import { summarizeProposalEvidence } from "../proposalEvidence.js";
 import { resolveProposalEvidence, type ProposalChange, type ProposalEvidenceDependencies } from "../services/proposalEvidenceService.js";
 
@@ -16,6 +26,26 @@ export interface CopilotAgentLookupPort {
 }
 
 export const entity = (type: string, id: string | null | undefined) => id ? { type, id } : null;
+
+/**
+ * The adapter a proposal tool writes through, looked up by the target type it owns. Every proposal
+ * tool needs exactly this, so the lookup lives here rather than as a private copy per tool file.
+ */
+export const proposalAdapterFor = <TTargetType extends CopilotProposalTargetType>(
+  adapters: CopilotProposalAdapterRegistry,
+  targetType: TTargetType,
+): Extract<CopilotAnyProposalAdapter, { targetType: TTargetType }> => {
+  const adapter = adapters.find((candidate) => candidate.targetType === targetType);
+  if (!adapter) throw new Error(`No copilot proposal adapter registered for ${targetType}`);
+  return adapter as Extract<CopilotAnyProposalAdapter, { targetType: TTargetType }>;
+};
+
+/** What every proposal tool needs to persist and audit a draft, whatever it proposes. */
+export interface CopilotProposalToolDependencies {
+  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
+  readonly proposalAdapters: CopilotProposalAdapterRegistry;
+  readonly auditService: CopilotAuditPort;
+}
 
 type NamedAgentInput = { readonly agentId?: string; readonly agentName?: string };
 

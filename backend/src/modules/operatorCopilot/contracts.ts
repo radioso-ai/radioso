@@ -226,6 +226,19 @@ export interface CopilotContextVariableProposalAdapter extends CopilotProposalAd
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
 
+/**
+ * Every adapter a tool factory may be handed, discriminated by `targetType`. One declaration so a
+ * new target type reaches every proposal tool at once instead of being added to each one by hand.
+ */
+export type CopilotAnyProposalAdapter =
+  | CopilotDirectiveProposalAdapter
+  | CopilotAgentSettingProposalAdapter
+  | CopilotRoutineProposalAdapter
+  | CopilotAgentSkillProposalAdapter
+  | CopilotContextVariableProposalAdapter;
+
+export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
+
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;

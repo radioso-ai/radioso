@@ -29,7 +29,7 @@ import type {
   CopilotEvalCaseReplayPort,
   ProposalEvidenceDependencies,
   CopilotEvalSuiteProbePort,
-  CopilotRoutineProposalAdapter,
+  CopilotProposalAdapterRegistry,
   CopilotWorkspaceRouteKeyResolver,
 } from "../../modules/operatorCopilot/public.js";
 import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
@@ -86,7 +86,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
+  readonly proposalAdapters: CopilotProposalAdapterRegistry;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;

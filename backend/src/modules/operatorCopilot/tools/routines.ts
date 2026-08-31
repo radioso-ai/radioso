@@ -2,18 +2,12 @@ import { z } from "zod";
 
 import { projectRoutineToPortableDocument, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
 import type {
-  CopilotAuditPort,
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotContextVariableProposalAdapter,
   CopilotRoutineProposalDraft,
   CopilotEntityDescription,
   CopilotProposal,
-  CopilotDirectiveProposalAdapter,
   CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
-import type { CopilotRepositoryPort } from "../service.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   describeNamedAgent,
@@ -28,6 +22,8 @@ import {
   proposalEvidenceOutput,
   proposalOutputSchema,
   type CopilotProposalEvidenceDependencies,
+  proposalAdapterFor,
+  type CopilotProposalToolDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -341,15 +337,12 @@ const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   diagnostics: draft.diagnostics.slice(0, copilotRoutineDiagnosticLimit).map((diagnostic) => ({ ...diagnostic })),
 });
 
-export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
+export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
   readonly routineDefinitionService?: Pick<CopilotRoutineDefinitionPort, "list">;
-  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
-  readonly auditService: CopilotAuditPort;
 }
 export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => {
-  const routineAdapter = proposalAdapter(deps.proposalAdapters);
+  const routineAdapter = proposalAdapterFor(deps.proposalAdapters, "routine");
   return [
     {
       name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
@@ -485,9 +478,4 @@ const proposeRoutineChange = async (
     validation: routineValidationOutput(draft),
     ...proposalEvidenceOutput(evidence),
   };
-};
-const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>): CopilotRoutineProposalAdapter => {
-  const adapter = adapters.find((candidate) => candidate.targetType === "routine");
-  if (!adapter) throw new Error("No copilot proposal adapter registered for routine");
-  return adapter as CopilotRoutineProposalAdapter;
 };

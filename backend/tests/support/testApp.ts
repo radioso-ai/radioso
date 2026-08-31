@@ -176,6 +176,8 @@ import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
+import { assertPublicWebsiteUrl } from "../../src/modules/websiteCrawler/public.js";
 import { createCopilotWorkspaceAccountResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
@@ -1870,6 +1872,11 @@ export const createTestDependencies = (overrides: {
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
+    createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, enqueue: websiteCrawlJobService.enqueue.bind(websiteCrawlJobService) },
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
+      crawlLimits: { defaultLimit: 1000, maxLimit: 1000 },
+    }),
   ] as const;
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const copilotCapabilityRunner = new AgenticCapabilityRunner({

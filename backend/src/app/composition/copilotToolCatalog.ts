@@ -33,6 +33,7 @@ import type {
   CopilotWorkspaceRouteKeyResolver,
 } from "../../modules/operatorCopilot/public.js";
 import type { CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
+import { websiteCrawlerCopilotPrimitives } from "../../modules/websiteCrawler/public.js";
 import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
@@ -119,6 +120,7 @@ export const createCopilotToolCatalog = (deps: {
     ...retrievalCopilotPrimitives,
     ...routineCopilotPrimitives,
     ...settingsCopilotPrimitives,
+    ...websiteCrawlerCopilotPrimitives,
   ]);
   assertCopilotCapabilityProvenanceRegistry(descriptors);
   assertCopilotCapabilityProvenance(descriptors, publicOperationIds, operationPermissionRequirements, ownerExportedPrimitiveIds);

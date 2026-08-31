@@ -24,6 +24,8 @@ export const buildCopilotDashboardLink = (
     // URL, so this one has to name its tab explicitly.
     case "ingestion_settings":
       return `${base}/knowledge?knowledgeTab=ingestion`;
+    case "document_source":
+      return `${base}/knowledge?knowledgeTab=sources`;
     case "document":
       return subject.id ? `${base}/knowledge/documents/${encodeURIComponent(subject.id)}` : `${base}/knowledge`;
     case "conversation":

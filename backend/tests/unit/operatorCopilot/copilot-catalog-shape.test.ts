@@ -24,6 +24,7 @@ import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
 import { retrievalCopilotPrimitives } from "../../../src/modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../../src/modules/routines/public.js";
 import { settingsCopilotPrimitives } from "../../../src/modules/settings/public.js";
+import { websiteCrawlerCopilotPrimitives } from "../../../src/modules/websiteCrawler/public.js";
 import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
 import { filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { AccountAccessService } from "../../../src/modules/account/services/accountAccessService.js";
@@ -50,6 +51,7 @@ const ownerExportedPrimitiveIds = new Set([
   ...retrievalCopilotPrimitives,
   ...routineCopilotPrimitives,
   ...settingsCopilotPrimitives,
+  ...websiteCrawlerCopilotPrimitives,
 ]);
 
 // These two exercise the REAL composition barrel rather than re-wiring the factories by hand.

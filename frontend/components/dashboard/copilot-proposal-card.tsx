@@ -155,6 +155,11 @@ export const targetReference = (
     const documentId = applied.documentId ?? ref.documentId
     return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null
   }
+  if (summary.targetType === 'website_crawl') {
+    // A crawl has no target until it is applied and the job resolves a source.
+    const sourceId = applied.sourceId
+    return typeof sourceId === 'string' ? { entity: { type: 'document_source', id: sourceId } } : null
+  }
   if (summary.targetType === 'ingestion_settings') {
     return { entity: { type: 'ingestion_settings' } }
   }

@@ -18599,7 +18599,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings";
+                                targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -18732,11 +18732,11 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings";
+                        targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings";
+                            type: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                             ref?: unknown;
                         };
                         targetLabel: string;

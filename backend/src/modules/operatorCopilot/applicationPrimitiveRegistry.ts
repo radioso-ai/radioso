@@ -30,6 +30,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "eval.case.replay": { owningModule: "eval", exportedPort: "EvalRunService" },
   "eval.suite.run": { owningModule: "eval", exportedPort: "EvalSuiteService" },
   "settings.ingestion.propose": { owningModule: "settings", exportedPort: "IngestionSettingsService" },
+  "websiteCrawler.crawl.propose": { owningModule: "websiteCrawler", exportedPort: "WebsiteCrawlJobService" },
   "operatorCopilot.proposal.create": { owningModule: "operatorCopilot", exportedPort: "CopilotRepositoryPort" },
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },

@@ -18,6 +18,8 @@ import { createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, 
 import type { DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies, CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 import { createDocumentProposalCopilotTools } from "./documentProposals.js";
 import type { DocumentProposalCopilotToolDependencies } from "./documentProposals.js";
+import { createWebsiteCrawlProposalCopilotTools } from "./websiteCrawlProposals.js";
+import type { WebsiteCrawlProposalCopilotToolDependencies } from "./websiteCrawlProposals.js";
 import { createIngestionSettingsProposalCopilotTools } from "./ingestionSettingsProposals.js";
 import type { IngestionSettingsProposalCopilotToolDependencies } from "./ingestionSettingsProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
@@ -57,7 +59,8 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">
   & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">
   & DocumentProposalCopilotToolDependencies
-  & IngestionSettingsProposalCopilotToolDependencies;
+  & IngestionSettingsProposalCopilotToolDependencies
+  & WebsiteCrawlProposalCopilotToolDependencies;
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -86,6 +89,7 @@ export const createCopilotToolDescriptors = (
   ...createContextVariableProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentProposalCopilotTools(deps),
   ...createIngestionSettingsProposalCopilotTools(deps),
+  ...createWebsiteCrawlProposalCopilotTools(deps),
 ]);
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";

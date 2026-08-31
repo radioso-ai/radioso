@@ -22816,6 +22816,7 @@ paths:
                                       - context_variable
                                       - document
                                       - ingestion_settings
+                                      - website_crawl
                                   targetLabel:
                                     type: string
                                   summary:

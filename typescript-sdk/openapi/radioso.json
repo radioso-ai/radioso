@@ -35520,7 +35520,8 @@
                                         "agent_skill",
                                         "context_variable",
                                         "document",
-                                        "ingestion_settings"
+                                        "ingestion_settings",
+                                        "website_crawl"
                                       ]
                                     },
                                     "targetLabel": {
@@ -35836,7 +35837,8 @@
                         "agent_skill",
                         "context_variable",
                         "document",
-                        "ingestion_settings"
+                        "ingestion_settings",
+                        "website_crawl"
                       ]
                     },
                     "targetRef": {},
@@ -35852,7 +35854,8 @@
                             "agent_skill",
                             "context_variable",
                             "document",
-                            "ingestion_settings"
+                            "ingestion_settings",
+                            "website_crawl"
                           ]
                         },
                         "ref": {}

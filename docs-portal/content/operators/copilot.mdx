@@ -148,7 +148,7 @@ conversation.
 
 When Ray identifies a configuration change, it can draft a proposal for a
 directive, an agent setting, a routine, a skill's configuration, a context
-variable, a document, or the workspace's ingestion settings. The proposal card names the target, summarizes the
+variable, a document, a website crawl, or the workspace's ingestion settings. The proposal card names the target, summarizes the
 change, and shows the current and proposed values before anything is written.
 Expand **Show changes** to inspect the field-level diff.
 
@@ -199,6 +199,14 @@ documents as search snippets and retrieved chunks, so it sees parts of a documen
 rather than the whole of one, and a body it drafted as a replacement would lose
 whatever it never read. When a document says the wrong thing, ask Ray which
 passages are wrong — `document_chunks` quotes them — and edit from there.
+
+A crawl proposal points at a website. Drafting one costs nothing; applying it
+fetches the site and indexes what it finds, which spends real crawl budget and
+reaches an external server, so it goes on a card rather than starting the moment
+Ray decides it would help. The card names the URL, the page ceiling the
+deployment allows, and any URL patterns Ray narrowed the crawl to. To refresh a
+site that is already a source, ask Ray to recrawl it instead — that reuses the
+crawl settings the source already carries.
 
 An ingestion settings proposal changes how documents are chunked and enriched
 when they are processed: the chunking strategy, the fixed-window size and

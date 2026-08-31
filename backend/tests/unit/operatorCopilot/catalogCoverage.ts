@@ -61,6 +61,7 @@ const catalogToolCoverage = {
   createAssistantChatResponse: "test_agent_turn",
   searchRetrievalEvidence: "retrieval_probe",
   updateIngestionSettings: "propose_ingestion_settings",
+  crawlWebsiteDocuments: "start_crawl",
 } as const;
 
 const routineStructuralEditing = deferred(
@@ -277,7 +278,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "pauseDocumentSourceCrawl",
     "resumeDocumentSourceCrawl",
     "importDocument",
-    "crawlWebsiteDocuments",
     "listWebsiteCrawlJobs",
     "deleteWebsiteCrawlJob",
     "getDocumentTypeCatalog",

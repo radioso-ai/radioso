@@ -555,6 +555,12 @@ describe("runtime configuration", () => {
     // The retention window is documented as an operator knob, and the sweep that reads it runs in
     // the worker — so a Terraform deployment that never passes it leaves the docs describing a
     // setting the deployment cannot honour.
+    // Both copilot knobs are documented as operator-tunable, and each has to reach the process that
+    // reads it — the budget in the API service where a Ray turn runs, the window in the worker
+    // where the sweep runs. A variable that never reaches its service is a setting in name only.
+    expect(computeTf).toContain('name  = "COPILOT_PROBE_BUDGET_PER_TURN"');
+    expect(computeTf).toContain("value = tostring(var.copilot_probe_budget_per_turn)");
+    expect(terraformVariables).toContain('variable "copilot_probe_budget_per_turn"');
     expect(computeTf).toContain('name  = "COPILOT_CONVERSATION_RETENTION_DAYS"');
     expect(computeTf).toContain("value = tostring(var.copilot_conversation_retention_days)");
     expect(terraformVariables).toContain('variable "copilot_conversation_retention_days"');

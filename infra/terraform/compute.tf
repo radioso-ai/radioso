@@ -54,6 +54,12 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "OBSERVABILITY_SERVICE_NAME"
         value = "radioso-api"
       }
+      # Ray turns run in the API process, so the budget bounding what one turn may spend on
+      # replayed turns has to reach this service rather than the worker.
+      env {
+        name  = "COPILOT_PROBE_BUDGET_PER_TURN"
+        value = tostring(var.copilot_probe_budget_per_turn)
+      }
       env {
         name  = "PRODUCT_ANALYTICS_SINKS"
         value = var.product_analytics_sinks

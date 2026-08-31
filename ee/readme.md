@@ -15,6 +15,15 @@ top-level `@radioso/enterprise-backend-module` export aggregates those modules;
 feature-specific routes, migrators, hooks, providers, and lifecycle behavior
 belong beside the feature implementation.
 
+Enterprise operator surfaces reach the operator copilot through
+`registerCopilotTools`. A contribution carries its descriptors together with the
+operation and application-primitive identities they cite, because the OSS public
+contract and owning-port registry describe OSS surfaces only. The copilot
+contract is mirrored structurally in
+`ee/packages/backend-module/src/radiosoModuleTypes.ts`, the same arrangement the
+other registration ports use, so Enterprise code contributes tools without
+importing OSS types. `usageLimits/copilotTools.ts` is the worked example.
+
 Feature manifests describe ownership metadata such as feature id, edition,
 backend module id, API namespace, frontend route stubs, and docs. The frontend
 route sync script reads Enterprise frontend manifests from:

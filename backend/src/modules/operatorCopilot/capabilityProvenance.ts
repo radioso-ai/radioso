@@ -87,12 +87,28 @@ export const assertCopilotCapabilityProvenanceRegistry = (
   if (stale.length > 0) throw new Error(`Stale copilot capability provenance: ${stale.sort().join(", ")}`);
 };
 
+/**
+ * The identities a descriptor may cite. Contributed catalog tools declare their own operation and
+ * primitive identities (see `contribution.ts`), so these are assembled per
+ * application rather than read from the first-party registries directly.
+ */
+export interface CopilotCapabilityIdentityRegistries {
+  readonly publicOperationIds: ReadonlySet<string>;
+  readonly operationPermissions?: Readonly<Record<string, readonly string[]>>;
+  readonly ownerExportedPrimitiveIds?: ReadonlySet<string>;
+  /** Defaults to the first-party registry; an application widens it with contributed primitives. */
+  readonly applicationPrimitiveIds?: ReadonlySet<string>;
+}
+
 export const assertCopilotCapabilityProvenance = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
-  publicOperationIds: ReadonlySet<string>,
-  operationPermissions: Readonly<Record<string, readonly string[]>> = {},
-  ownerExportedPrimitiveIds: ReadonlySet<string> = new Set(),
+  registries: CopilotCapabilityIdentityRegistries,
 ): void => {
+  const publicOperationIds = registries.publicOperationIds;
+  const operationPermissions = registries.operationPermissions ?? {};
+  const ownerExportedPrimitiveIds = registries.ownerExportedPrimitiveIds ?? new Set<string>();
+  const applicationPrimitiveIds = registries.applicationPrimitiveIds
+    ?? new Set(Object.keys(copilotApplicationPrimitiveRegistry));
   const seen = new Set<string>();
   for (const descriptor of descriptors) {
     if (seen.has(descriptor.name)) throw new Error(`Duplicate copilot descriptor: ${descriptor.name}`);
@@ -116,7 +132,7 @@ export const assertCopilotCapabilityProvenance = (
       }
     }
     for (const primitiveId of primitiveIds) {
-      if (!(primitiveId in copilotApplicationPrimitiveRegistry)) throw new Error(`Unknown application primitive identity: ${primitiveId}`);
+      if (!applicationPrimitiveIds.has(primitiveId)) throw new Error(`Unknown application primitive identity: ${primitiveId}`);
       if (!copilotRayOwnedPrimitiveIds.includes(primitiveId as never) && !ownerExportedPrimitiveIds.has(primitiveId)) {
         throw new Error(`Application primitive is not exported by its owning module: ${primitiveId}`);
       }

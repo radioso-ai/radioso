@@ -1,5 +1,6 @@
 import type { Router } from "express";
 import type { Pool } from "pg";
+import type { ZodType } from "zod";
 
 import type {
   SkillDefinition,
@@ -29,7 +30,103 @@ export interface ApplicationModuleRegistrationContext {
   registerSkillDefinition?(definition: SkillDefinition): void;
   registerAgentSurfaceExtension?(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider?(provider: ApplicationChatActionSuggestionProviderRegistration): void;
+  registerCopilotTools?(registration: ApplicationCopilotToolRegistration): void;
 }
+
+/**
+ * Mirrors OSS's operator-copilot catalog contract (in
+ * `backend/src/modules/operatorCopilot/contracts.ts` and `contribution.ts`). Kept structurally
+ * compatible so EE modules can contribute Ray tools without importing OSS types directly, the same
+ * arrangement `AgentSurfaceExtension` above uses.
+ *
+ * Reads, probes, and acts only. A `propose` tool needs an adapter for its target type, and the
+ * target-type set is closed by an OpenAPI enum, repository narrowing, and the dashboard's card
+ * presentation.
+ */
+export type CopilotToolShape = "read" | "probe" | "act" | "propose";
+
+/**
+ * The subset of OSS's `CopilotToolInvocationContext` an EE descriptor reads. OSS passes the full
+ * context; declaring only what is used keeps the mirror small and the drift surface narrow.
+ */
+export interface CopilotToolInvocationContext {
+  readonly workspaceId: string;
+  readonly accountId: string;
+  readonly operatorUserId: string;
+}
+
+export interface CopilotAgentToolContext {
+  readonly signal: AbortSignal;
+  readonly stepIndex: number;
+  readonly callId: string;
+}
+
+export interface CopilotAgentTool<TInput = unknown, TOutput = unknown> {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: ZodType<TInput>;
+  readonly outputSchema: ZodType<TOutput>;
+  invoke(input: TInput, context: CopilotAgentToolContext): Promise<TOutput>;
+}
+
+export interface CopilotEntityReference {
+  readonly type: string;
+  readonly id?: string;
+  readonly label?: string;
+  readonly agentId?: string;
+}
+
+export interface CopilotCapabilityProvenance {
+  readonly backingOperationIds?: readonly [string, ...string[]];
+  readonly applicationPrimitiveIds?: readonly [string, ...string[]];
+  readonly rayOnly?: { readonly reason: string };
+}
+
+export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
+  readonly name: string;
+  readonly shape: CopilotToolShape;
+  readonly uiLabel: string;
+  readonly description: string;
+  readonly inputSchema: ZodType<TInput>;
+  readonly outputSchema: ZodType<TOutput>;
+  /** Workspace permissions, every one required. OSS resolves them per turn and filters on them. */
+  readonly requiredPermissions: readonly [string, ...string[]];
+  readonly capabilityProvenance: CopilotCapabilityProvenance;
+  readonly contributingModule: string;
+  readonly dashboardSubject: CopilotEntityReference;
+  createTool(context: CopilotToolInvocationContext): CopilotAgentTool<TInput, TOutput>;
+}
+
+/**
+ * Descriptors plus the identities their provenance cites. OSS validates provenance against its own
+ * OpenAPI document and application-primitive registry, neither of which describes an EE surface, so
+ * a contribution declares its own operations and primitives instead.
+ */
+export interface CopilotToolContribution {
+  readonly moduleId: string;
+  readonly descriptors: ReadonlyArray<CopilotToolDescriptor>;
+  /** Operation id -> the workspace permissions that operation's own HTTP route requires. */
+  readonly operationPermissions?: Readonly<Record<string, readonly string[]>>;
+  readonly applicationPrimitives?: Readonly<Record<string, { readonly owningModule: string; readonly exportedPort: string }>>;
+}
+
+export type ApplicationCopilotToolRegistration =
+  | CopilotToolContribution
+  | ((context: {
+      database: UsageLimitDatabasePort;
+      logger: {
+        error(entry: unknown, message?: string): void;
+      };
+      auditService: {
+        record(input: {
+          accountId?: string | null;
+          workspaceId?: string | null;
+          eventType: string;
+          eventStatus: "success" | "failure";
+          metadata?: Record<string, unknown>;
+        }): Promise<void>;
+      };
+    }) => CopilotToolContribution);
 
 /**
  * Mirrors OSS's `AgentSurfaceExtension` (in `backend/src/modules/agents/surfaceExtensions.ts`).

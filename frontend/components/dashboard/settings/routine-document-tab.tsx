@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineGuardKind, RoutineReentryMode, RoutineSlotType, RoutineStepKind, RoutineValidationDiagnostic } from '@/lib/api'
-import { documentDiagnosticText, formatBindingLine, formatBranchTargetLabel, sanitizeDraftContentForSave } from '@/lib/routine-document'
+import { documentDiagnosticText, formatBindingLine, formatBranchTargetLabel, instructionToProseParagraphs, proseParagraphsToInstruction, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import { diagnosticTargetFor } from '@/lib/routine-form'
 import {
   addBranch,
@@ -44,7 +44,7 @@ import {
   updateSlot,
   updateStep,
 } from '@/lib/routine-document-edits'
-import { draftFromBlockDoc, fieldGuardOpNeedsUnit, fieldGuardOpNeedsValue, ROUTINE_FIELD_GUARD_UNITS, routineToBlockDoc, slugifyVariableKey, type ProseParagraph, type ProseSegment, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
+import { draftFromBlockDoc, fieldGuardOpNeedsUnit, fieldGuardOpNeedsValue, ROUTINE_FIELD_GUARD_UNITS, routineToBlockDoc, slugifyVariableKey, type ProseParagraph, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['field', 'slot_filled', 'outcome', 'counter', 'default']
@@ -57,18 +57,6 @@ const stepKindOptions: { value: RoutineStepKind; label: string }[] = [
   { value: 'approval', label: 'Approval' },
 ]
 const branchEnding = (branch: RoutineBlockBranch) => branch.target.kind === 'ending' ? branch.target.ending : undefined
-
-const instructionParagraph = (segments: RoutineBlockInstructionSegment[]): ProseParagraph[] => [{
-  segments: segments.map((segment): ProseSegment => segment.kind === 'text'
-    ? segment
-    : { kind: 'chip', chipKind: 'variable', refId: segment.key, label: segment.key }),
-}]
-
-const segmentsFromParagraph = (segments: ProseSegment[]): RoutineBlockInstructionSegment[] => segments.length === 0
-  ? [{ kind: 'text', text: '' }]
-  : segments.map((segment) => segment.kind === 'text'
-    ? segment
-    : { kind: 'slotReference', key: segment.refId, source: `{{slot.${segment.refId}}}` })
 
 const instructionsEqual = (left: RoutineBlockInstructionSegment[], right: RoutineBlockInstructionSegment[]) =>
   left.length === right.length && left.every((segment, index) => {
@@ -173,9 +161,9 @@ function StepEditor({ step, stepIndex, doc, slotNames, documentIndex, nextStepId
   const prefix = `step:${step.stableStepId}:`
   const active = editing?.startsWith(prefix) ? editing.slice(prefix.length) : null
   const close = () => setEditing(null)
-  const initialInstructionContent = useMemo(() => instructionParagraph(step.instruction), [step.instruction])
-  const updateInstruction = useCallback((segments: ProseSegment[]) => {
-    const instruction = segmentsFromParagraph(segments)
+  const initialInstructionContent = useMemo(() => instructionToProseParagraphs(step.instruction), [step.instruction])
+  const updateInstruction = useCallback((paragraphs: ProseParagraph[]) => {
+    const instruction = proseParagraphsToInstruction(paragraphs)
     if (instructionsEqual(step.instruction, instruction)) return
     apply((current) => replaceInstruction(current, step.stableStepId, instruction))
   }, [apply, step.instruction, step.stableStepId])

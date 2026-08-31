@@ -10,18 +10,33 @@ import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/err
 import { copilotProposalPermissions, copilotProposalTargetTypes, type CopilotProposalTargetType } from "./contracts.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
-import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
+import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, type CopilotToolDescriptor, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
+import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
 /**
- * The permissions resolved per turn and handed to the catalog filter. A descriptor whose
- * requiredPermissions member is absent here is silently dropped from every live turn, so this list must
- * cover the whole catalog — asserted by copilot-catalog-shape.test.ts.
+ * The permissions this module knows a turn needs beyond what the assembled catalog declares:
+ * `workspace_triage` gates individual digest sections on permissions no descriptor requires, and a
+ * permission the route never resolves reports its section as unauthorized on every turn. The rest
+ * of the per-turn set is derived from the catalog itself, so a contributed tool cannot ship dead
+ * for want of an entry here — see `copilotResolvableToolPermissions`.
  */
-export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.chat.use", "workspace.history.read", "workspace.documents.read", "workspace.documents.manage", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read", "workspace.settings.manage", "workspace.conversation.takeover"] as const;
+export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.chat.use", "workspace.history.read", "workspace.documents.read", "workspace.documents.manage", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read", "workspace.conversation.takeover"] as const;
+
+/**
+ * Every permission a turn resolves: this module's section-gating baseline plus whatever the
+ * assembled catalog's descriptors require. Deriving the second half is what lets an application
+ * module contribute a tool without also editing a list in this file.
+ */
+export const copilotResolvableToolPermissions = (
+  catalog: ReadonlyArray<Pick<CopilotToolDescriptor, "requiredPermissions">>,
+): ReadonlyArray<AccountPermission> => [...new Set<AccountPermission>([
+  ...copilotToolPermissions,
+  ...catalog.flatMap((descriptor) => descriptor.requiredPermissions),
+])];
 
 export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   env: Env;
@@ -31,11 +46,13 @@ export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
       userId: string;
       principal: { type: "session_user"; userId: string };
       workspaceId: string;
-      permission: typeof copilotToolPermissions[number];
+      permission: AccountPermission;
     }): Promise<boolean>;
   };
   llmCapabilityResolver: ChatCapabilityProbePort;
   operatorCopilotService: OperatorCopilotService;
+  /** Read only for its permission declarations; the turn itself runs against the service's catalog. */
+  copilotToolCatalog: ReadonlyArray<Pick<CopilotToolDescriptor, "requiredPermissions">>;
 }
 
 /** Ray only asks whether the workspace has a usable chat model; it never resolves a call config. */
@@ -48,6 +65,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const sessionOnly = rejectBearer();
+  const resolvableToolPermissions = copilotResolvableToolPermissions(dependencies.copilotToolCatalog);
   router.use(workspaceSession, sessionOnly, agentRead);
 
   router.get("/availability", async (_req, res, next) => {
@@ -117,8 +135,8 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       if (!(await availability(dependencies, res)).available) { res.status(503).json({ reason: "no_llm_capability" }); return; }
       const { workspaceId, accountId, userId, principal } = sessionLocals(res);
       const resolvedPermissions = new Set<string>();
-      for (const permission of copilotToolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) resolvedPermissions.add(permission);
-      const permissions = new Set(copilotToolPermissions.filter((permission) =>
+      for (const permission of resolvableToolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) resolvedPermissions.add(permission);
+      const permissions = new Set(resolvableToolPermissions.filter((permission) =>
         hasAllCopilotToolPermissions([permission], resolvedPermissions)));
       await sendCopilotSse(res, dependencies.operatorCopilotService.runTurn({ workspaceId, accountId, operatorUserId: userId, conversationId: req.body.conversationId, message: req.body.message, pageContext: req.body.pageContext, permissions }));
     } catch (error) {
@@ -147,7 +165,7 @@ const applyableProposalTargets = async (
 ): Promise<CopilotProposalTargetType[]> => {
   const { workspaceId, accountId, userId, principal } = sessionLocals(res);
   const held = new Map<string, boolean>();
-  const holds = async (permission: typeof copilotToolPermissions[number]): Promise<boolean> => {
+  const holds = async (permission: AccountPermission): Promise<boolean> => {
     const cached = held.get(permission);
     if (cached !== undefined) return cached;
     const allowed = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission });
@@ -157,7 +175,7 @@ const applyableProposalTargets = async (
   const targets: CopilotProposalTargetType[] = [];
   for (const targetType of copilotProposalTargetTypes) {
     const permissions = copilotProposalPermissions[targetType];
-    const allowed = await Promise.all(permissions.map((permission) => holds(permission as typeof copilotToolPermissions[number])));
+    const allowed = await Promise.all(permissions.map((permission) => holds(permission)));
     if (allowed.every(Boolean)) targets.push(targetType);
   }
   return targets;

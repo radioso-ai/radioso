@@ -54,6 +54,7 @@ import type { ChatActionSuggestionProvider } from "../../modules/chat/contracts/
 import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/public.js";
 import type { Env } from "../config/env.js";
 import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";
+import type { CopilotToolContribution } from "../../modules/operatorCopilot/public.js";
 
 export type ApplicationChatActionSuggestionProviderRegistration =
   | ChatActionSuggestionProvider
@@ -193,6 +194,22 @@ export type ApplicationAccountCreatedHook = (context: {
   logger: AppLogger;
 }) => Promise<void>;
 
+/**
+ * What a module gets when it builds copilot tools or proposal adapters. Deliberately narrow: a
+ * contributed descriptor reads its own module's state and receives everything workspace-scoped
+ * through the per-call {@link CopilotToolInvocationContext}, so it needs no application services
+ * beyond persistence, logging, and the audit sink its own effects write to.
+ */
+export interface ApplicationCopilotRegistrationContext {
+  database: Database;
+  logger: AppLogger;
+  auditService: AuditService;
+}
+
+export type ApplicationCopilotToolRegistration =
+  | CopilotToolContribution
+  | ((context: ApplicationCopilotRegistrationContext) => CopilotToolContribution);
+
 export interface ApplicationExtensionRegistry {
   connectors: ConnectorPlugin[];
   telemetrySinks: TelemetrySink[];
@@ -237,6 +254,7 @@ export interface ApplicationExtensionRegistry {
   agentSurfaceExtensions: AgentSurfaceExtension[];
   chatActionSuggestionProviders: ApplicationChatActionSuggestionProviderRegistration[];
   oauthProviders: OauthProviderDefinition[];
+  copilotToolRegistrations: ApplicationCopilotToolRegistration[];
 }
 
 export interface ApplicationModuleRegistrationContext {
@@ -274,6 +292,12 @@ export interface ApplicationModuleRegistrationContext {
   registerAgentSurfaceExtension(extension: AgentSurfaceExtension): void;
   registerChatActionSuggestionProvider(provider: ApplicationChatActionSuggestionProviderRegistration): void;
   registerOauthProvider(provider: OauthProviderDefinition): void;
+  /**
+   * Contributes catalog tools. Reads, probes, and acts only: a proposal needs an adapter for its
+   * target type, and the target-type set is closed by an OpenAPI enum, repository narrowing, and
+   * the dashboard's card presentation, so an extension-owned target type is its own change.
+   */
+  registerCopilotTools(registration: ApplicationCopilotToolRegistration): void;
 }
 
 export interface ApplicationModule {
@@ -302,6 +326,7 @@ export const createApplicationExtensionRegistry = (): ApplicationExtensionRegist
   agentSurfaceExtensions: [],
   chatActionSuggestionProviders: [],
   oauthProviders: [],
+  copilotToolRegistrations: [],
 });
 
 const createRegistrationContext = (registry: ApplicationExtensionRegistry): ApplicationModuleRegistrationContext => ({
@@ -408,6 +433,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerOauthProvider(provider) {
     registry.oauthProviders.push(provider);
+  },
+  registerCopilotTools(registration) {
+    registry.copilotToolRegistrations.push(registration);
   },
 });
 

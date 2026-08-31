@@ -119,3 +119,46 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   }
   await expect(page.getByRole("button", { name: "Step", exact: true })).toHaveCount(0);
 });
+
+test("a step instruction keeps the lines its author wrote", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Multi-line step");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Greet the visitor.");
+  await instruction.press("Enter");
+  await instruction.pressSequentially("Then ask what they need.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // The row reads back both lines, and reopening the editor shows the same document.
+  const row = documentEditor.getByRole("button", { name: "Instruction" }).first();
+  await expect(row).toContainText("Greet the visitor.");
+  await expect(row).toContainText("Then ask what they need.");
+
+  await expect.poll(
+    () => routineUpdates.find((update) => update.method === "POST")?.body,
+    { timeout: 15_000 },
+  ).toMatchObject({
+    steps: [{ instruction: "Greet the visitor.\nThen ask what they need." }],
+  });
+
+  await row.click();
+  await expect(documentEditor.getByLabel("Step 1 instruction")).toContainText("Then ask what they need.");
+});

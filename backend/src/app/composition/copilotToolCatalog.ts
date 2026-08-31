@@ -34,7 +34,8 @@ import type {
 } from "../../modules/operatorCopilot/public.js";
 import type { CopilotDocumentAuthoringPort, CopilotDocumentSummary, CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
 import { websiteCrawlerCopilotPrimitives } from "../../modules/websiteCrawler/public.js";
-import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
+import type { CopilotToolContribution, CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
+import { copilotApplicationPrimitiveRegistry, resolveCopilotToolContributions } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
 import { enrichCopilotToolCatalog } from "../../modules/operatorCopilot/catalog.js";
@@ -133,8 +134,14 @@ export const createCopilotToolCatalog = (deps: {
   readonly auditService: CopilotAuditPort;
   readonly workspaceRouteKeyResolver: CopilotWorkspaceRouteKeyResolver;
   readonly logger?: CopilotTriageLogPort;
+  /**
+   * Tools contributed by application modules outside this repository's first-party catalog. They
+   * are merged before governance and enrichment so permission filtering, authorization re-checks,
+   * duplicate-name rejection, and dashboard handoffs apply to them with no special case.
+   */
+  readonly toolContributions?: ReadonlyArray<CopilotToolContribution>;
 }): ReadonlyArray<CopilotToolDescriptor> => {
-  const descriptors = createCopilotToolDescriptors(deps);
+  const firstPartyDescriptors = createCopilotToolDescriptors(deps);
   const publicOperationIds = new Set(Object.values(createOpenApiDocument().paths ?? {})
     .flatMap((path) => Object.values(path ?? {}))
     .flatMap((operation) => operation && typeof operation === "object" && "operationId" in operation && typeof operation.operationId === "string"
@@ -153,7 +160,20 @@ export const createCopilotToolCatalog = (deps: {
     ...settingsCopilotPrimitives,
     ...websiteCrawlerCopilotPrimitives,
   ]);
-  assertCopilotCapabilityProvenanceRegistry(descriptors);
-  assertCopilotCapabilityProvenance(descriptors, publicOperationIds, operationPermissionRequirements, ownerExportedPrimitiveIds);
+  // Reviewed first-party coverage, so it stays a bijection with the first-party descriptors alone.
+  // Running it over the merged catalog would report every contributed descriptor as ungoverned and
+  // force this repository to enumerate identities it does not own.
+  assertCopilotCapabilityProvenanceRegistry(firstPartyDescriptors);
+  const contributed = resolveCopilotToolContributions(deps.toolContributions ?? [], {
+    operationIds: publicOperationIds,
+    applicationPrimitiveIds: new Set(Object.keys(copilotApplicationPrimitiveRegistry)),
+  });
+  const descriptors = [...firstPartyDescriptors, ...contributed.descriptors];
+  assertCopilotCapabilityProvenance(descriptors, {
+    publicOperationIds: new Set([...publicOperationIds, ...contributed.operationIds]),
+    operationPermissions: { ...operationPermissionRequirements, ...contributed.operationPermissions },
+    ownerExportedPrimitiveIds: new Set([...ownerExportedPrimitiveIds, ...contributed.applicationPrimitiveIds]),
+    applicationPrimitiveIds: new Set([...Object.keys(copilotApplicationPrimitiveRegistry), ...contributed.applicationPrimitiveIds]),
+  });
   return enrichCopilotToolCatalog(descriptors, deps.workspaceRouteKeyResolver);
 };

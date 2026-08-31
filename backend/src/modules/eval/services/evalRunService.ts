@@ -169,13 +169,29 @@ export class EvalRunService {
    * before it starts — an unknown snapshot, a case from another snapshot — releases.
    */
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
+    return this.metered(input, () => this.executeReserved(input));
+  }
+
+  /**
+   * Charges exactly one answer for the work `run` performs.
+   *
+   * Both public entry points wrap themselves in this, and the work itself lives in private methods
+   * that never reserve. That split is the point: a public method delegating to another public
+   * method would charge twice for one replay, and a reservation living on only one of them would
+   * leave the other free — which is what the workbench-override routes were doing, since they call
+   * {@link executeWorkbenchReplay} rather than {@link execute}.
+   */
+  private async metered<T>(
+    input: Pick<EvalRunInput, "accountId" | "workspaceId">,
+    run: () => Promise<T>,
+  ): Promise<T> {
     const reservation = await this.usageLimitPolicy.reserveAnswer({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       surface: "eval_replay",
     });
     try {
-      const outcome = await this.executeReserved(input);
+      const outcome = await run();
       await reservation.commit();
       return outcome;
     } catch (error) {
@@ -207,7 +223,7 @@ export class EvalRunService {
       && snapshot.originalAgentConfig
       && snapshot.sourceAgentId
     ) {
-      return this.executeWorkbenchReplay(input);
+      return this.runWorkbenchReplay(input);
     }
     if (requiresWorkbenchReplay(overrides)) {
       // The retrieval fallback ignores both of these, so continuing would answer from the
@@ -369,6 +385,10 @@ export class EvalRunService {
   }
 
   async executeWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
+    return this.metered(input, () => this.runWorkbenchReplay(input));
+  }
+
+  private async runWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
     const startedAtMs = Date.now();
     if (!this.workbenchReplayRunner) {
       throw badRequest("Workbench replay runner is not configured");

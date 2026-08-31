@@ -149,4 +149,22 @@ describe('skill mention value', () => {
     expect(seedSkillMentionValue('')).toBe('')
     expect(readSkillMentions('', ['issue_refund'])).toEqual([])
   })
+
+  describe('with line breaks', () => {
+    const action = 'Answer in two sentences.\nThen escalate with #issue_refund.'
+
+    it('seeds a value the author broke across lines byte-identically', () => {
+      expect(seedSkillMentionValue(action, ['issue_refund'])).toBe(action)
+    })
+
+    it('finds a mention on any line, not only the first', () => {
+      expect(readSkillMentions(action, ['issue_refund'])).toEqual(['issue_refund'])
+      expect(mentionsSkill(action, 'issue_refund')).toBe(true)
+    })
+
+    it('keeps a blank line between two lines', () => {
+      const spaced = 'First.\n\nSecond.'
+      expect(seedSkillMentionValue(spaced)).toBe(spaced)
+    })
+  })
 })

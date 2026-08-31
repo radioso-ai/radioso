@@ -30,7 +30,7 @@ export interface EvalCopilotToolDependencies {
 
 export const createEvalCopilotTools = (deps: EvalCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "eval_results", shape: "read", uiLabel: "Reading eval results", contributingModule: "eval", dashboardSubject: { type: "eval" }, requiredPermissions: ["workspace.retrieval.query"],
+    name: "eval_results", shape: "read", verificationCost: () => 0, uiLabel: "Reading eval results", contributingModule: "eval", dashboardSubject: { type: "eval" }, requiredPermissions: ["workspace.retrieval.query"],
     description: "Read recent evaluation cases and their latest outcomes for an agent.",
     inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "eval_results", description: "Read recent evaluation cases and their latest outcomes for an agent.", inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }), invoke: async ({ agentId, limit }) => {
@@ -219,6 +219,7 @@ export const createEvalVerificationCopilotTools = (
   {
     name: "create_eval_case_from_turn",
     shape: "act",
+    verificationCost: () => 0,
     uiLabel: "Capturing an eval case",
     contributingModule: "eval",
     dashboardSubject: { type: "eval" },
@@ -258,6 +259,11 @@ export const createEvalVerificationCopilotTools = (
     // pass rate the Eval list reports. The compute cost alone would make it a probe; the persisted
     // verdict is what takes it out of work a transport may run unattended.
     shape: "act",
+    // The most expensive call in the catalog, and the reason cost is declared rather than inferred
+    // from shape: one full assistant replay per distinct case, so a call costs what it was asked
+    // for. Distinct, because a repeated id is not a second replay — the same count its own schema
+    // caps at MAX_COPILOT_EVAL_SUITE_CASES.
+    verificationCost: (input) => new Set(input.caseIds).size,
     uiLabel: "Running eval cases",
     contributingModule: "eval",
     dashboardSubject: { type: "eval" },
@@ -297,6 +303,8 @@ export const createEvalVerificationCopilotTools = (
     // A probe, not an act: the run is stored detached, so the case's verdict, its last-run
     // pointer, and the suite pass rate are all left where the library had them.
     shape: "probe",
+    // One full assistant replay per call.
+    verificationCost: () => 1,
     uiLabel: "Replaying an eval case",
     contributingModule: "eval",
     dashboardSubject: { type: "eval" },

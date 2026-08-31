@@ -614,6 +614,7 @@ describe("US3 copilot proposals", () => {
 const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
   name,
   shape: "propose" as const,
+  verificationCost: () => 0,
   uiLabel: "Drafting a directive",
   description: "Draft",
   requiredPermissions: [requiredPermission] as const,

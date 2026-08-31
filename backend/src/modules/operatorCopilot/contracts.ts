@@ -329,6 +329,23 @@ export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAda
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
+  /**
+   * How much of a turn's verification budget one call spends, counted in replayed turns. `0` for a
+   * tool that commands no synchronous model work.
+   *
+   * Required rather than optional, and separate from {@link shape}, because those are the two ways
+   * this has already gone wrong. Shape answers what a tool changes; it does not answer what a tool
+   * costs, and inferring cost from it left `run_eval_suite` — an `act`, because it moves a case's
+   * stored verdict — spending five replays a call against no budget at all. An optional field would
+   * fail the same way by omission, so every descriptor states a number and a reviewer can see a
+   * wrong one.
+   *
+   * Takes the arguments because cost can depend on them: `run_eval_suite` costs one per case asked
+   * for, not one per call. Declared as a method rather than a function-typed property so a
+   * descriptor narrowed to its own input type stays assignable to the catalog's, the same way
+   * {@link describeEntity} does.
+   */
+  verificationCost(input: TInput): number;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;

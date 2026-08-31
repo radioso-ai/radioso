@@ -14,6 +14,7 @@ import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot
 const descriptor = (overrides: Partial<CopilotToolDescriptor> = {}): CopilotToolDescriptor => ({
   name: "extension_tool",
   shape: "read",
+  verificationCost: () => 0,
   uiLabel: "Reading extension state",
   description: "Read extension state.",
   inputSchema: z.object({}),

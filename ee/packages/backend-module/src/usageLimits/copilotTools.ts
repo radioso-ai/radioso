@@ -37,6 +37,7 @@ const window = (
 const usageDescriptor = (deps: { usage: CopilotAccountUsagePort }): CopilotToolDescriptor => ({
   name: "workspace_usage_limits",
   shape: "read",
+  verificationCost: () => 0,
   uiLabel: "Reading plan usage and limits",
   description:
     "Read the plan and current-period usage for this workspace's organization: answers, stored documents, and indexed content, each with its limit and what remains. Use it before advising on ingestion or before proposing configuration whose cost depends on volume.",

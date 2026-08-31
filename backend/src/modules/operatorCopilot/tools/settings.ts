@@ -179,7 +179,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "workspace_settings", shape: "read", uiLabel: "Reading workspace settings", contributingModule: "settings", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: ["workspace.settings.read"],
+    name: "workspace_settings", shape: "read", verificationCost: () => 0, uiLabel: "Reading workspace settings", contributingModule: "settings", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: ["workspace.settings.read"],
     description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
     inputSchema: workspaceSettingsInputSchema, outputSchema: workspaceSettingsOutputSchema,
     createTool: (context) => ({

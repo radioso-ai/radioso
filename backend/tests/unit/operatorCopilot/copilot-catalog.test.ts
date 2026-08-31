@@ -16,6 +16,7 @@ import { copilotApplicationPrimitiveRegistry } from "../../../src/modules/operat
 const descriptor = (...permissions: CopilotToolDescriptor["requiredPermissions"]): CopilotToolDescriptor => ({
   name: `tool_${permissions.join("_").replaceAll(".", "_")}`,
   shape: "read",
+  verificationCost: () => 0,
   uiLabel: "Safe tool label",
   description: "A focused read-only operator capability.",
   inputSchema: z.object({}),

@@ -123,7 +123,7 @@ export interface DocumentKnowledgeCopilotToolDependencies {
 
 export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "document_search", shape: "read", uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
+    name: "document_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema,
     createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
@@ -132,7 +132,7 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
 
 export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "document_status", shape: "read", uiLabel: "Checking document status", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
+    name: "document_status", shape: "read", verificationCost: () => 0, uiLabel: "Checking document status", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
     inputSchema: documentStatusInputSchema, outputSchema: documentStatusOutputSchema,
     createTool: (context) => ({
@@ -166,6 +166,7 @@ export const createDocumentKnowledgeCopilotTools = (
   {
     name: "document_chunks",
     shape: "read",
+    verificationCost: () => 0,
     uiLabel: "Inspecting document chunks",
     contributingModule: "documents",
     dashboardSubject: { type: "document" },
@@ -219,6 +220,7 @@ export const createDocumentKnowledgeCopilotTools = (
   {
     name: "reprocess_document",
     shape: "act",
+    verificationCost: () => 0,
     uiLabel: "Reprocessing documents",
     contributingModule: "documents",
     dashboardSubject: { type: "document" },
@@ -268,6 +270,7 @@ export const createDocumentKnowledgeCopilotTools = (
   {
     name: "recrawl_source",
     shape: "act",
+    verificationCost: () => 0,
     uiLabel: "Recrawling a document source",
     contributingModule: "documents",
     dashboardSubject: { type: "document" },

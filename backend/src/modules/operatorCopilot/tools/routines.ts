@@ -85,7 +85,7 @@ export interface RoutineDefinitionCopilotToolDependencies {
 
 export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
+    name: "routine_definition", shape: "read", verificationCost: () => 0, uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
     description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address.",
     inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
@@ -126,7 +126,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
     // A read rather than a probe: validation is structural, spends no model budget, persists
     // nothing, and is safe to retry. Declaring it a probe would tell a transport not to retry a
     // call that is free and deterministic.
-    name: "validate_routine", shape: "read", uiLabel: "Validating routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
+    name: "validate_routine", shape: "read", verificationCost: () => 0, uiLabel: "Validating routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
     description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic.",
     inputSchema: validateRoutineInputSchema, outputSchema: validateRoutineOutputSchema,
     createTool: (context) => ({
@@ -345,7 +345,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
   const routineAdapter = proposalAdapterFor(deps.proposalAdapters, "routine");
   return [
     {
-      name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      name: "propose_routine", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: routineProposalOutputSchema,
@@ -388,7 +388,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       },
     },
     {
-      name: "propose_routine_edit", shape: "propose", uiLabel: "Drafting a routine edit", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      name: "propose_routine_edit", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine edit", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       // The tool transport renders a nested input object as the bare word "object", so the shape
       // of `changes` has to live in the description or the model invents one of its own.
       description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published.",
@@ -413,7 +413,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       describeEntity: (input, context) => describeRoutineTarget(input as z.infer<typeof validateRoutineInputSchema>, context, deps, draftFirst),
     },
     {
-      name: "propose_routine_lifecycle", shape: "propose", uiLabel: "Drafting a routine lifecycle change", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      name: "propose_routine_lifecycle", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine lifecycle change", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. This is the only tool that changes what an agent is actually running, so it is proposed separately from editing a routine's content.",
       inputSchema: routineLifecycleInputSchema, outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({

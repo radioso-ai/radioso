@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   copilotProposalTargetTypes,
+  MAX_COPILOT_PROPOSAL_SUMMARY,
   type CopilotAnyProposalAdapter,
   type CopilotAuditPort,
   type CopilotEntityDescription,
@@ -26,6 +27,17 @@ export interface CopilotAgentLookupPort {
 }
 
 export const entity = (type: string, id: string | null | undefined) => id ? { type, id } : null;
+
+/**
+ * The sentence a card states, clamped to what its payload can hold. A tool composes this from
+ * operator- and model-supplied text whose combined length no per-field bound can usefully constrain,
+ * so the sentence is shortened here rather than the draft being refused - an over-long summary is a
+ * display problem, and refusing the whole proposal over one would be a worse answer than eliding it.
+ */
+export const boundedSummary = (summary: string): string =>
+  summary.length <= MAX_COPILOT_PROPOSAL_SUMMARY
+    ? summary
+    : `${summary.slice(0, MAX_COPILOT_PROPOSAL_SUMMARY - 1).trimEnd()}\u2026`;
 
 /**
  * The adapter a proposal tool writes through, looked up by the target type it owns. Every proposal

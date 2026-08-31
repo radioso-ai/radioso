@@ -11,6 +11,7 @@ import type { CopilotDocumentProposalAdapter, CopilotToolDescriptor } from "../c
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   entity,
+  boundedSummary,
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
@@ -102,7 +103,7 @@ const documentProposalDescriptor = <TInput>(
           spec.change(input),
         );
         const payload = validated.payload as CopilotDocumentPayload;
-        const summary = spec.summary(payload.name, input);
+        const summary = boundedSummary(spec.summary(payload.name, input));
         await requireCurrentCopilotPermissions(context, [...MANAGE_DOCUMENTS]);
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,

@@ -312,3 +312,71 @@ describe("the composed document port", () => {
     expect(JSON.stringify(document)).not.toContain("entire stored body");
   });
 });
+
+/**
+ * Every summary is composed from operator- and model-supplied text, and the payload that stores it
+ * has a ceiling. Rather than argue from each field's bound that the total fits - arithmetic that
+ * went wrong twice - each tool clamps the composed sentence. These drive the worst input each tool's
+ * own schema accepts and require a proposal to come back.
+ */
+describe("a maximal draft still produces a storable card", () => {
+  const toolContext = {
+    workspaceId: "workspace-1",
+    accountId: "account-1",
+    operatorUserId: "operator-1",
+    currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
+    copilotConversationId: "conversation-1",
+    pageContext: { view: "documents" as const, agentId: null, conversationId: null, selection: null, entities: [] },
+  };
+  const recorder = () => {
+    const createProposal = vi.fn(async (input: Record<string, unknown>) => ({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", ...input }) as never);
+    return { createProposal, deps: { proposalRepository: { createProposal }, auditService: { record: vi.fn(async () => undefined) } } };
+  };
+  const longestRationale = "y".repeat(1_000);
+
+  it("for a crawl of a long url narrowed by fifty long patterns", async () => {
+    const { createProposal, deps } = recorder();
+    const adapter = createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), enqueue: vi.fn() },
+      workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
+      crawlPolicy: () => ({ enabled: true, defaultLimit: 50, maxLimit: 1_000 }),
+    });
+    const [descriptor] = createWebsiteCrawlProposalCopilotTools({ ...deps, proposalAdapters: [adapter] });
+
+    await descriptor!.createTool(toolContext as never).invoke({
+      url: `https://help.example.com/${"p".repeat(600)}`,
+      limit: 1_000,
+      includeUrlPatterns: Array.from({ length: 50 }, (_, index) => `/${String(index).padStart(3, "0")}${"x".repeat(190)}`),
+      excludeUrlPatterns: Array.from({ length: 50 }, (_, index) => `/${String(index).padStart(3, "0")}${"z".repeat(190)}`),
+      rationale: longestRationale,
+    } as never, {} as never);
+
+    const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
+    await expect(adapter.preview("workspace-1", (createProposal.mock.calls[0]![0] as { targetRef: unknown }).targetRef, persisted)).resolves.toBeDefined();
+  });
+
+  it("for a document retrieval change whose expiry carries maximal fractional precision", async () => {
+    const { createProposal, deps } = recorder();
+    const storedDocument = {
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", title: "T".repeat(300), status: "ready",
+      metadata: {}, retrievalEnabled: true, retrievalExpiresAt: null, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    };
+    const adapter = createDocumentCopilotProposalAdapter({
+      documentAuthoring: { getDocument: vi.fn(async () => storedDocument), ingest: vi.fn(), updateMetadata: vi.fn(), updateRetrievalEligibility: vi.fn() },
+      documentDeletion: { delete: vi.fn() },
+      workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
+    });
+    const descriptors = createDocumentProposalCopilotTools({ ...deps, proposalAdapters: [adapter] });
+    const descriptor = descriptors.find((candidate) => candidate.name === "propose_document_retrieval");
+
+    await descriptor!.createTool(toolContext as never).invoke({
+      documentId: storedDocument.id,
+      // Zod's datetime accepts arbitrary fractional-second precision, so this is a valid input.
+      retrievalExpiresAt: `2026-08-31T10:00:00.${"0".repeat(900)}Z`,
+      rationale: longestRationale,
+    } as never, {} as never);
+
+    const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
+    await expect(adapter.preview("workspace-1", { documentId: storedDocument.id }, persisted)).resolves.toBeDefined();
+  });
+});

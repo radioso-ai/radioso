@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_COPILOT_PROPOSAL_SUMMARY } from "../contracts.js";
+
 import { chunkingStrategyIds } from "../../retrieval/public.js";
 import { manualDocumentEnrichmentOverrides } from "../../settings/public.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -51,7 +53,7 @@ export const copilotIngestionSettingsPayloadSchema = z.object({
   manualDocumentEnrichmentOverride: copilotIngestionSettingsFields.manualDocumentEnrichmentOverride.optional(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
   /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
-  summary: z.string().min(1).max(2_000).optional(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
 /** Ingestion settings are one row per workspace, and the workspace is already the call's scope. */

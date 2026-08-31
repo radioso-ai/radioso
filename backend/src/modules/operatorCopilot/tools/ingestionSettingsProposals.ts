@@ -6,6 +6,7 @@ import {
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
+  boundedSummary,
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
@@ -52,7 +53,7 @@ export const createIngestionSettingsProposalCopilotTools = (
         const validated = await adapter.validatePayload(context.workspaceId, {}, change);
         const payload = validated.payload as CopilotIngestionSettingsPayload;
         const named = Object.keys(change).filter((key) => key !== "rationale" && change[key as keyof typeof change] !== undefined);
-        const summary = summarize(payload, named);
+        const summary = boundedSummary(summarize(payload, named));
         await requireCurrentCopilotPermissions(context, [...MANAGE_SETTINGS]);
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,

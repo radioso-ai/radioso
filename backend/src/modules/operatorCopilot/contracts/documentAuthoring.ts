@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_COPILOT_PROPOSAL_SUMMARY } from "../contracts.js";
+
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 
 /**
@@ -31,7 +33,7 @@ export const copilotDocumentCreatePayloadSchema = z.object({
   metadata: documentMetadataRecordSchema.optional(),
   rationale: rationaleSchema.optional(),
   /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
-  summary: z.string().min(1).max(2_000).optional(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
 /**
@@ -77,7 +79,7 @@ export const copilotDocumentRetrievalPayloadSchema = z.object({
   ...retrievalChangeFields,
   rationale: rationaleSchema.optional(),
   /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
-  summary: z.string().min(1).max(2_000).optional(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
 export const copilotDocumentDeletePayloadSchema = z.object({
@@ -88,7 +90,7 @@ export const copilotDocumentDeletePayloadSchema = z.object({
   removesTarget: z.literal(true),
   rationale: rationaleSchema.optional(),
   /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
-  summary: z.string().min(1).max(2_000).optional(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
 /** What is stored on the proposal and read back by preview and apply. */

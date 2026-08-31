@@ -129,6 +129,14 @@ export const copilotProposalPermissions = {
   website_crawl: ["workspace.documents.manage"],
 } as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
 
+/**
+ * How long the sentence a proposal card states may be. Enforced on the composed sentence rather than
+ * argued from its parts: a summary is built from a title, a URL, a rationale and whatever else the
+ * target needs, and proving every combination of those fits is arithmetic that goes stale the moment
+ * one of them changes. Composing then clamping cannot go stale.
+ */
+export const MAX_COPILOT_PROPOSAL_SUMMARY = 2_000;
+
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {

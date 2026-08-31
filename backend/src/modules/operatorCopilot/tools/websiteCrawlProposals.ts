@@ -6,6 +6,7 @@ import {
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
+  boundedSummary,
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
@@ -73,7 +74,7 @@ export const createWebsiteCrawlProposalCopilotTools = (
         const validated = await adapter.validatePayload(context.workspaceId, { url: change.url }, change);
         const payload = validated.payload as CopilotWebsiteCrawlPayload;
         await requireCurrentCopilotPermissions(context, [...MANAGE_DOCUMENTS]);
-        const summary = summarize(payload);
+        const summary = boundedSummary(summarize(payload));
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,

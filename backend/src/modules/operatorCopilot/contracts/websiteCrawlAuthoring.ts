@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_COPILOT_PROPOSAL_SUMMARY } from "../contracts.js";
+
 import type { CopilotWorkspaceAccountResolver } from "./documentAuthoring.js";
 
 const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
@@ -35,7 +37,7 @@ export const copilotWebsiteCrawlPayloadSchema = z.object({
   preserveContentLinks: z.boolean(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
   /** The sentence the card states. Stored so a reloaded card reads what the live one did. */
-  summary: z.string().min(1).max(2_000).optional(),
+  summary: z.string().min(1).max(MAX_COPILOT_PROPOSAL_SUMMARY).optional(),
 }).strict();
 
 export const copilotWebsiteCrawlTargetRefSchema = z.object({ url: httpUrlSchema }).strict();

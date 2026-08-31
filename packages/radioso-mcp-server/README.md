@@ -1,10 +1,10 @@
 # Radioso MCP Server
 
-MCP server package that lets an MCP client talk to a Radioso agent through its turn loop, and read or write the workspace documents that agent answers from.
+MCP server package that lets an MCP client talk to a Radioso agent through its turn loop and read that agent's documents as resources.
 
 ## What It Does
 
-The package connects to an existing Radioso deployment over its public HTTP API and exposes two surfaces.
+The package connects to an existing Radioso deployment over its public HTTP API and exposes one MCP surface.
 
 **Agent converse surface.** A client talks to one agent through that agent's turn loop, using a per-agent converse grant. The agent applies its own persona, the directives that steer it, and any routine carrying the conversation across turns, so an MCP client reaches it through the same loop as every other channel. Tools:
 
@@ -12,7 +12,7 @@ The package connects to an existing Radioso deployment over its public HTTP API 
 - `answer_grounded` over the bound agent's retrieval settings
 - the agent's documents as read-only MCP resources
 
-**Workspace document tools.** The package contains retrieval-first tools scoped to a whole workspace, but the MCP credential boundary does not accept personal or service-account REST credentials. Workspace credentials from the pre-migration verifier are invalid after upgrade, so these tools are not an eligible MCP entry point in this feature.
+**Workspace document work.** Use the REST document routes with a personal token or service-account credential. The MCP surface is bound to an agent-converse grant.
 
 The two credential families remain separate. An agent-converse grant is the supported MCP credential, and it is not interchangeable with a REST credential. A workspace REST credential cannot be used as an agent-converse grant.
 
@@ -20,12 +20,11 @@ The package owns MCP protocol handling, token verification seams, capability pol
 
 ## Remote Runtime
 
-The package supports two HTTP runtimes:
+The package provides one HTTP runtime:
 
-- **Standalone**: run the package as its own process. The HTTP endpoint accepts an agent-converse grant; personal and service-account REST credentials are rejected by the exchange and MCP authentication paths.
-- **Merged**: the backend imports the package's public HTTP runtime contract and mounts MCP at its own `/mcp` route. Personal and service-account REST credentials are rejected at the MCP boundary.
+- **Standalone**: run the package as its own process. The HTTP `/mcp` endpoint accepts the original agent-converse grant and exchanges it internally.
 
-Standalone remains the recommended shape for public connector surfaces. Merged mode is intended for same-host self-hosted installs.
+The backend's same-host merged setting reports `mode: "unsupported"` with `reason: "merged_auth_unavailable"` and does not mount an MCP route. The package has no stdio MCP entrypoint.
 
 ### Required Environment Variables
 
@@ -48,15 +47,15 @@ The target Radioso backend must also have the same `RADIOSO_MCP_SIGNING_SECRET` 
 - `RADIOSO_MCP_REDIS_URL` enables a shared runtime store for sessions
 - `RADIOSO_MCP_REDIS_KEY_PREFIX` default `radioso-mcp`
 - `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` path to a JSON file with workspace-specific policy overrides
-- `RADIOSO_MCP_ENABLED` and `RADIOSO_MCP_STANDALONE` are read by the backend, not the standalone package. Use `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` to mount the backend route.
+- `RADIOSO_MCP_ENABLED` and `RADIOSO_MCP_STANDALONE` are read by the backend, not the standalone package. A merged configuration is reported as unsupported; run the standalone HTTP process for MCP access.
 - `RADIOSO_MCP_MOUNT_PATH` backend merged route path, default `/mcp`
 - `RADIOSO_MCP_MERGED_CORS_ORIGINS` backend merged CORS allowlist, default `*`
 
 Capability allowlists remain package configuration for the internal tool catalog. This credential change does not add a new tool-filtering surface or server-side approval flow.
 
-When `RADIOSO_MCP_REDIS_URL` is omitted, the server stays in documented in-memory single-node mode. When it is set, session state moves into Redis so multiple MCP server instances can serve the same session.
+When `RADIOSO_MCP_REDIS_URL` is omitted, the standalone server uses in-memory state for one process. When it is set, session state moves into Redis so multiple standalone MCP instances can serve the same session.
 
-Before either runtime reports readiness or serves MCP traffic, its controlled runtime store purges persisted sessions containing legacy upstream credentials. Redis performs a namespace-scoped `SCAN` and removes the matching session records and token indexes. If the configured store is unavailable, the runtime stays unavailable and retries; it does not switch to another store. Cached sessions revalidate their upstream credential on each request, so a stale copy held by another deployment fails when the backend rejects that credential.
+Before standalone MCP reports readiness or serves traffic, its controlled runtime store purges persisted sessions containing removed upstream credentials. Redis performs a namespace-scoped `SCAN` and removes the matching session records and token indexes. If the configured store is unavailable, standalone stays unavailable and retries. When the backend has a merged configuration with `RADIOSO_MCP_REDIS_URL`, it runs the same purge as a maintenance lifecycle while the merged MCP status remains unsupported; backend health stays unready until the purge succeeds.
 
 Workspace policy files use this JSON shape:
 
@@ -98,23 +97,25 @@ RADIOSO_MCP_SIGNING_SECRET=dev-signing-secret \
 node dist/src/cli/http.js
 ```
 
-The workspace MCP context endpoint is available only to a signed-in dashboard session. It is not part of standalone MCP credential setup. Agent-converse grants use the separate converse session flow.
+The backend's merged MCP route is unavailable without an eligible merged authentication class. Standalone MCP uses the agent-converse grant flow below.
 
 ## Credential Eligibility
 
-Personal REST credentials and service-account REST credentials receive the same generic unauthorized response from merged MCP, standalone `/v1/auth/exchange`, and stdio preflight. The exchange path does not enumerate credential classes.
+Personal REST credentials and service-account REST credentials do not authorize MCP. Standalone `/mcp` accepts an agent-converse grant and performs its exchange internally.
 
-When an installation is upgraded, the backend destroys the legacy workspace-token verifier material. A retained copy in another MCP deployment cannot create a usable session: its next upstream validation fails, and any cached session is removed locally.
+When an installation is upgraded, the backend destroys the shared workspace credential verifier material. A retained copy in another MCP deployment cannot create a usable session: its next upstream validation fails, and any cached session is removed locally.
 
-Agent-converse grants use the separate `/api/v1/mcp/converse/session` flow. Pass the resulting grant or session bearer to the MCP converse surface; do not pass a REST credential to that surface.
+Agent-converse grants are issued by the signed-in dashboard. Put the original grant in the `Authorization` header sent to standalone `/mcp`; the server performs the grant-to-session exchange internally. A session token returned by the backend's direct REST converse endpoint is not an `/mcp` credential.
 
 ## Client Setup
 
-Cursor can connect to a local config that points at `http://127.0.0.1:8787/mcp` and reads an eligible agent-converse bearer from `RADIOSO_MCP_ACCESS_TOKEN`. Create that bearer through the agent-converse grant flow described in [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md).
+Cursor can connect to a local config that points at `http://127.0.0.1:8787/mcp` and reads the original agent-converse grant from `RADIOSO_MCP_ACCESS_TOKEN`. Create that grant through the flow described in [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md).
 
 Claude, Claude Desktop remote connectors, ChatGPT apps, and OpenAI-hosted remote MCP flows require a public HTTPS deployment of this server. They do not connect to `localhost` from your laptop. See [`../../docs/mcp-client-setup.md`](../../docs/mcp-client-setup.md) for the agent-converse credential flow and deployment boundaries.
 
 ## Initialize MCP
+
+Set `RADIOSO_MCP_ACCESS_TOKEN` to the original agent-converse grant. Standalone performs the exchange when the first `/mcp` request arrives; do not replace it with the backend's short-lived session token.
 
 ```bash
 curl -s http://127.0.0.1:8787/mcp \
@@ -185,10 +186,6 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
-## Stdio workspace mode
-
-The stdio workspace credential preflight rejects shared workspace credentials, personal tokens, and service-account credentials. Use the HTTP agent-converse surface instead; an agent-converse grant is not interchangeable with `RADIOSO_API_TOKEN`.
-
 ## Scope
 
-A converse grant carries `ask_agent`, `answer_grounded`, and the agent's documents as read-only resources. This package change covers credential eligibility, legacy verifier cleanup, and runtime readiness. It introduces no OAuth flow, REST-credential tool filtering, skills catalogue, or Ray access.
+A converse grant carries `ask_agent`, `answer_grounded`, and the agent's documents as read-only resources. This package covers credential eligibility and runtime readiness. It introduces no OAuth flow, REST-credential tool filtering, skills catalogue, or Ray access.

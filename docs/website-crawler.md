@@ -50,7 +50,7 @@ WEBSITE_CRAWLER_USER_AGENT=RadiosoCrawler/1.0
 
 Pages whose content exceeds 500,000 characters are skipped during ingestion with a skip reason recorded in the crawl job result.
 
-Cookie-session requests select the workspace with `x-workspace-id`. Crawler configuration and document-management operations use the signed-in dashboard session. Personal and service API credentials are not accepted for connector/provider-secret or crawler-management routes. Public chat, website embed, agent-converse, and MCP session credentials are not accepted as crawler credentials.
+Cookie-session requests select the workspace with `x-workspace-id`. Crawler configuration and document-management operations accept either a signed-in dashboard session or an eligible personal or service API credential. Provider-secret settings remain session-only. Public chat, website embed, agent-converse, and MCP session credentials are not accepted as crawler credentials.
 
 Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, metadata extraction, retrieval, and citations remain owned by the standard document worker.
 

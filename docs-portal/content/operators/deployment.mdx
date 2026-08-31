@@ -50,7 +50,9 @@ Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private ba
 
 The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so personal/service API credentials, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
-Radioso's own MCP server is a deployment-level setting: set `RADIOSO_MCP_ENABLED` to turn it on, and set `RADIOSO_MCP_STANDALONE` depending on whether MCP should run merged into the backend or as its own process. See [MCP server](/guides/mcp-server) for both deployment shapes and the credentials each one needs.
+Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL`, `RADIOSO_MCP_SIGNING_SECRET`, and the standalone bind settings on that process, then send the original per-agent converse grant to its `/mcp` endpoint. The backend's merged setting reports `mode: "unsupported"` with `reason: "merged_auth_unavailable"` and does not mount `/mcp`; see [MCP server](/guides/mcp-server) for the client flow.
+
+When a backend deployment has `RADIOSO_MCP_ENABLED=true`, `RADIOSO_MCP_STANDALONE=false`, and `RADIOSO_MCP_REDIS_URL` configured, startup runs a purge-only maintenance lifecycle against that Redis namespace. Backend health remains unready while the purge retries and reports ready after it succeeds. This cleanup does not expose an MCP transport.
 
 ## Enterprise Edition deployment
 

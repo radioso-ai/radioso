@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { loadConfig, loadStdioConfig, STDIO_COMPAT_SIGNING_SECRET } from "../src/config.js";
+import { loadConfig } from "../src/config.js";
 import {
   DEFAULT_ALLOWED_READ_TOOLS,
   DEFAULT_ALLOWED_WRITE_TOOLS,
@@ -45,15 +45,6 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ RADIOSO_BASE_URL: "http://localhost:8080" })).toThrow(/RADIOSO_MCP_SIGNING_SECRET/i);
   });
 
-  it("rejects the stdio compatibility signing secret in remote mode", () => {
-    expect(() =>
-      loadConfig({
-        RADIOSO_BASE_URL: "http://localhost:8080",
-        RADIOSO_MCP_SIGNING_SECRET: STDIO_COMPAT_SIGNING_SECRET,
-      }),
-    ).toThrow(/non-default secret/i);
-  });
-
   it("normalizes the upstream base url and rejects invalid bind ports", () => {
     expect(() =>
       loadConfig({
@@ -71,21 +62,4 @@ describe("loadConfig", () => {
     expect(config.baseUrl).toBe("http://localhost:8080");
   });
 
-  it("treats blank optional env vars as unset in stdio mode", () => {
-    const config = loadStdioConfig({
-      RADIOSO_BASE_URL: "http://localhost:8080",
-      RADIOSO_MCP_ALLOWED_READ_TOOLS: "   ",
-      RADIOSO_MCP_ALLOWED_WRITE_TOOLS: "",
-      RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: " ",
-      RADIOSO_MCP_AUDIT_LOG_PATH: "",
-      RADIOSO_MCP_SIGNING_SECRET: "  ",
-      RADIOSO_API_TOKEN: "radioso_test",
-    });
-
-    expect(config.allowedReadTools).toEqual(DEFAULT_ALLOWED_READ_TOOLS);
-    expect(config.allowedWriteTools).toEqual(DEFAULT_ALLOWED_WRITE_TOOLS);
-    expect(config.approvalRequiredWriteTools).toEqual(DEFAULT_APPROVAL_REQUIRED_WRITE_TOOLS);
-    expect(config.auditLogPath).toBeUndefined();
-    expect(config.signingSecret).toBe(STDIO_COMPAT_SIGNING_SECRET);
-  });
 });

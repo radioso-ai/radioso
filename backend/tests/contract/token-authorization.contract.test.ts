@@ -51,12 +51,7 @@ describe("token authorization contract", () => {
       .get("/api/v1/workspace/mcp/context")
       .set("Authorization", `Bearer ${publicLaunchCredential}`);
 
-    expect(response.status).toBe(401);
-    expect(response.body).toMatchObject({
-      error: {
-        code: "unauthorized",
-      },
-    });
+    expect(response.status).toBe(404);
   });
 
   it("uses a valid session principal before bearer auth when both are present", async () => {

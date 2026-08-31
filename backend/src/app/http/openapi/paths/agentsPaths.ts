@@ -82,7 +82,7 @@ export const registerAgentsPaths = (
     tags: ["Agents"],
     summary: "Issue an MCP converse grant for an agent",
     operationId: "issueAgentMcpConverseGrant",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: security.workspaceAdminSecurity,
     request: {
       params: schemas.AgentParamsSchema,
       body: {
@@ -108,7 +108,7 @@ export const registerAgentsPaths = (
     tags: ["Agents"],
     summary: "List MCP converse grants for an agent",
     operationId: "listAgentMcpConverseGrants",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: security.workspaceAdminSecurity,
     request: { params: schemas.AgentParamsSchema },
     responses: {
       200: {
@@ -127,7 +127,7 @@ export const registerAgentsPaths = (
     tags: ["Agents"],
     summary: "Rotate an MCP converse grant for an agent",
     operationId: "rotateAgentMcpConverseGrant",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: security.workspaceAdminSecurity,
     request: { params: schemas.AgentMcpConverseGrantParamsSchema },
     responses: {
       200: {
@@ -146,7 +146,7 @@ export const registerAgentsPaths = (
     tags: ["Agents"],
     summary: "Revoke an MCP converse grant for an agent",
     operationId: "revokeAgentMcpConverseGrant",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: security.workspaceAdminSecurity,
     request: { params: schemas.AgentMcpConverseGrantParamsSchema },
     responses: {
       204: { description: "MCP converse grant revoked" },

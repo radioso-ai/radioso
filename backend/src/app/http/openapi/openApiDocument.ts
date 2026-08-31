@@ -16,7 +16,7 @@ export const createOpenApiDocument = (
     info: {
       title: "Radioso API",
       version: "0.1.0",
-      description: "Grounded retrieval and assistant chat over your documents. Get a workspace API token from your Radioso dashboard, then send it as a Bearer token.",
+      description: "Grounded retrieval and assistant chat over your documents. Create a personal token or service-account credential in API access settings, then send it as a Bearer token.",
     },
     servers: [
       {

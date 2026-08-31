@@ -4,6 +4,7 @@ export {
   type ApiAccessRole,
   type ApiAccessSummary,
   type ApiCredentialMetadata,
+  type ApiCredentialStatus,
   type CredentialKind,
   type CreateServiceAccountResponse,
   type OneTimeCredentialResponse,

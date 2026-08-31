@@ -13,15 +13,13 @@
   },
   "bin": {
     "radioso-mcp-http": "./dist/src/cli/http.js",
-    "radioso-mcp-server": "./dist/src/cli/http.js",
-    "radioso-mcp-stdio": "./dist/src/cli/stdio.js"
+    "radioso-mcp-server": "./dist/src/cli/http.js"
   },
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "build": "pnpm run sync:openapi && tsc -p tsconfig.build.json",
-    "cursor:mcp-stdio": "node --import tsx ./src/cli/stdio.ts",
     "smoke:all": "pnpm run smoke:http && pnpm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",

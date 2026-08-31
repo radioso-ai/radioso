@@ -62,6 +62,13 @@ export const buildAccessServices = (input: {
         },
       });
     },
+    recordLastUsePersistenceFailure() {
+      metricsRegistry?.incrementCounter("machine_access_last_use_persistence_failures_total", {
+        help: "Machine API credential last-use persistence failures",
+        labels: {},
+      });
+      logger.warn({ machineAccess: { operation: "last_use_persistence" } }, "machine_access_last_use_persistence_failed");
+    },
   };
   const accessGrantService = new AccessGrantService({
     repository: repositories.accessGrantRepository,
@@ -79,6 +86,7 @@ export const buildAccessServices = (input: {
     repositories.workspaceGrantRepository,
     repositories.workspaceRepository,
     personalCredentialTenureService,
+    repositories.personalCredentialLifecycleRepository,
   );
   const accountInvitationService = new AccountInvitationService(
     repositories.accountInvitationRepository,
@@ -98,6 +106,7 @@ export const buildAccessServices = (input: {
     }),
     machineAccessSecurityObserver,
     personalCredentialTenureService,
+    personalCredentialLifecycle: repositories.personalCredentialLifecycleRepository,
     credentialExpiryWarningLifecycle: new CredentialExpiryWarningService({
       repository: repositories.machineAccessRepository,
       audit: auditService,
@@ -157,6 +166,7 @@ export const buildWorkspaceServices = (input: {
   documentRepository: DocumentRepository;
   env: Env;
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
+  personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
   workspaceRepository: WorkspaceRepository;
 }) => {
   const workspaceService = new WorkspaceService(
@@ -164,6 +174,7 @@ export const buildWorkspaceServices = (input: {
     input.auditService,
     input.accountMembershipRepository,
     input.personalCredentialTermination,
+    input.personalCredentialLifecycle,
   );
   return {
     workspaceService,
@@ -198,6 +209,7 @@ export const buildAuthService = (input: {
     auditService: input.auditService,
     apiPrincipalAuthenticator: input.access.apiPrincipalAuthenticator,
     personalCredentialTermination: input.access.personalCredentialTenureService,
+    personalCredentialLifecycle: input.access.personalCredentialLifecycle,
   });
 
 export const buildPasswordResetService = (input: {

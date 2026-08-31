@@ -1,9 +1,10 @@
 import { conflict, forbidden } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
-import type { ApiCredentialRecord, MachineAccessPersistencePort } from "../ports.js";
-import { MACHINE_ACCESS_LIFETIMES, MACHINE_ACCESS_LIMITS, assertAssignableRole, normalizeCredentialLabel, requireMaximumExpiry, type MachineAccessRole } from "../domain.js";
+import type { ApiCredentialRecord, MachineAccessAuditEvent, MachineAccessPersistencePort } from "../ports.js";
+import { MACHINE_ACCESS_LIFETIMES, MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, requireMaximumExpiry, type MachineAccessRole } from "../domain.js";
 import { issueMachineSecret } from "../credentialSecretCodec.js";
+import { machineAccessAuditEvent } from "../auditMetadata.js";
 
 type PersonalCredentialRepository = Pick<
   MachineAccessPersistencePort,
@@ -46,10 +47,13 @@ export class PersonalCredentialService {
       now: this.now(),
       limit: MACHINE_ACCESS_LIMITS.maxActivePersonalCredentials,
       issueSecret: () => issueMachineSecret("personal"),
+      auditEvents: ({ credential }) => [this.credentialAuditEvent(input, credential.id, "issued", {
+        roleCeiling: credential.roleCeiling,
+      })],
     });
     if (!issued) throw conflict("Personal credential limit reached");
     const { credential } = issued;
-    await this.input.audit.record({ accountId: input.accountId, workspaceId: input.workspaceId, eventType: "machine_access.personal_credential.issued", eventStatus: "success", metadata: { actorUserId: input.userId, principalKind: "user", principalId: input.userId, credentialId: credential.id, roleCeiling: credential.roleCeiling } });
+    this.logCommitted([this.credentialAuditEvent(input, credential.id, "issued", { roleCeiling: credential.roleCeiling })]);
     return issued;
   }
 
@@ -65,7 +69,7 @@ export class PersonalCredentialService {
       this.input.repository.listCredentials({ ...query, page: input.page, limit: Math.min(input.limit ?? MACHINE_ACCESS_LIMITS.defaultPageSize, MACHINE_ACCESS_LIMITS.maxPageSize) }),
       this.input.repository.countCredentials(query),
     ]);
-    return { items, total };
+    return { items: items.map((credential) => this.withCredentialStatus(credential)), total };
   }
 
   async relabel(input: { accountId: string; workspaceId: string; userId: string; credentialId: string; label: string; revision?: number }): Promise<ApiCredentialRecord> {
@@ -76,10 +80,15 @@ export class PersonalCredentialService {
       workspaceId: input.workspaceId,
     });
     const credential = await this.requireOwned(input);
-    const updated = await this.input.repository.relabelCredential({ id: credential.id, label: normalizeCredentialLabel(input.label), expectedRevision: input.revision });
+    const updated = await this.input.repository.relabelCredential({
+      id: credential.id,
+      label: normalizeCredentialLabel(input.label),
+      expectedRevision: input.revision,
+      auditEvents: (persisted) => [this.credentialAuditEvent(input, persisted.id, "relabeled")],
+    });
     if (!updated) throw conflict("Credential changed concurrently");
-    await this.audit(input, input.userId, updated.id, "relabeled");
-    return updated;
+    this.logCommitted([this.credentialAuditEvent(input, updated.id, "relabeled")]);
+    return this.withCredentialStatus(updated);
   }
 
   async rotate(input: { accountId: string; workspaceId: string; userId: string; credentialId: string; revision: number; label?: string }): Promise<{ credential: ApiCredentialRecord; secret: string }> {
@@ -92,11 +101,17 @@ export class PersonalCredentialService {
     const credential = await this.requireOwned(input);
     if (credential.revokedAt || credential.expiresAt <= this.now()) throw conflict("Credential is no longer active");
     const issued = issueMachineSecret("personal");
-    const replacement = await this.input.repository.replaceCredential({ credentialId: credential.id, expectedRevision: input.revision, label: normalizeCredentialLabel(input.label ?? credential.label), tokenPrefix: issued.tokenPrefix, tokenHash: issued.tokenHash, createdByUserId: input.userId });
-    if (!replacement) throw conflict("Credential changed concurrently");
-    await this.audit(input, input.userId, replacement.id, "rotated", {
-      rotatedFromCredentialId: credential.id,
+    const replacement = await this.input.repository.replaceCredential({
+      credentialId: credential.id,
+      expectedRevision: input.revision,
+      label: normalizeCredentialLabel(input.label ?? credential.label),
+      tokenPrefix: issued.tokenPrefix,
+      tokenHash: issued.tokenHash,
+      createdByUserId: input.userId,
+      auditEvents: (persisted) => [this.rotationAuditEvent(input, persisted.id, credential.id)],
     });
+    if (!replacement) throw conflict("Credential changed concurrently");
+    this.logCommitted([this.rotationAuditEvent(input, replacement.id, credential.id)]);
     return { credential: replacement, secret: issued.secret };
   }
 
@@ -123,16 +138,15 @@ export class PersonalCredentialService {
       actorUserId: input.actorUserId,
       expectedRevision: input.revision,
       now: this.now(),
+      auditEvents: (changed) => [this.credentialAuditEvent(
+        { ...input, userId: input.actorUserId }, credential.id, "revoked", { changed }, credential.ownerUserId!,
+      )],
     });
     if (!changed && input.revision !== undefined) throw conflict("Credential changed concurrently");
-    await this.audit(
-      { ...input, userId: input.actorUserId },
-      credential.ownerUserId!,
-      credential.id,
-      "revoked",
-      { changed },
-    );
-    return await this.input.repository.findCredential(credential.id) ?? credential;
+    this.logCommitted([this.credentialAuditEvent(
+      { ...input, userId: input.actorUserId }, credential.id, "revoked", { changed }, credential.ownerUserId!,
+    )]);
+    return this.withCredentialStatus(await this.input.repository.findCredential(credential.id) ?? credential);
   }
 
   async listWorkspace(input: { accountId: string; workspaceId: string; actorUserId: string; limit?: number; page?: number }): Promise<{ items: ApiCredentialRecord[]; total: number }> {
@@ -147,7 +161,7 @@ export class PersonalCredentialService {
       this.input.repository.listCredentials({ ...query, page: input.page, limit: Math.min(input.limit ?? MACHINE_ACCESS_LIMITS.defaultPageSize, MACHINE_ACCESS_LIMITS.maxPageSize) }),
       this.input.repository.countCredentials(query),
     ]);
-    return { items, total };
+    return { items: items.map((credential) => this.withCredentialStatus(credential)), total };
   }
 
   async legacyMigrationStatus(workspaceId: string): Promise<{ status: "destroyed" | "not_applicable"; migratedAt: string | null }> {
@@ -164,13 +178,47 @@ export class PersonalCredentialService {
     return credential;
   }
 
-  private async audit(
+  private rotationAuditEvent(
     input: { accountId: string; workspaceId: string; userId: string },
-    principalId: string,
+    credentialId: string,
+    rotatedFromCredentialId: string,
+  ): MachineAccessAuditEvent {
+    return machineAccessAuditEvent({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "machine_access.personal_credential.rotated",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: input.userId,
+        principalKind: "user",
+        principalId: input.userId,
+        credentialId,
+        rotatedFromCredentialId,
+      },
+    });
+  }
+
+  private credentialAuditEvent(
+    input: { accountId: string; workspaceId: string; userId: string },
     credentialId: string,
     action: string,
     metadata: Record<string, unknown> = {},
-  ): Promise<void> {
-    await this.input.audit.record({ accountId: input.accountId, workspaceId: input.workspaceId, eventType: `machine_access.personal_credential.${action}`, eventStatus: "success", metadata: { actorUserId: input.userId, principalKind: "user", principalId, credentialId, ...metadata } });
+    principalId = input.userId,
+  ): MachineAccessAuditEvent {
+    return machineAccessAuditEvent({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: `machine_access.personal_credential.${action}`,
+      eventStatus: "success",
+      metadata: { actorUserId: input.userId, credentialId, principalKind: "user", principalId, ...metadata },
+    });
+  }
+
+  private logCommitted(events: readonly MachineAccessAuditEvent[]): void {
+    for (const event of events) this.input.audit.logRecorded?.(event);
+  }
+
+  private withCredentialStatus(credential: ApiCredentialRecord) {
+    return { ...credential, status: deriveCredentialStatus({ ...credential, now: this.now() }) };
   }
 }

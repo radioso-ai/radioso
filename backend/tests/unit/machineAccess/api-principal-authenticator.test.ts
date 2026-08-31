@@ -64,7 +64,7 @@ const createHarness = (credential: ApiCredentialRecord) => {
     }),
     resolveWorkspaceRole: vi.fn().mockResolvedValue("member"),
   };
-  const authenticationObserver = { recordAuthentication: vi.fn() };
+  const authenticationObserver = { recordAuthentication: vi.fn(), recordLastUsePersistenceFailure: vi.fn() };
   const authenticator = new ApiPrincipalAuthenticator({
     repository,
     accountAccess: accountAccess as never,
@@ -127,12 +127,14 @@ describe("ApiPrincipalAuthenticator", () => {
       accessTenureMembershipId: null,
       serviceAccountId: "service-1",
     };
-    const { authenticator, repository } = createHarness(credential);
+    const { authenticationObserver, authenticator, repository } = createHarness(credential);
     repository.touchCredentialUse.mockRejectedValueOnce(new Error("metadata unavailable"));
 
     await expect(authenticator.authenticate(issued.secret)).resolves.toMatchObject({
       principal: { type: "service_account_credential", serviceAccountId: "service-1", role: "member" },
     });
+    await Promise.resolve();
+    expect(authenticationObserver.recordLastUsePersistenceFailure).toHaveBeenCalledOnce();
 
     repository.findServiceAccount.mockResolvedValueOnce({ ...serviceAccount, status: "disabled" });
     await expect(authenticator.authenticate(issued.secret)).rejects.toMatchObject({ statusCode: 401 });

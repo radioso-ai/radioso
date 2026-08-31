@@ -1,4 +1,5 @@
 import { getEnv, type Env } from "../config/env.js";
+import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
@@ -151,6 +152,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
     personalCredentialTermination: access.personalCredentialTenureService,
+    personalCredentialLifecycle: access.personalCredentialLifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -693,6 +695,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
+    apiPrincipalRouteInventory,
     machineAccessSecurityObserver: access.machineAccessSecurityObserver,
     credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
     personalCredentialService: access.personalCredentialService,

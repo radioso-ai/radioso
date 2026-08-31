@@ -40,4 +40,19 @@ describe("PersonalCredentialTenureService", () => {
     expect(JSON.stringify(audit.events)).not.toContain(secret.secret);
     expect(JSON.stringify(audit.events)).not.toContain(secret.tokenHash);
   });
+
+  it("rolls back tenure invalidation when its mandatory audit evidence cannot persist", async () => {
+    const repository = new InMemoryMachineAccessRepository();
+    const now = new Date("2026-08-31T00:00:00.000Z");
+    const issued = await repository.createPersonalWithinLimit({
+      accountId: "account-1", workspaceId: "workspace-1", ownerUserId: "user-1", accessTenureMembershipId: "membership-old",
+      roleCeiling: "member", label: "CLI", expiresAt: new Date("2026-10-01T00:00:00.000Z"), createdByUserId: "user-1",
+      now, limit: 10, issueSecret: () => issueMachineSecret("personal"),
+    });
+    if (!issued) throw new Error("Expected a credential");
+    repository.failAuditPersistence = new Error("audit unavailable");
+    const service = new PersonalCredentialTenureService({ repository, audit: createAuditService(), now: () => now });
+    await expect(service.endMembership({ accountId: "account-1", membershipId: "membership-old" })).rejects.toThrow("audit unavailable");
+    expect(await repository.findCredential(issued.credential.id)).toMatchObject({ revokedAt: null });
+  });
 });

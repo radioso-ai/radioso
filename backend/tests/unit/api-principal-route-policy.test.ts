@@ -24,6 +24,19 @@ describe("API principal route policy", () => {
     }
   });
 
+  it("records account and application-contributed session routes explicitly", () => {
+    for (const key of [
+      "GET /api/v1/account/users",
+      "POST /api/v1/account/switch",
+      "GET /api/v1/account/usage-trends",
+      "GET /api/v1/quality/audience-pulse",
+      "POST /api/v1/quality/audience-pulse/evidence-anchor",
+      "GET /api/v1/ee/usage-limits/me",
+    ]) {
+      expect(apiPrincipalRoutePolicy[key], `${key} needs an explicit policy`).toMatchObject({ sessionOnly: true });
+    }
+  });
+
   it.each([
     ["POST", "/api/v1/settings/general/anonymous-chat-token/rotate"],
     ["POST", "/api/v1/settings/general/website-embed-token/rotate"],

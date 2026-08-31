@@ -178,6 +178,7 @@ const createAuthService = (options: {
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner?: OrganizationCoreProvisioner;
   personalCredentialTermination?: { endAccount(input: { accountId: string; actorUserId?: string | null }): Promise<void> };
+  personalCredentialLifecycle?: { deleteAccount(input: { accountId: string; actorUserId?: string | null; auditEvent?: unknown }): Promise<boolean> };
   envOverrides?: Partial<ReturnType<typeof createTestEnv>>;
 }) => {
   const env = { ...createTestEnv(), ...options.envOverrides };
@@ -215,6 +216,7 @@ const createAuthService = (options: {
         workspaceService,
       ),
       personalCredentialTermination: options.personalCredentialTermination,
+      personalCredentialLifecycle: options.personalCredentialLifecycle,
     }),
     accountRepository,
     userRepository,
@@ -591,6 +593,27 @@ describe("AuthService rollback", () => {
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
     expect(ended).toEqual([accountId]);
+  });
+
+  it("delegates organization deletion to the transactional personal credential lifecycle", async () => {
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({ id: "user-1", email: "transactional-delete-org@example.com", passwordHash: "hash" });
+    const deleted: Array<Record<string, unknown>> = [];
+    const { authService: orgAuthService, accountRepository } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      personalCredentialLifecycle: { deleteAccount: async (input) => { deleted.push(input); return true; } },
+    });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(deleted).toEqual([expect.objectContaining({
+      accountId,
+      actorUserId: "user-1",
+      auditEvent: expect.objectContaining({ eventType: "account.delete" }),
+    })]);
+    await expect(accountRepository.findById(accountId)).resolves.toMatchObject({ id: accountId });
   });
 
   it("calls the account-created hook when registering a new account", async () => {

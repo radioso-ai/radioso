@@ -37,12 +37,17 @@ describe("merged MCP readiness status", () => {
     expect(JSON.stringify([...logger.info.mock.calls, ...logger.warn.mock.calls])).not.toContain("token");
   });
 
-  it("does not report an enabled merged runtime ready before purge readiness exists", () => {
+  it("reports configured merged MCP as unsupported because it has no eligible auth class", () => {
     expect(getMcpMountStatus({
       RADIOSO_MCP_ENABLED: true,
       RADIOSO_MCP_MOUNT_PATH: "/mcp",
       RADIOSO_MCP_STANDALONE: false,
-    })).toMatchObject({ enabled: true, mode: "merged", ready: false });
+    })).toMatchObject({
+      enabled: false,
+      mode: "unsupported",
+      ready: true,
+      reason: "merged_auth_unavailable",
+    });
   });
 
   it("keeps disabled and standalone backend mounts ready", () => {

@@ -159,7 +159,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "listAccessibleAccounts",
     "listAccountUsers",
   ], accountScope),
-  ...coverage(["getWorkspaceMcpContext"], accountScope),
   // Grant metadata, not grant tokens: this endpoint documents its own response as "returned without
   // token material". Its siblings listMcpConnections and getMcpConnection are already agent_skills
   // reads, so treating the grants as a permanent secret boundary was inconsistent on its face.

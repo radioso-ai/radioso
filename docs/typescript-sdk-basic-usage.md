@@ -361,8 +361,10 @@ const skill = await client.agents.skills.create(agentId, {
 Capability-specific skills have their own namespaces:
 `client.agents.emailSkills`, `client.agents.externalSkills`,
 `client.agents.webhookSkills`, and `client.agents.slackSkills`. External skills
-connect to MCP servers through `client.agents.mcpConnections`, and
-`client.agents.mcpConverseGrants` issues grants for the converse surface.
+connect to MCP servers through `client.agents.mcpConnections`. Create
+agent-converse grants from the signed-in dashboard's MCP channel settings; the
+SDK uses bearer authentication and does not expose that session-authenticated
+grant lifecycle.
 
 ## Non-Streaming Chat
 

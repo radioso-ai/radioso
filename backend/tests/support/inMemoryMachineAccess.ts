@@ -37,6 +37,8 @@ export class InMemoryMachineAccessRepository implements Pick<
 > {
   readonly credentials = new Map<string, ApiCredentialRecord>();
   readonly serviceAccounts = new Map<string, ServiceAccountRecord>();
+  readonly durableAuditEvents: import("../../src/modules/machineAccess/ports.js").MachineAccessAuditEvent[] = [];
+  failAuditPersistence: Error | null = null;
   private readonly warningClaims = new Set<string>();
 
   async createPersonalWithinLimit(input: InputOf<"createPersonalWithinLimit">) {
@@ -73,7 +75,13 @@ export class InMemoryMachineAccessRepository implements Pick<
       revision: 1,
     };
     this.credentials.set(credential.id, credential);
-    return { credential, secret: issued.secret };
+    try {
+      await this.persistAuditEvents(input.auditEvents?.({ credential }) ?? []);
+      return { credential, secret: issued.secret };
+    } catch (error) {
+      this.credentials.delete(credential.id);
+      throw error;
+    }
   }
 
   async findCredentialByHash(tokenHash: string): Promise<ApiCredentialRecord | null> {
@@ -117,6 +125,8 @@ export class InMemoryMachineAccessRepository implements Pick<
   }
 
   async mutateServiceAccount(input: InputOf<"mutateServiceAccount">) {
+    const credentialsBefore = new Map(this.credentials);
+    const accountsBefore = new Map(this.serviceAccounts);
     const account = this.serviceAccounts.get(input.id);
     if (!account || account.workspaceId !== input.workspaceId) return { status: "missing" as const };
     if (account.revision !== input.expectedRevision || account.status === "archived") {
@@ -156,7 +166,17 @@ export class InMemoryMachineAccessRepository implements Pick<
     }
     updated.activeCredentialCount = this.activeServiceCredentials(account.id, input.now).length;
     this.serviceAccounts.set(updated.id, updated);
-    return { status: "updated" as const, account: updated, invalidatedCredentialIds };
+    const result = { status: "updated" as const, account: updated, invalidatedCredentialIds };
+    try {
+      await this.persistAuditEvents(input.auditEvents?.(result) ?? []);
+      return result;
+    } catch (error) {
+      this.credentials.clear();
+      credentialsBefore.forEach((credential, id) => this.credentials.set(id, credential));
+      this.serviceAccounts.clear();
+      accountsBefore.forEach((account, id) => this.serviceAccounts.set(id, account));
+      throw error;
+    }
   }
 
   async createServiceAccountWithinLimit(input: InputOf<"createServiceAccountWithinLimit">) {
@@ -194,7 +214,14 @@ export class InMemoryMachineAccessRepository implements Pick<
     });
     this.serviceAccounts.set(account.id, account);
     this.credentials.set(credential.id, credential);
-    return { account, credential, secret: issued.secret };
+    try {
+      await this.persistAuditEvents(input.auditEvents?.({ account, credential }) ?? []);
+      return { account, credential, secret: issued.secret };
+    } catch (error) {
+      this.serviceAccounts.delete(account.id);
+      this.credentials.delete(credential.id);
+      throw error;
+    }
   }
 
   async createServiceCredentialWithinLimit(input: InputOf<"createServiceCredentialWithinLimit">) {
@@ -216,7 +243,13 @@ export class InMemoryMachineAccessRepository implements Pick<
       createdByUserId: input.createdByUserId,
     });
     this.credentials.set(credential.id, credential);
-    return { status: "created" as const, credential, secret: issued.secret };
+    try {
+      await this.persistAuditEvents(input.auditEvents?.({ credential }) ?? []);
+      return { status: "created" as const, credential, secret: issued.secret };
+    } catch (error) {
+      this.credentials.delete(credential.id);
+      throw error;
+    }
   }
 
   async countActiveServiceCredentials(serviceAccountId: string): Promise<number> {
@@ -247,6 +280,7 @@ export class InMemoryMachineAccessRepository implements Pick<
   async revokeCredential(input: InputOf<"revokeCredential">): Promise<boolean> {
     const credential = this.credentials.get(input.id);
     if (!credential || credential.revokedAt || (input.expectedRevision !== undefined && credential.revision !== input.expectedRevision)) return false;
+    const before = credential;
     this.credentials.set(input.id, {
       ...credential,
       revokedAt: input.now,
@@ -255,7 +289,13 @@ export class InMemoryMachineAccessRepository implements Pick<
       updatedAt: input.now,
       revision: credential.revision + 1,
     });
-    return true;
+    try {
+      await this.persistAuditEvents(input.auditEvents?.(true) ?? []);
+      return true;
+    } catch (error) {
+      this.credentials.set(before.id, before);
+      throw error;
+    }
   }
 
   async relabelCredential(input: InputOf<"relabelCredential">): Promise<ApiCredentialRecord | null> {
@@ -264,7 +304,13 @@ export class InMemoryMachineAccessRepository implements Pick<
       || (input.expectedRevision !== undefined && credential.revision !== input.expectedRevision)) return null;
     const updated = { ...credential, label: input.label, updatedAt: new Date(), revision: credential.revision + 1 };
     this.credentials.set(updated.id, updated);
-    return updated;
+    try {
+      await this.persistAuditEvents(input.auditEvents?.(updated) ?? []);
+      return updated;
+    } catch (error) {
+      this.credentials.set(credential.id, credential);
+      throw error;
+    }
   }
 
   async replaceCredential(input: InputOf<"replaceCredential">): Promise<ApiCredentialRecord | null> {
@@ -272,6 +318,7 @@ export class InMemoryMachineAccessRepository implements Pick<
     if (!previous || previous.revokedAt || previous.expiresAt <= new Date() || previous.revision !== input.expectedRevision) return null;
     if (previous.serviceAccountId && this.serviceAccounts.get(previous.serviceAccountId)?.status !== "enabled") return null;
     const now = new Date();
+    const credentialsBefore = new Map(this.credentials);
     this.credentials.set(previous.id, { ...previous, revokedAt: now, revokedByUserId: input.createdByUserId, revocationReason: "rotated", updatedAt: now, revision: previous.revision + 1 });
     const replacement: ApiCredentialRecord = {
       ...previous,
@@ -290,7 +337,14 @@ export class InMemoryMachineAccessRepository implements Pick<
       revision: 1,
     };
     this.credentials.set(replacement.id, replacement);
-    return replacement;
+    try {
+      await this.persistAuditEvents(input.auditEvents?.(replacement) ?? []);
+      return replacement;
+    } catch (error) {
+      this.credentials.clear();
+      credentialsBefore.forEach((credential, id) => this.credentials.set(id, credential));
+      throw error;
+    }
   }
 
   async touchCredentialUse(input: InputOf<"touchCredentialUse">): Promise<void> {
@@ -341,10 +395,11 @@ export class InMemoryMachineAccessRepository implements Pick<
     );
   }
 
-  private invalidatePersonalCredentials(
+  private async invalidatePersonalCredentials(
     matches: (credential: ApiCredentialRecord) => boolean,
-    input: { reason: string; actorUserId?: string | null; now: Date },
-  ): ApiCredentialRecord[] {
+    input: { reason: string; actorUserId?: string | null; now: Date; auditEvents?: (credentials: ApiCredentialRecord[]) => import("../../src/modules/machineAccess/ports.js").MachineAccessAuditEvent[] },
+  ): Promise<ApiCredentialRecord[]> {
+    const before = new Map(this.credentials);
     const invalidated: ApiCredentialRecord[] = [];
     for (const credential of this.credentials.values()) {
       if (credential.kind !== "personal" || credential.revokedAt || !matches(credential)) continue;
@@ -359,7 +414,14 @@ export class InMemoryMachineAccessRepository implements Pick<
       this.credentials.set(updated.id, updated);
       invalidated.push(updated);
     }
-    return invalidated;
+    try {
+      await this.persistAuditEvents(input.auditEvents?.(invalidated) ?? []);
+      return invalidated;
+    } catch (error) {
+      this.credentials.clear();
+      before.forEach((credential, id) => this.credentials.set(id, credential));
+      throw error;
+    }
   }
 
   private createServiceCredentialRecord(input: {
@@ -395,5 +457,10 @@ export class InMemoryMachineAccessRepository implements Pick<
       rotatedFromCredentialId: null,
       revision: 1,
     };
+  }
+
+  private async persistAuditEvents(events: readonly import("../../src/modules/machineAccess/ports.js").MachineAccessAuditEvent[]): Promise<void> {
+    if (this.failAuditPersistence) throw this.failAuditPersistence;
+    this.durableAuditEvents.push(...events);
   }
 }

@@ -1,6 +1,7 @@
 import type {
   MachineAccessRole,
   MachineCredentialKind,
+  MachineCredentialStatus,
   ServiceAccountStatus,
   PersonalCredentialTenureEndReason,
 } from "./domain.js";
@@ -12,7 +13,7 @@ export interface ServiceAccountRecord {
   displayName: string;
   role: MachineAccessRole;
   status: ServiceAccountStatus;
-  createdByUserId: string | null;
+  createdByUserId: string;
   createdAt: Date;
   updatedAt: Date;
   disabledAt: Date | null;
@@ -34,7 +35,7 @@ export interface ApiCredentialRecord {
   ownerUserId: string | null;
   accessTenureMembershipId: string | null;
   serviceAccountId: string | null;
-  createdByUserId: string | null;
+  createdByUserId: string;
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date;
@@ -44,6 +45,55 @@ export interface ApiCredentialRecord {
   revocationReason: string | null;
   rotatedFromCredentialId: string | null;
   revision: number;
+  status?: MachineCredentialStatus;
+}
+
+/**
+ * An audit record that is required for a machine-access lifecycle mutation to
+ * be considered complete. Implementations persist it in the mutation's DB
+ * transaction; callers may separately log it only after that transaction
+ * commits.
+ */
+export interface MachineAccessAuditEvent {
+  accountId: string;
+  workspaceId: string;
+  eventType: string;
+  eventStatus: "success";
+  metadata: Record<string, unknown>;
+}
+
+/**
+ * Coordinates a tenure-ending parent deletion with credential invalidation in
+ * one storage transaction. Lifecycle domains depend only on this narrow port;
+ * the Postgres adapter owns table and lock ordering.
+ */
+export interface PersonalCredentialLifecyclePort {
+  removeMembership(input: {
+    accountId: string;
+    membershipId: string;
+    userId: string;
+    actorUserId?: string | null;
+    auditEvent?: TransactionalLifecycleAuditEvent;
+  }): Promise<boolean>;
+  deleteWorkspace(input: {
+    accountId: string;
+    workspaceId: string;
+    actorUserId?: string | null;
+    auditEvent?: TransactionalLifecycleAuditEvent;
+  }): Promise<boolean>;
+  deleteAccount(input: {
+    accountId: string;
+    actorUserId?: string | null;
+    auditEvent?: TransactionalLifecycleAuditEvent;
+  }): Promise<boolean>;
+}
+
+export interface TransactionalLifecycleAuditEvent {
+  accountId: string | null;
+  workspaceId?: string | null;
+  eventType: string;
+  eventStatus: "success";
+  metadata: Record<string, unknown>;
 }
 
 export interface CredentialExpiryWarningClaim {
@@ -66,6 +116,7 @@ export interface MachineAccessSecurityObserver {
     principalKind: "personal" | "service";
     reason: "route_policy";
   }): void;
+  recordLastUsePersistenceFailure?(): void;
 }
 
 export type MachineAccessAuthenticationReason =
@@ -86,6 +137,13 @@ interface IssuedSecret {
   tokenHash: string;
 }
 
+/** The current human authority that must be revalidated inside a service mutation transaction. */
+export interface ServiceAccountMutationActor {
+  accountId: string;
+  workspaceId: string;
+  actorUserId: string;
+}
+
 /** Persistence contract; application services select only the operations they consume. */
 export interface MachineAccessPersistencePort {
   invalidatePersonalCredentialsForTenure(input: {
@@ -93,18 +151,21 @@ export interface MachineAccessPersistencePort {
     reason: PersonalCredentialTenureEndReason;
     actorUserId?: string | null;
     now: Date;
+    auditEvents?: (credentials: ApiCredentialRecord[]) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord[]>;
   invalidatePersonalCredentialsForWorkspace(input: {
     workspaceId: string;
     reason: Extract<PersonalCredentialTenureEndReason, "workspace_deleted" | "account_deleted">;
     actorUserId?: string | null;
     now: Date;
+    auditEvents?: (credentials: ApiCredentialRecord[]) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord[]>;
   invalidatePersonalCredentialsForAccount(input: {
     accountId: string;
     reason: Extract<PersonalCredentialTenureEndReason, "account_deleted">;
     actorUserId?: string | null;
     now: Date;
+    auditEvents?: (credentials: ApiCredentialRecord[]) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord[]>;
   createPersonalWithinLimit(input: {
     accountId: string;
@@ -118,6 +179,7 @@ export interface MachineAccessPersistencePort {
     now: Date;
     limit: number;
     issueSecret: () => IssuedSecret;
+    auditEvents?: (result: { credential: ApiCredentialRecord }) => MachineAccessAuditEvent[];
   }): Promise<{ credential: ApiCredentialRecord; secret: string } | null>;
   createServiceAccountWithinLimit(input: {
     workspaceId: string;
@@ -129,6 +191,8 @@ export interface MachineAccessPersistencePort {
     expiresAt: Date;
     limit: number;
     issueSecret: () => IssuedSecret;
+    actorAuthority?: ServiceAccountMutationActor;
+    auditEvents?: (result: { account: ServiceAccountRecord; credential: ApiCredentialRecord }) => MachineAccessAuditEvent[];
   }): Promise<{ account: ServiceAccountRecord; credential: ApiCredentialRecord; secret: string } | null>;
   createServiceCredentialWithinLimit(input: {
     accountId: string;
@@ -140,6 +204,8 @@ export interface MachineAccessPersistencePort {
     now: Date;
     limit: number;
     issueSecret: () => IssuedSecret;
+    actorAuthority?: ServiceAccountMutationActor;
+    auditEvents?: (result: { credential: ApiCredentialRecord }) => MachineAccessAuditEvent[];
   }): Promise<
     | { status: "created"; credential: ApiCredentialRecord; secret: string }
     | { status: "inactive" | "limit" | "missing" }
@@ -178,6 +244,8 @@ export interface MachineAccessPersistencePort {
     role?: MachineAccessRole;
     targetStatus?: ServiceAccountStatus;
     now: Date;
+    actorAuthority?: ServiceAccountMutationActor;
+    auditEvents?: (result: { account: ServiceAccountRecord; invalidatedCredentialIds: string[] }) => MachineAccessAuditEvent[];
   }): Promise<
     | { status: "updated"; account: ServiceAccountRecord; invalidatedCredentialIds: string[] }
     | { status: "conflict" }
@@ -188,11 +256,15 @@ export interface MachineAccessPersistencePort {
     actorUserId: string;
     expectedRevision?: number;
     now: Date;
+    actorAuthority?: ServiceAccountMutationActor;
+    auditEvents?: (changed: boolean) => MachineAccessAuditEvent[];
   }): Promise<boolean>;
   relabelCredential(input: {
     id: string;
     label: string;
     expectedRevision?: number;
+    actorAuthority?: ServiceAccountMutationActor;
+    auditEvents?: (credential: ApiCredentialRecord) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord | null>;
   replaceCredential(input: {
     credentialId: string;
@@ -201,6 +273,8 @@ export interface MachineAccessPersistencePort {
     tokenPrefix: string;
     tokenHash: string;
     createdByUserId: string;
+    actorAuthority?: ServiceAccountMutationActor;
+    auditEvents?: (replacement: ApiCredentialRecord) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord | null>;
   touchCredentialUse(input: {
     credentialId: string;

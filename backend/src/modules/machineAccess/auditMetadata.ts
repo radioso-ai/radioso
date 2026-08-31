@@ -1,12 +1,19 @@
+import { requestAuditMetadata } from "../../shared/observability/requestAuditContext.js";
+import type { MachineAccessAuditEvent, TransactionalLifecycleAuditEvent } from "./ports.js";
+
 const ALLOWED_MACHINE_ACCESS_AUDIT_KEYS = new Set([
   "actorUserId",
+  "changed",
   "credentialId",
   "initialCredential",
   "principalId",
   "principalKind",
   "reason",
+  "requestId",
   "role",
   "roleCeiling",
+  "rotatedFromCredentialId",
+  "status",
   "systemInitiated",
 ] as const);
 
@@ -25,3 +32,20 @@ export const machineAccessAuditMetadata = (metadata: Record<string, unknown>): R
   }
   return metadata;
 };
+
+/** Mirrors AuditService.record attribution before the repository writes in-transaction. */
+export const machineAccessAuditEvent = (event: MachineAccessAuditEvent): MachineAccessAuditEvent => ({
+  ...event,
+  metadata: machineAccessAuditMetadata({
+    ...event.metadata,
+    ...requestAuditMetadata(event.eventType),
+  }),
+});
+
+/** Applies the same safe request correlation attribution as AuditService.record. */
+export const transactionalLifecycleAuditEvent = (
+  event: TransactionalLifecycleAuditEvent,
+): TransactionalLifecycleAuditEvent => ({
+  ...event,
+  metadata: { ...event.metadata, ...requestAuditMetadata(event.eventType) },
+});

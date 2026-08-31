@@ -23,10 +23,12 @@ describe("machine-access observability", () => {
       principalKind: "service",
       reason: "route_policy",
     });
+    access.machineAccessSecurityObserver.recordLastUsePersistenceFailure?.();
 
     const output = metricsRegistry.renderPrometheus();
     expect(output).toContain('radioso_machine_access_authentication_total{outcome="denied",principal_kind="personal",reason="expired"} 1');
     expect(output).toContain('radioso_machine_access_authorization_denials_total{principal_kind="service",reason="route_policy"} 1');
+    expect(output).toContain("radioso_machine_access_last_use_persistence_failures_total 1");
     expect(output).not.toMatch(/credential_id=|workspace_id=|principal_id=|token_prefix=/);
   });
 });

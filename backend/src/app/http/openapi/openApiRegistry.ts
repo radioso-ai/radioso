@@ -286,7 +286,6 @@ export interface OpenApiSchemaCatalog {
   WorkspaceIngestionReprocessResponseSchema: z.ZodTypeAny;
   workspaceKeyParamsSchema: RouteParameterSchema;
   WorkspaceListResponseSchema: z.ZodTypeAny;
-  WorkspaceMcpContextResponseSchema: z.ZodTypeAny;
   WorkspaceProviderCredentialSummarySchema: z.ZodTypeAny;
   WorkspaceProviderCredentialsResponseSchema: z.ZodTypeAny;
   SetWorkspaceProviderCredentialRequestSchema: z.ZodTypeAny;

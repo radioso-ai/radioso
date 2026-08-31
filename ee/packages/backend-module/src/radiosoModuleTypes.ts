@@ -1,4 +1,4 @@
-import type { Router } from "express";
+import type { RequestHandler, Router } from "express";
 import type { Pool } from "pg";
 import type { ZodType } from "zod";
 
@@ -293,6 +293,14 @@ export interface ApplicationDatabaseMigrator {
   migrate(database: ApplicationDatabasePort): Promise<void>;
 }
 
+export type ApiPrincipalAuthenticationMode = "machine_eligible" | "machine_required" | "session_only";
+
+/** Narrow host capability for marking optional-module authentication in the central route inventory. */
+export interface ApiPrincipalRouteInventory {
+  markAuthenticator<T extends RequestHandler>(handler: T, mode: ApiPrincipalAuthenticationMode): T;
+  markRouteMount<T extends Router>(router: T, path: string): T;
+}
+
 export interface ApplicationRouteMount {
   path: string;
   createRouter(dependencies: {
@@ -306,6 +314,7 @@ export interface ApplicationRouteMount {
       AUTH_RATE_LIMIT_WINDOW_MS?: number;
       AUTH_RATE_LIMIT_MAX_ATTEMPTS?: number;
     };
+    apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
     abuseControlService: {
       enforce(input: {
         scope: string;

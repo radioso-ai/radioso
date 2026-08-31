@@ -288,6 +288,36 @@ describe("AccountAccessService", () => {
     await expect(membershipRepository.findById(targetMembership.id)).resolves.toBeNull();
   });
 
+  it("delegates membership removal to the transactional personal credential lifecycle", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const owner = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    const member = await userRepository.create({ email: "member@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: owner.id, role: "owner" });
+    const targetMembership = await membershipRepository.create({ accountId: "account-1", userId: member.id, role: "member" });
+    const removed: Array<Record<string, unknown>> = [];
+    const service = new AccountAccessService(
+      membershipRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      { removeMembership: async (input) => { removed.push(input); return true; } },
+    );
+
+    await service.removeUserAccess({ accountId: "account-1", actorUserId: owner.id, membershipId: targetMembership.id });
+
+    expect(removed).toEqual([expect.objectContaining({
+      accountId: "account-1",
+      membershipId: targetMembership.id,
+      userId: member.id,
+      actorUserId: owner.id,
+      auditEvent: expect.objectContaining({ eventType: "account.membership.remove" }),
+    })]);
+    await expect(membershipRepository.findById(targetMembership.id)).resolves.toEqual(targetMembership);
+  });
+
   it("rejects member-initiated removals", async () => {
     const userRepository = new InMemoryUserRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();

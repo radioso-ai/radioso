@@ -49,34 +49,39 @@ const parseRequest = <T>(schema: z.ZodType<T>, value: unknown, message: string):
   };
 };
 
-const requireAdminToken = (): RequestHandler => (req, res, next) => {
-  const expectedToken = process.env.EE_USAGE_ADMIN_TOKEN;
-  if (!expectedToken) {
-    res.status(503).json({
-      error: {
-        code: "service_unavailable",
-        message: "EE usage limit admin API is not configured.",
-        details: { missingEnv: "EE_USAGE_ADMIN_TOKEN" },
-      },
-    });
-    return;
-  }
+const requireAdminToken = (
+  inventory?: Pick<RouteDependencies["apiPrincipalRouteInventory"], "markAuthenticator">,
+): RequestHandler => {
+  const handler: RequestHandler = (req, res, next) => {
+    const expectedToken = process.env.EE_USAGE_ADMIN_TOKEN;
+    if (!expectedToken) {
+      res.status(503).json({
+        error: {
+          code: "service_unavailable",
+          message: "EE usage limit admin API is not configured.",
+          details: { missingEnv: "EE_USAGE_ADMIN_TOKEN" },
+        },
+      });
+      return;
+    }
 
-  const authorization = req.header("authorization");
-  const bearerToken = authorization?.startsWith("Bearer ")
-    ? authorization.slice("Bearer ".length).trim()
-    : null;
-  if (bearerToken !== expectedToken) {
-    res.status(401).json({
-      error: {
-        code: "unauthorized",
-        message: "Unauthorized",
-      },
-    });
-    return;
-  }
+    const authorization = req.header("authorization");
+    const bearerToken = authorization?.startsWith("Bearer ")
+      ? authorization.slice("Bearer ".length).trim()
+      : null;
+    if (bearerToken !== expectedToken) {
+      res.status(401).json({
+        error: {
+          code: "unauthorized",
+          message: "Unauthorized",
+        },
+      });
+      return;
+    }
 
-  next();
+    next();
+  };
+  return inventory?.markAuthenticator(handler, "session_only") ?? handler;
 };
 
 const isRouteDependencies = (
@@ -84,26 +89,29 @@ const isRouteDependencies = (
 ): input is RouteDependencies =>
   "connectorDb" in input && "authService" in input && "accountAccessService" in input;
 
-const requireAccountSession = (dependencies: RouteDependencies): RequestHandler => async (req, res, next) => {
-  try {
-    const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
-    if (typeof sessionToken !== "string" || !sessionToken) {
-      throw {
-        statusCode: 401,
-        code: "unauthorized",
-        message: "Unauthorized",
-      };
-    }
+const requireAccountSession = (dependencies: RouteDependencies): RequestHandler => {
+  const handler: RequestHandler = async (req, res, next) => {
+    try {
+      const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
+      if (typeof sessionToken !== "string" || !sessionToken) {
+        throw {
+          statusCode: 401,
+          code: "unauthorized",
+          message: "Unauthorized",
+        };
+      }
 
-    const session = await dependencies.authService.authenticateSession(sessionToken);
-    await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
-    res.locals.accountId = session.accountId;
-    res.locals.userId = session.userId;
-    res.locals.sessionId = session.sessionId;
-    next();
-  } catch (error) {
-    next(error);
-  }
+      const session = await dependencies.authService.authenticateSession(sessionToken);
+      await dependencies.accountAccessService.requireActiveMembership(session.accountId, session.userId);
+      res.locals.accountId = session.accountId;
+      res.locals.userId = session.userId;
+      res.locals.sessionId = session.sessionId;
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
+  return dependencies.apiPrincipalRouteInventory.markAuthenticator(handler, "session_only");
 };
 
 export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitDatabasePort): Router => {
@@ -125,7 +133,7 @@ export const createUsageLimitRoutes = (input: RouteDependencies | UsageLimitData
     });
   }
 
-  router.use(requireAdminToken());
+  router.use(requireAdminToken(isRouteDependencies(input) ? input.apiPrincipalRouteInventory : undefined));
 
   router.get("/profiles", async (_req, res, next) => {
     try {

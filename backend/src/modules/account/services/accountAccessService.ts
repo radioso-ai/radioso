@@ -12,6 +12,10 @@ import type {
 } from "../../../db/repositories/workspaceGrantRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import {
+  transactionalLifecycleAuditEvent,
+  type PersonalCredentialLifecyclePort,
+} from "../../machineAccess/public.js";
 
 export type AccountPermission =
   | "account.users.manage"
@@ -128,6 +132,7 @@ export class AccountAccessService {
     private readonly workspaceGrantRepository?: WorkspaceGrantRepositoryPort,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findByIdAndAccountId">,
     private readonly personalCredentialTenureTermination?: PersonalCredentialTenureTerminationPort,
+    private readonly personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "removeMembership">,
   ) {}
 
   async findActiveMembership(accountId: string, userId: string): Promise<AccountMembershipRecord | null> {
@@ -198,6 +203,14 @@ export class AccountAccessService {
   async removeMembershipIfExists(accountId: string, userId: string): Promise<void> {
     const membership = await this.membershipRepository.findActiveByAccountAndUser(accountId, userId);
     if (membership) {
+      if (this.personalCredentialLifecycle) {
+        await this.personalCredentialLifecycle.removeMembership({
+          accountId,
+          membershipId: membership.id,
+          userId: membership.userId,
+        });
+        return;
+      }
       await this.personalCredentialTenureTermination?.endMembership({ accountId, membershipId: membership.id });
       await this.membershipRepository.deleteById(membership.id);
     }
@@ -276,16 +289,7 @@ export class AccountAccessService {
       throw conflict("Owner access cannot be removed");
     }
 
-    if (this.workspaceGrantRepository) {
-      await this.workspaceGrantRepository.deleteByAccountAndUser(input.accountId, targetMembership.userId);
-    }
-    await this.personalCredentialTenureTermination?.endMembership({
-      accountId: input.accountId,
-      membershipId: targetMembership.id,
-      actorUserId: input.actorUserId,
-    });
-    await this.membershipRepository.deleteById(targetMembership.id);
-    await this.auditService.record({
+    const auditEvent = transactionalLifecycleAuditEvent({
       accountId: input.accountId,
       eventType: "account.membership.remove",
       eventStatus: "success",
@@ -295,6 +299,28 @@ export class AccountAccessService {
         targetMembershipId: targetMembership.id,
       },
     });
+    if (this.personalCredentialLifecycle) {
+      const removed = await this.personalCredentialLifecycle.removeMembership({
+        accountId: input.accountId,
+        membershipId: targetMembership.id,
+        userId: targetMembership.userId,
+        actorUserId: input.actorUserId,
+        auditEvent,
+      });
+      if (!removed) throw notFound("Membership not found");
+      this.auditService.logRecorded?.(auditEvent);
+      return;
+    }
+    if (this.workspaceGrantRepository) {
+      await this.workspaceGrantRepository.deleteByAccountAndUser(input.accountId, targetMembership.userId);
+    }
+    await this.personalCredentialTenureTermination?.endMembership({
+      accountId: input.accountId,
+      membershipId: targetMembership.id,
+      actorUserId: input.actorUserId,
+    });
+    await this.membershipRepository.deleteById(targetMembership.id);
+    await this.auditService.record(auditEvent);
   }
 
   async updateMembershipRole(input: {

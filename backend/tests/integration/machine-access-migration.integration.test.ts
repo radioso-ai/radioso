@@ -133,8 +133,8 @@ describeIfDatabase("machine-access migration (158)", () => {
   });
 
   it("creates hash-only personal/service credential storage and warning claims", async () => {
-    const columns = await database.query<{ table_name: string; column_name: string }>(
-      `SELECT table_name, column_name
+    const columns = await database.query<{ table_name: string; column_name: string; is_nullable: string }>(
+      `SELECT table_name, column_name, is_nullable
        FROM information_schema.columns
        WHERE table_schema = current_schema()
          AND table_name IN ('api_credentials', 'workspace_service_accounts', 'api_credential_expiry_warnings')`,
@@ -146,6 +146,11 @@ describeIfDatabase("machine-access migration (158)", () => {
     expect(credentialColumns).not.toContain("encrypted_token");
     expect(columns.some((column) => column.table_name === "workspace_service_accounts")).toBe(true);
     expect(columns.some((column) => column.table_name === "api_credential_expiry_warnings")).toBe(true);
+    expect(columns.filter((column) => column.column_name === "created_by_user_id"))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ table_name: "api_credentials", is_nullable: "NO" }),
+        expect.objectContaining({ table_name: "workspace_service_accounts", is_nullable: "NO" }),
+      ]));
   });
 
   it("rejects service identities and credentials whose account does not own the workspace", async () => {

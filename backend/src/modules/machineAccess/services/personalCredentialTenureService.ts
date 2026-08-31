@@ -1,7 +1,7 @@
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { PersonalCredentialTenureEndReason } from "../domain.js";
-import type { ApiCredentialRecord, MachineAccessPersistencePort } from "../ports.js";
-import { machineAccessAuditMetadata } from "../auditMetadata.js";
+import type { ApiCredentialRecord, MachineAccessAuditEvent, MachineAccessPersistencePort } from "../ports.js";
+import { machineAccessAuditEvent } from "../auditMetadata.js";
 
 type TenureRepository = Pick<
   MachineAccessPersistencePort,
@@ -24,8 +24,9 @@ export class PersonalCredentialTenureService {
       actorUserId: input.actorUserId,
       reason: input.reason ?? "membership_ended",
       now: this.now(),
+      auditEvents: (credentials) => this.invalidationEvents(input.accountId, credentials, input.actorUserId, input.reason ?? "membership_ended"),
     });
-    await this.recordInvalidations(input.accountId, credentials, input.actorUserId, input.reason ?? "membership_ended");
+    this.logCommitted(this.invalidationEvents(input.accountId, credentials, input.actorUserId, input.reason ?? "membership_ended"));
   }
 
   async endWorkspace(input: {
@@ -40,8 +41,9 @@ export class PersonalCredentialTenureService {
       actorUserId: input.actorUserId,
       reason,
       now: this.now(),
+      auditEvents: (credentials) => this.invalidationEvents(input.accountId, credentials, input.actorUserId, reason),
     });
-    await this.recordInvalidations(input.accountId, credentials, input.actorUserId, reason);
+    this.logCommitted(this.invalidationEvents(input.accountId, credentials, input.actorUserId, reason));
   }
 
   async endAccount(input: { accountId: string; actorUserId?: string | null }): Promise<void> {
@@ -50,35 +52,38 @@ export class PersonalCredentialTenureService {
       actorUserId: input.actorUserId,
       reason: "account_deleted",
       now: this.now(),
+      auditEvents: (credentials) => this.invalidationEvents(input.accountId, credentials, input.actorUserId, "account_deleted"),
     });
-    await this.recordInvalidations(input.accountId, credentials, input.actorUserId, "account_deleted");
+    this.logCommitted(this.invalidationEvents(input.accountId, credentials, input.actorUserId, "account_deleted"));
   }
 
   private now(): Date {
     return (this.input.now ?? (() => new Date()))();
   }
 
-  private async recordInvalidations(
+  private invalidationEvents(
     accountId: string,
     credentials: ApiCredentialRecord[],
     actorUserId: string | null | undefined,
     reason: PersonalCredentialTenureEndReason,
-  ): Promise<void> {
-    for (const credential of credentials) {
-      await this.input.audit.record({
+  ): MachineAccessAuditEvent[] {
+    return credentials.map((credential) => machineAccessAuditEvent({
         accountId,
         workspaceId: credential.workspaceId,
         eventType: "machine_access.personal_credential.invalidated",
         eventStatus: "success",
-        metadata: machineAccessAuditMetadata({
+        metadata: {
           actorUserId: actorUserId ?? null,
           credentialId: credential.id,
           principalKind: "user",
           principalId: credential.ownerUserId,
           reason,
           systemInitiated: actorUserId == null,
-        }),
-      });
-    }
+        },
+      }));
+  }
+
+  private logCommitted(events: readonly MachineAccessAuditEvent[]): void {
+    for (const event of events) this.input.audit.logRecorded?.(event);
   }
 }

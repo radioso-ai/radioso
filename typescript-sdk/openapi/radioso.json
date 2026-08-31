@@ -3,7 +3,7 @@
   "info": {
     "title": "Radioso API",
     "version": "0.1.0",
-    "description": "Grounded retrieval and assistant chat over your documents. Get a workspace API token from your Radioso dashboard, then send it as a Bearer token."
+    "description": "Grounded retrieval and assistant chat over your documents. Create a personal token or service-account credential in API access settings, then send it as a Bearer token."
   },
   "servers": [
     {
@@ -429,55 +429,6 @@
           "hasCompletedChat",
           "sampleDocumentsImported",
           "websiteCrawlerEnabled"
-        ]
-      },
-      "WorkspaceMcpContextResponse": {
-        "type": "object",
-        "properties": {
-          "apiVersion": {
-            "type": "string",
-            "enum": [
-              "0.1.0"
-            ]
-          },
-          "mcpContextVersion": {
-            "type": "string",
-            "enum": [
-              "2026-06-09"
-            ]
-          },
-          "supportedTools": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "answer_grounded",
-                "create_document",
-                "delete_document",
-                "describe_capabilities",
-                "get_document",
-                "list_documents",
-                "reprocess_document",
-                "search_documents",
-                "update_document"
-              ]
-            }
-          },
-          "workspaceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "workspaceName": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "apiVersion",
-          "mcpContextVersion",
-          "supportedTools",
-          "workspaceId",
-          "workspaceName"
         ]
       },
       "RegisterRequest": {
@@ -18236,10 +18187,7 @@
                             "format": "uuid"
                           },
                           "createdByUserId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
+                            "type": "string",
                             "format": "uuid"
                           },
                           "createdAt": {
@@ -18249,6 +18197,16 @@
                           "expiresAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "suspended",
+                              "invalid"
+                            ]
                           },
                           "expiryWarningDays": {
                             "anyOf": [
@@ -18325,6 +18283,7 @@
                           "createdByUserId",
                           "createdAt",
                           "expiresAt",
+                          "status",
                           "expiryWarningDays",
                           "lastUsedAt",
                           "revokedAt",
@@ -18533,10 +18492,7 @@
                           "format": "uuid"
                         },
                         "createdByUserId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": "string",
                           "format": "uuid"
                         },
                         "createdAt": {
@@ -18546,6 +18502,16 @@
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
                         },
                         "expiryWarningDays": {
                           "anyOf": [
@@ -18622,6 +18588,7 @@
                         "createdByUserId",
                         "createdAt",
                         "expiresAt",
+                        "status",
                         "expiryWarningDays",
                         "lastUsedAt",
                         "revokedAt",
@@ -18817,10 +18784,7 @@
                       "format": "uuid"
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -18830,6 +18794,16 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
                     },
                     "expiryWarningDays": {
                       "anyOf": [
@@ -18906,6 +18880,7 @@
                     "createdByUserId",
                     "createdAt",
                     "expiresAt",
+                    "status",
                     "expiryWarningDays",
                     "lastUsedAt",
                     "revokedAt",
@@ -19089,10 +19064,7 @@
                           "format": "uuid"
                         },
                         "createdByUserId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": "string",
                           "format": "uuid"
                         },
                         "createdAt": {
@@ -19102,6 +19074,16 @@
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
                         },
                         "expiryWarningDays": {
                           "anyOf": [
@@ -19178,6 +19160,7 @@
                         "createdByUserId",
                         "createdAt",
                         "expiresAt",
+                        "status",
                         "expiryWarningDays",
                         "lastUsedAt",
                         "revokedAt",
@@ -19348,10 +19331,7 @@
                       "format": "uuid"
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -19361,6 +19341,16 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
                     },
                     "expiryWarningDays": {
                       "anyOf": [
@@ -19437,6 +19427,7 @@
                     "createdByUserId",
                     "createdAt",
                     "expiresAt",
+                    "status",
                     "expiryWarningDays",
                     "lastUsedAt",
                     "revokedAt",
@@ -19582,10 +19573,7 @@
                             ]
                           },
                           "createdByUserId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
+                            "type": "string",
                             "format": "uuid"
                           },
                           "createdAt": {
@@ -19835,10 +19823,7 @@
                           ]
                         },
                         "createdByUserId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": "string",
                           "format": "uuid"
                         },
                         "createdAt": {
@@ -19941,10 +19926,7 @@
                           "format": "uuid"
                         },
                         "createdByUserId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": "string",
                           "format": "uuid"
                         },
                         "createdAt": {
@@ -19954,6 +19936,16 @@
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
                         },
                         "expiryWarningDays": {
                           "anyOf": [
@@ -20030,6 +20022,7 @@
                         "createdByUserId",
                         "createdAt",
                         "expiresAt",
+                        "status",
                         "expiryWarningDays",
                         "lastUsedAt",
                         "revokedAt",
@@ -20170,10 +20163,7 @@
                       ]
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -20391,10 +20381,7 @@
                       ]
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -20602,10 +20589,7 @@
                       ]
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -20813,10 +20797,7 @@
                       ]
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -21024,10 +21005,7 @@
                       ]
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -21247,10 +21225,7 @@
                             "format": "uuid"
                           },
                           "createdByUserId": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
+                            "type": "string",
                             "format": "uuid"
                           },
                           "createdAt": {
@@ -21260,6 +21235,16 @@
                           "expiresAt": {
                             "type": "string",
                             "format": "date-time"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "suspended",
+                              "invalid"
+                            ]
                           },
                           "expiryWarningDays": {
                             "anyOf": [
@@ -21336,6 +21321,7 @@
                           "createdByUserId",
                           "createdAt",
                           "expiresAt",
+                          "status",
                           "expiryWarningDays",
                           "lastUsedAt",
                           "revokedAt",
@@ -21545,10 +21531,7 @@
                           "format": "uuid"
                         },
                         "createdByUserId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": "string",
                           "format": "uuid"
                         },
                         "createdAt": {
@@ -21558,6 +21541,16 @@
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
                         },
                         "expiryWarningDays": {
                           "anyOf": [
@@ -21634,6 +21627,7 @@
                         "createdByUserId",
                         "createdAt",
                         "expiresAt",
+                        "status",
                         "expiryWarningDays",
                         "lastUsedAt",
                         "revokedAt",
@@ -21838,10 +21832,7 @@
                       "format": "uuid"
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -21851,6 +21842,16 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
                     },
                     "expiryWarningDays": {
                       "anyOf": [
@@ -21927,6 +21928,7 @@
                     "createdByUserId",
                     "createdAt",
                     "expiresAt",
+                    "status",
                     "expiryWarningDays",
                     "lastUsedAt",
                     "revokedAt",
@@ -22119,10 +22121,7 @@
                           "format": "uuid"
                         },
                         "createdByUserId": {
-                          "type": [
-                            "string",
-                            "null"
-                          ],
+                          "type": "string",
                           "format": "uuid"
                         },
                         "createdAt": {
@@ -22132,6 +22131,16 @@
                         "expiresAt": {
                           "type": "string",
                           "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
                         },
                         "expiryWarningDays": {
                           "anyOf": [
@@ -22208,6 +22217,7 @@
                         "createdByUserId",
                         "createdAt",
                         "expiresAt",
+                        "status",
                         "expiryWarningDays",
                         "lastUsedAt",
                         "revokedAt",
@@ -22387,10 +22397,7 @@
                       "format": "uuid"
                     },
                     "createdByUserId": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
+                      "type": "string",
                       "format": "uuid"
                     },
                     "createdAt": {
@@ -22400,6 +22407,16 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
                     },
                     "expiryWarningDays": {
                       "anyOf": [
@@ -22476,6 +22493,7 @@
                     "createdByUserId",
                     "createdAt",
                     "expiresAt",
+                    "status",
                     "expiryWarningDays",
                     "lastUsedAt",
                     "revokedAt",
@@ -22530,53 +22548,6 @@
           },
           "409": {
             "description": "Stale revision, quota, or invalid lifecycle transition",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/workspace/mcp/context": {
-      "get": {
-        "tags": [
-          "Workspace"
-        ],
-        "summary": "Get workspace MCP context for a signed-in workspace session",
-        "operationId": "getWorkspaceMcpContext",
-        "security": [
-          {
-            "sessionCookie": [],
-            "workspaceSelection": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Workspace MCP context returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkspaceMcpContextResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Signed-in workspace session required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Workspace is not available in the signed-in account",
             "content": {
               "application/json": {
                 "schema": {
@@ -24540,7 +24511,8 @@
         "operationId": "issueAgentMcpConverseGrant",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -24625,7 +24597,8 @@
         "operationId": "listAgentMcpConverseGrants",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -24692,7 +24665,8 @@
         "operationId": "rotateAgentMcpConverseGrant",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -24768,7 +24742,8 @@
         "operationId": "revokeAgentMcpConverseGrant",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [

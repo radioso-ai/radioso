@@ -11,7 +11,6 @@ const createAdapter = (): RadiosoApiAdapter => ({
   createDocument: vi.fn(),
   deleteDocument: vi.fn(),
   getDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "FAQ" }),
-  getWorkspaceMcpContext: vi.fn(),
   listDocuments: vi.fn().mockResolvedValue({ documents: [{ id: "doc-1", title: "FAQ" }] }),
   reprocessDocument: vi.fn(),
   searchDocuments: vi.fn().mockResolvedValue({ results: [{ documentId: "doc-1", title: "FAQ" }] }),

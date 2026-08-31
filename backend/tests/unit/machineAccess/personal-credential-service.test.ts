@@ -126,4 +126,27 @@ describe("PersonalCredentialService", () => {
       }),
     }));
   });
+
+  it("rolls back issue, relabel, and revoke when their required audit write fails", async () => {
+    const { repository, service } = createHarness();
+    repository.failAuditPersistence = new Error("audit unavailable");
+    await expect(service.issue({
+      accountId: "account-1", workspaceId: "workspace-1", userId: "owner-1", label: "Deploy", roleCeiling: "member", expiresAt,
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.credentials).toHaveLength(0);
+
+    repository.failAuditPersistence = null;
+    const issued = await service.issue({
+      accountId: "account-1", workspaceId: "workspace-1", userId: "owner-1", label: "Deploy", roleCeiling: "member", expiresAt,
+    });
+    repository.failAuditPersistence = new Error("audit unavailable");
+    await expect(service.relabel({
+      accountId: "account-1", workspaceId: "workspace-1", userId: "owner-1", credentialId: issued.credential.id, label: "Renamed",
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.credentials.get(issued.credential.id)).toMatchObject({ label: "Deploy", revokedAt: null });
+    await expect(service.revoke({
+      accountId: "account-1", workspaceId: "workspace-1", actorUserId: "owner-1", credentialId: issued.credential.id,
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.credentials.get(issued.credential.id)).toMatchObject({ revokedAt: null });
+  });
 });

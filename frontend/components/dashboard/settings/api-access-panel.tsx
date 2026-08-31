@@ -232,6 +232,22 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
     }
   }
 
+  const renameServiceAccount = async () => {
+    if (!workspaceId || !selectedServiceAccount || selectedServiceAccount.status === 'archived') return
+    const displayName = window.prompt('New service-account name', selectedServiceAccount.displayName)?.trim()
+    if (!displayName || displayName === selectedServiceAccount.displayName) return
+    try {
+      const updated = await apiAccessApi.updateServiceAccount(workspaceId, selectedServiceAccount.id, {
+        displayName,
+        revision: selectedServiceAccount.revision,
+      })
+      setSelectedServiceAccount(updated)
+      await load()
+    } catch (renameError) {
+      setError(getApiErrorMessage(renameError, 'Failed to rename service account.'))
+    }
+  }
+
   const transitionServiceAccount = async (action: 'disable' | 'enable' | 'archive') => {
     if (!workspaceId || !selectedServiceAccount) return
     const consequence = action === 'archive'
@@ -307,10 +323,10 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
             </div> : null}
             {serviceFormOpen ? <><div className="grid gap-3 md:grid-cols-2"><div className="space-y-1"><Label htmlFor="service-credential-label">Initial credential label</Label><Input id="service-credential-label" value={serviceCredentialLabel} onChange={(event) => setServiceCredentialLabel(event.target.value)} /></div><div className="space-y-1"><Label htmlFor="service-credential-expiry">Expires</Label><Input id="service-credential-expiry" type="date" value={serviceExpiry} onChange={(event) => setServiceExpiry(event.target.value)} /></div></div><Button onClick={createService} disabled={isCreating || !serviceName.trim() || !serviceCredentialLabel.trim()}><Plus className="mr-2 h-4 w-4" />Create service account</Button></> : null}
             <div className="divide-y divide-border rounded-lg border border-border">
-              {serviceAccounts.length === 0 ? <p className="p-3 text-sm text-muted-foreground">No service accounts yet.</p> : serviceAccounts.map((account) => <div key={account.id} className="flex items-center justify-between gap-3 p-3"><div><p className="font-medium">{account.displayName}</p><p className="text-xs text-muted-foreground">{account.role} · {account.activeCredentialCount} active credential{account.activeCredentialCount === 1 ? '' : 's'} · last used {formatDate(account.lastUsedAt)}</p></div><div className="flex items-center gap-2"><Badge variant={account.status === 'enabled' ? 'outline' : 'secondary'}>{account.status}</Badge><Button size="sm" variant="ghost" onClick={() => void selectServiceAccount(account)}>Manage credentials</Button></div></div>)}
+              {serviceAccounts.length === 0 ? <p className="p-3 text-sm text-muted-foreground">No service accounts yet.</p> : serviceAccounts.map((account) => <div key={account.id} className="flex items-center justify-between gap-3 p-3"><div><p className="font-medium">{account.displayName}</p><p className="text-xs text-muted-foreground">{account.role} · {account.activeCredentialCount} active credential{account.activeCredentialCount === 1 ? '' : 's'} · last used {formatDate(account.lastUsedAt)}</p></div><div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex items-center gap-2"><Badge variant={account.status === 'enabled' ? 'outline' : 'secondary'}>{account.status}</Badge><Button size="sm" variant="ghost" aria-label={`Manage credentials for ${account.displayName}`} onClick={() => void selectServiceAccount(account)}>Manage credentials</Button></div></div>)}
             </div>
             <PaginationControls page={servicePage} total={serviceTotal} onPage={setServicePage} />
-            {selectedServiceAccount ? <div className="space-y-3 rounded-lg border border-border p-4"><div className="flex items-center justify-between"><h4 className="font-medium">{selectedServiceAccount.displayName} credentials</h4><Badge variant="outline">{selectedServiceAccount.status}</Badge></div><div className="flex flex-wrap items-end gap-3"><div className="space-y-1"><Label htmlFor="selected-service-role">Live role</Label><select id="selected-service-role" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedServiceAccount.role} disabled={selectedServiceAccount.status === 'archived'} onChange={(event) => void changeServiceRole(event.target.value as 'member' | 'admin')}><option value="member">Member</option><option value="admin">Admin</option></select></div>{selectedServiceAccount.status === 'enabled' ? <Button variant="outline" onClick={() => void transitionServiceAccount('disable')}>Disable</Button> : null}{selectedServiceAccount.status === 'disabled' ? <Button variant="outline" onClick={() => void transitionServiceAccount('enable')}>Enable</Button> : null}{selectedServiceAccount.status !== 'archived' ? <Button variant="destructive" onClick={() => void transitionServiceAccount('archive')}>Archive</Button> : null}</div><div className="grid gap-3 md:grid-cols-2"><div className="space-y-1"><Label htmlFor="additional-credential-label">Credential label</Label><Input id="additional-credential-label" value={additionalCredentialLabel} onChange={(event) => setAdditionalCredentialLabel(event.target.value)} placeholder="Canary runner" /></div><div className="space-y-1"><Label htmlFor="additional-credential-expiry">Expires</Label><Input id="additional-credential-expiry" type="date" value={additionalCredentialExpiry} onChange={(event) => setAdditionalCredentialExpiry(event.target.value)} /></div></div><Button onClick={issueAdditionalCredential} disabled={!additionalCredentialLabel.trim() || selectedServiceAccount.status !== 'enabled'}><Plus className="mr-2 h-4 w-4" />Issue credential</Button><CredentialList items={serviceCredentials} onRevoke={revokeServiceCredential} onRelabel={relabelServiceCredential} onRotate={rotateServiceCredential} /><PaginationControls page={serviceCredentialPage} total={serviceCredentialTotal} onPage={(page) => void selectServiceAccount(selectedServiceAccount, page)} /></div> : null}
+            {selectedServiceAccount ? <div className="space-y-3 rounded-lg border border-border p-4"><div className="flex items-start justify-between gap-3"><div><h4 className="font-medium">{selectedServiceAccount.displayName} credentials</h4><ServiceAccountMetadata account={selectedServiceAccount} /></div><Badge variant="outline">{selectedServiceAccount.status}</Badge></div><div role="group" aria-label={`Actions for service account ${selectedServiceAccount.displayName}`} className="flex flex-wrap items-end gap-3"><div className="space-y-1"><Label htmlFor="selected-service-role">Live role</Label><select id="selected-service-role" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedServiceAccount.role} disabled={selectedServiceAccount.status === 'archived'} onChange={(event) => void changeServiceRole(event.target.value as 'member' | 'admin')}><option value="member">Member</option><option value="admin">Admin</option></select></div>{selectedServiceAccount.status !== 'archived' ? <Button variant="outline" aria-label={`Rename service account ${selectedServiceAccount.displayName}`} onClick={() => void renameServiceAccount()}>Rename</Button> : null}{selectedServiceAccount.status === 'enabled' ? <Button variant="outline" onClick={() => void transitionServiceAccount('disable')}>Disable</Button> : null}{selectedServiceAccount.status === 'disabled' ? <Button variant="outline" onClick={() => void transitionServiceAccount('enable')}>Enable</Button> : null}{selectedServiceAccount.status !== 'archived' ? <Button variant="destructive" onClick={() => void transitionServiceAccount('archive')}>Archive</Button> : null}</div><div className="grid gap-3 md:grid-cols-2"><div className="space-y-1"><Label htmlFor="additional-credential-label">Credential label</Label><Input id="additional-credential-label" value={additionalCredentialLabel} onChange={(event) => setAdditionalCredentialLabel(event.target.value)} placeholder="Canary runner" /></div><div className="space-y-1"><Label htmlFor="additional-credential-expiry">Expires</Label><Input id="additional-credential-expiry" type="date" value={additionalCredentialExpiry} onChange={(event) => setAdditionalCredentialExpiry(event.target.value)} /></div></div><Button onClick={issueAdditionalCredential} disabled={!additionalCredentialLabel.trim() || selectedServiceAccount.status !== 'enabled'}><Plus className="mr-2 h-4 w-4" />Issue credential</Button><CredentialList items={serviceCredentials} onRevoke={revokeServiceCredential} onRelabel={relabelServiceCredential} onRotate={rotateServiceCredential} /><PaginationControls page={serviceCredentialPage} total={serviceCredentialTotal} onPage={(page) => void selectServiceAccount(selectedServiceAccount, page)} /></div> : null}
           </div>
         </SettingsCard>
       ) : null}
@@ -340,7 +356,7 @@ function CredentialList({
   return (
     <div className="divide-y divide-border rounded-lg border border-border">
       {items.length === 0 ? <p className="p-3 text-sm text-muted-foreground">No credentials yet.</p> : items.map((credential) => {
-        const isRevoked = Boolean(credential.revokedAt)
+        const isRevoked = credential.status === 'revoked' || Boolean(credential.revokedAt)
         const mayRevoke = canRevoke(credential)
         const mayRelabel = onRelabel && canRelabel(credential)
         const mayRotate = onRotate && canRotate(credential)
@@ -352,10 +368,10 @@ function CredentialList({
               <p className="text-xs text-muted-foreground">{credential.prefix} · expires {formatDate(credential.expiresAt)}{credential.expiryWarningDays ? ` · expires in ${credential.expiryWarningDays} days` : ''} · last used {formatDate(credential.lastUsedAt)}</p>
               <CredentialMetadata credential={credential} />
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {mayRelabel ? <Button size="sm" variant="ghost" onClick={() => onRelabel(credential)} disabled={isRevoked}>Rename</Button> : null}
-              {mayRotate ? <Button size="sm" variant="ghost" onClick={() => onRotate(credential)} disabled={isRevoked}>Rotate</Button> : null}
-              {mayRevoke ? <Button size="sm" variant="ghost" onClick={() => onRevoke(credential)} disabled={isRevoked}><Trash2 className="mr-1 h-3.5 w-3.5" />{isRevoked ? 'Revoked' : 'Revoke'}</Button> : null}
+            <div role="group" aria-label={`Actions for credential ${credential.label}`} className="flex shrink-0 items-center gap-1">
+              {mayRelabel ? <Button size="sm" variant="ghost" aria-label={`Rename ${credential.label}`} onClick={() => onRelabel(credential)} disabled={isRevoked}>Rename</Button> : null}
+              {mayRotate ? <Button size="sm" variant="ghost" aria-label={`Rotate ${credential.label}`} onClick={() => onRotate(credential)} disabled={isRevoked}>Rotate</Button> : null}
+              {mayRevoke ? <Button size="sm" variant="ghost" aria-label={`${isRevoked ? 'Revoked' : 'Revoke'} ${credential.label}`} onClick={() => onRevoke(credential)} disabled={isRevoked}><Trash2 className="mr-1 h-3.5 w-3.5" />{isRevoked ? 'Revoked' : 'Revoke'}</Button> : null}
             </div>
           </div>
         )
@@ -365,7 +381,7 @@ function CredentialList({
 }
 
 function CredentialMetadata({ credential }: { credential: ApiCredentialMetadata }) {
-  const status = credential.revokedAt ? 'Revoked' : 'Not revoked'
+  const status = credential.status[0].toUpperCase() + credential.status.slice(1)
 
   return (
     <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -378,6 +394,18 @@ function CredentialMetadata({ credential }: { credential: ApiCredentialMetadata 
       {credential.revokedByUserId ? <span>Revoked by {credential.revokedByUserId}</span> : null}
       {credential.revocationReason ? <span>Reason {credential.revocationReason}</span> : null}
       {credential.rotatedFromCredentialId ? <span>Rotated from {credential.rotatedFromCredentialId}</span> : null}
+    </div>
+  )
+}
+
+function ServiceAccountMetadata({ account }: { account: ServiceAccountSummary }) {
+  return (
+    <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span>Created by {account.createdByUserId ?? 'Unknown'}</span>
+      <span>Created {formatDate(account.createdAt)}</span>
+      <span>Updated {formatDate(account.updatedAt)}</span>
+      <span>Disabled {formatDate(account.disabledAt)}</span>
+      <span>Archived {formatDate(account.archivedAt)}</span>
     </div>
   )
 }

@@ -38,7 +38,7 @@ describe("CopilotRetentionWorker", () => {
       cutoff: new Date("2026-08-01T12:00:00.000Z"),
       limit: 200,
     });
-    expect(result).toEqual({ deleted: 7 });
+    expect(result).toEqual({ status: "swept", deleted: 7 });
   });
 
   it("keeps deleting while a batch comes back full, so a backlog drains without one unbounded statement", async () => {
@@ -47,7 +47,7 @@ describe("CopilotRetentionWorker", () => {
     const result = await worker.sweep();
 
     expect(deleteConversationsUpdatedBefore).toHaveBeenCalledTimes(3);
-    expect(result).toEqual({ deleted: 5 });
+    expect(result).toEqual({ status: "swept", deleted: 5 });
   });
 
   it("records what it removed so a vanished copilot conversation is explainable", async () => {
@@ -77,7 +77,7 @@ describe("CopilotRetentionWorker", () => {
     const result = await worker.sweep();
     await worker.stop();
 
-    expect(result).toBeNull();
+    expect(result).toEqual({ status: "skipped", reason: "disabled" });
     expect(deleteConversationsUpdatedBefore).not.toHaveBeenCalled();
   });
 
@@ -93,7 +93,9 @@ describe("CopilotRetentionWorker", () => {
       now: () => now,
     });
 
-    await expect(worker.sweep()).resolves.toBeNull();
+    // Reported rather than swallowed: the scheduled task route turns this into a retry, and a
+    // failure indistinguishable from a quiet tick is a retention window that stops being enforced.
+    await expect(worker.sweep()).resolves.toEqual({ status: "failed", error: "deadlock" });
     expect(error).toHaveBeenCalled();
   });
 
@@ -117,7 +119,7 @@ describe("CopilotRetentionWorker", () => {
     release?.();
     await first;
 
-    expect(second).toBeNull();
+    expect(second).toEqual({ status: "skipped", reason: "in_flight" });
     expect(deleteConversationsUpdatedBefore).toHaveBeenCalledOnce();
   });
 

@@ -32,6 +32,17 @@ export interface CopilotRetentionLoggerPort {
   error(payload: Record<string, unknown>, message: string): void;
 }
 
+/**
+ * What one sweep did. A failed sweep is its own outcome rather than a zero, because the two
+ * callers need different answers: the poll loop keeps its cadence either way, but the scheduled
+ * task route has to return a retryable status — a transient deadlock reported as success is a
+ * retention window that quietly stops being enforced.
+ */
+export type CopilotRetentionSweepResult =
+  | { readonly status: "swept"; readonly deleted: number }
+  | { readonly status: "skipped"; readonly reason: "disabled" | "in_flight" }
+  | { readonly status: "failed"; readonly error: string };
+
 export interface CopilotRetentionWorkerOptions {
   readonly retention: CopilotRetentionPort;
   readonly audit: CopilotExpensiveOperationAuditPort;
@@ -83,12 +94,13 @@ export class CopilotRetentionWorker {
   }
 
   /**
-   * Runs one sweep. Returns `null` when retention is off, a sweep is already in flight, or the
-   * sweep threw — the error is logged and the timer keeps its cadence, because a transient
-   * deadlock must not silently end retention for the life of the process.
+   * Runs one sweep. Never throws: the timer must keep its cadence, because a transient deadlock
+   * must not silently end retention for the life of the process. The failure is reported rather
+   * than swallowed so a caller that can retry — the scheduled task route — is able to.
    */
-  async sweep(): Promise<{ deleted: number } | null> {
-    if (!this.enabled || this.sweeping) return null;
+  async sweep(): Promise<CopilotRetentionSweepResult> {
+    if (!this.enabled) return { status: "skipped", reason: "disabled" };
+    if (this.sweeping) return { status: "skipped", reason: "in_flight" };
     this.sweeping = true;
     try {
       const batchSize = this.options.batchSize ?? COPILOT_RETENTION_BATCH_SIZE_DEFAULT;
@@ -102,13 +114,11 @@ export class CopilotRetentionWorker {
         if (removed < batchSize) break;
       }
       if (deleted > 0) await this.report(deleted, cutoff);
-      return { deleted };
+      return { status: "swept", deleted };
     } catch (error) {
-      this.options.logger.error(
-        { err: error instanceof Error ? error.message : String(error) },
-        "Copilot conversation retention sweep failed",
-      );
-      return null;
+      const message = error instanceof Error ? error.message : String(error);
+      this.options.logger.error({ err: message }, "Copilot conversation retention sweep failed");
+      return { status: "failed", error: message };
     } finally {
       this.sweeping = false;
     }

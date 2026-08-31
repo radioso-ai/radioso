@@ -5508,6 +5508,13 @@ CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals 
 
 
 --
+-- Name: copilot_replay_evidence_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_replay_evidence_conversation_idx ON public.copilot_replay_evidence USING btree (conversation_id);
+
+
+--
 -- Name: copilot_replay_evidence_operator_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 

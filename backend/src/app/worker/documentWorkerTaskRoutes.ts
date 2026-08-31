@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
+import { serviceUnavailable } from "../../shared/domain/errors.js";
 import type { AppDependencies } from "../server/types.js";
 
 const documentProcessingTaskSchema = z.object({
@@ -139,9 +140,14 @@ export const createDocumentWorkerTaskRoutes = (
   router.post("/internal/tasks/copilot-retention/sweep", async (_req, res, next) => {
     try {
       const result = await dependencies.copilotRetentionWorker.sweep();
-      // A null sweep is retention being switched off or a sweep already in flight — both are
-      // ordinary, and neither is worth failing a scheduled request over.
-      res.status(200).json({ deleted: result?.deleted ?? 0 });
+      if (result.status === "failed") {
+        // Retryable on purpose. Retention has no queue behind it, so a scheduled push reported as
+        // success is the whole enforcement for that interval quietly not happening.
+        next(serviceUnavailable("Copilot retention sweep failed", { reason: result.error }));
+        return;
+      }
+      // Switched off or already in flight are both ordinary, and neither is worth a retry.
+      res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
     } catch (error) {
       next(error);
     }

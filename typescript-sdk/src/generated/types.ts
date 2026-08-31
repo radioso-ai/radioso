@@ -18703,6 +18703,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Copilot turn rate limit exceeded for this operator, workspace, and account */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
             /** @description No LLM capability */
             503: {
                 headers: {

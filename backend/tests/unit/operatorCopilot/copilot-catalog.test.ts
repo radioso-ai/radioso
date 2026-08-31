@@ -104,6 +104,7 @@ describe("enrichCopilotToolCatalog current authorization", () => {
       workspaceId: "workspace",
       accountId: "account",
       operatorUserId: "operator",
+      surface: "dashboard" as const,
       permissions: new Set(["workspace.agents.read"]),
       currentAuthorization: { hasAllPermissions: authorization },
       pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
@@ -140,6 +141,7 @@ describe("enrichCopilotToolCatalog current authorization", () => {
       workspaceId: "workspace",
       accountId: "account",
       operatorUserId: "operator",
+      surface: "dashboard" as const,
       currentAuthorization: { hasAllPermissions: authorization },
       pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
     });

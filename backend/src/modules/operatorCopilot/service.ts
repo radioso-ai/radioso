@@ -336,7 +336,7 @@ export class OperatorCopilotService {
   private async describeActivityEntity(
     descriptor: CopilotToolDescriptor | undefined,
     toolInput: unknown,
-    input: { workspaceId: string; accountId: string; operatorUserId: string; permissions?: ReadonlySet<string>; pageContext: CopilotPageContext },
+    input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; permissions?: ReadonlySet<string>; pageContext: CopilotPageContext },
   ): Promise<CopilotEntityReference | null> {
     try {
       if (!descriptor) return null;
@@ -344,6 +344,7 @@ export class OperatorCopilotService {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         operatorUserId: input.operatorUserId,
+        surface: input.surface,
         permissions: input.permissions,
         currentAuthorization: this.deps.currentAuthorization,
         pageContext: input.pageContext,
@@ -374,11 +375,11 @@ export class OperatorCopilotService {
     return acquired;
   }
 
-  private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, probeBudget: CopilotProbeBudget): ReadonlyArray<AgentTool> {
+  private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, probeBudget: CopilotProbeBudget): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
       .map((descriptor) => meteredCopilotTool(
-        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool,
+        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool,
         descriptor.verificationCost,
         probeBudget,
       ));

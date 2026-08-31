@@ -24,6 +24,7 @@ export const context = (agentId: string | null) => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   currentAuthorization: alwaysAuthorized(),
   pageContext: pageContext(agentId),
 });
@@ -150,6 +151,7 @@ export const documentSkillsContext = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   currentAuthorization: alwaysAuthorized(),
   pageContext: { view: "documents" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };

@@ -6,8 +6,11 @@
 -- leading-column index it never constrains, so without this it degrades to a sequential scan on a
 -- table that only ever grows.
 --
--- Messages, proposals, and replay evidence all cascade from copilot_conversations, so no
--- companion index is needed for the rows the delete takes with it.
+-- Messages, proposals, and replay evidence all cascade from copilot_conversations. Postgres does
+-- not index a referencing column for you, so each cascade needs one that leads with
+-- conversation_id or the delete scans that whole table once per batch. copilot_messages and
+-- copilot_proposals already have one; copilot_replay_evidence is indexed by operator and creation
+-- time only, so it gets one here.
 --
 -- Built in the migration transaction like every other index in this schema, which means it holds a
 -- write-blocking SHARE lock for the build. Two things make that the right trade here rather than a
@@ -19,3 +22,7 @@
 CREATE INDEX IF NOT EXISTS copilot_conversations_updated_at_idx
 ON copilot_conversations
 USING btree (updated_at);
+
+CREATE INDEX IF NOT EXISTS copilot_replay_evidence_conversation_idx
+ON copilot_replay_evidence
+USING btree (conversation_id);

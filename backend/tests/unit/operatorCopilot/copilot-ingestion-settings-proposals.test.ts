@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createIngestionSettingsCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createIngestionSettingsProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/ingestionSettingsProposals.js";
+import { conflict } from "../../../src/shared/domain/errors.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -114,7 +115,11 @@ describe("ingestion settings proposal adapter", () => {
       structuredMaxChunkSize: 2_000,
     }, "2026-08-30T10:00:00.000Z");
 
-    expect(settings.updateForWorkspace).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ fixedWindowChunkSize: 1_500 }));
+    expect(settings.updateForWorkspace).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({ fixedWindowChunkSize: 1_500 }),
+      { expectedUpdatedAt: new Date("2026-08-30T10:00:00.000Z") },
+    );
     expect(outcome).toEqual({ outcome: "applied", appliedRef: { workspaceId: "workspace-1" } });
   });
 
@@ -134,8 +139,14 @@ describe("ingestion settings proposal adapter", () => {
     expect(settings.updateForWorkspace).not.toHaveBeenCalled();
   });
 
-  it("reports a settings change as stale when the settings moved under the draft", async () => {
-    const { adapter, settings } = adapterFor();
+  // The version is the write's own predicate now, so staleness is what the settings service
+  // reports back rather than something this adapter decides from a preceding read.
+  it("reports a settings change as stale when the write refuses the drafted version", async () => {
+    const settings = settingsPorts();
+    settings.updateForWorkspace = vi.fn(async () => {
+      throw conflict("Ingestion settings were updated by another writer; reload before saving again");
+    });
+    const { adapter } = adapterFor(settings);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, {
       name: "Ingestion settings",
@@ -147,7 +158,6 @@ describe("ingestion settings proposal adapter", () => {
     }, "2026-08-01T10:00:00.000Z");
 
     expect(outcome).toEqual({ outcome: "stale" });
-    expect(settings.updateForWorkspace).not.toHaveBeenCalled();
   });
 
   it("previews only the fields the proposal changes against their stored values", async () => {

@@ -8,6 +8,7 @@ import {
   type CopilotIngestionSettingsSnapshot,
 } from "./contracts/ingestionSettingsAuthoring.js";
 import type { CopilotIngestionSettingsProposalAdapter } from "./contracts.js";
+import { isStale, versionInstant, versionToken } from "./proposalVersioning.js";
 import { validateIngestionSettings } from "../settings/public.js";
 import { AppError, badRequest } from "../../shared/domain/errors.js";
 
@@ -33,9 +34,6 @@ const TARGET_LABEL = INGESTION_SETTINGS_LABEL;
 export interface IngestionSettingsCopilotProposalAdapterDependencies {
   readonly ingestionSettings: CopilotIngestionSettingsPort;
 }
-
-const versionToken = (settings: Pick<CopilotIngestionSettingsSnapshot, "updatedAt">): string =>
-  settings.updatedAt.toISOString();
 
 /** The stored settings as the payload states them, so current and proposed compare field for field. */
 const settled = (settings: CopilotIngestionSettingsSnapshot): CopilotIngestionSettingsPayload =>
@@ -87,7 +85,7 @@ export const createIngestionSettingsCopilotProposalAdapter = (
 
   async readVersionToken(workspaceId, rawTargetRef) {
     copilotIngestionSettingsTargetRefSchema.parse(rawTargetRef);
-    return versionToken(await deps.ingestionSettings.getForWorkspace(workspaceId));
+    return versionToken((await deps.ingestionSettings.getForWorkspace(workspaceId)).updatedAt);
   },
 
   async preview(workspaceId, rawTargetRef, rawPayload) {
@@ -107,14 +105,15 @@ export const createIngestionSettingsCopilotProposalAdapter = (
     // model above all, whose absence is the reason applying this can never start a re-embed.
     const payload = copilotIngestionSettingsPayloadSchema.parse(rawPayload);
     try {
-      // Read-compare-then-write, not a conditional update: the settings service takes no expected
-      // revision, so an edit landing between the two would be overwritten by this payload's carried
-      // values. The same window exists on the dashboard's own save.
-      const settings = await readOrMissing(deps.ingestionSettings.getForWorkspace(workspaceId));
-      if (!settings || versionToken(settings) !== token) return { outcome: "stale" as const };
-      await deps.ingestionSettings.updateForWorkspace(workspaceId, payload);
+      // A conditional update, not read-compare-then-write: the drafted version reaches the write's
+      // own predicate, so a settings row that moved in between is refused there rather than
+      // replaced by the whole-object values this payload has been carrying since the draft.
+      const expectedUpdatedAt = versionInstant(token);
+      if (!expectedUpdatedAt) return { outcome: "stale" as const };
+      await deps.ingestionSettings.updateForWorkspace(workspaceId, payload, { expectedUpdatedAt });
       return { outcome: "applied" as const, appliedRef: { workspaceId } };
     } catch (error) {
+      if (isStale(error)) return { outcome: "stale" as const };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Ingestion settings apply failed" };
     }
   },
@@ -144,6 +143,6 @@ export const createIngestionSettingsCopilotProposalAdapter = (
       structuredMinChunkSize: payload.structuredMinChunkSize,
       structuredMaxChunkSize: payload.structuredMaxChunkSize,
     });
-    return { targetRef: {}, payload, versionToken: versionToken(settings) };
+    return { targetRef: {}, payload, versionToken: versionToken(settings.updatedAt) };
   },
 });

@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
-import type { DocumentCreateInput } from "../../src/modules/documents/contracts/index.js";
+import type {
+  DocumentCreateInput,
+  DocumentRecord,
+  DocumentRetrievalSettingsResult,
+} from "../../src/modules/documents/contracts/index.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -14,6 +18,15 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 // the Kysely migration must preserve byte-for-byte.
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+/** Unwraps the settled document, failing the test if the write was refused. */
+const settledDocument = async (
+  write: Promise<DocumentRetrievalSettingsResult>,
+): Promise<DocumentRecord> => {
+  const result = await write;
+  if (result.outcome !== "updated") throw new Error(`Expected an applied write, got ${result.outcome}`);
+  return result.document;
+};
 
 describeIntegration("DocumentRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
@@ -236,35 +249,37 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(await countProcessingJobs(document.id)).toBe(0);
   });
 
-  it("defaults new documents to retrievable and round-trips setRetrievalEligibility without bumping revision", async () => {
+  it("defaults new documents to retrievable and settles eligibility alone without bumping revision", async () => {
     const created = await repository.create({ ...baseCreateInput(), status: "ready" });
     expect(created.retrievalEnabled).toBe(true);
     expect(created.retrievalExpiresAt).toBeNull();
 
     const expiresAt = new Date("2027-01-01T00:00:00.000Z");
-    const updated = await repository.setRetrievalEligibility({
+    const updated = await repository.updateRetrievalSettings({
       documentId: created.id,
       workspaceId,
       retrievalEnabled: false,
       retrievalExpiresAt: expiresAt,
     });
 
-    expect(updated?.retrievalEnabled).toBe(false);
-    expect(updated?.retrievalExpiresAt).toEqual(expiresAt);
-    expect(updated?.revision).toBe(created.revision);
+    expect(updated.outcome).toBe("updated");
+    const settled = updated.outcome === "updated" ? updated.document : null;
+    expect(settled?.retrievalEnabled).toBe(false);
+    expect(settled?.retrievalExpiresAt).toEqual(expiresAt);
+    expect(settled?.revision).toBe(created.revision);
 
     const reloaded = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
     expect(reloaded?.retrievalEnabled).toBe(false);
     expect(reloaded?.retrievalExpiresAt).toEqual(expiresAt);
 
     expect(
-      await repository.setRetrievalEligibility({
+      await repository.updateRetrievalSettings({
         documentId: randomUUID(),
         workspaceId,
         retrievalEnabled: false,
         retrievalExpiresAt: null,
       }),
-    ).toBeNull();
+    ).toEqual({ outcome: "missing" });
   });
 
   it("findByIdAndWorkspaceId and findByExternalDocumentId resolve documents and the source summary", async () => {
@@ -505,17 +520,17 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     ).rejects.toMatchObject({ message: "Document not found" });
   });
 
-  it("updateMetadataAndQueue replaces the jsonb map, requeues, enqueues a job, and clears failure", async () => {
+  it("updateRetrievalSettings replaces the jsonb map, requeues, enqueues a job, and clears failure", async () => {
     const created = await repository.create({
       ...baseCreateInput({ metadata: { tag: "alpha", stale: "drop" } }),
       status: "failed",
     });
 
-    const updated = await repository.updateMetadataAndQueue({
+    const updated = await settledDocument(repository.updateRetrievalSettings({
       documentId: created.id,
       workspaceId,
       metadata: { audience: "operators", revision: 2, published: true, retiredAt: null },
-    });
+    }));
 
     // Full replace, not a merge: the previous keys are gone.
     expect(updated.metadata).toEqual({
@@ -529,33 +544,90 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(updated.failureReason).toBeNull();
     expect(await countProcessingJobs(created.id)).toBe(1);
 
-    const cleared = await repository.updateMetadataAndQueue({
+    const cleared = await settledDocument(repository.updateRetrievalSettings({
       documentId: created.id,
       workspaceId,
       metadata: {},
-    });
+    }));
     expect(cleared.metadata).toEqual({});
     expect(cleared.revision).toBe(created.revision + 2);
   });
 
-  it("updateMetadataAndQueue returns notFound for a missing document and scopes by workspace", async () => {
+  // The metadata replace and the eligibility switch reach the row in one statement, so a card that
+  // proposed both can no longer land one of them and report that nothing happened.
+  it("updateRetrievalSettings settles metadata and eligibility in one statement", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+    const expiresAt = new Date("2027-06-01T00:00:00.000Z");
+
+    const updated = await settledDocument(repository.updateRetrievalSettings({
+      documentId: created.id,
+      workspaceId,
+      metadata: { audience: "operators" },
+      retrievalEnabled: false,
+      retrievalExpiresAt: expiresAt,
+    }));
+
+    expect(updated.metadata).toEqual({ audience: "operators" });
+    expect(updated.retrievalEnabled).toBe(false);
+    expect(updated.retrievalExpiresAt).toEqual(expiresAt);
+    expect(updated.revision).toBe(created.revision + 1);
+    expect(await countProcessingJobs(created.id)).toBe(1);
+  });
+
+  // The version the caller read is the write's own predicate, not something compared beforehand:
+  // an edit that lands in between is refused rather than overwritten from the older snapshot.
+  it("updateRetrievalSettings refuses a write whose expected version the row no longer holds", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+    // The token is an `updated_at` compared at millisecond precision, so the write standing in for
+    // the other writer has to land in a later millisecond than the create it supersedes.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const settled = await settledDocument(repository.updateRetrievalSettings({
+      documentId: created.id,
+      workspaceId,
+      retrievalEnabled: false,
+    }));
+
+    expect(
+      await repository.updateRetrievalSettings({
+        documentId: created.id,
+        workspaceId,
+        metadata: { audience: "operators" },
+        expectedUpdatedAt: created.updatedAt,
+      }),
+    ).toEqual({ outcome: "conflict" });
+    const untouched = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+    expect(untouched?.metadata).toEqual({ tag: "alpha" });
+    expect(untouched?.revision).toBe(created.revision);
+
+    // The version it does hold still writes.
+    expect(
+      (await repository.updateRetrievalSettings({
+        documentId: created.id,
+        workspaceId,
+        metadata: { audience: "operators" },
+        expectedUpdatedAt: settled.updatedAt,
+      })).outcome,
+    ).toBe("updated");
+  });
+
+  it("updateRetrievalSettings reports a missing document and scopes by workspace", async () => {
     const created = await repository.create({ ...baseCreateInput(), status: "ready" });
 
-    await expect(
-      repository.updateMetadataAndQueue({
+    expect(
+      await repository.updateRetrievalSettings({
         documentId: randomUUID(),
         workspaceId,
         metadata: {},
       }),
-    ).rejects.toMatchObject({ message: "Document not found" });
+    ).toEqual({ outcome: "missing" });
 
-    await expect(
-      repository.updateMetadataAndQueue({
+    expect(
+      await repository.updateRetrievalSettings({
         documentId: created.id,
         workspaceId: randomUUID(),
         metadata: {},
       }),
-    ).rejects.toMatchObject({ message: "Document not found" });
+    ).toEqual({ outcome: "missing" });
 
     // The failed cross-workspace write leaves the document untouched.
     const untouched = await repository.findByIdAndWorkspaceId(created.id, workspaceId);

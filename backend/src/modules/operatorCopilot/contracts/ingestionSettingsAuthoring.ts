@@ -75,5 +75,14 @@ export interface CopilotIngestionSettingsSnapshot {
 
 export interface CopilotIngestionSettingsPort {
   getForWorkspace(workspaceId: string): Promise<CopilotIngestionSettingsSnapshot>;
-  updateForWorkspace(workspaceId: string, input: CopilotIngestionSettingsPayload): Promise<unknown>;
+  /**
+   * `expectedUpdatedAt` carries the version the card was drafted against into the write's own
+   * predicate, so a settings row edited since the draft is refused rather than replaced wholesale
+   * by the values this payload has been holding.
+   */
+  updateForWorkspace(
+    workspaceId: string,
+    input: CopilotIngestionSettingsPayload,
+    options?: { expectedUpdatedAt?: Date },
+  ): Promise<unknown>;
 }

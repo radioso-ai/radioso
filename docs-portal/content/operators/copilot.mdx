@@ -487,6 +487,14 @@ setup state with a link to **Settings → Providers**.
   already running, or one never finished. Wait a few minutes and try again;
   an apply that never finished releases its hold on its own, after which the
   proposal can be applied or dismissed.
+- **An apply reports that an earlier attempt may already have taken effect** —
+  an apply of that card stopped partway, and the card creates something new:
+  a document, or a crawl. A second attempt would create a second one, so Ray
+  resolves the card instead of retrying it. Open the Knowledge Base to see
+  whether the document or crawl is already there, then ask Ray for the change
+  again if it is not. Cards that change something already in the workspace —
+  a directive, a setting, a document's retrieval state — retry safely and come
+  back **Stale** if the target moved.
 - **Agent-turn testing is unavailable** — your session is missing one of
   `workspace.chat.use`, `workspace.history.read`, or
   `workspace.agents.manage` in addition to Ray's agent-read permission.

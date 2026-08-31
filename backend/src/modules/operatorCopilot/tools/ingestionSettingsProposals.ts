@@ -1,5 +1,6 @@
 import {
   copilotIngestionSettingsChangeSchema,
+  copilotIngestionSettingsPayloadSchema,
   type CopilotIngestionSettingsPayload,
 } from "../contracts/ingestionSettingsAuthoring.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
@@ -59,7 +60,7 @@ export const createIngestionSettingsProposalCopilotTools = (
           conversationId: requiredCopilotConversation(context),
           targetType: "ingestion_settings",
           targetRef: validated.targetRef,
-          payload: { ...payload, summary },
+          payload: copilotIngestionSettingsPayloadSchema.parse({ ...payload, summary }),
           versionToken: validated.versionToken,
           // Ingestion settings install through no agent config override, so no replay measures them.
           evidence: null,

@@ -1,5 +1,6 @@
 import {
   copilotWebsiteCrawlChangeSchema,
+  copilotWebsiteCrawlPayloadSchema,
   type CopilotWebsiteCrawlPayload,
 } from "../contracts/websiteCrawlAuthoring.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
@@ -18,11 +19,30 @@ const DESCRIPTION = "Propose crawling a website into the workspace knowledge bas
 
 export type WebsiteCrawlProposalCopilotToolDependencies = CopilotProposalToolDependencies;
 
+/**
+ * How much of the card's sentence the pattern list may take. Patterns are individually long and
+ * there can be fifty of them, so the list is bounded by characters rather than by count: the stored
+ * payload has its own ceiling, and a sentence that outgrew it would persist a card whose preview and
+ * Apply could only ever fail.
+ */
+const SCOPE_BUDGET = 600;
+
+const describeScope = (patterns: ReadonlyArray<string>): string => {
+  if (patterns.length === 0) return "";
+  const listed: string[] = [];
+  let used = 0;
+  for (const pattern of patterns) {
+    if (used + pattern.length > SCOPE_BUDGET) break;
+    listed.push(pattern);
+    used += pattern.length + 2;
+  }
+  const rest = patterns.length - listed.length;
+  if (listed.length === 0) return ` matching ${patterns.length} URL patterns`;
+  return rest > 0 ? ` matching ${listed.join(", ")} and ${rest} more patterns` : ` matching ${listed.join(", ")}`;
+};
+
 const summarize = (payload: CopilotWebsiteCrawlPayload): string => {
-  const scope = payload.includeUrlPatterns.length > 0
-    ? ` matching ${payload.includeUrlPatterns.join(", ")}`
-    : "";
-  const summary = `Crawl ${payload.url}, up to ${payload.limit} pages${scope}.`;
+  const summary = `Crawl ${payload.url}, up to ${payload.limit} pages${describeScope(payload.includeUrlPatterns)}.`;
   return payload.rationale ? `${summary} ${payload.rationale}` : summary;
 };
 
@@ -60,7 +80,7 @@ export const createWebsiteCrawlProposalCopilotTools = (
           conversationId: requiredCopilotConversation(context),
           targetType: "website_crawl",
           targetRef: validated.targetRef,
-          payload: { ...payload, summary },
+          payload: copilotWebsiteCrawlPayloadSchema.parse({ ...payload, summary }),
           versionToken: validated.versionToken,
           // A crawl installs through no agent config override, so no replay measures it.
           evidence: null,

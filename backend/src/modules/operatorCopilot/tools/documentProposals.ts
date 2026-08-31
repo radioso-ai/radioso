@@ -2,6 +2,7 @@ import { z, type ZodType } from "zod";
 
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import {
+  copilotDocumentPayloadSchema,
   MAX_COPILOT_DOCUMENT_CONTENT,
   type CopilotDocumentChange,
   type CopilotDocumentPayload,
@@ -109,7 +110,7 @@ const documentProposalDescriptor = <TInput>(
           conversationId: requiredCopilotConversation(context),
           targetType: "document",
           targetRef: validated.targetRef,
-          payload: { ...payload, summary },
+          payload: copilotDocumentPayloadSchema.parse({ ...payload, summary }),
           versionToken: validated.versionToken,
           // A document change installs through no agent config override, so no replay can measure
           // it. Citing evidence is refused by omission rather than resolved and discarded.

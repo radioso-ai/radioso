@@ -136,7 +136,8 @@ describe("reloaded proposal cards", () => {
 /**
  * The sentence a card states has two producers: the tool's own output drives the live card, and
  * `presentProposalCard` re-derives one from the stored payload after a reload. They drifted apart
- * once already, so this holds them to the same string per target type.
+ * once already, so this holds them to the same string for each target type added here. The five
+ * older types keep parity through the rationale fallback and are covered by their own suites.
  */
 describe("live and reloaded cards state the same thing", () => {
   const toolContext = {
@@ -228,6 +229,8 @@ describe("failure modes the adapters must tell apart", () => {
   });
   const deletePayload = { op: "delete" as const, name: "Refund policy", removesTarget: true as const };
 
+  // On its own this would also pass a blanket catch; it is the pair with the database-failure tests
+  // below that shows the two are told apart.
   it("reads a deleted document as a stale proposal", async () => {
     const adapter = documentAdapter(async () => { throw notFound("Document not found"); });
 

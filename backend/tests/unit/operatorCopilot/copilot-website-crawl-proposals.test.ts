@@ -97,6 +97,50 @@ describe("start_crawl", () => {
   });
 });
 
+  it("stores a payload its own adapter can read back, however many patterns narrow the crawl", async () => {
+    // The card's sentence is part of the payload, so a summary that outgrew the stored schema would
+    // persist a proposal whose preview and Apply both fail their strict parse - a card that can only
+    // ever fail. The tool parses what it is about to store with the schema the adapter reads it with.
+    const { adapter } = adapterFor();
+    const { descriptor, createProposal } = toolFor(adapter);
+
+    await descriptor.createTool(context).invoke({
+      url: "https://help.example.com",
+      includeUrlPatterns: Array.from({ length: 40 }, (_, index) => `/${String(index).padStart(3, "0")}${"x".repeat(190)}`),
+      rationale: "y".repeat(1_000),
+    }, {} as never);
+
+    const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
+    await expect(adapter.preview("workspace-1", { url: "https://help.example.com" }, persisted)).resolves.toBeDefined();
+  });
+
+  it("lists a handful of short patterns in full", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor } = toolFor(adapter);
+
+    const result = await descriptor.createTool(context).invoke({
+      url: "https://help.example.com",
+      includeUrlPatterns: ["/docs/*", "/guides/*", "/faq/*"],
+    }, {} as never) as { summary: string };
+
+    expect(result.summary).toContain("/docs/*, /guides/*, /faq/*");
+    expect(result.summary).not.toContain("more patterns");
+  });
+
+  it("names the patterns that fit and counts the rest, so the sentence stays a sentence", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor } = toolFor(adapter);
+
+    const result = await descriptor.createTool(context).invoke({
+      url: "https://help.example.com",
+      includeUrlPatterns: Array.from({ length: 20 }, (_, index) => `/${String(index).padStart(3, "0")}${"x".repeat(190)}`),
+    }, {} as never) as { summary: string };
+
+    expect(result.summary).toContain("/000");
+    expect(result.summary).toMatch(/\d+ more patterns/);
+    expect(result.summary.length).toBeLessThan(2_000);
+  });
+
 describe("website crawl proposal adapter", () => {
   it("enqueues the crawl with the workspace's account when applied", async () => {
     const { adapter, crawl } = adapterFor();

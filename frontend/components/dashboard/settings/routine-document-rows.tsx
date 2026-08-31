@@ -32,7 +32,9 @@ export function InstructionSentence({ segments, editable = false }: { segments: 
   if (instructionIsEmpty(segments)) {
     return editable ? <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">Write what this step should do…</p> : null
   }
-  return <p className="leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</p>
+  // The instruction keeps the line breaks its author wrote, so the row reads them back
+  // instead of collapsing every line into one.
+  return <p className="whitespace-pre-wrap leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</p>
 }
 
 function InlineSlotText({ text }: { text: string }) {

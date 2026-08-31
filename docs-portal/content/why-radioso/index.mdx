@@ -1,53 +1,44 @@
 ---
 title: Why Radioso
-description: Build self-hosted agents that answer, act, and hand off — inside the rules you author, on every surface.
-last_updated: 2026-08-07
+description: "Using the internet is about to mean talking, not clicking — and every organization deserves to shape its own side of that conversation."
+last_updated: 2026-09-01
 ---
 
 # Why Radioso
 
-## Agents that answer, act, and hand off — inside the rules you set.
+## Using the internet is about to mean talking, not clicking.
 
-A Radioso agent works out how to help, and the rules you author decide what it may do while it does that. It answers from your own data with citations, carries a request through to the action it needed, and gets a person when a person is what the moment calls for. When it gets something wrong, you can see which rule steered it and fix that. One agent, every surface, one debug loop.
+For thirty years, using the internet has meant clicking through websites. That's changing: more and more, it means talking — to agents that book the flight, find the recipe, fill the grocery order, and do a hundred things nobody has imagined yet. Every organization will need a way to take part in that conversation — to answer, to help, to do — wherever its customers are already talking.
+
+And here's what we believe: as a handful of large agents come to mediate more of that conversation, every organization should be able to represent itself — on its own terms, in its own words, not through whatever summary a big model happens to hold about it. That belief, not a feature list, is why Radioso is built the way it is.
+
+- **Open source and self-hosted.** Run it yourself, read exactly how it answers, shape it to fit. Every conversation stays in your Postgres.
+- **Grounded in what's true about you.** Answers come from documents you publish and cite their sources, so anyone can check the work. No evidence, no invented answer — and if you can break that, we want the bug report.
+- **Steered by rules you author.** The agent works out how to help; your directives and routines decide what it may do while it does. When it gets something wrong, you see which rule steered it and fix that — no vendor ticket, no retraining.
+- **Your model keys, no inference markup.** Bring OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint. You pay your provider, not a middleman.
 
 <a href="/quickstarts/run-locally" className="inline-flex h-9 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline transition-colors hover:bg-primary/90">Run locally in 5 minutes →</a>
 
-## It carries a request end to end
+## Talking is the cheap half
 
-Talking is the cheap half. The job is finishing the thing the person came for.
-
-**Directives** are standing rules that steer how the agent behaves. *"When the customer sounds anxious, slow down and confirm before doing anything."* You write the rule once; the agent applies it whenever it fits, on every surface, in every language. Directives steer; when you want the agent to actually *do* something, that is a skill's job.
-
-**Routines** are multi-step flows the agent runs across turns. A return request, an onboarding check, a "collect these three things and file a ticket" — you write the steps in plain language, drop in a chip where the flow needs to collect a value, call a tool, or branch, and Radioso compiles it into something the engine runs and resumes turn to turn. Validate it, publish it, and it is live on every surface — writing the steps is the whole job.
-
-And when the agent should stop talking and *do* something, it does: call a tool, fire a webhook when a routine finishes, or hand the conversation to a real person. The built-in "contact a human" flow is itself just a routine — collect an email, collect a message, submit, confirm.
-
-Every step it takes — which directive steered it, which tool it called, which routine step it is on — lands in the same turn trace as the answers. If it does the wrong thing, you can see why.
-
-We call this shape guided autonomy: you don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
+The job is finishing the thing the person came for. A Radioso agent takes real action instead of describing it: routines carry a return request or an onboarding check across turns, skills call your tools and webhooks, and when the moment calls for a person, the agent hands over the whole conversation with everything it did marked inline. It knows when to act — and when to ask. That's the difference between talking about it and getting it done.
 
 <div className="mt-5 flex flex-wrap gap-4">
   <a href="/why-radioso/guided-autonomy" className="inline-flex items-center text-sm font-medium text-primary no-underline hover:underline">How guided autonomy works →</a>
   <a href="/why-radioso/capabilities" className="inline-flex items-center text-sm font-medium text-primary no-underline hover:underline">See everything an agent can do →</a>
 </div>
 
-## Grounded by default
+## Nobody clicks a product you don't sell
 
-The answering half has its own rule, and it is on from the start. When the agent has evidence in your data, it answers and cites the source. When it does not, it says so.
+People tell an assistant things they would never put in a search box. In our experience, 0.5–2% of visitors talk to the assistant when it's offered — at 50k monthly visitors, that's about 500 conversations a month where people tell you, in their own words, why they came. On one site, visitors kept asking the assistant for course dates instead of browsing course pages: they already knew the course, they just needed the details. At a web store we work with, several customers asked about a perfume category the store didn't sell. Guess what, they do now.
 
-This is not a marketing claim. It is the default behavior of every Radioso agent, and it works the same way across every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
+Radioso ships that loop built in. Audience Pulse turns the last 30 days of visitor questions into a census — named topics with exact counts, recurring gaps where answers had nothing to stand on, and content recommendations you can open as a draft document. The full argument is on our blog: [Know thy customer](https://radioso.ai/blog/know-thy-customer).
 
-## Debug the agent, not the framework
+## One deployment, every surface
 
-Every agent gets a wrong answer eventually. The question is whether you can find out why and fix it without paging an ML engineer.
+Your website needs a chat widget. Your sales team wants a shareable link. Your support tooling calls the API, and your engineers want the same agent in Cursor and Claude Desktop. That usually means several integrations, several contracts, and several copies of your knowledge drifting apart.
 
-In Radioso, every answer shows you the retrieval steps that produced it: which documents were considered, which chunks ranked highest, and which made it into the final context. If the answer was wrong, you can edit the source document, replay the question against the updated corpus, and watch the next answer get better. No vendor ticket. No retraining. No guessing.
-
-## One agent, every surface
-
-Your customers ask questions on your website. Your sales team wants the same agent in a shareable link. Your docs site needs an embedded chat widget. Your support team queries through your API. Your engineers want the same agent in Cursor and Claude Desktop.
-
-Most teams build five different integrations against five different stacks to make this happen. With Radioso, you build your agent once — its data, its procedures, its persona. Every surface talks to the same agent, with the same answers and the same debug loop when something goes wrong. Update a document or a procedure, and every surface updates with it.
+With Radioso you build the agent once — its data, its rules, its persona — and every surface talks to that one agent, with the same answers and the same debug loop. Update a document or a routine, and every surface updates with it.
 
 <div className="my-6 rounded-2xl border border-border bg-card p-4 shadow-sm">
   <div className="grid gap-3">
@@ -62,9 +53,9 @@ Most teams build five different integrations against five different stacks to ma
   </div>
 </div>
 
-## Whether we are the right fit
+## Whether we're the right fit
 
-We would rather lose a deal than win the wrong one, so here is where the edges are.
+We'd rather lose a deal than win the wrong one, so here is where the edges are.
 
 **Knowledge you curate, plus systems you call.** The agent answers from material you publish into Radioso — docs, policies, product pages, crawled sites — and grounding is only as current as what you have published. Live state that changes minute to minute, like ticket status or inventory, belongs on the other side of a skill: you connect the system over MCP and the agent queries it at the moment of the question. Deciding which knowledge is curated and which is fetched live is a real design call, and it is yours to make.
 
@@ -75,6 +66,8 @@ We would rather lose a deal than win the wrong one, so here is where the edges a
 If those trades read as the ones you would make, keep going.
 
 ## Get started
+
+Every organization should shape its own conversations. Here's where yours starts:
 
 <div className="mt-5 flex flex-wrap gap-3">
   <a href="/quickstarts/run-locally" className="inline-flex h-9 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline transition-colors hover:bg-primary/90">Run locally in 5 minutes</a>

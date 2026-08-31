@@ -174,7 +174,7 @@ export interface ApiCredentials {
   access_tenure_membership_id: string | null;
   account_id: string;
   created_at: Generated<Timestamp>;
-  created_by_user_id: string | null;
+  created_by_user_id: string;
   expires_at: Timestamp;
   id: string;
   kind: string;
@@ -1243,7 +1243,7 @@ export interface WorkspaceServiceAccounts {
   account_id: string;
   archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
-  created_by_user_id: string | null;
+  created_by_user_id: string;
   disabled_at: Timestamp | null;
   display_name: string;
   id: string;

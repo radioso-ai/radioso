@@ -4387,11 +4387,14 @@ export class InMemoryAuditService extends AuditService {
   readonly events: AuditEventInput[] = [];
 
   async record(event: AuditEventInput): Promise<void> {
+    await super.record(event);
+  }
+
+  override logRecorded(event: AuditEventInput): void {
     const contextualMetadata = requestAuditMetadata(event.eventType);
     this.events.push(contextualMetadata
       ? { ...event, metadata: { ...event.metadata, ...contextualMetadata } }
       : event);
-    await super.record(event);
   }
 }
 

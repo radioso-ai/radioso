@@ -58,7 +58,6 @@ describe("operator copilot catalog coverage", () => {
     expect(reasonFor("getApiAccessSummary")).toContain("identity and authorization administration");
     expect(reasonFor("switchAccount")).toContain("does not administer identity");
     expect(reasonFor("listAccountUsers")).toContain("account-scoped");
-    expect(reasonFor("getWorkspaceMcpContext")).toContain("account-scoped");
     // The signing key derives the secret an embed uses to sign visitor identity; it must never
     // become readable, and the context_variables reader and propose_context_variable must never
     // grow a path to it.

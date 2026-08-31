@@ -60,6 +60,53 @@ describe("ServiceAccountService", () => {
     }));
   });
 
+  it("passes the current actor to every transaction-owned service mutation", async () => {
+    const repository = new InMemoryMachineAccessRepository();
+    const audit = createAuditService();
+    const actorAuthority: unknown[] = [];
+    const mutators = new Set([
+      "createServiceAccountWithinLimit",
+      "createServiceCredentialWithinLimit",
+      "mutateServiceAccount",
+      "relabelCredential",
+      "replaceCredential",
+      "revokeCredential",
+    ]);
+    const observedRepository = new Proxy(repository, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (typeof key !== "string" || !mutators.has(key) || typeof value !== "function") return value;
+        return async (input: { actorAuthority?: unknown }) => {
+          actorAuthority.push(input.actorAuthority);
+          return value.call(target, input);
+        };
+      },
+    });
+    const service = new ServiceAccountService({
+      repository: observedRepository as never,
+      accountAccess: { requirePermission: async () => undefined, resolveWorkspaceRole: async () => "admin" } as never,
+      audit,
+      now: () => now,
+    });
+    const created = await createServiceAccount(service);
+    const issued = await service.issueCredential({ accountId: "account-1", workspaceId: "workspace-1", actorUserId: "admin-1", serviceAccountId: created.account.id, label: "second", expiresAt });
+    const renamed = await service.update({ accountId: "account-1", workspaceId: "workspace-1", actorUserId: "admin-1", serviceAccountId: created.account.id, revision: created.account.revision, displayName: "Renamed" });
+    const relabeled = await service.relabelCredential({ accountId: "account-1", workspaceId: "workspace-1", actorUserId: "admin-1", serviceAccountId: created.account.id, credentialId: issued.credential.id, revision: issued.credential.revision, label: "Renamed credential" });
+    const rotated = await service.rotateCredential({ accountId: "account-1", workspaceId: "workspace-1", actorUserId: "admin-1", serviceAccountId: created.account.id, credentialId: relabeled.id, revision: relabeled.revision });
+    await service.revokeCredential({ accountId: "account-1", workspaceId: "workspace-1", actorUserId: "admin-1", serviceAccountId: created.account.id, credentialId: rotated.credential.id, revision: rotated.credential.revision });
+
+    expect(renamed.displayName).toBe("Renamed");
+    expect(actorAuthority).toEqual(Array.from({ length: 6 }, () => ({ accountId: "account-1", workspaceId: "workspace-1", actorUserId: "admin-1" })));
+  });
+
+  it("rolls back service-account creation when either required audit record cannot persist", async () => {
+    const { repository, service } = createHarness();
+    repository.failAuditPersistence = new Error("audit unavailable");
+    await expect(createServiceAccount(service)).rejects.toThrow("audit unavailable");
+    expect(repository.serviceAccounts).toHaveLength(0);
+    expect(repository.credentials).toHaveLength(0);
+  });
+
   it("supports overlapping credentials up to the quota without changing the stable principal", async () => {
     const { service } = createHarness();
     const created = await createServiceAccount(service);
@@ -118,6 +165,34 @@ describe("ServiceAccountService", () => {
       revision: archived.revision,
       status: "enabled",
     })).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it("rolls back archive and rotation state when mandatory audit persistence fails", async () => {
+    const { repository, service } = createHarness();
+    const created = await createServiceAccount(service);
+
+    repository.failAuditPersistence = new Error("audit unavailable");
+    await expect(service.update({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      actorUserId: "admin-1",
+      serviceAccountId: created.account.id,
+      revision: created.account.revision,
+      status: "archived",
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.serviceAccounts.get(created.account.id)).toMatchObject({ status: "enabled" });
+    expect(repository.credentials.get(created.credential.id)).toMatchObject({ revokedAt: null });
+
+    await expect(service.rotateCredential({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      actorUserId: "admin-1",
+      serviceAccountId: created.account.id,
+      credentialId: created.credential.id,
+      revision: created.credential.revision,
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.credentials.get(created.credential.id)).toMatchObject({ revokedAt: null });
+    expect(repository.credentials).toHaveLength(1);
   });
 
   it("maps missing or cross-workspace service resources to the 404 boundary", async () => {

@@ -3,31 +3,28 @@ import { describe, expect, it } from 'vitest'
 import { buildClientConfig, resolveMcpChannelSetup, shouldProbeMcpHealth } from '@/components/dashboard/settings/mcp-channel-card'
 
 describe('MCP channel card setup mode', () => {
-  it('uses same-host setup when the MCP URL resolves to the dashboard origin', () => {
+  it('marks same-host merged MCP as unavailable', () => {
     const setup = resolveMcpChannelSetup({
       dashboardOrigin: 'https://radioso.example.com',
       mcpUrl: 'https://radioso.example.com/mcp',
     })
 
-    expect(setup.mode).toBe('same-host')
-    expect(setup.label).toBe('Same-host setup')
-    expect(setup.steps).toEqual([
-      "Open your AI client's MCP settings.",
-      'Paste the MCP server URL.',
-      'Paste a personal token or service-account credential from Workspace settings → API access directly.',
-    ])
-    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <credential from Workspace settings>')
+    expect(setup.mode).toBe('disabled')
+    expect(setup.label).toBe('MCP unavailable')
+    expect(setup.error).toContain('merged MCP endpoint is unavailable')
+    expect(setup.steps).toEqual([])
   })
 
-  it('keeps relative MCP URLs in same-host setup before the browser origin is known', () => {
+  it('marks relative same-host merged MCP as unavailable', () => {
     const setup = resolveMcpChannelSetup({
       dashboardOrigin: '',
       mcpUrl: '/backend/mcp',
     })
 
-    expect(setup.mode).toBe('same-host')
+    expect(setup.mode).toBe('disabled')
+    expect(setup.label).toBe('MCP unavailable')
     expect(setup.mcpUrl).toBe('/backend/mcp')
-    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <credential from Workspace settings>')
+    expect(setup.error).toContain('merged MCP endpoint is unavailable')
   })
 
   it('keeps remote exchange instructions when the MCP URL uses a different origin', () => {
@@ -38,18 +35,18 @@ describe('MCP channel card setup mode', () => {
 
     expect(setup.mode).toBe('remote')
     expect(setup.label).toBe('Remote setup')
-    expect(setup.steps.some((step) => step.includes('Create a personal token or service-account credential'))).toBe(true)
-    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <MCP access token>')
+    expect(setup.steps.some((step) => step.includes('Create an MCP converse credential'))).toBe(true)
+    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <MCP converse grant token>')
     expect(shouldProbeMcpHealth(setup)).toBe(false)
   })
 
-  it('uses the backend health endpoint for same-host MCP setup', () => {
+  it('does not probe the unavailable same-host merged MCP endpoint', () => {
     const setup = resolveMcpChannelSetup({
       dashboardOrigin: 'https://radioso.example.com',
       mcpUrl: '/backend/mcp',
     })
 
-    expect(shouldProbeMcpHealth(setup)).toBe(true)
+    expect(shouldProbeMcpHealth(setup)).toBe(false)
   })
 
   it('marks MCP unavailable when no MCP URL is configured', () => {

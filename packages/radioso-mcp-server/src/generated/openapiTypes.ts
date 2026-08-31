@@ -621,23 +621,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspace/mcp/context": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get workspace MCP context for a signed-in workspace session */
-        get: operations["getWorkspaceMcpContext"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -3497,16 +3480,6 @@ export interface components {
             hasCompletedChat: boolean;
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
-        };
-        WorkspaceMcpContextResponse: {
-            /** @enum {string} */
-            apiVersion: "0.1.0";
-            /** @enum {string} */
-            mcpContextVersion: "2026-06-09";
-            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "list_documents" | "reprocess_document" | "search_documents" | "update_document")[];
-            /** Format: uuid */
-            workspaceId: string;
-            workspaceName: string;
         };
         RegisterRequest: {
             /** Format: email */
@@ -8546,11 +8519,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -8660,11 +8635,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -8769,11 +8746,13 @@ export interface operations {
                         /** Format: uuid */
                         serviceAccountId: string | null;
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
                         expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
                         /** Format: date-time */
                         lastUsedAt: string | null;
@@ -8876,11 +8855,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -8978,11 +8959,13 @@ export interface operations {
                         /** Format: uuid */
                         serviceAccountId: string | null;
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
                         expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
                         /** Format: date-time */
                         lastUsedAt: string | null;
@@ -9074,7 +9057,7 @@ export interface operations {
                             /** @enum {string} */
                             status: "enabled" | "disabled" | "archived";
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
@@ -9183,7 +9166,7 @@ export interface operations {
                             /** @enum {string} */
                             status: "enabled" | "disabled" | "archived";
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
@@ -9211,11 +9194,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -9306,7 +9291,7 @@ export interface operations {
                         /** @enum {string} */
                         status: "enabled" | "disabled" | "archived";
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
@@ -9407,7 +9392,7 @@ export interface operations {
                         /** @enum {string} */
                         status: "enabled" | "disabled" | "archived";
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
@@ -9505,7 +9490,7 @@ export interface operations {
                         /** @enum {string} */
                         status: "enabled" | "disabled" | "archived";
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
@@ -9603,7 +9588,7 @@ export interface operations {
                         /** @enum {string} */
                         status: "enabled" | "disabled" | "archived";
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
@@ -9701,7 +9686,7 @@ export interface operations {
                         /** @enum {string} */
                         status: "enabled" | "disabled" | "archived";
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
@@ -9800,11 +9785,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -9913,11 +9900,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -10023,11 +10012,13 @@ export interface operations {
                         /** Format: uuid */
                         serviceAccountId: string | null;
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
                         expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
                         /** Format: date-time */
                         lastUsedAt: string | null;
@@ -10131,11 +10122,13 @@ export interface operations {
                             /** Format: uuid */
                             serviceAccountId: string | null;
                             /** Format: uuid */
-                            createdByUserId: string | null;
+                            createdByUserId: string;
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
                             expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
                             /** Format: date-time */
                             lastUsedAt: string | null;
@@ -10234,11 +10227,13 @@ export interface operations {
                         /** Format: uuid */
                         serviceAccountId: string | null;
                         /** Format: uuid */
-                        createdByUserId: string | null;
+                        createdByUserId: string;
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
                         expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
                         /** Format: date-time */
                         lastUsedAt: string | null;
@@ -10291,44 +10286,6 @@ export interface operations {
             };
             /** @description Stale revision, quota, or invalid lifecycle transition */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    getWorkspaceMcpContext: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Workspace MCP context returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WorkspaceMcpContextResponse"];
-                };
-            };
-            /** @description Signed-in workspace session required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Workspace is not available in the signed-in account */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

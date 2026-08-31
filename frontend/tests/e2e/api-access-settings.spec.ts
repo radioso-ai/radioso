@@ -27,6 +27,7 @@ const personalCredential: ApiCredentialMetadata = {
   label: 'CLI on laptop',
   prefix: 'radioso_pat_ab12',
   roleCeiling: 'member',
+  status: 'active',
   ownerUserId: 'user-1',
   serviceAccountId: null,
   createdByUserId: 'user-1',
@@ -74,7 +75,7 @@ test('member issues, revokes, and pages personal tokens without storing the one-
       return
     }
     if (request.method() === 'POST' && path.endsWith('/personal-tokens/personal-1/revoke')) {
-      issuedToken = { ...personalCredential, revokedAt: '2026-08-31T01:00:00.000Z', revision: 2 }
+      issuedToken = { ...personalCredential, status: 'revoked', revokedAt: '2026-08-31T01:00:00.000Z', revision: 2 }
       await route.fulfill({ json: issuedToken })
       return
     }
@@ -98,8 +99,8 @@ test('member issues, revokes, and pages personal tokens without storing the one-
   await expect(page.getByText('radioso_pat_one_time_secret')).toHaveCount(0)
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByText('CLI on laptop').locator('xpath=../..').getByRole('button', { name: 'Revoke' }).click()
-  await expect(page.getByText('CLI on laptop').locator('xpath=../..').getByRole('button', { name: 'Revoked' })).toBeVisible()
+  await page.getByText('CLI on laptop').locator('xpath=../..').getByRole('button', { name: 'Revoke CLI on laptop' }).click()
+  await expect(page.getByText('CLI on laptop').locator('xpath=../..').getByRole('button', { name: 'Revoked CLI on laptop' })).toBeVisible()
 
   await expect(page.getByText('Page 1 of 2')).toBeVisible()
   await page.getByRole('button', { name: 'Next', exact: true }).click()
@@ -140,10 +141,29 @@ test('administrator audits workspace personal tokens without gaining another use
     ...colleagueToken,
     id: 'personal-revoked',
     label: 'Rotated colleague token',
+    status: 'revoked',
     revokedAt: '2026-08-30T00:00:00.000Z',
     revokedByUserId: 'user-1',
     revocationReason: 'rotated',
     rotatedFromCredentialId: 'personal-previous',
+  }
+  const expiredToken: ApiCredentialMetadata = {
+    ...colleagueToken,
+    id: 'personal-expired',
+    label: 'Expired credential',
+    status: 'expired',
+  }
+  const suspendedToken: ApiCredentialMetadata = {
+    ...colleagueToken,
+    id: 'personal-suspended',
+    label: 'Suspended credential',
+    status: 'suspended',
+  }
+  const invalidToken: ApiCredentialMetadata = {
+    ...colleagueToken,
+    id: 'personal-invalid',
+    label: 'Invalid credential',
+    status: 'invalid',
   }
   const requests: string[] = []
   await page.route('**/backend/api/v1/account/workspaces/workspace-1/api-access**', async (route) => {
@@ -155,7 +175,7 @@ test('administrator audits workspace personal tokens without gaining another use
       return
     }
     if (request.method() === 'GET' && url.pathname.endsWith('/personal-tokens')) {
-      await route.fulfill({ json: { items: [ownToken, colleagueToken, revokedToken], page: 1, limit: 50, total: 3 } })
+      await route.fulfill({ json: { items: [ownToken, colleagueToken, revokedToken, expiredToken, suspendedToken, invalidToken], page: 1, limit: 50, total: 6 } })
       return
     }
     if (request.method() === 'POST' && url.pathname.endsWith('/personal-tokens/personal-colleague/revoke')) {
@@ -178,7 +198,7 @@ test('administrator audits workspace personal tokens without gaining another use
   await expect(colleagueRow.getByText('Owner user-2')).toBeVisible()
   await expect(colleagueRow.getByText('Role ceiling admin')).toBeVisible()
   await expect(colleagueRow.getByText('Created by user-3')).toBeVisible()
-  await expect(colleagueRow.getByText('Status Not revoked')).toBeVisible()
+  await expect(colleagueRow.getByText('Status Active')).toBeVisible()
   await expect(colleagueRow.getByText('Created 8/29/2026')).toBeVisible()
   await expect(colleagueRow.getByRole('button', { name: 'Rename' })).toHaveCount(0)
   await expect(colleagueRow.getByRole('button', { name: 'Rotate' })).toHaveCount(0)
@@ -193,8 +213,12 @@ test('administrator audits workspace personal tokens without gaining another use
   await expect(revokedRow.getByText('Rotated from personal-previous')).toBeVisible()
   await expect(revokedRow.getByText('Status Revoked')).toBeVisible()
 
+  await expect(page.getByText('Expired credential').locator('xpath=../..').getByText('Status Expired')).toBeVisible()
+  await expect(page.getByText('Suspended credential').locator('xpath=../..').getByText('Status Suspended')).toBeVisible()
+  await expect(page.getByText('Invalid credential').locator('xpath=../..').getByText('Status Invalid')).toBeVisible()
+
   page.once('dialog', (dialog) => dialog.accept())
-  await colleagueRow.getByRole('button', { name: 'Revoke' }).click()
+  await colleagueRow.getByRole('button', { name: 'Revoke Colleague laptop' }).click()
   expect(requests).toContain('POST /backend/api/v1/account/workspaces/workspace-1/api-access/personal-tokens/personal-colleague/revoke')
 })
 
@@ -232,6 +256,7 @@ test('administrator manages the service-account and credential lifecycle', async
   let serviceAccount: ServiceAccountSummary = {
     id: 'service-1', displayName: 'Nightly ingestion', role: 'member', status: 'enabled',
     createdByUserId: 'user-1', createdAt: '2026-08-31T00:00:00.000Z', updatedAt: '2026-08-31T00:00:00.000Z',
+    disabledAt: null, archivedAt: null,
     lastUsedAt: null, activeCredentialCount: 1, revision: 1,
   }
   const initialCredential: ApiCredentialMetadata = {
@@ -268,13 +293,13 @@ test('administrator manages the service-account and credential lifecycle', async
       return route.fulfill({ status: 201, json: { credential: issued, secret: 'radioso_svc_canary_secret' } })
     }
     if (request.method() === 'PATCH' && path.endsWith('/service-1')) {
-      const body = request.postDataJSON() as { role: 'member' | 'admin'; revision: number }
-      serviceAccount = { ...serviceAccount, role: body.role, revision: serviceAccount.revision + 1 }
+      const body = request.postDataJSON() as { displayName?: string; role?: 'member' | 'admin'; revision: number }
+      serviceAccount = { ...serviceAccount, ...(body.displayName ? { displayName: body.displayName } : {}), ...(body.role ? { role: body.role } : {}), revision: serviceAccount.revision + 1, updatedAt: '2026-08-31T01:00:00.000Z' }
       return route.fulfill({ json: serviceAccount })
     }
     if (request.method() === 'POST' && /\/service-1\/(disable|enable|archive)$/.test(path)) {
       const action = path.split('/').at(-1) as 'disable' | 'enable' | 'archive'
-      serviceAccount = { ...serviceAccount, status: action === 'disable' ? 'disabled' : action === 'enable' ? 'enabled' : 'archived', revision: serviceAccount.revision + 1 }
+      serviceAccount = { ...serviceAccount, status: action === 'disable' ? 'disabled' : action === 'enable' ? 'enabled' : 'archived', disabledAt: action === 'disable' ? '2026-08-31T02:00:00.000Z' : serviceAccount.disabledAt, archivedAt: action === 'archive' ? '2026-08-31T03:00:00.000Z' : serviceAccount.archivedAt, revision: serviceAccount.revision + 1, updatedAt: '2026-08-31T03:00:00.000Z' }
       return route.fulfill({ json: serviceAccount })
     }
     if (request.method() === 'PATCH' && /\/credentials\/service-credential-1$/.test(path)) {
@@ -285,11 +310,11 @@ test('administrator manages the service-account and credential lifecycle', async
     if (request.method() === 'POST' && /\/credentials\/service-credential-1\/rotate$/.test(path)) {
       const predecessor = credentials.find((credential) => credential.id === 'service-credential-1')!
       const replacement = { ...predecessor, id: 'service-credential-3', prefix: 'radioso_svc_rotated', revision: 1, rotatedFromCredentialId: predecessor.id }
-      credentials = [replacement, ...credentials.map((credential) => credential.id === predecessor.id ? { ...credential, revokedAt: '2026-08-31T01:00:00.000Z', revision: credential.revision + 1 } : credential)]
+      credentials = [replacement, ...credentials.map((credential) => credential.id === predecessor.id ? { ...credential, status: 'revoked' as const, revokedAt: '2026-08-31T01:00:00.000Z', revision: credential.revision + 1 } : credential)]
       return route.fulfill({ status: 201, json: { credential: replacement, secret: 'radioso_svc_rotated_secret' } })
     }
     if (request.method() === 'POST' && /\/credentials\/service-credential-2\/revoke$/.test(path)) {
-      credentials = credentials.map((credential) => credential.id === 'service-credential-2' ? { ...credential, revokedAt: '2026-08-31T01:00:00.000Z', revision: credential.revision + 1 } : credential)
+      credentials = credentials.map((credential) => credential.id === 'service-credential-2' ? { ...credential, status: 'revoked' as const, revokedAt: '2026-08-31T01:00:00.000Z', revision: credential.revision + 1 } : credential)
       return route.fulfill({ json: credentials.find((credential) => credential.id === 'service-credential-2') })
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled API access request: ${request.method()} ${path}` } } })
@@ -306,8 +331,16 @@ test('administrator manages the service-account and credential lifecycle', async
   await page.getByRole('checkbox', { name: /cannot be recovered/i }).check()
   await page.getByRole('button', { name: 'Done' }).click()
 
-  await page.getByRole('button', { name: 'Manage credentials' }).click()
+  await page.getByRole('button', { name: 'Manage credentials for Nightly ingestion' }).click()
   await expect(page.getByRole('heading', { name: 'Nightly ingestion credentials' })).toBeVisible()
+  await expect(page.getByText('Created by user-1').last()).toBeVisible()
+  await expect(page.getByText('Created 8/31/2026').last()).toBeVisible()
+  await expect(page.getByText('Updated 8/31/2026')).toBeVisible()
+  await expect(page.getByText('Disabled Never')).toBeVisible()
+  await expect(page.getByText('Archived Never')).toBeVisible()
+  page.once('dialog', (dialog) => dialog.accept('Production automation'))
+  await page.getByRole('button', { name: 'Rename service account Nightly ingestion' }).click()
+  await expect(page.getByRole('heading', { name: 'Production automation credentials' })).toBeVisible()
   await page.getByLabel('Credential label').fill('Canary runner')
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Issue credential' }).click()
@@ -316,18 +349,18 @@ test('administrator manages the service-account and credential lifecycle', async
   await page.getByRole('button', { name: 'Done' }).click()
 
   page.once('dialog', (dialog) => dialog.accept('Production runner'))
-  await page.getByText('Initial credential').locator('xpath=../..').getByRole('button', { name: 'Rename' }).click()
+  await page.getByText('Initial credential').locator('xpath=../..').getByRole('button', { name: 'Rename Initial credential' }).click()
   await expect(page.getByText('Production runner')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByText('Production runner').locator('xpath=../..').getByRole('button', { name: 'Rotate' }).click()
+  await page.getByText('Production runner').locator('xpath=../..').getByRole('button', { name: 'Rotate Production runner' }).click()
   await expect(page.getByText('radioso_svc_rotated_secret')).toBeVisible()
   await page.getByRole('checkbox', { name: /cannot be recovered/i }).check()
   await page.getByRole('button', { name: 'Done' }).click()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByText('Canary runner').locator('xpath=../..').getByRole('button', { name: 'Revoke' }).click()
-  await expect(page.getByText('Canary runner').locator('xpath=../..').getByRole('button', { name: 'Revoked' })).toBeVisible()
+  await page.getByText('Canary runner').locator('xpath=../..').getByRole('button', { name: 'Revoke Canary runner' }).click()
+  await expect(page.getByText('Canary runner').locator('xpath=../..').getByRole('button', { name: 'Revoked Canary runner' })).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByLabel('Live role').selectOption('admin')
@@ -336,12 +369,14 @@ test('administrator manages the service-account and credential lifecycle', async
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Disable' }).click()
   await expect(page.getByRole('button', { name: 'Enable' })).toBeVisible()
+  await expect(page.getByText('Disabled 8/31/2026')).toBeVisible()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Enable' }).click()
   await expect(page.getByRole('button', { name: 'Disable' })).toBeVisible()
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Archive' }).click()
   await expect(page.getByRole('button', { name: 'Archive' })).toHaveCount(0)
+  await expect(page.getByText('Archived 8/31/2026')).toBeVisible()
 
   expect(requests).toEqual(expect.arrayContaining([
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/\/service-accounts$/) }),
@@ -350,6 +385,7 @@ test('administrator manages the service-account and credential lifecycle', async
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/credentials\/service-credential-1\/rotate$/) }),
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/credentials\/service-credential-2\/revoke$/) }),
     expect.objectContaining({ method: 'PATCH', path: expect.stringMatching(/\/service-1$/), body: expect.objectContaining({ role: 'admin' }) }),
+    expect.objectContaining({ method: 'PATCH', path: expect.stringMatching(/\/service-1$/), body: expect.objectContaining({ displayName: 'Production automation' }) }),
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/\/service-1\/disable$/) }),
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/\/service-1\/enable$/) }),
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/\/service-1\/archive$/) }),

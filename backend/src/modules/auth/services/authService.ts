@@ -1,7 +1,12 @@
 import type { Env } from "../../../app/config/env.js";
 import { conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
-import type { ApiPrincipalAuthenticator, PersonalCredentialTenureService } from "../../machineAccess/public.js";
+import {
+  transactionalLifecycleAuditEvent,
+  type ApiPrincipalAuthenticator,
+  type PersonalCredentialLifecyclePort,
+  type PersonalCredentialTenureService,
+} from "../../machineAccess/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   OrganizationCoreProvisioner,
@@ -71,6 +76,7 @@ interface AuthServiceDependencies {
   auditService: AuditService;
   apiPrincipalAuthenticator?: Pick<ApiPrincipalAuthenticator, "authenticate">;
   personalCredentialTermination?: Pick<PersonalCredentialTenureService, "endAccount">;
+  personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteAccount">;
 }
 
 export class AuthService {
@@ -676,6 +682,25 @@ export class AuthService {
     }
 
     const account = await this.dependencies.accountRepository.findById(input.accountId);
+    const auditEvent = transactionalLifecycleAuditEvent({
+      accountId: input.accountId,
+      eventType: "account.delete",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: input.userId,
+        organizationName: account?.name ?? null,
+      },
+    });
+    if (this.dependencies.personalCredentialLifecycle) {
+      const deleted = await this.dependencies.personalCredentialLifecycle.deleteAccount({
+        accountId: input.accountId,
+        actorUserId: input.userId,
+        auditEvent,
+      });
+      if (!deleted) throw conflict("Organization could not be deleted");
+      this.dependencies.auditService.logRecorded?.(auditEvent);
+      return { accountId: input.accountId };
+    }
     await this.dependencies.personalCredentialTermination?.endAccount({
       accountId: input.accountId,
       actorUserId: input.userId,
@@ -685,15 +710,7 @@ export class AuthService {
       throw conflict("Organization could not be deleted");
     }
 
-    await this.dependencies.auditService.record({
-      accountId: input.accountId,
-      eventType: "account.delete",
-      eventStatus: "success",
-      metadata: {
-        actorUserId: input.userId,
-        organizationName: account?.name ?? null,
-      },
-    });
+    await this.dependencies.auditService.record(auditEvent);
 
     return { accountId: input.accountId };
   }

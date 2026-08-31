@@ -305,11 +305,9 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 
 ### MCP server
 
-Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. A workspace admin creates its per-agent converse grant from the signed-in dashboard session (the dashboard uses `POST /api/v1/agents/{agentId}/mcp-converse-grants`); the client exchanges that grant for a short-lived session. A personal or service API bearer cannot create the grant. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) are scoped to a whole workspace, but personal tokens and service-account credentials are not accepted by MCP. The two surfaces do not share credentials.
+Radioso's supported MCP surface is the standalone HTTP server. It lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. A workspace admin creates its per-agent converse grant from the signed-in dashboard session (the dashboard uses `POST /api/v1/agents/{agentId}/mcp-converse-grants`); send the original grant to standalone `/mcp`, where the server exchanges it for a short-lived session. Personal and service API credentials are REST credentials and are not MCP credentials.
 
-The MCP package supports same-host merged and standalone deployment shapes. The supported authenticated client flow is agent converse. Workspace-document MCP has no accepted personal or service credential class; do not put a REST API credential into MCP configuration.
-
-Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. Public connectors use a session token minted through the grant exchange; there is no standard MCP OAuth front door for the converse surface.
+The backend's same-host merged MCP setting reports `mode: "unsupported"` with `reason: "merged_auth_unavailable"` and does not mount `/mcp`. If a merged configuration still points to `RADIOSO_MCP_REDIS_URL`, backend health waits for purge-only session cleanup while no MCP route is exposed. The package has no stdio MCP entrypoint. Run the standalone HTTP server and give it the original agent-converse grant. Hosted clients such as Claude Desktop and ChatGPT require a public HTTPS deployment; local clients can use the standalone HTTP URL.
 
 ### Website embed
 
@@ -325,21 +323,24 @@ The **Web chat** page under an agent's Channels section holds both placements â€
 
 Workspaces can supply their own provider API keys and pick a model per capability without restarting the backend. Keys are encrypted with `CONNECTOR_ENCRYPTION_KEY` (the same key that protects connector secrets; the bootstrap command generates one when missing) and never round-tripped to clients.
 
-List configured providers, store a key, or remove one:
+Sign in first and save the session cookie. Provider credentials and model preferences are workspace settings, so these operations use that signed-in session and the selected workspace header:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <api-credential>" \
+  -b cookies.txt \
+  -H "X-Workspace-Id: <workspace-id>" \
   http://localhost:8080/api/v1/settings/credentials
 
 curl -sS -X PUT \
-  -H "Authorization: Bearer <api-credential>" \
+  -b cookies.txt \
+  -H "X-Workspace-Id: <workspace-id>" \
   -H 'Content-Type: application/json' \
   -d '{"apiKey":"sk-..."}' \
   http://localhost:8080/api/v1/settings/credentials/claude
 
 curl -sS -X DELETE \
-  -H "Authorization: Bearer <api-credential>" \
+  -b cookies.txt \
+  -H "X-Workspace-Id: <workspace-id>" \
   http://localhost:8080/api/v1/settings/credentials/claude
 ```
 
@@ -347,11 +348,13 @@ Read or update the per-workspace chat / rewrite / rerank model preference. A `nu
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <api-credential>" \
+  -b cookies.txt \
+  -H "X-Workspace-Id: <workspace-id>" \
   http://localhost:8080/api/v1/settings/llm-models
 
 curl -sS -X PUT \
-  -H "Authorization: Bearer <api-credential>" \
+  -b cookies.txt \
+  -H "X-Workspace-Id: <workspace-id>" \
   -H 'Content-Type: application/json' \
   -d '{"chat":{"provider":"claude","model":"claude-sonnet-4-5"},"rerank":null}' \
   http://localhost:8080/api/v1/settings/llm-models

@@ -36,6 +36,11 @@ export interface RuntimeStoreHandleOptions {
   legacySessionPurgeReadinessObserver?: LegacySessionPurgeReadinessObserver;
 }
 
+export interface LegacySessionPurgeRuntime {
+  close(): Promise<void>;
+  readiness: RuntimeStoreReadiness;
+}
+
 export const createRuntimeStoreReadiness = (input: {
   purge: () => Promise<void>;
   retryDelayMs?: number;
@@ -161,5 +166,41 @@ export const createRuntimeStoreHandle = async (
     mode: "in-memory",
     readiness,
     sessionStore,
+  };
+};
+
+/**
+ * Runs only the destructive legacy-session purge for a shared Redis namespace.
+ * The backend uses this during merged-mode upgrades even though it does not
+ * expose the standalone MCP transport.
+ */
+export const createLegacySessionPurgeRuntime = async ({
+  keyPrefix,
+  redisUrl,
+  retryDelayMs,
+  signingSecret,
+  observer,
+}: {
+  keyPrefix: string;
+  redisUrl: string;
+  retryDelayMs?: number;
+  signingSecret?: string;
+  observer?: LegacySessionPurgeReadinessObserver;
+}): Promise<LegacySessionPurgeRuntime> => {
+  const redisHandle = await createRedisClientHandle({ keyPrefix, redisUrl, signingSecret: signingSecret ?? "" });
+  const readiness = createRuntimeStoreReadiness({
+    purge: async () => {
+      await redisHandle.sessionStore.purgeLegacyApiTokenSessions();
+    },
+    retryDelayMs,
+    observer,
+  });
+
+  return {
+    async close() {
+      readiness.stop();
+      await redisHandle.close();
+    },
+    readiness,
   };
 };

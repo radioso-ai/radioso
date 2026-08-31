@@ -307,7 +307,7 @@ await client.contextVariables.upsertValue(contextVariable.id, { scope: { type: '
 await client.agents.contextVariables.upsert(agentId, contextVariable.id, { source: 'pushed', surfacing: 'always', enabled: true })
 ```
 
-Bind a skill so a routine can act. Capability-specific bindings have their own namespaces: `client.agents.emailSkills`, `client.agents.externalSkills`, `client.agents.webhookSkills`, `client.agents.slackSkills`, `client.agents.mcpConnections`, and `client.agents.mcpConverseGrants`.
+Bind a skill so a routine can act. Capability-specific bindings have their own namespaces: `client.agents.emailSkills`, `client.agents.externalSkills`, `client.agents.webhookSkills`, `client.agents.slackSkills`, and `client.agents.mcpConnections`. Create agent-converse grants from the signed-in dashboard's MCP channel settings; the SDK uses bearer authentication and does not expose that session-authenticated grant lifecycle.
 
 ```ts
 const skill = await client.agents.skills.create(agentId, {

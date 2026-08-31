@@ -7,11 +7,14 @@ import {
   apiPrincipalRoutePolicy,
   type ApiPrincipalAuthenticationMode,
 } from "../../src/app/http/apiPrincipalRoutePolicy.js";
+import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { createApiRouteMounts } from "../../src/app/http/routes/index.js";
 import { createTestApp } from "../support/testApp.js";
 
 type RouterLayer = {
   handle?: unknown;
+  regexp?: { fast_slash?: boolean };
+  fast_slash?: boolean;
   route?: {
     path: string;
     methods: Record<string, boolean>;
@@ -76,8 +79,9 @@ const collectAuthenticatedRoutes = (
 
     const childLayers = routerLayers(layer.handle);
     if (childLayers.length === 0) continue;
-    const childPath = apiPrincipalRouteMountPath(layer.handle);
-    if (!childPath) {
+    const childPath = apiPrincipalRouteMountPath(layer.handle)
+      ?? (layer.fast_slash || layer.regexp?.fast_slash ? "" : null);
+    if (childPath === null) {
       if (containsApiPrincipalAuthentication(layer.handle)) {
         discovery.unregisteredNestedRouters.push(`${mount} has an authenticated nested router without an inventory mount`);
       }
@@ -91,9 +95,16 @@ const collectAuthenticatedRoutes = (
   return discovery;
 };
 
+const createRouteInventoryTestApp = () => {
+  const composition = createDefaultApplicationComposition({
+    logger: { error: () => undefined },
+  });
+  return createTestApp({ applicationRouteMounts: composition.routeMounts });
+};
+
 const discoveredAuthenticatedRoutes = (dependencies: ReturnType<typeof createTestApp>["dependencies"]): RouteDiscovery => {
   const discovery: RouteDiscovery = { routes: [], unregisteredNestedRouters: [] };
-  for (const mount of createApiRouteMounts(dependencies).filter((candidate) => candidate.principalPolicyInventory)) {
+  for (const mount of [...createApiRouteMounts(dependencies), ...dependencies.applicationRouteMounts]) {
     const child = collectAuthenticatedRoutes(mount.createRouter(dependencies), mount.path);
     discovery.routes.push(...child.routes);
     discovery.unregisteredNestedRouters.push(...child.unregisteredNestedRouters);
@@ -102,8 +113,19 @@ const discoveredAuthenticatedRoutes = (dependencies: ReturnType<typeof createTes
 };
 
 describe("API principal route policy inventory", () => {
+  it("discovers account and application-contributed authenticated routes", () => {
+    const { dependencies } = createRouteInventoryTestApp();
+    const keys = new Set(discoveredAuthenticatedRoutes(dependencies).routes.map(({ key }) => key));
+
+    expect([...keys]).toEqual(expect.arrayContaining([
+      "GET /api/v1/account/users",
+      "GET /api/v1/account/usage-trends",
+      "GET /api/v1/quality/audience-pulse",
+    ]));
+  });
+
   it("gives every mounted workspace/bearer route an explicit centralized eligibility decision", () => {
-    const { dependencies } = createTestApp();
+    const { dependencies } = createRouteInventoryTestApp();
     const discovery = discoveredAuthenticatedRoutes(dependencies);
     const { routes } = discovery;
     expect(routes.length).toBeGreaterThan(50);
@@ -130,7 +152,7 @@ describe("API principal route policy inventory", () => {
   });
 
   it("checks the inventory against the actual authenticated public mounts", async () => {
-    const { app, dependencies } = createTestApp();
+    const { app, dependencies } = createRouteInventoryTestApp();
     const mountedPaths = new Set([
       ...createApiRouteMounts(dependencies).map((mount) => mount.path),
       ...dependencies.applicationRouteMounts.map((mount) => mount.path),

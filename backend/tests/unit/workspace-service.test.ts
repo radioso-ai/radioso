@@ -108,4 +108,24 @@ describe("workspace service", () => {
     expect(ended).toEqual([{ accountId: "account-1", workspaceId: target.id, actorUserId: "owner-1" }]);
     await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toBeNull();
   });
+
+  it("delegates workspace deletion to the transactional personal credential lifecycle", async () => {
+    const repository = new InMemoryWorkspaceRepository();
+    const deleted: Array<Record<string, unknown>> = [];
+    const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, {
+      deleteWorkspace: async (input) => { deleted.push(input); return true; },
+    });
+    await service.create("account-1", "Keep");
+    const target = await service.create("account-1", "Delete");
+
+    await service.delete(target.id, "account-1", "owner-1");
+
+    expect(deleted).toEqual([expect.objectContaining({
+      accountId: "account-1",
+      workspaceId: target.id,
+      actorUserId: "owner-1",
+      auditEvent: expect.objectContaining({ eventType: "workspace.deleted" }),
+    })]);
+    await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toEqual(target);
+  });
 });

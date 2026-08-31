@@ -39,24 +39,15 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
   // The mock issues tokens at index grants.length + 1; one grant is seeded above, so the
   // first created token is index 2.
   const issuedToken = "radioso_mcp_converse_2_plaintext";
-  // The token legitimately appears twice (the standalone token field and embedded in the
-  // JSON config), so scope to the first match.
-  await expect(page.getByText(issuedToken).first()).toBeVisible();
+  await expect(page.getByText(issuedToken)).toBeVisible();
   await expect(page.getByText("Shown once")).toBeVisible();
-  await expect(page.getByText(`Bearer ${issuedToken}`)).toBeVisible();
+  // Same-host merged MCP is intentionally unavailable. The grant lifecycle remains usable,
+  // but no client config should be generated for the unsupported same-host transport.
+  await expect(page.getByText(`Bearer ${issuedToken}`)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy mcp converse client config instruction" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Copy MCP converse grant token" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(issuedToken);
-
-  await page.getByRole("button", { name: "Copy mcp converse client config instruction" }).click();
-  const copiedConfig = await page.evaluate(() => navigator.clipboard.readText());
-  // The MCP endpoint URL is resolved from the deployment (shared with the workspace MCP
-  // card), so assert the contract — the bearer is the converse grant and the URL points at
-  // an /mcp endpoint — rather than hardcoding a deployment-specific host.
-  const parsedConfig = JSON.parse(copiedConfig);
-  expect(parsedConfig.mcpServers.radioso.headers.Authorization).toBe(`Bearer ${issuedToken}`);
-  expect(typeof parsedConfig.mcpServers.radioso.url).toBe("string");
-  expect(parsedConfig.mcpServers.radioso.url).toContain("/mcp");
 
   await expect.poll(() =>
     grantRequests.some((request) =>

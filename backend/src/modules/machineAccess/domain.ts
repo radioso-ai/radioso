@@ -4,6 +4,8 @@ export const MACHINE_CREDENTIAL_KINDS = ["personal", "service"] as const;
 export type MachineCredentialKind = (typeof MACHINE_CREDENTIAL_KINDS)[number];
 export type MachineAccessRole = "member" | "admin";
 export type ServiceAccountStatus = "enabled" | "disabled" | "archived";
+export const MACHINE_CREDENTIAL_STATUSES = ["active", "expired", "revoked", "suspended", "invalid"] as const;
+export type MachineCredentialStatus = (typeof MACHINE_CREDENTIAL_STATUSES)[number];
 export const PERSONAL_CREDENTIAL_TENURE_END_REASONS = [
   "membership_ended",
   "workspace_deleted",
@@ -52,3 +54,25 @@ export const assertAssignableRole = (actorRole: "owner" | MachineAccessRole, rol
 };
 
 export const isServiceAccountActive = (status: ServiceAccountStatus): boolean => status === "enabled";
+
+export const deriveCredentialStatus = (input: {
+  kind: MachineCredentialKind;
+  expiresAt: Date;
+  revokedAt: Date | null;
+  ownerUserId: string | null;
+  accessTenureMembershipId: string | null;
+  roleCeiling: MachineAccessRole | null;
+  serviceAccountId: string | null;
+  serviceAccountStatus?: ServiceAccountStatus | null;
+  now: Date;
+}): MachineCredentialStatus => {
+  if (input.revokedAt) return "revoked";
+  if (input.expiresAt.getTime() <= input.now.getTime()) return "expired";
+  if (input.kind === "personal") {
+    return input.ownerUserId && input.accessTenureMembershipId && input.roleCeiling ? "active" : "invalid";
+  }
+  if (!input.serviceAccountId || input.serviceAccountStatus === null) return "invalid";
+  if (input.serviceAccountStatus === "disabled") return "suspended";
+  if (input.serviceAccountStatus === "archived") return "invalid";
+  return "active";
+};

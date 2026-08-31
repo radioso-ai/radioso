@@ -126,6 +126,7 @@ import type {
   ServiceAccountService,
 } from "../../modules/machineAccess/public.js";
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
+import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 
 export interface AppDependencies {
   env: Env;
@@ -154,6 +155,7 @@ export interface AppDependencies {
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
+  apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
   credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
   personalCredentialService: PersonalCredentialService;

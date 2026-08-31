@@ -167,6 +167,15 @@ describe("ServiceAccountService credential lifecycle", () => {
       credentialId: created.credential.id,
       revision: created.credential.revision,
     })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(service.relabelCredential({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      actorUserId: "operator-2",
+      serviceAccountId: created.account.id,
+      credentialId: created.credential.id,
+      label: "Disabled but described",
+      revision: created.credential.revision,
+    })).resolves.toMatchObject({ status: "suspended" });
 
     const archived = await service.update({
       accountId: "account-1",
@@ -198,5 +207,23 @@ describe("ServiceAccountService credential lifecycle", () => {
     const issued = await issueSibling(service, created.account.id);
     expect(issued.credential.createdByUserId).toBe("operator-2");
     expect(repository.serviceAccounts.get(created.account.id)).toMatchObject({ createdByUserId: "creator-1" });
+  });
+
+  it("rolls back service credential issue, relabel, and revoke when audit persistence fails", async () => {
+    const { repository, service } = createHarness();
+    const created = await createServiceAccount(service);
+    repository.failAuditPersistence = new Error("audit unavailable");
+    await expect(issueSibling(service, created.account.id)).rejects.toThrow("audit unavailable");
+    expect(repository.credentials).toHaveLength(1);
+    await expect(service.relabelCredential({
+      accountId: "account-1", workspaceId: "workspace-1", actorUserId: "operator-2", serviceAccountId: created.account.id,
+      credentialId: created.credential.id, label: "Renamed", revision: created.credential.revision,
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.credentials.get(created.credential.id)).toMatchObject({ label: "Primary", revokedAt: null });
+    await expect(service.revokeCredential({
+      accountId: "account-1", workspaceId: "workspace-1", actorUserId: "operator-2", serviceAccountId: created.account.id,
+      credentialId: created.credential.id, revision: created.credential.revision,
+    })).rejects.toThrow("audit unavailable");
+    expect(repository.credentials.get(created.credential.id)).toMatchObject({ revokedAt: null });
   });
 });

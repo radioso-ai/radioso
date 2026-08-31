@@ -33,6 +33,22 @@ export const apiPrincipalRouteMountPath = (router: unknown): string | null => {
   return typeof path === "string" ? path : null;
 };
 
+/**
+ * Narrow host capability for application modules that authenticate their own
+ * routes. It keeps optional modules structurally compatible without importing
+ * HTTP internals, while giving the host inventory the same runtime mark it
+ * uses for first-party middleware.
+ */
+export interface ApiPrincipalRouteInventory {
+  markAuthenticator<T extends RequestHandler>(handler: T, mode: ApiPrincipalAuthenticationMode): T;
+  markRouteMount<T extends Router>(router: T, path: string): T;
+}
+
+export const apiPrincipalRouteInventory: ApiPrincipalRouteInventory = {
+  markAuthenticator: markApiPrincipalAuthenticator,
+  markRouteMount: markApiPrincipalRouteMount,
+};
+
 export type ApiPrincipalRouteEligibility = {
   allowedPrincipalKinds: readonly AuthenticatedPrincipal["type"][];
   permission: string;
@@ -61,6 +77,34 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/workspace", "workspace.create"),
   sessionOnly("PATCH", "/api/v1/workspace/:workspaceId", "workspace.rename"),
   sessionOnly("DELETE", "/api/v1/workspace/:workspaceId", "workspace.delete"),
+
+  // Account identity and organization administration authenticate exclusively
+  // with the account session; machine credentials are workspace-scoped.
+  sessionOnly("GET", "/api/v1/account/users", "account.users.manage"),
+  sessionOnly("GET", "/api/v1/account/accounts", "account.membership.read"),
+  sessionOnly("POST", "/api/v1/account/accounts", "account.organization.create"),
+  sessionOnly("POST", "/api/v1/account/invitations", "account.users.manage"),
+  sessionOnly("DELETE", "/api/v1/account/invitations/:invitationId", "account.users.manage"),
+  sessionOnly("POST", "/api/v1/account/switch", "account.membership.read"),
+  sessionOnly("DELETE", "/api/v1/account", "account.organization.delete"),
+  sessionOnly("PATCH", "/api/v1/account", "account.organization.rename"),
+  sessionOnly("PATCH", "/api/v1/account/users/:membershipId", "account.membership.role.update"),
+  sessionOnly("PUT", "/api/v1/account/workspaces/:workspaceId/grants/:userId", "account.membership.role.update"),
+  sessionOnly("DELETE", "/api/v1/account/workspaces/:workspaceId/grants/:userId", "account.membership.role.update"),
+  sessionOnly("DELETE", "/api/v1/account/users/:membershipId", "account.membership.remove"),
+  sessionOnly("GET", "/api/v1/account/usage-trends", "workspace.usage.read"),
+  sessionOnly("GET", "/api/v1/account/usage/messages", "workspace.usage.read"),
+  sessionOnly("GET", "/api/v1/account/usage/internal-operations", "workspace.usage.read"),
+  ...[
+    ["GET", "/api/v1/ee/usage-limits/me", "workspace.usage.read"],
+    ["GET", "/api/v1/ee/usage-limits/profiles", "workspace.usage.manage"],
+    ["PUT", "/api/v1/ee/usage-limits/profiles/:profileKey", "workspace.usage.manage"],
+    ["PUT", "/api/v1/ee/usage-limits/accounts/:accountId", "workspace.usage.manage"],
+    ["GET", "/api/v1/ee/usage-limits/accounts/:accountId/usage", "workspace.usage.read"],
+    ["GET", "/api/v1/ee/usage-limits/org-creation/users/:userId", "workspace.usage.manage"],
+    ["PUT", "/api/v1/ee/usage-limits/org-creation/users/:userId", "workspace.usage.manage"],
+    ["DELETE", "/api/v1/ee/usage-limits/org-creation/users/:userId", "workspace.usage.manage"],
+  ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   allow("POST", "/api/v1/assistant/chat", "workspace.chat.use"),
   allow("POST", "/api/v1/retrieval/search", "workspace.retrieval.query"),
   allow("POST", "/api/v1/retrieval/answer", "workspace.retrieval.query"),
@@ -117,6 +161,10 @@ const declarations: readonly PolicyDeclaration[] = [
   allow("GET", "/api/v1/quality/turns", "workspace.quality.read"),
   allow("GET", "/api/v1/quality/stats", "workspace.quality.read"),
   allow("PUT", "/api/v1/quality/turns/:assistantMessageId/triage", "workspace.quality.manage"),
+  sessionOnly("GET", "/api/v1/quality/audience-pulse", "workspace.quality.read"),
+  sessionOnly("GET", "/api/v1/quality/audience-pulse/refresh-status", "workspace.quality.read"),
+  sessionOnly("POST", "/api/v1/quality/audience-pulse/evidence-anchor", "workspace.history.read"),
+  sessionOnly("POST", "/api/v1/quality/audience-pulse", "workspace.quality.read"),
 
   ...["/snapshots", "/cases", "/cases/run", "/cases/:id/runs", "/runs"]
     .map((path) => allow("POST", `/api/v1/evals${path}`, "workspace.retrieval.query")),
@@ -140,7 +188,6 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("POST", "/api/v1/settings/general/assistant-logo", "workspace.settings.manage"),
   sessionOnly("DELETE", "/api/v1/settings/general/assistant-logo", "workspace.settings.manage"),
 
-  sessionOnly("GET", "/api/v1/workspace/mcp/context", "workspace.settings.read"),
   sessionOnly("POST", "/api/v1/settings/general/anonymous-chat-token/rotate"),
   sessionOnly("POST", "/api/v1/settings/general/website-embed-token/rotate"),
   sessionOnly("POST", "/api/v1/agents/:agentId/anonymous-chat-token/rotate"),

@@ -2,6 +2,7 @@ import type { Express } from "express";
 import type { Server } from "node:http";
 
 import { createApp } from "../app/server/createApp.js";
+import { closeMergedMcpPurgeLifecycle } from "../app/server/mcpMount.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
 import type { ApplicationModule } from "../app/composition/index.js";
@@ -107,18 +108,22 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
         });
       } finally {
         try {
-          await dependencies.credentialExpiryWarningLifecycle.stop();
+          await closeMergedMcpPurgeLifecycle(dependencies.env);
         } finally {
           try {
-            await dependencies.realtimePublisherLifecycle.shutdown();
+            await dependencies.credentialExpiryWarningLifecycle.stop();
           } finally {
             try {
-              await dependencies.applicationModules.shutdownAll();
+              await dependencies.realtimePublisherLifecycle.shutdown();
             } finally {
               try {
-                await dependencies.connectorRegistry.shutdownAll();
+                await dependencies.applicationModules.shutdownAll();
               } finally {
-                await stopRuntimeTracing();
+                try {
+                  await dependencies.connectorRegistry.shutdownAll();
+                } finally {
+                  await stopRuntimeTracing();
+                }
               }
             }
           }

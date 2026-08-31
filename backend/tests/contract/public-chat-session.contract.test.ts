@@ -346,7 +346,7 @@ describe("public chat session contract", () => {
     await request(app)
       .get("/api/v1/workspace/mcp/context")
       .set("Authorization", authorization)
-      .expect(401);
+      .expect(404);
   });
 
   it("rejects embed launches that omit the browser origin header", async () => {

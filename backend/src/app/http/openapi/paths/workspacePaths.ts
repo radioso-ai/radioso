@@ -9,41 +9,6 @@ export const registerWorkspacePaths = (
 ) => {
   registry.registerPath({
     method: "get",
-    path: "/api/v1/workspace/mcp/context",
-    tags: ["Workspace"],
-    summary: "Get workspace MCP context for a signed-in workspace session",
-    operationId: "getWorkspaceMcpContext",
-    security: security.workspaceAdminSecurity,
-    responses: {
-      200: {
-        description: "Workspace MCP context returned",
-        content: {
-          "application/json": {
-            schema: schemas.WorkspaceMcpContextResponseSchema,
-          },
-        },
-      },
-      401: {
-        description: "Signed-in workspace session required",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
-      },
-      404: {
-        description: "Workspace is not available in the signed-in account",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: "get",
     path: "/api/v1/workspace",
     tags: ["Workspace"],
     summary: "List workspaces for the authenticated account",

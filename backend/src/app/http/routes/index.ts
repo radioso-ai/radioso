@@ -20,7 +20,6 @@ import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js"
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
-import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
 import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";
@@ -41,48 +40,44 @@ import { createApiAccessRoutes } from "./apiAccessRoutes.js";
 export type ApiRouteMount = {
   path: string;
   createRouter: (dependencies: AppDependencies) => Router;
-  /** Routes behind an API-principal-aware authenticator need a policy decision. */
-  principalPolicyInventory: boolean;
 };
 
 /**
- * The public API's mount table. Keeping the runtime mounts and the principal-policy
- * inventory on one declaration means the contract can inspect the same routers the
- * application mounts, including routers that authenticate with `router.use`.
+ * The public API's mount table. The route-policy contract inspects every router here
+ * and every application contribution, then discovers authentication structurally.
  */
 export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
-  { path: "/api/v1/auth", createRouter: createAuthRoutes, principalPolicyInventory: false },
-  { path: "/api/v1/account", createRouter: createAccountRoutes, principalPolicyInventory: false },
-  { path: "/api/v1/account", createRouter: createAccountUserRoutes, principalPolicyInventory: false },
-  { path: "/api/v1/account", createRouter: createApiAccessRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/workspace/mcp", createRouter: createMcpContextRoutes, principalPolicyInventory: true },
-  { path: "/api/v1", createRouter: createOauthConnectionRoutes, principalPolicyInventory: true },
-  { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes, principalPolicyInventory: true },
-  { path: "/api/v1", createRouter: createSlackConnectionRoutes, principalPolicyInventory: true },
-  { path: "/api/v1", createRouter: createEmailSkillActivityRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createAgentRoutes, principalPolicyInventory: true },
-  { path: "/api/v1", createRouter: createContextVariableRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createDecisionRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createEmailSkillRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createSlackSkillRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/agents", createRouter: createAgentSkillRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/assistant", createRouter: createAssistantRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/copilot", createRouter: createCopilotRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/history", createRouter: createHistoryRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/observability", createRouter: createObservabilityRoutes, principalPolicyInventory: false },
-  { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/skills", createRouter: createSkillRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/settings", createRouter: createSettingsRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/settings/credentials", createRouter: createSettingsCredentialsRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/settings/llm-models", createRouter: createSettingsLlmModelsRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/settings/webhook-destinations", createRouter: createSettingsWebhookDestinationRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/connectors", createRouter: createConnectorRoutes, principalPolicyInventory: true },
-  { path: "/api/v1/document", createRouter: createDocumentRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/auth", createRouter: createAuthRoutes },
+  { path: "/api/v1/account", createRouter: createAccountRoutes },
+  { path: "/api/v1/account", createRouter: createAccountUserRoutes },
+  { path: "/api/v1/account", createRouter: createApiAccessRoutes },
+  { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes },
+  { path: "/api/v1", createRouter: createOauthConnectionRoutes },
+  { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },
+  { path: "/api/v1", createRouter: createSlackConnectionRoutes },
+  { path: "/api/v1", createRouter: createEmailSkillActivityRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentRoutes },
+  { path: "/api/v1", createRouter: createContextVariableRoutes },
+  { path: "/api/v1/agents", createRouter: createDecisionRoutes },
+  { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes },
+  { path: "/api/v1/agents", createRouter: createEmailSkillRoutes },
+  { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes },
+  { path: "/api/v1/agents", createRouter: createSlackSkillRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentSkillRoutes },
+  { path: "/api/v1/assistant", createRouter: createAssistantRoutes },
+  { path: "/api/v1/copilot", createRouter: createCopilotRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
+  { path: "/api/v1/history", createRouter: createHistoryRoutes },
+  { path: "/api/v1/observability", createRouter: createObservabilityRoutes },
+  { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes },
+  { path: "/api/v1/skills", createRouter: createSkillRoutes },
+  { path: "/api/v1/settings", createRouter: createSettingsRoutes },
+  { path: "/api/v1/settings/credentials", createRouter: createSettingsCredentialsRoutes },
+  { path: "/api/v1/settings/llm-models", createRouter: createSettingsLlmModelsRoutes },
+  { path: "/api/v1/settings/webhook-destinations", createRouter: createSettingsWebhookDestinationRoutes },
+  { path: "/api/v1/connectors", createRouter: createConnectorRoutes },
+  { path: "/api/v1/document", createRouter: createDocumentRoutes },
   {
     path: "/api/v1/evals",
     createRouter: (appDependencies) => createEvalRoutes({
@@ -93,9 +88,8 @@ export const createApiRouteMounts = (dependencies: AppDependencies): readonly Ap
       runService: appDependencies.evalRunService,
       suiteService: appDependencies.evalSuiteService,
     }),
-    principalPolicyInventory: true,
   },
-  { path: "/api/v1/public/chat", createRouter: createPublicChatRoutes, principalPolicyInventory: false },
+  { path: "/api/v1/public/chat", createRouter: createPublicChatRoutes },
 ];
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {

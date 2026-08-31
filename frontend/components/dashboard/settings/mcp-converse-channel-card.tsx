@@ -84,11 +84,11 @@ export function McpConverseChannelCard({ agentId }: { agentId: string }) {
   }, [agentId])
 
   const clientConfig = useMemo(() => {
-    if (!issuedCredential || !setup.mcpUrl) {
+    if (!issuedCredential || setup.mode !== 'remote' || !setup.mcpUrl) {
       return ''
     }
     return buildConverseClientConfig(setup.mcpUrl, issuedCredential.token)
-  }, [issuedCredential, setup.mcpUrl])
+  }, [issuedCredential, setup.mcpUrl, setup.mode])
 
   const handleCreate = async () => {
     setIsCreating(true)
@@ -151,7 +151,7 @@ export function McpConverseChannelCard({ agentId }: { agentId: string }) {
             />
           </div>
           <div className="flex items-end">
-            <Button type="button" onClick={() => void handleCreate()} disabled={isCreating || setup.mode === 'disabled'}>
+            <Button type="button" onClick={() => void handleCreate()} disabled={isCreating}>
               {isCreating ? <Spinner className="mr-2 h-4 w-4" /> : <KeyRound className="mr-2 h-4 w-4" />}
               Create credential
             </Button>

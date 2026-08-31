@@ -2,13 +2,16 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { MachineAccessRole, MachineCredentialKind, PersonalCredentialTenureEndReason, ServiceAccountStatus } from "../../modules/machineAccess/domain.js";
 import type {
   ApiCredentialRecord,
   CredentialExpiryWarningClaim,
   MachineAccessPersistencePort,
+  MachineAccessAuditEvent,
   ServiceAccountRecord,
 } from "../../modules/machineAccess/ports.js";
+import { MachineAccessActorAuthorityRepository } from "./machineAccessActorAuthorityRepository.js";
 
 export type {
   ApiCredentialRecord,
@@ -18,7 +21,7 @@ export type {
 
 const mapAccount = (row: Record<string, unknown>): ServiceAccountRecord => ({
   id: String(row.id), workspaceId: String(row.workspace_id), accountId: String(row.account_id), displayName: String(row.display_name),
-  role: row.role as MachineAccessRole, status: row.status as ServiceAccountStatus, createdByUserId: row.created_by_user_id as string | null,
+  role: row.role as MachineAccessRole, status: row.status as ServiceAccountStatus, createdByUserId: String(row.created_by_user_id),
   createdAt: new Date(String(row.created_at)), updatedAt: new Date(String(row.updated_at)),
   disabledAt: row.disabled_at ? new Date(String(row.disabled_at)) : null, archivedAt: row.archived_at ? new Date(String(row.archived_at)) : null,
   lastUsedAt: row.last_used_at ? new Date(String(row.last_used_at)) : null,
@@ -29,7 +32,7 @@ const mapCredential = (row: Record<string, unknown>): ApiCredentialRecord => ({
   id: String(row.id), accountId: String(row.account_id), workspaceId: String(row.workspace_id), kind: row.kind as MachineCredentialKind, label: String(row.label),
   tokenPrefix: String(row.token_prefix), tokenHash: String(row.token_hash), roleCeiling: row.role_ceiling as MachineAccessRole | null,
   ownerUserId: row.owner_user_id as string | null, accessTenureMembershipId: row.access_tenure_membership_id as string | null,
-  serviceAccountId: row.service_account_id as string | null, createdByUserId: row.created_by_user_id as string | null,
+  serviceAccountId: row.service_account_id as string | null, createdByUserId: String(row.created_by_user_id),
   createdAt: new Date(String(row.created_at)), updatedAt: new Date(String(row.updated_at)), expiresAt: new Date(String(row.expires_at)),
   lastUsedAt: row.last_used_at ? new Date(String(row.last_used_at)) : null, revokedAt: row.revoked_at ? new Date(String(row.revoked_at)) : null,
   revokedByUserId: row.revoked_by_user_id as string | null, revocationReason: row.revocation_reason as string | null,
@@ -38,15 +41,20 @@ const mapCredential = (row: Record<string, unknown>): ApiCredentialRecord => ({
 
 /** Persistence only: lifecycle and authorization decisions stay in machineAccess services. */
 export class MachineAccessRepository implements MachineAccessPersistencePort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly actorAuthority = new MachineAccessActorAuthorityRepository(),
+  ) {}
 
   async invalidatePersonalCredentialsForTenure(input: {
     membershipId: string;
     reason: PersonalCredentialTenureEndReason;
     actorUserId?: string | null;
     now: Date;
+    auditEvents?: (credentials: ApiCredentialRecord[]) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord[]> {
     return this.db.transaction().execute(async (trx) => {
+      await this.lockMembership(trx, input.membershipId);
       const rows = await trx.updateTable("api_credentials").set({
         revoked_at: input.now,
         revoked_by_user_id: input.actorUserId ?? null,
@@ -57,7 +65,9 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         .where("access_tenure_membership_id", "=", input.membershipId)
         .where("revoked_at", "is", null)
         .returningAll().execute();
-      return rows.map((row) => mapCredential(row as Record<string, unknown>));
+      const credentials = rows.map((row) => mapCredential(row as Record<string, unknown>));
+      await this.insertAuditEvents(trx, input.auditEvents?.(credentials) ?? []);
+      return credentials;
     });
   }
 
@@ -66,6 +76,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     reason: Extract<PersonalCredentialTenureEndReason, "workspace_deleted" | "account_deleted">;
     actorUserId?: string | null;
     now: Date;
+    auditEvents?: (credentials: ApiCredentialRecord[]) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord[]> {
     return this.db.transaction().execute(async (trx) => {
       const rows = await trx.updateTable("api_credentials").set({
@@ -78,7 +89,9 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         .where("workspace_id", "=", input.workspaceId)
         .where("revoked_at", "is", null)
         .returningAll().execute();
-      return rows.map((row) => mapCredential(row as Record<string, unknown>));
+      const credentials = rows.map((row) => mapCredential(row as Record<string, unknown>));
+      await this.insertAuditEvents(trx, input.auditEvents?.(credentials) ?? []);
+      return credentials;
     });
   }
 
@@ -87,6 +100,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     reason: Extract<PersonalCredentialTenureEndReason, "account_deleted">;
     actorUserId?: string | null;
     now: Date;
+    auditEvents?: (credentials: ApiCredentialRecord[]) => MachineAccessAuditEvent[];
   }): Promise<ApiCredentialRecord[]> {
     return this.db.transaction().execute(async (trx) => {
       const rows = await trx.updateTable("api_credentials").set({
@@ -99,7 +113,9 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         .where("account_id", "=", input.accountId)
         .where("revoked_at", "is", null)
         .returningAll().execute();
-      return rows.map((row) => mapCredential(row as Record<string, unknown>));
+      const credentials = rows.map((row) => mapCredential(row as Record<string, unknown>));
+      await this.insertAuditEvents(trx, input.auditEvents?.(credentials) ?? []);
+      return credentials;
     });
   }
 
@@ -115,10 +131,16 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     now: Date;
     limit: number;
     issueSecret: () => { secret: string; tokenPrefix: string; tokenHash: string };
+    auditEvents?: (result: { credential: ApiCredentialRecord }) => MachineAccessAuditEvent[];
   }): Promise<{ credential: ApiCredentialRecord; secret: string } | null> {
     return this.db.transaction().execute(async (trx) => {
-      const lockKey = `machine-personal:${input.workspaceId}:${input.ownerUserId}`;
-      await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`.execute(trx);
+      await this.lockMembership(trx, input.accessTenureMembershipId);
+      const membership = await trx.selectFrom("account_memberships")
+        .select(["account_id", "user_id", "status"])
+        .where("id", "=", input.accessTenureMembershipId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!membership || membership.status !== "active" || membership.account_id !== input.accountId || membership.user_id !== input.ownerUserId) return null;
       const count = await trx.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count"))
         .where("workspace_id", "=", input.workspaceId).where("owner_user_id", "=", input.ownerUserId)
         .where("kind", "=", "personal").where("revoked_at", "is", null).where("expires_at", ">", input.now)
@@ -132,7 +154,9 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         owner_user_id: input.ownerUserId, access_tenure_membership_id: input.accessTenureMembershipId,
         created_by_user_id: input.createdByUserId, expires_at: input.expiresAt,
       }).returningAll().executeTakeFirstOrThrow();
-      return { credential: mapCredential(row as Record<string, unknown>), secret: issued.secret };
+      const credential = mapCredential(row as Record<string, unknown>);
+      await this.insertAuditEvents(trx, input.auditEvents?.({ credential }) ?? []);
+      return { credential, secret: issued.secret };
     });
   }
 
@@ -176,12 +200,15 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     role?: MachineAccessRole;
     targetStatus?: ServiceAccountStatus;
     now: Date;
+    actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor;
+    auditEvents?: (result: { account: ServiceAccountRecord; invalidatedCredentialIds: string[] }) => MachineAccessAuditEvent[];
   }): Promise<
     | { status: "updated"; account: ServiceAccountRecord; invalidatedCredentialIds: string[] }
     | { status: "conflict" }
     | { status: "missing" }
   > {
     return this.db.transaction().execute(async (trx) => {
+      await this.requireServiceActorAuthority(trx, input.actorAuthority);
       const existing = await trx.selectFrom("workspace_service_accounts").selectAll()
         .where("id", "=", input.id).where("workspace_id", "=", input.workspaceId)
         .forUpdate().executeTakeFirst();
@@ -231,7 +258,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         : await trx.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count"))
           .where("service_account_id", "=", input.id).where("revoked_at", "is", null)
           .where("expires_at", ">", input.now).executeTakeFirstOrThrow();
-      return {
+      const result = {
         status: "updated" as const,
         account: {
           ...mapAccount(row as Record<string, unknown>),
@@ -241,6 +268,8 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         },
         invalidatedCredentialIds,
       };
+      await this.insertAuditEvents(trx, input.auditEvents?.(result) ?? []);
+      return result;
     });
   }
 
@@ -254,8 +283,11 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     expiresAt: Date;
     limit: number;
     issueSecret: () => { secret: string; tokenPrefix: string; tokenHash: string };
+    actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor;
+    auditEvents?: (result: { account: ServiceAccountRecord; credential: ApiCredentialRecord }) => MachineAccessAuditEvent[];
   }): Promise<{ account: ServiceAccountRecord; credential: ApiCredentialRecord; secret: string } | null> {
     return this.db.transaction().execute(async (trx) => {
+      await this.requireServiceActorAuthority(trx, input.actorAuthority);
       const lockKey = `machine-service-accounts:${input.workspaceId}`;
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`.execute(trx);
       const count = await trx.selectFrom("workspace_service_accounts").select(({ fn }) => fn.countAll<number>().as("count"))
@@ -272,11 +304,13 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         token_prefix: issued.tokenPrefix, token_hash: issued.tokenHash, service_account_id: accountRow.id,
         created_by_user_id: input.createdByUserId, expires_at: input.expiresAt,
       }).returningAll().executeTakeFirstOrThrow();
-      return {
+      const result = {
         account: { ...mapAccount(accountRow as Record<string, unknown>), activeCredentialCount: 1 },
         credential: mapCredential(credentialRow as Record<string, unknown>),
         secret: issued.secret,
       };
+      await this.insertAuditEvents(trx, input.auditEvents?.(result) ?? []);
+      return result;
     });
   }
 
@@ -296,11 +330,14 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     now: Date;
     limit: number;
     issueSecret: () => { secret: string; tokenPrefix: string; tokenHash: string };
+    actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor;
+    auditEvents?: (result: { credential: ApiCredentialRecord }) => MachineAccessAuditEvent[];
   }): Promise<
     | { status: "created"; credential: ApiCredentialRecord; secret: string }
     | { status: "inactive" | "limit" | "missing" }
   > {
     return this.db.transaction().execute(async (trx) => {
+      await this.requireServiceActorAuthority(trx, input.actorAuthority);
       const lockKey = `machine-service-credentials:${input.serviceAccountId}`;
       await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`.execute(trx);
       const account = await trx.selectFrom("workspace_service_accounts").selectAll()
@@ -321,7 +358,9 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         token_prefix: issued.tokenPrefix, token_hash: issued.tokenHash, service_account_id: input.serviceAccountId,
         created_by_user_id: input.createdByUserId, expires_at: input.expiresAt,
       }).returningAll().executeTakeFirstOrThrow();
-      return { status: "created" as const, credential: mapCredential(row as Record<string, unknown>), secret: issued.secret };
+      const credential = mapCredential(row as Record<string, unknown>);
+      await this.insertAuditEvents(trx, input.auditEvents?.({ credential }) ?? []);
+      return { status: "created" as const, credential, secret: issued.secret };
     });
   }
 
@@ -348,30 +387,51 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     return row?.migrated_at ? new Date(String(row.migrated_at)) : null;
   }
 
-  async revokeCredential(input: { id: string; actorUserId: string; expectedRevision?: number; now: Date }): Promise<boolean> {
-    let query = this.db.updateTable("api_credentials").set({
-      revoked_at: input.now,
-      revoked_by_user_id: input.actorUserId,
-      revocation_reason: "explicit",
-      updated_at: input.now,
-      revision: (eb) => eb("revision", "+", 1),
-    }).where("id", "=", input.id).where("revoked_at", "is", null);
-    if (input.expectedRevision !== undefined) query = query.where("revision", "=", input.expectedRevision);
-    const result = await query.executeTakeFirst();
-    return Number(result.numUpdatedRows) === 1;
-  }
-
-  async relabelCredential(input: { id: string; label: string; expectedRevision?: number }): Promise<ApiCredentialRecord | null> {
-    let query = this.db.updateTable("api_credentials").set({ label: input.label, updated_at: new Date(), revision: (eb) => eb("revision", "+", 1) })
-      .where("id", "=", input.id).where("revoked_at", "is", null).where("expires_at", ">", new Date());
-    if (input.expectedRevision !== undefined) query = query.where("revision", "=", input.expectedRevision);
-    const row = await query.returningAll().executeTakeFirst();
-    return row ? mapCredential(row as Record<string, unknown>) : null;
-  }
-
-  async replaceCredential(input: { credentialId: string; expectedRevision: number; label: string; tokenPrefix: string; tokenHash: string; createdByUserId: string }): Promise<ApiCredentialRecord | null> {
+  async revokeCredential(input: { id: string; actorUserId: string; expectedRevision?: number; now: Date; actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor; auditEvents?: (changed: boolean) => MachineAccessAuditEvent[] }): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
-      const candidate = await trx.selectFrom("api_credentials").select(["id", "service_account_id"])
+      await this.requireServiceActorAuthority(trx, input.actorAuthority);
+      let query = trx.updateTable("api_credentials").set({
+        revoked_at: input.now,
+        revoked_by_user_id: input.actorUserId,
+        revocation_reason: "explicit",
+        updated_at: input.now,
+        revision: (eb) => eb("revision", "+", 1),
+      }).where("id", "=", input.id).where("revoked_at", "is", null);
+      if (input.expectedRevision !== undefined) query = query.where("revision", "=", input.expectedRevision);
+      const result = await query.executeTakeFirst();
+      const changed = Number(result.numUpdatedRows) === 1;
+      await this.insertAuditEvents(trx, input.auditEvents?.(changed) ?? []);
+      return changed;
+    });
+  }
+
+  async relabelCredential(input: { id: string; label: string; expectedRevision?: number; actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor; auditEvents?: (credential: ApiCredentialRecord) => MachineAccessAuditEvent[] }): Promise<ApiCredentialRecord | null> {
+    return this.db.transaction().execute(async (trx) => {
+      await this.requireServiceActorAuthority(trx, input.actorAuthority);
+      let query = trx.updateTable("api_credentials").set({ label: input.label, updated_at: new Date(), revision: (eb) => eb("revision", "+", 1) })
+        .where("id", "=", input.id).where("revoked_at", "is", null).where("expires_at", ">", new Date());
+      if (input.expectedRevision !== undefined) query = query.where("revision", "=", input.expectedRevision);
+      const row = await query.returningAll().executeTakeFirst();
+      if (!row) return null;
+      const credential = mapCredential(row as Record<string, unknown>);
+      await this.insertAuditEvents(trx, input.auditEvents?.(credential) ?? []);
+      return credential;
+    });
+  }
+
+  async replaceCredential(input: {
+    credentialId: string;
+    expectedRevision: number;
+    label: string;
+    tokenPrefix: string;
+    tokenHash: string;
+    createdByUserId: string;
+    actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor;
+    auditEvents?: (replacement: ApiCredentialRecord) => MachineAccessAuditEvent[];
+  }): Promise<ApiCredentialRecord | null> {
+    return this.db.transaction().execute(async (trx) => {
+      await this.requireServiceActorAuthority(trx, input.actorAuthority);
+      const candidate = await trx.selectFrom("api_credentials").select(["id", "kind", "service_account_id", "access_tenure_membership_id"])
         .where("id", "=", input.credentialId).executeTakeFirst();
       if (!candidate) return null;
 
@@ -384,10 +444,23 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         if (!parent || parent.status !== "enabled") return null;
       }
 
+      // Personal rotation takes the tenure lock before the credential-row
+      // lock. Tenure termination takes that same lock before invalidating
+      // credentials, so neither path can invert the lock order.
+      const membership = candidate.kind === "personal" && candidate.access_tenure_membership_id
+        ? await this.findLockedActiveMembership(trx, candidate.access_tenure_membership_id)
+        : null;
+      if (candidate.kind === "personal" && !membership) return null;
+
       const previous = await trx.selectFrom("api_credentials").selectAll().where("id", "=", input.credentialId)
         .where("revision", "=", input.expectedRevision).where("revoked_at", "is", null).where("expires_at", ">", new Date())
         .forUpdate().executeTakeFirst();
       if (!previous) return null;
+      if (previous.kind === "personal") {
+        if (!membership || !previous.access_tenure_membership_id || !previous.owner_user_id
+          || previous.access_tenure_membership_id !== candidate.access_tenure_membership_id
+          || membership.account_id !== previous.account_id || membership.user_id !== previous.owner_user_id) return null;
+      }
       const now = new Date();
       const revoked = await trx.updateTable("api_credentials").set({
         revoked_at: now,
@@ -405,7 +478,9 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         service_account_id: previous.service_account_id, created_by_user_id: input.createdByUserId,
         expires_at: previous.expires_at, rotated_from_credential_id: previous.id,
       }).returningAll().executeTakeFirstOrThrow();
-      return mapCredential(row as Record<string, unknown>);
+      const replacement = mapCredential(row as Record<string, unknown>);
+      await this.insertAuditEvents(trx, input.auditEvents?.(replacement) ?? []);
+      return replacement;
     });
   }
 
@@ -498,5 +573,42 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
       .where("credential_id", "=", credentialId)
       .where("threshold_days", "=", thresholdDays)
       .execute();
+  }
+
+  private async insertAuditEvents(
+    trx: Db,
+    events: readonly MachineAccessAuditEvent[],
+  ): Promise<void> {
+    if (events.length === 0) return;
+    await trx.insertInto("audit_events").values(events.map((event) => ({
+      id: randomUUID(),
+      account_id: event.accountId,
+      workspace_id: event.workspaceId,
+      event_type: event.eventType,
+      event_status: event.eventStatus,
+      metadata_json: toSanitizedJsonb(event.metadata),
+    }))).execute();
+  }
+
+  private async requireServiceActorAuthority(
+    trx: Db,
+    actorAuthority: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor | undefined,
+  ): Promise<void> {
+    if (actorAuthority) await this.actorAuthority.requireServiceAccountMutationAuthority(trx, actorAuthority);
+  }
+
+  private async lockMembership(trx: Db, membershipId: string): Promise<void> {
+    const lockKey = `machine-personal-membership:${membershipId}`;
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`.execute(trx);
+  }
+
+  private async findLockedActiveMembership(trx: Db, membershipId: string) {
+    await this.lockMembership(trx, membershipId);
+    const membership = await trx.selectFrom("account_memberships")
+      .select(["account_id", "user_id", "status"])
+      .where("id", "=", membershipId)
+      .forUpdate()
+      .executeTakeFirst();
+    return membership?.status === "active" ? membership : null;
   }
 }

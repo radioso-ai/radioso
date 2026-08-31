@@ -8,6 +8,7 @@ import {
 import { createAuthService } from "../auth/authService.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import { createConverseApiAdapter } from "../converseApiAdapter.js";
+import { RadiosoApiError } from "../radiosoApiAdapter.js";
 import { createCapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../policy/workspacePolicy.js";
 import {
@@ -17,7 +18,14 @@ import {
 } from "../state/runtimeStores.js";
 
 import { createHttpServer, type RadiosoRemoteHttpServer } from "./createHttpServer.js";
-import { validateWorkspaceToken } from "./validateWorkspaceToken.js";
+
+const rejectWorkspaceTokenExchange = async (): Promise<never> => {
+  throw new RadiosoApiError(
+    "MCP credential is invalid or unauthorized.",
+    401,
+    "unauthorized",
+  );
+};
 
 export interface CreateRemoteHttpRuntimeOptions {
   auditLogger?: AuditLogger;
@@ -85,7 +93,7 @@ export const createRemoteHttpRuntime = async ({
       baseUrl: config.baseUrl,
       requestTimeoutMs: config.requestTimeoutMs,
     }),
-    validateWorkspaceToken: (radiosoApiToken) => validateWorkspaceToken(config, radiosoApiToken),
+    validateWorkspaceToken: rejectWorkspaceTokenExchange,
   });
   const server = createHttpServer({
     authService,

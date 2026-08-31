@@ -2,7 +2,6 @@ import type { RadiosoMcpConfig } from "./config.js";
 import type {
   DocumentListResult,
   JsonRecord,
-  WorkspaceMcpContextRecord,
 } from "./types.js";
 
 export class RadiosoApiError extends Error {
@@ -18,7 +17,6 @@ export class RadiosoApiError extends Error {
 }
 
 export interface RadiosoApiAdapter {
-  getWorkspaceMcpContext(): Promise<WorkspaceMcpContextRecord>;
   listDocuments(query?: { limit?: number; cursor?: string; offset?: number }): Promise<DocumentListResult>;
   getDocument(documentId: string): Promise<unknown>;
   searchDocuments(body: { query: string; metadataFilter?: JsonRecord }): Promise<unknown>;
@@ -145,8 +143,6 @@ export const createRadiosoApiAdapter = (
         method: "DELETE",
       }),
     getDocument: (documentId) => request(`/api/v1/document/${documentId}`),
-    getWorkspaceMcpContext: () =>
-      request("/api/v1/workspace/mcp/context", {}, { notFoundCode: "unsupported_capability" }),
     listDocuments: (query) => {
       const searchParams = new URLSearchParams();
       if (query?.limit !== undefined) searchParams.set("limit", String(query.limit));

@@ -191,6 +191,7 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import { badRequest, conflict } from "../../src/shared/domain/errors.js";
+import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import type {
   AgentContextVariableEnablement,
   ContextVariable,
@@ -2115,6 +2116,7 @@ export const createTestDependencies = (overrides: {
     },
     authService,
     apiPrincipalAuthenticator,
+    apiPrincipalRouteInventory,
     personalCredentialService,
     serviceAccountService,
     accessGrantService,

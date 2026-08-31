@@ -2,11 +2,14 @@
 
 import { loadRemoteConfig } from "../config.js";
 import { createRemoteHttpRuntime } from "../http/runtime.js";
-import { emitHttpStartupWarnings } from "./httpStartupWarnings.js";
+import { createHttpStartupReadinessObserver, emitHttpStartupWarnings } from "./httpStartupWarnings.js";
 
 const main = async () => {
   const config = loadRemoteConfig(process.env);
-  const runtime = await createRemoteHttpRuntime({ config });
+  const runtime = await createRemoteHttpRuntime({
+    config,
+    legacySessionPurgeReadinessObserver: createHttpStartupReadinessObserver(),
+  });
 
   await runtime.listen();
   console.info(

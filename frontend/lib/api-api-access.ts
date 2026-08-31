@@ -3,6 +3,7 @@ import { withQuery } from './api-query'
 
 export type ApiAccessRole = 'member' | 'admin' | 'owner'
 export type CredentialKind = 'personal' | 'service'
+export type ApiCredentialStatus = 'active' | 'expired' | 'revoked' | 'suspended' | 'invalid'
 export type ServiceAccountStatus = 'enabled' | 'disabled' | 'archived'
 export type PersonalTokenView = 'mine' | 'workspace'
 
@@ -12,6 +13,7 @@ export interface ApiCredentialMetadata {
   label: string
   prefix: string
   roleCeiling: 'member' | 'admin' | null
+  status: ApiCredentialStatus
   ownerUserId: string | null
   serviceAccountId: string | null
   createdByUserId: string | null
@@ -70,6 +72,8 @@ export interface ServiceAccountSummary {
   createdByUserId: string | null
   createdAt: string
   updatedAt: string
+  disabledAt: string | null
+  archivedAt: string | null
   lastUsedAt: string | null
   activeCredentialCount: number
   revision: number

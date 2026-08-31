@@ -66,6 +66,14 @@ const createDependencies = (database: UsageLimitDatabasePort): RouteDependencies
   env: {
     SESSION_COOKIE_NAME: "radioso_session",
   },
+  apiPrincipalRouteInventory: {
+    markAuthenticator(handler) {
+      return handler;
+    },
+    markRouteMount(router) {
+      return router;
+    },
+  },
   authService: {
     async authenticateSession(token: string) {
       if (token !== "valid-session") {
@@ -161,6 +169,24 @@ describe("usage limit admin route auth", () => {
     await request(createSessionApp(inertDatabase))
       .get("/api/v1/ee/usage-limits/me")
       .expect(401);
+  });
+
+  it("marks both account and router-wide admin authentication for the host policy inventory", () => {
+    const modes: string[] = [];
+    const dependencies = createDependencies(inertDatabase);
+    dependencies.apiPrincipalRouteInventory = {
+      markAuthenticator(handler, mode) {
+        modes.push(mode);
+        return handler;
+      },
+      markRouteMount(router) {
+        return router;
+      },
+    };
+
+    createUsageLimitRoutes(dependencies);
+
+    expect(modes).toEqual(["session_only", "session_only"]);
   });
 });
 

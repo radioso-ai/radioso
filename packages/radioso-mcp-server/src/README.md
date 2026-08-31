@@ -1,8 +1,8 @@
 # MCP Server Internals
 
-This package owns the standalone Radioso MCP server runtime: stdio and HTTP
-transports, MCP tool handlers, auth exchange, workspace policy, audit logging,
-runtime state, and the backend API adapter.
+This package owns the standalone Radioso MCP server runtime: HTTP transport, MCP
+tool handlers, agent-converse grant exchange, policy, audit logging, runtime
+state, and the backend API adapter.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../docs/architecture/code-map.md).

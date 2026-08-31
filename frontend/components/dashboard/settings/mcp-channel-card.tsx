@@ -49,7 +49,7 @@ export const resolveMcpChannelSetup = ({
   const trimmedUrl = mcpUrl.trim()
   if (!trimmedUrl) {
     return {
-      authorizationPlaceholder: '<credential from Workspace settings>',
+      authorizationPlaceholder: '<MCP converse grant token>',
       error: 'MCP is not enabled on this deployment.',
       label: 'MCP not enabled',
       mcpUrl: '',
@@ -64,7 +64,7 @@ export const resolveMcpChannelSetup = ({
     resolvedUrl = new URL(trimmedUrl, dashboardOrigin || 'http://localhost')
   } catch {
     return {
-      authorizationPlaceholder: '<credential from Workspace settings>',
+      authorizationPlaceholder: '<MCP converse grant token>',
       error: 'The configured MCP URL is invalid.',
       label: 'MCP not enabled',
       mcpUrl: trimmedUrl,
@@ -78,27 +78,25 @@ export const resolveMcpChannelSetup = ({
 
   if (sameHost) {
     return {
-      authorizationPlaceholder: '<credential from Workspace settings>',
-      label: 'Same-host setup',
+      authorizationPlaceholder: '<MCP converse grant token>',
+      error: 'The same-host merged MCP endpoint is unavailable in this release. Use standalone MCP with an agent-converse grant instead.',
+      label: 'MCP unavailable',
       mcpUrl: dashboardOrigin ? resolvedUrl.toString() : trimmedUrl,
-      mode: 'same-host',
-      steps: [
-        "Open your AI client's MCP settings.",
-        'Paste the MCP server URL.',
-        'Paste a personal token or service-account credential from Workspace settings → API access directly.',
-      ],
+      mode: 'disabled',
+      remediation: 'Run the standalone MCP server at a separate origin, set NEXT_PUBLIC_MCP_URL to that URL, then create an agent-converse grant in the panel below.',
+      steps: [],
     }
   }
 
   return {
-    authorizationPlaceholder: '<MCP access token>',
+    authorizationPlaceholder: '<MCP converse grant token>',
     label: 'Remote setup',
     mcpUrl: resolvedUrl.toString(),
     mode: 'remote',
     steps: [
       "Open your AI client's MCP settings (Cursor, Claude Desktop, or compatible).",
-      'Create a personal token or service-account credential in Workspace settings → API access, then use its secret in the secure client configuration.',
-      'Paste the config below, replacing the placeholder with your access token.',
+      'Create an MCP converse credential for this agent in the panel below, then copy its one-time token into the secure client configuration.',
+      'Paste the config below, replacing the placeholder with the converse grant token.',
     ],
   }
 }
@@ -207,7 +205,7 @@ export function McpChannelCard() {
           </div>
           <div className="space-y-2">
             <Label className="text-foreground">MCP credentials</Label>
-            <p className="text-sm text-muted-foreground">MCP credentials are not issued in the dashboard. Use a personal token or service-account credential from Workspace settings and keep the secret in your client’s secure configuration.</p>
+            <p className="text-sm text-muted-foreground">{resolvedSetup.mode === 'disabled' && resolvedSetup.error?.includes('same-host merged MCP') ? 'Workspace MCP authentication is unavailable on the backend origin. Run standalone MCP and create an agent-converse grant in the panel below.' : 'Workspace API credentials are not accepted by MCP. Create an agent MCP converse credential in the panel below and keep its one-time token in your client’s secure configuration.'}</p>
           </div>
         </div>
 

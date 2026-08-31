@@ -49,6 +49,13 @@ export interface CopilotWebsiteCrawlPort {
   /** The same guard the crawler applies before fetching, so a card is never drafted for a URL the
    * crawl would refuse. */
   assertCrawlUrlAllowed(url: string): Promise<void>;
+  /**
+   * The crawler's own normalization, which also refuses a URL carrying credentials. Running it at
+   * draft means the card shows the URL that will actually be crawled, and a `user:secret@host` URL
+   * is refused before it can be stored and displayed rather than only when Apply reaches the job
+   * service.
+   */
+  normalizeCrawlUrl(url: string): string;
   enqueue(input: {
     accountId?: string | null;
     workspaceId: string;

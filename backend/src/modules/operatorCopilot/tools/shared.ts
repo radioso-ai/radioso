@@ -34,10 +34,14 @@ export const entity = (type: string, id: string | null | undefined) => id ? { ty
  * so the sentence is shortened here rather than the draft being refused - an over-long summary is a
  * display problem, and refusing the whole proposal over one would be a worse answer than eliding it.
  */
-export const boundedSummary = (summary: string): string =>
-  summary.length <= MAX_COPILOT_PROPOSAL_SUMMARY
-    ? summary
-    : `${summary.slice(0, MAX_COPILOT_PROPOSAL_SUMMARY - 1).trimEnd()}\u2026`;
+export const boundedSummary = (summary: string): string => {
+  if (summary.length <= MAX_COPILOT_PROPOSAL_SUMMARY) return summary;
+  // Sliced by code point, not by UTF-16 unit: cutting an emoji in half leaves a lone surrogate,
+  // which survives the schema's length check and then makes Postgres reject the jsonb payload.
+  const kept = Array.from(summary).slice(0, MAX_COPILOT_PROPOSAL_SUMMARY - 1);
+  while (kept.length > 0 && kept.join("").length > MAX_COPILOT_PROPOSAL_SUMMARY - 1) kept.pop();
+  return `${kept.join("").trimEnd()}\u2026`;
+};
 
 /**
  * The adapter a proposal tool writes through, looked up by the target type it owns. Every proposal

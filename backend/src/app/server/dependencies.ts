@@ -54,6 +54,7 @@ import { createConnectorIngestionPort } from "../../modules/connectors/services/
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
+import { normalizeBaseUrl } from "../../modules/websiteCrawler/public.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import {
   AgentTurnProbeService,
@@ -435,7 +436,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
     createWebsiteCrawlCopilotProposalAdapter({
-      websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
+      websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
       crawlPolicy: () => {
         const config = resolveWebsiteCrawlerConfig();

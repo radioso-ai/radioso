@@ -18807,7 +18807,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Missing agent management permission */
+            /** @description Missing the permission that governs what the proposal changes */
             403: {
                 headers: {
                     [name: string]: unknown;

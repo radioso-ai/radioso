@@ -35,6 +35,8 @@ const readOrMissing = async <T>(read: Promise<T>): Promise<T | null> => {
 
 export interface DocumentCopilotProposalAdapterDependencies {
   readonly documentAuthoring: CopilotDocumentAuthoringPort;
+  /** Injected so a preview's expiry reasoning is testable rather than clock-dependent. */
+  readonly now?: () => Date;
   readonly documentDeletion: CopilotDocumentDeletionPort;
   readonly workspaceAccount: CopilotWorkspaceAccountResolver;
 }
@@ -57,19 +59,28 @@ const retrievalState = (document: CopilotDocumentSummary) => ({
 const proposedRetrievalState = (
   document: CopilotDocumentSummary,
   payload: Extract<CopilotDocumentPayload, { op: "update_retrieval" }>,
+  now: Date,
 ) => {
   const current = retrievalState(document);
-  return {
+  const proposed = {
     ...current,
     ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
     ...(payload.retrievalEnabled !== undefined ? { retrievalEnabled: payload.retrievalEnabled } : {}),
     ...(payload.retrievalExpiresAt !== undefined ? { retrievalExpiresAt: payload.retrievalExpiresAt } : {}),
   };
+  // The write clears an expiry already in the past when retrieval is being switched on, so showing
+  // the requested date would promise an eligibility window the document will not come back with.
+  const expiresAt = proposed.retrievalExpiresAt;
+  if (payload.retrievalEnabled === true && expiresAt !== null && new Date(expiresAt).getTime() <= now.getTime()) {
+    return { ...proposed, retrievalExpiresAt: null };
+  }
+  return proposed;
 };
 
 export const createDocumentCopilotProposalAdapter = (
   deps: DocumentCopilotProposalAdapterDependencies,
 ): CopilotDocumentProposalAdapter => {
+  const now = deps.now ?? (() => new Date());
   const readDocument = (workspaceId: string, documentId: string) =>
     deps.documentAuthoring.getDocument(workspaceId, documentId);
 
@@ -104,7 +115,7 @@ export const createDocumentCopilotProposalAdapter = (
       return {
         targetLabel: document?.title ?? payload.name,
         current: document ? retrievalState(document) : null,
-        proposed: document ? proposedRetrievalState(document, payload) : null,
+        proposed: document ? proposedRetrievalState(document, payload, now()) : null,
       };
     },
 

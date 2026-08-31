@@ -139,7 +139,7 @@ export const createDocumentProposalCopilotTools = (
     documentProposalDescriptor(deps, adapter, {
       name: "propose_document",
       uiLabel: "Drafting a document",
-      description: "Propose a new workspace knowledge document for the operator to review and apply. Write the whole document body; it is stored exactly as drafted. Use this to close a knowledge gap a turn exposed, not to restate something an existing document already covers.",
+      description: "Propose a new workspace knowledge document for the operator to review and apply. Write the whole document body; ingestion normalizes it into the workspace's markdown form before indexing. Use this to close a knowledge gap a turn exposed, not to restate something an existing document already covers.",
       inputSchema: createInputSchema,
       targetDocumentId: () => null,
       change: (input) => ({

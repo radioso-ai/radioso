@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { normalizeBaseUrl } from "../../../src/modules/websiteCrawler/public.js";
 
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { createWebsiteCrawlProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/websiteCrawlProposals.js";
@@ -15,6 +16,7 @@ const context = {
 const crawlPorts = () => ({
   enqueue: vi.fn(async () => ({ jobId: "job-1", sourceId: "source-1", requestedUrl: "https://help.example.com", status: "queued" as const })),
   assertCrawlUrlAllowed: vi.fn(async () => undefined),
+  normalizeCrawlUrl: normalizeBaseUrl,
 });
 
 const adapterFor = (crawl = crawlPorts(), policy = { enabled: true, defaultLimit: 50, maxLimit: 200 }) => ({
@@ -139,6 +141,27 @@ describe("start_crawl", () => {
     expect(result.summary).toContain("/000");
     expect(result.summary).toMatch(/\d+ more patterns/);
     expect(result.summary.length).toBeLessThan(2_000);
+  });
+
+  it("refuses a url carrying credentials while drafting, rather than storing and showing them", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, createProposal } = toolFor(adapter);
+
+    await expect(descriptor.createTool(context).invoke({ url: "https://user:secret@help.example.com" }, {} as never))
+      .rejects.toThrow();
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("drafts the url the crawl will actually use, not the one as typed", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor, createProposal } = toolFor(adapter);
+
+    const result = await descriptor.createTool(context).invoke({ url: "https://help.example.com/docs/#section" }, {} as never) as { targetLabel: string };
+
+    expect(result.targetLabel).toBe("https://help.example.com/docs");
+    expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
+      targetRef: { url: "https://help.example.com/docs" },
+    }));
   });
 
 describe("website crawl proposal adapter", () => {

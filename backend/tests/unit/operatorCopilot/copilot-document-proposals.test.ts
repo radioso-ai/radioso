@@ -200,6 +200,18 @@ describe("propose_document_removal", () => {
   });
 });
 
+  it("previews an expiry the write would clear as cleared, not as the date that was asked for", async () => {
+    // Enabling retrieval with an expiry already in the past clears it, so showing the requested date
+    // would promise an eligibility window the document never comes back with.
+    const { adapter } = adapterFor();
+
+    const preview = await adapter.preview("workspace-1", { documentId: DOCUMENT_ID }, {
+      op: "update_retrieval", name: "Refund policy", retrievalEnabled: true, retrievalExpiresAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    expect(preview.proposed).toMatchObject({ retrievalEnabled: true, retrievalExpiresAt: null });
+  });
+
 describe("document proposal adapter", () => {
   it("creates the document through the ingestion port with the workspace's account", async () => {
     const { adapter, authoring, account } = adapterFor();

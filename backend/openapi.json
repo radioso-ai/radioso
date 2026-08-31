@@ -36072,7 +36072,7 @@
             }
           },
           "403": {
-            "description": "Missing agent management permission"
+            "description": "Missing the permission that governs what the proposal changes"
           },
           "409": {
             "description": "Proposal is not pending"

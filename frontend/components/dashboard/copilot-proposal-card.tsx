@@ -151,6 +151,8 @@ export const targetReference = (
     } : null
   }
   if (summary.targetType === 'document') {
+    // Nothing to open once the document is gone; the removal card would otherwise link to a 404.
+    if (summary.removal === true && summary.status === 'applied') return null
     // A create carries a null documentId until it is applied, the same as a drafted skill.
     const documentId = applied.documentId ?? ref.documentId
     return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null

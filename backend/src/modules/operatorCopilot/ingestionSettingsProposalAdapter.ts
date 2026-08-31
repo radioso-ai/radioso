@@ -21,6 +21,12 @@ const readOrMissing = async <T>(read: Promise<T>): Promise<T | null> => {
   }
 };
 
+/** The card's own presentation fields are not settings, so a diff must not list them as changes. */
+const domainFields = (payload: CopilotIngestionSettingsPayload): Record<string, unknown> => {
+  const { name: _name, rationale: _rationale, summary: _summary, ...fields } = payload;
+  return fields;
+};
+
 const INGESTION_SETTINGS_LABEL = "Ingestion settings" as const;
 const TARGET_LABEL = INGESTION_SETTINGS_LABEL;
 
@@ -90,8 +96,8 @@ export const createIngestionSettingsCopilotProposalAdapter = (
     const settings = await readOrMissing(deps.ingestionSettings.getForWorkspace(workspaceId));
     return {
       targetLabel: TARGET_LABEL,
-      current: settings ? settled(settings) : null,
-      proposed: payload,
+      current: settings ? domainFields(settled(settings)) : null,
+      proposed: domainFields(payload),
     };
   },
 

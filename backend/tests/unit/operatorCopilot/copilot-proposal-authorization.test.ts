@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
+import { normalizeBaseUrl } from "../../../src/modules/websiteCrawler/public.js";
 
 import { notFound } from "../../../src/shared/domain/errors.js";
 
 import { copilotProposalPermissions } from "../../../src/modules/operatorCopilot/contracts.js";
+import { boundedSummary } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { presentProposalCard } from "../../../src/db/repositories/copilotRepository.js";
 import { OperatorCopilotService } from "../../../src/modules/operatorCopilot/service.js";
 import { createDocumentProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/documentProposals.js";
@@ -206,7 +208,7 @@ describe("live and reloaded cards state the same thing", () => {
   it("agrees for a website crawl", async () => {
     const { createProposal, deps } = recorder();
     const adapter = createWebsiteCrawlCopilotProposalAdapter({
-      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), enqueue: vi.fn() },
+      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), normalizeCrawlUrl: normalizeBaseUrl, enqueue: vi.fn() },
       workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
       crawlPolicy: () => ({ enabled: true, defaultLimit: 50, maxLimit: 200 }),
     });
@@ -273,7 +275,7 @@ describe("failure modes the adapters must tell apart", () => {
     const enqueue = vi.fn(async () => ({ jobId: "job-1", sourceId: "source-1" }));
     let policy = { enabled: true, defaultLimit: 50, maxLimit: 200 };
     const adapter = createWebsiteCrawlCopilotProposalAdapter({
-      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), enqueue },
+      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), normalizeCrawlUrl: normalizeBaseUrl, enqueue },
       workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
       crawlPolicy: () => policy,
     });
@@ -337,7 +339,7 @@ describe("a maximal draft still produces a storable card", () => {
   it("for a crawl of a long url narrowed by fifty long patterns", async () => {
     const { createProposal, deps } = recorder();
     const adapter = createWebsiteCrawlCopilotProposalAdapter({
-      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), enqueue: vi.fn() },
+      websiteCrawl: { assertCrawlUrlAllowed: vi.fn(async () => undefined), normalizeCrawlUrl: normalizeBaseUrl, enqueue: vi.fn() },
       workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
       crawlPolicy: () => ({ enabled: true, defaultLimit: 50, maxLimit: 1_000 }),
     });
@@ -378,5 +380,25 @@ describe("a maximal draft still produces a storable card", () => {
 
     const persisted = (createProposal.mock.calls[0]![0] as { payload: Record<string, unknown> }).payload;
     await expect(adapter.preview("workspace-1", { documentId: storedDocument.id }, persisted)).resolves.toBeDefined();
+  });
+});
+
+describe("the summary bound", () => {
+  it("never cuts a character in half", () => {
+    // A lone surrogate passes a length check and then makes Postgres reject the jsonb payload, so
+    // the clamp has to work in characters rather than UTF-16 units.
+    const clamped = boundedSummary("\u{1F600}".repeat(3_000));
+
+    expect(clamped.length).toBeLessThanOrEqual(2_000);
+    expect(JSON.stringify(clamped)).not.toMatch(/\\ud[89ab][0-9a-f]{2}(?!\\udc)/i);
+    expect([...clamped].every((character) => character === "\u{1F600}" || character === "\u2026")).toBe(true);
+  });
+
+  it("leaves a summary that already fits exactly as it was", () => {
+    expect(boundedSummary("Add the document \"Refund policy\".")).toBe("Add the document \"Refund policy\".");
+  });
+
+  it("never produces an empty summary, which the payload schema would reject", () => {
+    expect(boundedSummary("x".repeat(5_000)).trim().length).toBeGreaterThan(0);
   });
 });

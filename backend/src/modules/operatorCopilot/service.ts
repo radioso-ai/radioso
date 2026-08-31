@@ -5,6 +5,8 @@ import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   copilotProposalPermissions,
   copilotProposalTargetTypes,
+  withCopilotActor,
+  type CopilotActor,
   type CopilotPageContext,
   type CopilotEntityReference,
   type CopilotCurrentAuthorizationPort,
@@ -16,11 +18,13 @@ import {
   type CopilotProposalEvidenceSummary,
   type CopilotProposalStatus,
   type CopilotSseEvent,
+  type CopilotSurface,
   type CopilotToolDescriptor,
   type CopilotTurnOutcome,
   type CopilotWorkspaceRouteKeyResolver,
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
+import { COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT, createCopilotProbeBudget, meteredCopilotTool, type CopilotProbeBudget } from "./probeBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
 import { buildCopilotNeverListContext } from "./neverList.js";
 
@@ -115,11 +119,22 @@ export interface OperatorCopilotServiceDeps {
   /** Existing workspace authorization is mandatory for every protected Ray hook. */
   readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   readonly proposalAdapters?: ReadonlyArray<CopilotProposalAdapter>;
+  /** Probe calls one turn may spend; see {@link COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT}. */
+  readonly probeBudgetPerTurn?: number;
   readonly now?: () => Date;
 }
 
 export class OperatorCopilotService {
   constructor(private readonly deps: OperatorCopilotServiceDeps) {}
+
+  /**
+   * The only way this service writes audit. Taking the actor as a positional argument is what makes
+   * attribution structural rather than a convention a later call site can forget: there is no
+   * overload that omits it, so an event cannot be recorded without saying who acted and from where.
+   */
+  private async audit(actor: CopilotActor, event: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void> {
+    await this.deps.auditService.record({ ...event, metadata: withCopilotActor(actor, event.metadata) });
+  }
 
   async list(workspaceId: string, operatorUserId: string): Promise<ReadonlyArray<CopilotConversation>> {
     return this.deps.repository.listConversations({ workspaceId, operatorUserId });
@@ -149,7 +164,7 @@ export class OperatorCopilotService {
     return { proposal, preview, currentVersionMatches };
   }
 
-  async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
+  async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
     // The proposal is read before the claim because what an operator must hold to apply it depends
     // on what it changes, and only the stored row says which domain that is.
     const pending = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -193,7 +208,7 @@ export class OperatorCopilotService {
     return result.outcome === "failed" ? { status, reason: result.reason } : { status };
   }
 
-  async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: "dismissed" }> {
+  async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }): Promise<{ status: "dismissed" }> {
     const proposal = await this.requirePendingProposal(input);
     await this.updateProposalAndAudit(input, proposal, "dismissed", null, "copilot.proposal.dismissed", "success", "dismissed", { state: "free", claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
     return { status: "dismissed" };
@@ -203,6 +218,7 @@ export class OperatorCopilotService {
     workspaceId: string;
     accountId: string;
     operatorUserId: string;
+    surface: CopilotSurface;
     conversationId: string | null;
     message: string;
     pageContext: CopilotPageContext;
@@ -222,14 +238,17 @@ export class OperatorCopilotService {
     let terminalPersisted = false;
     const activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }> = [];
     const labels = new Map(this.deps.tools.map((tool) => [tool.name, tool.uiLabel]));
-    const tools = this.resolveTools({ ...input, copilotConversationId: conversation.id }, labels);
+    // One budget per turn, created here rather than per conversation: the operator reads the answer
+    // and decides whether more verification is worth another turn.
+    const probeBudget = createCopilotProbeBudget(this.deps.probeBudgetPerTurn ?? COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT);
+    const tools = this.resolveTools({ ...input, copilotConversationId: conversation.id }, probeBudget);
     const descriptors = new Map(this.deps.tools.map((tool) => [tool.name, tool]));
     const entitiesByToolCall = new Map<string, CopilotEntityReference>();
     const proposals: CopilotProposalCard[] = [];
     try {
       const priorTranscript = await this.buildPriorTranscript(conversation.id);
       await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
-      await this.deps.auditService.record({
+      await this.audit(input, {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: "copilot.turn.started",
@@ -330,10 +349,14 @@ export class OperatorCopilotService {
     return acquired;
   }
 
-  private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, labels: ReadonlyMap<string, string>): ReadonlyArray<AgentTool> {
+  private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, probeBudget: CopilotProbeBudget): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
-      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool);
+      .map((descriptor) => meteredCopilotTool(
+        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool,
+        descriptor.shape,
+        probeBudget,
+      ));
   }
 
   private async buildPriorTranscript(conversationId: string): Promise<string | null> {
@@ -354,8 +377,8 @@ export class OperatorCopilotService {
     if (proposals.length > 0) await this.deps.repository.attachProposalsToMessage({ proposalIds: proposals.map((proposal) => proposal.id), messageId: message.id, conversationId: conversation.id });
   }
 
-  private async recordTerminal(input: { workspaceId: string; accountId: string }, conversationId: string, turnId: string, outcome: CopilotTurnOutcome, startedAt: Date, completedAt: Date, activity: ReadonlyArray<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>): Promise<void> {
-    await this.deps.auditService.record({
+  private async recordTerminal(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface }, conversationId: string, turnId: string, outcome: CopilotTurnOutcome, startedAt: Date, completedAt: Date, activity: ReadonlyArray<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>): Promise<void> {
+    await this.audit(input, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: outcome === "failed" ? "copilot.turn.failed" : "copilot.turn.completed",
@@ -374,9 +397,9 @@ export class OperatorCopilotService {
     return this.deps.currentAuthorization.hasAllPermissions({ ...input, requiredPermissions: [...copilotProposalPermissions[targetType]] });
   }
 
-  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }, targetType: CopilotProposalTargetType): Promise<void> {
+  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; proposalId: string }, targetType: CopilotProposalTargetType): Promise<void> {
     if (await this.canManageProposal(input, targetType)) return;
-    await this.deps.auditService.record({
+    await this.audit(input, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "copilot.proposal.apply_denied",
@@ -393,10 +416,10 @@ export class OperatorCopilotService {
     return proposal;
   }
 
-  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {
+  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {
     const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, applyClaimGuard });
     if (!updated) throw new CopilotConflictError();
-    await this.deps.auditService.record({ accountId: input.accountId, workspaceId: input.workspaceId, eventType, eventStatus, metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome } });
+    await this.audit(input, { accountId: input.accountId, workspaceId: input.workspaceId, eventType, eventStatus, metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome } });
   }
 }
 

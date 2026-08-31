@@ -60,6 +60,8 @@ const createEnv = (): Env => ({
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS: 60_000,
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
+  COPILOT_PROBE_BUDGET_PER_TURN: 3,
+  COPILOT_CONVERSATION_RETENTION_DAYS: 90,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
@@ -151,6 +153,10 @@ const createDependencies = () =>
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
+    },
+    copilotRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
     },
     actionDispatchWorker: {
       start: vi.fn(),
@@ -259,6 +265,7 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
@@ -267,6 +274,7 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
@@ -522,6 +530,9 @@ describe("runtime startup", () => {
       },
       facetExtractionWorker: {
         route: "POST /internal/tasks/document-processing/recover",
+      },
+      copilotRetentionWorker: {
+        route: "POST /internal/tasks/copilot-retention/sweep",
       },
     };
 

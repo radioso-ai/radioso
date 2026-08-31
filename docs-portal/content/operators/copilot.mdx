@@ -461,6 +461,28 @@ dashboard session, so workspace API bearer tokens cannot start a Ray turn.
 When the workspace has no resolved LLM capability, Ray shows a provider
 setup state with a link to **Settings → Providers**.
 
+A Ray conversation is kept for 90 days after its last message, then removed
+along with its messages and proposals. Threads you want to keep past that are
+worth summarizing somewhere durable — a spec, an issue, or the rationale field
+on the change you applied. Your operator can change the window with
+`COPILOT_CONVERSATION_RETENTION_DAYS`.
+
+Every change Ray makes is recorded with the operator who applied it and the
+surface they applied it from, so a configuration change that surprises someone
+can be traced back to the person and the session that made it.
+
+## Budget for verification
+
+Testing a turn, replaying a case, and running a suite each cost a real model
+call — that is what makes their evidence worth anything. Ray spends at most
+three of them in one turn. Past that it stops, answers with what it measured,
+and asks you to send another turn.
+
+In practice this shapes how to ask. "Replay the three refund cases and tell me
+which regressed" fits in one turn. "Replay everything in the library" does not,
+and Ray will get part of the way and stop. Ask for the cases the change should
+have moved, read the result, then ask for the next batch.
+
 ## Common failure modes
 
 - **The Ray entry is missing** — your session does not hold
@@ -496,6 +518,14 @@ setup state with a link to **Settings → Providers**.
 - **A suite run is refused as too large** — one request runs at most five
   cases. Ask for the cases the change should have moved, then run the rest in a
   second request.
+- **Ray stops verifying mid-answer** — the turn spent its budget of three
+  verification runs. Read what it measured, then send a second turn for the
+  rest.
+- **Verification is rate limited** — too many test turns, replays, or suite
+  runs in a short window. Ray says how long to wait and answers from what it
+  already has.
+- **A Ray conversation is gone** — it passed the 90-day retention window.
+  Deleted conversations are not recoverable.
 - **A test conversation cannot be continued** — start a fresh test from the
   current Ray thread. Probe conversations are scoped to the Ray thread,
   operator, workspace, and agent that created them.

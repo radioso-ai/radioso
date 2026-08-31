@@ -414,6 +414,16 @@ Authenticated assistant chat and retrieval answer/search routes share a durable 
 
 The limit is scoped by account and workspace for browser sessions. Workspace API tokens get separate token-specific buckets within the same account and workspace.
 
+### Ray verification limits
+
+Ray's verification tools spend real model budget on every call: a test turn runs the agent for real, a case replay re-runs a recorded turn, and a suite run does that once per case. One Ray turn may spend three of them, tunable with `COPILOT_PROBE_BUDGET_PER_TURN`. When the budget runs out, Ray answers with what it already measured and tells you to send another turn.
+
+Each replayed turn also counts against the same answer meter a live customer turn does, so a suite run of five cases is charged as five answers.
+
+### Ray conversation retention
+
+Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule rather than accumulating forever. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely. The sweep runs in the document worker, so the worker process has to be running for retention to happen.
+
 ### Audience Pulse refresh limits
 
 Audience Pulse is an on-demand dashboard analysis, so loading a saved report does not consume its refresh budget. Each account and workspace can make three explicit refresh attempts every 15 minutes.

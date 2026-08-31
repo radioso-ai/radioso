@@ -616,8 +616,15 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain("schedule = local.document_worker_recovery_schedule");
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "crawler_worker_recovery"');
     expect(schedulerTf).toContain("schedule = local.crawler_worker_recovery_schedule");
-    expect((schedulerTf.match(/"X-Radioso-Worker-Token"\s+=\s+random_password\.worker_task_auth_token\.result/g) ?? [])).toHaveLength(3);
-    expect((schedulerTf.match(/oidc_token \{/g) ?? [])).toHaveLength(3);
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "copilot_retention"');
+    expect(schedulerTf).toContain("schedule = local.copilot_retention_schedule");
+    // Counted against the jobs actually declared rather than a fixed number: the invariant is
+    // that EVERY scheduled push authenticates, and a hardcoded count silently stops checking the
+    // job that pushed it past the number.
+    const schedulerJobCount = (schedulerTf.match(/resource "google_cloud_scheduler_job"/g) ?? []).length;
+    expect(schedulerJobCount).toBeGreaterThanOrEqual(4);
+    expect((schedulerTf.match(/"X-Radioso-Worker-Token"\s+=\s+random_password\.worker_task_auth_token\.result/g) ?? [])).toHaveLength(schedulerJobCount);
+    expect((schedulerTf.match(/oidc_token \{/g) ?? [])).toHaveLength(schedulerJobCount);
     expect(databaseTf).toContain('resource "random_password" "worker_task_auth_token"');
     expect(databaseTf).toMatch(/resource "random_password" "worker_task_auth_token" \{[\s\S]*?length\s+=\s+(?:3[2-9]|[4-9]\d|\d{3,})/);
     expect(secretsTf).toMatch(/"worker-task-auth-token"\s+=\s+random_password\.worker_task_auth_token\.result/);

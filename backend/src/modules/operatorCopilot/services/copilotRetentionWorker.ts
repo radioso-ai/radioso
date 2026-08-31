@@ -1,0 +1,129 @@
+import type { CopilotExpensiveOperationAuditPort } from "../contracts/expensiveOperation.js";
+
+/**
+ * How long a copilot conversation is kept after its last activity.
+ *
+ * Ray's transcripts are more sensitive than customer chat, not less: they are *about* the
+ * workspace's configuration rather than an instance of it, and they quote conversation excerpts,
+ * document titles, and settings along the way. Long enough that an operator can still find last
+ * quarter's investigation; short enough that the store is not an indefinite archive.
+ */
+export const COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT = 90;
+
+/** Rows removed per statement, so a large backlog drains without one table-wide delete. */
+export const COPILOT_RETENTION_BATCH_SIZE_DEFAULT = 200;
+
+const SWEEP_INTERVAL_MS_DEFAULT = 6 * 60 * 60 * 1_000;
+/** Caps one tick's work so a huge first sweep cannot monopolise the worker. */
+const MAX_BATCHES_PER_SWEEP = 25;
+
+/**
+ * Narrow port for the sweep alone: unlike every other copilot read, retention is not scoped to a
+ * workspace or an operator, so it deliberately does not travel on `CopilotRepositoryPort`.
+ */
+export interface CopilotRetentionPort {
+  /** Deletes at most `limit` conversations last active before `cutoff`; returns how many went. */
+  deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number>;
+}
+
+export interface CopilotRetentionLoggerPort {
+  info(payload: Record<string, unknown>, message: string): void;
+  warn(payload: Record<string, unknown>, message: string): void;
+  error(payload: Record<string, unknown>, message: string): void;
+}
+
+export interface CopilotRetentionWorkerOptions {
+  readonly retention: CopilotRetentionPort;
+  readonly audit: CopilotExpensiveOperationAuditPort;
+  readonly logger: CopilotRetentionLoggerPort;
+  readonly retentionDays: number;
+  readonly batchSize?: number;
+  readonly intervalMs?: number;
+  readonly now?: () => Date;
+}
+
+/**
+ * Enforces the copilot conversation retention window on a timer in the worker process.
+ *
+ * Messages, proposals, and replay evidence all cascade from the conversation row, so deleting the
+ * conversation is the whole policy — there is no second table to keep in step.
+ */
+export class CopilotRetentionWorker {
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private sweeping = false;
+
+  constructor(private readonly options: CopilotRetentionWorkerOptions) {}
+
+  get enabled(): boolean {
+    return this.options.retentionDays > 0;
+  }
+
+  start(): void {
+    if (this.timer) return;
+    if (!this.enabled) {
+      // Said once, at startup: an operator who turned retention off should be able to see that in
+      // the log rather than infer it from conversations that never disappear.
+      this.options.logger.warn({}, "Copilot conversation retention is disabled");
+      return;
+    }
+    this.options.logger.info(
+      { retentionDays: this.options.retentionDays },
+      "Copilot conversation retention enabled",
+    );
+    this.timer = setInterval(() => {
+      void this.sweep();
+    }, this.options.intervalMs ?? SWEEP_INTERVAL_MS_DEFAULT);
+  }
+
+  async stop(): Promise<void> {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /**
+   * Runs one sweep. Returns `null` when retention is off, a sweep is already in flight, or the
+   * sweep threw — the error is logged and the timer keeps its cadence, because a transient
+   * deadlock must not silently end retention for the life of the process.
+   */
+  async sweep(): Promise<{ deleted: number } | null> {
+    if (!this.enabled || this.sweeping) return null;
+    this.sweeping = true;
+    try {
+      const batchSize = this.options.batchSize ?? COPILOT_RETENTION_BATCH_SIZE_DEFAULT;
+      const cutoff = new Date(
+        (this.options.now ?? (() => new Date()))().getTime() - this.options.retentionDays * 24 * 60 * 60 * 1_000,
+      );
+      let deleted = 0;
+      for (let batch = 0; batch < MAX_BATCHES_PER_SWEEP; batch += 1) {
+        const removed = await this.options.retention.deleteConversationsUpdatedBefore({ cutoff, limit: batchSize });
+        deleted += removed;
+        if (removed < batchSize) break;
+      }
+      if (deleted > 0) await this.report(deleted, cutoff);
+      return { deleted };
+    } catch (error) {
+      this.options.logger.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        "Copilot conversation retention sweep failed",
+      );
+      return null;
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  /**
+   * Only a sweep that removed something is recorded. A quiet tick every few hours would bury the
+   * events that answer "where did this conversation go" under events that answer nothing.
+   */
+  private async report(deleted: number, cutoff: Date): Promise<void> {
+    this.options.logger.info({ deleted, retentionDays: this.options.retentionDays }, "Copilot conversation retention swept");
+    await this.options.audit.record({
+      eventType: "copilot.retention.enforced",
+      eventStatus: "success",
+      metadata: { deleted, retentionDays: this.options.retentionDays, cutoff: cutoff.toISOString() },
+    }).catch(() => undefined);
+  }
+}

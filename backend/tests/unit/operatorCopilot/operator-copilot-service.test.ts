@@ -48,7 +48,7 @@ describe("OperatorCopilotService", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Investigate", pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+    for await (const event of service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Investigate", pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
 
     expect(events).toEqual([
       { event: "conversation", data: { conversationId: expect.any(String), turnId: expect.any(String) } },
@@ -82,7 +82,7 @@ describe("OperatorCopilotService", () => {
       now: () => now,
     });
     const turn = (conversationId: string | null, message: string) =>
-      service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId, message, pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set() });
+      service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId, message, pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set() });
 
     const firstEvents = [];
     for await (const event of turn(null, "Check conversation abc")) firstEvents.push(event);
@@ -118,7 +118,7 @@ describe("OperatorCopilotService", () => {
       now: () => now,
     });
 
-    for await (const _event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Delete the workspace", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set() })) void _event;
+    for await (const _event of service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Delete the workspace", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set() })) void _event;
 
     expect(resolveWorkspaceKey).toHaveBeenCalledWith("workspace");
     expect(runStreaming.mock.calls[0][0].systemPrompt).toContain("workspace_delete");
@@ -155,7 +155,7 @@ describe("OperatorCopilotService", () => {
 
     const events = [];
     for await (const event of service.runTurn({
-      workspaceId: "workspace",
+      surface: "dashboard", workspaceId: "workspace",
       accountId: "account",
       operatorUserId: "operator",
       conversationId: null,
@@ -209,7 +209,7 @@ describe("OperatorCopilotService", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Explain this", pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+    for await (const event of service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Explain this", pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
 
     expect(events.filter((event) => event.event === "activity").every((event) => !("entity" in (event.data as Record<string, unknown>)))).toBe(true);
     expect(authorization).toHaveBeenCalledTimes(2);
@@ -247,7 +247,7 @@ describe("OperatorCopilotService", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Check Support", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+    for await (const event of service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Check Support", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
 
     expect(events).toContainEqual({ event: "outcome", data: { status: "completed" } });
     expect(repository.messages.at(-1)).toMatchObject({ outcome: "completed" });
@@ -289,7 +289,7 @@ describe("OperatorCopilotService", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Remove the competitor directive", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+    for await (const event of service.runTurn({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Remove the competitor directive", pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
 
     expect(events).toContainEqual({
       event: "proposal",
@@ -347,7 +347,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     await repository.claimProposalApply({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator", claimTtlSeconds: 300 });
     const service = buildService(repository, vi.fn());
 
-    await expect(service.applyProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id }))
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id }))
       .rejects.toBeInstanceOf(CopilotConflictError);
   });
 
@@ -363,7 +363,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { agentId: "agent-1" } }));
     const service = buildService(repository, applyIfVersionMatches);
 
-    const result = await service.applyProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id });
+    const result = await service.applyProposal({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id });
 
     expect(result).toEqual({ status: "applied", appliedRef: { agentId: "agent-1" } });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
@@ -382,7 +382,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     const applyIfVersionMatches = vi.fn(async () => ({ outcome: "stale" as const }));
     const service = buildService(repository, applyIfVersionMatches);
 
-    const result = await service.applyProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id });
+    const result = await service.applyProposal({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id });
 
     expect(result).toEqual({ status: "stale" });
     expect((await repository.findProposal({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator" }))?.status).toBe("stale");
@@ -394,7 +394,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     await repository.claimProposalApply({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator", claimTtlSeconds: 300 });
     const service = buildService(repository, vi.fn());
 
-    await expect(service.dismissProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id }))
+    await expect(service.dismissProposal({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id }))
       .rejects.toBeInstanceOf(CopilotConflictError);
   });
 
@@ -405,7 +405,7 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     vi.setSystemTime(new Date(Date.now() + CLAIM_TTL_MS + 1_000));
     const service = buildService(repository, vi.fn());
 
-    const result = await service.dismissProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id });
+    const result = await service.dismissProposal({ surface: "dashboard", workspaceId: "workspace", accountId: "account", operatorUserId: "operator", proposalId: proposal.id });
 
     expect(result).toEqual({ status: "dismissed" });
     expect((await repository.findProposal({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator" }))?.status).toBe("dismissed");

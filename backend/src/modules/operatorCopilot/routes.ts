@@ -15,6 +15,12 @@ import type { AccountPermission } from "../account/public.js";
 import type { OperatorCopilotService } from "./public.js";
 import { hasAllCopilotToolPermissions } from "./catalog.js";
 
+/**
+ * These routes are the dashboard panel and nothing else — they reject bearer auth and require a
+ * workspace session. A second transport declares its own surface rather than reusing this one.
+ */
+const DASHBOARD_SURFACE = "dashboard" as const;
+
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
 /**
@@ -111,7 +117,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);
-      res.status(200).json(await dependencies.operatorCopilotService.applyProposal({ workspaceId, accountId, operatorUserId: userId, proposalId }));
+      res.status(200).json(await dependencies.operatorCopilotService.applyProposal({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, proposalId }));
     } catch (error) {
       if (error instanceof CopilotAuthorizationError) { next(forbidden()); return; }
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
@@ -123,7 +129,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);
-      res.status(200).json(await dependencies.operatorCopilotService.dismissProposal({ workspaceId, accountId, operatorUserId: userId, proposalId }));
+      res.status(200).json(await dependencies.operatorCopilotService.dismissProposal({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, proposalId }));
     } catch (error) {
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
       if (error instanceof CopilotNotFoundError) { next(notFound("Copilot proposal not found")); return; }
@@ -138,7 +144,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       for (const permission of resolvableToolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) resolvedPermissions.add(permission);
       const permissions = new Set(resolvableToolPermissions.filter((permission) =>
         hasAllCopilotToolPermissions([permission], resolvedPermissions)));
-      await sendCopilotSse(res, dependencies.operatorCopilotService.runTurn({ workspaceId, accountId, operatorUserId: userId, conversationId: req.body.conversationId, message: req.body.message, pageContext: req.body.pageContext, permissions }));
+      await sendCopilotSse(res, dependencies.operatorCopilotService.runTurn({ workspaceId, accountId, operatorUserId: userId, surface: DASHBOARD_SURFACE, conversationId: req.body.conversationId, message: req.body.message, pageContext: req.body.pageContext, permissions }));
     } catch (error) {
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
       if (error instanceof CopilotNotFoundError) { next(notFound("Copilot conversation not found")); return; }

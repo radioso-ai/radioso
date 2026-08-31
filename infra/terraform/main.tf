@@ -30,6 +30,13 @@ locals {
     var.action_dispatch_recovery_schedule,
     "*/5 * * * *",
   )
+  # Daily is the right cadence for a retention window measured in months: the sweep is the only
+  # trigger retention has under the task runtime, and a day of lateness on a 90-day window is
+  # immaterial next to the cost of scanning for expired rows every few minutes.
+  copilot_retention_schedule = coalesce(
+    var.copilot_retention_schedule,
+    "30 4 * * *",
+  )
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

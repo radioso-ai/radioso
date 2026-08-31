@@ -7,6 +7,7 @@ import type {
   CopilotProposalApplyClaimGuard,
   CopilotProposalClaim,
   CopilotRepositoryPort,
+  CopilotRetentionPort,
 } from "../../src/modules/operatorCopilot/public.js";
 
 /**
@@ -14,7 +15,7 @@ import type {
  * app, the service unit tests, and the Ray eval suite. The collections are public so a test can
  * assert on what a turn persisted without going through the port.
  */
-export class InMemoryCopilotRepository implements CopilotRepositoryPort {
+export class InMemoryCopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
@@ -22,6 +23,19 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
   // (only claiming/finalizing needs it), the same narrowing the real repository does by not
   // including the column in `proposalColumns`.
   private readonly applyClaims = new Map<string, Date>();
+
+  /** Mirrors the real sweep, including the cascade the FKs perform on the owning conversation. */
+  async deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
+    const expired = this.conversations
+      .filter((conversation) => conversation.updatedAt < input.cutoff)
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .slice(0, input.limit);
+    const ids = new Set(expired.map((conversation) => conversation.id));
+    this.conversations = this.conversations.filter((conversation) => !ids.has(conversation.id));
+    this.messages = this.messages.filter((message) => !ids.has(message.conversationId));
+    this.proposals = this.proposals.filter((proposal) => !ids.has(proposal.conversationId));
+    return ids.size;
+  }
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
     const timestamp = new Date();

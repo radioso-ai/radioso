@@ -95,7 +95,7 @@ describe("US3 copilot proposals", () => {
 
     const events = [];
     for await (const event of service.runTurn({
-      workspaceId,
+      surface: "dashboard", workspaceId,
       accountId,
       operatorUserId,
       conversationId: conversation.id,
@@ -157,7 +157,7 @@ describe("US3 copilot proposals", () => {
 
     const events = [];
     for await (const event of service.runTurn({
-      workspaceId,
+      surface: "dashboard", workspaceId,
       accountId,
       operatorUserId,
       conversationId: conversation.id,
@@ -487,7 +487,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "new"), preview: vi.fn(), applyIfVersionMatches }],
     });
 
-    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "stale" });
+    expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "stale" });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("stale");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "stale" }) }));
@@ -510,12 +510,12 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
     });
 
-    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
     expect(applyIfVersionMatches).not.toHaveBeenCalled();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.proposal.apply_denied",
-      metadata: { proposalId: proposal.id, outcome: "authorization_denied" },
+      metadata: { proposalId: proposal.id, outcome: "authorization_denied", operatorUserId, surface: "dashboard" },
     }));
   });
 
@@ -535,11 +535,11 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
     });
 
-    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
       .rejects.toBeInstanceOf(CopilotAuthorizationError);
     expect(repository.hasApplyClaim(proposal.id)).toBe(false);
 
-    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
       .resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
@@ -560,7 +560,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => { throw new Error("target unavailable"); }) }],
     });
 
-    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed" });
+    expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed" });
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("failed");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "failed" }) }));
   });
@@ -582,7 +582,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
     });
 
-    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed", reason: "Directive validation failed." });
+    expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed", reason: "Directive validation failed." });
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.reason).toBe("Directive validation failed.");
     expect((await repository.listMessages({ conversationId: "conversation-1" }))[0]?.proposals?.[0]?.reason).toBe("Directive validation failed.");
   });
@@ -605,7 +605,7 @@ describe("US3 copilot proposals", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId, accountId, operatorUserId, conversationId: conversation.id, message: "Draft it", pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.manage"]) })) events.push(event);
+    for await (const event of service.runTurn({ surface: "dashboard", workspaceId, accountId, operatorUserId, conversationId: conversation.id, message: "Draft it", pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.manage"]) })) events.push(event);
 
     expect(events).toContainEqual({ event: "proposal", data: { proposalId: proposal.id, targetType: "routine", targetLabel: "Return intake", summary: "Draft routine" } });
   });

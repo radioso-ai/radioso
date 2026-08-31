@@ -5480,6 +5480,13 @@ CREATE INDEX copilot_conversations_operator_updated_idx ON public.copilot_conver
 
 
 --
+-- Name: copilot_conversations_updated_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_conversations_updated_at_idx ON public.copilot_conversations USING btree (updated_at);
+
+
+--
 -- Name: copilot_messages_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 

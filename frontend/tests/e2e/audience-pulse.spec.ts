@@ -507,8 +507,11 @@ test.describe("Audience Pulse dashboard", () => {
     });
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
-    // Expand the theme card to reveal evidence questions.
-    await page.getByRole("button", { name: "Show questions" }).first().click();
+    // Expand the topic row to reveal its description and bounded examples.
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await topicRow.getByRole("button", { name: /Show examples/ }).click();
+    await expect(topicRow.getByText(completedReport.themes[0].description)).toBeVisible();
+    await expect(topicRow.getByText("Examples · 2 of 30 questions")).toBeVisible();
     await page.getByRole("button", { name: "How long until I get my refund after returning?" }).click();
 
     await expect(page).toHaveURL(/\/activity\?tab=all$/);
@@ -565,7 +568,7 @@ test.describe("Audience Pulse dashboard", () => {
       .toBeNull();
   });
 
-  test("collapsed topic card shows the exact member count and its share of the window when it exceeds distinct questions", async ({ page }) => {
+  test("collapsed topic row shows the exact member count and its share of the window", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -593,12 +596,76 @@ test.describe("Audience Pulse dashboard", () => {
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
-    // Collapsed card shows the distinct question count plus the exact census member count and its share.
-    await expect(page.getByText(/3 questions · asked 24× \(10% of window\)/)).toBeVisible();
+    // Collapsed row shows the exact census member count and its share of the window.
+    await expect(page.getByText(/asked 24× · 10% of questions/)).toBeVisible();
 
     // Expanding reveals per-evidence occurrence count.
-    await page.getByRole("button", { name: "Show questions" }).first().click();
+    await page.getByTestId("audience-pulse-topic-row").first()
+      .getByRole("button", { name: /Show examples/ }).click();
     await expect(page.getByText(/asked 3×/)).toBeVisible();
+  });
+
+  test("content-gap evidence counts stay visible when the gap has no recommendation", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const gapWithoutRecommendationReport = {
+      ...completedReport,
+      recommendations: [],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ kind: "completed", report: gapWithoutRecommendationReport }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicRow = page.getByTestId("audience-pulse-topic-row").first();
+    await expect(topicRow.getByText("asked 6× in 4 conversations", { exact: true })).toBeVisible();
+    await expect(page.getByText("Explain refund timelines end-to-end")).toHaveCount(0);
+  });
+
+  test("topic sparkline announces every weekly value when the trend is non-monotonic", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const nonMonotonicReport = {
+      ...completedReport,
+      themes: [{
+        ...completedReport.themes[0],
+        weeklyPulse: [
+          { weekStart: "2026-04-01T00:00:00.000Z", count: 2 },
+          { weekStart: "2026-04-08T00:00:00.000Z", count: 100 },
+          { weekStart: "2026-04-15T00:00:00.000Z", count: 2 },
+        ],
+      }],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ kind: "completed", report: nonMonotonicReport }),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    const topicToggle = page.getByTestId("audience-pulse-topic-row").first()
+      .getByRole("button", { name: /Show examples/ });
+    await expect(topicToggle).toHaveAccessibleName(/Weekly questions by week: 2, 100, 2\./);
   });
 
   test("ungrouped majority notice appears when most questions were not grouped into a topic", async ({ page }) => {
@@ -707,7 +774,7 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(page.getByText(/Most questions weren/)).toBeVisible();
   });
 
-  test("expanding a topic whose grounding is entirely unknown does not render the grounding-summary strip", async ({ page }) => {
+  test("expanding a topic whose grounding is entirely unknown still renders the grounding-summary strip", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -728,8 +795,11 @@ test.describe("Audience Pulse dashboard", () => {
     });
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
-    await page.getByRole("button", { name: "Show questions" }).first().click();
-    await expect(page.getByLabel("Grounding summary")).toHaveCount(0);
+    await page.getByTestId("audience-pulse-topic-row").first()
+      .getByRole("button", { name: /Show examples/ }).click();
+    const groundingSummary = page.getByLabel("Grounding summary");
+    await expect(groundingSummary).toBeVisible();
+    await expect(groundingSummary.getByText("Not recorded")).toBeVisible();
   });
 
   test("a seed keyed to a different workspace is discarded and never leaks into the composer", async ({ page }) => {

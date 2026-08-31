@@ -868,6 +868,7 @@ Public surfaces and contracts:
 - `frontend/components/dashboard/audience-pulse-view.tsx`
 - `frontend/lib/api-audience-pulse.ts`
 - `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
+- `frontend/lib/audience-pulse-topic-viz.ts` (pure share-bar and sparkline math for the topic rows)
 
 Primary internals:
 

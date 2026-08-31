@@ -22,6 +22,8 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: {},
       operatorCopilotService: {},
       copilotToolCatalog: [],
+      abuseControlService: { enforce: vi.fn(async () => {}) },
+      auditService: { record: vi.fn(async () => {}) },
     } as never);
 
     const paths = router.stack
@@ -58,6 +60,8 @@ describe("createCopilotRoutes", () => {
       },
       operatorCopilotService: {},
       copilotToolCatalog: [],
+      abuseControlService: { enforce: vi.fn(async () => {}) },
+      auditService: { record: vi.fn(async () => {}) },
     } as never));
 
     const response = await request(app)
@@ -151,6 +155,8 @@ describe("createCopilotRoutes", () => {
         runTurn: async function* () { throw new CopilotConflictError(); },
       },
       copilotToolCatalog: [],
+      abuseControlService: { enforce: vi.fn(async () => {}) },
+      auditService: { record: vi.fn(async () => {}) },
     } as never));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error as { statusCode?: number; code?: string };
@@ -202,6 +208,8 @@ describe("createCopilotRoutes", () => {
       llmCapabilityResolver: { async resolve() { return {}; } },
       operatorCopilotService: { runTurn },
       copilotToolCatalog: [{ requiredPermissions: ["workspace.token.read"] }],
+      abuseControlService: { enforce: vi.fn(async () => {}) },
+      auditService: { record: vi.fn(async () => {}) },
     } as never));
     app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       const appError = error as { statusCode?: number; code?: string };
@@ -219,5 +227,84 @@ describe("createCopilotRoutes", () => {
 
     expect(hasPermission.mock.calls.map(([input]) => input.permission)).toContain("workspace.token.read");
     expect([...runTurn.mock.calls[0]![0].permissions]).toContain("workspace.token.read");
+  });
+});
+
+describe("copilot turn rate limit", () => {
+  const buildApp = (input: { enforce: ReturnType<typeof vi.fn>; record?: ReturnType<typeof vi.fn> }) => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries(
+        (req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter(
+          (part): part is [string, string] => part.length === 2,
+        ),
+      );
+      next();
+    });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: {
+        SESSION_COOKIE_NAME: "radioso_session",
+        EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
+        EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS: 60_000,
+      },
+      authService: {
+        async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; },
+      },
+      workspaceSessionService: {
+        async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; },
+      },
+      accountAccessService: {
+        async requireActiveMembership() {},
+        async requirePermission() {},
+        hasPermission: vi.fn(async () => true),
+      },
+      llmCapabilityResolver: { async resolve() { return {}; } },
+      operatorCopilotService: { runTurn: async function* () { throw new CopilotConflictError(); } },
+      copilotToolCatalog: [],
+      abuseControlService: { enforce: input.enforce },
+      auditService: { record: input.record ?? vi.fn(async () => {}) },
+    } as never));
+    app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const appError = error as { statusCode?: number; code?: string };
+      res.status(appError.statusCode ?? 500).json({ error: { code: appError.code ?? "internal_error" } });
+    });
+    return app;
+  };
+
+  const postTurn = (app: express.Express) => request(app)
+    .post("/api/v1/copilot/turns")
+    .set("Cookie", "radioso_session=valid-session")
+    .send({
+      message: "Audit my whole workspace",
+      pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] },
+    });
+
+  it("spends the operator's own budget, so one operator's loop cannot exhaust a colleague's", async () => {
+    const enforce = vi.fn(async () => {});
+    const app = buildApp({ enforce });
+
+    await postTurn(app);
+
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "api.copilot_turn",
+      subjectKey: `account:${ACCOUNT_ID}:workspace:${WORKSPACE_ID}:operator:${USER_ID}`,
+    }));
+  });
+
+  it("refuses the turn once the budget is gone", async () => {
+    const enforce = vi.fn(async () => {
+      throw Object.assign(new Error("Rate limit exceeded"), { statusCode: 429, code: "rate_limit_exceeded" });
+    });
+    const record = vi.fn(async () => {});
+    const app = buildApp({ enforce, record });
+
+    const response = await postTurn(app);
+
+    expect(response.status).toBe(429);
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "security.rate_limit_enforced",
+      metadata: expect.objectContaining({ scope: "api.copilot_turn", operatorUserId: USER_ID }),
+    }));
   });
 });

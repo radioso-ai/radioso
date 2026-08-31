@@ -54,7 +54,7 @@ const serviceFor = (proposal = proposalRow(), holds: ReadonlyArray<string> = [])
   return { service, applyIfVersionMatches, hasAllPermissions, record };
 };
 
-const applyInput = { workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" };
+const applyInput = { workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", surface: "dashboard" as const, proposalId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee" };
 
 describe("proposal authorization by target type", () => {
   it("names a required permission for every proposal target type", () => {

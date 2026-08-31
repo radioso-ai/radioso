@@ -222,6 +222,19 @@ export interface CopilotProposalAdapter {
     | { outcome: "stale" }
     | { outcome: "failed"; reason: string }
   >;
+  /**
+   * Whether applying this proposal again is safe after an earlier attempt was interrupted — a
+   * process that died between the effect and recording it leaves a claim nothing ever resolves,
+   * and the claim's TTL exists so an operator is not stuck with a card they can neither apply nor
+   * dismiss.
+   *
+   * Answered by whether this target's version token can tell the two crash windows apart. A token
+   * read from the world can: after a successful first attempt the target has moved, so the retry
+   * comes back `stale`. A token that is a constant cannot, because a create addresses no stored
+   * row — retrying it would ingest a second document or start a second crawl. Absent means
+   * retryable, which is right for every adapter whose target always addresses an existing row.
+   */
+  canRetryAfterInterruptedApply?(targetRef: unknown, payload: unknown): boolean;
 }
 
 export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter {

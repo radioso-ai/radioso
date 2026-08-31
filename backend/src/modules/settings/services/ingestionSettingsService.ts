@@ -136,6 +136,7 @@ export class IngestionSettingsService {
   async updateForWorkspace(
     workspaceId: string,
     input: IngestionSettingsWriteInput,
+    options?: { expectedUpdatedAt?: Date },
   ): Promise<IngestionSettingsRecord> {
     try {
       const existing = await this.findSettingsSnapshot(workspaceId);
@@ -170,6 +171,7 @@ export class IngestionSettingsService {
           ...input,
           ...embeddingTransition,
         }, embeddingTransition.embeddingModel),
+        options,
       );
       try {
         await this.auditService.record({

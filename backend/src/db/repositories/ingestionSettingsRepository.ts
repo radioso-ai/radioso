@@ -5,7 +5,8 @@ import {
   type ValidatedIngestionSettingsInput,
 } from "../../modules/settings/contracts/ingestion.js";
 import type { IngestionSettingsRepositoryPort } from "../../modules/settings/contracts/services.js";
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import { conflict } from "../../shared/domain/errors.js";
+import { currentTimestamp, optionalTimestampMatch } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface IngestionSettingsRow {
@@ -59,6 +60,20 @@ const ingestionSettingsColumns = [
   "updated_at",
 ] as const;
 
+/** The stored column form of a settings input, shared by the insert and the conditional update. */
+const settingsColumnValues = (input: ValidatedIngestionSettingsInput) => ({
+  chunking_strategy: input.chunkingStrategy,
+  fixed_window_chunk_size: input.fixedWindowChunkSize,
+  fixed_window_chunk_overlap: input.fixedWindowChunkOverlap,
+  structured_min_chunk_size: input.structuredMinChunkSize,
+  structured_max_chunk_size: input.structuredMaxChunkSize,
+  embedding_model: input.embeddingModel,
+  pending_embedding_model: input.pendingEmbeddingModel,
+  document_enrichment_enabled: input.documentEnrichmentEnabled,
+  manual_document_enrichment_override:
+    input.manualDocumentEnrichmentOverride ?? MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT,
+});
+
 export class IngestionSettingsRepository implements IngestionSettingsRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -91,21 +106,37 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
     };
   }
 
-  async upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord> {
+  async upsert(
+    workspaceId: string,
+    input: ValidatedIngestionSettingsInput,
+    options?: { expectedUpdatedAt?: Date },
+  ): Promise<IngestionSettingsRecord> {
+    // A caller that read a row before deciding gets a conditional update, not an upsert: the
+    // insert branch would write over the absence of the row whose version it claimed to know.
+    if (options?.expectedUpdatedAt) {
+      const expectedUpdatedAt = options.expectedUpdatedAt;
+      const updated = await this.db
+        .updateTable("ingestion_settings")
+        .set((eb) => ({
+          ...settingsColumnValues(input),
+          revision: eb("revision", "+", "1"),
+          updated_at: currentTimestamp(),
+        }))
+        .where("workspace_id", "=", workspaceId)
+        .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), expectedUpdatedAt))
+        .returning(ingestionSettingsColumns)
+        .executeTakeFirst();
+      if (!updated) {
+        throw conflict("Ingestion settings were updated by another writer; reload before saving again");
+      }
+      return mapSettings(updated as IngestionSettingsRow);
+    }
+
     const row = await this.db
       .insertInto("ingestion_settings")
       .values({
         workspace_id: workspaceId,
-        chunking_strategy: input.chunkingStrategy,
-        fixed_window_chunk_size: input.fixedWindowChunkSize,
-        fixed_window_chunk_overlap: input.fixedWindowChunkOverlap,
-        structured_min_chunk_size: input.structuredMinChunkSize,
-        structured_max_chunk_size: input.structuredMaxChunkSize,
-        embedding_model: input.embeddingModel,
-        pending_embedding_model: input.pendingEmbeddingModel,
-        document_enrichment_enabled: input.documentEnrichmentEnabled,
-        manual_document_enrichment_override:
-          input.manualDocumentEnrichmentOverride ?? MANUAL_DOCUMENT_ENRICHMENT_OVERRIDE_DEFAULT,
+        ...settingsColumnValues(input),
       })
       .onConflict((oc) =>
         oc.column("workspace_id").doUpdateSet((eb) => ({

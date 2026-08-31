@@ -45,6 +45,14 @@ const HISTORY_MESSAGE_CHARS = 2_000;
  */
 const APPLY_CLAIM_TTL_SECONDS = 300;
 
+/**
+ * What an operator is told when an interrupted apply cannot be retried. It names the uncertainty
+ * rather than hiding it: the earlier attempt may have completed, so the answer is to look before
+ * asking for the change again.
+ */
+const INTERRUPTED_APPLY_REASON =
+  "An earlier apply of this proposal was interrupted and may already have taken effect. Check the workspace before asking for this change again.";
+
 export interface CopilotConversation {
   readonly id: string;
   readonly workspaceId: string;
@@ -88,6 +96,12 @@ export type CopilotProposalApplyClaimGuard =
 export interface CopilotProposalClaim {
   readonly proposal: CopilotProposal;
   readonly claimedAt: Date;
+  /**
+   * The claim this one replaced, or null on a first attempt. Set means an earlier attempt got as
+   * far as claiming and never resolved — it may or may not have reached the effect, and only the
+   * adapter knows whether repeating it is safe.
+   */
+  readonly previousAttemptStartedAt: Date | null;
 }
 
 export interface CopilotRepositoryPort {
@@ -178,12 +192,22 @@ export class OperatorCopilotService {
     }
     const { proposal, claimedAt } = claim;
     const claimGuard: CopilotProposalApplyClaimGuard = { state: "held", claimedAt };
+    const adapter = this.adapterFor(proposal.targetType);
+    if (claim.previousAttemptStartedAt && !this.canRetryAfterInterruptedApply(adapter, proposal)) {
+      // An earlier attempt claimed this and never resolved. For a target whose version token
+      // cannot recognise its own first attempt, retrying is how one apply becomes two documents or
+      // two crawls — so the proposal is resolved with what actually happened rather than retried.
+      // Audited apart from an adapter failure: "the apply was refused because an earlier one may
+      // have landed" is the question support asks first when a change appears twice, or not at all.
+      await this.updateProposalAndAudit(input, proposal, "failed", null, "copilot.proposal.apply_failed", "failure", "interrupted", claimGuard, INTERRUPTED_APPLY_REASON);
+      return { status: "failed", reason: INTERRUPTED_APPLY_REASON };
+    }
     let result: Awaited<ReturnType<CopilotProposalAdapter["applyIfVersionMatches"]>>;
     try {
       // Claiming is Ray bookkeeping, not authority. Reauthorize immediately
       // before the owning service receives the domain mutation.
       await this.requireProposalAuthorization(input, proposal.targetType);
-      result = await this.adapterFor(proposal.targetType).applyIfVersionMatches(input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken);
+      result = await adapter.applyIfVersionMatches(input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken);
     } catch (error) {
       if (error instanceof CopilotAuthorizationError) {
         // The authorization check is intentionally after the claim. Leaving that bookkeeping
@@ -415,6 +439,20 @@ export class OperatorCopilotService {
     if (!proposal) throw new CopilotNotFoundError();
     if (proposal.status !== "pending") throw new CopilotConflictError();
     return proposal;
+  }
+
+  /**
+   * An adapter that cannot answer does not get the retry. The question is asked of a stored
+   * payload, so a schema the payload no longer satisfies makes the adapter throw — and refusing
+   * is the safe reading of "I cannot tell whether the earlier attempt already took effect".
+   */
+  private canRetryAfterInterruptedApply(adapter: CopilotProposalAdapter, proposal: CopilotProposal): boolean {
+    if (!adapter.canRetryAfterInterruptedApply) return true;
+    try {
+      return adapter.canRetryAfterInterruptedApply(proposal.targetRef, proposal.payload);
+    } catch {
+      return false;
+    }
   }
 
   private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, applyClaimGuard: CopilotProposalApplyClaimGuard, reason: string | null = null): Promise<void> {

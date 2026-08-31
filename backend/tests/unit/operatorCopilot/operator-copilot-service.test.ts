@@ -313,17 +313,28 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
     vi.useRealTimers();
   });
 
-  const buildService = (repository: MemoryCopilotRepository, applyIfVersionMatches: CopilotProposalAdapter["applyIfVersionMatches"]) =>
+  const buildService = (
+    repository: MemoryCopilotRepository,
+    applyIfVersionMatches: CopilotProposalAdapter["applyIfVersionMatches"],
+    canRetryAfterInterruptedApply?: CopilotProposalAdapter["canRetryAfterInterruptedApply"],
+    auditService: { record: (input: unknown) => Promise<void> } = { record: vi.fn(async () => {}) },
+  ) =>
     new OperatorCopilotService({
       repository,
       capabilityRunner: { runStreaming: vi.fn() },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
-      auditService: { record: vi.fn(async () => {}) },
+      auditService,
       prompt: "system",
       workspaceRouteKeyResolver,
       currentAuthorization,
       tools: [],
-      proposalAdapters: [{ targetType: "agent_setting", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
+      proposalAdapters: [{
+        targetType: "agent_setting",
+        readVersionToken: vi.fn(),
+        preview: vi.fn(),
+        applyIfVersionMatches,
+        ...(canRetryAfterInterruptedApply ? { canRetryAfterInterruptedApply } : {}),
+      }],
     });
 
   const createProposal = async (repository: MemoryCopilotRepository) =>
@@ -386,6 +397,63 @@ describe("OperatorCopilotService proposal apply-claim recovery", () => {
 
     expect(result).toEqual({ status: "stale" });
     expect((await repository.findProposal({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator" }))?.status).toBe("stale");
+  });
+
+  // The recovery above is right for an adapter whose version token would catch a repeat. An adapter
+  // that creates something has no such token, and its second attempt would create a second thing.
+  it("refuses to retry an interrupted apply whose effect the version token cannot fence", async () => {
+    const repository = new MemoryCopilotRepository();
+    const proposal = await createProposal(repository);
+    await repository.claimProposalApply({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator", claimTtlSeconds: 300 });
+    vi.setSystemTime(new Date(Date.now() + CLAIM_TTL_MS + 1_000));
+
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: {} }));
+    const auditService = { record: vi.fn(async () => {}) };
+    const service = buildService(repository, applyIfVersionMatches, () => false, auditService);
+
+    const result = await service.applyProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", surface: "dashboard", proposalId: proposal.id });
+
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    // Audited as its own outcome: an adapter that failed and an apply that was never retried are
+    // different answers to "why did this change not happen".
+    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.proposal.apply_failed",
+      metadata: expect.objectContaining({ outcome: "interrupted" }),
+    }));
+    expect(result.status).toBe("failed");
+    expect(result.reason).toContain("may already have taken effect");
+    // Terminal, so the card stops offering an Apply that would only be refused again.
+    expect((await repository.findProposal({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator" }))?.status).toBe("failed");
+  });
+
+  it("refuses the retry when the adapter cannot answer whether repeating is safe", async () => {
+    const repository = new MemoryCopilotRepository();
+    const proposal = await createProposal(repository);
+    await repository.claimProposalApply({ id: proposal.id, workspaceId: "workspace", operatorUserId: "operator", claimTtlSeconds: 300 });
+    vi.setSystemTime(new Date(Date.now() + CLAIM_TTL_MS + 1_000));
+
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: {} }));
+    // A stored payload the adapter's schema no longer accepts: it cannot say whether the earlier
+    // attempt took effect, which is not a licence to repeat it.
+    const service = buildService(repository, applyIfVersionMatches, () => { throw new Error("payload no longer parses"); });
+
+    const result = await service.applyProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", surface: "dashboard", proposalId: proposal.id });
+
+    expect(applyIfVersionMatches).not.toHaveBeenCalled();
+    expect(result.status).toBe("failed");
+  });
+
+  it("still applies an unfenceable proposal on a first attempt", async () => {
+    const repository = new MemoryCopilotRepository();
+    const proposal = await createProposal(repository);
+
+    const applyIfVersionMatches = vi.fn(async () => ({ outcome: "applied" as const, appliedRef: { documentId: "document-1" } }));
+    const service = buildService(repository, applyIfVersionMatches, () => false);
+
+    const result = await service.applyProposal({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", surface: "dashboard", proposalId: proposal.id });
+
+    expect(result).toEqual({ status: "applied", appliedRef: { documentId: "document-1" } });
+    expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
 
   it("keeps dismiss refused while a claim is active", async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { branchIsImplicitFallThrough, documentDiagnosticText, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, sanitizeDraftContentForSave } from '@/lib/routine-document'
-import type { RoutineBlockBranch } from '@/lib/routine-prose'
+import { branchIsImplicitFallThrough, documentDiagnosticText, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, instructionToProseParagraphs, proseParagraphsToInstruction, sanitizeDraftContentForSave } from '@/lib/routine-document'
+import type { RoutineBlockBranch, RoutineBlockInstructionSegment } from '@/lib/routine-prose'
 
 describe('routine document helpers', () => {
   const slots = new Map([['email', 'Customer email'], ['attempts', 'Attempts'], ['order_total', 'Order total'], ['placed_at', 'Placed at'], ['is_member', 'Member']])
@@ -164,5 +164,55 @@ describe('documentDiagnosticText', () => {
       location: 'routine:x',
       message: 'routine has no terminal step',
     })).toBe('routine has no terminal step')
+  })
+})
+
+describe('step instruction prose mapping', () => {
+  it('opens a stored instruction as one paragraph per line, with slots as chips', () => {
+    expect(instructionToProseParagraphs([
+      { kind: 'text', text: 'Ask for ' },
+      { kind: 'slotReference', key: 'email', source: '{{slot.email}}' },
+      { kind: 'text', text: '.\nThen thank them.' },
+    ])).toEqual([
+      { segments: [{ kind: 'text', text: 'Ask for ' }, { kind: 'chip', chipKind: 'variable', refId: 'email', label: 'email' }, { kind: 'text', text: '.' }] },
+      { segments: [{ kind: 'text', text: 'Then thank them.' }] },
+    ])
+  })
+
+  it('writes each authored line back into the instruction, separated by a newline', () => {
+    expect(proseParagraphsToInstruction([
+      { segments: [{ kind: 'text', text: 'Ask for ' }, { kind: 'chip', chipKind: 'variable', refId: 'email', label: 'email' }] },
+      { segments: [{ kind: 'text', text: 'Then thank them.' }] },
+    ])).toEqual([
+      { kind: 'text', text: 'Ask for ' },
+      { kind: 'slotReference', key: 'email', source: '{{slot.email}}' },
+      { kind: 'text', text: '\n' },
+      { kind: 'text', text: 'Then thank them.' },
+    ])
+  })
+
+  it('keeps a blank line the author left between two lines', () => {
+    const paragraphs = proseParagraphsToInstruction([
+      { segments: [{ kind: 'text', text: 'First.' }] },
+      { segments: [] },
+      { segments: [{ kind: 'text', text: 'Second.' }] },
+    ])
+    expect(paragraphs.map((segment) => segment.kind === 'text' ? segment.text : segment.source).join('')).toBe('First.\n\nSecond.')
+  })
+
+  it('round-trips a multi-line instruction unchanged', () => {
+    const instruction: RoutineBlockInstructionSegment[] = [
+      { kind: 'text', text: 'Ask for ' },
+      { kind: 'slotReference', key: 'email', source: '{{slot.email}}' },
+      { kind: 'text', text: '.\n\nThen thank them.' },
+    ]
+    const restored = proseParagraphsToInstruction(instructionToProseParagraphs(instruction))
+    expect(restored.map((segment) => segment.kind === 'text' ? segment.text : segment.source).join(''))
+      .toBe('Ask for {{slot.email}}.\n\nThen thank them.')
+  })
+
+  it('reads an empty document as a single empty instruction segment', () => {
+    expect(proseParagraphsToInstruction([])).toEqual([{ kind: 'text', text: '' }])
+    expect(instructionToProseParagraphs([])).toEqual([{ segments: [{ kind: 'text', text: '' }] }])
   })
 })

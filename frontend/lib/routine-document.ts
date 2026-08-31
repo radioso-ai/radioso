@@ -1,4 +1,4 @@
-import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
+import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type ProseParagraph, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 import type { RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api-types'
 
@@ -16,6 +16,37 @@ export function branchIsImplicitFallThrough(branch: Pick<RoutineBlockBranch, 'gu
 
 export function documentTextToSegments(text: string): RoutineBlockInstructionSegment[] {
   return instructionToBlockSegments(text)
+}
+
+// A step instruction is stored as one string, and the editor writes it as prose paragraphs.
+// A return the author pressed is a newline in that string, so both directions have to carry
+// it: opening splits the stored text into a paragraph per line, and reading joins the lines
+// back with the newline between them. Dropping either half loses every line but the first.
+export function instructionToProseParagraphs(segments: RoutineBlockInstructionSegment[]): ProseParagraph[] {
+  const paragraphs: ProseParagraph[] = [{ segments: [] }]
+  const currentSegments = () => paragraphs[paragraphs.length - 1]!.segments
+  for (const segment of segments) {
+    if (segment.kind !== 'text') {
+      currentSegments().push({ kind: 'chip', chipKind: 'variable', refId: segment.key, label: segment.key })
+      continue
+    }
+    const lines = segment.text.split('\n')
+    lines.forEach((line, index) => {
+      if (index > 0) paragraphs.push({ segments: [] })
+      if (line) currentSegments().push({ kind: 'text', text: line })
+    })
+  }
+  return paragraphs.map((paragraph) => paragraph.segments.length > 0 ? paragraph : { segments: [{ kind: 'text', text: '' }] })
+}
+
+export function proseParagraphsToInstruction(paragraphs: ProseParagraph[]): RoutineBlockInstructionSegment[] {
+  const instruction = paragraphs.flatMap((paragraph, index): RoutineBlockInstructionSegment[] => [
+    ...(index > 0 ? [{ kind: 'text' as const, text: '\n' }] : []),
+    ...paragraph.segments.map((segment): RoutineBlockInstructionSegment => segment.kind === 'text'
+      ? segment
+      : { kind: 'slotReference', key: segment.refId, source: `{{slot.${segment.refId}}}` }),
+  ])
+  return instruction.length > 0 ? instruction : [{ kind: 'text', text: '' }]
 }
 
 export function formatBranchTargetLabel(ending: Pick<RoutineBlockEnding, 'kind' | 'instruction' | 'stableStepId'>): string {

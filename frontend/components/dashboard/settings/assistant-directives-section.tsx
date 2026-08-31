@@ -505,7 +505,9 @@ function DirectiveRow({
           </div>
         ) : null}
       </div>
-      <p className={`text-sm ${replacedBy ? 'text-muted-foreground' : 'text-foreground'}`}>{directive.action}</p>
+      {/* The instruction keeps the line breaks its author wrote, so the row reads them back
+          instead of collapsing every line into one. */}
+      <p className={`whitespace-pre-wrap text-sm ${replacedBy ? 'text-muted-foreground' : 'text-foreground'}`}>{directive.action}</p>
     </div>
   )
 }

@@ -31,6 +31,14 @@ composition calls them and assembles the result.
   provide default behavior, then wire the default here.
 - Optional feature behavior: register it through an application module instead
   of importing optional implementation details into routes or domain services.
+- Operator copilot tools from an optional module: `registerCopilotTools` in
+  `applicationModule.ts`, assembled by `copilotToolCatalog.ts`. The contribution
+  declares the operation and application-primitive identities its descriptors
+  cite, since this repository's public contract and owning-port registry describe
+  first-party surfaces only. The catalog serves tenant operators: every
+  descriptor takes a workspace-scoped invocation context and every permission
+  resolves through workspace membership, so a staff principal that holds no
+  membership needs its own catalog rather than a filter over this one.
 - Capability checks: define stable capability names and keep checks close to
   the mutation or privileged workflow.
 - Storage, queue, telemetry, and provider changes: keep provider-specific code

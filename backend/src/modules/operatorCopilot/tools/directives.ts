@@ -1,15 +1,8 @@
 import { z } from "zod";
 
 import type {
-  CopilotAuditPort,
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotContextVariableProposalAdapter,
-  CopilotDirectiveProposalAdapter,
-  CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
-import type { CopilotRepositoryPort } from "../service.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
   describeNamedAgent,
@@ -23,15 +16,14 @@ import {
   proposalEvidenceOutput,
   proposalOutputSchema,
   type CopilotProposalEvidenceDependencies,
+  proposalAdapterFor,
+  type CopilotProposalToolDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
-export interface DirectiveProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
+export interface DirectiveProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
-  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
-  readonly auditService: CopilotAuditPort;
 }
 const describeDirectiveToolAgent = (
   deps: Pick<DirectiveProposalCopilotToolDependencies, "agentLookup">,
@@ -44,7 +36,7 @@ const describeDirectiveToolAgent = (
 export const createDirectiveProposalCopilotTools = (
   deps: DirectiveProposalCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const directiveAdapter = proposalAdapter(deps.proposalAdapters);
+  const directiveAdapter = proposalAdapterFor(deps.proposalAdapters, "directive");
   return [
     {
       name: "propose_directive", shape: "propose", uiLabel: "Drafting a directive", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
@@ -109,7 +101,7 @@ export const createDirectiveProposalCopilotTools = (
             conversationId: requiredCopilotConversation(context),
             targetType: "directive",
             targetRef,
-            payload: { op: "remove" as const, name: preview.targetLabel, rationale: summary },
+            payload: { op: "remove" as const, removesTarget: true as const, name: preview.targetLabel, rationale: summary },
             versionToken,
             evidence,
           });
@@ -161,9 +153,4 @@ export const createDirectiveProposalCopilotTools = (
       describeEntity: (input, context) => describeDirectiveToolAgent(deps, input as { agentId?: string; agentName?: string }, context),
     },
   ];
-};
-const proposalAdapter = (adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>): CopilotDirectiveProposalAdapter => {
-  const adapter = adapters.find((candidate) => candidate.targetType === "directive");
-  if (!adapter) throw new Error("No copilot proposal adapter registered for directive");
-  return adapter as CopilotDirectiveProposalAdapter;
 };

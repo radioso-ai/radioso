@@ -43,12 +43,15 @@ export interface CopilotAvailability {
   available: boolean
   reason: 'ok' | 'no_llm_capability'
   canManage: boolean
+  /** The proposal kinds this operator may apply. Applying writes to the domain a proposal targets,
+   * so a document manager and an agent manager can each apply some cards and not others. */
+  applyableProposalTargets?: CopilotProposalTargetType[]
 }
 
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document' | 'ingestion_settings' | 'website_crawl'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
@@ -98,6 +101,7 @@ export interface CopilotProposalTargetReference {
   routineId?: string | null
   skillId?: string | null
   variableId?: string | null
+  documentId?: string | null
   settingKey?: string | null
   id?: string | null
 }
@@ -145,7 +149,8 @@ export interface CopilotEntityReference {
    * client/runtime enum drift the comment on COPILOT_PAGE_ENTITY_TYPES warns about.
    */
   type: string
-  id: string
+  /** Absent for a singleton subject such as the workspace's ingestion settings. */
+  id?: string
 }
 
 export interface CopilotOperatorMessage {

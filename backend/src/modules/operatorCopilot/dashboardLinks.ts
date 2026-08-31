@@ -20,6 +20,12 @@ export const buildCopilotDashboardLink = (
       return subject.id && subject.agentId
         ? `${base}/agents/${encodeURIComponent(subject.agentId)}/routines/${encodeURIComponent(subject.id)}`
         : `${base}/agents`;
+    // Ingestion settings are a tab on Knowledge, and the dashboard drops the default tab from the
+    // URL, so this one has to name its tab explicitly.
+    case "ingestion_settings":
+      return `${base}/knowledge?knowledgeTab=ingestion`;
+    case "document_source":
+      return `${base}/knowledge?knowledgeTab=sources`;
     case "document":
       return subject.id ? `${base}/knowledge/documents/${encodeURIComponent(subject.id)}` : `${base}/knowledge`;
     case "conversation":

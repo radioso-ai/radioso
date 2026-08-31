@@ -35271,12 +35271,29 @@
                     },
                     "canManage": {
                       "type": "boolean"
+                    },
+                    "applyableProposalTargets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "directive",
+                          "agent_setting",
+                          "routine",
+                          "agent_skill",
+                          "context_variable",
+                          "document",
+                          "ingestion_settings",
+                          "website_crawl"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "available",
                     "reason",
-                    "canManage"
+                    "canManage",
+                    "applyableProposalTargets"
                   ]
                 }
               }
@@ -35518,7 +35535,10 @@
                                         "agent_setting",
                                         "routine",
                                         "agent_skill",
-                                        "context_variable"
+                                        "context_variable",
+                                        "document",
+                                        "ingestion_settings",
+                                        "website_crawl"
                                       ]
                                     },
                                     "targetLabel": {
@@ -35832,7 +35852,10 @@
                         "agent_setting",
                         "routine",
                         "agent_skill",
-                        "context_variable"
+                        "context_variable",
+                        "document",
+                        "ingestion_settings",
+                        "website_crawl"
                       ]
                     },
                     "targetRef": {},
@@ -35846,7 +35869,10 @@
                             "agent_setting",
                             "routine",
                             "agent_skill",
-                            "context_variable"
+                            "context_variable",
+                            "document",
+                            "ingestion_settings",
+                            "website_crawl"
                           ]
                         },
                         "ref": {}
@@ -36046,7 +36072,7 @@
             }
           },
           "403": {
-            "description": "Missing agent management permission"
+            "description": "Missing the permission that governs what the proposal changes"
           },
           "409": {
             "description": "Proposal is not pending"

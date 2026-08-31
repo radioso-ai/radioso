@@ -34,13 +34,12 @@ export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalC
   // setting key instead. Every other target type (present or future) proposes a named thing, so
   // this reads as "not agent_setting" rather than an OR-chain a new target type could miss.
   const targetLabel = proposal.targetType !== "agent_setting" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
-  // Same discriminator proposalAdapters.ts's own isDirectiveRemoval uses to pick the removal
-  // branch at preview/apply time: a payload missing `op` is the save shape every proposal used
-  // before removal existed, so only an explicit `op: "remove"` reads as one (Finding 1, issue
-  // triage next-ray-epic-issue). This lets a reloaded card state plainly that Apply deletes the
-  // target, not just an ordinary card whose summary happens to mention it.
-  const removal = proposal.targetType === "directive" && payload.op === "remove";
-  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}) };
+  // A payload states its own irreversibility, so a reloaded card warns about deletion without the
+  // reader having to recognise each target type's word for it - the pairing that silently dropped
+  // the warning when document removal arrived. The directive clause reads rows written before the
+  // flag existed; every proposal drafted since carries `removesTarget`.
+  const removal = payload.removesTarget === true || (proposal.targetType === "directive" && payload.op === "remove");
+  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}) };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -83,8 +82,9 @@ export class CopilotRepository implements CopilotRepositoryPort {
    * still fresh. Also reclaims a claim older than `claimTtlSeconds` — a process that crashed
    * after claiming (before its write, or after it but before the outcome was recorded) leaves
    * exactly that: a claim timestamp nothing ever moves again. Recovery is the same relaxed
-   * predicate for both crash windows; what makes a blind re-apply of an already-applied proposal
-   * safe is the adapter's own version gate on the *target* row, not anything tracked here.
+   * predicate for both crash windows. A re-apply is only safe where the adapter has a version gate
+   * on an existing *target* row; an adapter that CREATES something (a document, a crawl job) has no
+   * such row to gate on and will repeat the effect. Tracked as issue #1137.
    *
    * `claimedAt` is a JS `Date` written as-is (not SQL `now()`), so it round-trips through
    * Postgres at the millisecond precision it started at — the exact value `updateProposalOutcome`

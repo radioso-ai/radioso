@@ -180,6 +180,8 @@ In practice:
 
 - Use MCP `answer_grounded` when a client wants a grounded answer from workspace documents.
 - Use MCP document tools when a client wants document capability access.
+- Use MCP `create_document`, `update_document`, and `delete_document` for programmatic ingestion — a sync job, a CI step, a content pipeline — where a workspace API token is the only credential and nobody is waiting to review the write.
+- When a person is deciding what the knowledge base should say, use Ray in the dashboard instead. Ray drafts the same changes as proposals attributed to the operator who applies them, so the change is reviewed before it lands. See [Ray, the operator copilot](../docs-portal/content/operators/copilot.mdx).
 - Use `POST /api/v1/assistant/chat` only when the integration explicitly wants the customer-facing assistant chat product.
 
 The retrieval answer endpoint accepts optional `conversationContext` hints for rewrite continuity. The caller owns those hints. Radioso retrieval uses them to improve the search query, but retrieval does not become the owner of assistant chat history.

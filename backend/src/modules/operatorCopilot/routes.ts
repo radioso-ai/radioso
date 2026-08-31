@@ -7,6 +7,7 @@ import type { WorkspaceSessionDependencies } from "../../app/http/middleware/req
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
+import { copilotProposalPermissions, copilotProposalTargetTypes, type CopilotProposalTargetType } from "./contracts.js";
 import { summarizeProposalEvidence } from "./proposalEvidence.js";
 import type { LlmCapabilityResolveInput } from "../../shared/infra/llm/workspaceContext.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, type CopilotToolDescriptor, CopilotAuthorizationError, CopilotConflictError, CopilotNotFoundError } from "./public.js";
@@ -63,7 +64,6 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
-  const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
   const sessionOnly = rejectBearer();
   const resolvableToolPermissions = copilotResolvableToolPermissions(dependencies.copilotToolCatalog);
   router.use(workspaceSession, sessionOnly, agentRead);
@@ -104,7 +104,10 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       });
     } catch (error) { next(error); }
   });
-  router.post("/proposals/:proposalId/apply", agentManage, async (req, res, next) => {
+  // No permission middleware here on purpose: what an operator must hold to apply a proposal depends
+  // on what that proposal changes, and only the stored row says which domain that is. The service
+  // reads it and authorizes against copilotProposalPermissions, answering 403 the same way.
+  router.post("/proposals/:proposalId/apply", async (req, res, next) => {
     try {
       const { workspaceId, accountId, userId } = sessionLocals(res);
       const { proposalId } = proposalParamsSchema.parse(req.params);
@@ -150,14 +153,43 @@ const sessionLocals = (res: Response): { workspaceId: string; accountId: string;
   const locals = res.locals as { workspaceId: string; accountId: string; userId: string; authPrincipal: { type: "session_user"; userId: string } };
   return { workspaceId: locals.workspaceId, accountId: locals.accountId, userId: locals.userId, principal: locals.authPrincipal };
 };
-const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean }> => {
+/**
+ * Which proposals this operator can apply, not whether they can apply proposals. Applying writes to
+ * the domain the proposal targets, so a document manager and an agent manager can each apply some
+ * cards and not others; one workspace-wide flag would either hide Apply from someone entitled to it
+ * or offer it where the server will refuse.
+ */
+const applyableProposalTargets = async (
+  dependencies: Pick<CopilotRouteDependencies, "accountAccessService">,
+  res: Response,
+): Promise<CopilotProposalTargetType[]> => {
+  const { workspaceId, accountId, userId, principal } = sessionLocals(res);
+  const held = new Map<string, boolean>();
+  const holds = async (permission: AccountPermission): Promise<boolean> => {
+    const cached = held.get(permission);
+    if (cached !== undefined) return cached;
+    const allowed = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission });
+    held.set(permission, allowed);
+    return allowed;
+  };
+  const targets: CopilotProposalTargetType[] = [];
+  for (const targetType of copilotProposalTargetTypes) {
+    const permissions = copilotProposalPermissions[targetType];
+    const allowed = await Promise.all(permissions.map((permission) => holds(permission)));
+    if (allowed.every(Boolean)) targets.push(targetType);
+  }
+  return targets;
+};
+
+const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean; applyableProposalTargets: CopilotProposalTargetType[] }> => {
   const { workspaceId, accountId, userId, principal } = sessionLocals(res);
   const canManage = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission: "workspace.agents.manage" });
+  const targets = await applyableProposalTargets(dependencies, res);
   try {
     await dependencies.llmCapabilityResolver.resolve("chat", { workspaceId });
-    return { available: true, reason: "ok", canManage };
+    return { available: true, reason: "ok", canManage, applyableProposalTargets: targets };
   } catch {
-    return { available: false, reason: "no_llm_capability", canManage };
+    return { available: false, reason: "no_llm_capability", canManage, applyableProposalTargets: targets };
   }
 };
 const presentConversation = (result: { conversation: CopilotConversation; messages: ReadonlyArray<CopilotMessage> }): unknown => ({ id: result.conversation.id, title: result.conversation.title, status: result.conversation.status, messages: result.messages.map((message) => ({ id: message.id, role: message.role, content: message.content, createdAt: message.createdAt.toISOString(), ...(message.role === "copilot" ? { outcome: message.outcome, activity: message.activity ?? [], proposals: message.proposals ?? [] } : {}) })) });

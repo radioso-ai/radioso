@@ -22,6 +22,7 @@ import {
 import { validateAgentInput } from "../../src/modules/agents/public.js";
 import { enrichCopilotToolCatalog } from "../../src/modules/operatorCopilot/catalog.js";
 import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
+import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
 import type {
   CopilotToolDescriptor,
   CopilotWorkspaceRouteKeyResolver,
@@ -479,7 +480,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         ...input,
       }),
     },
-    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
+    proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
       targetType,
       draft: async (_workspaceId: string, _targetRef: unknown, intent: string) => ({
         payload: { intent },

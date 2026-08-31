@@ -18505,6 +18505,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
+                        applyableProposalTargets: ("directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl")[];
                     };
                 };
             };
@@ -18599,7 +18600,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
+                                targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -18732,11 +18733,11 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
+                        targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable";
+                            type: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                             ref?: unknown;
                         };
                         targetLabel: string;
@@ -18806,7 +18807,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Missing agent management permission */
+            /** @description Missing the permission that governs what the proposal changes */
             403: {
                 headers: {
                     [name: string]: unknown;

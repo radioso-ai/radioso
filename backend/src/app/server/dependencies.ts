@@ -54,6 +54,7 @@ import { createConnectorIngestionPort } from "../../modules/connectors/services/
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
+import { normalizeBaseUrl } from "../../modules/websiteCrawler/public.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import {
   AgentTurnProbeService,
@@ -65,10 +66,13 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
-import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
+import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
+import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -425,6 +429,20 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createDocumentCopilotProposalAdapter({
+      documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
+      documentDeletion: documents.documentDeletionService,
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
+    }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
+    createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
+      crawlPolicy: () => {
+        const config = resolveWebsiteCrawlerConfig();
+        return { enabled: env.WEBSITE_CRAWLER_ENABLED, defaultLimit: config.defaultLimit, maxLimit: config.maxLimit };
+      },
+    }),
   ] as const;
   const retrievalProbeService = new RetrievalProbeService({
     retrievalSearch: retrieval.retrievalSearchService,

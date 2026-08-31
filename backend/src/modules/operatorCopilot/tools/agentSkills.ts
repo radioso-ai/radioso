@@ -1,15 +1,9 @@
 import { z } from "zod";
 
 import type {
-  CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
-  CopilotContextVariableProposalAdapter,
-  CopilotAuditPort,
-  CopilotDirectiveProposalAdapter,
-  CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
-import type { CopilotRepositoryPort } from "../service.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
@@ -24,6 +18,8 @@ import {
   requiredPageAgent,
   type CopilotAgentLookupPort,
   type CopilotProposalEvidenceDependencies,
+  proposalAdapterFor,
+  type CopilotProposalToolDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -155,17 +151,14 @@ export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDepend
 const skillSettingsEvidenceKey = (capability: string, invocationMode: string): string | null =>
   capability === "retrieve" && invocationMode === "default_answer" ? "retrieval.answer" : null;
 
-export interface AgentSkillConfigProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
+export interface AgentSkillConfigProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
-  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
-  readonly auditService: CopilotAuditPort;
 }
 
 export const createAgentSkillConfigProposalCopilotTools = (
   deps: AgentSkillConfigProposalCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const skillAdapter = proposalAdapter(deps.proposalAdapters);
+  const skillAdapter = proposalAdapterFor(deps.proposalAdapters, "agent_skill");
   const description = "Propose creating or updating a skill's configuration for the operator to review and apply. This does not change configuration. Values are supplied from settings already read, not invented.";
   return [
     {
@@ -224,10 +217,3 @@ export const createAgentSkillConfigProposalCopilotTools = (
   ];
 };
 
-const proposalAdapter = (
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>,
-): CopilotAgentSkillProposalAdapter => {
-  const adapter = adapters.find((candidate) => candidate.targetType === "agent_skill");
-  if (!adapter) throw new Error("No copilot proposal adapter registered for agent_skill");
-  return adapter as CopilotAgentSkillProposalAdapter;
-};

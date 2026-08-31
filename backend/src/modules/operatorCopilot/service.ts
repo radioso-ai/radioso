@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { AGENT_BUDGET_DEFAULTS, type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
+  copilotProposalPermissions,
   copilotProposalTargetTypes,
   type CopilotPageContext,
   type CopilotEntityReference,
@@ -11,6 +12,7 @@ import {
   type CopilotProposal,
   type CopilotProposalAdapter,
   type CopilotProposalCard,
+  type CopilotProposalTargetType,
   type CopilotProposalEvidenceSummary,
   type CopilotProposalStatus,
   type CopilotSseEvent,
@@ -148,7 +150,11 @@ export class OperatorCopilotService {
   }
 
   async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
-    await this.requireProposalAuthorization(input);
+    // The proposal is read before the claim because what an operator must hold to apply it depends
+    // on what it changes, and only the stored row says which domain that is.
+    const pending = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
+    if (!pending) throw new CopilotNotFoundError();
+    await this.requireProposalAuthorization(input, pending.targetType);
     const claim = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, claimTtlSeconds: APPLY_CLAIM_TTL_SECONDS });
     if (!claim) {
       const existing = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -161,7 +167,7 @@ export class OperatorCopilotService {
     try {
       // Claiming is Ray bookkeeping, not authority. Reauthorize immediately
       // before the owning service receives the domain mutation.
-      await this.requireProposalAuthorization(input);
+      await this.requireProposalAuthorization(input, proposal.targetType);
       result = await this.adapterFor(proposal.targetType).applyIfVersionMatches(input.workspaceId, proposal.targetRef, proposal.payload, proposal.versionToken);
     } catch (error) {
       if (error instanceof CopilotAuthorizationError) {
@@ -364,12 +370,12 @@ export class OperatorCopilotService {
     return adapter;
   }
 
-  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string }): Promise<boolean> {
-    return this.deps.currentAuthorization.hasAllPermissions({ ...input, requiredPermissions: ["workspace.agents.manage"] });
+  private async canManageProposal(input: { workspaceId: string; accountId: string; operatorUserId: string }, targetType: CopilotProposalTargetType): Promise<boolean> {
+    return this.deps.currentAuthorization.hasAllPermissions({ ...input, requiredPermissions: [...copilotProposalPermissions[targetType]] });
   }
 
-  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<void> {
-    if (await this.canManageProposal(input)) return;
+  private async requireProposalAuthorization(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }, targetType: CopilotProposalTargetType): Promise<void> {
+    if (await this.canManageProposal(input, targetType)) return;
     await this.deps.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,

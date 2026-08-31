@@ -1,5 +1,7 @@
 import express from "express";
 import request from "supertest";
+
+import { forbidden } from "../../../src/shared/domain/errors.js";
 import { describe, expect, it, vi } from "vitest";
 
 import { createCopilotRoutes } from "../../../src/modules/operatorCopilot/routes.js";
@@ -63,7 +65,59 @@ describe("createCopilotRoutes", () => {
       .set("Cookie", "radioso_session=valid-session");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ available: true, reason: "ok", canManage: false });
+    // This operator cannot manage agents but can manage documents and settings, so Apply belongs on
+    // the knowledge cards and nowhere else - a single canManage flag would have hidden all of them.
+    expect(response.body).toEqual({
+      available: true,
+      reason: "ok",
+      canManage: false,
+      applyableProposalTargets: ["document", "ingestion_settings", "website_crawl"],
+    });
+  });
+
+  it("lets a document manager apply a document proposal, without agent management", async () => {
+    // Route middleware cannot decide this: which permission Apply needs depends on what the stored
+    // proposal changes, so the check belongs in the service. A blanket agents.manage gate here
+    // rejected knowledge managers before the service ever saw the proposal.
+    const applyProposal = vi.fn(async () => ({ status: "applied" as const, appliedRef: { documentId: "document-1" } }));
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries(
+        (req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter(
+          (part): part is [string, string] => part.length === 2,
+        ),
+      );
+      next();
+    });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" },
+      authService: {
+        async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; },
+      },
+      workspaceSessionService: {
+        async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; },
+      },
+      accountAccessService: {
+        async requireActiveMembership() {},
+        // This operator manages knowledge but not agents, and requirePermission refuses like the
+        // real service does - without that the middleware under test can never reject.
+        async requirePermission({ permission }: { permission: string }) {
+          if (permission === "workspace.agents.manage") throw forbidden();
+        },
+        hasPermission: vi.fn(async ({ permission }: { permission: string }) => permission !== "workspace.agents.manage"),
+      },
+      llmCapabilityResolver: { async resolve() { return {}; } },
+      operatorCopilotService: { applyProposal },
+      copilotToolCatalog: [],
+    } as never));
+
+    const response = await request(app)
+      .post("/api/v1/copilot/proposals/eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee/apply")
+      .set("Cookie", "radioso_session=valid-session");
+
+    expect(response.status).toBe(200);
+    expect(applyProposal).toHaveBeenCalled();
   });
 
   it("returns a JSON conflict before committing SSE headers when a turn cannot be acquired", async () => {

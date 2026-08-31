@@ -150,11 +150,32 @@ export const targetReference = (
       ...(agentId ? { agentId } : {}),
     } : null
   }
-  const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
-  return typeof directiveId === 'string' ? {
-    entity: { type: 'directive', id: directiveId },
-    ...(agentId ? { agentId } : {}),
-  } : null
+  if (summary.targetType === 'document') {
+    // Once a removal has been applied there is nothing to open. Keyed off appliedRef rather than
+    // the summary's status: after an in-place Apply the card's own state advances while the
+    // proposal prop it was rendered from still reads 'pending' until the next reload.
+    if (summary.removal === true && applied.documentId !== undefined) return null
+    // A create carries a null documentId until it is applied, the same as a drafted skill.
+    const documentId = applied.documentId ?? ref.documentId
+    return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null
+  }
+  if (summary.targetType === 'website_crawl') {
+    // A crawl has no target until it is applied and the job resolves a source.
+    const sourceId = applied.sourceId
+    return typeof sourceId === 'string' ? { entity: { type: 'document_source', id: sourceId } } : null
+  }
+  if (summary.targetType === 'ingestion_settings') {
+    return { entity: { type: 'ingestion_settings' } }
+  }
+  if (summary.targetType === 'directive') {
+    const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
+    return typeof directiveId === 'string' ? {
+      entity: { type: 'directive', id: directiveId },
+      ...(agentId ? { agentId } : {}),
+    } : null
+  }
+  // A target type with no branch here links nowhere rather than borrowing the directive's.
+  return null
 }
 
 const statusMessage = (state: CopilotProposalCardState, detail: CopilotProposalDetail | null) => {

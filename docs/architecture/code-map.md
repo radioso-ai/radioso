@@ -312,9 +312,13 @@ card presentation.
 
 Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
 Every `copilot.*` audit event carries the operator principal and the calling
-surface, stamped by the service's own actor-bound audit method rather than by each
-call site, and the surface is a required input with no default so a second
-transport declares its own. Metering follows cost rather than call shape, and cost is declared rather than
+surface. The service stamps its own events through an actor-bound audit method
+rather than at each call site, and carries the surface onto the tool-invocation
+context for the events a tool records itself — a drafted proposal is audited by
+the tool that drafted it, so the surface has to reach that far or Ray's signature
+act is the one act nobody can attribute. Surface is a required input with no
+default, on the turn and on the tool context alike, so a second transport
+declares its own. Metering follows cost rather than call shape, and cost is declared rather than
 inferred: every descriptor states a `verificationCost` — required, and separate
 from `shape`, because shape answers what a tool changes rather than what it
 spends, and inferring one from the other exempted `run_eval_suite` (an `act`,

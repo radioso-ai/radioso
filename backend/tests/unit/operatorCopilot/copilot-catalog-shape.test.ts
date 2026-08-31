@@ -38,6 +38,7 @@ const context = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
@@ -143,6 +144,7 @@ describe("copilot catalog contributions through the real factory", () => {
       workspaceId: "workspace-1",
       accountId: "account-1",
       operatorUserId: "operator-1",
+      surface: "dashboard" as const,
       currentAuthorization: { hasAllPermissions: async () => true },
       pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
     } as never).invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" } as never);

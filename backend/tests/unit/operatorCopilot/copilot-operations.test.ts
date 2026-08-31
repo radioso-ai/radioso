@@ -8,6 +8,7 @@ import {
   type CopilotSurface,
   type CopilotToolDescriptor,
 } from "../../../src/modules/operatorCopilot/public.js";
+import { recordProposalCreated } from "../../../src/modules/operatorCopilot/tools/shared.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
 
 const now = new Date("2026-08-31T00:00:00.000Z");
@@ -167,6 +168,47 @@ describe("copilot audit attribution", () => {
       .toMatchObject({ surface: "dashboard", operatorUserId: "operator" });
     expect(events.find((event) => event.eventType === "copilot.proposal.dismissed")?.metadata)
       .toMatchObject({ surface: "mcp", operatorUserId: "operator" });
+  });
+
+  it("attributes a proposal drafted during a turn, not only the apply that follows it", async () => {
+    // Drafting is the act Ray performs; applying is the operator's. An audit trail that can name
+    // who applied a change but not which transport drafted it answers the wrong half. The tool
+    // records this one itself, so the surface has to reach the tool's context rather than stopping
+    // at the service.
+    const auditRecord = auditSpy();
+    const draft: CopilotToolDescriptor = {
+      ...descriptor("propose_directive", "propose", async () => ({ value: "ok" })),
+      createTool: (toolContext) => ({
+        name: "propose_directive",
+        description: "propose_directive",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ value: z.string() }),
+        invoke: async () => {
+          await recordProposalCreated(
+            { record: auditRecord },
+            toolContext,
+            { id: "proposal-1", targetType: "directive" } as never,
+          );
+          return { value: "ok" };
+        },
+      }),
+    };
+    const { service } = buildService({
+      auditRecord,
+      tools: [draft],
+      runStreaming: (_request, tools) => ({
+        events: (async function* () {
+          await tools.find((candidate) => candidate.name === "propose_directive")!
+            .invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-0" });
+        })(),
+        result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+      }),
+    });
+
+    await runTurn(service, "mcp");
+
+    const created = recorded(auditRecord).find((event) => event.eventType === "copilot.proposal.created");
+    expect(created?.metadata).toMatchObject({ surface: "mcp", operatorUserId: "operator" });
   });
 
   it("attributes an authorization denial to the operator who was refused", async () => {

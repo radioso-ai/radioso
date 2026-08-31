@@ -46,6 +46,12 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /**
+   * Where the turn running this tool came in. Carried on the context because a tool audits its own
+   * effects — a drafted proposal is recorded by the tool that drafted it, not by the service — so
+   * without it the one act Ray actually performs is the one act nobody can attribute.
+   */
+  readonly surface: CopilotSurface;
   /** Present for transport-facing catalog calls so entity lookup cannot bypass tool permissions. */
   readonly permissions?: ReadonlySet<string>;
   /**

@@ -35803,6 +35803,16 @@
           "409": {
             "description": "Conversation already running"
           },
+          "429": {
+            "description": "Copilot turn rate limit exceeded for this operator, workspace, and account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          },
           "503": {
             "description": "No LLM capability"
           }

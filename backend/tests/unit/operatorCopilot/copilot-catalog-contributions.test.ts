@@ -49,6 +49,7 @@ const invocationContext = (permissions: ReadonlySet<string>) => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   permissions,
   currentAuthorization: {
     hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly AccountPermission[] }) =>

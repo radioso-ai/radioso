@@ -33,6 +33,17 @@ workspace's active model. Ray follows the next chunk index when it needs another
 page, so chunk text stays intact instead of being clipped to fit one large
 result.
 
+Between those two reads sits the question they cannot answer on their own: what
+does retrieval actually return for this query, for this agent. Ray runs that
+search with the agent's own source scope, retrieval settings, and answering
+instruction, and reports the chunks it would ground on with their scores. The
+result always names the agent it measured, so a probe on one agent is never
+mistaken for another agent's behavior or for the workspace defaults. If the
+agent answers without retrieval at all, the probe says so — otherwise an empty
+result reads as a knowledge gap when the real cause is a setting. Scoping needs
+`workspace.agents.read` alongside `workspace.retrieval.query`. Each probe counts
+against your per-operator limit for calls that spend model budget.
+
 With `workspace.documents.manage`, Ray can reprocess one document or the
 existing documents in one source, and it can recrawl an existing website
 source. These are maintenance acts, so they queue immediately and appear in the
@@ -425,6 +436,9 @@ setup state with a link to **Settings → Providers**.
 - **Document maintenance is unavailable** — your session can read documents
   but does not hold `workspace.documents.manage`. Chunk inspection remains
   available; reprocess and recrawl do not appear in Ray's tool set.
+- **Retrieval probing is unavailable** — your session holds
+  `workspace.retrieval.query` but not `workspace.agents.read`, which the probe
+  needs in order to run as an agent.
 - **A source cannot be recrawled** — recrawl accepts an existing website source
   with a stored URL. Uploaded, API, and connector sources use their own refresh
   paths in the Knowledge Base.

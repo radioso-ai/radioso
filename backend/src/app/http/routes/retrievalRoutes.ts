@@ -1,7 +1,8 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
+import type { AuthenticatedPrincipal } from "../../../modules/account/public.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
@@ -12,6 +13,7 @@ import type { RetrievalExecutionSurface } from "../../../modules/retrieval/publi
 
 export const retrievalSearchSchema = z.object({
   query: retrievalQuerySchema,
+  agentId: z.string().uuid().optional(),
   metadataFilter: metadataFilterSchema,
   topK: z.number().int().min(1).max(100).optional(),
   includeDebug: z.boolean().optional().default(false),
@@ -19,6 +21,7 @@ export const retrievalSearchSchema = z.object({
 
 export const retrievalAnswerSchema = z.object({
   query: retrievalQuerySchema,
+  agentId: z.string().uuid().optional(),
   conversationContext: z.object({
     previousUserMessages: z.array(z.string().max(4000)).max(20).optional(),
     previousAssistantMessages: z.array(z.string().max(4000)).max(20).optional(),
@@ -33,6 +36,38 @@ const resolveCapabilitySurface = (header: unknown): Extract<RetrievalExecutionSu
 
 const resolveRequestId = (requestId: unknown): string | undefined =>
   typeof requestId === "string" && requestId.length > 0 ? requestId : undefined;
+
+/**
+ * Scoping a probe to an agent reads that agent's configuration, so the agent
+ * read permission applies — but only to requests that name one, which keeps the
+ * unscoped workspace probe reachable with retrieval access alone.
+ */
+const requireAgentScopePermission = (
+  dependencies: RetrievalRouteDependencies,
+): RequestHandler => async (req, res, next) => {
+  if (!(req.body as { agentId?: string }).agentId) {
+    next();
+    return;
+  }
+  try {
+    const { accountId, userId, workspaceId, authPrincipal } = res.locals as {
+      accountId: string;
+      userId?: string;
+      workspaceId?: string;
+      authPrincipal?: AuthenticatedPrincipal;
+    };
+    await dependencies.accountAccessService.requirePermission({
+      accountId,
+      userId,
+      principal: authPrincipal,
+      permission: "workspace.agents.read",
+      workspaceId,
+    });
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
 
 const presentRetrievalSearchResult = <T extends {
   activitySummary: unknown;
@@ -79,6 +114,7 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
     workspaceSession,
     requireWorkspacePermission(dependencies, "workspace.retrieval.query"),
     validateBody(retrievalSearchSchema),
+    requireAgentScopePermission(dependencies),
     rateLimitExpensiveAuthenticatedRequest,
     async (req, res, next) => {
       try {
@@ -87,6 +123,7 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
           workspaceId,
           accountId: accountId ?? null,
           requestId: resolveRequestId((req as { id?: unknown }).id),
+          agentId: req.body.agentId,
           query: req.body.query,
           metadataFilter: req.body.metadataFilter,
           topK: req.body.topK,
@@ -104,6 +141,7 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
     workspaceSession,
     requireWorkspacePermission(dependencies, "workspace.retrieval.query"),
     validateBody(retrievalAnswerSchema),
+    requireAgentScopePermission(dependencies),
     rateLimitExpensiveAuthenticatedRequest,
     async (req, res, next) => {
       try {
@@ -112,6 +150,7 @@ export const createRetrievalRoutes = (dependencies: RetrievalRouteDependencies):
           workspaceId,
           accountId: accountId ?? null,
           requestId: resolveRequestId((req as { id?: unknown }).id),
+          agentId: req.body.agentId,
           query: req.body.query,
           conversationContext: req.body.conversationContext,
           metadataFilter: req.body.metadataFilter,

@@ -446,6 +446,20 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       getGeneralSettings: async () => ({}),
     },
     agentTurnProbe: { run: unusedPort("agentTurnProbe.run") },
+    retrievalProbe: {
+      probe: async ({ agentId }: { agentId: string }) => ({
+        agentId,
+        retrievalEnabled: true,
+        rewrittenQuery: { semantic: "shipping rates italy", lexical: "shipping italy" },
+        results: [{
+          documentId: COPILOT_EVAL_DOCUMENT_ID,
+          chunkId: "77777777-7777-4777-8777-777777777772",
+          title: "Shipping rates",
+          content: "Shipping to Italy costs nine euro.",
+          score: 0.71,
+        }],
+      }),
+    },
     evalCaseCapture: { capture: unusedPort("evalCaseCapture.capture") },
     evalSuiteProbe: { run: unusedPort("evalSuiteProbe.run") },
     evalCaseReplay: { replay: unusedPort("evalCaseReplay.replay") },

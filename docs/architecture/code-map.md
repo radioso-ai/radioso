@@ -513,6 +513,7 @@ Public surfaces and contracts:
 - `backend/src/modules/retrieval/llmAdapters.ts`
 - `backend/src/modules/retrieval/domain/`
 - `backend/src/app/composition/retrievalDefaultsProvider.ts`
+- `backend/src/app/composition/agentRetrievalScope.ts`
 
 Primary internals:
 

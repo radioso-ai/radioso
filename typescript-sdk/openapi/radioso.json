@@ -9221,6 +9221,25 @@
           "results"
         ]
       },
+      "RetrievalAgentScope": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retrievalEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "retrievalEnabled"
+        ]
+      },
       "RetrievalSearchRequest": {
         "type": "object",
         "properties": {
@@ -9228,6 +9247,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
           },
           "metadataFilter": {
             "type": "object",
@@ -9254,6 +9277,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
           },
           "conversationContext": {
             "type": "object",
@@ -9334,6 +9361,9 @@
               "results"
             ]
           },
+          "agentScope": {
+            "$ref": "#/components/schemas/RetrievalAgentScope"
+          },
           "rewrittenQuery": {
             "type": "object",
             "properties": {
@@ -9373,6 +9403,7 @@
         },
         "required": [
           "outcome",
+          "agentScope",
           "rewrittenQuery",
           "results"
         ]
@@ -9397,6 +9428,9 @@
           "metadata": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "score": {
+            "type": "number"
           }
         },
         "required": [
@@ -9415,6 +9449,9 @@
               "answer"
             ]
           },
+          "agentScope": {
+            "$ref": "#/components/schemas/RetrievalAgentScope"
+          },
           "answer": {
             "type": "string"
           },
@@ -9465,6 +9502,7 @@
         },
         "required": [
           "outcome",
+          "agentScope",
           "answer",
           "validation"
         ]
@@ -9478,6 +9516,9 @@
               "answer"
             ]
           },
+          "agentScope": {
+            "$ref": "#/components/schemas/RetrievalAgentScope"
+          },
           "answer": {
             "type": "string"
           },
@@ -9528,6 +9569,7 @@
         },
         "required": [
           "outcome",
+          "agentScope",
           "answer",
           "validation"
         ]
@@ -22609,6 +22651,26 @@
               }
             }
           },
+          "403": {
+            "description": "Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The agentId supplied does not resolve to an agent in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Expensive authenticated request rate limit exceeded",
             "content": {
@@ -30628,6 +30690,26 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The agentId supplied does not resolve to an agent in this workspace",
             "content": {
               "application/json": {
                 "schema": {

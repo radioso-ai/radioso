@@ -6,6 +6,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   getOrCreateEvalCaseBySourceMessage: ["workspace.retrieval.query"],
   runEvalCases: ["workspace.retrieval.query"],
   createEvalRun: ["workspace.retrieval.query"],
+  searchRetrievalEvidence: ["workspace.retrieval.query"],
   validateAgentRoutine: ["workspace.agents.read"],
   createAssistantChatResponse: ["workspace.chat.use"],
   createAgentRoutine: ["workspace.agents.manage"],

@@ -43,7 +43,7 @@ describe("operator copilot catalog coverage", () => {
   //               deferred scope, since they carry visitor runtime data rather than configuration.
   //   121 -> 118  recrawlDocumentSource, reprocessDocumentSource, and reprocessDocument moved to
   //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
-  const maxDeferredCatalogExclusions = 118;
+  const maxDeferredCatalogExclusions = 117;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

@@ -2,6 +2,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { AgentConversePrincipal } from "../../settings/contracts/agentConverseSession.js";
 import type { RetrievalAnswerService } from "./retrievalAnswerService.js";
 import { serviceUnavailable } from "../../../shared/domain/errors.js";
+import { resolveAgentRetrievalScope } from "../domain/agentRetrievalScope.js";
 
 // Narrow, module-local audit port. The chat module owns the concrete AgentConverseAudit;
 // this service depends only on the one method it calls, so the cross-module wiring stays in
@@ -53,13 +54,7 @@ export class AgentConverseGroundedAnswerService {
       const result = await this.dependencies.retrievalAnswerService.answer({
         workspaceId: principal.workspaceId,
         query: input.query,
-        sourceScope: agent.sourceScope,
-        responseBehaviorEnabled: true,
-        responseBehavior: {
-          customInstruction: agent.customInstruction,
-          citationDisplayEnabled: agent.citationDisplayEnabled,
-        },
-        agentSkillSettings: agent.skillSettings,
+        ...resolveAgentRetrievalScope(agent),
         executionSurface: "mcp_capability",
       });
 

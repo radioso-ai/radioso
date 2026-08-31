@@ -47,7 +47,7 @@ BEGIN
     ) THEN
       ALTER TABLE routine_transition
         ADD CONSTRAINT routine_transition_guard_kind_check
-        CHECK (guard_kind IN ('llm', 'default', 'slot_filled', 'outcome', 'counter'));
+        CHECK (guard_kind IN ('llm', 'default', 'slot_filled', 'outcome', 'counter', 'field'));
     END IF;
   END IF;
 END $$;

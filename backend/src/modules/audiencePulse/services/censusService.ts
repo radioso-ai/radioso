@@ -339,7 +339,8 @@ export class CensusService {
         topicId,
         title: label.title,
         description: label.description,
-        memberIds: [...cluster.memberIds],
+        memberIds: [...cluster.memberIds].sort((left, right) =>
+          distanceByMessageId.get(left)! - distanceByMessageId.get(right)! || left.localeCompare(right)),
         memberCount: cluster.memberIds.length,
         share: populationSize === 0 ? 0 : cluster.memberIds.length / populationSize,
       });

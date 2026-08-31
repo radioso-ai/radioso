@@ -99,7 +99,11 @@ describe("AccountAccessService", () => {
 
   it("evaluates an all-of workspace permission vector from one effective principal", async () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
-    const principal = { type: "workspace_api_token" as const, role: "member" as const };
+    const principal = {
+      type: "workspace_api_token" as const,
+      role: "member" as const,
+      workspaceId: "workspace-1",
+    };
 
     await expect(service.hasAllWorkspacePermissions({
       principal,

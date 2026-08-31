@@ -7,7 +7,19 @@ import { notFound } from "../../../src/shared/domain/errors.js";
 describe("operator probe owner ports", () => {
   it("uses the Chat-owned identity port rather than exposing a Copilot repository dependency", async () => {
     const findByIdAndWorkspaceId = vi.fn(async () => ({
-      workspaceId: "workspace-1", agentId: "agent-1", sourceChannel: "operator_copilot", sourceOrigin: "operator:1",
+      id: "conversation-1",
+      workspaceId: "workspace-1",
+      agentId: "agent-1",
+      agentName: null,
+      agentInternalName: null,
+      sourceChannel: "operator_copilot",
+      sourceOrigin: "operator:1",
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      entryPageUrl: null,
+      createdAt: new Date("2026-08-30T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T00:00:00.000Z"),
     }));
     const reader = new ProbeConversationReader({ findByIdAndWorkspaceId });
 

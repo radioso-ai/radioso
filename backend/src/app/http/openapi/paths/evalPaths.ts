@@ -621,6 +621,14 @@ export const registerEvalPaths = (
           },
         },
       },
+      429: {
+        description: "Workspace answer allowance exhausted. Each replayed case is charged as one answer, so a suite can run out part-way; the cases already recorded are kept.",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
       401: {
         description: "Authentication required",
         content: {

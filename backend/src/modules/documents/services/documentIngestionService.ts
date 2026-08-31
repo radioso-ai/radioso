@@ -503,9 +503,9 @@ export class DocumentIngestionService {
 
     const updated = result.document;
     this.publishDocumentStatusChanged(input.workspaceId);
-    if (settlesEligibility) {
-      await this.embeddingCoverage?.reconcileWorkspace(input.workspaceId);
-    }
+    // Both halves are committed by now, so each half's follow-up work stays together and the
+    // metadata half runs first: a failure reconciling embedding coverage — the eligibility half's
+    // concern — must not skip dispatching the requeue this write already committed.
     if (metadata !== undefined) {
       await this.auditService.record({
         workspaceId: input.workspaceId,
@@ -519,8 +519,14 @@ export class DocumentIngestionService {
           ...(await this.queueSnapshotMetadata()),
         },
       });
+      await this.dispatchQueuedDocumentJob({
+        documentId: updated.id,
+        workspaceId: input.workspaceId,
+        revision: updated.revision,
+      });
     }
     if (settlesEligibility) {
+      await this.embeddingCoverage?.reconcileWorkspace(input.workspaceId);
       await this.auditService.record({
         workspaceId: input.workspaceId,
         eventType: "document.retrieval.update",
@@ -530,13 +536,6 @@ export class DocumentIngestionService {
           retrievalEnabled: updated.retrievalEnabled,
           retrievalExpiresAt: updated.retrievalExpiresAt ? updated.retrievalExpiresAt.toISOString() : null,
         },
-      });
-    }
-    if (metadata !== undefined) {
-      await this.dispatchQueuedDocumentJob({
-        documentId: updated.id,
-        workspaceId: input.workspaceId,
-        revision: updated.revision,
       });
     }
 

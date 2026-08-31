@@ -466,6 +466,7 @@ describe("InMemoryCopilotRepository proposal card reload", () => {
 const tool = (name: string, requiredPermission: "workspace.agents.read" | "workspace.history.read", invoke: (input: unknown, ctx: unknown) => Promise<unknown>) => ({
   name,
   shape: "read" as const,
+  verificationCost: () => 0,
   uiLabel: name === "visible" ? "Visible" : "Hidden",
   description: "reader",
   inputSchema: z.object({}),

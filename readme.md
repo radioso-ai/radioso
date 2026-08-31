@@ -416,7 +416,7 @@ The limit is scoped by account and workspace for browser sessions. Workspace API
 
 ### Ray verification limits
 
-Ray's verification tools spend real model budget on every call: a test turn runs the agent for real, a case replay re-runs a recorded turn, and a suite run does that once per case. One Ray turn may spend three of them, tunable with `COPILOT_PROBE_BUDGET_PER_TURN`. When the budget runs out, Ray answers with what it already measured and tells you to send another turn.
+Ray's verification tools spend real model budget on every call: a test turn runs the agent for real, a case replay re-runs a recorded turn, and a suite run does that once per case. One Ray turn may spend six replayed turns, tunable with `COPILOT_PROBE_BUDGET_PER_TURN`. A suite run is charged per case, so asking for five cases spends five. When the budget runs out, Ray answers with what it already measured and tells you to send another turn.
 
 Each replayed turn also counts against the same answer meter a live customer turn does, so a suite run of five cases is charged as five answers.
 
@@ -424,7 +424,7 @@ Ray turns themselves share the `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_*` window, in
 
 ### Ray conversation retention
 
-Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule rather than accumulating forever. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely. The sweep runs in the document worker, so the worker process has to be running for retention to happen.
+Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule rather than accumulating forever. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely. On a Terraform-managed deployment the matching variable is `copilot_conversation_retention_days`, which passes the value through to the worker. The sweep runs in the document worker, so the worker process has to be running for retention to happen.
 
 ### Audience Pulse refresh limits
 

@@ -1,68 +1,73 @@
 import type { AgentTool } from "../../shared/agent-runtime/index.js";
 
-import type { CopilotToolShape } from "./contracts.js";
+import type { CopilotToolDescriptor } from "./contracts.js";
 
 /**
- * How many `probe` calls one copilot turn may spend.
+ * How much model-backed work one copilot turn may command, counted in replayed turns.
  *
- * A probe is the shape that costs real provider money without changing configuration — a replayed
- * agent turn, an eval suite run, a website fetch. The turn's step budget already bounds how many
- * tool calls run, but not what they cost: one `run_eval_suite` call replays up to five cases, so a
- * six-step turn can drive thirty full assistant turns off a single reserved copilot answer.
+ * The turn's step budget bounds how many tool calls run, not what they cost: a single
+ * `run_eval_suite` call replays several cases, so a six-step turn could otherwise drive dozens of
+ * full assistant turns off one reserved copilot answer.
  *
- * Deliberately below the step budget rather than equal to it: a turn that spent every step probing
- * read nothing about the workspace it was probing, so leaving room for reads is the point.
+ * At least one whole eval suite run fits, because a suite run is the unit an operator actually
+ * asks for — a budget that could not admit one would make Ray refuse the request it was given
+ * rather than pace it.
  */
-export const COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT = 3;
+export const COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT = 6;
 
 /**
- * Raised in place of running a probe once the turn's budget is gone.
+ * Raised in place of running a tool once the turn's budget cannot cover it.
  *
  * The agent runtime surfaces a tool failure's message into the transcript verbatim, so this text is
  * addressed to the model rather than to an operator: an unexplained failure is one the model will
  * retry, and each retry is another billed call that will fail the same way.
  */
 export class CopilotProbeBudgetExhaustedError extends Error {
-  constructor(toolName: string, limit: number) {
+  constructor(toolName: string, cost: number, remaining: number) {
     super(
-      `Verification budget for this turn is spent: ${limit} probe ${limit === 1 ? "call is" : "calls are"} allowed per turn and ${toolName} would exceed it. `
+      `Verification budget for this turn cannot cover ${toolName}: it costs ${cost} and ${remaining} ${remaining === 1 ? "run is" : "runs are"} left. `
       + "Do not retry this call. Answer with what you already measured, and tell the operator to send a new turn if more verification is needed.",
     );
     this.name = "CopilotProbeBudgetExhaustedError";
   }
 }
 
-/** One turn's remaining probe allowance. Created per turn, never shared across turns. */
+/** One turn's remaining allowance. Created per turn, never shared across turns. */
 export interface CopilotProbeBudget {
-  spend(toolName: string): void;
+  spend(toolName: string, cost: number): void;
 }
 
 export const createCopilotProbeBudget = (limit: number): CopilotProbeBudget => {
-  let spent = 0;
+  let remaining = limit;
   return {
-    spend(toolName: string) {
-      if (spent >= limit) throw new CopilotProbeBudgetExhaustedError(toolName, limit);
-      spent += 1;
+    spend(toolName: string, cost: number) {
+      // Refused whole rather than partially: a five-case suite run allowed through on a remaining
+      // budget of one would spend five, which is the overrun the budget exists to prevent.
+      if (cost > remaining) throw new CopilotProbeBudgetExhaustedError(toolName, cost, remaining);
+      remaining -= cost;
     },
   };
 };
 
 /**
- * Meters a tool by its declared shape rather than by name, so a probe contributed later is metered
- * without also being wired into a list here. Every other shape passes through untouched: reads are
- * free, and `act`/`propose` are bounded by the operator confirming them.
+ * Meters a tool by the cost its descriptor declares.
+ *
+ * Deliberately not by `shape`. Shape answers "what does this change, and what confirmation does it
+ * need" — a different question from "what does this spend", and conflating them is what let
+ * `run_eval_suite` through: it is an `act` because it moves a case's stored verdict, and it is also
+ * the most expensive call in the catalog. A tool states its own cost, and a call that costs
+ * nothing is invoked untouched.
  */
 export const meteredCopilotTool = (
   tool: AgentTool,
-  shape: CopilotToolShape,
+  verificationCost: CopilotToolDescriptor["verificationCost"],
   budget: CopilotProbeBudget,
-): AgentTool => {
-  if (shape !== "probe") return tool;
-  return {
-    ...tool,
-    invoke: async (input, context) => {
-      budget.spend(tool.name);
-      return tool.invoke(input, context);
-    },
-  };
-};
+): AgentTool => ({
+  ...tool,
+  invoke: async (input, context) => {
+    // Asked per call rather than once, because a tool's cost can depend on its arguments.
+    const cost = verificationCost(input);
+    if (cost > 0) budget.spend(tool.name, cost);
+    return tool.invoke(input, context);
+  },
+});

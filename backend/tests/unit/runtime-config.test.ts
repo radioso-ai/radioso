@@ -552,6 +552,12 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
+    // The retention window is documented as an operator knob, and the sweep that reads it runs in
+    // the worker — so a Terraform deployment that never passes it leaves the docs describing a
+    // setting the deployment cannot honour.
+    expect(computeTf).toContain('name  = "COPILOT_CONVERSATION_RETENTION_DAYS"');
+    expect(computeTf).toContain("value = tostring(var.copilot_conversation_retention_days)");
+    expect(terraformVariables).toContain('variable "copilot_conversation_retention_days"');
     expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
     expect(computeTf).toContain('name  = "APP_BASE_URL"');
     expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');

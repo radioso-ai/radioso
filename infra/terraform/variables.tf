@@ -280,6 +280,17 @@ variable "action_dispatch_recovery_max_jobs" {
   }
 }
 
+variable "copilot_conversation_retention_days" {
+  description = "Days a Ray conversation is kept after its last activity before the worker sweep removes it, along with its messages and proposals. 0 keeps conversations indefinitely."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.copilot_conversation_retention_days >= 0
+    error_message = "copilot_conversation_retention_days must be zero or greater."
+  }
+}
+
 variable "copilot_retention_schedule" {
   description = "Optional cron schedule for the Ray conversation retention sweep. The worker enforces COPILOT_CONVERSATION_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps copilot conversations forever."
   type        = string

@@ -21,6 +21,7 @@ const context = (permissions: ReadonlySet<string>) => ({
 const descriptor = (describeEntity: NonNullable<CopilotToolDescriptor<{ name: string }> ["describeEntity"]>): CopilotToolDescriptor<{ name: string }> => ({
   name: "agent_configuration",
   shape: "read",
+  verificationCost: () => 0,
   uiLabel: "Reading agent configuration",
   description: "Read an agent.",
   inputSchema: z.object({ name: z.string() }),

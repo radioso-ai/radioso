@@ -314,9 +314,15 @@ Ray's operational envelope has three parts, all keyed off the turn/tool boundary
 Every `copilot.*` audit event carries the operator principal and the calling
 surface, stamped by the service's own actor-bound audit method rather than by each
 call site, and the surface is a required input with no default so a second
-transport declares its own. Metering follows cost rather than call shape: a
-`probe`-shaped tool spends from a per-turn budget enforced where descriptors
-become tools, so a probe contributed later is metered without new wiring, while
+transport declares its own. Metering follows cost rather than call shape, and cost is declared rather than
+inferred: every descriptor states a `verificationCost` — required, and separate
+from `shape`, because shape answers what a tool changes rather than what it
+spends, and inferring one from the other exempted `run_eval_suite` (an `act`,
+since it moves a case's stored verdict) from the very budget it most needed. A
+turn's budget is counted in replayed turns and charged per call from the
+declared cost, so a suite run costs one per case asked for. It is enforced where
+descriptors become tools, so a tool added later is metered without new wiring,
+while
 the provider spend itself is reserved by the service that incurs it. An eval run
 reserves one answer, charged by a wrapper both of `EvalRunService`'s public entry
 points share: `execute` serves the plain runs route, `replay_eval_case`, and each
@@ -365,7 +371,7 @@ Public and tool surfaces:
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
-- `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn probe budget, applied by declared tool shape)
+- `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn verification budget, charged from each descriptor's declared cost)
 - `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
 - `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)

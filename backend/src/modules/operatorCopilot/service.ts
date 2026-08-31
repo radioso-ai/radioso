@@ -239,7 +239,8 @@ export class OperatorCopilotService {
     const activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }> = [];
     const labels = new Map(this.deps.tools.map((tool) => [tool.name, tool.uiLabel]));
     // One budget per turn, created here rather than per conversation: the operator reads the answer
-    // and decides whether more verification is worth another turn.
+    // and decides whether more verification is worth another turn. Denominated in replayed turns,
+    // not in tool calls, because one call can replay several cases.
     const probeBudget = createCopilotProbeBudget(this.deps.probeBudgetPerTurn ?? COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT);
     const tools = this.resolveTools({ ...input, copilotConversationId: conversation.id }, probeBudget);
     const descriptors = new Map(this.deps.tools.map((tool) => [tool.name, tool]));
@@ -354,7 +355,7 @@ export class OperatorCopilotService {
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
       .map((descriptor) => meteredCopilotTool(
         descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool,
-        descriptor.shape,
+        descriptor.verificationCost,
         probeBudget,
       ));
   }

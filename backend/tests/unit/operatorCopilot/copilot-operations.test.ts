@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT,
+  MAX_COPILOT_EVAL_SUITE_CASES,
   OperatorCopilotService,
   type CopilotSurface,
   type CopilotToolDescriptor,
@@ -29,9 +30,11 @@ const descriptor = (
   name: string,
   shape: CopilotToolDescriptor["shape"],
   invoke: (input: unknown, ctx: unknown) => Promise<unknown>,
+  verificationCost: number | ((input: unknown) => number) = 0,
 ): CopilotToolDescriptor => ({
   name,
   shape,
+  verificationCost: typeof verificationCost === "function" ? verificationCost : () => verificationCost,
   uiLabel: name,
   description: name,
   inputSchema: z.object({}),
@@ -222,7 +225,7 @@ describe("copilot per-turn probe budget", () => {
   it("refuses a probe past the turn budget with wording the model can act on", async () => {
     const invoke = vi.fn(async () => ({ value: "ok" }));
     const { service } = buildService({
-      tools: [descriptor("replay_eval_case", "probe", invoke)],
+      tools: [descriptor("replay_eval_case", "probe", invoke, 1)],
       probeBudgetPerTurn: 2,
       runStreaming: streamInvoking("replay_eval_case", 4),
     });
@@ -237,7 +240,7 @@ describe("copilot per-turn probe budget", () => {
   it("surfaces the exhausted budget as a refusal that tells the model not to retry this turn", async () => {
     const errors: string[] = [];
     const { service } = buildService({
-      tools: [descriptor("replay_eval_case", "probe", vi.fn(async () => ({ value: "ok" })))],
+      tools: [descriptor("replay_eval_case", "probe", vi.fn(async () => ({ value: "ok" })), 1)],
       probeBudgetPerTurn: 1,
       runStreaming: (_request, tools) => {
         const target = tools.find((candidate) => candidate.name === "replay_eval_case")!;
@@ -266,7 +269,7 @@ describe("copilot per-turn probe budget", () => {
   it("spends the budget per turn, not per conversation", async () => {
     const invoke = vi.fn(async () => ({ value: "ok" }));
     const { service } = buildService({
-      tools: [descriptor("replay_eval_case", "probe", invoke)],
+      tools: [descriptor("replay_eval_case", "probe", invoke, 1)],
       probeBudgetPerTurn: 1,
       runStreaming: streamInvoking("replay_eval_case", 1),
     });
@@ -277,10 +280,10 @@ describe("copilot per-turn probe budget", () => {
     expect(invoke).toHaveBeenCalledTimes(2);
   });
 
-  it("leaves read, act, and propose tools unmetered", async () => {
+  it("leaves a tool that costs nothing unmetered, whatever its shape", async () => {
     const reads = vi.fn(async () => ({ value: "ok" }));
     const { service } = buildService({
-      tools: [descriptor("agent_configuration", "read", reads)],
+      tools: [descriptor("agent_configuration", "read", reads, 0)],
       probeBudgetPerTurn: 1,
       runStreaming: streamInvoking("agent_configuration", 5),
     });
@@ -290,8 +293,61 @@ describe("copilot per-turn probe budget", () => {
     expect(reads).toHaveBeenCalledTimes(5);
   });
 
-  it("defaults the budget below the turn step budget so reads still fit", async () => {
-    expect(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT).toBeGreaterThan(0);
-    expect(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT).toBeLessThan(6);
+  // The defect this replaced: the budget keyed on `shape: "probe"`, but `run_eval_suite` is an
+  // `act` (it moves a case's stored verdict) and replays up to five cases a call — so the most
+  // expensive tool in the catalog was the one shape-based metering let through untouched.
+  it("meters an act-shaped tool that spends model budget", async () => {
+    const invoke = vi.fn(async () => ({ value: "ok" }));
+    const { service } = buildService({
+      tools: [descriptor("run_eval_suite", "act", invoke, 1)],
+      probeBudgetPerTurn: 2,
+      runStreaming: streamInvoking("run_eval_suite", 4),
+    });
+
+    await runTurn(service);
+
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("charges what the call will actually spend, not one unit per call", async () => {
+    const invoke = vi.fn(async () => ({ value: "ok" }));
+    const { service } = buildService({
+      tools: [descriptor("run_eval_suite", "act", invoke, (input) => (input as { caseIds: string[] }).caseIds.length)],
+      probeBudgetPerTurn: 5,
+      runStreaming: (_request, tools) => {
+        const target = tools.find((candidate) => candidate.name === "run_eval_suite")!;
+        return {
+          events: (async function* () {
+            await target.invoke({ caseIds: ["a", "b", "c"] }, { signal: new AbortController().signal, stepIndex: 0, callId: "call-0" });
+            try {
+              await target.invoke({ caseIds: ["d", "e", "f"] }, { signal: new AbortController().signal, stepIndex: 1, callId: "call-1" });
+            } catch { /* the refusal is what the assertion below checks */ }
+          })(),
+          result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 2, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+        };
+      },
+    });
+
+    await runTurn(service);
+
+    // Three of five spent, so a second three-case call would overshoot and never runs.
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a call whose whole cost overshoots, rather than letting it run and go negative", async () => {
+    const invoke = vi.fn(async () => ({ value: "ok" }));
+    const { service } = buildService({
+      tools: [descriptor("run_eval_suite", "act", invoke, 5)],
+      probeBudgetPerTurn: 3,
+      runStreaming: streamInvoking("run_eval_suite", 1),
+    });
+
+    await runTurn(service);
+
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("defaults to a budget that admits one full eval suite run", () => {
+    expect(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT).toBeGreaterThanOrEqual(MAX_COPILOT_EVAL_SUITE_CASES);
   });
 });

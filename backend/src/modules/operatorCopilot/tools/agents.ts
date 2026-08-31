@@ -72,7 +72,7 @@ export interface AgentConfigurationCopilotToolDependencies {
 
 export const createAgentConfigurationCopilotTools = (deps: AgentConfigurationCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "agent_configuration", shape: "read", uiLabel: "Reading agent configuration", contributingModule: "agents", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
+    name: "agent_configuration", shape: "read", verificationCost: () => 0, uiLabel: "Reading agent configuration", contributingModule: "agents", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
     description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
     inputSchema: agentConfigurationInputSchema, outputSchema: agentConfigurationOutputSchema,
     createTool: (context) => ({
@@ -282,7 +282,7 @@ export const createAgentSettingProposalCopilotTools = (
   const settingAdapter = proposalAdapterFor(deps.proposalAdapters, "agent_setting");
   return [
     {
-      name: "propose_agent_setting", shape: "propose", uiLabel: "Drafting a setting change", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      name: "propose_agent_setting", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a setting change", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,

@@ -5,6 +5,7 @@ import type { Env } from "../../app/config/env.js";
 import { requireWorkspaceSession } from "../../app/http/middleware/requireWorkspaceSession.js";
 import type { WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
+import { createRateLimitMiddleware, type RateLimitAbuseControlPort, type RateLimitAuditPort } from "../../app/http/middleware/rateLimit.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
 import { copilotProposalPermissions, copilotProposalTargetTypes, type CopilotProposalTargetType } from "./contracts.js";
@@ -46,6 +47,8 @@ export const copilotResolvableToolPermissions = (
 
 export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
   env: Env;
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
   accountAccessService: WorkspaceSessionDependencies["accountAccessService"] & {
     hasPermission(input: {
       accountId: string;
@@ -71,6 +74,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
   const sessionOnly = rejectBearer();
+  const rateLimitTurn = copilotTurnRateLimiter(dependencies);
   const resolvableToolPermissions = copilotResolvableToolPermissions(dependencies.copilotToolCatalog);
   router.use(workspaceSession, sessionOnly, agentRead);
 
@@ -136,7 +140,7 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
       next(error);
     }
   });
-  router.post("/turns", validateBody(copilotTurnRequestSchema), async (req, res, next) => {
+  router.post("/turns", rateLimitTurn, validateBody(copilotTurnRequestSchema), async (req, res, next) => {
     try {
       if (!(await availability(dependencies, res)).available) { res.status(503).json({ reason: "no_llm_capability" }); return; }
       const { workspaceId, accountId, userId, principal } = sessionLocals(res);
@@ -153,6 +157,37 @@ export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Rou
   });
   return router;
 };
+
+/**
+ * Keyed to the operator, not to the account.
+ *
+ * The dashboard's own limiter buckets a browser session by account and workspace, which is right
+ * for a surface a person types into. A Ray turn is a loop the operator starts and a model runs, so
+ * an account-wide bucket would let one runaway session refuse every colleague in the workspace.
+ * The operator-scoped key matches how Ray's expensive tools already spend their budget, and gives
+ * a Ray turn its own scope rather than competing with the operator's assistant and retrieval work.
+ */
+const copilotTurnRateLimiter = (dependencies: CopilotRouteDependencies): RequestHandler =>
+  createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "api.copilot_turn",
+    limit: dependencies.env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    resolveSubjectKey: (_req, res) => {
+      const locals = res.locals as { accountId?: string; workspaceId?: string; userId?: string };
+      if (!locals.accountId || !locals.workspaceId || !locals.userId) return null;
+      return `account:${locals.accountId}:workspace:${locals.workspaceId}:operator:${locals.userId}`;
+    },
+    resolveAuditContext: (_req, res) => {
+      const locals = res.locals as { accountId?: string; workspaceId?: string; userId?: string };
+      return {
+        accountId: locals.accountId ?? null,
+        workspaceId: locals.workspaceId ?? null,
+        metadata: { principalType: "operator_copilot", operatorUserId: locals.userId, route: "POST /api/v1/copilot/turns" },
+      };
+    },
+  });
 
 const rejectBearer = (): RequestHandler => (_req, res, next) => { if (res.locals.authMode === "bearer") { next(forbidden()); return; } next(); };
 const sessionLocals = (res: Response): { workspaceId: string; accountId: string; userId: string; principal: { type: "session_user"; userId: string } } => {

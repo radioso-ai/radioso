@@ -420,6 +420,8 @@ Ray's verification tools spend real model budget on every call: a test turn runs
 
 Each replayed turn also counts against the same answer meter a live customer turn does, so a suite run of five cases is charged as five answers.
 
+Ray turns themselves share the `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_*` window, in a bucket per operator, workspace, and account. One operator driving Ray hard therefore cannot refuse turns for a colleague in the same workspace.
+
 ### Ray conversation retention
 
 Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule rather than accumulating forever. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely. The sweep runs in the document worker, so the worker process has to be running for retention to happen.

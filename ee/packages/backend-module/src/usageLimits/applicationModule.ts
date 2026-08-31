@@ -4,6 +4,7 @@ import { usageLimitMigrator } from "./usageLimitMigrator.js";
 import { createUsageLimitRoutes } from "./usageLimitRoutes.js";
 import { EnterpriseUsageLimitService } from "./usageLimitService.js";
 import { EnterpriseOrganizationCreationGuard } from "../orgCreation/organizationCreationGuard.js";
+import { createUsageLimitCopilotToolContribution } from "./copilotTools.js";
 
 const STARTER_PROFILE_KEY = "starter_100";
 
@@ -31,5 +32,9 @@ export const createUsageLimitsApplicationModule = (): ApplicationModule => ({
         return createUsageLimitRoutes(dependencies);
       },
     });
+    // Without this the plan an operator is billed against is invisible to Ray, which then advises
+    // on ingestion volume with no idea what the account is allowed to store.
+    context.registerCopilotTools?.(({ database }) =>
+      createUsageLimitCopilotToolContribution({ usage: new EnterpriseUsageLimitService(database) }));
   },
 });

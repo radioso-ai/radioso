@@ -185,8 +185,8 @@ describe("copilot capability governance", () => {
       capabilityProvenance: { rayOnly: { reason: "  " } },
     };
 
-    expect(() => assertCopilotCapabilityProvenance([invalidPrimitive], new Set())).toThrow("Unknown application primitive identity");
-    expect(() => assertCopilotCapabilityProvenance([emptyDisposition], new Set())).toThrow("empty Ray-only reason");
+    expect(() => assertCopilotCapabilityProvenance([invalidPrimitive], { publicOperationIds: new Set() })).toThrow("Unknown application primitive identity");
+    expect(() => assertCopilotCapabilityProvenance([emptyDisposition], { publicOperationIds: new Set() })).toThrow("empty Ray-only reason");
   });
 
   it("requires a primitive identity to be exported by its owning module", () => {
@@ -195,9 +195,9 @@ describe("copilot capability governance", () => {
       capabilityProvenance: { applicationPrimitiveIds: ["agents.configuration.read"] },
     } satisfies CopilotToolDescriptor;
 
-    expect(() => assertCopilotCapabilityProvenance([ownerPrimitive], new Set())).toThrow("not exported by its owning module");
+    expect(() => assertCopilotCapabilityProvenance([ownerPrimitive], { publicOperationIds: new Set() })).toThrow("not exported by its owning module");
     expect(() => assertCopilotCapabilityProvenance(
-      [ownerPrimitive], new Set(), {}, new Set(["agents.configuration.read"]),
+      [ownerPrimitive], { publicOperationIds: new Set(), ownerExportedPrimitiveIds: new Set(["agents.configuration.read"]) },
     )).not.toThrow();
   });
 
@@ -207,11 +207,10 @@ describe("copilot capability governance", () => {
       capabilityProvenance: { backingOperationIds: ["validateAgentRoutine"] },
     } satisfies CopilotToolDescriptor;
 
-    expect(() => assertCopilotCapabilityProvenance(
-      [weakened],
-      new Set(["validateAgentRoutine"]),
-      { validateAgentRoutine: ["workspace.agents.manage"] },
-    )).toThrow("weakens permission parity");
+    expect(() => assertCopilotCapabilityProvenance([weakened], {
+      publicOperationIds: new Set(["validateAgentRoutine"]),
+      operationPermissions: { validateAgentRoutine: ["workspace.agents.manage"] },
+    })).toThrow("weakens permission parity");
   });
 
   it("keeps one-to-one parity when a descriptor adds a primitive or Ray-only safety", () => {
@@ -224,11 +223,10 @@ describe("copilot capability governance", () => {
       },
     } satisfies CopilotToolDescriptor;
 
-    expect(() => assertCopilotCapabilityProvenance(
-      [composed],
-      new Set(["validateAgentRoutine"]),
-      { validateAgentRoutine: ["workspace.agents.manage"] },
-      new Set(["routines.validation"]),
-    )).toThrow("weakens permission parity");
+    expect(() => assertCopilotCapabilityProvenance([composed], {
+      publicOperationIds: new Set(["validateAgentRoutine"]),
+      operationPermissions: { validateAgentRoutine: ["workspace.agents.manage"] },
+      ownerExportedPrimitiveIds: new Set(["routines.validation"]),
+    })).toThrow("weakens permission parity");
   });
 });

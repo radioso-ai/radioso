@@ -22648,10 +22648,24 @@ paths:
                       - no_llm_capability
                   canManage:
                     type: boolean
+                  applyableProposalTargets:
+                    type: array
+                    items:
+                      type: string
+                      enum: &a90
+                        - directive
+                        - agent_setting
+                        - routine
+                        - agent_skill
+                        - context_variable
+                        - document
+                        - ingestion_settings
+                        - website_crawl
                 required:
                   - available
                   - reason
                   - canManage
+                  - applyableProposalTargets
         "403":
           description: Forbidden
   /api/v1/copilot/conversations:
@@ -22808,15 +22822,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: &a90
-                                      - directive
-                                      - agent_setting
-                                      - routine
-                                      - agent_skill
-                                      - context_variable
-                                      - document
-                                      - ingestion_settings
-                                      - website_crawl
+                                    enum: *a90
                                   targetLabel:
                                     type: string
                                   summary:

@@ -43,6 +43,9 @@ export interface CopilotAvailability {
   available: boolean
   reason: 'ok' | 'no_llm_capability'
   canManage: boolean
+  /** The proposal kinds this operator may apply. Applying writes to the domain a proposal targets,
+   * so a document manager and an agent manager can each apply some cards and not others. */
+  applyableProposalTargets?: CopilotProposalTargetType[]
 }
 
 export type CopilotConversationStatus = 'idle' | 'running'

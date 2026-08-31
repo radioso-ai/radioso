@@ -2,11 +2,12 @@ import {
   copilotWebsiteCrawlChangeSchema,
   copilotWebsiteCrawlPayloadSchema,
   copilotWebsiteCrawlTargetRefSchema,
-  type CopilotWebsiteCrawlLimits,
+  type CopilotWebsiteCrawlPolicy,
   type CopilotWebsiteCrawlPort,
   type CopilotWorkspaceAccountResolver,
 } from "./contracts/websiteCrawlAuthoring.js";
 import type { CopilotWebsiteCrawlProposalAdapter } from "./contracts.js";
+import { badRequest } from "../../shared/domain/errors.js";
 
 /**
  * A crawl proposal addresses no stored row: applying it starts a job rather than changing a
@@ -18,7 +19,7 @@ const CRAWL_VERSION_TOKEN = "crawl";
 export interface WebsiteCrawlCopilotProposalAdapterDependencies {
   readonly websiteCrawl: CopilotWebsiteCrawlPort;
   readonly workspaceAccount: CopilotWorkspaceAccountResolver;
-  readonly crawlLimits: CopilotWebsiteCrawlLimits;
+  readonly crawlPolicy: () => CopilotWebsiteCrawlPolicy;
 }
 
 export const createWebsiteCrawlCopilotProposalAdapter = (
@@ -41,11 +42,15 @@ export const createWebsiteCrawlCopilotProposalAdapter = (
     copilotWebsiteCrawlTargetRefSchema.parse(rawTargetRef);
     const payload = copilotWebsiteCrawlPayloadSchema.parse(rawPayload);
     try {
+      // Read again rather than trusting the draft: a deployment that turned crawling off, or
+      // lowered its ceiling, since the card was written governs what actually runs.
+      const policy = deps.crawlPolicy();
+      if (!policy.enabled) return { outcome: "failed" as const, reason: "Website crawling is disabled for this deployment." };
       const result = await deps.websiteCrawl.enqueue({
         accountId: await deps.workspaceAccount.resolveAccountId(workspaceId),
         workspaceId,
         url: payload.url,
-        limit: payload.limit,
+        limit: Math.min(payload.limit, policy.maxLimit),
         policy: {
           includeUrlPatterns: payload.includeUrlPatterns,
           excludeUrlPatterns: payload.excludeUrlPatterns,
@@ -61,14 +66,19 @@ export const createWebsiteCrawlCopilotProposalAdapter = (
   async validatePayload(_workspaceId, rawTargetRef, rawChange) {
     copilotWebsiteCrawlTargetRefSchema.parse(rawTargetRef);
     const change = copilotWebsiteCrawlChangeSchema.parse(rawChange);
+    const policy = deps.crawlPolicy();
+    // A deployment with crawling off removes the crawl route and its workers exit, so a card drafted
+    // here could only ever queue a job nothing would run.
+    if (!policy.enabled) throw badRequest("Website crawling is disabled for this deployment.");
     // Checked here so a URL the crawler would refuse fails while Ray is drafting, rather than
     // reaching an operator as a card that can only fail when they choose Apply.
     await deps.websiteCrawl.assertCrawlUrlAllowed(change.url);
     return {
       targetRef: { url: change.url },
       payload: copilotWebsiteCrawlPayloadSchema.parse({
+        name: change.url,
         url: change.url,
-        limit: Math.min(change.limit ?? deps.crawlLimits.defaultLimit, deps.crawlLimits.maxLimit),
+        limit: Math.min(change.limit ?? policy.defaultLimit, policy.maxLimit),
         includeUrlPatterns: change.includeUrlPatterns ?? [],
         excludeUrlPatterns: change.excludeUrlPatterns ?? [],
         preserveContentLinks: change.preserveContentLinks ?? true,

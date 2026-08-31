@@ -17,11 +17,11 @@ const crawlPorts = () => ({
   assertCrawlUrlAllowed: vi.fn(async () => undefined),
 });
 
-const adapterFor = (crawl = crawlPorts(), limits = { defaultLimit: 50, maxLimit: 200 }) => ({
+const adapterFor = (crawl = crawlPorts(), policy = { enabled: true, defaultLimit: 50, maxLimit: 200 }) => ({
   adapter: createWebsiteCrawlCopilotProposalAdapter({
     websiteCrawl: crawl,
     workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
-    crawlLimits: limits,
+    crawlPolicy: () => policy,
   }),
   crawl,
 });
@@ -75,7 +75,7 @@ describe("start_crawl", () => {
   });
 
   it("holds a proposed page count to the deployment's ceiling", async () => {
-    const { adapter } = adapterFor(crawlPorts(), { defaultLimit: 50, maxLimit: 100 });
+    const { adapter } = adapterFor(crawlPorts(), { enabled: true, defaultLimit: 50, maxLimit: 100 });
     const { descriptor, createProposal } = toolFor(adapter);
 
     await descriptor.createTool(context).invoke({ url: "https://help.example.com", limit: 5_000 }, {} as never);
@@ -86,7 +86,7 @@ describe("start_crawl", () => {
   });
 
   it("falls back to the deployment's default page count", async () => {
-    const { adapter } = adapterFor(crawlPorts(), { defaultLimit: 40, maxLimit: 100 });
+    const { adapter } = adapterFor(crawlPorts(), { enabled: true, defaultLimit: 40, maxLimit: 100 });
     const { descriptor, createProposal } = toolFor(adapter);
 
     await descriptor.createTool(context).invoke({ url: "https://help.example.com" }, {} as never);
@@ -102,6 +102,7 @@ describe("website crawl proposal adapter", () => {
     const { adapter, crawl } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { url: "https://help.example.com" }, {
+      name: "https://help.example.com",
       url: "https://help.example.com",
       limit: 25,
       includeUrlPatterns: ["/docs/*"],
@@ -125,6 +126,7 @@ describe("website crawl proposal adapter", () => {
     const { adapter } = adapterFor(crawl);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { url: "https://help.example.com" }, {
+      name: "https://help.example.com",
       url: "https://help.example.com",
       limit: 25,
       includeUrlPatterns: [],
@@ -135,10 +137,53 @@ describe("website crawl proposal adapter", () => {
     expect(outcome).toEqual({ outcome: "failed", reason: "Website crawling is unavailable" });
   });
 
+  it("refuses to draft a crawl on a deployment with crawling turned off", async () => {
+    const { adapter } = adapterFor(crawlPorts(), { enabled: false, defaultLimit: 50, maxLimit: 200 });
+    const { descriptor, createProposal } = toolFor(adapter);
+
+    await expect(descriptor.createTool(context).invoke({ url: "https://help.example.com" }, {} as never))
+      .rejects.toThrow(/disabled/i);
+    expect(createProposal).not.toHaveBeenCalled();
+  });
+
+  it("holds an applied crawl to the ceiling in force now, not the one captured at draft", async () => {
+    const crawl = crawlPorts();
+    const { adapter } = adapterFor(crawl, { enabled: true, defaultLimit: 50, maxLimit: 60 });
+
+    await adapter.applyIfVersionMatches("workspace-1", { url: "https://help.example.com" }, {
+      name: "https://help.example.com",
+      url: "https://help.example.com",
+      limit: 1_000,
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
+    }, "crawl");
+
+    expect(crawl.enqueue).toHaveBeenCalledWith(expect.objectContaining({ limit: 60 }));
+  });
+
+  it("refuses to apply a crawl after the deployment turned crawling off", async () => {
+    const crawl = crawlPorts();
+    const { adapter } = adapterFor(crawl, { enabled: false, defaultLimit: 50, maxLimit: 200 });
+
+    const outcome = await adapter.applyIfVersionMatches("workspace-1", { url: "https://help.example.com" }, {
+      name: "https://help.example.com",
+      url: "https://help.example.com",
+      limit: 25,
+      includeUrlPatterns: [],
+      excludeUrlPatterns: [],
+      preserveContentLinks: true,
+    }, "crawl");
+
+    expect(outcome).toMatchObject({ outcome: "failed" });
+    expect(crawl.enqueue).not.toHaveBeenCalled();
+  });
+
   it("previews the crawl as an addition, with no current state to compare against", async () => {
     const { adapter } = adapterFor();
 
     const preview = await adapter.preview("workspace-1", { url: "https://help.example.com" }, {
+      name: "https://help.example.com",
       url: "https://help.example.com",
       limit: 25,
       includeUrlPatterns: [],

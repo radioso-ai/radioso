@@ -65,7 +65,7 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
-import { createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
+import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
@@ -429,7 +429,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
     createDocumentCopilotProposalAdapter({
-      documentAuthoring: documents.documentIngestionService,
+      documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
       documentDeletion: documents.documentDeletionService,
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
@@ -437,7 +437,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createWebsiteCrawlCopilotProposalAdapter({
       websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
-      crawlLimits: resolveWebsiteCrawlerConfig(),
+      crawlPolicy: () => {
+        const config = resolveWebsiteCrawlerConfig();
+        return { enabled: env.WEBSITE_CRAWLER_ENABLED, defaultLimit: config.defaultLimit, maxLimit: config.maxLimit };
+      },
     }),
   ] as const;
   const retrievalProbeService = new RetrievalProbeService({

@@ -29,7 +29,7 @@ test("opens Ray, streams activity and an answer, resumes history, and deletes it
     const path = url.pathname.replace("/backend/api/v1", "");
 
     if (path === "/copilot/availability" && request.method() === "GET") {
-      await route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+      await route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
       return;
     }
     if (path === "/copilot/conversations" && request.method() === "GET") {
@@ -168,7 +168,7 @@ test("summons Ray from Activity with ambient conversation context and links acti
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
     if (path === "/copilot/availability" && request.method() === "GET") {
-      await route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+      await route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
       return;
     }
     if (path === "/copilot/conversations" && request.method() === "GET") {
@@ -225,7 +225,7 @@ test("asks Ray about selected dashboard text", async ({ page }) => {
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations") return route.fulfill({ json: { conversations: [] } });
     if (path === "/copilot/turns" && request.method() === "POST") {
       const body = JSON.parse(request.postData() ?? "{}") as { pageContext: { selection: string | null } };
@@ -275,7 +275,7 @@ test("retries a failed Ray turn with the same message", async ({ page }) => {
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Retry this", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Retry this", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === "/copilot/turns" && request.method() === "POST") {
@@ -331,7 +331,7 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Draft a refund rule", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Draft a refund rule", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
@@ -398,7 +398,7 @@ test("reviews and applies a reversible directive disable proposal", async ({ pag
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Disable a directive", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Disable a directive", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
@@ -447,7 +447,7 @@ test("states plainly that applying a directive removal proposal deletes it perma
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Remove the competitor directive", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Remove the competitor directive", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { directiveId: "directive-competitors-1" } } });
@@ -528,7 +528,7 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Draft a refund workflow", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Draft a refund workflow", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
@@ -578,7 +578,7 @@ test("dismisses a pending proposal without applying it", async ({ page }) => {
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Dismiss proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Dismiss proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}/dismiss` && request.method() === "POST") return route.fulfill({ json: { status: "dismissed" } });
@@ -605,7 +605,7 @@ test("shows the stale explanation when applying a changed proposal", async ({ pa
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Stale proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Stale proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "stale" } });
@@ -652,7 +652,7 @@ test("shows what a proposal was verified against, regressions and stale replays 
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["directive","agent_setting","routine","agent_skill","context_variable","document","ingestion_settings","website_crawl"] } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: [] } });
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
     if (path === "/copilot/turns" && request.method() === "POST") {

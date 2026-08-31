@@ -98,7 +98,7 @@ describe("propose_document", () => {
       targetRef: { documentId: null },
       payload: expect.objectContaining({
         op: "create",
-        title: "Refund window",
+        name: "Refund window",
         content: "Refunds are accepted within 30 days of delivery.",
         metadata: { language: "en" },
       }),
@@ -143,7 +143,7 @@ describe("propose_document_retrieval", () => {
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
       targetType: "document",
       targetRef: { documentId: DOCUMENT_ID },
-      payload: expect.objectContaining({ op: "update_retrieval", retrievalEnabled: false, title: "Refund policy" }),
+      payload: expect.objectContaining({ op: "update_retrieval", retrievalEnabled: false, name: "Refund policy" }),
       versionToken: "2026-08-30T10:00:00.000Z",
     }));
     expect(result.targetLabel).toBe("Refund policy");
@@ -182,7 +182,7 @@ describe("propose_document_removal", () => {
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
       targetType: "document",
       targetRef: { documentId: DOCUMENT_ID },
-      payload: expect.objectContaining({ op: "delete", title: "Refund policy" }),
+      payload: expect.objectContaining({ op: "delete", name: "Refund policy", removesTarget: true }),
     }));
     expect(result.removal).toBe(true);
     expect(result.summary).toContain("cannot be undone");
@@ -205,7 +205,7 @@ describe("document proposal adapter", () => {
     const { adapter, authoring, account } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: null }, {
-      op: "create", title: "Refund window", content: "Within 30 days.", metadata: { language: "en" },
+      op: "create", name: "Refund window", content: "Within 30 days.", metadata: { language: "en" },
     }, "create");
 
     expect(account.resolveAccountId).toHaveBeenCalledWith("workspace-1");
@@ -223,7 +223,7 @@ describe("document proposal adapter", () => {
     const { adapter, authoring } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, {
-      op: "update_retrieval", title: "Refund policy", retrievalEnabled: false,
+      op: "update_retrieval", name: "Refund policy", retrievalEnabled: false,
     }, "2026-08-01T10:00:00.000Z");
 
     expect(outcome).toEqual({ outcome: "stale" });
@@ -234,7 +234,7 @@ describe("document proposal adapter", () => {
     const { adapter, authoring } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, {
-      op: "update_retrieval", title: "Refund policy", metadata: { language: "de" }, retrievalEnabled: false,
+      op: "update_retrieval", name: "Refund policy", metadata: { language: "de" }, retrievalEnabled: false,
     }, "2026-08-30T10:00:00.000Z");
 
     expect(authoring.updateMetadata).toHaveBeenCalledWith({ workspaceId: "workspace-1", documentId: DOCUMENT_ID, metadata: { language: "de" } });
@@ -247,11 +247,11 @@ describe("document proposal adapter", () => {
   it("deletes only when the stored version still matches the draft", async () => {
     const { adapter, deletion } = adapterFor();
 
-    const stale = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", title: "Refund policy" }, "2026-08-01T10:00:00.000Z");
+    const stale = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", name: "Refund policy", removesTarget: true }, "2026-08-01T10:00:00.000Z");
     expect(stale).toEqual({ outcome: "stale" });
     expect(deletion.delete).not.toHaveBeenCalled();
 
-    const applied = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", title: "Refund policy" }, "2026-08-30T10:00:00.000Z");
+    const applied = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", name: "Refund policy", removesTarget: true }, "2026-08-30T10:00:00.000Z");
     expect(applied).toEqual({ outcome: "applied", appliedRef: { documentId: DOCUMENT_ID } });
     expect(deletion.delete).toHaveBeenCalledWith({ workspaceId: "workspace-1", documentId: DOCUMENT_ID });
   });
@@ -260,19 +260,19 @@ describe("document proposal adapter", () => {
     const { adapter } = adapterFor();
 
     const preview = await adapter.preview("workspace-1", { documentId: DOCUMENT_ID }, {
-      op: "update_retrieval", title: "Refund policy", retrievalEnabled: false,
+      op: "update_retrieval", name: "Refund policy", retrievalEnabled: false,
     });
 
     expect(preview.targetLabel).toBe("Refund policy");
-    expect(preview.current).toEqual({ title: "Refund policy", metadata: { language: "en" }, retrievalEnabled: true, retrievalExpiresAt: null });
-    expect(preview.proposed).toEqual({ title: "Refund policy", metadata: { language: "en" }, retrievalEnabled: false, retrievalExpiresAt: null });
+    expect(preview.current).toEqual({ name: "Refund policy", metadata: { language: "en" }, retrievalEnabled: true, retrievalExpiresAt: null });
+    expect(preview.proposed).toEqual({ name: "Refund policy", metadata: { language: "en" }, retrievalEnabled: false, retrievalExpiresAt: null });
     expect(JSON.stringify(preview)).not.toContain("content");
   });
 
   it("keeps a create's version token free of any existing row's timestamp", async () => {
     const { adapter, authoring } = adapterFor();
 
-    const token = await adapter.readVersionToken("workspace-1", { documentId: null }, { op: "create", title: "Refund window", content: "Within 30 days." });
+    const token = await adapter.readVersionToken("workspace-1", { documentId: null }, { op: "create", name: "Refund window", content: "Within 30 days." });
 
     expect(token).toBe("create");
     expect(authoring.getDocument).not.toHaveBeenCalled();

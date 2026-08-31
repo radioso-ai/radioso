@@ -34,12 +34,11 @@ export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalC
   // setting key instead. Every other target type (present or future) proposes a named thing, so
   // this reads as "not agent_setting" rather than an OR-chain a new target type could miss.
   const targetLabel = proposal.targetType !== "agent_setting" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
-  // Same discriminator proposalAdapters.ts's own isDirectiveRemoval uses to pick the removal
-  // branch at preview/apply time: a payload missing `op` is the save shape every proposal used
-  // before removal existed, so only an explicit `op: "remove"` reads as one (Finding 1, issue
-  // triage next-ray-epic-issue). This lets a reloaded card state plainly that Apply deletes the
-  // target, not just an ordinary card whose summary happens to mention it.
-  const removal = proposal.targetType === "directive" && payload.op === "remove";
+  // A payload states its own irreversibility, so a reloaded card warns about deletion without the
+  // reader having to recognise each target type's word for it - the pairing that silently dropped
+  // the warning when document removal arrived. The directive clause reads rows written before the
+  // flag existed; every proposal drafted since carries `removesTarget`.
+  const removal = payload.removesTarget === true || (proposal.targetType === "directive" && payload.op === "remove");
   const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}) };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };

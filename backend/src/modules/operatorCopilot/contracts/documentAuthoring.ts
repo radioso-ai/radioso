@@ -24,7 +24,9 @@ const titleSchema = z.string().trim().min(1).max(300);
  */
 export const copilotDocumentCreatePayloadSchema = z.object({
   op: z.literal("create"),
-  title: titleSchema,
+  /** The document's title. Named `name` because that is what every proposal card reads a target's
+   * label from, whatever the target is. */
+  name: titleSchema,
   content: z.string().trim().min(1).max(MAX_COPILOT_DOCUMENT_CONTENT),
   metadata: documentMetadataRecordSchema.optional(),
   rationale: rationaleSchema.optional(),
@@ -50,6 +52,7 @@ export const copilotDocumentRetrievalChangeSchema = z.object({
 
 export const copilotDocumentDeleteChangeSchema = z.object({
   op: z.literal("delete"),
+  removesTarget: z.literal(true),
   rationale: rationaleSchema.optional(),
 }).strict();
 
@@ -66,14 +69,17 @@ export const copilotDocumentChangeSchema = z.discriminatedUnion("op", [
 export const copilotDocumentRetrievalPayloadSchema = z.object({
   op: z.literal("update_retrieval"),
   /** The document's title when the draft was made, so the card can name its target. */
-  title: titleSchema,
+  name: titleSchema,
   ...retrievalChangeFields,
   rationale: rationaleSchema.optional(),
 }).strict();
 
 export const copilotDocumentDeletePayloadSchema = z.object({
   op: z.literal("delete"),
-  title: titleSchema,
+  name: titleSchema,
+  /** Applying this deletes the target. Stated on the payload so a reloaded card can warn about it
+   * without the reader knowing each target type's word for deletion. */
+  removesTarget: z.literal(true),
   rationale: rationaleSchema.optional(),
 }).strict();
 

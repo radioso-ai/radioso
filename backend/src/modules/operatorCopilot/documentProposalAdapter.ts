@@ -9,7 +9,7 @@ import {
   type CopilotWorkspaceAccountResolver,
 } from "./contracts/documentAuthoring.js";
 import type { CopilotDocumentProposalAdapter } from "./contracts.js";
-import { badRequest } from "../../shared/domain/errors.js";
+import { AppError, badRequest } from "../../shared/domain/errors.js";
 
 /**
  * A create addresses no stored row, and it carries no external identity that could collide with
@@ -17,6 +17,21 @@ import { badRequest } from "../../shared/domain/errors.js";
  * borrowing an unrelated row's timestamp.
  */
 const CREATE_VERSION_TOKEN = "create";
+
+/**
+ * Only a target that is genuinely gone reads as gone. A database or service failure that also threw
+ * would otherwise be reported as "someone deleted this" - resolving a proposal an operator could
+ * have retried, and telling them a conflict happened that did not.
+ */
+const missingTarget = (error: unknown): boolean => error instanceof AppError && error.code === "not_found";
+const readOrMissing = async <T>(read: Promise<T>): Promise<T | null> => {
+  try {
+    return await read;
+  } catch (error) {
+    if (missingTarget(error)) return null;
+    throw error;
+  }
+};
 
 export interface DocumentCopilotProposalAdapterDependencies {
   readonly documentAuthoring: CopilotDocumentAuthoringPort;
@@ -33,7 +48,7 @@ const versionToken = (document: Pick<CopilotDocumentSummary, "updatedAt">): stri
   document.updatedAt.toISOString();
 
 const retrievalState = (document: CopilotDocumentSummary) => ({
-  title: document.title,
+  name: document.title,
   metadata: document.metadata,
   retrievalEnabled: document.retrievalEnabled,
   retrievalExpiresAt: document.retrievalExpiresAt ? document.retrievalExpiresAt.toISOString() : null,
@@ -75,19 +90,19 @@ export const createDocumentCopilotProposalAdapter = (
       const payload = copilotDocumentPayloadSchema.parse(rawPayload);
       if (payload.op === "create") {
         return {
-          targetLabel: payload.title,
+          targetLabel: payload.name,
           current: null,
-          proposed: { title: payload.title, content: payload.content, metadata: payload.metadata ?? {} },
+          proposed: { name: payload.name, content: payload.content, metadata: payload.metadata ?? {} },
         };
       }
       // A missing document still previews: the operator is looking at a card for something that has
       // since been deleted, and an empty current is the honest rendering of that.
-      const document = await readDocument(workspaceId, requiredDocumentId(targetRef)).catch(() => null);
+      const document = await readOrMissing(readDocument(workspaceId, requiredDocumentId(targetRef)));
       if (payload.op === "delete") {
-        return { targetLabel: document?.title ?? payload.title, current: document ? retrievalState(document) : null, proposed: null };
+        return { targetLabel: document?.title ?? payload.name, current: document ? retrievalState(document) : null, proposed: null };
       }
       return {
-        targetLabel: document?.title ?? payload.title,
+        targetLabel: document?.title ?? payload.name,
         current: document ? retrievalState(document) : null,
         proposed: document ? proposedRetrievalState(document, payload) : null,
       };
@@ -101,7 +116,7 @@ export const createDocumentCopilotProposalAdapter = (
           const created = await deps.documentAuthoring.ingest({
             workspaceId,
             accountId: await deps.workspaceAccount.resolveAccountId(workspaceId),
-            title: payload.title,
+            title: payload.name,
             content: payload.content,
             ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
           });
@@ -110,8 +125,10 @@ export const createDocumentCopilotProposalAdapter = (
 
         const documentId = requiredDocumentId(targetRef);
         // The documents service takes no expected-version argument, so the version check is this
-        // read compared against the draft's token. The window it leaves open is the one apply call.
-        const document = await readDocument(workspaceId, documentId).catch(() => null);
+        // read compared against the draft's token, leaving a window between them. That is the same
+        // window the dashboard's own save has, so applying a proposal is no less safe than the edit
+        // it mirrors - but neither is atomic. Conditional writes are tracked separately.
+        const document = await readOrMissing(readDocument(workspaceId, documentId));
         if (!document || versionToken(document) !== token) return { outcome: "stale" as const };
 
         if (payload.op === "delete") {
@@ -120,7 +137,9 @@ export const createDocumentCopilotProposalAdapter = (
         }
 
         // Metadata is replaced first so the requeue it triggers carries the new tags, matching the
-        // order the documents PATCH route settles the same two writes in.
+        // order the documents PATCH route settles the same two writes in. They are two writes, so a
+        // failure in the second leaves the first applied while the proposal reports `failed` - again
+        // matching the route, which has no transaction around the pair either.
         if (payload.metadata !== undefined) {
           await deps.documentAuthoring.updateMetadata({ workspaceId, documentId, metadata: payload.metadata });
         }
@@ -157,7 +176,7 @@ export const createDocumentCopilotProposalAdapter = (
       const document = await readDocument(workspaceId, requiredDocumentId(targetRef));
       return {
         targetRef: { documentId: document.id },
-        payload: copilotDocumentPayloadSchema.parse({ ...change, title: document.title }),
+        payload: copilotDocumentPayloadSchema.parse({ ...change, name: document.title }),
         versionToken: versionToken(document),
       };
     },

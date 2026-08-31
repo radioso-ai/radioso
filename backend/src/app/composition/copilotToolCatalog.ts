@@ -32,7 +32,7 @@ import type {
   CopilotProposalAdapterRegistry,
   CopilotWorkspaceRouteKeyResolver,
 } from "../../modules/operatorCopilot/public.js";
-import type { CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
+import type { CopilotDocumentAuthoringPort, CopilotDocumentSummary, CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
 import { websiteCrawlerCopilotPrimitives } from "../../modules/websiteCrawler/public.js";
 import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
@@ -54,6 +54,37 @@ import { contextVariableCopilotPrimitives } from "../../modules/context-variable
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
+/**
+ * Projects the ingestion service down to what the copilot may see. The port's type already omits a
+ * document's body, but a type is a compile-time claim: the object composition injects still carries
+ * `content` at runtime, so anything that reached it through a widening cast or a JSON dump would
+ * carry the body with it. Selecting the fields here makes the boundary a runtime fact.
+ */
+export const createCopilotDocumentAuthoringPort = (
+  documentIngestionService: {
+    getDocument(workspaceId: string, documentId: string): Promise<CopilotDocumentSummary>;
+    ingest: CopilotDocumentAuthoringPort["ingest"];
+    updateMetadata: CopilotDocumentAuthoringPort["updateMetadata"];
+    updateRetrievalEligibility: CopilotDocumentAuthoringPort["updateRetrievalEligibility"];
+  },
+): CopilotDocumentAuthoringPort => ({
+  getDocument: async (workspaceId, documentId) => {
+    const document = await documentIngestionService.getDocument(workspaceId, documentId);
+    return {
+      id: document.id,
+      title: document.title,
+      status: document.status,
+      metadata: document.metadata,
+      retrievalEnabled: document.retrievalEnabled,
+      retrievalExpiresAt: document.retrievalExpiresAt,
+      updatedAt: document.updatedAt,
+    };
+  },
+  ingest: (input) => documentIngestionService.ingest(input),
+  updateMetadata: (input) => documentIngestionService.updateMetadata(input),
+  updateRetrievalEligibility: (input) => documentIngestionService.updateRetrievalEligibility(input),
+});
+
 export const createCopilotWorkspaceAccountResolver = (
   deps: { readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById"> },
 ): CopilotWorkspaceAccountResolver => ({

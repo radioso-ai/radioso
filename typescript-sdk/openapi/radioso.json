@@ -35271,12 +35271,29 @@
                     },
                     "canManage": {
                       "type": "boolean"
+                    },
+                    "applyableProposalTargets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "directive",
+                          "agent_setting",
+                          "routine",
+                          "agent_skill",
+                          "context_variable",
+                          "document",
+                          "ingestion_settings",
+                          "website_crawl"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "available",
                     "reason",
-                    "canManage"
+                    "canManage",
+                    "applyableProposalTargets"
                   ]
                 }
               }

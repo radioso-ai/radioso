@@ -26,6 +26,8 @@ export const copilotWebsiteCrawlChangeSchema = z.object({
 }).strict();
 
 export const copilotWebsiteCrawlPayloadSchema = z.object({
+  /** Every proposal card reads its target's label from `name`; a crawl is named by its URL. */
+  name: httpUrlSchema,
   url: httpUrlSchema,
   limit: z.number().int().positive(),
   includeUrlPatterns: crawlPatternSchema,
@@ -56,9 +58,13 @@ export interface CopilotWebsiteCrawlPort {
   }): Promise<{ jobId: string; sourceId: string | null }>;
 }
 
-/** The deployment's own crawl sizing, mirrored from the HTTP route so both settle a page count the
- * same way. */
-export interface CopilotWebsiteCrawlLimits {
+/**
+ * The deployment's own crawl policy, read at draft AND at apply. A deployment can turn crawling off
+ * or lower its ceiling between the two, and a card that was runnable when drafted must not run
+ * outside the policy in force when it is applied.
+ */
+export interface CopilotWebsiteCrawlPolicy {
+  readonly enabled: boolean;
   readonly defaultLimit: number;
   readonly maxLimit: number;
 }

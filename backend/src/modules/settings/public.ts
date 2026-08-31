@@ -1,4 +1,5 @@
 export {
+  validateIngestionSettings,
   manualDocumentEnrichmentOverrides,
   type ManualDocumentEnrichmentOverride,
 } from "./domain/ingestionSettings.js";

@@ -101,7 +101,7 @@ const documentProposalDescriptor = <TInput>(
           spec.change(input),
         );
         const payload = validated.payload as CopilotDocumentPayload;
-        const summary = spec.summary(payload.title, input);
+        const summary = spec.summary(payload.name, input);
         await requireCurrentCopilotPermissions(context, [...MANAGE_DOCUMENTS]);
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
@@ -119,7 +119,7 @@ const documentProposalDescriptor = <TInput>(
         return {
           proposalId: proposal.id,
           targetType: "document" as const,
-          targetLabel: payload.title,
+          targetLabel: payload.name,
           summary,
           ...(spec.removal ? { removal: true as const } : {}),
         };
@@ -142,7 +142,7 @@ export const createDocumentProposalCopilotTools = (
       targetDocumentId: () => null,
       change: (input) => ({
         op: "create",
-        title: input.title,
+        name: input.title,
         ...(input.rationale !== undefined ? { rationale: input.rationale } : {}),
         content: input.content,
         ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
@@ -170,7 +170,7 @@ export const createDocumentProposalCopilotTools = (
       description: "Propose permanently deleting a document and everything indexed from it. If the goal is only to keep it out of answers, use propose_document_retrieval with retrievalEnabled: false instead: that is reversible and preserves the text. Applying removal cannot be undone.",
       inputSchema: removalInputSchema,
       targetDocumentId: (input) => input.documentId,
-      change: (input) => ({ op: "delete", ...(input.rationale !== undefined ? { rationale: input.rationale } : {}) }),
+      change: (input) => ({ op: "delete", removesTarget: true, ...(input.rationale !== undefined ? { rationale: input.rationale } : {}) }),
       summary: (targetLabel, input) => withRationale(`Permanently remove the document "${targetLabel}". This cannot be undone.`, input.rationale),
       removal: true,
     }),

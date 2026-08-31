@@ -110,6 +110,25 @@ export interface CopilotAuditPort {
  */
 export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
+/**
+ * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
+ * the owning domain, so it has to ask for that domain's permission rather than one permission for
+ * everything: gating a document deletion on agent management both blocks the document managers who
+ * should be able to apply it and lets an agent manager delete documents they cannot otherwise touch.
+ * Every target type appears here, so a new one cannot inherit an unrelated domain's authority by
+ * omission.
+ */
+export const copilotProposalPermissions = {
+  directive: ["workspace.agents.manage"],
+  agent_setting: ["workspace.agents.manage"],
+  routine: ["workspace.agents.manage"],
+  agent_skill: ["workspace.agents.manage"],
+  context_variable: ["workspace.agents.manage"],
+  document: ["workspace.documents.manage"],
+  ingestion_settings: ["workspace.settings.manage"],
+  website_crawl: ["workspace.documents.manage"],
+} as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
+
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {

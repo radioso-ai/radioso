@@ -666,7 +666,7 @@ export function CopilotChatSurface({
                           {proposals.length > 0 ? (
                             <div className="mt-4 space-y-3">
                               {proposals.map((proposal) => (
-                                <CopilotProposalCard key={proposal.id} proposal={proposal} canApply={session.availability?.canManage === true} defaultAgentId={pageContext.agentId} onOpenEntity={openEntity} />
+                                <CopilotProposalCard key={proposal.id} proposal={proposal} canApply={(session.availability?.applyableProposalTargets ?? []).includes(proposal.targetType)} defaultAgentId={pageContext.agentId} onOpenEntity={openEntity} />
                               ))}
                             </div>
                           ) : null}

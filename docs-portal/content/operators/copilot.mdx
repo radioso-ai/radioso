@@ -220,9 +220,12 @@ The embedding model is not part of this. Changing it re-embeds every chunk in th
 workspace, which is a cost decision with a typed confirmation of its own in
 **Knowledge → Ingestion**. Ray describes the change and hands you the link.
 
-Operators with `workspace.agents.manage` can choose **Apply** and confirm the
-change; a document proposal asks for `workspace.documents.manage` and an
-ingestion settings proposal for `workspace.settings.manage` instead. Ray sends the confirmed proposal through the same guarded
+**Apply** asks for the permission that governs what the proposal changes, not one
+permission for all of them: `workspace.agents.manage` for a directive, agent
+setting, routine, skill, or context variable; `workspace.documents.manage` for a
+document or a crawl; `workspace.settings.manage` for ingestion settings. An
+operator who manages knowledge but not agents sees Apply on the document cards
+and a read-only view of the rest. Ray sends the confirmed proposal through the same guarded
 management service used by the dashboard. Operators with read access can
 review or dismiss a pending proposal; the Apply action is available only when
 their session can manage agents.

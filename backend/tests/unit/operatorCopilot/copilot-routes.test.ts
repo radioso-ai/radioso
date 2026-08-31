@@ -61,7 +61,14 @@ describe("createCopilotRoutes", () => {
       .set("Cookie", "radioso_session=valid-session");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ available: true, reason: "ok", canManage: false });
+    // This operator cannot manage agents but can manage documents and settings, so Apply belongs on
+    // the knowledge cards and nowhere else - a single canManage flag would have hidden all of them.
+    expect(response.body).toEqual({
+      available: true,
+      reason: "ok",
+      canManage: false,
+      applyableProposalTargets: ["document", "ingestion_settings", "website_crawl"],
+    });
   });
 
   it("returns a JSON conflict before committing SSE headers when a turn cannot be acquired", async () => {

@@ -106,6 +106,7 @@ describe("ingestion settings proposal adapter", () => {
     const { adapter, settings } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, {
+      name: "Ingestion settings",
       chunkingStrategy: "fixed_window",
       fixedWindowChunkSize: 1_500,
       fixedWindowChunkOverlap: 100,
@@ -121,6 +122,7 @@ describe("ingestion settings proposal adapter", () => {
     const { adapter, settings } = adapterFor();
 
     await expect(adapter.applyIfVersionMatches("workspace-1", {}, {
+      name: "Ingestion settings",
       chunkingStrategy: "fixed_window",
       fixedWindowChunkSize: 1_500,
       fixedWindowChunkOverlap: 100,
@@ -136,6 +138,7 @@ describe("ingestion settings proposal adapter", () => {
     const { adapter, settings } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, {
+      name: "Ingestion settings",
       chunkingStrategy: "fixed_window",
       fixedWindowChunkSize: 1_500,
       fixedWindowChunkOverlap: 100,
@@ -151,6 +154,7 @@ describe("ingestion settings proposal adapter", () => {
     const { adapter } = adapterFor();
 
     const preview = await adapter.preview("workspace-1", {}, {
+      name: "Ingestion settings",
       chunkingStrategy: "fixed_window",
       fixedWindowChunkSize: 1_500,
       fixedWindowChunkOverlap: 100,

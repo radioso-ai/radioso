@@ -101,7 +101,7 @@ export const createDirectiveProposalCopilotTools = (
             conversationId: requiredCopilotConversation(context),
             targetType: "directive",
             targetRef,
-            payload: { op: "remove" as const, name: preview.targetLabel, rationale: summary },
+            payload: { op: "remove" as const, removesTarget: true as const, name: preview.targetLabel, rationale: summary },
             versionToken,
             evidence,
           });

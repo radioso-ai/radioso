@@ -39,6 +39,9 @@ export const copilotIngestionSettingsChangeSchema = z.object({
  * showed only the named fields would hide what the rest of the replace carries.
  */
 export const copilotIngestionSettingsPayloadSchema = z.object({
+  /** Every proposal card reads its target's label from `name`; this target is the workspace's one
+   * ingestion settings row, so the label is a constant rather than something Ray chooses. */
+  name: z.literal("Ingestion settings"),
   chunkingStrategy: copilotIngestionSettingsFields.chunkingStrategy,
   fixedWindowChunkSize: copilotIngestionSettingsFields.fixedWindowChunkSize,
   fixedWindowChunkOverlap: copilotIngestionSettingsFields.fixedWindowChunkOverlap,

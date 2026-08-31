@@ -130,7 +130,7 @@ export interface DocumentQueueUpdateInput extends DocumentSourceInput {
   sourceId?: string | null;
   source?: DocumentSourceSummary | null;
   metadata?: Record<string, unknown>;
-  /** See `DocumentMetadataReplaceInput.enrichment`: ownership relinquishment rides with the write. */
+  /** See `DocumentRetrievalSettingsInput.enrichment`: ownership relinquishment rides with the write. */
   enrichment?: Record<string, unknown>;
   externalDocumentId?: string | null;
 }
@@ -143,12 +143,45 @@ export interface DocumentDerivedContentUpdateInput {
   markdownContent: string;
 }
 
-export interface DocumentRetrievalEligibilityInput {
+/**
+ * The retrieval-facing half of a document: the metadata retrieval filters and boosts on, and
+ * whether the document is eligible at all. One input because they settle in one statement — as two
+ * writes, a failure in the second left the first applied under a report that nothing had happened.
+ */
+export interface DocumentRetrievalSettingsInput {
   documentId: string;
   workspaceId: string;
-  retrievalEnabled: boolean;
-  retrievalExpiresAt: Date | null;
+  /**
+   * Replaces the stored map. Document tags reach the chunks at vectorize time, so a metadata
+   * replace requeues the document; absent leaves both the map and the processing state alone.
+   */
+  metadata?: Record<string, unknown>;
+  /**
+   * Replacement enrichment provenance, written in the same statement as the metadata. A manual
+   * write that changes or removes a key extraction generated relinquishes ownership of it here, so
+   * the next processing pass treats it as operator-owned. Omitted leaves stored provenance
+   * untouched.
+   */
+  enrichment?: Record<string, unknown>;
+  /** Resolved by the caller against the stored row; absent leaves eligibility untouched. */
+  retrievalEnabled?: boolean;
+  retrievalExpiresAt?: Date | null;
+  /**
+   * The `updated_at` the caller last read. Present makes the write conditional on the row still
+   * holding it, so an edit that landed between the read and the write is refused rather than
+   * silently overwritten by values carried from the older snapshot.
+   */
+  expectedUpdatedAt?: Date;
 }
+
+/**
+ * `conflict` is distinguishable from `missing` because the two mean different things to an
+ * operator: one says reload and decide again, the other says the target is gone.
+ */
+export type DocumentRetrievalSettingsResult =
+  | { outcome: "updated"; document: DocumentRecord }
+  | { outcome: "missing" }
+  | { outcome: "conflict" };
 
 export interface ChunkRecord {
   id: string;
@@ -171,19 +204,6 @@ export interface DocumentEnrichmentMetadataUpdateInput {
   revision: number;
   metadata: Record<string, unknown>;
   enrichment?: Record<string, unknown> | null;
-}
-
-export interface DocumentMetadataReplaceInput {
-  documentId: string;
-  workspaceId: string;
-  metadata: Record<string, unknown>;
-  /**
-   * Replacement enrichment provenance, written in the same statement as the
-   * metadata. A manual write that changes or removes a key extraction
-   * generated relinquishes ownership of it here, so the next processing pass
-   * treats it as operator-owned. Omitted leaves stored provenance untouched.
-   */
-  enrichment?: Record<string, unknown>;
 }
 
 export interface DocumentRepositoryPort {
@@ -226,12 +246,12 @@ export interface DocumentRepositoryPort {
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
   /**
-   * Replaces the operator-authored metadata map and requeues the document.
-   * Metadata reaches the chunks only at vectorize time, so a replace without a
-   * requeue would leave the published chunks carrying the previous tags.
+   * Settles the operator-authored metadata map and retrieval eligibility in one statement.
+   * Replacing metadata also requeues the document: metadata reaches the chunks only at vectorize
+   * time, so a replace without a requeue would leave the published chunks carrying the previous
+   * tags.
    */
-  updateMetadataAndQueue(input: DocumentMetadataReplaceInput): Promise<DocumentRecord>;
-  setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null>;
+  updateRetrievalSettings(input: DocumentRetrievalSettingsInput): Promise<DocumentRetrievalSettingsResult>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   requeueEligibleAndQueue(
@@ -254,7 +274,7 @@ export interface DocumentRepositoryPort {
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
   }>;
-  deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
+  deleteByIdAndWorkspaceId(documentId: string, workspaceId: string, options?: { expectedUpdatedAt?: Date }): Promise<boolean>;
   listSummaryPageBySourceId(
     workspaceId: string,
     sourceId: string | null,

@@ -165,6 +165,14 @@ describe("start_crawl", () => {
   });
 
 describe("website crawl proposal adapter", () => {
+  // A crawl job carries no identity a second attempt could recognise as its own, so a retry after
+  // an interrupted apply would re-fetch the site rather than notice the first one already ran.
+  it("declares that an interrupted apply must not be retried", () => {
+    const { adapter } = adapterFor();
+
+    expect(adapter.canRetryAfterInterruptedApply?.({ url: "https://help.example.com" }, { name: "https://help.example.com", url: "https://help.example.com", limit: 25, includeUrlPatterns: [], excludeUrlPatterns: [], preserveContentLinks: true })).toBe(false);
+  });
+
   it("enqueues the crawl with the workspace's account when applied", async () => {
     const { adapter, crawl } = adapterFor();
 

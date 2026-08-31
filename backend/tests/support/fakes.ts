@@ -2679,34 +2679,56 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async updateMetadataAndQueue(input: {
+  async updateRetrievalSettings(input: {
     documentId: string;
     workspaceId: string;
-    metadata: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
     enrichment?: Record<string, unknown>;
-  }): Promise<DocumentRecord> {
+    retrievalEnabled?: boolean;
+    retrievalExpiresAt?: Date | null;
+    expectedUpdatedAt?: Date;
+  }): Promise<
+    | { outcome: "updated"; document: DocumentRecord }
+    | { outcome: "missing" }
+    | { outcome: "conflict" }
+  > {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId) {
-      throw notFound("Document not found");
+      return { outcome: "missing" };
+    }
+    if (
+      input.expectedUpdatedAt !== undefined
+      && existing.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()
+    ) {
+      return { outcome: "conflict" };
     }
 
+    const replacesMetadata = input.metadata !== undefined;
     const record: DocumentRecord = {
       ...existing,
-      metadata: input.metadata,
+      ...(replacesMetadata
+        ? {
+            metadata: input.metadata!,
+            status: "queued",
+            revision: existing.revision + 1,
+            failureReason: null,
+          }
+        : {}),
       ...(input.enrichment ? { enrichment: input.enrichment as unknown as DocumentRecord["enrichment"] } : {}),
-      status: "queued",
-      revision: existing.revision + 1,
-      failureReason: null,
-      updatedAt: new Date(),
+      ...(input.retrievalEnabled !== undefined ? { retrievalEnabled: input.retrievalEnabled } : {}),
+      ...(input.retrievalExpiresAt !== undefined ? { retrievalExpiresAt: input.retrievalExpiresAt } : {}),
+      updatedAt: new Date(existing.updatedAt.getTime() + 1),
     };
 
-    await this.jobRepository?.enqueue({
-      documentId: record.id,
-      workspaceId: record.workspaceId,
-      documentRevision: record.revision,
-    });
+    if (replacesMetadata) {
+      await this.jobRepository?.enqueue({
+        documentId: record.id,
+        workspaceId: record.workspaceId,
+        documentRevision: record.revision,
+      });
+    }
     this.items.set(record.id, record);
-    return record;
+    return { outcome: "updated", document: record };
   }
 
   async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
@@ -2813,27 +2835,6 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async setRetrievalEligibility(input: {
-    documentId: string;
-    workspaceId: string;
-    retrievalEnabled: boolean;
-    retrievalExpiresAt: Date | null;
-  }): Promise<DocumentRecord | null> {
-    const existing = this.items.get(input.documentId);
-    if (!existing || existing.workspaceId !== input.workspaceId) {
-      return null;
-    }
-
-    const record: DocumentRecord = {
-      ...existing,
-      retrievalEnabled: input.retrievalEnabled,
-      retrievalExpiresAt: input.retrievalExpiresAt,
-      updatedAt: new Date(),
-    };
-    this.items.set(record.id, record);
-    return record;
-  }
-
   async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
@@ -2932,9 +2933,19 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
+  async deleteByIdAndWorkspaceId(
+    documentId: string,
+    workspaceId: string,
+    options?: { expectedUpdatedAt?: Date },
+  ): Promise<boolean> {
     const existing = this.items.get(documentId);
     if (!existing || existing.workspaceId !== workspaceId) {
+      return false;
+    }
+    if (
+      options?.expectedUpdatedAt !== undefined
+      && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()
+    ) {
       return false;
     }
 

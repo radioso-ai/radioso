@@ -303,4 +303,27 @@ describeIntegration("IngestionSettingsRepository document enrichment settings (P
     expect(enabled.fixedWindowChunkSize).toBe(900);
     expect((await repository.findByWorkspaceId(workspaceId))?.documentEnrichmentEnabled).toBe(true);
   });
+
+  // The write is a whole-object replace, so a caller holding an older snapshot would otherwise
+  // reset every field another writer had just changed.
+  it("refuses a write whose expected version the settings row no longer holds", async () => {
+    const defaults = defaultIngestionSettings(workspaceId);
+    const stored = await repository.upsert(workspaceId, defaults);
+    // The token is an `updated_at` compared at millisecond precision, so the write standing in for
+    // the other writer has to land in a later millisecond than the one it supersedes.
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    const moved = await repository.upsert(workspaceId, { ...defaults, fixedWindowChunkSize: 700 });
+
+    await expect(
+      repository.upsert(workspaceId, { ...defaults, fixedWindowChunkSize: 950 }, { expectedUpdatedAt: stored.updatedAt }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect((await repository.findByWorkspaceId(workspaceId))?.fixedWindowChunkSize).toBe(700);
+
+    const applied = await repository.upsert(
+      workspaceId,
+      { ...defaults, fixedWindowChunkSize: 950 },
+      { expectedUpdatedAt: moved.updatedAt },
+    );
+    expect(applied.fixedWindowChunkSize).toBe(950);
+  });
 });

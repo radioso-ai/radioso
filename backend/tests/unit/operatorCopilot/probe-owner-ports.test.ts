@@ -11,6 +11,7 @@ describe("operator probe owner ports", () => {
       workspaceId: "workspace-1",
       agentId: "agent-1",
       agentName: null,
+      title: null,
       agentInternalName: null,
       sourceChannel: "operator_copilot",
       sourceOrigin: "operator:1",

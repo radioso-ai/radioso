@@ -48,7 +48,7 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document' | 'ingestion_settings'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
@@ -146,7 +146,8 @@ export interface CopilotEntityReference {
    * client/runtime enum drift the comment on COPILOT_PAGE_ENTITY_TYPES warns about.
    */
   type: string
-  id: string
+  /** Absent for a singleton subject such as the workspace's ingestion settings. */
+  id?: string
 }
 
 export interface CopilotOperatorMessage {

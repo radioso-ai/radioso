@@ -60,6 +60,7 @@ const catalogToolCoverage = {
   getWorkspaceLlmModels: "workspace_settings",
   createAssistantChatResponse: "test_agent_turn",
   searchRetrievalEvidence: "retrieval_probe",
+  updateIngestionSettings: "propose_ingestion_settings",
 } as const;
 
 const routineStructuralEditing = deferred(
@@ -74,11 +75,11 @@ const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: doc
 const documentBodyIsOperatorAuthored = permanent(
   "Replacing a document's body is operator-authored: Ray only ever sees snippets and chunks of a document, so it cannot propose a faithful replacement for one.",
 );
-// Ingestion settings become proposable in Wave 3. Only the embedding-model switch inside such a
-// proposal stays never-list, because it triggers a bulk re-embed; cancelling a pending switch is a
-// safe de-escalation and is deliberately not treated as a boundary.
-const wave3IngestionSettings = deferred(
-  `Deferred to Wave 3 ingestion settings proposals. ${copilotNeverList.embedding_model_switch_without_typed_confirmation.reason}`,
+// Cancelling a pending embedding-model switch is a safe de-escalation rather than a boundary: it
+// stops a transition an operator started. It waits on a de-escalation act with its own guards,
+// not on the never-list entry that governs starting one.
+const pendingEmbeddingSwitchCancel = deferred(
+  "Deferred: cancelling a pending embedding-model switch stops a transition an operator started, and needs its own de-escalation act rather than a proposal card.",
 );
 const wave4Serving = deferred("Deferred to Wave 4 serving work: operator serving controls need an explicit runtime safety model.");
 // `replay_eval_case` reaches this operation only through a case: it derives the snapshot from one
@@ -169,10 +170,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "setWorkspaceProviderCredential",
     "removeWorkspaceProviderCredential",
   ], neverListExclusion("provider_credential_writes")),
-  ...coverage([
-    "updateIngestionSettings",
-    "cancelPendingEmbeddingModel",
-  ], wave3IngestionSettings),
+  ...coverage(["cancelPendingEmbeddingModel"], pendingEmbeddingSwitchCancel),
   ...coverage(["replyToConversation"], neverListExclusion("unattended_live_customer_reply")),
 
   ...coverage([

@@ -148,7 +148,7 @@ conversation.
 
 When Ray identifies a configuration change, it can draft a proposal for a
 directive, an agent setting, a routine, a skill's configuration, a context
-variable, or a document. The proposal card names the target, summarizes the
+variable, a document, or the workspace's ingestion settings. The proposal card names the target, summarizes the
 change, and shows the current and proposed values before anything is written.
 Expand **Show changes** to inspect the field-level diff.
 
@@ -200,8 +200,21 @@ rather than the whole of one, and a body it drafted as a replacement would lose
 whatever it never read. When a document says the wrong thing, ask Ray which
 passages are wrong — `document_chunks` quotes them — and edit from there.
 
+An ingestion settings proposal changes how documents are chunked and enriched
+when they are processed: the chunking strategy, the fixed-window size and
+overlap, the structured minimum and maximum, and the enrichment switches. Name
+the one field you want changed and the rest carry over from the stored settings,
+because the write replaces all of them at once — the card shows the whole result
+so nothing changes out of sight. Applying it re-chunks nothing on its own;
+reprocess a document or a source afterwards to reach what is already indexed.
+
+The embedding model is not part of this. Changing it re-embeds every chunk in the
+workspace, which is a cost decision with a typed confirmation of its own in
+**Knowledge → Ingestion**. Ray describes the change and hands you the link.
+
 Operators with `workspace.agents.manage` can choose **Apply** and confirm the
-change; a document proposal asks for `workspace.documents.manage` instead. Ray sends the confirmed proposal through the same guarded
+change; a document proposal asks for `workspace.documents.manage` and an
+ingestion settings proposal for `workspace.settings.manage` instead. Ray sends the confirmed proposal through the same guarded
 management service used by the dashboard. Operators with read access can
 review or dismiss a pending proposal; the Apply action is available only when
 their session can manage agents.

@@ -108,7 +108,7 @@ export interface CopilotAuditPort {
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable", "document"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
@@ -237,6 +237,16 @@ export interface CopilotDocumentProposalAdapter extends CopilotProposalAdapter {
 }
 
 /**
+ * An ingestion settings change is supplied by Ray from settings it read, and the write replaces
+ * every field at once, so `validatePayload` merges it against the stored row.
+ */
+export interface CopilotIngestionSettingsProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "ingestion_settings";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
  * Every adapter a tool factory may be handed, discriminated by `targetType`. One declaration so a
  * new target type reaches every proposal tool at once instead of being added to each one by hand.
  */
@@ -246,7 +256,8 @@ export type CopilotAnyProposalAdapter =
   | CopilotRoutineProposalAdapter
   | CopilotAgentSkillProposalAdapter
   | CopilotContextVariableProposalAdapter
-  | CopilotDocumentProposalAdapter;
+  | CopilotDocumentProposalAdapter
+  | CopilotIngestionSettingsProposalAdapter;
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 

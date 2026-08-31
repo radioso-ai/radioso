@@ -548,6 +548,8 @@ export function CopilotChatSurface({
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', anchor: 'assistant-skills' }))
     } else if (entity.type === 'document') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'documents', documentId: entity.id }))
+    } else if (entity.type === 'ingestion_settings') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'ingestion' }))
     }
   }
 

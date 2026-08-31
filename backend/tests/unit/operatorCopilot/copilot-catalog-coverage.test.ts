@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { catalogCoverage } from "./catalogCoverage.js";
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
-import { buildCopilotNeverListContext } from "../../../src/modules/operatorCopilot/neverList.js";
+import { buildCopilotNeverListContext, copilotNeverList } from "../../../src/modules/operatorCopilot/neverList.js";
+import { copilotIngestionSettingsChangeSchema } from "../../../src/modules/operatorCopilot/contracts/ingestionSettingsAuthoring.js";
 
 describe("operator copilot catalog coverage", () => {
   // Ratchet: this may only ever decrease as tools land. Every increase so far has been a correction
@@ -43,7 +44,7 @@ describe("operator copilot catalog coverage", () => {
   //               deferred scope, since they carry visitor runtime data rather than configuration.
   //   121 -> 118  recrawlDocumentSource, reprocessDocumentSource, and reprocessDocument moved to
   //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
-  const maxDeferredCatalogExclusions = 113;
+  const maxDeferredCatalogExclusions = 112;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -221,14 +222,18 @@ describe("operator copilot catalog coverage", () => {
     expect(coverageBoundaries.every((entry) => runtimeBoundaries.has(entry))).toBe(true);
   });
 
-  it("defers ingestion settings rather than excluding them, while keeping the embedding-model guard visible", () => {
-    // The never-list entry covers the embedding-model switch inside a future proposal, not the whole
-    // endpoint: Wave 3 makes ingestion settings proposable, and cancelling a pending model change is
-    // a safe de-escalation rather than a boundary.
-    for (const operationId of ["updateIngestionSettings", "cancelPendingEmbeddingModel"]) {
-      const entry = catalogCoverage[operationId];
-      expect(entry).toMatchObject({ disposition: "deferred" });
-      expect(typeof entry === "string" ? "" : entry.reason).toContain("Embedding-model changes require");
-    }
+  it("covers ingestion settings through a proposal while the embedding-model switch stays a boundary", () => {
+    // The never-list entry covers the embedding-model switch, not the whole endpoint. The proposal
+    // tool carries every other ingestion field and has no embedding-model input at all, which is
+    // what keeps the switch behind its typed dashboard confirmation.
+    expect(catalogCoverage.updateIngestionSettings).toBe("propose_ingestion_settings");
+    expect(copilotIngestionSettingsChangeSchema.safeParse({ embeddingModel: "text-embedding-3-large" }).success).toBe(false);
+    expect(copilotNeverList.embedding_model_switch_without_typed_confirmation.reason).toContain("typed operator confirmation");
+  });
+
+  it("defers cancelling a pending embedding-model switch as a de-escalation, not a boundary", () => {
+    const entry = catalogCoverage.cancelPendingEmbeddingModel;
+    expect(entry).toMatchObject({ disposition: "deferred" });
+    expect(typeof entry === "string" ? "" : entry.reason).toContain("de-escalation");
   });
 });

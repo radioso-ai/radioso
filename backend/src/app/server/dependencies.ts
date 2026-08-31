@@ -70,6 +70,7 @@ import { ProbeConversationReader } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
+import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -431,6 +432,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentDeletion: documents.documentDeletionService,
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
     }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
   ] as const;
   const retrievalProbeService = new RetrievalProbeService({
     retrievalSearch: retrieval.retrievalSearchService,

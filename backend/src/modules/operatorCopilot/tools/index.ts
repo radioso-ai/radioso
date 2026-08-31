@@ -18,6 +18,8 @@ import { createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, 
 import type { DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies, CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 import { createDocumentProposalCopilotTools } from "./documentProposals.js";
 import type { DocumentProposalCopilotToolDependencies } from "./documentProposals.js";
+import { createIngestionSettingsProposalCopilotTools } from "./ingestionSettingsProposals.js";
+import type { IngestionSettingsProposalCopilotToolDependencies } from "./ingestionSettingsProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
@@ -54,7 +56,8 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">
   & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">
   & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">
-  & DocumentProposalCopilotToolDependencies;
+  & DocumentProposalCopilotToolDependencies
+  & IngestionSettingsProposalCopilotToolDependencies;
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -82,6 +85,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentSkillConfigProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createContextVariableProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentProposalCopilotTools(deps),
+  ...createIngestionSettingsProposalCopilotTools(deps),
 ]);
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";

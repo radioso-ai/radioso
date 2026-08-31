@@ -25,4 +25,5 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   createDocument: ["workspace.documents.manage"],
   updateDocumentRetrieval: ["workspace.documents.manage"],
   deleteDocument: ["workspace.documents.manage"],
+  updateIngestionSettings: ["workspace.settings.manage"],
 };

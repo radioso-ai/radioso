@@ -155,6 +155,9 @@ export const targetReference = (
     const documentId = applied.documentId ?? ref.documentId
     return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null
   }
+  if (summary.targetType === 'ingestion_settings') {
+    return { entity: { type: 'ingestion_settings' } }
+  }
   if (summary.targetType === 'directive') {
     const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
     return typeof directiveId === 'string' ? {

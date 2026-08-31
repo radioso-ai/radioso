@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import multer from "multer";
 
 import type { AppDependencies } from "../../server/types.js";
+import { markApiPrincipalRouteMount } from "../apiPrincipalRoutePolicy.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
@@ -408,7 +409,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
   });
 
   if (dependencies.env.WEBSITE_CRAWLER_ENABLED) {
-    router.use("/crawl", createWebsiteCrawlerRoutes(dependencies));
+    router.use("/crawl", markApiPrincipalRouteMount(createWebsiteCrawlerRoutes(dependencies), "/crawl"));
   } else {
     // Stub the crawl namespace so requests get the project's JSON ErrorResponse
     // shape (not Express's default text 404), which matches what every other

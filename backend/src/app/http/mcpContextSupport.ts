@@ -30,6 +30,11 @@ export const workspaceMcpContextSchema = z.object({
   workspaceName: z.string().min(1),
 });
 
+/** REST API credentials have no MCP authorization contract in this feature. */
+export const isApiPrincipalRejectedByMcp = (principal: AuthenticatedPrincipal): boolean =>
+  principal.type === "personal_api_credential"
+  || principal.type === "service_account_credential";
+
 // Token-management permissions are intentionally omitted; no MCP tool exposes token management.
 const mcpToolPermissionGroups: Array<{
   permission: AccountPermission;

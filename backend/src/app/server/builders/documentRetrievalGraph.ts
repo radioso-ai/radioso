@@ -36,6 +36,7 @@ import {
 import { buildWorkspaceServices } from "./accessAuth.js";
 import type { WorkspaceProviderCredentialsService } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { Env } from "../../config/env.js";
+import type { WorkspacePersonalCredentialTerminationPort } from "../../../modules/workspace/services/workspaceService.js";
 
 /** Composes the embedding transition, document, and retrieval graph in dependency order. */
 export const buildDocumentRetrievalGraph = (input: {
@@ -46,6 +47,7 @@ export const buildDocumentRetrievalGraph = (input: {
   repositories: ReturnType<typeof buildRepositories>;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
+  personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort;
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
   const llmRegistry = buildLlmRegistry(env, logger);
@@ -228,6 +230,7 @@ export const buildDocumentRetrievalGraph = (input: {
     documentRepository: repositories.documentRepository,
     env,
     workspaceRepository: repositories.workspaceRepository,
+    personalCredentialTermination: input.personalCredentialTermination,
   });
   return {
     documentJobDispatcher,

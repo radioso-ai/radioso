@@ -178,7 +178,7 @@ describe("copilot capability governance", () => {
   it("rejects a fabricated owner primitive and an empty Ray-only disposition", () => {
     const invalidPrimitive = {
       ...descriptor("workspace.agents.read"),
-      capabilityProvenance: { applicationPrimitiveIds: ["invented.primitive"] },
+      capabilityProvenance: { applicationPrimitiveIds: ["invented.primitive"] as const },
     };
     const emptyDisposition = {
       ...descriptor("workspace.agents.read"),
@@ -192,7 +192,7 @@ describe("copilot capability governance", () => {
   it("requires a primitive identity to be exported by its owning module", () => {
     const ownerPrimitive = {
       ...descriptor("workspace.agents.read"),
-      capabilityProvenance: { applicationPrimitiveIds: ["agents.configuration.read"] },
+      capabilityProvenance: { applicationPrimitiveIds: ["agents.configuration.read"] as const },
     };
 
     expect(() => assertCopilotCapabilityProvenance([ownerPrimitive], new Set())).toThrow("not exported by its owning module");
@@ -204,7 +204,7 @@ describe("copilot capability governance", () => {
   it("rejects a one-to-one descriptor whose permissions are weaker than its HTTP operation", () => {
     const weakened = {
       ...descriptor("workspace.agents.read"),
-      capabilityProvenance: { backingOperationIds: ["validateAgentRoutine"] },
+      capabilityProvenance: { backingOperationIds: ["validateAgentRoutine"] as const },
     };
 
     expect(() => assertCopilotCapabilityProvenance(
@@ -218,8 +218,8 @@ describe("copilot capability governance", () => {
     const composed = {
       ...descriptor("workspace.agents.read"),
       capabilityProvenance: {
-        backingOperationIds: ["validateAgentRoutine"],
-        applicationPrimitiveIds: ["routines.validation"],
+        backingOperationIds: ["validateAgentRoutine"] as const,
+        applicationPrimitiveIds: ["routines.validation"] as const,
         rayOnly: { reason: "Ray returns bounded diagnostics alongside validation." },
       },
     };

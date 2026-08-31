@@ -7,7 +7,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
-import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
@@ -17,6 +17,7 @@ import {
   routineDefinitionDraftInputSchema,
   routineDraftAssistRequestSchema,
 } from "../../../modules/routines/public.js";
+import type { AgentInput, AgentSettingsResource } from "../../../modules/agents/public.js";
 import { builtInAnswerDirectiveViews } from "../../../modules/directives/public.js";
 import {
   ASSISTANT_LOGO_MIME_TYPES,
@@ -152,6 +153,51 @@ const presentMcpConverseGrantSecret = ({ grant, token }: AccessGrantSecret) => (
   token,
 });
 
+type AgentRoutePrincipal = {
+  type?: string;
+} | null | undefined;
+
+const isMachinePrincipal = (principal: AgentRoutePrincipal): boolean =>
+  principal?.type === "personal_api_credential" || principal?.type === "service_account_credential";
+
+/**
+ * Machine credentials may author ordinary agent configuration, but public-launch
+ * credentials are interactive-only. Keep the resource shape useful while making
+ * the launch secrets unavailable to bearer clients.
+ */
+const presentAgentForPrincipal = (agent: AgentSettingsResource, principal: AgentRoutePrincipal) => {
+  if (!isMachinePrincipal(principal)) return agent;
+  const { token: _anonymousChatToken, ...anonymousChat } = agent.surfaceSettings.anonymousChat;
+  const { token: _websiteEmbedToken, ...websiteEmbed } = agent.surfaceSettings.websiteEmbed;
+  const extensions = agent.surfaceSettings.extensions;
+  const extensionWebsiteEmbed = extensions?.websiteEmbed;
+  const safeExtensions = extensionWebsiteEmbed && typeof extensionWebsiteEmbed === "object" && !Array.isArray(extensionWebsiteEmbed)
+    ? {
+      ...extensions,
+      websiteEmbed: (() => {
+        const { token: _token, ...safeWebsiteEmbed } = extensionWebsiteEmbed as Record<string, unknown>;
+        return safeWebsiteEmbed;
+      })(),
+    }
+    : extensions;
+  return {
+    ...agent,
+    surfaceSettings: {
+      ...agent.surfaceSettings,
+      anonymousChat,
+      websiteEmbed,
+      ...(safeExtensions ? { extensions: safeExtensions } : {}),
+    },
+  };
+};
+
+const rejectMachineLaunchSurfaceInput = (principal: AgentRoutePrincipal, input: AgentInput): void => {
+  if (!isMachinePrincipal(principal)) return;
+  if (input.surfaceSettings?.anonymousChat !== undefined || input.surfaceSettings?.websiteEmbed !== undefined) {
+    throw forbidden("Public launch surfaces require an interactive session");
+  }
+};
+
 const assertAgentExists = async (
   dependencies: Pick<AgentRouteDependencies, "agentRepository">,
   workspaceId: string,
@@ -192,7 +238,9 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   router.get("/", workspaceSession, agentRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      res.status(200).json({ agents: await dependencies.agentService.list(workspaceId) });
+      const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
+      const agents = await dependencies.agentService.list(workspaceId);
+      res.status(200).json({ agents: agents.map((agent) => presentAgentForPrincipal(agent, authPrincipal)) });
     } catch (error) {
       next(error);
     }
@@ -201,8 +249,10 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   router.post("/", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
+      rejectMachineLaunchSurfaceInput(authPrincipal, req.body);
       const agent = await dependencies.agentService.create(workspaceId, req.body);
-      res.status(201).json(agent);
+      res.status(201).json(presentAgentForPrincipal(agent, authPrincipal));
     } catch (error) {
       next(error);
     }
@@ -211,9 +261,10 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   router.get("/:agentId", workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
       const parsed = agentParamsSchema.parse(req.params);
       const agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
-      res.status(200).json(agent);
+      res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
     } catch (error) {
       next(error);
     }
@@ -585,14 +636,16 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   router.put("/:agentId", workspaceSession, agentManage, validateBody(agentBodySchema), async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
+      const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
       const parsed = agentParamsSchema.parse(req.params);
       const current = await dependencies.agentService.resolve(workspaceId, parsed.agentId);
+      rejectMachineLaunchSurfaceInput(authPrincipal, req.body);
       const agent = await dependencies.agentService.update(
         workspaceId,
         parsed.agentId,
         dependencies.agentService.withRotatedTokens(current, req.body),
       );
-      res.status(200).json(agent);
+      res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
     } catch (error) {
       next(error);
     }

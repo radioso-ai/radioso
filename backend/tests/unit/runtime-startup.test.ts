@@ -147,6 +147,10 @@ const createDependencies = () =>
     metricsRegistry: null,
     workspaceInvalidationPublisher: { enqueue: vi.fn(() => ({ accepted: false, reason: "disabled" })) },
     realtimePublisherLifecycle: { shutdown: vi.fn().mockResolvedValue(undefined) },
+    credentialExpiryWarningLifecycle: {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
     logger: createLogger().logger,
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -209,10 +213,12 @@ describe("runtime startup", () => {
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
+    expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();

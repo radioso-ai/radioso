@@ -17,7 +17,14 @@ export const extractBearerToken = (authorization: string | undefined): string | 
   return match?.[1]?.trim() || null;
 };
 
-export const rejectWorkspaceBearerToken = (audit?: AgentConverseAudit): RequestHandler => async (req, _res, next) => {
+const invalidConverseSession = (): AppError => new AppError(
+  401,
+  "unauthorized",
+  "MCP converse session is required.",
+  { code: "invalid_session" },
+);
+
+export const rejectWorkspaceBearerToken = (_audit?: AgentConverseAudit): RequestHandler => async (req, _res, next) => {
   try {
     const token = extractBearerToken(req.header("authorization"));
     if (!token) {
@@ -25,14 +32,7 @@ export const rejectWorkspaceBearerToken = (audit?: AgentConverseAudit): RequestH
       return;
     }
 
-    if (!token.includes(".")) {
-      await audit?.recordWorkspaceTokenRejected();
-      throw new AppError(401, "unauthorized", "Workspace API tokens are not accepted on the MCP converse surface.", {
-        code: "workspace_token_rejected",
-      });
-    }
-
-    next();
+    throw invalidConverseSession();
   } catch (error) {
     next(error);
   }
@@ -40,20 +40,12 @@ export const rejectWorkspaceBearerToken = (audit?: AgentConverseAudit): RequestH
 
 export const requireMcpConverseSession = (
   sessionService: Pick<AgentConverseSessionPort, "validate">,
-  audit?: AgentConverseAudit,
+  _audit?: AgentConverseAudit,
 ): RequestHandler => async (req, res, next) => {
   try {
     const token = extractBearerToken(req.header("authorization"));
     if (!token) {
-      throw new AppError(401, "unauthorized", "MCP converse session is required.", {
-        code: "invalid_session",
-      });
-    }
-    if (!token.includes(".")) {
-      await audit?.recordWorkspaceTokenRejected();
-      throw new AppError(401, "unauthorized", "Workspace API tokens are not accepted on the MCP converse surface.", {
-        code: "workspace_token_rejected",
-      });
+      throw invalidConverseSession();
     }
 
     const principal = await sessionService.validate(token);

@@ -1,18 +1,21 @@
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-import { forbidden } from "../../../shared/domain/errors.js";
-import { requireApiToken, type ApiTokenDependencies } from "../middleware/requireApiToken.js";
+import { notFound } from "../../../shared/domain/errors.js";
+import {
+  requireDashboardWorkspaceSession,
+  type DashboardWorkspaceSessionDependencies,
+} from "../middleware/requireDashboardWorkspaceSession.js";
 import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
 import { MCP_CONTEXT_VERSION, resolveSupportedMcpToolsForPrincipal } from "../mcpContextSupport.js";
 
-type McpContextRouteDependencies = ApiTokenDependencies &
+type McpContextRouteDependencies = DashboardWorkspaceSessionDependencies &
   Pick<AppDependencies, "accountAccessService" | "workspaceRepository">;
 
 export const createMcpContextRoutes = (dependencies: McpContextRouteDependencies): Router => {
   const router = Router();
 
-  router.get("/context", requireApiToken(dependencies), async (_req, res, next) => {
+  router.get("/context", requireDashboardWorkspaceSession(dependencies), async (_req, res, next) => {
     try {
       const { accountId, authPrincipal, workspaceId } = res.locals as {
         accountId: string;
@@ -21,7 +24,7 @@ export const createMcpContextRoutes = (dependencies: McpContextRouteDependencies
       };
       const workspace = await dependencies.workspaceRepository.findById(workspaceId);
       if (!workspace) {
-        throw forbidden("Workspace token no longer resolves to an active workspace.");
+        throw notFound("Workspace not found");
       }
       const scopedTools = await resolveSupportedMcpToolsForPrincipal(dependencies.accountAccessService, {
         accountId,

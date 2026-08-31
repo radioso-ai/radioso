@@ -1,11 +1,13 @@
 import type { Express, NextFunction, Request, Response } from "express";
 import {
   createMcpExpressRuntime,
+  type LegacySessionPurgeReadinessObserver,
   type PublicMcpRuntimeConfig,
   type VerifiedMcpBearerToken,
 } from "@radioso/mcp-server";
 
 import {
+  isApiPrincipalRejectedByMcp,
   MCP_CONTEXT_VERSION,
   resolveSupportedMcpToolsForPrincipal,
 } from "../http/mcpContextSupport.js";
@@ -16,19 +18,45 @@ type McpMountDependencies = Pick<
   "accountAccessService" | "authService" | "env" | "logger" | "workspaceRepository"
 >;
 
+type MergedMcpRuntimeState = {
+  failed: boolean;
+  runtime?: Awaited<ReturnType<typeof createMcpExpressRuntime>>;
+};
+
+const mergedRuntimeState = new WeakMap<object, MergedMcpRuntimeState>();
+
 const splitToolList = (value: string | undefined): string[] | undefined =>
   value
     ? value.split(",").map((part) => part.trim()).filter((part) => part.length > 0)
     : undefined;
 
+export const createMergedMcpPurgeReadinessObserver = (
+  logger: Pick<AppDependencies["logger"], "info" | "warn">,
+): LegacySessionPurgeReadinessObserver => ({
+  emit(event) {
+    const message = {
+      attempt: "MCP legacy-session purge attempt started",
+      failure: "MCP legacy-session purge attempt failed",
+      retry: "MCP legacy-session purge retry scheduled",
+      success: "MCP legacy-session purge completed",
+    }[event.type];
+    const level = event.type === "failure" || event.type === "retry" ? "warn" : "info";
+    logger[level]({ mcpLegacySessionPurge: event }, message);
+  },
+});
+
 export const getMcpMountStatus = (
   env: Pick<AppDependencies["env"], "RADIOSO_MCP_ENABLED" | "RADIOSO_MCP_MOUNT_PATH" | "RADIOSO_MCP_STANDALONE">,
 ) => {
   const enabled = env.RADIOSO_MCP_ENABLED && !env.RADIOSO_MCP_STANDALONE;
+  const state = mergedRuntimeState.get(env);
+  const ready = !enabled || Boolean(state?.runtime?.readiness.isReady());
   return {
     enabled,
+    failed: enabled ? state?.failed ?? false : false,
     mode: enabled ? "merged" : env.RADIOSO_MCP_STANDALONE ? "standalone" : "disabled",
     path: env.RADIOSO_MCP_MOUNT_PATH,
+    ready,
     standalone: env.RADIOSO_MCP_STANDALONE,
   };
 };
@@ -99,11 +127,16 @@ export const mountMergedMcp = (app: Express, dependencies: McpMountDependencies)
     return;
   }
 
+  const state: MergedMcpRuntimeState = { failed: false };
+  mergedRuntimeState.set(dependencies.env, state);
   const runtime = (async () => {
     const config = buildMergedMcpConfig(dependencies.env);
     const verifyBearerToken = async (token: string): Promise<VerifiedMcpBearerToken | null> => {
       try {
         const auth = await dependencies.authService.authenticateApiToken(token);
+        if (isApiPrincipalRejectedByMcp(auth.principal)) {
+          return null;
+        }
         const workspace = await dependencies.workspaceRepository.findById(auth.workspaceId);
         if (!workspace) {
           return null;
@@ -132,11 +165,17 @@ export const mountMergedMcp = (app: Express, dependencies: McpMountDependencies)
         return null;
       }
     };
-    return createMcpExpressRuntime({
+    const created = await createMcpExpressRuntime({
       config,
+      legacySessionPurgeReadinessObserver: createMergedMcpPurgeReadinessObserver(dependencies.logger),
       verifyBearerToken,
     });
-  })();
+    state.runtime = created;
+    return created;
+  })().catch((error: unknown) => {
+    state.failed = true;
+    throw error;
+  });
 
   app.use(dependencies.env.RADIOSO_MCP_MOUNT_PATH, (req, res, next) => {
     if (applyMergedMcpCors(req, res, dependencies.env.RADIOSO_MCP_MERGED_CORS_ORIGINS)) {

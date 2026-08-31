@@ -7,6 +7,7 @@ import {
 } from "../audit/auditLogger.js";
 
 import { createAuthService } from "../auth/authService.js";
+import { assertMcpWorkspaceCredential, type McpCredentialClass } from "../auth/credentialPreflight.js";
 import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import { hashToken } from "../auth/token.js";
 import type { RadiosoMcpConfig } from "../config.js";
@@ -17,7 +18,12 @@ import {
   createCapabilityPolicyRegistry,
 } from "../policy/capabilityPolicy.js";
 import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../policy/workspacePolicy.js";
-import { createRuntimeStoreHandle, type RuntimeStoreHandle } from "../state/runtimeStores.js";
+import {
+  createRuntimeStoreHandle,
+  type LegacySessionPurgeReadinessObserver,
+  type RuntimeStoreHandle,
+  type RuntimeStoreReadiness,
+} from "../state/runtimeStores.js";
 
 import { createExpressMcpMiddleware, type ExpressLikeMcpMiddleware } from "./expressAdapter.js";
 import { createMcpRequestHandler, type McpRequestHandler } from "./requestHandler.js";
@@ -32,6 +38,7 @@ export type PublicMcpRuntimeConfig =
 
 export interface VerifiedMcpBearerToken {
   apiVersion?: string;
+  credentialClass?: McpCredentialClass;
   clientName?: string;
   mcpContextVersion?: string;
   supportedTools?: string[];
@@ -46,6 +53,7 @@ export interface CreateMcpHttpRuntimeOptions {
   auditSinks?: AuditSink[];
   config: PublicMcpRuntimeConfig;
   entryPoint?: "merged" | "standalone";
+  legacySessionPurgeReadinessObserver?: LegacySessionPurgeReadinessObserver;
   runtimeStores?: RuntimeStoreHandle;
   verifyBearerToken: (accessToken: string) => Promise<VerifiedMcpBearerToken | null>;
   workspacePolicyOverrides?: Record<
@@ -62,6 +70,7 @@ export interface McpHttpRuntime {
   close(): Promise<void>;
   handler: McpRequestHandler;
   mode: RuntimeStoreHandle["mode"];
+  readiness: RuntimeStoreReadiness;
 }
 
 export interface McpExpressRuntime extends McpHttpRuntime {
@@ -80,6 +89,7 @@ export const createMcpHttpRuntime = async ({
   auditSinks,
   config,
   entryPoint = "merged",
+  legacySessionPurgeReadinessObserver,
   runtimeStores,
   verifyBearerToken,
   workspacePolicyOverrides,
@@ -103,7 +113,10 @@ export const createMcpHttpRuntime = async ({
     basePolicyConfig,
     workspacePolicyOverrides ?? loadWorkspacePolicyOverrides(normalizedConfig.workspacePoliciesPath),
   );
-  const stores = runtimeStores ?? await createRuntimeStoreHandle(normalizedConfig);
+  const stores = runtimeStores ?? await createRuntimeStoreHandle(normalizedConfig, {
+    legacySessionPurgeReadinessObserver,
+  });
+  stores.readiness.start();
   const authService = createAuthService({
     accessTokenTtlSeconds: normalizedConfig.accessTokenTtlSeconds,
     auditLogger: resolvedAuditLogger,
@@ -121,6 +134,11 @@ export const createMcpHttpRuntime = async ({
   const toSession = async (accessToken: string): Promise<AccessSessionRecord | null> => {
     const verification = await verifyBearerToken(accessToken);
     if (!verification) {
+      return null;
+    }
+    try {
+      assertMcpWorkspaceCredential(verification);
+    } catch {
       return null;
     }
 
@@ -151,6 +169,7 @@ export const createMcpHttpRuntime = async ({
   };
   const handler = createMcpRequestHandler({
     config: normalizedConfig,
+    readiness: stores.readiness,
     serverManager,
     verifyBearerToken: toSession,
   });
@@ -163,6 +182,7 @@ export const createMcpHttpRuntime = async ({
     },
     handler,
     mode: stores.mode,
+    readiness: stores.readiness,
   };
 };
 

@@ -11,9 +11,9 @@ The repository includes a first-party TypeScript SDK published as `@radioso/type
 
 - Node.js 24+
 - A Radioso base URL
-- An API token
+- A personal token or service-account credential
 
-The SDK uses API tokens. It does not cover browser sign-in or admin-only actions.
+Use a personal token for a client that acts as your current workspace membership. Use a service-account credential for CI or a long-running service. Create either one under **Settings → API access** and save the one-time secret in a secret manager. The SDK does not cover browser sign-in or credential lifecycle actions.
 
 ## Install
 
@@ -45,7 +45,7 @@ const client = createRadiosoClient({
 - `https://api-us.radioso.ai` — the US-hosted instance
 - your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`, or `http://localhost:8080` for a local backend)
 
-A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
+An API credential only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
 
 ## First request
 

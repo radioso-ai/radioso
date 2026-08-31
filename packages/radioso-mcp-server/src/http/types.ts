@@ -6,6 +6,7 @@ import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import type { RadiosoMcpServerHandle } from "../server.js";
+import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
 
 export interface InternalMcpRequestAuthInfo extends McpRequestAuthInfo {
   accessToken: string;
@@ -30,4 +31,5 @@ export interface RemoteHttpDependencies {
   authService: AuthService;
   auditLogger?: AuditLogger;
   config: RadiosoMcpConfig;
+  readiness?: RuntimeStoreReadiness;
 }

@@ -7,9 +7,9 @@ description: How the Radioso API is organized, which auth mode to use, and where
 
 Call the Radioso API to create workspaces, upload documents, and ask an agent a grounded question — the same work the dashboard does, reached over HTTP instead of a browser. One naming note before you dive in: the persona you configure in the dashboard is an **agent**. The chat surface you call to talk to it is still named **assistant** in API paths, such as `/api/v1/assistant/chat`. Same thing, two names — the assistant chat API is how you talk to an agent.
 
-## Get a token and ask a question
+## Get an API credential and ask a question
 
-Sign in to the dashboard, open a workspace, and copy its token from **Settings → API access**, or reveal it over the API itself — see [Workspaces and tokens](/api/workspaces-and-tokens). With a token in hand:
+Sign in to the dashboard and create a personal token or service-account credential under **Settings → API access** — see [Personal tokens and service accounts](/api/workspaces-and-tokens). Save the one-time secret, then:
 
 ```bash
 curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
@@ -18,12 +18,12 @@ curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
   -d '{"message":"What can this workspace answer?","stream":false}'
 ```
 
-Swap in `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — a workspace token only works against the instance that issued it. If the workspace has no documents yet, the agent still answers, just without grounding; [Documents and search](/api/documents-and-search) covers giving it something to answer from.
+Swap in `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — an API credential only works against the instance that issued it. If the workspace has no documents yet, the agent still answers, just without grounding; [Documents and search](/api/documents-and-search) covers giving it something to answer from.
 
 ## Find your workflow
 
 - Signing users into the product yourself: [Auth and sessions](/api/auth-and-sessions).
-- Automating documents and chat from your backend: [Workspaces and tokens](/api/workspaces-and-tokens), then [Agents and skills](/api/agents-and-skills), [Documents and search](/api/documents-and-search), and [Chat and history](/api/chat-and-history).
+- Automating documents and chat from your backend: [Personal tokens and service accounts](/api/workspaces-and-tokens), then [Agents and skills](/api/agents-and-skills), [Documents and search](/api/documents-and-search), and [Chat and history](/api/chat-and-history).
 - Adding customer-facing public chat or the Enterprise website widget: [Public chat and embed](/api/public-chat-and-embed).
 - Tuning workspace behavior: [Settings](/api/settings).
 - Managing external ingestion or messaging systems: [Connectors and webhooks](/api/connectors-and-webhooks), and [WordPress and WooCommerce](/operators/wordpress-connector) for a site or catalogue.
@@ -33,7 +33,7 @@ Swap in `https://api-us.radioso.ai` for the US-hosted instance, or your own orig
 Which credential you send determines which routes will accept the request:
 
 - **Session cookie** — set by login, invitation acceptance, or password reset. Manages accounts, users, invitations, and workspaces.
-- **Workspace API token** — sent as `Authorization: Bearer <token>`. Runs agents, skills, documents, chat, search, settings, and connectors.
+- **Personal token or service-account credential** — sent as `Authorization: Bearer <token>`. Runs the routes explicitly available to its live `member` or `admin` role.
 - **Public token** — a per-surface token embedded in a public chat link or website widget, not tied to your account. Handles anonymous chat and the Enterprise embed flow.
 
 Exact schemas, status codes, and payload contracts live in the [API Reference](/api-reference), generated from the OpenAPI document at `backend/openapi.json` — the canonical source for both that reference and this scenario-first section.
@@ -49,5 +49,5 @@ Use it for service monitoring and basic deployment checks; it needs no credentia
 ## Read next
 
 - [Auth and sessions](/api/auth-and-sessions)
-- [Workspaces and tokens](/api/workspaces-and-tokens)
+- [Personal tokens and service accounts](/api/workspaces-and-tokens)
 - [API Reference](/api-reference)

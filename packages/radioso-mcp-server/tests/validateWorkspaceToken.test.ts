@@ -91,4 +91,38 @@ describe("validateWorkspaceToken", () => {
     } satisfies Partial<RadiosoApiError>);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it.each(["personal_api", "service_account_credential"] as const)(
+    "rejects a %s credential even if the context endpoint returns 200",
+    async (credentialClass) => {
+      const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          apiVersion: "0.1.0",
+          credentialClass,
+          mcpContextVersion: "2026-04-22",
+          supportedTools: ["describe_capabilities"],
+          workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
+          workspaceName: "Default",
+        }), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+      );
+
+      await expect(
+        validateWorkspaceToken(
+          {
+            baseUrl: "http://localhost:8080",
+            requestTimeoutMs: 30_000,
+            serverName: "radioso-test",
+          },
+          "radioso_new_credential",
+          fetchMock,
+        ),
+      ).rejects.toMatchObject({
+        code: "invalid_access_token",
+        status: 401,
+      } satisfies Partial<RadiosoApiError>);
+    },
+  );
 });

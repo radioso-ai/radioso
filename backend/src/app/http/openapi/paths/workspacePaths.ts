@@ -11,9 +11,9 @@ export const registerWorkspacePaths = (
     method: "get",
     path: "/api/v1/workspace/mcp/context",
     tags: ["Workspace"],
-    summary: "Get workspace MCP context for a bearer-authenticated workspace token",
+    summary: "Get workspace MCP context for a signed-in workspace session",
     operationId: "getWorkspaceMcpContext",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: security.workspaceAdminSecurity,
     responses: {
       200: {
         description: "Workspace MCP context returned",
@@ -24,15 +24,15 @@ export const registerWorkspacePaths = (
         },
       },
       401: {
-        description: "Authentication required",
+        description: "Signed-in workspace session required",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
           },
         },
       },
-      403: {
-        description: "Workspace token no longer resolves to an active workspace",
+      404: {
+        description: "Workspace is not available in the signed-in account",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

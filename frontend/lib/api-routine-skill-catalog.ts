@@ -147,7 +147,7 @@ export const routineSkillCatalogApi = {
   async listRoutineSkillCatalog(agentId: string): Promise<SkillAuthoringDescriptor[]> {
     const payload = await request<SkillAuthoringCatalogResponse>(`/agents/${agentId}/routine-skill-catalog`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
     return parseSkillAuthoringCatalogResponse(payload)
   },
 }

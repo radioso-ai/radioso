@@ -8,19 +8,17 @@ import {
   CodeSnippet,
   ExampleSelector,
   type ExampleLanguage,
-  useInlineWorkspaceToken,
 } from '@/components/shared/api-snippets'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
-import { Spinner } from '@/components/ui/spinner'
 
 const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
 const SDK_BASE_PATH = API_BASE_PATH.replace(/\/api\/v1\/?$/, '')
 const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
 const PLACEHOLDER_ORIGIN = 'https://your-radioso-host'
 
-const tokenLiteral = (apiToken: string | null) => (apiToken ? JSON.stringify(apiToken) : "'radioso_...'")
-const curlBearer = (apiToken: string | null) => apiToken ?? '$RADIOSO_API_TOKEN'
+const tokenLiteral = (apiToken: string | null) => (apiToken ? JSON.stringify(apiToken) : "'YOUR_PERSONAL_OR_SERVICE_CREDENTIAL'")
+const curlBearer = (apiToken: string | null) => apiToken ?? '$RADIOSO_API_CREDENTIAL'
 
 const buildCreateDocumentCurl = (origin: string, apiToken: string | null) => `curl ${origin}${API_BASE_PATH}/document \\
   -X POST \\
@@ -54,8 +52,7 @@ const response = await client.chat.create({
 
 console.log(response.answer)`
 
-export function ApiChannelCard({ workspaceId }: { workspaceId: string | null | undefined }) {
-  const { apiToken, apiTokenError, isApiTokenLoading } = useInlineWorkspaceToken(workspaceId)
+export function ApiChannelCard() {
   const [exampleLanguage, setExampleLanguage] = useState<ExampleLanguage>('curl')
 
   const origin = useMemo(
@@ -66,10 +63,10 @@ export function ApiChannelCard({ workspaceId }: { workspaceId: string | null | u
 
   const isCurl = exampleLanguage === 'curl'
   const createDocumentCode = isCurl
-    ? buildCreateDocumentCurl(origin, apiToken)
-    : buildCreateDocumentTypeScript(origin, apiToken)
+    ? buildCreateDocumentCurl(origin, null)
+    : buildCreateDocumentTypeScript(origin, null)
   const askQuestionCode = isCurl
-    ? buildAskQuestionCurl(origin, apiToken)
+    ? buildAskQuestionCurl(origin, null)
     : buildAskQuestionTypeScript()
 
   return (
@@ -86,17 +83,13 @@ export function ApiChannelCard({ workspaceId }: { workspaceId: string | null | u
             <CopyValueField value={apiBaseUrl} ariaLabel="Copy API base URL" className="w-full" />
           </div>
           <div className="space-y-2">
-            <Label className="text-foreground">API token</Label>
-            {isApiTokenLoading ? (
-              <div className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
-                <Spinner className="h-4 w-4" />
-                Loading workspace API token...
-              </div>
-            ) : apiTokenError ? (
-              <p className="text-sm text-destructive">{apiTokenError}</p>
-            ) : apiToken ? (
-              <CopyValueField value={apiToken} ariaLabel="Copy API token" className="w-full" truncate />
-            ) : null}
+            <div className="space-y-1">
+              <Label className="text-foreground">API credential</Label>
+              <p className="text-sm text-muted-foreground">
+                Create a personal token or service-account credential in Workspace settings. The secret is shown once
+                and belongs in your server-side secret manager.
+              </p>
+            </div>
           </div>
         </div>
 

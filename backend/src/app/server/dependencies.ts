@@ -103,6 +103,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
     repositories,
   });
   const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
@@ -143,6 +145,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     infrastructure,
     logger,
     repositories,
+    personalCredentialTermination: access.personalCredentialTenureService,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -651,6 +654,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     emailVerificationService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
+    apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
+    machineAccessSecurityObserver: access.machineAccessSecurityObserver,
+    credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
+    personalCredentialService: access.personalCredentialService,
+    serviceAccountService: access.serviceAccountService,
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,

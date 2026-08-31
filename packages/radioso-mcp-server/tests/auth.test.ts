@@ -302,6 +302,36 @@ describe("auth foundations", () => {
     expect(converseApi.validate).not.toHaveBeenCalled();
   });
 
+  it("revalidates a cached workspace session so a destroyed upstream credential fails closed", async () => {
+    const sessionStore = createInMemorySessionStore();
+    await sessionStore.save({
+      accessToken: "mcp_sess_stale",
+      expiresAt: new Date("2026-04-21T12:10:00.000Z"),
+      grantedTools: ["describe_capabilities"],
+      issuedAt: new Date("2026-04-21T12:00:00.000Z"),
+      sessionId: "sess_stale",
+      upstreamApiToken: "radioso_destroyed",
+    });
+    const validateWorkspaceToken = vi.fn().mockRejectedValue(
+      new RadiosoApiError("Unauthorized", 401, "unauthorized"),
+    );
+    const auth = createAuthService({
+      policy: createCapabilityPolicyRegistry({
+        allowedReadTools: ["describe_capabilities"],
+        allowedWriteTools: [],
+        approvalRequiredWriteTools: [],
+      }),
+      sessionStore,
+      signingSecret: "dev-signing-secret",
+      validateWorkspaceToken,
+      now: () => new Date("2026-04-21T12:05:00.000Z"),
+    });
+
+    await expect(auth.getSession("mcp_sess_stale")).resolves.toBeNull();
+    expect(validateWorkspaceToken).toHaveBeenCalledWith("radioso_destroyed");
+    await expect(sessionStore.getByAccessToken("mcp_sess_stale")).resolves.toBeNull();
+  });
+
   it("returns null when converse grant exchange rejects an unknown bearer", async () => {
     const converseApi = {
       exchange: vi.fn().mockRejectedValue(new RadiosoApiError("Forbidden", 403, "forbidden")),

@@ -3,10 +3,12 @@
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 
 import { loadStdioConfig, STDIO_COMPAT_SIGNING_SECRET } from "../config.js";
+import { validateWorkspaceToken } from "../http/validateWorkspaceToken.js";
 import { createRadiosoMcpServer } from "../server.js";
 
 const main = async () => {
   const config = loadStdioConfig(process.env);
+  await validateWorkspaceToken(config, config.apiToken!);
 
   const { server } = createRadiosoMcpServer({
     baseConfig: {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { accountApi } from '@/lib/api'
 import { buildError } from '@/lib/api-client'
 
-describe('accountApi.getWorkspaceToken', () => {
+describe('accountApi', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -35,30 +35,6 @@ describe('accountApi.getWorkspaceToken', () => {
         resetAt: '2026-07-01T00:00:00.000Z',
       },
     })
-  })
-
-  it('reveals the workspace token with session credentials and no bearer storage dependency', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: {
-        get: () => 'application/json',
-      },
-      json: async () => ({ token: 'radioso_test_token' }),
-    })
-
-    vi.stubGlobal('fetch', fetchMock)
-
-    const response = await accountApi.getWorkspaceToken('workspace-123')
-
-    expect(response).toEqual({ token: 'radioso_test_token' })
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/backend/api/v1/account/workspaces/workspace-123/token',
-      expect.objectContaining({
-        method: 'GET',
-        credentials: 'include',
-      }),
-    )
   })
 
   it('loads account usage trends with session credentials and scoped query params', async () => {
@@ -174,30 +150,6 @@ describe('accountApi.getWorkspaceToken', () => {
     expect(response).toBeDefined()
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/account/invitations',
-      expect.objectContaining({
-        method: 'POST',
-        credentials: 'include',
-      }),
-    )
-  })
-
-  it('rotates the workspace token with session credentials', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      headers: {
-        get: () => 'application/json',
-      },
-      json: async () => ({ token: 'radioso_rotated_token' }),
-    })
-
-    vi.stubGlobal('fetch', fetchMock)
-
-    const response = await accountApi.rotateWorkspaceToken('workspace-123')
-
-    expect(response).toEqual({ token: 'radioso_rotated_token' })
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/backend/api/v1/account/workspaces/workspace-123/token/rotate',
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',

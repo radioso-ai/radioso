@@ -7,6 +7,7 @@ import { createRequestTelemetryMiddleware } from "../../shared/observability/tel
 import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
+import { createRequestAuditContextMiddleware } from "../http/middleware/requestAuditContextMiddleware.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { createApiRouter } from "../http/routes/index.js";
 import { mountMergedMcp } from "./mcpMount.js";
@@ -34,6 +35,7 @@ export const createApp = (dependencies: AppDependencies) => {
 
   app.disable("x-powered-by");
   app.use(createHttpLogger(dependencies.logger));
+  app.use(createRequestAuditContextMiddleware());
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
   mountMergedMcp(app, dependencies);

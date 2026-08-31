@@ -628,6 +628,53 @@ CREATE TABLE public.agents (
 
 
 --
+-- Name: api_credential_expiry_warnings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.api_credential_expiry_warnings (
+    credential_id uuid NOT NULL,
+    threshold_days integer NOT NULL,
+    claimed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT api_credential_expiry_warnings_threshold_days_check CHECK ((threshold_days = ANY (ARRAY[30, 7, 1])))
+);
+
+
+--
+-- Name: api_credentials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.api_credentials (
+    id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    kind text NOT NULL,
+    label text NOT NULL,
+    token_prefix text NOT NULL,
+    token_hash text NOT NULL,
+    role_ceiling text,
+    owner_user_id uuid,
+    access_tenure_membership_id uuid,
+    service_account_id uuid,
+    created_by_user_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    last_used_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    revoked_by_user_id uuid,
+    revocation_reason text,
+    rotated_from_credential_id uuid,
+    revision integer DEFAULT 1 NOT NULL,
+    CONSTRAINT api_credentials_check CHECK ((((kind = 'personal'::text) AND (owner_user_id IS NOT NULL) AND (access_tenure_membership_id IS NOT NULL) AND (role_ceiling IS NOT NULL) AND (service_account_id IS NULL)) OR ((kind = 'service'::text) AND (service_account_id IS NOT NULL) AND (owner_user_id IS NULL) AND (access_tenure_membership_id IS NULL) AND (role_ceiling IS NULL)))),
+    CONSTRAINT api_credentials_kind_check CHECK ((kind = ANY (ARRAY['personal'::text, 'service'::text]))),
+    CONSTRAINT api_credentials_label_check CHECK ((btrim(label) <> ''::text)),
+    CONSTRAINT api_credentials_revision_check CHECK ((revision > 0)),
+    CONSTRAINT api_credentials_revocation_reason_check CHECK ((revocation_reason = ANY (ARRAY['explicit'::text, 'rotated'::text, 'service_account_archived'::text, 'membership_ended'::text, 'workspace_deleted'::text, 'account_deleted'::text, 'user_deleted'::text]))),
+    CONSTRAINT api_credentials_role_ceiling_check CHECK ((role_ceiling = ANY (ARRAY['member'::text, 'admin'::text])))
+);
+
+
+--
 -- Name: assistant_answer_feedback; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2181,6 +2228,22 @@ CREATE TABLE public.integration_oauth_connections (
 
 
 --
+-- Name: legacy_workspace_credential_tombstones; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.legacy_workspace_credential_tombstones (
+    legacy_token_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    token_prefix text NOT NULL,
+    final_status text DEFAULT 'destroyed'::text NOT NULL,
+    migrated_at timestamp with time zone DEFAULT now() NOT NULL,
+    system_reason text DEFAULT 'legacy_workspace_credential_destroyed'::text NOT NULL,
+    CONSTRAINT legacy_workspace_credential_tombstones_final_status_check CHECK ((final_status = 'destroyed'::text))
+);
+
+
+--
 -- Name: mcp_connections; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2882,19 +2945,29 @@ CREATE TABLE public.workspace_provider_credentials (
 
 
 --
--- Name: workspace_tokens; Type: TABLE; Schema: public; Owner: -
+-- Name: workspace_service_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.workspace_tokens (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
+CREATE TABLE public.workspace_service_accounts (
+    id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     account_id uuid NOT NULL,
-    token_prefix text NOT NULL,
-    token_hash text NOT NULL,
-    encrypted_token text NOT NULL,
+    display_name text NOT NULL,
+    role text NOT NULL,
+    status text DEFAULT 'enabled'::text NOT NULL,
+    created_by_user_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    disabled_at timestamp with time zone,
+    archived_at timestamp with time zone,
     last_used_at timestamp with time zone,
-    revoked_at timestamp with time zone
+    revision integer DEFAULT 1 NOT NULL,
+    CONSTRAINT workspace_service_accounts_check CHECK (((status <> 'disabled'::text) OR (disabled_at IS NOT NULL))),
+    CONSTRAINT workspace_service_accounts_check1 CHECK (((status <> 'archived'::text) OR (archived_at IS NOT NULL))),
+    CONSTRAINT workspace_service_accounts_display_name_check CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT workspace_service_accounts_revision_check CHECK ((revision > 0)),
+    CONSTRAINT workspace_service_accounts_role_check CHECK ((role = ANY (ARRAY['member'::text, 'admin'::text]))),
+    CONSTRAINT workspace_service_accounts_status_check CHECK ((status = ANY (ARRAY['enabled'::text, 'disabled'::text, 'archived'::text])))
 );
 
 
@@ -3296,6 +3369,30 @@ ALTER TABLE ONLY public.agent_skills
 
 ALTER TABLE ONLY public.agents
     ADD CONSTRAINT agents_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: api_credential_expiry_warnings api_credential_expiry_warnings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credential_expiry_warnings
+    ADD CONSTRAINT api_credential_expiry_warnings_pkey PRIMARY KEY (credential_id, threshold_days);
+
+
+--
+-- Name: api_credentials api_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: api_credentials api_credentials_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_token_hash_key UNIQUE (token_hash);
 
 
 --
@@ -4115,6 +4212,14 @@ ALTER TABLE ONLY public.integration_oauth_connections
 
 
 --
+-- Name: legacy_workspace_credential_tombstones legacy_workspace_credential_tombstones_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.legacy_workspace_credential_tombstones
+    ADD CONSTRAINT legacy_workspace_credential_tombstones_pkey PRIMARY KEY (legacy_token_id);
+
+
+--
 -- Name: mcp_connections mcp_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4523,27 +4628,11 @@ ALTER TABLE ONLY public.workspace_provider_credentials
 
 
 --
--- Name: workspace_tokens workspace_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: workspace_service_accounts workspace_service_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.workspace_tokens
-    ADD CONSTRAINT workspace_tokens_pkey PRIMARY KEY (id);
-
-
---
--- Name: workspace_tokens workspace_tokens_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workspace_tokens
-    ADD CONSTRAINT workspace_tokens_token_hash_key UNIQUE (token_hash);
-
-
---
--- Name: workspace_tokens workspace_tokens_workspace_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.workspace_tokens
-    ADD CONSTRAINT workspace_tokens_workspace_id_key UNIQUE (workspace_id);
+ALTER TABLE ONLY public.workspace_service_accounts
+    ADD CONSTRAINT workspace_service_accounts_pkey PRIMARY KEY (id);
 
 
 --
@@ -4552,6 +4641,14 @@ ALTER TABLE ONLY public.workspace_tokens
 
 ALTER TABLE ONLY public.workspace_webhook_destinations
     ADD CONSTRAINT workspace_webhook_destinations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspaces workspaces_id_account_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspaces
+    ADD CONSTRAINT workspaces_id_account_id_key UNIQUE (id, account_id);
 
 
 --
@@ -5641,6 +5738,34 @@ CREATE INDEX idx_agents_workspace_id ON public.agents USING btree (workspace_id)
 
 
 --
+-- Name: idx_api_credentials_expiry_warning_scan; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_api_credentials_expiry_warning_scan ON public.api_credentials USING btree (expires_at, id) WHERE (revoked_at IS NULL);
+
+
+--
+-- Name: idx_api_credentials_personal_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_api_credentials_personal_active ON public.api_credentials USING btree (workspace_id, owner_user_id, created_at DESC) WHERE ((kind = 'personal'::text) AND (revoked_at IS NULL));
+
+
+--
+-- Name: idx_api_credentials_service_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_api_credentials_service_active ON public.api_credentials USING btree (service_account_id, created_at DESC) WHERE ((kind = 'service'::text) AND (revoked_at IS NULL));
+
+
+--
+-- Name: idx_api_credentials_workspace_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_api_credentials_workspace_created ON public.api_credentials USING btree (workspace_id, created_at DESC, id DESC);
+
+
+--
 -- Name: idx_assistant_answer_feedback_actor_message; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6327,17 +6452,10 @@ CREATE INDEX idx_workspace_grants_user_id ON public.workspace_grants USING btree
 
 
 --
--- Name: idx_workspace_tokens_account_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_workspace_service_accounts_workspace_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_workspace_tokens_account_id ON public.workspace_tokens USING btree (account_id);
-
-
---
--- Name: idx_workspace_tokens_active_token_hash; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_workspace_tokens_active_token_hash ON public.workspace_tokens USING btree (token_hash) WHERE (revoked_at IS NULL);
+CREATE INDEX idx_workspace_service_accounts_workspace_active ON public.workspace_service_accounts USING btree (workspace_id, created_at DESC) WHERE (status <> 'archived'::text);
 
 
 --
@@ -7785,6 +7903,54 @@ ALTER TABLE ONLY public.agents
 
 
 --
+-- Name: api_credential_expiry_warnings api_credential_expiry_warnings_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credential_expiry_warnings
+    ADD CONSTRAINT api_credential_expiry_warnings_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.api_credentials(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_credentials api_credentials_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_credentials api_credentials_rotated_from_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_rotated_from_credential_id_fkey FOREIGN KEY (rotated_from_credential_id) REFERENCES public.api_credentials(id) ON DELETE SET NULL;
+
+
+--
+-- Name: api_credentials api_credentials_service_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_service_account_id_fkey FOREIGN KEY (service_account_id) REFERENCES public.workspace_service_accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_credentials api_credentials_workspace_id_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_workspace_id_account_id_fkey FOREIGN KEY (workspace_id, account_id) REFERENCES public.workspaces(id, account_id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_credentials api_credentials_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_credentials
+    ADD CONSTRAINT api_credentials_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: assistant_answer_feedback assistant_answer_feedback_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8961,19 +9127,27 @@ ALTER TABLE ONLY public.workspace_provider_credentials
 
 
 --
--- Name: workspace_tokens workspace_tokens_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: workspace_service_accounts workspace_service_accounts_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.workspace_tokens
-    ADD CONSTRAINT workspace_tokens_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.workspace_service_accounts
+    ADD CONSTRAINT workspace_service_accounts_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
 
 
 --
--- Name: workspace_tokens workspace_tokens_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: workspace_service_accounts workspace_service_accounts_workspace_id_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.workspace_tokens
-    ADD CONSTRAINT workspace_tokens_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.workspace_service_accounts
+    ADD CONSTRAINT workspace_service_accounts_workspace_id_account_id_fkey FOREIGN KEY (workspace_id, account_id) REFERENCES public.workspaces(id, account_id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_service_accounts workspace_service_accounts_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_service_accounts
+    ADD CONSTRAINT workspace_service_accounts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

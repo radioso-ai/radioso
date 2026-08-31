@@ -5,7 +5,6 @@ import { slackApi } from '@/lib/api-slack'
 const createLocalStorage = () => {
   const store = new Map<string, string>([
     ['radioso.activeWorkspaceId', 'workspace-1'],
-    ['radioso.workspaceTokens', JSON.stringify({ 'workspace-1': 'workspace-token' })],
   ])
 
   return {
@@ -49,8 +48,8 @@ describe('slackApi', () => {
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/slack/install/start')
     expect(requestInit.method).toBe('POST')
-    expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer workspace-token')
+    expect(requestInit.credentials).toBe('include')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBeNull()
   })
 
   it('updates the Slack answering binding with a typed JSON body', async () => {
@@ -102,6 +101,6 @@ describe('slackApi', () => {
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/workspaces/workspace-1/slack/manifest')
     expect(requestInit.method).toBe('GET')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer workspace-token')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBeNull()
   })
 })

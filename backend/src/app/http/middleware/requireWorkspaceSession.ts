@@ -5,6 +5,9 @@ import type { Env } from "../../config/env.js";
 import type { AccountAccessService } from "../../../modules/account/services/accountAccessService.js";
 import type { AuthService } from "../../../modules/auth/services/authService.js";
 import type { WorkspaceSessionService } from "../../../modules/auth/services/workspaceSessionService.js";
+import { allowsMachinePrincipal, markApiPrincipalAuthenticator } from "../apiPrincipalRoutePolicy.js";
+import { attributeMachinePrincipalToRequestAudit } from "./requestAuditContextMiddleware.js";
+import type { MachineAccessSecurityObserver } from "../../../modules/machineAccess/public.js";
 
 const WORKSPACE_HEADER = "x-workspace-id";
 const BEARER_PREFIX = "Bearer ";
@@ -14,10 +17,11 @@ export interface WorkspaceSessionDependencies {
   authService: AuthService;
   accountAccessService: AccountAccessService;
   workspaceSessionService: WorkspaceSessionService;
+  machineAccessSecurityObserver?: Pick<MachineAccessSecurityObserver, "recordAuthorizationDenial">;
 }
 
 export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependencies): RequestHandler => {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return markApiPrincipalAuthenticator(async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
       if (sessionToken) {
@@ -58,14 +62,23 @@ export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependenci
       }
 
       const auth = await dependencies.authService.authenticateApiToken(bearerToken);
+      if (!allowsMachinePrincipal(req.method, `${req.baseUrl}${req.path}`, auth.principal)) {
+        dependencies.machineAccessSecurityObserver?.recordAuthorizationDenial({
+          principalKind: auth.principal.type === "personal_api_credential" ? "personal" : "service",
+          reason: "route_policy",
+        });
+        next(unauthorized());
+        return;
+      }
       res.locals.accountId = auth.accountId;
       res.locals.bearerToken = bearerToken;
       res.locals.workspaceId = auth.workspaceId;
       res.locals.authMode = "bearer";
       res.locals.authPrincipal = auth.principal;
+      attributeMachinePrincipalToRequestAudit(auth.principal);
       next();
     } catch (error) {
       next(error);
     }
-  };
+  }, "machine_eligible");
 };

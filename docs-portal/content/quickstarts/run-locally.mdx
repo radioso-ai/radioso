@@ -53,7 +53,7 @@ Open the app, register the first user on a new server or sign in, upload a docum
 
 ### Goal 2: test the API contract
 
-Use the local backend to check registration availability, register the first user if needed, log in, reveal a workspace token, and call document or chat routes directly.
+Use the local backend to check registration availability, register the first user if needed, log in, issue a personal token, and call document or chat routes directly.
 
 ### Goal 3: test the Enterprise website widget
 
@@ -114,14 +114,18 @@ curl -sS -c cookies.txt \
   http://localhost:8080/api/v1/auth/login
 ```
 
-Reveal the workspace API token with the session cookie:
+Issue a personal token with the session cookie. Pick an `expiresAt` value no more than 90 days away:
 
 ```bash
-curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+curl -sS -b cookies.txt -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-Radioso-CSRF: 1' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -d '{"label":"Local development","roleCeiling":"member","expiresAt":"<RFC3339-UTC>"}' \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 
-That token is what your scripts and SDK clients authenticate with once you leave the browser behind.
+Store the response's `secret` value outside the browser. That personal token is what your scripts and SDK clients authenticate with once you leave the dashboard behind.
 
 ## What local development changes
 

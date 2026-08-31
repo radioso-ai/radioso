@@ -90,8 +90,9 @@ Signed visitor identity lets a website backend prove which customer is using an
 embedded chat session. This is the only browser path that unlocks
 customer-scoped context values.
 
-First, reveal the per-agent signing key from an authenticated workspace-admin
-session:
+First, reveal the per-agent signing key from the signed-in dashboard as a
+workspace administrator. This is a session-only settings operation; API
+credentials cannot reveal signing keys:
 
 ```text
 GET /api/v1/agents/{agentId}/context-variables/signing-key
@@ -131,7 +132,7 @@ window.Radioso.identify(token)
 
 Radioso verifies the token on each message. Verification is strict:
 
-- the signature must match the current or previous workspace token secret
+- the signature must match the current or previous per-agent signing key
 - `issuedAt` must be within the acceptance window, five minutes
 - `sessionId` must match the established public chat session
 - `origin` must match the approved embed origin

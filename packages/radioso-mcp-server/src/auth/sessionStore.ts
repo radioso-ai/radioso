@@ -19,7 +19,11 @@ export interface AccessSessionRecord {
   workspaceName?: string;
 }
 
-export interface SessionStore {
+export interface LegacySessionPurger {
+  purgeLegacyApiTokenSessions(): Promise<{ purgedSessionCount: number }>;
+}
+
+export interface SessionStore extends LegacySessionPurger {
   delete(sessionId: string): Promise<boolean>;
   getByAccessToken(accessToken: string, now?: Date): Promise<AccessSessionRecord | null>;
   getById(sessionId: string): Promise<AccessSessionRecord | null>;
@@ -91,6 +95,18 @@ export const createInMemorySessionStore = (): SessionStore => {
     async getById(sessionId) {
       const session = sessionsById.get(sessionId);
       return session ? cloneSession(session) : null;
+    },
+    async purgeLegacyApiTokenSessions() {
+      let purgedSessionCount = 0;
+      for (const [sessionId, session] of sessionsById) {
+        if (session.upstreamApiToken === undefined) {
+          continue;
+        }
+        sessionsById.delete(sessionId);
+        sessionIdsByAccessTokenHash.delete(session.accessTokenHash);
+        purgedSessionCount += 1;
+      }
+      return { purgedSessionCount };
     },
     async save(input) {
       const session: AccessSessionRecord = {

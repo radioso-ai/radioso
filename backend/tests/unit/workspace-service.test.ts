@@ -93,4 +93,19 @@ describe("workspace service", () => {
     const survivor = await repository.findByIdAndAccountId(target.id, "account-1");
     expect(survivor).not.toBeNull();
   });
+
+  it("ends personal credential access before deleting a workspace", async () => {
+    const repository = new InMemoryWorkspaceRepository();
+    const ended: Array<{ accountId: string; workspaceId: string; actorUserId?: string | null }> = [];
+    const service = new WorkspaceService(repository, createAuditService(), undefined, {
+      endWorkspace: async (input) => { ended.push(input); },
+    });
+    await service.create("account-1", "Keep");
+    const target = await service.create("account-1", "Delete");
+
+    await service.delete(target.id, "account-1", "owner-1");
+
+    expect(ended).toEqual([{ accountId: "account-1", workspaceId: target.id, actorUserId: "owner-1" }]);
+    await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toBeNull();
+  });
 });

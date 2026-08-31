@@ -14,9 +14,9 @@ describe('MCP channel card setup mode', () => {
     expect(setup.steps).toEqual([
       "Open your AI client's MCP settings.",
       'Paste the MCP server URL.',
-      'Paste your workspace API token directly.',
+      'Paste a personal token or service-account credential from Workspace settings → API access directly.',
     ])
-    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <workspace API token>')
+    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <credential from Workspace settings>')
   })
 
   it('keeps relative MCP URLs in same-host setup before the browser origin is known', () => {
@@ -27,7 +27,7 @@ describe('MCP channel card setup mode', () => {
 
     expect(setup.mode).toBe('same-host')
     expect(setup.mcpUrl).toBe('/backend/mcp')
-    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <workspace API token>')
+    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <credential from Workspace settings>')
   })
 
   it('keeps remote exchange instructions when the MCP URL uses a different origin', () => {
@@ -38,7 +38,7 @@ describe('MCP channel card setup mode', () => {
 
     expect(setup.mode).toBe('remote')
     expect(setup.label).toBe('Remote setup')
-    expect(setup.steps.some((step) => step.includes('Exchange your workspace API token'))).toBe(true)
+    expect(setup.steps.some((step) => step.includes('Create a personal token or service-account credential'))).toBe(true)
     expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <MCP access token>')
     expect(shouldProbeMcpHealth(setup)).toBe(false)
   })

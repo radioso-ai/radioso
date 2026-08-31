@@ -5,7 +5,6 @@ import { documentsApi } from '@/lib/api'
 const createLocalStorage = () => {
   const store = new Map<string, string>([
     ['radioso.activeWorkspaceId', 'workspace-1'],
-    ['radioso.workspaceTokens', JSON.stringify({ 'workspace-1': 'workspace-token' })],
   ])
 
   return {

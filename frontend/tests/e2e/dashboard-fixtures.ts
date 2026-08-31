@@ -495,7 +495,6 @@ export const seedDashboardStorage = async (page: Page) => {
     window.localStorage.setItem("radioso.lastAccountId", accountIdValue);
     window.localStorage.setItem("radioso.activeWorkspaceId", workspaceIdValue);
     window.localStorage.setItem("radioso.activeWorkspacePublicRouteKey", workspaceKeyValue);
-    window.localStorage.setItem("radioso.workspaceTokens", JSON.stringify({ [workspaceIdValue]: "workspace-token" }));
   }, {
     accountIdValue: accountId,
     workspaceIdValue: workspaceId,
@@ -1251,11 +1250,6 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/account/usage/internal-operations") {
       await json(route, internalUsage);
-      return;
-    }
-
-    if (request.method() === "GET" && path === `/account/workspaces/${workspaceId}/token`) {
-      await json(route, { token: "workspace-token" });
       return;
     }
 

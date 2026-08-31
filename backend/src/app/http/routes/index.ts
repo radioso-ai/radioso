@@ -36,14 +36,76 @@ import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { getMcpMountStatus } from "../../server/mcpMount.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
+import { createApiAccessRoutes } from "./apiAccessRoutes.js";
+
+export type ApiRouteMount = {
+  path: string;
+  createRouter: (dependencies: AppDependencies) => Router;
+  /** Routes behind an API-principal-aware authenticator need a policy decision. */
+  principalPolicyInventory: boolean;
+};
+
+/**
+ * The public API's mount table. Keeping the runtime mounts and the principal-policy
+ * inventory on one declaration means the contract can inspect the same routers the
+ * application mounts, including routers that authenticate with `router.use`.
+ */
+export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
+  { path: "/api/v1/auth", createRouter: createAuthRoutes, principalPolicyInventory: false },
+  { path: "/api/v1/account", createRouter: createAccountRoutes, principalPolicyInventory: false },
+  { path: "/api/v1/account", createRouter: createAccountUserRoutes, principalPolicyInventory: false },
+  { path: "/api/v1/account", createRouter: createApiAccessRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/workspace/mcp", createRouter: createMcpContextRoutes, principalPolicyInventory: true },
+  { path: "/api/v1", createRouter: createOauthConnectionRoutes, principalPolicyInventory: true },
+  { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes, principalPolicyInventory: true },
+  { path: "/api/v1", createRouter: createSlackConnectionRoutes, principalPolicyInventory: true },
+  { path: "/api/v1", createRouter: createEmailSkillActivityRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createAgentRoutes, principalPolicyInventory: true },
+  { path: "/api/v1", createRouter: createContextVariableRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createDecisionRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createEmailSkillRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createSlackSkillRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/agents", createRouter: createAgentSkillRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/assistant", createRouter: createAssistantRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/copilot", createRouter: createCopilotRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/history", createRouter: createHistoryRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/observability", createRouter: createObservabilityRoutes, principalPolicyInventory: false },
+  { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/skills", createRouter: createSkillRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/settings", createRouter: createSettingsRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/settings/credentials", createRouter: createSettingsCredentialsRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/settings/llm-models", createRouter: createSettingsLlmModelsRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/settings/webhook-destinations", createRouter: createSettingsWebhookDestinationRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/connectors", createRouter: createConnectorRoutes, principalPolicyInventory: true },
+  { path: "/api/v1/document", createRouter: createDocumentRoutes, principalPolicyInventory: true },
+  {
+    path: "/api/v1/evals",
+    createRouter: (appDependencies) => createEvalRoutes({
+      ...appDependencies,
+      snapshotService: appDependencies.evalSnapshotService,
+      messageCaseService: appDependencies.evalMessageCaseService,
+      caseService: appDependencies.evalCaseService,
+      runService: appDependencies.evalRunService,
+      suiteService: appDependencies.evalSuiteService,
+    }),
+    principalPolicyInventory: true,
+  },
+  { path: "/api/v1/public/chat", createRouter: createPublicChatRoutes, principalPolicyInventory: false },
+];
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    res.status(200).json({
-      mcp: getMcpMountStatus(dependencies.env),
-      status: "ok",
+    const mcp = getMcpMountStatus(dependencies.env);
+    res.status(mcp.ready ? 200 : 503).json({
+      mcp,
+      status: mcp.ready ? "ok" : "starting",
     });
   });
   if (dependencies.env.METRICS_ENABLED) {
@@ -56,46 +118,9 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
       createMetricsRoutes(dependencies.metricsRegistry, dependencies.env.METRICS_AUTH_TOKEN),
     );
   }
-  router.use("/api/v1/auth", createAuthRoutes(dependencies));
-  router.use("/api/v1/account", createAccountRoutes(dependencies));
-  router.use("/api/v1/account", createAccountUserRoutes(dependencies));
-  router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));
-  router.use("/api/v1/workspace/mcp", createMcpContextRoutes(dependencies));
-  router.use("/api/v1", createOauthConnectionRoutes(dependencies));
-  router.use("/api/v1", createCustomerEmailConnectionRoutes(dependencies));
-  router.use("/api/v1", createSlackConnectionRoutes(dependencies));
-  router.use("/api/v1", createEmailSkillActivityRoutes(dependencies));
-  router.use("/api/v1/agents", createAgentRoutes(dependencies));
-  router.use("/api/v1", createContextVariableRoutes(dependencies));
-  router.use("/api/v1/agents", createDecisionRoutes(dependencies));
-  router.use("/api/v1/decisions", createDecisionsQueryRoutes(dependencies));
-  router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));
-  router.use("/api/v1/agents", createEmailSkillRoutes(dependencies));
-  router.use("/api/v1/agents", createWebhookSkillRoutes(dependencies));
-  router.use("/api/v1/agents", createSlackSkillRoutes(dependencies));
-  router.use("/api/v1/agents", createAgentSkillRoutes(dependencies));
-  router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
-  router.use("/api/v1/copilot", createCopilotRoutes(dependencies));
-  router.use("/api/v1/conversations", createConversationOwnershipRoutes(dependencies));
-  router.use("/api/v1/history", createHistoryRoutes(dependencies));
-  router.use("/api/v1/observability", createObservabilityRoutes(dependencies));
-  router.use("/api/v1/retrieval", createRetrievalRoutes(dependencies));
-  router.use("/api/v1/skills", createSkillRoutes(dependencies));
-  router.use("/api/v1/settings", createSettingsRoutes(dependencies));
-  router.use("/api/v1/settings/credentials", createSettingsCredentialsRoutes(dependencies));
-  router.use("/api/v1/settings/llm-models", createSettingsLlmModelsRoutes(dependencies));
-  router.use("/api/v1/settings/webhook-destinations", createSettingsWebhookDestinationRoutes(dependencies));
-  router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
-  router.use("/api/v1/document", createDocumentRoutes(dependencies));
-  router.use("/api/v1/evals", createEvalRoutes({
-    ...dependencies,
-    snapshotService: dependencies.evalSnapshotService,
-    messageCaseService: dependencies.evalMessageCaseService,
-    caseService: dependencies.evalCaseService,
-    runService: dependencies.evalRunService,
-    suiteService: dependencies.evalSuiteService,
-  }));
-  router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));
+  for (const mount of createApiRouteMounts(dependencies)) {
+    router.use(mount.path, mount.createRouter(dependencies));
+  }
   for (const mount of dependencies.applicationRouteMounts) {
     router.use(mount.path, mount.createRouter(dependencies));
   }

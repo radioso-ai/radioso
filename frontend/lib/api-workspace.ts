@@ -42,6 +42,6 @@ export const workspaceApi = {
   async getSummary(): Promise<WorkspaceSummaryResponse> {
     return request<WorkspaceSummaryResponse>("/workspace/summary", {
       method: "GET",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 }

@@ -59,14 +59,14 @@ export const externalSkillsApi = {
   async listConnections(agentId: string): Promise<{ connections: McpConnection[] }> {
     return request<{ connections: McpConnection[] }>(`/agents/${agentId}/mcp-connections`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createConnection(agentId: string, data: CreateMcpConnectionInput): Promise<McpConnection> {
     return request<McpConnection>(`/agents/${agentId}/mcp-connections`, {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateConnection(agentId: string, connectionId: string, data: {
@@ -76,20 +76,20 @@ export const externalSkillsApi = {
     return request<McpConnection>(`/agents/${agentId}/mcp-connections/${connectionId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteConnection(agentId: string, connectionId: string): Promise<void> {
     await request<void>(`/agents/${agentId}/mcp-connections/${connectionId}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async startOauth(agentId: string, connectionId: string): Promise<{ authorizationUrl: string }> {
     return request<{ authorizationUrl: string }>(
       `/agents/${agentId}/mcp-connections/${connectionId}/oauth/authorize`,
       { method: 'POST' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -101,27 +101,27 @@ export const externalSkillsApi = {
     return request<McpConnection>(
       `/agents/${agentId}/mcp-connections/${connectionId}/oauth/complete`,
       { method: 'POST', body: JSON.stringify(data) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
   async discoverTools(agentId: string, connectionId: string): Promise<{ tools: DiscoveredMcpTool[] }> {
     return request<{ tools: DiscoveredMcpTool[] }>(`/agents/${agentId}/mcp-connections/${connectionId}/discover`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listSkills(agentId: string): Promise<{ skills: ExternalSkillDefinition[] }> {
     return request<{ skills: ExternalSkillDefinition[] }>(`/agents/${agentId}/external-skills`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createSkill(agentId: string, data: CreateExternalSkillInput): Promise<ExternalSkillDefinition> {
     return request<ExternalSkillDefinition>(`/agents/${agentId}/external-skills`, {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateSkill(agentId: string, skillId: string, data: {
@@ -133,12 +133,12 @@ export const externalSkillsApi = {
     return request<ExternalSkillDefinition>(`/agents/${agentId}/external-skills/${skillId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteSkill(agentId: string, skillId: string): Promise<void> {
     await request<void>(`/agents/${agentId}/external-skills/${skillId}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 }

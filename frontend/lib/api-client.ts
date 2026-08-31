@@ -1,12 +1,7 @@
-import {
-  clearStoredWorkspaceToken,
-  getStoredActiveWorkspaceId,
-  readStoredWorkspaceToken,
-  storeWorkspaceToken,
-} from './api-storage'
+import { getStoredActiveWorkspaceId } from './api-storage'
 
 export {
-  activateWorkspaceToken,
+  activateWorkspaceSession,
   attachAnonymousSessionHeader,
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
@@ -20,7 +15,7 @@ export {
   readStoredEffectivePublicChatToken,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
-  removeWorkspaceToken,
+  removeWorkspaceSession,
   seedWorkspaceSession,
   setPendingAccountSwitchId,
   storeAnonymousSessionId,
@@ -28,7 +23,6 @@ export {
   storeEffectivePublicChatToken,
   storePublicSessionResumeToken,
   storePublicSessionToken,
-  storeWorkspaceToken,
   type StoredEmbedBootstrapSession,
   type StoredPublicSessionToken,
   type StoredPublicSessionResumeToken,
@@ -48,12 +42,6 @@ export interface ErrorResponse {
   }
 }
 
-interface WorkspaceTokenResponse {
-  token: string
-}
-
-const workspaceTokenRequests = new Map<string, Promise<string>>()
-
 const isAbortError = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
 
@@ -61,19 +49,6 @@ const throwIfAborted = (signal: AbortSignal | undefined): void => {
   if (signal?.aborted) {
     throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
   }
-}
-
-const detachOnAbort = async <T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> => {
-  if (!signal) return operation
-  throwIfAborted(signal)
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason ?? new DOMException('The operation was aborted', 'AbortError'))
-    signal.addEventListener('abort', onAbort, { once: true })
-    operation.then(
-      (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
-      (error) => { signal.removeEventListener('abort', onAbort); reject(error) },
-    )
-  })
 }
 
 export const buildError = async (response: Response): Promise<ErrorResponse> => {
@@ -129,88 +104,10 @@ export const buildError = async (response: Response): Promise<ErrorResponse> => 
   }
 };
 
-export const requireWorkspaceApiToken = async (signal?: AbortSignal): Promise<string> => {
-  throwIfAborted(signal)
-  const workspaceId = getStoredActiveWorkspaceId()
-
-  if (!workspaceId) {
-    throw {
-      error: {
-        code: "UNAUTHORIZED",
-        message: "Sign in again to continue.",
-      },
-    } satisfies ErrorResponse
-  }
-
-  const cachedToken = readStoredWorkspaceToken(workspaceId)
-  if (cachedToken) {
-    return cachedToken
-  }
-
-  const inFlightRequest = workspaceTokenRequests.get(workspaceId)
-  if (inFlightRequest) {
-    return detachOnAbort(inFlightRequest, signal)
-  }
-
-  const tokenRequest = (async () => {
-    const response = await fetch(`${API_BASE}/account/workspaces/${workspaceId}/token`, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "include",
-      headers: {
-        "X-Forwarded-Prefix": "/backend",
-      },
-    })
-
-    if (!response.ok) {
-      throw await buildError(response)
-    }
-
-    const payload = (await response.json()) as Partial<WorkspaceTokenResponse>
-    if (typeof payload.token !== "string" || payload.token.length === 0) {
-      throw {
-        error: {
-          code: "HTTP_ERROR",
-          message: "Workspace token response was invalid.",
-        },
-      } satisfies ErrorResponse
-    }
-
-    storeWorkspaceToken(workspaceId, payload.token)
-    return payload.token
-  })()
-
-  workspaceTokenRequests.set(workspaceId, tokenRequest)
-  void tokenRequest.then(
-    () => {
-      if (workspaceTokenRequests.get(workspaceId) === tokenRequest) workspaceTokenRequests.delete(workspaceId)
-    },
-    () => {
-      if (workspaceTokenRequests.get(workspaceId) === tokenRequest) workspaceTokenRequests.delete(workspaceId)
-    },
-  )
-  return detachOnAbort(tokenRequest, signal)
-}
-
-export const canRetryWithFreshWorkspaceToken = (response: Response): boolean =>
-  response.status === 401 && Boolean(getStoredActiveWorkspaceId())
-
-export const refreshWorkspaceApiToken = async (headers: Headers, signal?: AbortSignal): Promise<boolean> => {
-  throwIfAborted(signal)
-  const workspaceId = getStoredActiveWorkspaceId()
-  if (!workspaceId) {
-    return false
-  }
-
-  clearStoredWorkspaceToken(workspaceId)
-  headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken(signal)}`)
-  return true
-}
-
 export const request = async <T>(
   path: string,
   init: RequestInit = {},
-  options: { withSession?: boolean; withApiToken?: boolean } = {},
+  options: { withSession?: boolean } = { withSession: true },
 ): Promise<T> => {
   const headers = new Headers(init.headers);
   const signal = init.signal ?? undefined
@@ -223,29 +120,22 @@ export const request = async <T>(
   if (!headers.has("X-Forwarded-Prefix")) {
     headers.set("X-Forwarded-Prefix", "/backend");
   }
-  if (options.withSession && !headers.has("X-Workspace-Id")) {
+  const useSession = options.withSession !== false
+  if (useSession && !headers.has("X-Workspace-Id")) {
     const workspaceId = getStoredActiveWorkspaceId()
     if (workspaceId) {
       headers.set("X-Workspace-Id", workspaceId)
     }
   }
 
-  if (options.withApiToken) {
-    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken(signal)}`);
-  }
-
   const executeFetch = () => fetch(`${API_BASE}${path}`, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession ? "include" : options.withApiToken ? "omit" : init.credentials,
+    credentials: useSession ? "include" : init.credentials,
   });
 
-  let response = await executeFetch()
-  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers, signal)) {
-    throwIfAborted(signal)
-    response = await executeFetch()
-  }
+  const response = await executeFetch()
 
   if (!response.ok) {
     throw await buildError(response);
@@ -266,33 +156,33 @@ export const request = async <T>(
 export const requestLongRunning = async <T>(
   path: string,
   init: RequestInit = {},
-  options: { withSession?: boolean; withApiToken?: boolean } = {},
+  options: { withSession?: boolean } = { withSession: true },
 ): Promise<T> => {
   const headers = new Headers(init.headers);
   const signal = init.signal ?? undefined
   throwIfAborted(signal)
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  const useSession = options.withSession !== false
+
+  if (useSession && !headers.has("X-Workspace-Id")) {
+    const workspaceId = getStoredActiveWorkspaceId()
+    if (workspaceId) {
+      headers.set("X-Workspace-Id", workspaceId)
+    }
+  }
 
   if (!headers.has("Content-Type") && init.body && !isFormData) {
     headers.set("Content-Type", "application/json");
-  }
-
-  if (options.withApiToken) {
-    headers.set("Authorization", `Bearer ${await requireWorkspaceApiToken(signal)}`);
   }
 
   const executeFetch = () => fetch(path, {
     ...init,
     cache: "no-store",
     headers,
-    credentials: options.withSession ? "include" : options.withApiToken ? "omit" : init.credentials,
+    credentials: useSession ? "include" : init.credentials,
   });
 
-  let response = await executeFetch()
-  if (options.withApiToken && canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers, signal)) {
-    throwIfAborted(signal)
-    response = await executeFetch()
-  }
+  const response = await executeFetch()
 
   if (!response.ok) {
     throw await buildError(response);

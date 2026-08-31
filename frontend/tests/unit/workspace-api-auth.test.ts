@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { generalSettingsApi, workspaceApi } from '@/lib/api'
+import { request } from '@/lib/api-client'
 
 const createLocalStorage = (seed: Record<string, string> = {}) => {
   const store = new Map(Object.entries(seed))
@@ -56,11 +57,10 @@ describe('workspace API auth', () => {
     vi.unstubAllGlobals()
   })
 
-  it('uses a cached workspace token as bearer auth for workspace-scoped requests', async () => {
+  it('uses the signed-in session for workspace-scoped requests without cached bearer auth', async () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_cached_token' }),
       }),
     })
 
@@ -74,8 +74,24 @@ describe('workspace API auth', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings')
-    expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
+    expect(requestInit.credentials).toBe('include')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBeNull()
+    expect(new Headers(requestInit.headers).get('X-Workspace-Id')).toBe('workspace-1')
+  })
+
+  it('defaults private transport to the signed-in session so an omitted adapter option cannot drop workspace auth', async () => {
+    vi.stubGlobal('window', {
+      localStorage: createLocalStorage({ 'radioso.activeWorkspaceId': 'workspace-1' }),
+    })
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await request('/document/', { method: 'GET' })
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(init.credentials).toBe('include')
+    expect(new Headers(init.headers).get('X-Workspace-Id')).toBe('workspace-1')
+    expect(new Headers(init.headers).get('Authorization')).toBeNull()
   })
 
   it('can load general settings with session auth and active workspace context', async () => {
@@ -101,11 +117,10 @@ describe('workspace API auth', () => {
     expect(headers.get('X-Workspace-Id')).toBe('workspace-1')
   })
 
-  it('requests workspace summary with bearer workspace auth', async () => {
+  it('requests workspace summary with session workspace auth', async () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_cached_token' }),
       }),
     })
 
@@ -132,11 +147,12 @@ describe('workspace API auth', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/workspace/summary')
-    expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
+    expect(requestInit.credentials).toBe('include')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBeNull()
+    expect(new Headers(requestInit.headers).get('X-Workspace-Id')).toBe('workspace-1')
   })
 
-  it('bootstraps a workspace token with the session and then uses bearer auth', async () => {
+  it('does not bootstrap a workspace token before a workspace-scoped request', async () => {
     const localStorage = createLocalStorage({
       'radioso.activeWorkspaceId': 'workspace-1',
     })
@@ -144,32 +160,23 @@ describe('workspace API auth', () => {
 
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(createJsonResponse({ token: 'radioso_fetched_token' }))
-      .mockResolvedValueOnce(
-        createJsonResponse(platformSettingsPayload),
-      )
+      .mockResolvedValueOnce(createJsonResponse(platformSettingsPayload))
 
     vi.stubGlobal('fetch', fetchMock)
 
     await generalSettingsApi.getGeneralSettings()
 
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-
-    const [tokenUrl, tokenInit] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(tokenUrl).toBe('/backend/api/v1/account/workspaces/workspace-1/token')
-    expect(tokenInit.credentials).toBe('include')
-
-    const [requestUrl, requestInit] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(requestUrl).toBe('/backend/api/v1/settings')
-    expect(requestInit.credentials).toBe('omit')
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer radioso_fetched_token')
-    expect(localStorage.getItem('radioso.workspaceTokens')).toContain('workspace-1')
+    expect(requestInit.credentials).toBe('include')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBeNull()
+    expect(new Headers(requestInit.headers).get('X-Workspace-Id')).toBe('workspace-1')
   })
 
-  it('refreshes a stale cached workspace token after a bearer 401', async () => {
+  it('does not refresh or retry with a workspace token after a session 401', async () => {
     const localStorage = createLocalStorage({
       'radioso.activeWorkspaceId': 'workspace-1',
-      'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_stale_token' }),
     })
     vi.stubGlobal('window', { localStorage })
 
@@ -181,17 +188,10 @@ describe('workspace API auth', () => {
           message: 'Invalid workspace token.',
         },
       }))
-      .mockResolvedValueOnce(createJsonResponse({ token: 'radioso_fresh_token' }))
-      .mockResolvedValueOnce(
-        createJsonResponse(platformSettingsPayload),
-      )
     vi.stubGlobal('fetch', fetchMock)
 
-    await generalSettingsApi.getGeneralSettings()
+    await expect(generalSettingsApi.getGeneralSettings()).rejects.toMatchObject({ status: 401 })
 
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(fetchMock.mock.calls[1]?.[0]).toBe('/backend/api/v1/account/workspaces/workspace-1/token')
-    expect(new Headers(fetchMock.mock.calls[2]?.[1]?.headers).get('Authorization')).toBe('Bearer radioso_fresh_token')
-    expect(localStorage.getItem('radioso.workspaceTokens')).toContain('radioso_fresh_token')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
-description: "Installation and client setup guide for the Radioso TypeScript SDK with workspace API token authentication and a first request example."
-last_updated: 2026-08-04
+description: "Installation and client setup guide for the Radioso TypeScript SDK with a personal token or service-account credential."
+last_updated: 2026-08-31
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -12,9 +12,11 @@ This guide shows how to install the SDK, configure a client, and make your first
 
 - Node.js 24+
 - A Radioso base URL
-- An API token
+- A personal token or service-account credential
 
-The SDK uses workspace API tokens. These are secret bearer credentials bound to one workspace. Public chat URLs and website embed launch values are not API tokens and cannot be used with the SDK.
+Use a personal token when the client should act as your current workspace membership. Use a service-account credential for a durable CI or server workload. Both are secret bearer credentials bound to one workspace and a live role. Public chat, website embed, agent-converse, and MCP values are separate credential classes and cannot be used with the SDK.
+
+Create the credential from **Settings → API access** in a signed-in browser. Radioso returns the secret once, so store it in a secret manager rather than browser storage or source code.
 
 ## Install
 
@@ -46,7 +48,7 @@ const client = createRadiosoClient({
 - `https://api-us.radioso.ai` — the US-hosted instance
 - your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`)
 
-A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
+An API credential only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
 
 ## First Request
 

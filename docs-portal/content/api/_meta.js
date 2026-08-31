@@ -2,7 +2,7 @@ const meta = {
   index: 'Overview',
   'auth-and-sessions': 'Auth and sessions',
   'accounts-and-users': 'Accounts and users',
-  'workspaces-and-tokens': 'Workspaces and tokens',
+  'workspaces-and-tokens': 'Personal tokens and service accounts',
   'agents-and-skills': 'Agents and skills',
   'documents-and-search': 'Documents and search',
   'chat-and-history': 'Chat and history',

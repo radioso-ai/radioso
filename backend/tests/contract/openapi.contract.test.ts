@@ -256,6 +256,8 @@ describe("openapi contract", () => {
       type: "http",
       scheme: "bearer",
       bearerFormat: "APIKey",
+      description:
+        "Personal API tokens and service-account credentials for eligible REST API operations. MCP, public launch, agent-converse, and session-only operations use separate credentials or a signed-in session.",
     });
     expect(sessionCookie).toBeDefined();
     expect(bearerAuth).not.toEqual(sessionCookie);

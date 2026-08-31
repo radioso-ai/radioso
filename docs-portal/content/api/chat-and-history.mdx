@@ -9,7 +9,7 @@ This is the main agent chat workflow for authenticated API clients.
 
 ## How it works
 
-1. Send a chat request with a workspace token.
+1. Send a chat request with a personal token or service-account credential issued from Workspace → API access.
 2. Optionally set `agentId`. When omitted, Radioso uses the workspace default agent.
 3. Choose whether the response should stream.
 4. Reuse `conversationId` when you want continuity across turns.
@@ -19,7 +19,7 @@ Agents own assistant identity, instructions, greeting settings, retrieval partic
 
 ## Ask a grounded question
 
-This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching wherever `$RADIOSO_API_TOKEN` was issued — see [Workspaces and tokens](/api/workspaces-and-tokens).
+This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching the host where the personal or service credential was issued — see [Personal tokens and service accounts](/api/workspaces-and-tokens).
 
 ```bash
 curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
@@ -96,7 +96,7 @@ GET  /api/v1/history/search/{searchId}
 ## Common failure modes
 
 - `400` usually means the request body is invalid.
-- `401` means the workspace token is missing or invalid.
+- `401` means the personal or service credential is missing, invalid, expired, or outside the route's accepted credential scope.
 - `404` can mean the conversation id is not available in the current workspace context.
 - `204` is part of the route contract. Use the reference page for the exact no-body case.
 

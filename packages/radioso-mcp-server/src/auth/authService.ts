@@ -7,6 +7,7 @@ import type { CapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
 import { CapabilityPolicyError } from "../policy/capabilityPolicy.js";
 import { RadiosoApiError } from "../radiosoApiAdapter.js";
 import { toMcpRequestAuthInfo, type McpRequestAuthInfo } from "./authInfo.js";
+import { assertMcpWorkspaceCredential } from "./credentialPreflight.js";
 import { issueOpaqueToken } from "./token.js";
 import type { AccessSessionRecord, SessionStore } from "./sessionStore.js";
 
@@ -35,6 +36,7 @@ export interface AuthServiceDependencies {
   converseApi?: ConverseApiAdapter;
   validateWorkspaceToken: (radiosoApiToken: string) => Promise<{
     apiVersion?: string;
+    credentialClass?: "legacy_workspace_api" | "personal_api" | "service_account_credential" | "agent_converse";
     mcpContextVersion?: string;
     supportedTools?: string[];
     workspaceHint?: string;
@@ -202,7 +204,24 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
 
   const getValidatedSession = async (accessToken: string): Promise<AccessSessionRecord | null> => {
     const session = await dependencies.sessionStore.getByAccessToken(accessToken, now());
-    return session ? validateConverseSession(session) : null;
+    if (!session) {
+      return null;
+    }
+
+    if (session.upstreamApiToken) {
+      try {
+        const validation = await dependencies.validateWorkspaceToken(session.upstreamApiToken);
+        assertMcpWorkspaceCredential(validation);
+      } catch {
+        // A cached workspace session is only usable while the upstream
+        // credential still verifies. Any upstream failure fails closed and
+        // removes the local bearer so it cannot be retried indefinitely.
+        await dependencies.sessionStore.delete(session.sessionId);
+        return null;
+      }
+    }
+
+    return validateConverseSession(session);
   };
 
   return {
@@ -210,6 +229,7 @@ export const createAuthService = (dependencies: AuthServiceDependencies): AuthSe
       try {
         const issuedAt = now();
         const validation = await dependencies.validateWorkspaceToken(input.radiosoApiToken);
+        assertMcpWorkspaceCredential(validation);
         const policyResolution = dependencies.resolvePolicy?.(validation.workspaceId) ?? {
           policy: dependencies.policy,
           source: "global" as const,

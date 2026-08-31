@@ -32,7 +32,7 @@ describe('quality API', () => {
     expect(requestMock).toHaveBeenCalledWith(
       '/quality/turns?feedback=down&sort=negative_feedback_updated_at&activeNegativeFeedbackOnly=true&hasComment=true&limit=25',
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 
@@ -49,7 +49,7 @@ describe('quality API', () => {
     expect(requestMock).toHaveBeenCalledWith(
       '/quality/turns?groundingVerdict=degraded%2Cno_support&hasUnsourcedClaims=true&hasInvalidSources=false',
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 
@@ -67,7 +67,7 @@ describe('quality API', () => {
     expect(requestMock).toHaveBeenCalledWith(
       '/quality/turns?resolutionReason=knowledge_gap%2Cother&from=2026-01-01T00%3A00%3A00.000Z&resolutionFrom=2026-07-01T00%3A00%3A00.000Z&resolutionTo=2026-08-01T00%3A00%3A00.000Z',
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 
@@ -98,7 +98,7 @@ describe('quality API', () => {
           resolution: { reason: 'knowledge_gap' },
         }),
       },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 

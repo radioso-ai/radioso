@@ -1,6 +1,7 @@
 import type { Env } from "../../../app/config/env.js";
-import { conflict, forbidden, serviceUnavailable, unauthorized } from "../../../shared/domain/errors.js";
-import type { AccountAccessService, AccountInvitationService } from "../../account/public.js";
+import { conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
+import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
+import type { ApiPrincipalAuthenticator, PersonalCredentialTenureService } from "../../machineAccess/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   OrganizationCoreProvisioner,
@@ -12,16 +13,12 @@ import { noopOrganizationCreationGuard } from "../../../shared/domain/organizati
 import type { WorkspaceService } from "../../workspace/public.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import {
-  decryptSecret,
-  encryptSecret,
-  generateApiToken,
   generateSessionToken,
   hashPassword,
   deriveOrganizationName,
   normalizeEmail,
   serializeSessionCookie,
   sha256,
-  tokenPrefix,
   verifyPassword,
 } from "../domain/authPrimitives.js";
 
@@ -45,24 +42,6 @@ export interface SessionRecord {
   revokedAt: Date | null;
 }
 
-export interface WorkspaceTokenRecord {
-  id: string;
-  workspaceId: string;
-  accountId: string;
-  tokenPrefix: string;
-  tokenHash: string;
-  encryptedToken: string;
-  createdAt: Date;
-  lastUsedAt: Date | null;
-  revokedAt: Date | null;
-}
-
-export type WorkspaceApiTokenPrincipal = {
-  type: "workspace_api_token";
-  role: "admin";
-  tokenId: string;
-  workspaceId: string;
-};
 
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
@@ -78,25 +57,11 @@ export interface SessionRepositoryPort {
   revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
 }
 
-export interface WorkspaceTokenRepositoryPort {
-  findByWorkspaceId(workspaceId: string): Promise<WorkspaceTokenRecord | null>;
-  findByTokenHash(tokenHash: string): Promise<WorkspaceTokenRecord | null>;
-  save(params: {
-    workspaceId: string;
-    accountId: string;
-    tokenPrefix: string;
-    tokenHash: string;
-    encryptedToken: string;
-  }): Promise<WorkspaceTokenRecord>;
-  touch(workspaceId: string, lastUsedAt: Date): Promise<void>;
-}
-
 interface AuthServiceDependencies {
   env: Env;
   accountRepository: AccountRepositoryPort;
   userRepository: UserRepositoryPort;
   sessionRepository: SessionRepositoryPort;
-  workspaceTokenRepository: WorkspaceTokenRepositoryPort;
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
@@ -104,6 +69,8 @@ interface AuthServiceDependencies {
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner: OrganizationCoreProvisioner;
   auditService: AuditService;
+  apiPrincipalAuthenticator?: Pick<ApiPrincipalAuthenticator, "authenticate">;
+  personalCredentialTermination?: Pick<PersonalCredentialTenureService, "endAccount">;
 }
 
 export class AuthService {
@@ -709,6 +676,10 @@ export class AuthService {
     }
 
     const account = await this.dependencies.accountRepository.findById(input.accountId);
+    await this.dependencies.personalCredentialTermination?.endAccount({
+      accountId: input.accountId,
+      actorUserId: input.userId,
+    });
     const deleted = await this.dependencies.accountRepository.deleteById(input.accountId);
     if (!deleted) {
       throw conflict("Organization could not be deleted");
@@ -763,95 +734,13 @@ export class AuthService {
     return { userId: session.userId, accountId: session.accountId, sessionId: session.id };
   }
 
-  async getTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {
-    await this.dependencies.workspaceService.validateOwnership(workspaceId, accountId);
-    const workspaceTokenSecret = this.getWorkspaceTokenSecret();
-
-    const existing = await this.dependencies.workspaceTokenRepository.findByWorkspaceId(workspaceId);
-
-    if (existing) {
-      try {
-        const token = decryptSecret(existing.encryptedToken, workspaceTokenSecret);
-        await this.dependencies.workspaceTokenRepository.touch(workspaceId, new Date());
-        await this.dependencies.auditService.record({
-          accountId,
-          workspaceId,
-          eventType: "auth.token.read",
-          eventStatus: "success",
-        });
-        return { token };
-      } catch {
-        await this.dependencies.auditService.record({
-          accountId,
-          workspaceId,
-          eventType: "auth.token.read",
-          eventStatus: "failure",
-          metadata: { reason: "decrypt_failed" },
-        });
-      }
-    }
-
-    return this.issueWorkspaceToken(workspaceId, accountId);
-  }
-
-  async rotateTokenForWorkspace(workspaceId: string, accountId: string): Promise<{ token: string }> {
-    await this.dependencies.workspaceService.validateOwnership(workspaceId, accountId);
-    const token = await this.issueWorkspaceToken(workspaceId, accountId);
-
-    await this.dependencies.auditService.record({
-      accountId,
-      workspaceId,
-      eventType: "auth.token.rotate",
-      eventStatus: "success",
-    });
-
-    return token;
-  }
-
   async authenticateApiToken(token: string): Promise<{
     workspaceId: string;
     accountId: string;
-    principal: WorkspaceApiTokenPrincipal;
+    principal: AuthenticatedPrincipal;
   }> {
-    const tokenHash = sha256(token);
-    const workspaceToken = await this.dependencies.workspaceTokenRepository.findByTokenHash(tokenHash);
-
-    if (!workspaceToken) {
-      throw unauthorized();
-    }
-
-    await this.dependencies.workspaceTokenRepository.touch(workspaceToken.workspaceId, new Date());
-    return {
-      workspaceId: workspaceToken.workspaceId,
-      accountId: workspaceToken.accountId,
-      principal: {
-        type: "workspace_api_token",
-        role: "admin",
-        tokenId: workspaceToken.id,
-        workspaceId: workspaceToken.workspaceId,
-      },
-    };
-  }
-
-  private async issueWorkspaceToken(workspaceId: string, accountId: string): Promise<{ token: string }> {
-    const workspaceTokenSecret = this.getWorkspaceTokenSecret();
-    const token = generateApiToken();
-    await this.dependencies.workspaceTokenRepository.save({
-      workspaceId,
-      accountId,
-      tokenPrefix: tokenPrefix(),
-      tokenHash: sha256(token),
-      encryptedToken: encryptSecret(token, workspaceTokenSecret),
-    });
-
-    await this.dependencies.auditService.record({
-      accountId,
-      workspaceId,
-      eventType: "auth.token.create",
-      eventStatus: "success",
-    });
-
-    return { token };
+    if (!this.dependencies.apiPrincipalAuthenticator) throw unauthorized();
+    return this.dependencies.apiPrincipalAuthenticator.authenticate(token);
   }
 
   private async createSessionCookie(userId: string, accountId: string): Promise<string> {
@@ -866,17 +755,6 @@ export class AuthService {
     });
 
     return serializeSessionCookie(sessionToken, this.dependencies.env);
-  }
-
-  private getWorkspaceTokenSecret(): string {
-    const secret = this.dependencies.env.WORKSPACE_TOKEN_SECRET;
-    if (!secret) {
-      throw serviceUnavailable("Workspace token operations are not configured.", {
-        missingEnv: "WORKSPACE_TOKEN_SECRET",
-      });
-    }
-
-    return secret;
   }
 
   private async rollbackCreatedAccount(accountId: string, createdUserId?: string): Promise<void> {

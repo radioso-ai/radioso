@@ -317,11 +317,14 @@ call site, and the surface is a required input with no default so a second
 transport declares its own. Metering follows cost rather than call shape: a
 `probe`-shaped tool spends from a per-turn budget enforced where descriptors
 become tools, so a probe contributed later is metered without new wiring, while
-the provider spend itself is reserved by the service that incurs it — an eval run
-reserves one answer in `EvalRunService.execute`, which covers the runs route,
-`replay_eval_case`, and each case of `run_eval_suite` alike. Both refusals are
-worded for the model that reads them out of a transcript, because an unexplained
-tool failure is one it retries. Retention sweeps copilot conversations past their
+the provider spend itself is reserved by the service that incurs it. An eval run
+reserves one answer, charged by a wrapper both of `EvalRunService`'s public entry
+points share: `execute` serves the plain runs route, `replay_eval_case`, and each
+case of `run_eval_suite`, while `executeWorkbenchReplay` serves the override and
+routine-start routes that call it directly. The work itself lives in private
+methods that never reserve, so one public method delegating to another charges
+once rather than twice. Both refusals are worded for the model that reads them out
+of a transcript, because an unexplained tool failure is one it retries. Retention sweeps copilot conversations past their
 window in the worker process; messages, proposals, and replay evidence cascade
 from the conversation row.
 
@@ -364,7 +367,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
 - `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn probe budget, applied by declared tool shape)
 - `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
-- `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode)
+- `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
 - `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
 - `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)

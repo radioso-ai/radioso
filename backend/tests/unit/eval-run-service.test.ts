@@ -1641,6 +1641,40 @@ describe("EvalRunService metering", () => {
     expect(metering.release).not.toHaveBeenCalled();
   });
 
+  it("meters the workbench replay entry point the eval routes call directly", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({ sourceAgentId: agent.id, originalAgentConfig: projectInternalAgentConfig(agent) });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "override replay", assertions: [refundIncludes] });
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, metering.policy);
+
+    await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      accountId: "account-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: { agentConfigOverride: { customInstruction: "Workbench override." } },
+    });
+
+    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay" });
+    expect(metering.commit).toHaveBeenCalledOnce();
+  });
+
+  it("charges a full_assistant run once, not twice, when execute delegates to the replay path", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({ sourceAgentId: agent.id, originalAgentConfig: projectInternalAgentConfig(agent) });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, metering.policy);
+
+    await service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, mode: "full_assistant" });
+
+    expect(metering.reserveAnswer).toHaveBeenCalledOnce();
+    expect(metering.commit).toHaveBeenCalledOnce();
+  });
+
   it("releases the reservation when the run is rejected before anything is spent", async () => {
     const repo = new InMemoryEvalRepository({ snapshots: [] });
     const metering = meteringPolicy();

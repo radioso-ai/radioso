@@ -1,44 +1,56 @@
-# Radioso
-# <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" />
-## Self-hosted conversational agents that answer, act, and hand off — inside the rules you set.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./frontend/public/radioso-lockup-dark.svg">
+    <img src="./frontend/public/radioso-lockup.svg" alt="Radioso" width="340">
+  </picture>
+</p>
 
-Run one script and you have a conversational agent that takes a request and sees it through: it carries a task across turns until the work is done, answers grounded in what you actually gave it, and hands off to a person when a turn calls for one — self-hosted, multi-provider, API-first. No framework wiring, no canvas to drag nodes around. Your data, your rules, your infrastructure.
+<p align="center">
+  <a href="https://docs.radioso.ai">Docs</a> · <a href="https://docs.radioso.ai/why-radioso">Why Radioso?</a> · <a href="https://docs.radioso.ai/quickstarts/run-locally">Run locally</a> · <a href="https://docs.radioso.ai/api-reference">API reference</a> · <a href="./CONTRIBUTING.md">Contributing</a>
+</p>
 
-Every message runs through a plain loop: read it, decide what the turn needs, do that, write the reply. The interesting part is what you plug into the loop — grounded retrieval, your own behavioral rules, multi-turn flows — and that is what the rest of this document is about.
+<p align="center">
+  <a href="./LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="http://makeapullrequest.com"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"></a>
+  <a href="https://github.com/radioso-ai/radioso/commits/main"><img alt="Commit activity" src="https://img.shields.io/github/commit-activity/m/radioso-ai/radioso"></a>
+</p>
 
----
+## Radioso is the self-hosted platform for conversational agents that answer, act, and hand off
 
-## Guided autonomy
+Run one script and you have an agent your customers can talk to. It answers from the documents you gave it, with citations so you can check its work. It carries a request across turns: collects what it needs, calls your tools, finishes the job. And when the conversation needs a human, it hands the whole thing to one instead of improvising. All of this happens inside rules you author — we call it [guided autonomy](https://docs.radioso.ai/why-radioso/guided-autonomy). You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
 
-Radioso agents reason freely about how to help, inside rules you author. You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own. We call that guided autonomy, and it is the whole design.
+Self-hosted, so your data stays put. Multi-provider, so no model lock-in. API-first, because you'll want to build on it.
 
-It shows up as three things, in this order. The agent **answers** — grounded in the sources you gave it, cited back to them. It **acts** — skills and routines carry a request across turns until the work is done. It **hands off** — to a person who picks up the whole conversation, with the routine it was running and the skills it called marked inline. Directives steer all three: standing rules that are matched by meaning, in any language, and applied on every turn.
+<p align="center">
+  <img src="./docs-portal/public/screenshots/dashboard-agents-workbench.png" alt="A grounded agent answer in the Radioso dashboard, cited to its source, with suggested follow-up questions" width="800">
+</p>
 
-Control stays with you. Radioso is open source and runs in your cloud or on your own infrastructure, and every turn records which directive steered it, which skill it dispatched, and which routine step it was on.
+The whole thing ships in this repo:
 
----
+- **[Grounded answers](https://docs.radioso.ai/why-radioso/grounded-answers)** — replies built on your own documents, cited back to them, with retrieval you can tune per agent.
+- **[Directives](https://docs.radioso.ai/guides/authoring-directives)** — standing rules matched by meaning, in any language: *"when the customer sounds anxious, slow down and confirm before acting."* Write the rule once; it applies on every turn, on every surface.
+- **[Routines](https://docs.radioso.ai/guides/authoring-routines)** — multi-turn flows you author in plain language and publish without a redeploy; the engine runs and resumes them turn to turn until the task is done.
+- **[Skills](https://docs.radioso.ai/api/agents-and-skills)** — what the agent can do: grounded retrieval, [your webhooks](./docs/webhook-skills.md), [Slack posts](./docs/slack-skills.md), [customer email](./docs/customer-email-skills.md), or [tools from your own MCP servers](./docs/external-skills.md).
+- **[Human takeover](https://docs.radioso.ai/operators/human-takeover)** — an operator claims the conversation and replies as a named person; the Inbox queues waiting handoffs and routine approvals.
+- **[Ray, the operator copilot](https://docs.radioso.ai/operators/copilot)** — ask why a conversation went the way it did; when the answer is a change, Ray drafts it as a proposal you review and apply.
+- **[Quality & Evals](https://docs.radioso.ai/guides/evals)** — triage weak answers, preserve one as a repeatable eval case in a single request, and verify the fix. [Close the loop.](./docs/quality-eval-learning-loop.md)
+- **[Audience Pulse](./docs/architecture/topic-census.md)** — a census of the last 30 days of visitor questions: named topics with exact counts, recurring grounding gaps, and content recommendations you can open as a draft document.
+- **[Workbench](https://docs.radioso.ai/guides/workbench)** — replay real conversations against your draft changes before they go live.
+- **[Website embed](https://docs.radioso.ai/quickstarts/website-embed)** — one script tag opens a themed chat widget on origins you approve.
+- **[REST API](https://docs.radioso.ai/api-reference), [TypeScript SDK](https://docs.radioso.ai/sdk/typescript-getting-started), and [MCP](https://docs.radioso.ai/guides/mcp-server)** — the same agent from your backend, your code, or clients like Cursor and Claude.
+- **[Bring your own models](https://docs.radioso.ai/api/settings)** — OpenAI, Anthropic, Gemini, or any OpenAI-compatible endpoint; per-workspace keys and per-capability model choice, changed without a restart.
 
-## Quick Start
+Every surface hands its turn to the same engine, and every turn records which directive steered it, which skill it dispatched, and which routine step it was on. So when the agent does something you didn't expect, you don't guess — you open the trace, see which rule did it, and fix that.
 
-**Prerequisites:** Node.js 24+ and Docker Desktop. A provider API key (OpenAI, Gemini, or Anthropic) is optional at startup — you can enter one when prompted, or skip it and add it later in the app under Settings → Credentials.
+## Quick start
+
+You need Node.js 24+ and Docker Desktop. A provider API key (OpenAI, Gemini, or Anthropic) can wait — enter it when the bootstrap prompts, or add it later in the app under **Settings → Credentials**.
 
 ```bash
 ./run-dev.sh
 ```
 
-The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. OpenAI, OpenAI-compatible, and Gemini use the same provider for text and embeddings; Claude setup asks which supported provider should create document embeddings. On a new open-source installation, register the first user to create the server's organization and default workspace. The development stack verifies that new account and signs it in automatically. Add a key if you skipped it, upload a document, and ask a question — the answer comes back cited to the document it came from. Then give the agent a Notify Human skill on its Skills tab, named `contact_human`, with a recipient email. Ask to speak to a person and the built-in contact routine takes over: it collects an email and a message, sends it to that recipient, and confirms. That is the shape of every agent here — answer, act, hand off. [Authoring routines](./docs/authoring-routines.md) covers building your own.
-
-In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
-
-By default the Docker stack uses the Compose project name `radioso` and publishes the app on port 3000, the API on port 8080, and Postgres on `127.0.0.1:5432`. The database stays reachable from the local host and the Compose network without accepting connections on public host interfaces. To run more than one local stack, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
-
-For Enterprise Edition development, run:
-
-```bash
-./run-ee-dev.sh
-```
-
-This starts Postgres in Docker, builds and installs the commercial packages from `ee/packages` locally without saving them to the OSS package manifests, generates the local Enterprise Edition frontend routes from Enterprise feature manifests, updates `.env` with embed settings, and runs the backend, worker, frontend, and embed harness on the host. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+The bootstrap generates secrets and starts the full stack. OpenAI, OpenAI-compatible, and Gemini keys serve both text and embeddings; with a Claude key, the bootstrap asks which supported provider should create document embeddings.
 
 | Surface | URL |
 |---|---|
@@ -46,42 +58,36 @@ This starts Postgres in Docker, builds and installs the commercial packages from
 | API | http://localhost:8080 |
 | Embed test harness | http://127.0.0.1:4321 |
 
----
+Then, five minutes and three steps:
 
-## The conversation engine
+1. **Register.** The first registration on an empty server creates the organization and default workspace; the development stack verifies the account and signs you in.
+2. **Answer.** Upload a document and ask about it. The reply comes back cited to the document it came from.
+3. **Act and hand off.** On the agent's Skills tab, add a Notify Human skill named `contact_human` with a recipient email, then ask to speak to a person. The built-in contact routine takes over: it collects an email and a message, sends them to that recipient, and confirms. That flow is itself just routine data — [authoring routines](https://docs.radioso.ai/guides/authoring-routines) shows how to build your own.
 
-Every human-facing assistant turn takes one path: the conversation engine. It is a loop with four phases.
+That's the whole product in miniature. Everything else is tuning.
+
+Development-stack notes: source is bind-mounted into the containers, backend TypeScript restarts on change, and prompt templates under `backend/prompts/` are re-read per request. The Compose project is named `radioso` and keeps Postgres on `127.0.0.1:5432` — reachable from your machine, not from public interfaces. To run several stacks side by side, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before `./run-dev.sh`; Conductor workspaces pick up their `CONDUCTOR_PORT` allocation automatically.
+
+Production concerns — registration email verification, mail configuration, secrets — live in [Deployment](https://docs.radioso.ai/operators/deployment) and [Authentication](https://docs.radioso.ai/guides/authentication).
+
+For Enterprise Edition development, `./run-ee-dev.sh` starts Postgres in Docker and runs the backend, workers, frontend, and embed harness on the host with the commercial packages from `ee/packages` built in. Plain `./run-dev.sh` removes the generated Enterprise routes before starting the OSS stack.
+
+## How a turn works
+
+Every human-facing turn takes one path: the conversation engine, a loop with four phases.
 
 1. **Gather** — interpret the message: intent, query rewrite, routing.
 2. **Select** — decide which skill or skills the turn needs.
-3. **Dispatch** — run the selected skills through one invocation port.
-4. **Compose** — build the reply from what the skills returned and the steering that applies.
+3. **Dispatch** — run them through one invocation port.
+4. **Compose** — build the reply from what they returned and the steering that applies.
 
-The loop holds the mechanism; the behavior lives in small units you register. Adding a capability or a rule means registering a unit, not editing the loop. The engine is the only turn path the assistant uses — there is no separate fallback.
+The loop holds the mechanism; the behavior lives in small units you register.
 
-It works through a product-independent contract. The reusable turn vocabulary lives in `packages/conversation-contract/`, and the pure runtime loop lives in `packages/conversation-engine/`. Workspace auth, billing, retrieval, settings, persistence, and streaming stay in Radioso-owned adapters that the engine reaches through ports.
+- A **skill** is something the agent *does* — grounded retrieval, a lookup, a webhook call. It is dispatched through one port and returns a result. Retrieval itself is the `retrieval.answer` skill, reached the same way as every other capability.
+- A **directive** is a standing rule that shapes *how* the agent behaves: a condition paired with an action, judged by the model by meaning — Radioso is multilingual, so a condition is never a keyword list — and added to the turn's instructions when it holds.
+- A **routine** is a stateful, multi-turn flow authored as data — in the dashboard or over the API — then validated and published with no redeploy. The platform compiles it into a graph the engine runs and resumes turn to turn.
 
-### Skills, directives, and routines
-
-The assistant works with three kinds of unit on a turn.
-
-- A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, reached the same way as every other capability.
-- A **directive** is a standing rule that shapes *how* the assistant behaves. It pairs a condition with an action: when the condition holds, the action is added to the turn's instructions. A directive is matched and added to the prompt; it is never dispatched and returns nothing. For example: when the customer sounds anxious, slow down and confirm before acting.
-- A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. Radioso ships one written the same way: the built-in contact flow — collect an email, collect a message, submit, confirm — is routine data registered at application composition rather than stored per agent, so it is available to every agent that enables a `contact_human` notify skill.
-
-**Skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
-
-Condition matching is never a keyword list, because Radioso is multilingual. A condition that depends on the situation is judged by the model, by meaning, in any language.
-
-### Extending behavior
-
-Skills and directives are declared in a catalog and registered at application composition. Routines are different: they are authored as data per agent — in the Routines settings or over the API at `/api/v1/agents/<agentId>/routines` — then validated and published, with no redeploy. Skills also expose a read-only catalog over HTTP at `GET /api/v1/skills` (see [REST API](#rest-api)). Each directive match and skill dispatch is recorded in the turn trace with the reason it applied, so the steering behind any answer can be inspected.
-
-For the full model, see [Assistant turn spine](./docs/architecture/assistant-turn-spine.md), [Conversational directives](./docs/architecture/conversational-directives.md), and [Conversational routines](./docs/architecture/conversational-routines.md). To build a routine, see [Authoring routines](./docs/authoring-routines.md).
-
----
-
-## Architecture
+**Skills act, directives steer, routines carry a flow across turns.**
 
 ```
     Web app · REST API · TS SDK · MCP server · Website embed
@@ -117,85 +123,19 @@ For the full model, see [Assistant turn spine](./docs/architecture/assistant-tur
                     └──────────────────────────────────┘
 ```
 
-Every surface — the web app, REST API, SDK, MCP clients, and the website embed — hands its turn to the same conversation engine. Selection chooses which skills to run, steered by the directives that matched this turn; dispatch runs them; compose merges their outcomes with the steering into a reply. Skills are a set you extend: document search, plain assistant chat, any skill you register, and `retrieval.answer`, which reads the chunks and vectors a background worker has ingested into Postgres with `pgvector`. Retrieval is one skill in that set, not a privileged step. The headless retrieval, SDK, and MCP surfaces can also call retrieval directly when no assistant behavior is wanted. Directives are standing rules that shape selection and the reply. A routine is a stateful, multi-turn flow that expresses itself each turn by projecting its current step into a directive, and can drive a skill as it advances — that is how a request is carried across turns to an action taken or a handoff to a person.
+Adding a capability or a rule means registering a unit, not editing the loop, and the engine is the only turn path the assistant uses. On eligible turns the engine fuses its pre-answer classification into one planning call, so a simple turn costs two model calls instead of five, with the staged calls as fallback — see [Assistant turn spine](./docs/architecture/assistant-turn-spine.md).
 
-Postgres is the system of record for everything, not just vectors: accounts, settings, conversations, and audit events live there too. Uploaded source files use the local filesystem in local development and GCS in cloud deployments. Ingestion runs in a background worker so uploads don't block the request path. The frontend, API, and worker all run in Docker Compose locally and on Cloud Run in production.
+Postgres is the system of record for everything, not just vectors: documents, chunks, embeddings (`pgvector`), conversations, settings, and audit events. Ingestion runs in a background worker, so uploads never block a turn. The engine itself is product-independent: the turn vocabulary lives in [`packages/conversation-contract/`](./packages/conversation-contract) and the pure runtime loop in [`packages/conversation-engine/`](./packages/conversation-engine), while Radioso's auth, retrieval, settings, persistence, and streaming stay in adapters the engine reaches through ports.
 
----
+The long versions: [Conversational directives](./docs/architecture/conversational-directives.md) and [Conversational routines](./docs/architecture/conversational-routines.md).
 
-## Talking to Radioso
+## Talking to your agent
 
-There are five ways to reach an agent: the web app, the REST API, the TypeScript SDK, an MCP client, and a website embed.
+Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed. One naming note — the persona you configure is an **agent**; the HTTP surface you call to talk to it is named **assistant**, as in `/api/v1/assistant/chat`. Same thing, two names.
 
-One naming note: the persona you configure is an **agent**; the chat surface you call to talk to it is named **assistant** in API paths such as `/api/v1/assistant/chat`. Same thing, two names.
+**Get a token.** Sign in and reveal the workspace API token from settings, or with a session cookie call `GET /api/v1/account/workspaces/<workspace-id>/token`. Workspace payloads carry both `id` and `publicRouteKey`: use `id` in API calls, and `publicRouteKey` when building canonical dashboard URLs (`/w/<key>/...`). If a token is ever exposed, rotate it from the settings screen. Full account and session flows: [Authentication](https://docs.radioso.ai/guides/authentication) and [Workspaces and tokens](https://docs.radioso.ai/api/workspaces-and-tokens).
 
-### Web app
-
-1. Run `./run-dev.sh`.
-2. Open `http://localhost:3000`.
-3. On a new installation, register the first user. The development stack verifies the account and signs it in automatically. Otherwise, sign in or accept an invitation.
-4. If you skipped the provider key at startup, add one under Settings → Credentials. Chat and document processing both need a provider key.
-5. Let Radioso seed the starter documents for the workspace.
-6. Wait for document processing to finish.
-7. Ask one of the suggested questions in chat.
-
-On an empty open-source server, the first registration creates the server's organization and default workspace. `./run-dev.sh` enables development-only automatic verification, so a newly registered password user receives a session immediately and no verification message is sent. Production registration sends a verification email and creates no session until the address is verified. After the first open-source registration, organization owners and admins invite later users into the existing organization; Enterprise Edition keeps open registration and additional organization creation. Password reset and email verification are part of the open-source auth API. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` for production transactional email delivery.
-
-The organization limit does not limit workspaces. Authorized users can create additional workspaces inside the existing organization in either edition.
-
-Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. `/account/<account-id>/...` dashboard links also work; they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
-
-### REST API
-
-**Authentication and workspaces.** Check whether open registration is currently available:
-
-```bash
-curl -sS http://localhost:8080/api/v1/auth/registration
-```
-
-The response is `{ "available": true }` or `{ "available": false }`. On an open-source deployment it is `true` only while the server has no organization. Enterprise Edition keeps open registration available.
-
-When registration is available, create a user:
-
-```bash
-curl -sS \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/register
-```
-
-The response includes `workspaceId`, `workspacePublicRouteKey`, and `requiresEmailVerification`. In the development stack that flag is `false` and the response sets a session cookie. Production returns `true`, sends a verification email, and requires verification before login. When verification is required, log in after following the email link:
-
-```bash
-curl -sS -c cookies.txt \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/login
-```
-
-The login response also includes `workspacePublicRouteKey`. Browser URLs use that public route key, while backend workspace APIs and token reveal flows continue to use the internal `workspaceId`.
-
-List workspaces or reveal the workspace API token with the session cookie:
-
-```bash
-curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/workspace
-
-curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
-```
-
-Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
-
-**Agents, assistant, and retrieval.** Use agents to configure agent identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Date-aware event behavior is also configured there through temporal structured lookup, upcoming boost, and deterministic temporal sort settings. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
-
-```bash
-curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
-  http://localhost:8080/api/v1/agents
-```
-
-Use the assistant API for human-facing chat. Each turn runs through the [conversation engine](#the-conversation-engine), which interprets the message, selects the skills the turn needs — including the `retrieval.answer` skill when evidence is required — applies any matching directives or active routine, and composes the reply. The assistant API owns conversation history, source-channel context, assistant identity, direct social replies, persistence, and billing.
+**Ask a question.** Chat calls use the workspace default agent unless `agentId` says otherwise. Each turn runs through the engine above: it selects `retrieval.answer` when evidence is needed, applies whatever directives match, and resumes an active routine if there is one.
 
 ```bash
 curl -sS \
@@ -205,15 +145,9 @@ curl -sS \
   http://localhost:8080/api/v1/assistant/chat
 ```
 
-Use retrieval APIs when you want grounded search or answer generation over workspace context without assistant persona or chat routing. Retrieval-only calls run on system defaults and support per-call filters such as `metadataFilter`. Add `"agentId"` to either call to run it with one agent's own retrieval settings and source scope; the response reports which agent it measured in `agentScope`.
+**Grounded retrieval without the persona.** When you want search or answer generation over workspace content with no assistant behavior, call retrieval directly:
 
 ```bash
-curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"refund policy"}' \
-  http://localhost:8080/api/v1/retrieval/search
-
 curl -sS \
   -H "Authorization: Bearer <workspace-token>" \
   -H 'Content-Type: application/json' \
@@ -221,49 +155,18 @@ curl -sS \
   http://localhost:8080/api/v1/retrieval/answer
 ```
 
-The read-only skills catalog lists the skills the conversation engine can select on a turn:
+`/api/v1/retrieval/search` returns matches instead of an answer. Both accept per-call filters such as `metadataFilter`, and both accept `agentId` to run with one agent's retrieval settings and source scope — the response reports which agent it measured in `agentScope`. See [Documents and search](https://docs.radioso.ai/api/documents-and-search).
 
-```bash
-curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
-  http://localhost:8080/api/v1/skills
-```
+**See why.** Responses are lean by default. Add `includeDebug: true` and diagnostics arrive under a `debug` field — routing, retrieval summaries, activity traces, and full evidence — instead of mixing into the user-facing payload.
 
-The catalog describes product-facing work and points to stable contracts. It does not add a generic skill execution endpoint. Skill entries may also declare UI display hints and their own outcome names. History and diagnostics expose those names with a normalized status so clients can filter by skill behavior without depending on retrieval-specific enums.
-
-**History, settings, feedback, quality, and usage trends.** Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings stay under the settings API. Retrieval defaults are read-only at `GET /api/v1/settings/retrieval-defaults`; per-agent retrieval behavior is configured on the agent Skills tab. Signed-in account members can read aggregate account usage trends from `GET /api/v1/account/usage-trends`, bucketed by UTC day, week, or month and optionally filtered by workspace or agent. The Usage screen also exposes message-level model and embedding subtotals and per-event internal AI operations through `GET /api/v1/account/usage/messages` and `GET /api/v1/account/usage/internal-operations`.
-
-Metadata extraction is an ingestion setting and is disabled by default. Operators can enable it at workspace level, override it per document source, or force it on or off for a single document, source, or workspace reprocess request. Extraction uses one model call per processed document to decide which document type the page is and to pull out the fields that type declares, writing them as structured tags.
-
-What extraction looks for is workspace data, edited in **Knowledge → Ingestion** and served by `GET /api/v1/settings/document-types` and `PUT /api/v1/settings/document-types`. Five built-in types ship with every workspace — `event` and `article`, which own the `dateFrom` and `dateTo` tags, `profile` and `reference`, and the `generic` fallback — and operators add their own: a key, a label, a prose description of what such a page looks like, and up to ten fields, each with a key, a value type of `string`, `number`, `date`, or `boolean`, and an instruction. A workspace holds up to 20 of its own types. The `PUT` replaces the whole catalog and carries `expectedRevision`, so a concurrent save is rejected with `409` and the current revision rather than overwriting. Field keys share one typed namespace across the workspace, and a key keeps its value type for good: deleting a field retires the key, and it only ever comes back as the same type. Extracted fields land in document metadata, so per-agent metadata rules filter and boost on them; the rule editor's field suggestions are the catalog's declarations unioned with the keys already observed on document metadata.
-
-Persisted assistant answers can receive thumbs up or thumbs down feedback in the dashboard, public chat, and website embed. Authenticated callers use `PUT /api/v1/answer-feedback/messages/<assistant-message-id>` and `DELETE /api/v1/answer-feedback/messages/<assistant-message-id>`. Public chat sessions use `PUT /api/v1/answer-feedback/public/chat/<token>/messages/<assistant-message-id>` and the matching `DELETE` route. A thumbs down request may include an optional `comment` up to 2000 characters.
-
-Operators can review assistant-answer quality with `GET /api/v1/quality/turns`. A `signal` query parameter narrows the list to one or more classes of issue: `negative_feedback`, `grounding_gaps`, or `skill_failures`. Pass several as a comma-separated list, or repeat the parameter, and you get every turn carrying any of them: `signal=grounding_gaps,skill_failures` returns the union, and a turn that matches both is listed once. The other filters still apply on top of that signal match. The dashboard's quality queue is built on this: with nothing selected it asks for every signal in an `open` or `acknowledged` triage state, so the table holds the backlog rather than every answer the agent has ever given. The **All answers** toggle above the table drops both defaults when you want to browse everything. Admins and owners update a turn with `PUT /api/v1/quality/turns/<assistant-message-id>/triage`, sending `expectedVersion` and one of `open`, `acknowledged`, `resolved`, or `dismissed`. Terminal states use a structured `resolution`; stale writes return `409` with the current record instead of overwriting another operator.
-
-Each Quality turn includes `grounding`, either `null` or a complete snapshot with `verdict`, `claimCount`, `sourcedClaimCount`, `unsourcedClaimCount`, and `invalidSourceCount`. Filter by one or more `groundingVerdict` values (comma-separated or repeated), or use `hasUnsourcedClaims` and `hasInvalidSources`. `false` matches a complete diagnostic whose corresponding count is zero; it does not match turns whose diagnostic is unavailable. In the dashboard, the same evidence appears beneath the Outcome badge, and **Filter → Evidence** stores the selected review queue in the URL.
-
-Use `sort=negative_feedback_updated_at` with `activeNegativeFeedbackOnly=true` for an active thumbs-down queue. Results are ordered by the latest feedback creation or edit, and feedback newer than an earlier resolved or dismissed decision is treated as open. Each turn includes `feedback.latestDownUpdatedAt`, while written feedback entries include both `createdAt` and `updatedAt`.
-
-Filter closed work with `resolutionReason`, `resolutionFrom`, and `resolutionTo`; the latter pair uses the closure timestamp and is intentionally distinct from the turn-creation `from` and `to`. `GET /api/v1/quality/stats` returns the rates behind those turns plus a current-window structured `resolutionBreakdown`: a rolling `7d` or `30d` window, the equal-length window before it for comparison, one bucket per UTC day, and the all-time count of turns still awaiting triage for each signal. Every rate ships with the population it is measured over, and reports `null` instead of a rate when that population is empty. Both quality endpoints read the same turns. Conversations from the dashboard test chat, workbench replay, and Ray's agent-turn probes are excluded, as are replies written by a human teammate during a takeover, so operator activity does not distort the numbers.
-
-**Audience Pulse.** In the dashboard's **Audience Pulse** section, members with quality access can turn the last 30 days of conversation history into a saved report. It runs a census over every eligible visitor question in that window: clustering the whole population into named, sized topics, calling out the share that fits no topic, flagging recurring gaps where answers lack usable grounding, and proposing content to write. Topic identities are stored across refreshes so stable topics keep their names, while the report shows the current topic counts, shares, evidence, and draft recommendations. Choose **Start draft** to open a new Knowledge Base document with a recommendation ready to refine. Members who can also read workspace history can choose **View evidence** to inspect the related conversation. Refresh is explicit; opening the saved report does not run the analysis again.
-
-Quality turns also expose a compact `verification` projection when linked to an Eval case. `PUT /api/v1/evals/cases/by-source-message/<assistant-message-id>` atomically gets or creates that case and snapshot; `GET` performs a read-only lookup. This lets an operator move from a weak answer to a repeatable test in one request without scanning the Eval suite. See [Close the Quality loop with Evals](./docs/quality-eval-learning-loop.md).
-
-Operators can also take over a conversation, reply as a named human, and resolve routine approval gates. The dashboard surfaces this in the **Inbox**, which lists pending approvals and human-owned conversations. See [Human takeover](./docs/human-takeover.md) for the ownership model, the approval queue (`GET /api/v1/decisions`) and resolve endpoint, and the tail endpoints that stream new messages to both operators and visitors.
-
-**Debug output.** Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload. TypeScript SDK clients (`@radioso/typescript-sdk` 0.2.0 or later) read diagnostic data from `response.debug`.
+**Everything else.** Agents and their per-skill settings live under `/api/v1/agents`; routines are authored per agent under `/api/v1/agents/<agentId>/routines` (draft, validate, publish). `GET /api/v1/skills` lists the skills the engine can select. History, settings, the document-type catalog, answer feedback, quality triage, and usage subtotals each have their own routes — start at the [API index](https://docs.radioso.ai/api) or the [OpenAPI reference](https://docs.radioso.ai/api-reference).
 
 ### TypeScript SDK
 
-The SDK chat facade is for agent-backed assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
-
-The SDK follows the lean response contract: when you need `route`, `activitySummary`, `activityTrace`, or retrieval `evidence`, request debug output and read those values from `response.debug`.
+The SDK wraps agent-backed chat, streaming, and document management, and follows the same lean-response contract (`response.debug` when you asked for it):
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
-import { readFile } from "node:fs/promises";
 
 const client = createRadiosoClient({
   baseUrl: "http://localhost:8080",
@@ -276,170 +179,38 @@ await client.documents.create({
   source: { kind: "website", url: "https://example.com/docs" },
 });
 
-const file = await readFile("./handbook.pdf");
-await client.documents.importFile({
-  file,
-  filename: "handbook.pdf",
-  title: "Support handbook",
-  mimeType: "application/pdf",
-});
-
-await client.documents.reprocessSource("source-id", {
-  documentEnrichmentOverride: "on",
-});
-
-const response = await client.chat.create({
-  message: "What does the FAQ say about refunds?",
-  stream: false,
-});
-
 for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) {
-  if (event.type === "status") updateProgress(event.stage);
   if (event.type === "chunk") process.stdout.write(event.text);
-  if (event.type === "cancelled") break;
 }
 ```
 
-### MCP server
+Start with [Getting started](https://docs.radioso.ai/sdk/typescript-getting-started) and [Basic usage](https://docs.radioso.ai/sdk/basic-usage).
 
-Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. It uses a per-agent converse grant, minted by a workspace admin at `POST /api/v1/agents/{agentId}/mcp-converse-grants` and exchanged for a short-lived session. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) are scoped to a whole workspace and use the workspace API token. The two surfaces do not share credentials.
+### MCP
 
-Radioso supports MCP in two deployment shapes. Self-hosted operators can set `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` and serve MCP from the backend at `/mcp`, using the workspace API token directly. Operators who need a separate public connector surface can keep backend MCP disabled and use the standalone `packages/radioso-mcp-server/` process with its token exchange flow.
-
-Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. Public connectors use a session token minted through the grant exchange; there is no standard MCP OAuth front door for the converse surface.
+Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), get grounded answers with that agent's retrieval settings, and read its documents as resources; it uses a per-agent converse grant minted by a workspace admin. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) span a whole workspace and use the workspace API token. The two surfaces do not share credentials. MCP runs either merged into the backend at `/mcp` or as the standalone [`packages/radioso-mcp-server/`](./packages/radioso-mcp-server) process — [MCP server](https://docs.radioso.ai/guides/mcp-server) covers both shapes and client setup for Cursor, Claude, and ChatGPT.
 
 ### Website embed
 
-Embed a Radioso chat widget on any website. One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control. The widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
+One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work on the host site, and origin policy stays under your control. The widget, theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top. The **Web chat** page under an agent's Channels section holds both placements — public link and website widget — with each credential's status and last use, and rotating a credential stops new sessions on the old one immediately. See the [website embed quickstart](https://docs.radioso.ai/quickstarts/website-embed).
 
-The **Web chat** page under an agent's Channels section holds both placements — the public link and the website widget — and shows whether each launch credential is active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
+## Configuration and operations
 
----
+Short version here; every link goes to the full reference.
 
-## Operations
-
-### LLM providers and model selection
-
-Workspaces can supply their own provider API keys and pick a model per capability without restarting the backend. Keys are encrypted with `CONNECTOR_ENCRYPTION_KEY` (the same key that protects connector secrets; the bootstrap command generates one when missing) and never round-tripped to clients.
-
-List configured providers, store a key, or remove one:
-
-```bash
-curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
-  http://localhost:8080/api/v1/settings/credentials
-
-curl -sS -X PUT \
-  -H "Authorization: Bearer <workspace-token>" \
-  -H 'Content-Type: application/json' \
-  -d '{"apiKey":"sk-..."}' \
-  http://localhost:8080/api/v1/settings/credentials/claude
-
-curl -sS -X DELETE \
-  -H "Authorization: Bearer <workspace-token>" \
-  http://localhost:8080/api/v1/settings/credentials/claude
-```
-
-Read or update the per-workspace chat / rewrite / rerank model preference. A `null` value clears that capability and falls back to the env default:
-
-```bash
-curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
-  http://localhost:8080/api/v1/settings/llm-models
-
-curl -sS -X PUT \
-  -H "Authorization: Bearer <workspace-token>" \
-  -H 'Content-Type: application/json' \
-  -d '{"chat":{"provider":"claude","model":"claude-sonnet-4-5"},"rerank":null}' \
-  http://localhost:8080/api/v1/settings/llm-models
-```
-
-Agents can override the chat model for a specific persona via `chatModelOverride` on `PUT /api/v1/agents/<agentId>`. Resolution order at chat time is agent override → workspace preference → env default. API keys come from the workspace credential first, then fall back to the matching environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` — a workspace selecting it without a base URL fails with a clear error instead of silently calling the default OpenAI endpoint.
-
-### Fused turn planning
-
-A fresh assistant turn normally runs four small classification calls before the answer: routine activation, turn routing and rewrite, response-language detection, and directive matching. Fused turn planning replaces those four with one chat-tier call on eligible turns, so a simple direct turn costs two model calls instead of five. If the fused call times out or returns an invalid plan, the turn falls back to the staged calls — behavior does not change, only cost and latency.
-
-Fused planning is standard behavior and requires no configuration.
-
-### Worker dispatch
-
-Document ingestion always creates a durable PostgreSQL processing job first. Worker dispatch controls how the API wakes worker services after that durable job exists.
-
-Local runs default to `WORKER_DISPATCH_DRIVER=noop`, which keeps the worker polling the database. Google Cloud deployments can use `WORKER_DISPATCH_DRIVER=cloud-tasks` with `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`, and `WORKER_TASK_AUTH_TOKEN`. Cloud Tasks and Scheduler send that shared secret in `X-Radioso-Worker-Token` alongside Google OIDC; proxies in front of a self-hosted task server must preserve the header. Generate a random value of at least 32 characters and give the backend, document worker, and crawler worker the same value.
-
-Broker-based deployments can use `WORKER_DISPATCH_DRIVER=amqp` with a RabbitMQ-compatible AMQP 0-9-1 broker:
-
-```bash
-WORKER_DISPATCH_DRIVER=amqp
-WORKER_AMQP_URL=amqp://localhost:5672
-WORKER_AMQP_QUEUE_NAME=radioso-document-jobs
-WORKER_AMQP_CRAWL_QUEUE_NAME=radioso-website-crawls
-WORKER_AMQP_PREFETCH=1
-```
-
-AMQP messages contain job ids and trace metadata only. PostgreSQL remains the source of truth for job state, retries, leases, and recovery if broker dispatch is unavailable after a job has already been queued. Document processing and website crawling use separate queues so long-running crawls do not block document work. AMQP mode is an eventing plus polling hybrid: broker messages wake workers quickly, and the worker polling loop stays active for recovery and scheduled retry eligibility. Delayed retries are governed by the job table's `available_at` value, not by broker-delayed delivery.
-
-A routine's fire-and-forget actions — a contact request, a handoff notification, an approval request — go through a separate durable outbox (`routine_action_requests`) with the same durable-first, dispatch-second shape: a worker process drains it on a five-second poll loop by default. On Google Cloud, set `ACTION_DISPATCH_TASK_QUEUE_NAME` alongside the worker dispatch settings above so a turn that enqueues an action pushes a Cloud Task immediately, reaching the worker in seconds rather than on the next poll. A scheduled recovery sweep drains anything a push loses or never sends.
-
-### Website crawler
-
-Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls the bundled `radioso-crawler` provider by default, and publishes returned pages through the normal document ingestion pipeline.
-
-Application composition can register a different crawler provider for custom deployments. Crawl limits are controlled with `WEBSITE_CRAWLER_MAX_LIMIT` (default 1,000 pages), and crawl requests can also set simple URL allow and deny substrings. Outbound requests identify as `RadiosoCrawler/1.0` by default; set `WEBSITE_CRAWLER_USER_AGENT` when a deployment needs a custom allowlisted crawler identity or contact URL. Pages exceeding 500,000 characters are skipped during ingestion. Website sources can be re-crawled, paused, resumed, or deleted through the source management API; see `docs/website-crawler.md` for details.
-
-The bundled crawler does not rotate user agents or proxies to bypass site blocks. Responses with `401`, `403`, or `429` are recorded as failed pages instead of being ingested as content.
-
-`GET /api/v1/document/crawl/jobs` lists recent crawl jobs for the current workspace with their status, requested URL, page count, and last error. The dashboard Knowledge Base page uses it to display a status banner for in-flight and recently completed crawls. See `docs/website-crawler.md` for the full request and response shape.
-
-Website crawls run in a separate process from document chunking and embeddings. Locally, `docker-compose.yml` and `docker-compose.dev.yml` add a `backend-crawler-worker` service alongside `backend-worker` (running `pnpm run start:crawler-worker` or `dev:crawler-worker`). On Cloud Run, Terraform provisions a dedicated `radioso-<env>-crawler-worker` service and wires its run.app URL into the backend's `WORKER_TASKS_CRAWL_SERVICE_URL` automatically. No manual override is needed. When the env var is unset, such as in self-hosted single-process deployments, crawls reuse `WORKER_TASKS_SERVICE_URL`. See `docs/website-crawler.md` for the full deployment topology.
-
-Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hides the crawl routes (404), the dashboard hides the "Crawl Website" button, and the crawler worker entrypoints exit on startup so the container can be removed.
-
-### Reverse proxy client IPs
-
-Radioso keeps Express `trust proxy` disabled by default. Set `TRUST_PROXY_HOPS` only when the backend runs behind trusted reverse proxies and rate limits must use the real client IP from `X-Forwarded-For`.
-
-`TRUST_PROXY_HOPS=0` is the secure default for self-hosted deployments without a proxy. For GCP Cloud Run behind the frontend API proxy, the value is typically `1` or `2` depending on the exact topology. Set the exact number of trusted hops for your deployment.
-
-### Public chat rate limits
-
-Public chat and website embed rate limits are configured by operators, not workspace users. The optional `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`, `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`, and `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` environment variables tune those limits; backend defaults apply when they are unset.
-
-Workspace-level `anonymousRateLimit` and `messagesPerMinute` settings have no effect; the environment variables above are the only public-chat limit controls.
-
-### Authenticated LLM request limits
-
-Authenticated assistant chat and retrieval answer/search routes share a durable rate limit because they can trigger model or retrieval work. Operators can tune it with `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS` and `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS`. The default is 60 requests per 60 seconds.
-
-The limit is scoped by account and workspace for browser sessions. Workspace API tokens get separate token-specific buckets within the same account and workspace.
-
-### Audience Pulse refresh limits
-
-Audience Pulse is an on-demand dashboard analysis, so loading a saved report does not consume its refresh budget. Each account and workspace can make three explicit refresh attempts every 15 minutes.
-
-This limit applies only to cookie-authenticated dashboard sessions. Workspace API tokens and bearer requests cannot access Audience Pulse.
-
----
+- **Models and keys.** Workspaces store their own provider keys (encrypted with `CONNECTOR_ENCRYPTION_KEY`) and pick a model per capability — chat, rewrite, rerank — with no restart. Resolution at chat time is agent override → workspace preference → environment default. [Settings API →](https://docs.radioso.ai/api/settings)
+- **Ingestion.** Uploads create durable Postgres jobs first; chunking, parsing, and embedding run in a background worker. Optional metadata extraction classifies each document against a workspace-defined type catalog and writes typed tags that per-agent retrieval rules can filter and boost on. [Document metadata →](https://docs.radioso.ai/guides/document-metadata) · [Document processing →](https://docs.radioso.ai/operators/document-processing)
+- **Website crawler.** `POST /api/v1/document/crawl` crawls a site with the bundled provider and publishes pages through the normal ingestion pipeline. It identifies as `RadiosoCrawler/1.0` and records `401`/`403`/`429` responses as failed pages rather than ingesting them. [Website crawler →](./docs/website-crawler.md)
+- **Deployment.** Backend, frontend, and workers are separate services; the backend migrates the database on startup. Worker dispatch polls by default, with Cloud Tasks and AMQP drivers for push; rate limits and reverse-proxy hops are environment-tuned. [Deployment →](https://docs.radioso.ai/operators/deployment) · [Self-hosting operations →](https://docs.radioso.ai/operators/self-hosting-operations)
+- **Observability.** Runtime flags, `/metrics`, and optional PostHog or Sentry sinks. [Observability →](./docs/oss-saas-observability.md)
 
 ## Docs
 
-- [MCP client setup](./docs/mcp-client-setup.md)
-- [TypeScript SDK getting started](./docs/typescript-sdk-getting-started.md)
-- [TypeScript SDK basic usage](./docs/typescript-sdk-basic-usage.md)
-- [Assistant execution model](./docs/assistant-execution-model.md)
-- [Human takeover](./docs/human-takeover.md)
-- [Assistant turn spine](./docs/architecture/assistant-turn-spine.md)
-- [Conversational directives](./docs/architecture/conversational-directives.md)
-- [Observability](./docs/oss-saas-observability.md)
-
-Full configuration reference, API docs, retrieval tuning guide, and deployment documentation: [docs/README.md](./docs/README.md).
-
----
+The full documentation lives at [docs.radioso.ai](https://docs.radioso.ai): [quickstarts](https://docs.radioso.ai/quickstarts/run-locally), [core concepts](https://docs.radioso.ai/concepts), the [API reference](https://docs.radioso.ai/api-reference), and [operator runbooks](https://docs.radioso.ai/operators/deployment). Architecture deep-dives are in-repo under [`docs/architecture/`](./docs/architecture), starting with the [assistant turn spine](./docs/architecture/assistant-turn-spine.md); [docs/README.md](./docs/README.md) indexes the rest.
 
 ## Contributing
 
-Contributions are welcome. Run `./run-dev.sh` to get a full local stack, then read [CONTRIBUTING.md](./CONTRIBUTING.md) for the per-package test targets, the `pnpm run ci:local` check to run before you open a pull request, and the Conventional Commits format the history uses.
+Contributions are welcome. Run `./run-dev.sh` for a full local stack, then read [CONTRIBUTING.md](./CONTRIBUTING.md) for per-package test targets, the `pnpm run ci:local` check to run before opening a pull request, and the Conventional Commits format the history uses.
 
 ```
 backend/         Express API and background document worker
@@ -450,16 +221,13 @@ infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```
 
-Found a security vulnerability? Report it privately — see [SECURITY.md](./SECURITY.md). By taking part you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md). Detailed setup and follow-on guides are indexed in [docs/README.md](./docs/README.md).
-
----
+Found a security vulnerability? Report it privately — see [SECURITY.md](./SECURITY.md). By taking part you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
 ## License
 
 Radioso is dual-licensed:
 
 - The open-source edition is licensed under the [Apache License, Version 2.0](./LICENSE).
-- The files under [`ee/`](./ee) are Radioso Enterprise Edition, commercial source-available software governed by [`ee/LICENSE`](./ee/LICENSE), and are **not** covered by Apache 2.0.
-  We are happy for everyone to be able to run Radioso for their business and personal purposes. In ee/ we store features and setups required for us to run Radioso on the cloud, and using them requires a commercial license. Contact us for inquiries!
+- The files under [`ee/`](./ee) are Radioso Enterprise Edition, commercial source-available software governed by [`ee/LICENSE`](./ee/LICENSE), and are **not** covered by Apache 2.0. We are happy for everyone to run Radioso for business and personal purposes; `ee/` holds the features and setups we need to run Radioso as a cloud service, and using them requires a commercial license. Contact us for inquiries!
 
-See [NOTICE](./NOTICE) for the attribution and the Enterprise Edition.
+See [NOTICE](./NOTICE) for attribution and the Enterprise Edition.

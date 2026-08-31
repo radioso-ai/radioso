@@ -103,7 +103,7 @@
 - [x] T062 Run `pnpm run ci:local -- origin/main` (or `--all` if final scope warrants it) and record exact evidence.
 - [x] T063 Perform up to three independent senior-engineer review passes, resolve all material findings, and rerun affected tests after each pass.
 - [x] T064 Perform exactly one engineering-manager review against spec, architecture, observability, migration, generated artifacts, and validation evidence; resolve blockers.
-- [ ] T065 Update this task list, commit with a Conventional Commit, push the current branch without renaming it, and create a pull request targeting `main` with local-CI evidence and the destructive migration warning.
+- [x] T065 Update this task list, commit with a Conventional Commit, push the current branch without renaming it, and create a pull request targeting `main` with local-CI evidence and the destructive migration warning.
 
 ## Dependencies
 

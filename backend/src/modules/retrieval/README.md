@@ -72,6 +72,12 @@ imports from `services/` or `infra/`.
   temporal, and candidate-preparation adapters.
 - `domain/retrievalSourceFilter.ts`: shared source scoping values used by
   retrieval contracts and filter compilers.
+- `domain/agentRetrievalScope.ts`: the single derivation of how one agent
+  retrieves — source scope, answering behavior, and skill settings — plus the
+  port composition adapts to load an agent. Every surface that runs retrieval
+  on an agent's behalf reads scope from here, and
+  `services/scopedRetrievalRun.ts` applies it so a named agent that cannot be
+  resolved fails the run instead of silently measuring workspace defaults.
 - `infra/pgVectorAdapter.ts`, `infra/chunkCandidateHydrator.ts`, and
   `infra/lexicalSearch.ts`: concrete search and hydration adapters.
 - `infra/hnswIterativeScan.ts`: shared transaction wrapper that enables

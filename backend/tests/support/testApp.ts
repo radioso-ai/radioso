@@ -74,6 +74,7 @@ import {
 import { RerankService, type RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { createAgentRetrievalScopeResolver } from "../../src/app/composition/agentRetrievalScope.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { RetrievalSearchService } from "../../src/modules/retrieval/services/retrievalSearchService.js";
 import {
@@ -164,6 +165,7 @@ import {
   EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
+  RetrievalProbeService,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -178,6 +180,11 @@ import {
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
+import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
+import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
+import { createCopilotDocumentAuthoringPort, createCopilotWorkspaceAccountResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -1766,12 +1773,23 @@ export const createTestDependencies = (overrides: {
     publicConversationEventBus,
     customerReplyDelivery: { deliver: async () => {} },
   });
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+  const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
     auditService,
+    agentRetrievalScope,
+  });
+  const retrievalProbeService = new RetrievalProbeService({
+    retrievalSearch: retrievalSearchService,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -1855,6 +1873,17 @@ export const createTestDependencies = (overrides: {
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createDocumentCopilotProposalAdapter({
+      documentAuthoring: createCopilotDocumentAuthoringPort(documentIngestionService),
+      documentDeletion: documentDeletionService,
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
+    }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
+    createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: websiteCrawlJobService.enqueue.bind(websiteCrawlJobService) },
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
+      crawlPolicy: () => ({ enabled: true, defaultLimit: 1000, maxLimit: 1000 }),
+    }),
   ] as const;
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const copilotCapabilityRunner = new AgenticCapabilityRunner({
@@ -1874,6 +1903,7 @@ export const createTestDependencies = (overrides: {
     },
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
+    retrievalProbe: retrievalProbeService,
     documentSearchService,
     documentChunks: chunkRepository,
     documentMaintenance: {

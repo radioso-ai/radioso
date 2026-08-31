@@ -3,16 +3,9 @@ import { z } from "zod";
 import { serializeAgentConfig, type AgentConfig, type ConversationAgent } from "../../agents/public.js";
 import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../../directives/public.js";
 import type {
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotAuditPort,
-  CopilotContextVariableProposalAdapter,
-  CopilotDirectiveProposalAdapter,
   CopilotProposal,
-  CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
-import type { CopilotRepositoryPort } from "../service.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { boundPayload } from "../payloadCompaction.js";
 import {
@@ -28,6 +21,8 @@ import {
   proposalEvidenceOutput,
   proposalOutputSchema,
   type CopilotProposalEvidenceDependencies,
+  proposalAdapterFor,
+  type CopilotProposalToolDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -187,7 +182,6 @@ const projectAgentConfiguration = (
       : null,
   };
 };
-
 const projectBuiltInDirectives = (
   directives: ReadonlyArray<BuiltInDirectiveView>,
 ): ReadonlyArray<Record<string, unknown>> => {
@@ -277,17 +271,14 @@ const projectDirectiveDetail = (
 
 
 
-export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
+export interface AgentSettingProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
-  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
-  readonly auditService: CopilotAuditPort;
 }
 
 export const createAgentSettingProposalCopilotTools = (
   deps: AgentSettingProposalCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const settingAdapter = proposalAdapter(deps.proposalAdapters);
+  const settingAdapter = proposalAdapterFor(deps.proposalAdapters, "agent_setting");
   return [
     {
       name: "propose_agent_setting", shape: "propose", uiLabel: "Drafting a setting change", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
@@ -335,12 +326,4 @@ export const createAgentSettingProposalCopilotTools = (
       },
     },
   ];
-};
-
-const proposalAdapter = (
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>,
-): CopilotAgentSettingProposalAdapter => {
-  const adapter = adapters.find((candidate) => candidate.targetType === "agent_setting");
-  if (!adapter) throw new Error("No copilot proposal adapter registered for agent_setting");
-  return adapter as CopilotAgentSettingProposalAdapter;
 };

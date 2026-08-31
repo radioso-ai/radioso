@@ -208,7 +208,7 @@ curl -sS \
   http://localhost:8080/api/v1/assistant/chat
 ```
 
-Use retrieval APIs when you want grounded search or answer generation over workspace context without assistant persona or chat routing. Retrieval-only calls use system defaults and still support per-call filters such as `metadataFilter`.
+Use retrieval APIs when you want grounded search or answer generation over workspace context without assistant persona or chat routing. Retrieval-only calls run on system defaults and support per-call filters such as `metadataFilter`. Add `"agentId"` to either call to run it with one agent's own retrieval settings and source scope; the response reports which agent it measured in `agentScope`.
 
 ```bash
 curl -sS \

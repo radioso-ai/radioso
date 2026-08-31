@@ -22,6 +22,7 @@ import {
 import { validateAgentInput } from "../../src/modules/agents/public.js";
 import { enrichCopilotToolCatalog } from "../../src/modules/operatorCopilot/catalog.js";
 import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
+import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
 import type {
   CopilotToolDescriptor,
   CopilotWorkspaceRouteKeyResolver,
@@ -446,6 +447,20 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       getGeneralSettings: async () => ({}),
     },
     agentTurnProbe: { run: unusedPort("agentTurnProbe.run") },
+    retrievalProbe: {
+      probe: async ({ agentId }: { agentId: string }) => ({
+        agentId,
+        retrievalEnabled: true,
+        rewrittenQuery: { semantic: "shipping rates italy", lexical: "shipping italy" },
+        results: [{
+          documentId: COPILOT_EVAL_DOCUMENT_ID,
+          chunkId: "77777777-7777-4777-8777-777777777772",
+          title: "Shipping rates",
+          content: "Shipping to Italy costs nine euro.",
+          score: 0.71,
+        }],
+      }),
+    },
     evalCaseCapture: { capture: unusedPort("evalCaseCapture.capture") },
     evalSuiteProbe: { run: unusedPort("evalSuiteProbe.run") },
     evalCaseReplay: { replay: unusedPort("evalCaseReplay.replay") },
@@ -465,7 +480,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         ...input,
       }),
     },
-    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
+    proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
       targetType,
       draft: async (_workspaceId: string, _targetRef: unknown, intent: string) => ({
         payload: { intent },

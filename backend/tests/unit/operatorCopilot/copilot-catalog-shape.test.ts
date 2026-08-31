@@ -10,6 +10,9 @@ import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/too
 import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { createCopilotToolDescriptors } from "../../../src/modules/operatorCopilot/tools/index.js";
+import { copilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/contracts.js";
+import { createCopilotToolCatalog } from "../../../src/app/composition/copilotToolCatalog.js";
+import { z } from "zod";
 import { assertCopilotCapabilityProvenance } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
 import { createOpenApiDocument } from "../../../src/app/http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../../../src/app/http/openapi/operationPermissionRequirements.js";
@@ -20,9 +23,11 @@ import { contextVariableCopilotPrimitives } from "../../../src/modules/context-v
 import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../../src/modules/embeddingProfiles/public.js";
 import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
+import { retrievalCopilotPrimitives } from "../../../src/modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../../src/modules/routines/public.js";
 import { settingsCopilotPrimitives } from "../../../src/modules/settings/public.js";
-import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
+import { websiteCrawlerCopilotPrimitives } from "../../../src/modules/websiteCrawler/public.js";
+import { copilotResolvableToolPermissions, copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
 import { filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { AccountAccessService } from "../../../src/modules/account/services/accountAccessService.js";
 import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/triage.js";
@@ -45,22 +50,24 @@ const ownerExportedPrimitiveIds = new Set([
   ...documentCopilotPrimitives,
   ...embeddingProfileCopilotPrimitives,
   ...evalCopilotPrimitives,
+  ...retrievalCopilotPrimitives,
   ...routineCopilotPrimitives,
   ...settingsCopilotPrimitives,
+  ...websiteCrawlerCopilotPrimitives,
 ]);
 
 // These two exercise the REAL composition barrel rather than re-wiring the factories by hand.
 // The other suites build descriptors factory-by-factory, which means they wire dependencies
 // correctly themselves and can never catch the barrel wiring them wrongly — which is exactly how
 // a dead tool and a dead name-resolution path both reached main.
-const realCatalog = () => {
+const realCatalogDependencies = () => {
   const stub = () => vi.fn(async () => { throw new Error("not exercised: these tests only resolve entities"); });
   const agentService = {
     listExisting: vi.fn(async () => [{ id: "agent-1", name: "Support" }]),
     resolve: stub(),
     get: stub(),
   };
-  return createCopilotToolDescriptors({
+  return {
     agentService,
     routineDefinitionService: { list: stub(), get: stub(), validate: stub() },
     chatHistoryService: { getConversation: stub(), getConversationTurn: stub(), listConversations: stub() },
@@ -70,6 +77,7 @@ const realCatalog = () => {
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
+    retrievalProbe: { probe: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
     skillCapabilityTargets: { list: stub() },
@@ -79,12 +87,98 @@ const realCatalog = () => {
       getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },
-    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
+    proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
       targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(), validatePayload: stub(),
     })),
     auditService: { record: stub() },
-  } as unknown as Parameters<typeof createCopilotToolDescriptors>[0]);
+    workspaceRouteKeyResolver: { resolveWorkspaceKey: async () => "acme" },
+  } as unknown as Parameters<typeof createCopilotToolCatalog>[0];
 };
+
+const realCatalog = () => createCopilotToolDescriptors(
+  realCatalogDependencies() as unknown as Parameters<typeof createCopilotToolDescriptors>[0],
+);
+
+const contributedDescriptor = (overrides: Record<string, unknown> = {}) => ({
+  name: "extension_usage",
+  shape: "read" as const,
+  uiLabel: "Reading extension state",
+  description: "Read extension state.",
+  inputSchema: z.object({}),
+  outputSchema: z.object({ value: z.string() }),
+  requiredPermissions: ["workspace.settings.read"] as const,
+  contributingModule: "extension",
+  dashboardSubject: { type: "workspace_settings" },
+  capabilityProvenance: { backingOperationIds: ["getExtensionUsage"] },
+  createTool: () => ({
+    name: "extension_usage",
+    description: "Read extension state.",
+    inputSchema: z.object({}),
+    outputSchema: z.object({ value: z.string() }),
+    invoke: async () => ({ value: "extension" }),
+  }),
+  ...overrides,
+});
+
+describe("copilot catalog contributions through the real factory", () => {
+  // The unit tests around resolveCopilotToolContributions pin the rules; this pins that production
+  // assembly actually applies them, which is the half a fixture-only test cannot see.
+  const assemble = (contribution: unknown) => createCopilotToolCatalog({
+    ...realCatalogDependencies(),
+    toolContributions: [contribution],
+  } as unknown as Parameters<typeof createCopilotToolCatalog>[0]);
+
+  it("assembles a contributed tool alongside the first-party catalog", async () => {
+    const catalog = assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor()],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    });
+    const contributed = catalog.find((descriptor) => descriptor.name === "extension_usage");
+
+    expect(contributed).toBeDefined();
+    // Enrichment is what gives a tool its dashboard handoff and its re-authorization checks; a
+    // contribution merged after it would be governed but unreachable from the operator's page.
+    const result = await contributed!.createTool({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      operatorUserId: "operator-1",
+      currentAuthorization: { hasAllPermissions: async () => true },
+      pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
+    } as never).invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" } as never);
+
+    expect(result).toMatchObject({ value: "extension", dashboardUrl: "/w/acme/settings" });
+    expect(copilotResolvableToolPermissions(catalog)).toContain("workspace.settings.read");
+  });
+
+  it("refuses a contributed tool that cites an identity nothing declares", () => {
+    expect(() => assemble({ moduleId: "extension", descriptors: [contributedDescriptor()] }))
+      .toThrow("Unknown public operation identity");
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor({ capabilityProvenance: undefined })],
+      operationPermissions: { getExtensionUsage: [] },
+    })).toThrow("Missing capability provenance");
+  });
+
+  it("refuses a contributed tool that weakens the permissions its own operation requires", () => {
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor()],
+      operationPermissions: { getExtensionUsage: ["workspace.agents.manage"] },
+    })).toThrow("weakens permission parity");
+  });
+
+  it("leaves the first-party provenance registry a bijection when a contribution is present", () => {
+    // Running the registry check over the merged catalog would report every contributed descriptor
+    // as ungoverned, which is the failure that would push EE identities into a first-party map.
+    expect(() => assemble({
+      moduleId: "extension",
+      descriptors: [contributedDescriptor()],
+      operationPermissions: { getExtensionUsage: ["workspace.settings.read"] },
+    })).not.toThrow();
+  });
+});
 
 describe("copilot catalog wiring", () => {
   it("evaluates every production descriptor for every supported workspace role and each missing permission vector", () => {
@@ -115,9 +209,11 @@ describe("copilot catalog wiring", () => {
         ? [operation.operationId]
         : []));
 
-    expect(() => assertCopilotCapabilityProvenance(
-      realCatalog(), operationIds, operationPermissionRequirements, ownerExportedPrimitiveIds,
-    )).not.toThrow();
+    expect(() => assertCopilotCapabilityProvenance(realCatalog(), {
+      publicOperationIds: operationIds,
+      operationPermissions: operationPermissionRequirements,
+      ownerExportedPrimitiveIds,
+    })).not.toThrow();
     expect(realCatalog().every((descriptor) => descriptor.capabilityProvenance)).toBe(true);
   });
   it("contributes the agent-turn probe through the real composition barrel", () => {
@@ -143,7 +239,7 @@ describe("copilot catalog wiring", () => {
     ]);
   });
 
-  it("contributes bounded document diagnosis and maintenance through the real barrel", () => {
+  it("contributes bounded document diagnosis, maintenance, and proposals through the real barrel", () => {
     expect(realCatalog()
       .filter((descriptor) => descriptor.contributingModule === "documents")
       .map(({ name, shape, requiredPermissions }) => ({ name, shape, requiredPermissions }))).toEqual([
@@ -152,19 +248,28 @@ describe("copilot catalog wiring", () => {
       { name: "document_chunks", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "reprocess_document", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
       { name: "recrawl_source", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "propose_document", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "propose_document_retrieval", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "propose_document_removal", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
     ]);
   });
 
-  it("requires only permissions the turn route actually resolves", () => {
-    // A descriptor whose permission is missing from the route's list is filtered out of every
-    // live turn and is unreachable in production, while unit tests that inject permissions
-    // directly still pass. workspace_settings shipped dead this way.
+  it("resolves every permission the assembled catalog requires", () => {
+    // A descriptor whose permission the route never resolves is filtered out of every live turn and
+    // is unreachable in production, while unit tests that inject permissions directly still pass.
+    // workspace_settings shipped dead this way. The per-turn set is now derived from the catalog,
+    // so this pins the derivation rather than a hand-maintained list.
+    const resolvable = new Set<string>(copilotResolvableToolPermissions(realCatalog()));
     const missing = realCatalog()
       .flatMap((descriptor) => descriptor.requiredPermissions
-        .filter((permission) => !(copilotToolPermissions as ReadonlyArray<string>).includes(permission))
+        .filter((permission) => !resolvable.has(permission))
         .map((permission) => `${descriptor.name} needs ${permission}`));
 
     expect(missing).toEqual([]);
+    // The baseline stays a subset rather than being replaced: the triage digest gates sections on
+    // permissions no descriptor requires, and dropping them would report those sections
+    // unauthorized on every turn.
+    expect(copilotToolPermissions.every((permission) => resolvable.has(permission))).toBe(true);
   });
 
   it("resolves every permission the triage digest gates a section on", () => {

@@ -28,15 +28,16 @@ export const AUDIENCE_PULSE_SUMMARY_MAX_EXEMPLARS_PER_TOPIC = 6;
 
 /**
  * Response schema for the narrative call, sized to how many topics `topics` actually
- * shows the model this run. `themeIndex`'s range tracks `topicCount` exactly, so the
- * model has no in-schema way to reference a topic it was never shown -- unlike the
- * retired call's static `0..7`, which stayed valid even on a run with fewer themes.
+ * shows the model this run. Each qualifying topic index is a required object key, so
+ * the provider must return exactly one recommendation for every shown topic whose
+ * full membership qualifies. The service boundary maps those keys back to the
+ * domain's `themeIndex` representation after validation.
  * `themes` remains a required key only because `audiencePulseModelOutputSchema`
  * (`domain/report.ts`) still declares it for the retired call's compatibility; every
  * call returns it empty; topic identity and membership come from the census, never
  * from the model.
  */
-export const buildAudiencePulseResponseFormat = (topicCount: number): JsonSchemaResponseFormat => ({
+export const buildAudiencePulseResponseFormat = (qualifyingTopicIndexes: readonly number[]): JsonSchemaResponseFormat => ({
   type: "json_schema",
   name: "audience_pulse_report",
   strict: true,
@@ -51,28 +52,21 @@ export const buildAudiencePulseResponseFormat = (topicCount: number): JsonSchema
         maxItems: 0,
         items: { type: "object", additionalProperties: false, properties: {} },
       },
-      recommendations: topicCount === 0
-        ? {
-          type: "array",
-          maxItems: 0,
-          items: { type: "object", additionalProperties: false, properties: {} },
-        }
-        : {
-          type: "array",
-          maxItems: 8,
-          items: {
-            type: "object",
-            additionalProperties: false,
-            required: ["themeIndex", "title", "rationale", "questions", "evidenceIds"],
-            properties: {
-              themeIndex: { type: "integer", minimum: 0, maximum: topicCount - 1 },
-              title: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle },
-              rationale: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale },
-              questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question } },
-              evidenceIds: { type: "array", minItems: 2, maxItems: 12, items: { type: "string", maxLength: 80 } },
-            },
+      recommendations: {
+        type: "object",
+        additionalProperties: false,
+        required: qualifyingTopicIndexes.map(String),
+        properties: Object.fromEntries(qualifyingTopicIndexes.map((topicIndex) => [String(topicIndex), {
+          type: "object",
+          additionalProperties: false,
+          required: ["title", "rationale", "questions"],
+          properties: {
+            title: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle },
+            rationale: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale },
+            questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question } },
           },
-        },
+        }])),
+      },
       caveats: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.caveat } },
     },
   },
@@ -99,6 +93,7 @@ export interface AudiencePulseSummaryTopic {
   description: string;
   memberCount: number;
   share: number;
+  contentGapQualifies: boolean;
   exemplars: AudiencePulseSummaryTopicExemplar[];
 }
 
@@ -136,6 +131,7 @@ const toPromptInput = (input: AudiencePulseSummaryInput) => ({
     description: topic.description,
     memberCount: topic.memberCount,
     share: topic.share,
+    contentGapQualifies: topic.contentGapQualifies,
     exemplars: topic.exemplars,
   })),
   additionalTopics: input.additionalTopics,

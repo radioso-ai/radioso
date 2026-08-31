@@ -57,7 +57,7 @@ describeIntegration("AudiencePulseService.refresh() (Postgres, real census)", ()
   const modelSummary = JSON.stringify({
     summary: "Visitors mostly asked about two distinct kinds of questions this period.",
     themes: [],
-    recommendations: [],
+    recommendations: {},
     caveats: [],
   });
 

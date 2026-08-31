@@ -1,5 +1,7 @@
 export * from "./catalog.js";
 export * from "./contracts.js";
+export * from "./contribution.js";
+export * from "./applicationPrimitiveRegistry.js";
 export type {
   CopilotAgentTurnProbeInput,
   CopilotAgentTurnProbePort,
@@ -34,4 +36,11 @@ export { summarizeProposalEvidence } from "./proposalEvidence.js";
 export { resolveProposalEvidence } from "./services/proposalEvidenceService.js";
 export type { ProposalEvidenceDependencies } from "./services/proposalEvidenceService.js";
 export { EvalSuiteProbeService } from "./services/evalSuiteProbeService.js";
+export { RetrievalProbeService } from "./services/retrievalProbeService.js";
+export type {
+  CopilotRetrievalProbeInput,
+  CopilotRetrievalProbePort,
+  CopilotRetrievalProbeResult,
+  CopilotRetrievalSearchPort,
+} from "./contracts/retrievalProbe.js";
 export * from "./toolShape.js";

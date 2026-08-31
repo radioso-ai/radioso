@@ -46,6 +46,25 @@ describe('CopilotProposalCard', () => {
     expect(container.textContent).toContain('Dismiss')
   })
 
+  it('offers no link to a document a removal has already deleted, even before the card reloads', () => {
+    // After an in-place Apply the card's own state advances while the proposal prop it was rendered
+    // from still reads 'pending', so the applied reference is the only reliable signal that the
+    // document is gone.
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-document-removal',
+      targetType: 'document',
+      targetLabel: 'Refund policy',
+      summary: 'Permanently remove the document "Refund policy". This cannot be undone.',
+      status: 'pending',
+      removal: true,
+    }
+    const detail = { targetRef: { documentId: 'document-1' } } as CopilotProposalDetail
+
+    expect(targetReference(proposal, detail, { documentId: 'document-1' })).toBeNull()
+    // Before it is applied the document still exists, so the card may still point at it.
+    expect(targetReference(proposal, detail, null)).toEqual({ entity: { type: 'document', id: 'document-1' } })
+  })
+
   it('resolves routine targets from the applied reference, target reference, or id', () => {
     const proposal: CopilotProposalSummary = {
       id: 'proposal-routine',

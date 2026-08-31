@@ -65,3 +65,30 @@
   and evidence metadata without compaction; document/source maintenance acts
   use workspace-scoped owner paths with manage permission; recrawl cannot
   accept a new URL; and no agent-inaccurate retrieval probe enters the catalog.
+
+## Agent-Scoped Retrieval Probe (#1051)
+
+- [X] T031 Add failing tests for agent scope derivation, agent-scoped search,
+  refusal on an unresolvable agent, and answer-evidence score parity in
+  `backend/tests/unit/retrieval/` and `backend/tests/contract/`
+- [X] T032 Add `domain/agentRetrievalScope.ts`, `services/scopedRetrievalRun.ts`,
+  the composition adapter, and service wiring; move the MCP converse surface onto
+  the shared derivation
+- [X] T033 Add optional `agentId` and the conditional agent-read gate to both
+  retrieval routes, extend the response schemas, and regenerate OpenAPI, the
+  retrieval skill contract, the MCP generated types, and the SDK snapshot
+- [X] T034 Add the `retrieval_probe` descriptor, its copilot service, capability
+  provenance, owning primitive, coverage-map move, and behavior-eval case
+- [X] T035 Update API, SDK, and Ray operator documentation and run local CI
+
+### Dependencies And Independent Test Criteria
+
+- T031 is the red phase and precedes T032-T034.
+- T033 depends on T032 because the route passes a resolved scope rather than
+  building one; T034 depends on T033 for the backing operation's permission
+  parity.
+- This slice is independently complete when an agent-scoped call runs on that
+  agent's retrieval settings and reports which agent it measured, an
+  unresolvable agent fails instead of falling back to workspace defaults, and
+  Ray's probe cannot report a workspace-default measurement as an agent's
+  behavior.

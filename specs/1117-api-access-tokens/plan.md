@@ -95,7 +95,7 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 
 ## Delivery Phases
 
-1. Add failing domain/repository/migration tests, migration 157, machine-access ports/entities, storage adapters, crypto codec, composition, and safe audit/telemetry shapes.
+1. Add failing domain/repository/migration tests, migration 158, machine-access ports/entities, storage adapters, crypto codec, composition, and safe audit/telemetry shapes.
 2. Add failing personal-token and service-account lifecycle/auth tests, then implement session-only routes, default-deny route eligibility, live role/tenure enforcement, rotation/quota/pagination, OpenAPI definitions, and scheduled warning/last-use behavior.
 3. Add migration and MCP tests, then implement verifier destruction, tombstones, controlled runtime-store purge/readiness/retry, and rejection of every new API credential class across merged, standalone, stdio, and agent-converse paths.
 4. Add frontend adapter/state tests and Playwright journeys, then remove workspace-token caching/fallback and deliver separate personal/service-account lifecycle UI with transient one-time-secret handling.
@@ -115,7 +115,7 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 - There is no compatibility mode or auto-migration into a personal/service credential. Legacy API and MCP use stops immediately.
 - Controlled MCP runtime stores purge legacy sessions before readiness; backend verifier removal keeps stale external copies unusable.
 - Ordinary routes without an explicit machine-principal policy are denied by default. Lifecycle and other sensitive surfaces require a valid interactive session and never fall back to bearer auth.
-- Rollback across migration 157 requires a compatible pre-migration database backup; application code alone cannot reconstruct destroyed secrets.
+- Rollback across migration 158 requires a compatible pre-migration database backup; application code alone cannot reconstruct destroyed secrets.
 
 ## Planning Tooling Note
 

@@ -69,7 +69,7 @@ import { WebsiteCrawlJobService } from "../../../modules/websiteCrawler/jobServi
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
-import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
+import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
@@ -333,6 +333,7 @@ export const buildRetrievalServices = (input: {
   logger: AppLogger;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
   skillSettingsResolver?: SkillSettingsResolver;
+  agentRetrievalScope?: AgentRetrievalScopePort;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;

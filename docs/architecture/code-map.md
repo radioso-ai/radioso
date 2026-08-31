@@ -297,6 +297,19 @@ guards remain Ray safety measures, while routine and other domain services keep
 their lifecycle and mutation authority. Reusing an internal service does not
 establish parity for the standalone MCP surface.
 
+Application modules contribute their own tools through
+`registerCopilotTools`. A contribution carries its descriptors plus the operation
+and application-primitive identities their capability declarations cite, because
+the generated public contract and the owning-port registry describe only
+first-party surfaces. Contributed descriptors merge into the catalog before
+governance and enrichment, so duplicate names, permission parity, dashboard
+handoffs, and per-turn permission filtering apply to them unchanged, and the
+permissions a turn resolves are derived from the assembled catalog rather than a
+list a contributing module cannot edit. Contributions supply reads, probes, and
+acts; a proposal needs an adapter for its target type, and the target-type set is
+closed by the public contract enum, repository narrowing, and the dashboard's
+card presentation.
+
 Ray's behaviour is covered by its own eval suite, separate from the per-descriptor
 unit tests: one committed dataset scored at two fidelities. The deterministic
 fidelity replays each case's authored tool plan against the real catalog with a
@@ -320,11 +333,16 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_lifecycle`)
 - `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit/lifecycle apply rules)
-- `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
+- `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
+- `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
+- `ee/packages/backend-module/src/usageLimits/copilotTools.ts` (`workspace_usage_limits`, the Enterprise contribution)
 - `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
 - `backend/src/modules/operatorCopilot/tools/eval.ts` (`eval_results`, `create_eval_case_from_turn`, `run_eval_suite`, `replay_eval_case`)
 - `backend/src/modules/operatorCopilot/tools/triage.ts` and `triageDigest.ts` (`workspace_triage`: per-source reads and their permissions, and the ranking those reads feed)
 - `backend/src/modules/operatorCopilot/contracts/evalCases.ts`, `services/evalCaseCaptureService.ts`, `services/evalSuiteProbeService.ts`, and `services/evalCaseReplayService.ts` (eval verification boundary)
+- `backend/src/modules/operatorCopilot/tools/documentProposals.ts`, `contracts/documentAuthoring.ts`, and `documentProposalAdapter.ts` (`propose_document`, `propose_document_retrieval`, `propose_document_removal`)
+- `backend/src/modules/operatorCopilot/tools/ingestionSettingsProposals.ts`, `contracts/ingestionSettingsAuthoring.ts`, and `ingestionSettingsProposalAdapter.ts` (`propose_ingestion_settings`)
+- `backend/src/modules/operatorCopilot/tools/websiteCrawlProposals.ts`, `contracts/websiteCrawlAuthoring.ts`, and `websiteCrawlProposalAdapter.ts` (`start_crawl`)
 - `backend/src/modules/operatorCopilot/proposalEvidence.ts` and `services/proposalEvidenceService.ts` (replay evidence carried on a proposal)
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
@@ -513,6 +531,7 @@ Public surfaces and contracts:
 - `backend/src/modules/retrieval/llmAdapters.ts`
 - `backend/src/modules/retrieval/domain/`
 - `backend/src/app/composition/retrievalDefaultsProvider.ts`
+- `backend/src/app/composition/agentRetrievalScope.ts`
 
 Primary internals:
 
@@ -868,6 +887,7 @@ Public surfaces and contracts:
 - `frontend/components/dashboard/audience-pulse-view.tsx`
 - `frontend/lib/api-audience-pulse.ts`
 - `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
+- `frontend/lib/audience-pulse-topic-viz.ts` (pure share-bar and sparkline math for the topic rows)
 
 Primary internals:
 

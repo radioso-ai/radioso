@@ -136,9 +136,11 @@ describe("ServiceAccountService credential lifecycle", () => {
       service.rotateCredential(input),
       service.rotateCredential(input),
     ]);
-    const winner = attempts.find((attempt): attempt is PromiseFulfilledResult<{ credential: { id: string; rotatedFromCredentialId: string | null } }> => attempt.status === "fulfilled");
+    const winner = attempts.find((attempt) => attempt.status === "fulfilled");
     expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
-    expect(winner?.value.credential).toMatchObject({ rotatedFromCredentialId: created.credential.id });
+    expect(winner?.status).toBe("fulfilled");
+    if (!winner || winner.status !== "fulfilled") throw new Error("Expected one successful credential rotation");
+    expect(winner.value.credential).toMatchObject({ rotatedFromCredentialId: created.credential.id });
     expect(repository.credentials.get(created.credential.id)).toMatchObject({ revocationReason: "rotated" });
 
     await expect(service.rotateCredential(input)).rejects.toMatchObject({ statusCode: 409 });

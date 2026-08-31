@@ -159,6 +159,7 @@ import {
   EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
+  RetrievalProbeService,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -1769,6 +1770,15 @@ export const createTestDependencies = (overrides: {
     auditService,
     agentRetrievalScope,
   });
+  const retrievalProbeService = new RetrievalProbeService({
+    retrievalSearch: retrievalSearchService,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
     auditService,
@@ -1870,6 +1880,7 @@ export const createTestDependencies = (overrides: {
     },
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
+    retrievalProbe: retrievalProbeService,
     documentSearchService,
     documentChunks: chunkRepository,
     documentMaintenance: {

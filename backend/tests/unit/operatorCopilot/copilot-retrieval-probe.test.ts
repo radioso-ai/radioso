@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createRetrievalProbeCopilotTools } from "../../../src/modules/operatorCopilot/tools/retrievalProbe.js";
+import type { CopilotRetrievalProbePort } from "../../../src/modules/operatorCopilot/contracts/retrievalProbe.js";
 import { RetrievalProbeService } from "../../../src/modules/operatorCopilot/services/retrievalProbeService.js";
 import { context } from "./copilot-tools-test-helpers.js";
 
@@ -21,13 +22,16 @@ const probeResult = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const toolFor = (probe: { probe: ReturnType<typeof vi.fn> }) => {
+const toolFor = (retrievalProbe: CopilotRetrievalProbePort) => {
   const [descriptor] = createRetrievalProbeCopilotTools({
-    retrievalProbe: probe,
+    retrievalProbe,
     agentLookup: { listExisting: async () => [] },
   });
   return descriptor!;
 };
+
+/** The runtime supplies the tool context; these tests exercise projection, not the runtime. */
+const toolContext = {} as never;
 
 describe("retrieval_probe descriptor", () => {
   it("declares the retrieval query and agent read permissions it uses", () => {
@@ -47,7 +51,7 @@ describe("retrieval_probe descriptor", () => {
     const output = await descriptor.createTool(context(OTHER_AGENT_ID)).invoke({
       agentId: AGENT_ID,
       query: "refund window",
-    }) as { probe: { agentId: string; retrievalEnabled: boolean } };
+    }, toolContext) as { probe: { agentId: string; retrievalEnabled: boolean } };
 
     expect(probe).toHaveBeenCalledWith(expect.objectContaining({ agentId: AGENT_ID, query: "refund window" }));
     expect(output.probe.agentId).toBe(AGENT_ID);
@@ -57,7 +61,7 @@ describe("retrieval_probe descriptor", () => {
     const probe = vi.fn(async () => probeResult({ agentId: OTHER_AGENT_ID }));
     const descriptor = toolFor({ probe });
 
-    await descriptor.createTool(context(OTHER_AGENT_ID)).invoke({ query: "refund window" });
+    await descriptor.createTool(context(OTHER_AGENT_ID)).invoke({ query: "refund window" }, toolContext);
 
     expect(probe).toHaveBeenCalledWith(expect.objectContaining({ agentId: OTHER_AGENT_ID }));
   });
@@ -66,7 +70,7 @@ describe("retrieval_probe descriptor", () => {
     const probe = vi.fn(async () => probeResult());
     const descriptor = toolFor({ probe });
 
-    await expect(descriptor.createTool(context(null)).invoke({ query: "refund window" }))
+    await expect(descriptor.createTool(context(null)).invoke({ query: "refund window" }, toolContext))
       .rejects.toThrow(/agent/i);
     expect(probe).not.toHaveBeenCalled();
   });
@@ -75,7 +79,7 @@ describe("retrieval_probe descriptor", () => {
     const probe = vi.fn(async () => probeResult({ retrievalEnabled: false, results: [] }));
     const descriptor = toolFor({ probe });
 
-    const output = await descriptor.createTool(context(AGENT_ID)).invoke({ query: "refund window" }) as {
+    const output = await descriptor.createTool(context(AGENT_ID)).invoke({ query: "refund window" }, toolContext) as {
       probe: { retrievalEnabled: boolean; results: unknown[] };
     };
 
@@ -95,7 +99,7 @@ describe("retrieval_probe descriptor", () => {
     }));
     const descriptor = toolFor({ probe });
 
-    const output = await descriptor.createTool(context(AGENT_ID)).invoke({ query: "refund window" }) as {
+    const output = await descriptor.createTool(context(AGENT_ID)).invoke({ query: "refund window" }, toolContext) as {
       probe: { results: Array<{ content: string }> };
       omissions: Array<{ field: string; reason: string }>;
     };

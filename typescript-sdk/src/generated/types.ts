@@ -5353,8 +5353,15 @@ export interface components {
                 activityTrace: components["schemas"]["ActivityTrace"];
             };
         };
+        RetrievalAgentScope: {
+            /** Format: uuid */
+            agentId: string;
+            retrievalEnabled: boolean;
+        } | null;
         RetrievalSearchRequest: {
             query: string;
+            /** Format: uuid */
+            agentId?: string;
             metadataFilter?: {
                 [key: string]: unknown;
             };
@@ -5364,6 +5371,8 @@ export interface components {
         };
         RetrievalAnswerRequest: {
             query: string;
+            /** Format: uuid */
+            agentId?: string;
             conversationContext?: {
                 previousUserMessages?: string[];
                 previousAssistantMessages?: string[];
@@ -5390,6 +5399,7 @@ export interface components {
         RetrievalSearchResponse: {
             /** @enum {string} */
             outcome: "results";
+            agentScope: components["schemas"]["RetrievalAgentScope"];
             rewrittenQuery: {
                 semantic: string;
                 lexical: string;
@@ -5410,10 +5420,12 @@ export interface components {
             metadata?: {
                 [key: string]: unknown;
             };
+            score?: number;
         };
         RetrievalAnswerSuccess: {
             /** @enum {string} */
             outcome: "answer";
+            agentScope: components["schemas"]["RetrievalAgentScope"];
             answer: string;
             citations?: components["schemas"]["Citation"][];
             validation: {
@@ -5429,6 +5441,7 @@ export interface components {
         RetrievalAnswerResponse: {
             /** @enum {string} */
             outcome: "answer";
+            agentScope: components["schemas"]["RetrievalAgentScope"];
             answer: string;
             citations?: components["schemas"]["Citation"][];
             validation: {

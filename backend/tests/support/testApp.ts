@@ -74,6 +74,7 @@ import {
 import { RerankService, type RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { createAgentRetrievalScopeResolver } from "../../src/app/composition/agentRetrievalScope.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { RetrievalSearchService } from "../../src/modules/retrieval/services/retrievalSearchService.js";
 import {
@@ -1759,12 +1760,14 @@ export const createTestDependencies = (overrides: {
     publicConversationEventBus,
     customerReplyDelivery: { deliver: async () => {} },
   });
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+  const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
     auditService,
+    agentRetrievalScope,
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,

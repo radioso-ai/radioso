@@ -20,6 +20,7 @@ import { contextVariableCopilotPrimitives } from "../../../src/modules/context-v
 import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../../src/modules/embeddingProfiles/public.js";
 import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
+import { retrievalCopilotPrimitives } from "../../../src/modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../../src/modules/routines/public.js";
 import { settingsCopilotPrimitives } from "../../../src/modules/settings/public.js";
 import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
@@ -45,6 +46,7 @@ const ownerExportedPrimitiveIds = new Set([
   ...documentCopilotPrimitives,
   ...embeddingProfileCopilotPrimitives,
   ...evalCopilotPrimitives,
+  ...retrievalCopilotPrimitives,
   ...routineCopilotPrimitives,
   ...settingsCopilotPrimitives,
 ]);
@@ -70,6 +72,7 @@ const realCatalog = () => {
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
+    retrievalProbe: { probe: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
     skillCapabilityTargets: { list: stub() },

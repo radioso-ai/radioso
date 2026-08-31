@@ -43,7 +43,9 @@ The response includes inherited retrieval values such as:
 
 `metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware: it merges the fields the document type catalog declares with the keys observed on indexed document metadata, and a declared field wins the value type on a collision. The agent Skills tab uses this endpoint and the retrieve capability descriptor to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`. When a retrieve skill field is unset, the dashboard shows the inherited default inline. Saving the form still stores only fields that were explicitly overridden.
 
-To configure retrieval answer behavior, update the agent rather than the settings resource. Retrieval-only API calls, such as `POST /api/v1/retrieval/answer`, use system defaults and still accept per-call request controls such as `metadataFilter`.
+To configure retrieval answer behavior, update the agent rather than the settings resource. Retrieval-only API calls, such as `POST /api/v1/retrieval/answer`, run on system defaults and accept per-call request controls such as `metadataFilter`.
+
+Pass `agentId` to run the call the way one agent runs it, using that agent's source scope, answering instruction, and `skillSettings["retrieval.answer"]` overrides. The response echoes what it measured in `agentScope`: the agent it ran as, and `retrievalEnabled` for whether that agent grounds its answers at all. Without `agentId`, `agentScope` is `null` and the call describes workspace defaults rather than any agent. Scoping to an agent reads that agent's configuration, so the caller needs `workspace.agents.read` alongside `workspace.retrieval.query`.
 
 The three temporal fields default to `true`. They control whether an agent can use extracted event dates for upcoming-event lookup, upcoming-event boosting, and deterministic date ordering.
 

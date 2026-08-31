@@ -1,6 +1,7 @@
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 
 import {
+  createAgentRetrievalScopeResolver,
   createDefaultDocumentJobDispatcher,
   createRetrievalSkillSettingsResolver,
   createSystemRetrievalDefaultsProvider,
@@ -206,6 +207,9 @@ export const buildDocumentRetrievalGraph = (input: {
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();
+  const agentRetrievalScope = createAgentRetrievalScopeResolver({
+    agentRepository: repositories.agentRepository,
+  });
   const retrieval = buildRetrievalServices({
     auditService: infrastructure.auditService,
     database: infrastructure.database,
@@ -217,6 +221,7 @@ export const buildDocumentRetrievalGraph = (input: {
     logger,
     retrievalDefaultsProvider,
     skillSettingsResolver,
+    agentRetrievalScope,
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
     workspaceInvalidationPublisher: input.workspaceInvalidationPublisher,
@@ -230,6 +235,7 @@ export const buildDocumentRetrievalGraph = (input: {
     workspaceRepository: repositories.workspaceRepository,
   });
   return {
+    agentRetrievalScope,
     documentJobDispatcher,
     documents,
     embeddingBindingResolver,

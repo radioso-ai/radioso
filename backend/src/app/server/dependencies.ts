@@ -61,6 +61,7 @@ import {
   EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
+  RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
@@ -147,6 +148,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceProviderCredentialsService,
   });
   const {
+    agentRetrievalScope,
     documents,
     embeddingBindingResolver,
     embeddingPorts,
@@ -202,6 +204,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
+    agentRetrievalScope,
     agentService,
     agentSkillRepository,
     auditEventRepository: infrastructure.auditEventRepository,
@@ -423,6 +426,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
   ] as const;
+  const retrievalProbeService = new RetrievalProbeService({
+    retrievalSearch: retrieval.retrievalSearchService,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(repositories.conversationRepository),
     agentReader: {
@@ -557,6 +569,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalCaseCapture: evalCaseCaptureService,
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
+    retrievalProbe: retrievalProbeService,
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,
       agentVersion: copilotAgentVersion,

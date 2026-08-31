@@ -81,12 +81,16 @@ describe("retrieval answer contract", () => {
       });
 
     expect(debugResponse.status).toBe(200);
+    expect(debugResponse.body.agentScope).toBeNull();
     expect(debugResponse.body.debug).toMatchObject({
       evidence: [
         expect.objectContaining({
           documentId: expect.any(String),
           chunkId: expect.any(String),
           content: expect.stringContaining("advanced workshop"),
+          // Aligned with the search path: evidence that carries no score reads as
+          // rigorous without being comparable to anything.
+          score: expect.any(Number),
         }),
       ],
       activitySummary: expect.objectContaining({

@@ -30,6 +30,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "operatorCopilot.proposal.create": { owningModule: "operatorCopilot", exportedPort: "CopilotRepositoryPort" },
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },
+  "retrieval.evidence.probe": { owningModule: "retrieval", exportedPort: "RetrievalSearchService" },
   "routines.definition.read": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },
   "routines.proposal.prepare": { owningModule: "routines", exportedPort: "RoutineDraftAssistService" },
   "routines.validation": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },

@@ -12,6 +12,7 @@ import {
   type CopilotEvalResultsPort,
   type CopilotPendingApprovalsPort,
   type CopilotQualitySignalsPort,
+  type CopilotRetrievalProbePort,
   type CopilotTriageLogPort,
   type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
@@ -44,6 +45,7 @@ import { chatCopilotPrimitives } from "../../modules/chat/public.js";
 import { documentCopilotPrimitives } from "../../modules/documents/public.js";
 import { embeddingProfileCopilotPrimitives } from "../../modules/embeddingProfiles/public.js";
 import { evalCopilotPrimitives } from "../../modules/eval/public.js";
+import { retrievalCopilotPrimitives } from "../../modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../modules/routines/public.js";
 import { settingsCopilotPrimitives } from "../../modules/settings/public.js";
 import { contextVariableCopilotPrimitives } from "../../modules/context-variables/public.js";
@@ -75,6 +77,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly evalCaseReplay: CopilotEvalCaseReplayPort;
   readonly proposalEvidence: ProposalEvidenceDependencies;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
+  readonly retrievalProbe: CopilotRetrievalProbePort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
   readonly documentStatusService: CopilotDocumentStatusPort;
   readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
@@ -102,6 +105,7 @@ export const createCopilotToolCatalog = (deps: {
     ...documentCopilotPrimitives,
     ...embeddingProfileCopilotPrimitives,
     ...evalCopilotPrimitives,
+    ...retrievalCopilotPrimitives,
     ...routineCopilotPrimitives,
     ...settingsCopilotPrimitives,
   ]);

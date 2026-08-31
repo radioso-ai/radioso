@@ -304,12 +304,14 @@ Decisions resolved during drafting and review (planning must not relitigate):
   whole-workspace reprocessing, and embedding-model changes remain outside
   this slice.
 - **D9 — Agent-scoped retrieval probes (#1051).** Retrieval probes attributed
-  to an agent must resolve that agent's effective retrieval settings. The
-  target design is optional `agentId` scoping on the public retrieval endpoints
-  (with answer evidence retaining chunk scores); until that contract ships,
-  Ray must use the real agent pipeline through `test_agent_turn` or
-  `replay_eval_case` and must not expose the workspace-default probe endpoints
-  as if they measured an agent.
+  to an agent resolve that agent's effective retrieval settings. Both public
+  retrieval endpoints take an optional `agentId`, run on that agent's source
+  scope, answering behavior, and `retrieval.answer` skill settings, and report
+  the agent they measured; answer evidence carries chunk scores as the search
+  path does. Ray's `retrieval_probe` is always agent-scoped and refuses a
+  result attributed to any other agent. Whole-turn verification stays with
+  `test_agent_turn` and `replay_eval_case`, which exercise generation as well
+  as retrieval.
 
 Open clarifications (non-blocking; default answers stated):
 
@@ -521,10 +523,12 @@ Open clarifications (non-blocking; default answers stated):
   crawl settings inside the Documents-owned application service. These tools
   MUST reuse the existing queue, dispatch, audit, and invalidation paths and
   MUST NOT accept a new URL or whole-workspace target.
-- **FR-022**: Ray MUST NOT expose `searchRetrievalEvidence` or
-  `createRetrievalAnswer` as an agent diagnostic until those operations can
-  resolve the selected agent's effective retrieval settings. Agent-attributed
-  verification MUST use the real agent execution paths in the interim.
+- **FR-022**: A Ray retrieval diagnostic MUST resolve the selected agent's
+  effective retrieval settings and MUST report which agent it measured. A named
+  agent that cannot be resolved MUST fail the probe rather than fall back to
+  workspace defaults, and a result attributed to a different agent MUST be
+  refused. The probe MUST report whether the agent grounds its answers at all,
+  so an empty result for a retrieval-free agent is not read as a knowledge gap.
 
 ### Wave 3 Knowledge-Base Acceptance Scenarios
 
@@ -543,9 +547,10 @@ Open clarifications (non-blocking; default answers stated):
    **Then** the stored URL, bounded limit, and stored policy are used; a missing
    source, non-website source, or source without a configured URL fails safely.
 5. **Given** an agent whose effective retrieval settings differ from workspace
-   defaults, **When** Ray diagnoses retrieval before agent-scoped public probes
-   ship, **Then** it uses a real agent turn/eval replay and never attributes a
-   workspace-default probe result to that agent.
+   defaults, **When** Ray probes retrieval for that agent, **Then** the run uses
+   the agent's own source scope and retrieval skill settings and the result
+   names the agent it measured; an unresolvable agent fails the probe instead of
+   returning a workspace-default measurement.
 
 ### Key Entities
 

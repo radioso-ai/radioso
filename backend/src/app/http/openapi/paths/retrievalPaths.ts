@@ -49,6 +49,22 @@ export const registerRetrievalSearchPaths = (
           },
         },
       },
+      403: {
+        description: "Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "The agentId supplied does not resolve to an agent in this workspace",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
       429: {
         description: "Expensive authenticated request rate limit exceeded",
         content: {
@@ -102,6 +118,22 @@ export const registerRetrievalAnswerPaths = (
       },
       401: {
         description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "The agentId supplied does not resolve to an agent in this workspace",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

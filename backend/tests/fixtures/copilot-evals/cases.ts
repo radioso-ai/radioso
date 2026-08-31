@@ -162,6 +162,24 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "retrieval-probe-agent-scoped",
+    name: "A retrieval complaint is measured with the agent's own settings",
+    description: "Chunk inspection says what could be indexed; only an agent-scoped probe says what that agent's retrieval actually returns.",
+    tags: ["tool_selection", "grounding"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent", { agentId: COPILOT_EVAL_AGENT_ID }),
+    message: "The Support agent says it cannot find our Italy shipping rates. What does its retrieval actually return for that?",
+    requires: ["document"],
+    plan: [
+      { tool: "retrieval_probe", input: { agentId: COPILOT_EVAL_AGENT_ID, query: "shipping rates Italy" } },
+    ],
+    finalMessage: "Retrieval returns the Italy passage for that agent, so the miss is downstream of retrieval.",
+    assertions: [
+      { type: "tool_called", tool: "retrieval_probe" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "document-reprocess-act",
     name: "An explicit document refresh queues the maintenance act",
     tags: ["tool_selection"],

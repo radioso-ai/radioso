@@ -18,6 +18,8 @@ import { createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, 
 import type { DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies, CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
+import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
+import type { CopilotRetrievalProbePort, RetrievalProbeCopilotToolDependencies } from "./retrievalProbe.js";
 import { createQualityCopilotTools } from "./quality.js";
 import type { CopilotQualitySignalsPort, QualityCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
@@ -37,6 +39,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & DocumentKnowledgeCopilotToolDependencies
   & EvalCopilotToolDependencies
   & EvalVerificationCopilotToolDependencies
+  & Omit<RetrievalProbeCopilotToolDependencies, "agentLookup">
   & QualityCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
@@ -61,6 +64,7 @@ export const createCopilotToolDescriptors = (
   ...createDocumentSearchCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createEvalVerificationCopilotTools(deps),
+  ...createRetrievalProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAudiencePulseCopilotTools(deps),
   ...createDocumentStatusCopilotTools(deps),
@@ -84,6 +88,7 @@ export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 export type { CopilotEvalResultsPort } from "./eval.js";
 export type { CopilotQualitySignalsPort } from "./quality.js";
+export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";
 export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./triage.js";

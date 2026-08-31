@@ -56,6 +56,7 @@ const catalogToolCoverage = {
   listWorkspaceProviderCredentials: "workspace_settings",
   getWorkspaceLlmModels: "workspace_settings",
   createAssistantChatResponse: "test_agent_turn",
+  searchRetrievalEvidence: "retrieval_probe",
 } as const;
 
 const routineStructuralEditing = deferred(
@@ -261,7 +262,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], wave2BehaviorAuthoring),
   ...coverage(["createEvalRun"], snapshotOnlyReplay),
   ...coverage([
-    "searchRetrievalEvidence",
     "listDocumentSearchHistory",
     "getDocumentSearchHistory",
     "createDocument",

@@ -74,6 +74,7 @@ import {
 import { RerankService, type RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalPipelineService } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import { createAgentRetrievalScopeResolver } from "../../src/app/composition/agentRetrievalScope.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { RetrievalSearchService } from "../../src/modules/retrieval/services/retrievalSearchService.js";
 import {
@@ -158,6 +159,7 @@ import {
   EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
+  RetrievalProbeService,
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
@@ -1759,12 +1761,23 @@ export const createTestDependencies = (overrides: {
     publicConversationEventBus,
     customerReplyDelivery: { deliver: async () => {} },
   });
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+  const agentRetrievalScope = createAgentRetrievalScopeResolver({ agentRepository });
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, agentRetrievalScope);
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline,
     chatGateway,
     usageLimitPolicy,
     auditService,
+    agentRetrievalScope,
+  });
+  const retrievalProbeService = new RetrievalProbeService({
+    retrievalSearch: retrievalSearchService,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
   });
   const platformSettingsService = new PlatformSettingsService({
     workspaceRepository,
@@ -1867,6 +1880,7 @@ export const createTestDependencies = (overrides: {
     },
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
+    retrievalProbe: retrievalProbeService,
     documentSearchService,
     documentChunks: chunkRepository,
     documentMaintenance: {

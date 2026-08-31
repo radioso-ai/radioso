@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-08-26
+last_updated: 2026-08-31
 ---
 
 import { Callout } from 'nextra/components'
@@ -95,6 +95,16 @@ Public chat and website embed rate limits are operator tuning knobs, not workspa
 
 The session limit applies to a visitor session. The global limit applies across public chat traffic for the process, and both are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share.
 
+## Authenticated request limits
+
+Authenticated assistant chat and the retrieval answer and search routes share one durable rate limit, because each request can trigger model or retrieval work. Tune it with `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS` and `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS`; the default is 60 requests per 60 seconds. Browser sessions share a bucket per account and workspace, and each workspace API token gets its own bucket within that same account and workspace, so one integration's burst does not starve the dashboard.
+
+Audience Pulse has its own budget: each account and workspace can make three explicit refresh attempts every 15 minutes. Opening the saved report costs nothing — only pressing refresh counts. Audience Pulse is available to cookie-authenticated dashboard sessions; workspace API tokens and bearer requests cannot reach it.
+
+## Reverse proxy client IPs
+
+Express `trust proxy` stays off by default, and `TRUST_PROXY_HOPS=0` is the secure setting for a deployment with no proxy in front of the backend. When the backend runs behind reverse proxies you control and rate limits must see the real client IP from `X-Forwarded-For`, set `TRUST_PROXY_HOPS` to the exact number of trusted hops. On Cloud Run behind the frontend API proxy that is typically `1` or `2`, depending on the topology.
+
 ## Runtime separation
 
 The backend owns migrations, auth, retrieval, chat, and API routes. The worker owns queued document processing. When enabled, the realtime runtime owns long-lived dashboard streams. Keep those services independently deployable and independently scalable.
@@ -106,6 +116,18 @@ That separation matters because worker traffic behaves differently from chat tra
 - worker resource pressure should not degrade app responsiveness
 
 In the hosted Cloud Run environments, the backend and frontend scale to zero when idle. The document worker also defaults to `worker_min_instances = 0` and is invoked by Cloud Tasks when document work is queued. Raise `worker_min_instances` only when an environment needs a continuously warm polling fallback for queue recovery.
+
+## Worker dispatch
+
+Document ingestion always writes a durable processing job to Postgres first; the dispatch driver only controls how workers learn that the job exists. Set `WORKER_DISPATCH_DRIVER` to one of:
+
+- `noop` — the default. Workers poll the job table. Right for local runs and single-host deployments.
+- `cloud-tasks` — the API enqueues a Cloud Task per job. Configure `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`, and `WORKER_TASK_AUTH_TOKEN`. Cloud Tasks and Cloud Scheduler send that shared token in `X-Radioso-Worker-Token` alongside Google OIDC, so a proxy in front of a self-hosted task server must preserve the header. Generate a random value of at least 32 characters and give the backend, document worker, and crawler worker the same value.
+- `amqp` — a RabbitMQ-compatible AMQP 0-9-1 broker wakes the workers. Configure `WORKER_AMQP_URL`, `WORKER_AMQP_QUEUE_NAME`, `WORKER_AMQP_CRAWL_QUEUE_NAME`, and `WORKER_AMQP_PREFETCH`. Messages carry job ids and trace metadata only; Postgres remains the source of truth for job state, retries, and leases, and the worker polling loop stays active for recovery, so a lost broker message delays a job rather than losing it. Delayed retries follow the job table's `available_at` value, not broker-delayed delivery.
+
+Document processing and website crawling use separate queues in both push drivers, so a long-running crawl does not block document work.
+
+A routine's fire-and-forget actions — a contact request, a handoff notification, an approval request — go through their own durable outbox, `routine_action_requests`, with the same durable-first, dispatch-second shape: a worker drains it on a five-second poll by default. On Google Cloud, set `ACTION_DISPATCH_TASK_QUEUE_NAME` alongside the worker dispatch settings so a turn that enqueues an action pushes a Cloud Task immediately and reaches the worker in seconds rather than on the next poll. A scheduled recovery sweep drains anything a push loses or never sends.
 
 ## Startup migrations
 

@@ -151,8 +151,10 @@ export const targetReference = (
     } : null
   }
   if (summary.targetType === 'document') {
-    // Nothing to open once the document is gone; the removal card would otherwise link to a 404.
-    if (summary.removal === true && summary.status === 'applied') return null
+    // Once a removal has been applied there is nothing to open. Keyed off appliedRef rather than
+    // the summary's status: after an in-place Apply the card's own state advances while the
+    // proposal prop it was rendered from still reads 'pending' until the next reload.
+    if (summary.removal === true && applied.documentId !== undefined) return null
     // A create carries a null documentId until it is applied, the same as a drafted skill.
     const documentId = applied.documentId ?? ref.documentId
     return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null

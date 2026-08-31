@@ -348,4 +348,65 @@ describe("document deletion", () => {
       }),
     );
   });
+  // The version the caller read is the delete's own predicate, so a document edited since the
+  // decision was made is refused rather than removed on the strength of a stale snapshot.
+  it("reports a delete refused by its version predicate as a conflict, not as a missing document", async () => {
+    const auditService = createAuditService();
+    const stored = {
+      id: "doc-1",
+      workspaceId: "workspace-1",
+      title: "Inline",
+      sourceContent: "Inline body",
+      markdownContent: "Inline body",
+      metadata: {},
+      sourceKind: "inline_text" as const,
+      sourceFilename: null,
+      sourceMimeType: "text/plain",
+      sourceStorageBucket: null,
+      sourceStorageObject: null,
+      sourceStorageGeneration: null,
+      status: "ready",
+      revision: 1,
+      failureReason: null,
+      createdAt: new Date(),
+      updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+      retrievalEnabled: true,
+      retrievalExpiresAt: null,
+    };
+    const deleteByIdAndWorkspaceId = vi.fn(async (
+      _documentId: string,
+      _workspaceId: string,
+      options?: { expectedUpdatedAt?: Date },
+    ) => options?.expectedUpdatedAt === undefined);
+    const service = new DocumentDeletionService(
+      {
+        async findByIdAndWorkspaceId() { return stored; },
+        deleteByIdAndWorkspaceId,
+      },
+      {
+        async upload() { throw new Error("unused"); },
+        async read() { throw new Error("unused"); },
+        async delete() { throw new Error("unused"); },
+      },
+      auditService,
+    );
+
+    await expect(
+      service.delete({
+        workspaceId: "workspace-1",
+        documentId: "doc-1",
+        expectedUpdatedAt: new Date("2026-08-01T10:00:00.000Z"),
+      }),
+    ).rejects.toMatchObject({ statusCode: 409, code: "conflict" });
+    expect(deleteByIdAndWorkspaceId).toHaveBeenCalledWith("doc-1", "workspace-1", {
+      expectedUpdatedAt: new Date("2026-08-01T10:00:00.000Z"),
+    });
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "document.delete",
+        eventStatus: "failure",
+        metadata: { documentId: "doc-1", reason: "version_conflict" },
+      }),
+    );
+  });
 });

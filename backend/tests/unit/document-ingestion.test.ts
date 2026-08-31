@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import {
+  DocumentIngestionService,
+  type EmbeddingCoverageReconciliationPort,
+} from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
@@ -1873,7 +1876,7 @@ describe("document retrieval eligibility", () => {
   it("disables a document for retrieval and records an audit event", async () => {
     const { service, auditService, documentId } = await createReadyDocument();
 
-    const updated = await service.updateRetrievalEligibility({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId,
       retrievalEnabled: false,
@@ -1894,7 +1897,7 @@ describe("document retrieval eligibility", () => {
     const { service, documentId } = await createReadyDocument();
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-    const updated = await service.updateRetrievalEligibility({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId,
       retrievalExpiresAt: expiresAt,
@@ -1929,7 +1932,7 @@ describe("document retrieval eligibility", () => {
       status: "ready",
     });
 
-    await service.updateRetrievalEligibility({
+    await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId: document.id,
       retrievalEnabled: true,
@@ -1941,9 +1944,9 @@ describe("document retrieval eligibility", () => {
   it("clears an elapsed expiry when the document is re-enabled", async () => {
     const { service, documentId } = await createReadyDocument();
     const elapsed = new Date(Date.now() - 60 * 60 * 1000);
-    await service.updateRetrievalEligibility({ workspaceId: "workspace-1", documentId, retrievalExpiresAt: elapsed });
+    await service.updateRetrievalSettings({ workspaceId: "workspace-1", documentId, retrievalExpiresAt: elapsed });
 
-    const updated = await service.updateRetrievalEligibility({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId,
       retrievalEnabled: true,
@@ -1956,14 +1959,14 @@ describe("document retrieval eligibility", () => {
   it("keeps a future expiry when the document is re-enabled", async () => {
     const { service, documentId } = await createReadyDocument();
     const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    await service.updateRetrievalEligibility({
+    await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId,
       retrievalEnabled: false,
       retrievalExpiresAt: future,
     });
 
-    const updated = await service.updateRetrievalEligibility({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId,
       retrievalEnabled: true,
@@ -1977,7 +1980,7 @@ describe("document retrieval eligibility", () => {
     const { service } = await createReadyDocument();
 
     await expect(
-      service.updateRetrievalEligibility({
+      service.updateRetrievalSettings({
         workspaceId: "workspace-1",
         documentId: "00000000-0000-0000-0000-000000000000",
         retrievalEnabled: false,
@@ -2019,7 +2022,7 @@ describe("document metadata update", () => {
       metadata: { audience: "operators", stale: "drop me" },
     });
 
-    const updated = await service.updateMetadata({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId: document.id,
       metadata: { audience: "admins", revision: 2 },
@@ -2044,7 +2047,7 @@ describe("document metadata update", () => {
       metadata: { audience: "operators" },
     });
 
-    const updated = await service.updateMetadata({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId: document.id,
       metadata: {},
@@ -2066,7 +2069,7 @@ describe("document metadata update", () => {
       sourceMimeType: "application/pdf",
     });
 
-    const updated = await service.updateMetadata({
+    const updated = await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId: document.id,
       metadata: { audience: "operators" },
@@ -2086,7 +2089,7 @@ describe("document metadata update", () => {
       status: "ready",
     });
 
-    await service.updateMetadata({
+    await service.updateRetrievalSettings({
       workspaceId: "workspace-1",
       documentId: document.id,
       metadata: { audience: "operators" },
@@ -2106,10 +2109,172 @@ describe("document metadata update", () => {
     const { service } = createService();
 
     await expect(
-      service.updateMetadata({
+      service.updateRetrievalSettings({
         workspaceId: "workspace-1",
         documentId: "00000000-0000-0000-0000-000000000000",
         metadata: {},
+      }),
+    ).rejects.toThrow("Document not found");
+  });
+});
+
+
+// The PATCH surface settles metadata and retrieval eligibility together. They were two service
+// calls and therefore two writes: a failure in the second left the first applied while the caller
+// was told the whole update failed.
+describe("document retrieval settings", () => {
+  const createService = (embeddingCoverage?: EmbeddingCoverageReconciliationPort) => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const dispatcher = {
+      dispatch: vi.fn().mockResolvedValue(undefined),
+      dispatchMany: vi.fn().mockResolvedValue(undefined),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository,
+      auditService,
+      undefined,
+      jobRepository,
+      dispatcher,
+      undefined,
+      undefined,
+      undefined,
+      embeddingCoverage,
+    );
+    return { documentRepository, jobRepository, auditService, dispatcher, service };
+  };
+
+  const readyDocument = (documentRepository: InMemoryDocumentRepository) =>
+    documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      sourceContent: "body",
+      markdownContent: "body",
+      status: "ready",
+      metadata: { audience: "operators" },
+    });
+
+  it("settles both halves in one repository write", async () => {
+    const { service, documentRepository } = createService();
+    const document = await readyDocument(documentRepository);
+    const write = vi.spyOn(documentRepository, "updateRetrievalSettings");
+
+    const updated = await service.updateRetrievalSettings({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: { audience: "admins" },
+      retrievalEnabled: false,
+    });
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toMatchObject({
+      metadata: { audience: "admins" },
+      retrievalEnabled: false,
+    });
+    expect(updated.metadata).toEqual({ audience: "admins" });
+    expect(updated.retrievalEnabled).toBe(false);
+    expect(updated.status).toBe("queued");
+  });
+
+  it("records one audit event per requested half", async () => {
+    const { service, documentRepository, auditService } = createService();
+    const document = await readyDocument(documentRepository);
+
+    await service.updateRetrievalSettings({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: { audience: "admins" },
+      retrievalEnabled: false,
+    });
+
+    expect(auditService.events.filter((event) => event.eventType === "document.metadata.update")).toHaveLength(1);
+    expect(auditService.events.filter((event) => event.eventType === "document.retrieval.update")).toHaveLength(1);
+  });
+
+  it("leaves the eligibility half unaudited when only metadata was requested", async () => {
+    const { service, documentRepository, auditService } = createService();
+    const document = await readyDocument(documentRepository);
+
+    await service.updateRetrievalSettings({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      metadata: { audience: "admins" },
+    });
+
+    expect(auditService.events.filter((event) => event.eventType === "document.retrieval.update")).toHaveLength(0);
+  });
+
+  // Both halves commit in one statement, so the work each half leaves behind has to survive the
+  // other half's follow-up failing. Reconciliation belongs to the eligibility half; the requeue the
+  // metadata replace already committed still has to reach a worker.
+  it("dispatches the metadata reprocessing job even when coverage reconciliation fails", async () => {
+    const reconcileWorkspace = vi.fn().mockRejectedValue(new Error("coverage reconciliation unavailable"));
+    const { service, documentRepository, dispatcher } = createService({ reconcileWorkspace });
+    const document = await readyDocument(documentRepository);
+
+    await expect(
+      service.updateRetrievalSettings({
+        workspaceId: "workspace-1",
+        documentId: document.id,
+        metadata: { audience: "admins" },
+        retrievalEnabled: false,
+      }),
+    ).rejects.toThrow("coverage reconciliation unavailable");
+
+    expect(reconcileWorkspace).toHaveBeenCalledWith("workspace-1");
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
+    const stored = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+    expect(stored?.metadata).toEqual({ audience: "admins" });
+    expect(stored?.retrievalEnabled).toBe(false);
+  });
+
+  it("carries the caller's expected version into the write", async () => {
+    const { service, documentRepository } = createService();
+    const document = await readyDocument(documentRepository);
+    const write = vi.spyOn(documentRepository, "updateRetrievalSettings");
+
+    await service.updateRetrievalSettings({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      retrievalEnabled: false,
+      expectedUpdatedAt: document.updatedAt,
+    });
+
+    expect(write.mock.calls[0]?.[0]).toMatchObject({ expectedUpdatedAt: document.updatedAt });
+  });
+
+  it("refuses a write whose expected version the document no longer holds", async () => {
+    const { service, documentRepository } = createService();
+    const document = await readyDocument(documentRepository);
+    await service.updateRetrievalSettings({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      retrievalEnabled: false,
+    });
+
+    await expect(
+      service.updateRetrievalSettings({
+        workspaceId: "workspace-1",
+        documentId: document.id,
+        metadata: { audience: "admins" },
+        expectedUpdatedAt: document.updatedAt,
+      }),
+    ).rejects.toThrow("updated by another writer");
+    expect((await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1"))?.metadata)
+      .toEqual({ audience: "operators" });
+  });
+
+  it("reports a document that has since been deleted as missing rather than conflicting", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.updateRetrievalSettings({
+        workspaceId: "workspace-1",
+        documentId: "00000000-0000-0000-0000-000000000000",
+        metadata: {},
+        expectedUpdatedAt: new Date(),
       }),
     ).rejects.toThrow("Document not found");
   });

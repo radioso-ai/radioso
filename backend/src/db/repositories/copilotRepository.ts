@@ -99,9 +99,12 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
    * still fresh. Also reclaims a claim older than `claimTtlSeconds` — a process that crashed
    * after claiming (before its write, or after it but before the outcome was recorded) leaves
    * exactly that: a claim timestamp nothing ever moves again. Recovery is the same relaxed
-   * predicate for both crash windows. A re-apply is only safe where the adapter has a version gate
-   * on an existing *target* row; an adapter that CREATES something (a document, a crawl job) has no
-   * such row to gate on and will repeat the effect. Tracked as issue #1137.
+   * predicate for both crash windows, and `previousAttemptStartedAt` is what tells them apart
+   * afterwards: set, an earlier attempt reached at least as far as claiming, and the service
+   * refuses to retry an effect whose adapter cannot recognise its own first attempt.
+   *
+   * The read is locking and in the same transaction as the claim, so the value reported is the one
+   * this claim actually replaced rather than whatever the row held a round trip earlier.
    *
    * `claimedAt` is a JS `Date` written as-is (not SQL `now()`), so it round-trips through
    * Postgres at the millisecond precision it started at — the exact value `updateProposalOutcome`
@@ -109,16 +112,27 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
    */
   async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string; claimTtlSeconds: number }): Promise<CopilotProposalClaim | null> {
     const claimedAt = new Date();
-    const row = await this.db.updateTable("copilot_proposals")
-      .set({ apply_started_at: claimedAt, updated_at: claimedAt })
-      .where("id", "=", input.id)
-      .where("workspace_id", "=", input.workspaceId)
-      .where("operator_user_id", "=", input.operatorUserId)
-      .where("status", "=", "pending")
-      .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
-      .returning(proposalColumns)
-      .executeTakeFirst();
-    return row ? { proposal: mapProposal(row), claimedAt } : null;
+    return this.db.transaction().execute(async (trx) => {
+      const previous = await trx.selectFrom("copilot_proposals")
+        .select("apply_started_at")
+        .where("id", "=", input.id)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("operator_user_id", "=", input.operatorUserId)
+        .forUpdate()
+        .executeTakeFirst();
+      const row = await trx.updateTable("copilot_proposals")
+        .set({ apply_started_at: claimedAt, updated_at: claimedAt })
+        .where("id", "=", input.id)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("operator_user_id", "=", input.operatorUserId)
+        .where("status", "=", "pending")
+        .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
+        .returning(proposalColumns)
+        .executeTakeFirst();
+      return row
+        ? { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null }
+        : null;
+    });
   }
 
   /**

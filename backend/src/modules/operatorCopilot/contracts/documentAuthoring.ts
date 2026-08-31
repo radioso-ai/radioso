@@ -128,21 +128,24 @@ export interface CopilotDocumentAuthoringPort {
     content: string;
     metadata?: Record<string, unknown>;
   }): Promise<{ documentId: string }>;
-  updateMetadata(input: {
+  /**
+   * One call because metadata and retrieval eligibility settle in one statement. Applying a
+   * proposal that named both must not be able to land half of it and then report that the whole
+   * change failed. `expectedUpdatedAt` carries the version the card was drafted against into the
+   * write's own predicate, so an edit that landed in between is refused rather than overwritten.
+   */
+  updateRetrievalSettings(input: {
     workspaceId: string;
     documentId: string;
-    metadata: Record<string, unknown>;
-  }): Promise<unknown>;
-  updateRetrievalEligibility(input: {
-    workspaceId: string;
-    documentId: string;
+    metadata?: Record<string, unknown>;
     retrievalEnabled?: boolean;
     retrievalExpiresAt?: Date | null;
+    expectedUpdatedAt?: Date;
   }): Promise<unknown>;
 }
 
 export interface CopilotDocumentDeletionPort {
-  delete(input: { workspaceId: string; documentId: string }): Promise<unknown>;
+  delete(input: { workspaceId: string; documentId: string; expectedUpdatedAt?: Date }): Promise<unknown>;
 }
 
 /**

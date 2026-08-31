@@ -6,12 +6,12 @@ import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
-  DocumentMetadataReplaceInput,
+  DocumentRetrievalSettingsInput,
   DocumentProcessingJobOptions,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
-  DocumentRetrievalEligibilityInput,
+  DocumentRetrievalSettingsResult,
   DocumentSummaryRecord,
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
@@ -19,7 +19,7 @@ import type {
 import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/settings/contracts/retrieval.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
-import { anyOf, currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import {
@@ -586,55 +586,58 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return row ? mapDocument(row) : null;
   }
 
-  async updateMetadataAndQueue(input: DocumentMetadataReplaceInput): Promise<DocumentRecord> {
-    return this.db.transaction().execute(async (trx) => {
-      const documentRow = (await trx
-        .updateTable("documents")
-        .set({
-          metadata: toJsonb(input.metadata),
-          ...(input.enrichment ? { enrichment: toJsonb(input.enrichment) } : {}),
-          status: "queued",
-          revision: sql<number>`revision + 1`,
-          failed_at: null,
-          failure_reason: null,
-          updated_at: currentTimestamp(),
-        })
-        .where("id", "=", input.documentId)
-        .where("workspace_id", "=", input.workspaceId)
-        .returning(documentSelectColumns)
-        .executeTakeFirst()) as DocumentRow | undefined;
-
-      if (!documentRow) {
-        throw notFound("Document not found");
-      }
-
-      await this.insertProcessingJob(trx, input.documentId, input.workspaceId, documentRow.revision);
-
-      return mapDocument(documentRow);
-    });
-  }
-
-  async setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null> {
+  async updateRetrievalSettings(input: DocumentRetrievalSettingsInput): Promise<DocumentRetrievalSettingsResult> {
+    const replacesMetadata = input.metadata !== undefined;
+    const settlesEligibility = input.retrievalEnabled !== undefined || input.retrievalExpiresAt !== undefined;
     return this.db.transaction().execute(async (trx) => {
       const row = (await trx
         .updateTable("documents")
         .set({
-          retrieval_enabled: input.retrievalEnabled,
-          retrieval_expires_at: input.retrievalExpiresAt,
+          // Requeueing rides with the metadata replace: tags only reach the chunks at vectorize
+          // time, so published chunks would otherwise keep carrying the previous ones.
+          ...(replacesMetadata
+            ? {
+                metadata: toJsonb(input.metadata),
+                status: "queued",
+                revision: sql<number>`revision + 1`,
+                failed_at: null,
+                failure_reason: null,
+              }
+            : {}),
+          ...(input.enrichment ? { enrichment: toJsonb(input.enrichment) } : {}),
+          ...(input.retrievalEnabled !== undefined ? { retrieval_enabled: input.retrievalEnabled } : {}),
+          ...(input.retrievalExpiresAt !== undefined ? { retrieval_expires_at: input.retrievalExpiresAt } : {}),
           updated_at: currentTimestamp(),
         })
         .where("id", "=", input.documentId)
         .where("workspace_id", "=", input.workspaceId)
+        .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), input.expectedUpdatedAt))
         .returning(documentSelectColumns)
         .executeTakeFirst()) as DocumentRow | undefined;
+
       if (!row) {
-        return null;
+        // The predicate that failed is either the identity or the version, and only a second read
+        // separates them. Reported apart because "reload and decide again" and "this is gone" are
+        // different instructions to whoever asked for the write.
+        const existing = await trx
+          .selectFrom("documents")
+          .select("id")
+          .where("id", "=", input.documentId)
+          .where("workspace_id", "=", input.workspaceId)
+          .executeTakeFirst();
+        return existing ? { outcome: "conflict" as const } : { outcome: "missing" as const };
       }
-      await appendVectorFilterUpdatesForDocument(trx, {
-        workspaceId: input.workspaceId,
-        documentId: input.documentId,
-      });
-      return mapDocument(row);
+
+      if (replacesMetadata) {
+        await this.insertProcessingJob(trx, input.documentId, input.workspaceId, row.revision);
+      }
+      if (settlesEligibility) {
+        await appendVectorFilterUpdatesForDocument(trx, {
+          workspaceId: input.workspaceId,
+          documentId: input.documentId,
+        });
+      }
+      return { outcome: "updated" as const, document: mapDocument(row) };
     });
   }
 
@@ -883,13 +886,20 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return row ? mapDocument(row) : null;
   }
 
-  async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
+  async deleteByIdAndWorkspaceId(
+    documentId: string,
+    workspaceId: string,
+    options?: { expectedUpdatedAt?: Date },
+  ): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      // The version predicate rides on the locking read, so a document edited since the caller
+      // read it is refused here rather than deleted on the strength of a stale snapshot.
       const document = await trx
         .selectFrom("documents")
         .select("id")
         .where("id", "=", documentId)
         .where("workspace_id", "=", workspaceId)
+        .where((eb) => optionalTimestampMatch(eb.ref("updated_at"), options?.expectedUpdatedAt))
         .forUpdate()
         .executeTakeFirst();
       if (!document) {

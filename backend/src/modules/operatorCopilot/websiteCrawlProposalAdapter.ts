@@ -39,6 +39,12 @@ export const createWebsiteCrawlCopilotProposalAdapter = (
     return { targetLabel: payload.url, current: null, proposed: crawl };
   },
 
+  canRetryAfterInterruptedApply() {
+    // Applying this starts a job rather than changing a setting, and the job carries no identity a
+    // second attempt could recognise as its own. A retry would re-fetch the site.
+    return false;
+  },
+
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload) {
     copilotWebsiteCrawlTargetRefSchema.parse(rawTargetRef);
     const payload = copilotWebsiteCrawlPayloadSchema.parse(rawPayload);

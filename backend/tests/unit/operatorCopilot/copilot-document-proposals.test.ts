@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createDocumentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createDocumentProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/documentProposals.js";
+import { conflict } from "../../../src/shared/domain/errors.js";
 
 const DOCUMENT_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
@@ -28,8 +29,7 @@ const storedDocument = (overrides: Record<string, unknown> = {}) => ({
 const authoringPorts = (document = storedDocument()) => ({
   getDocument: vi.fn(async () => document),
   ingest: vi.fn(async () => ({ documentId: DOCUMENT_ID })),
-  updateMetadata: vi.fn(async () => document),
-  updateRetrievalEligibility: vi.fn(async () => document),
+  updateRetrievalSettings: vi.fn(async () => document),
 });
 
 const deletionPort = () => ({ delete: vi.fn(async () => undefined) });
@@ -231,41 +231,69 @@ describe("document proposal adapter", () => {
     expect(outcome).toEqual({ outcome: "applied", appliedRef: { documentId: DOCUMENT_ID } });
   });
 
-  it("reports a retrieval change as stale when the document moved under the draft", async () => {
-    const { adapter, authoring } = adapterFor();
+  // The draft's version is the write's own predicate, not something this adapter compares first,
+  // so the refusal it has to translate arrives as a conflict from the owning service.
+  it("reports a retrieval change as stale when the write refuses the version the draft carried", async () => {
+    const authoring = authoringPorts();
+    authoring.updateRetrievalSettings = vi.fn(async () => {
+      throw conflict("Document was updated by another writer; reload before saving again");
+    });
+    const { adapter } = adapterFor(authoring);
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, {
       op: "update_retrieval", name: "Refund policy", retrievalEnabled: false,
     }, "2026-08-01T10:00:00.000Z");
 
     expect(outcome).toEqual({ outcome: "stale" });
-    expect(authoring.updateRetrievalEligibility).not.toHaveBeenCalled();
   });
 
-  it("replaces metadata before settling retrieval eligibility so the requeue carries the new tags", async () => {
+  it("settles metadata and eligibility in one write that carries the drafted version", async () => {
     const { adapter, authoring } = adapterFor();
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, {
       op: "update_retrieval", name: "Refund policy", metadata: { language: "de" }, retrievalEnabled: false,
     }, "2026-08-30T10:00:00.000Z");
 
-    expect(authoring.updateMetadata).toHaveBeenCalledWith({ workspaceId: "workspace-1", documentId: DOCUMENT_ID, metadata: { language: "de" } });
-    expect(authoring.updateRetrievalEligibility).toHaveBeenCalledWith({ workspaceId: "workspace-1", documentId: DOCUMENT_ID, retrievalEnabled: false });
-    expect(authoring.updateMetadata.mock.invocationCallOrder[0]!)
-      .toBeLessThan(authoring.updateRetrievalEligibility.mock.invocationCallOrder[0]!);
+    expect(authoring.updateRetrievalSettings).toHaveBeenCalledTimes(1);
+    expect(authoring.updateRetrievalSettings).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      documentId: DOCUMENT_ID,
+      expectedUpdatedAt: new Date("2026-08-30T10:00:00.000Z"),
+      metadata: { language: "de" },
+      retrievalEnabled: false,
+    });
     expect(outcome).toEqual({ outcome: "applied", appliedRef: { documentId: DOCUMENT_ID } });
   });
 
-  it("deletes only when the stored version still matches the draft", async () => {
+  it("deletes under the version the draft was made against", async () => {
     const { adapter, deletion } = adapterFor();
 
-    const stale = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", name: "Refund policy", removesTarget: true }, "2026-08-01T10:00:00.000Z");
-    expect(stale).toEqual({ outcome: "stale" });
-    expect(deletion.delete).not.toHaveBeenCalled();
-
     const applied = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", name: "Refund policy", removesTarget: true }, "2026-08-30T10:00:00.000Z");
+
     expect(applied).toEqual({ outcome: "applied", appliedRef: { documentId: DOCUMENT_ID } });
-    expect(deletion.delete).toHaveBeenCalledWith({ workspaceId: "workspace-1", documentId: DOCUMENT_ID });
+    expect(deletion.delete).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      documentId: DOCUMENT_ID,
+      expectedUpdatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+  });
+
+  it("reports a delete the document has already moved under as stale", async () => {
+    const deletion = { delete: vi.fn(async () => { throw conflict("Document was updated by another writer; reload before saving again"); }) };
+    const { adapter } = adapterFor(authoringPorts(), deletion);
+
+    const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: DOCUMENT_ID }, { op: "delete", name: "Refund policy", removesTarget: true }, "2026-08-01T10:00:00.000Z");
+
+    expect(outcome).toEqual({ outcome: "stale" });
+  });
+
+  // A create leaves nothing behind that a second attempt could recognise, so the adapter has to
+  // say so and let the service refuse the retry rather than ingesting the document twice.
+  it("declares that a create cannot be retried after an interrupted apply", async () => {
+    const { adapter } = adapterFor();
+
+    expect(adapter.canRetryAfterInterruptedApply?.({ documentId: null }, { op: "create", name: "Refund window", content: "Within 30 days." })).toBe(false);
+    expect(adapter.canRetryAfterInterruptedApply?.({ documentId: DOCUMENT_ID }, { op: "update_retrieval", name: "Refund policy", retrievalEnabled: false })).toBe(true);
   });
 
   it("previews the stored retrieval state without ever reading the document body", async () => {

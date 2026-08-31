@@ -17,7 +17,16 @@ export interface IngestionSettingsRepositoryPort {
     settings: IngestionSettingsRecord;
     revision: string;
   } | null>;
-  upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord>;
+  /**
+   * `expectedUpdatedAt` is the version the caller read. Present, it becomes the write's own
+   * predicate and a row that moved since is refused with a conflict rather than overwritten by
+   * values carried from the older snapshot.
+   */
+  upsert(
+    workspaceId: string,
+    input: ValidatedIngestionSettingsInput,
+    options?: { expectedUpdatedAt?: Date },
+  ): Promise<IngestionSettingsRecord>;
   clearPendingEmbeddingModel?(
     workspaceId: string,
     expectedPendingEmbeddingModel: NonNullable<

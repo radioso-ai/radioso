@@ -35808,7 +35808,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

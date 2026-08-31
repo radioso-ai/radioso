@@ -23001,7 +23001,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RateLimitExceededResponse"
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No LLM capability
   /api/v1/copilot/proposals/{proposalId}:

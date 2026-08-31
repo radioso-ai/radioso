@@ -285,9 +285,12 @@ variable "copilot_probe_budget_per_turn" {
   type        = number
   default     = 6
 
+  # Whole numbers only. Terraform's number type accepts 1.5 happily; the backend parses this env
+  # var as an integer and refuses to start, so a fractional value turns a config typo into a boot
+  # failure rather than a plan error.
   validation {
-    condition     = var.copilot_probe_budget_per_turn >= 1
-    error_message = "copilot_probe_budget_per_turn must be at least 1."
+    condition     = var.copilot_probe_budget_per_turn >= 1 && floor(var.copilot_probe_budget_per_turn) == var.copilot_probe_budget_per_turn
+    error_message = "copilot_probe_budget_per_turn must be a whole number of at least 1."
   }
 }
 
@@ -296,9 +299,11 @@ variable "copilot_conversation_retention_days" {
   type        = number
   default     = 90
 
+  # Whole numbers only, for the same reason the probe budget is: the worker parses this as an
+  # integer at startup.
   validation {
-    condition     = var.copilot_conversation_retention_days >= 0
-    error_message = "copilot_conversation_retention_days must be zero or greater."
+    condition     = var.copilot_conversation_retention_days >= 0 && floor(var.copilot_conversation_retention_days) == var.copilot_conversation_retention_days
+    error_message = "copilot_conversation_retention_days must be a whole number of zero or greater."
   }
 }
 

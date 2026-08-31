@@ -169,7 +169,7 @@ export class EvalRunService {
    * before it starts — an unknown snapshot, a case from another snapshot — releases.
    */
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
-    return this.metered(input, () => this.executeReserved(input));
+    return this.metered(input, (markSpent) => this.executeReserved(input, markSpent));
   }
 
   /**
@@ -183,24 +183,30 @@ export class EvalRunService {
    */
   private async metered<T>(
     input: Pick<EvalRunInput, "accountId" | "workspaceId">,
-    run: () => Promise<T>,
+    run: (markSpent: () => void) => Promise<T>,
   ): Promise<T> {
     const reservation = await this.usageLimitPolicy.reserveAnswer({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       surface: "eval_replay",
     });
+    let spent = false;
     try {
-      const outcome = await run();
+      const outcome = await run(() => { spent = true; });
       await reservation.commit();
       return outcome;
     } catch (error) {
-      await reservation.release();
+      // The reservation is for provider spend, so the question a failure has to answer is not
+      // "did the call succeed" but "did the provider already run". Recording the result and
+      // judging it both happen after the replay and both can throw; releasing there would hand
+      // back budget that was genuinely consumed.
+      if (spent) await reservation.commit();
+      else await reservation.release();
       throw error;
     }
   }
 
-  private async executeReserved(input: EvalRunInput): Promise<EvalRunOutcome> {
+  private async executeReserved(input: EvalRunInput, markSpent: () => void): Promise<EvalRunOutcome> {
     const snapshot = await this.repository.findSnapshot(input.workspaceId, input.snapshotId);
     if (!snapshot) {
       throw notFound("Snapshot not found");
@@ -223,7 +229,7 @@ export class EvalRunService {
       && snapshot.originalAgentConfig
       && snapshot.sourceAgentId
     ) {
-      return this.runWorkbenchReplay(input);
+      return this.runWorkbenchReplay(input, markSpent);
     }
     if (requiresWorkbenchReplay(overrides)) {
       // The retrieval fallback ignores both of these, so continuing would answer from the
@@ -257,6 +263,7 @@ export class EvalRunService {
       overrides.retrievalSettingsOverride,
     );
 
+    markSpent();
     try {
       if (input.mode === "full_assistant") {
         const result = await this.retrievalRunner.answer({
@@ -385,10 +392,10 @@ export class EvalRunService {
   }
 
   async executeWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
-    return this.metered(input, () => this.runWorkbenchReplay(input));
+    return this.metered(input, (markSpent) => this.runWorkbenchReplay(input, markSpent));
   }
 
-  private async runWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
+  private async runWorkbenchReplay(input: EvalRunInput, markSpent: () => void): Promise<EvalRunOutcome> {
     const startedAtMs = Date.now();
     if (!this.workbenchReplayRunner) {
       throw badRequest("Workbench replay runner is not configured");
@@ -430,6 +437,7 @@ export class EvalRunService {
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
 
+    markSpent();
     try {
       const result = await this.workbenchReplayRunner.run({
         workspaceId: input.workspaceId,

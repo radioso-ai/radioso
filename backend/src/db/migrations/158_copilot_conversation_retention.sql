@@ -12,6 +12,11 @@
 -- copilot_proposals already have one; copilot_replay_evidence is indexed by operator and creation
 -- time only, so it gets one here.
 --
+-- The cascade is two levels deep, not one. Deleting the messages then fires
+-- copilot_proposals.message_id's ON DELETE SET NULL, whose referential-integrity lookup constrains
+-- message_id alone — which the (conversation_id, message_id, created_at) index cannot serve,
+-- because its leading column is unconstrained there. That one gets an index too.
+--
 -- Built in the migration transaction like every other index in this schema, which means it holds a
 -- write-blocking SHARE lock for the build. Two things make that the right trade here rather than a
 -- reason to reach for CREATE INDEX CONCURRENTLY: the runner wraps each migration in a transaction
@@ -26,3 +31,11 @@ USING btree (updated_at);
 CREATE INDEX IF NOT EXISTS copilot_replay_evidence_conversation_idx
 ON copilot_replay_evidence
 USING btree (conversation_id);
+
+-- Partial because only an attached proposal can be the target of that lookup: the integrity check
+-- searches for `message_id = <deleted id>`, which implies NOT NULL, so the planner can use this
+-- index for it while it stays off the pending proposals that carry no message yet.
+CREATE INDEX IF NOT EXISTS copilot_proposals_message_idx
+ON copilot_proposals
+USING btree (message_id)
+WHERE message_id IS NOT NULL;

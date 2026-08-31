@@ -7,7 +7,7 @@ import {
   type CopilotEvalSuiteProbeResult,
   type CopilotEvalSuiteRunnerPort,
 } from "../contracts/evalCases.js";
-import { enforceCopilotExpensiveOperation } from "./expensiveOperationGuard.js";
+import { enforceCopilotExpensiveOperation, withCopilotSpendRefusals } from "./expensiveOperationGuard.js";
 
 export interface EvalSuiteProbeServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   suite: CopilotEvalSuiteRunnerPort;
@@ -32,11 +32,11 @@ export class EvalSuiteProbeService implements CopilotEvalSuiteProbePort {
 
     await enforceCopilotExpensiveOperation(this.dependencies, input, "run_eval_suite");
 
-    return this.dependencies.suite.run({
+    return withCopilotSpendRefusals(() => this.dependencies.suite.run({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       caseIds,
       mode: input.mode ?? "full_assistant",
-    });
+    }));
   }
 }

@@ -1,3 +1,4 @@
+import { isUsageLimitExceededError, USAGE_LIMIT_EXCEEDED_CODE } from "../../../shared/domain/usageLimitPolicy.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "../contracts/expensiveOperation.js";
 
 const EXPENSIVE_OPERATION_SCOPE = "api.expensive_authenticated";
@@ -30,6 +31,38 @@ export class CopilotExpensiveOperationRateLimitedError extends Error {
     this.name = "CopilotExpensiveOperationRateLimitedError";
   }
 }
+
+/**
+ * Raised in place of the tier's own quota error, for the same reason the rate-limit refusal is
+ * reworded: the model reads this out of a transcript, and "Usage limit exceeded" says nothing it
+ * can act on. Unlike a rate limit, waiting does not help — the allowance is gone until the period
+ * turns over, so the refusal tells the model to stop rather than to try later.
+ */
+export class CopilotUsageLimitReachedError extends Error {
+  readonly statusCode = 429;
+  readonly code = USAGE_LIMIT_EXCEEDED_CODE;
+
+  constructor() {
+    super(
+      "The workspace has used its answer allowance, and every verification run is charged as one answer. "
+      + "Do not retry this call or any other verification in this turn. Answer with what you already have, and tell the operator their plan's allowance is exhausted.",
+    );
+    this.name = "CopilotUsageLimitReachedError";
+  }
+}
+
+/**
+ * Wraps the work a probe performs, not the budget check before it: the allowance is spent inside
+ * the owning service, several layers below, and surfaces as the shared usage-limit code.
+ */
+export const withCopilotSpendRefusals = async <T>(run: () => Promise<T>): Promise<T> => {
+  try {
+    return await run();
+  } catch (error) {
+    if (isUsageLimitExceededError(error)) throw new CopilotUsageLimitReachedError();
+    throw error;
+  }
+};
 
 const statusCodeOf = (error: unknown): unknown =>
   error && typeof error === "object" && "statusCode" in error ? (error as { statusCode?: unknown }).statusCode : undefined;

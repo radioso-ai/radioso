@@ -6,7 +6,7 @@ import type {
   CopilotAgentTurnProbePort,
   CopilotAgentTurnProbeResult,
 } from "../contracts/agentTurnProbe.js";
-import { enforceCopilotExpensiveOperation } from "./expensiveOperationGuard.js";
+import { enforceCopilotExpensiveOperation, withCopilotSpendRefusals } from "./expensiveOperationGuard.js";
 
 export { OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 
@@ -36,7 +36,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
     const sourceOrigin = probeSourceOrigin(input);
     await this.preflight(input, sourceOrigin, previewRoutineIds);
 
-    return this.dependencies.turnRunner.run({
+    return withCopilotSpendRefusals(() => this.dependencies.turnRunner.run({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       agentId: input.agentId,
@@ -53,7 +53,7 @@ export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
         surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
         requestId: input.copilotConversationId,
       },
-    });
+    }));
   }
 
   private async preflight(

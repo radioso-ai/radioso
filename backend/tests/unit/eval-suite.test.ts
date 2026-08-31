@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { summarizeSuite } from "../../src/modules/eval/domain/suite.js";
+import { USAGE_LIMIT_EXCEEDED_CODE } from "../../src/shared/domain/usageLimitPolicy.js";
 import {
   EvalSuiteService,
   type EvalSuiteCaseSource,
@@ -263,6 +264,24 @@ describe("EvalSuiteService.run", () => {
     // The thrown case is counted as errored (not its stale passing status); the
     // other reflects its fresh passing run.
     expect(result.summary).toMatchObject({ total: 2, scored: 2, passing: 1, error: 1 });
+  });
+
+  // Per-case isolation is for failures that belong to a case. Running out of workspace quota is
+  // not one: every remaining case would fail the same way, and reporting them as per-case errors
+  // inside a 200 tells the caller its suite ran when the workspace simply stopped being allowed to
+  // spend. The single-run paths surface the quota response, and so must this one.
+  it("stops the suite and surfaces a usage-limit refusal instead of scoring it as a case error", async () => {
+    const cases = [
+      makeCase({ id: "case-1", snapshotId: "snap-1", status: "passing" }),
+      makeCase({ id: "case-2", snapshotId: "snap-2", status: "passing" }),
+    ];
+    const runner = new RecordingRunner((input) => {
+      if (input.caseId === "case-1") return outcomeWithStatus("case-1", "pass", "passing");
+      throw Object.assign(new Error("Usage limit exceeded"), { code: USAGE_LIMIT_EXCEEDED_CODE, statusCode: 429 });
+    });
+    const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
+
+    await expect(service.run({ workspaceId: "ws-1" })).rejects.toMatchObject({ code: USAGE_LIMIT_EXCEEDED_CODE });
   });
 
   it("forwards an explicit run mode to each case", async () => {

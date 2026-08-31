@@ -5501,6 +5501,13 @@ CREATE INDEX copilot_proposals_conversation_message_idx ON public.copilot_propos
 
 
 --
+-- Name: copilot_proposals_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_message_idx ON public.copilot_proposals USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
 -- Name: copilot_proposals_operator_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 

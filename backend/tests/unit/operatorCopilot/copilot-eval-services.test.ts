@@ -150,7 +150,7 @@ describe("copilot eval suite probe", () => {
     });
     const { service, run, record } = harness({ enforce });
 
-    await expect(service.runCases({ ...subject, caseIds: [ids.case] })).rejects.toThrow("Too many requests");
+    await expect(service.runCases({ ...subject, caseIds: [ids.case] })).rejects.toThrow(/do not retry this call in this turn/i);
 
     expect(run).not.toHaveBeenCalled();
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
@@ -281,7 +281,7 @@ describe("copilot eval case replay", () => {
     });
     const { service, execute, record } = harness({ enforce });
 
-    await expect(service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation })).rejects.toThrow("Too many requests");
+    await expect(service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation })).rejects.toThrow(/do not retry this call in this turn/i);
 
     expect(execute).not.toHaveBeenCalled();
     expect(record).toHaveBeenCalledWith(expect.objectContaining({

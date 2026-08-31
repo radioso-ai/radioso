@@ -280,6 +280,12 @@ variable "action_dispatch_recovery_max_jobs" {
   }
 }
 
+variable "copilot_retention_schedule" {
+  description = "Optional cron schedule for the Ray conversation retention sweep. The worker enforces COPILOT_CONVERSATION_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps copilot conversations forever."
+  type        = string
+  default     = null
+}
+
 # --- Document storage ---
 
 variable "document_storage_bucket_name" {

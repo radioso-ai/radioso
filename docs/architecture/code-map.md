@@ -310,6 +310,21 @@ acts; a proposal needs an adapter for its target type, and the target-type set i
 closed by the public contract enum, repository narrowing, and the dashboard's
 card presentation.
 
+Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
+Every `copilot.*` audit event carries the operator principal and the calling
+surface, stamped by the service's own actor-bound audit method rather than by each
+call site, and the surface is a required input with no default so a second
+transport declares its own. Metering follows cost rather than call shape: a
+`probe`-shaped tool spends from a per-turn budget enforced where descriptors
+become tools, so a probe contributed later is metered without new wiring, while
+the provider spend itself is reserved by the service that incurs it — an eval run
+reserves one answer in `EvalRunService.execute`, which covers the runs route,
+`replay_eval_case`, and each case of `run_eval_suite` alike. Both refusals are
+worded for the model that reads them out of a transcript, because an unexplained
+tool failure is one it retries. Retention sweeps copilot conversations past their
+window in the worker process; messages, proposals, and replay evidence cascade
+from the conversation row.
+
 Ray's behaviour is covered by its own eval suite, separate from the per-descriptor
 unit tests: one committed dataset scored at two fidelities. The deterministic
 fidelity replays each case's authored tool plan against the real catalog with a
@@ -347,6 +362,9 @@ Public and tool surfaces:
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
+- `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn probe budget, applied by declared tool shape)
+- `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
+- `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
 - `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
 - `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)

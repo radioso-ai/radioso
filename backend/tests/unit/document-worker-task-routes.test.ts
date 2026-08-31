@@ -12,6 +12,7 @@ const buildApp = (input: {
   };
   facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn>; drainWorkspace: ReturnType<typeof vi.fn> };
   facetExtractionWorkspaceDrain?: { requestWorkspaceDrain: ReturnType<typeof vi.fn> };
+  copilotRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
 }) => {
   const app = express();
   app.use(express.json());
@@ -19,6 +20,7 @@ const buildApp = (input: {
     documentProcessingWorker: input.documentProcessingWorker as never,
     facetExtractionWorker: input.facetExtractionWorker as never,
     facetExtractionWorkspaceDrain: input.facetExtractionWorkspaceDrain as never,
+    copilotRetentionWorker: input.copilotRetentionWorker as never,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(500).json({ error: "internal" });
@@ -128,5 +130,27 @@ describe("createDocumentWorkerTaskRoutes", () => {
         analysisEnd: new Date("2026-08-01T00:00:00.000Z"),
       });
     });
+  });
+});
+
+describe("POST /internal/tasks/copilot-retention/sweep", () => {
+  it("reports what the sweep removed", async () => {
+    const sweep = vi.fn().mockResolvedValue({ deleted: 12 });
+    const app = buildApp({ copilotRetentionWorker: { sweep } });
+
+    const response = await request(app).post("/internal/tasks/copilot-retention/sweep").send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ deleted: 12 });
+    expect(sweep).toHaveBeenCalledOnce();
+  });
+
+  it("succeeds when retention is switched off, so a scheduled push is not a recurring failure", async () => {
+    const app = buildApp({ copilotRetentionWorker: { sweep: vi.fn().mockResolvedValue(null) } });
+
+    const response = await request(app).post("/internal/tasks/copilot-retention/sweep").send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ deleted: 0 });
   });
 });

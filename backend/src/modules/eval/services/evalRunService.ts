@@ -20,6 +20,7 @@ import type {
   EvalRunResolvedConfig,
   EvalSnapshot,
 } from "../domain/types.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 import type { EvalLlmJudgePort } from "./evalJudge.js";
 import { buildReplayInputs, type EvalRetrievalRunnerPort } from "./evalRunner.js";
@@ -152,9 +153,38 @@ export class EvalRunService {
     private readonly judge: EvalLlmJudgePort,
     private readonly workbenchReplayRunner?: EvalWorkbenchReplayRunnerPort,
     private readonly logger?: EvalReplayLoggerPort,
+    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
   ) {}
 
+  /**
+   * One eval run costs one answer, in either mode.
+   *
+   * A `full_assistant` run replays a real turn — model calls, retrieval, routines — and until this
+   * reservation existed it did so against no meter at all, on every surface that drives it: the
+   * runs route, Ray's `replay_eval_case`, and `run_eval_suite`, which loops this method per case.
+   * Metering here rather than at any one of those callers is what makes the charge match the cost:
+   * the caller decides how many runs to ask for, this method knows what a run actually spends.
+   *
+   * A run whose replay errored still commits. The provider was already called; only a run rejected
+   * before it starts — an unknown snapshot, a case from another snapshot — releases.
+   */
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
+    const reservation = await this.usageLimitPolicy.reserveAnswer({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      surface: "eval_replay",
+    });
+    try {
+      const outcome = await this.executeReserved(input);
+      await reservation.commit();
+      return outcome;
+    } catch (error) {
+      await reservation.release();
+      throw error;
+    }
+  }
+
+  private async executeReserved(input: EvalRunInput): Promise<EvalRunOutcome> {
     const snapshot = await this.repository.findSnapshot(input.workspaceId, input.snapshotId);
     if (!snapshot) {
       throw notFound("Snapshot not found");

@@ -97,10 +97,37 @@ export type CopilotEntityDescription<TInput> =
       readonly kind: "not_found";
     };
 
+/**
+ * Where a copilot call entered the product. Required with no default on every entry point that
+ * audits, so a transport added later cannot inherit `dashboard` by omission: "who changed this,
+ * and from where" is the first question asked when a configuration change is a surprise, and an
+ * event written without the answer can never be reconstructed.
+ */
+export type CopilotSurface = "dashboard" | "mcp";
+
+/** The principal a copilot audit event is attributed to, and the surface it acted through. */
+export interface CopilotActor {
+  readonly operatorUserId: string;
+  readonly surface: CopilotSurface;
+}
+
 /** Narrow audit port owned by the copilot consumer. */
 export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
+
+/**
+ * Stamps the actor onto an event's metadata.
+ *
+ * Deliberately not extra fields on {@link CopilotAuditPort}: the audit service it binds to accepts
+ * a wider input type, so extra properties would typecheck at the boundary and then be dropped
+ * before the row is written — attribution that compiles and does not exist. Folding into metadata
+ * here keeps the one shape the table actually persists.
+ */
+export const withCopilotActor = (
+  actor: CopilotActor,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> => ({ ...metadata, operatorUserId: actor.operatorUserId, surface: actor.surface });
 
 /**
  * The single runtime list of proposal target types. Every completeness guard over target types

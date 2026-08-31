@@ -28,7 +28,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -128,6 +128,20 @@ export const createDocumentWorkerTaskRoutes = (
       // fenced, so duplicate tasks simply find no jobs and do no provider work.
       await dependencies.facetExtractionWorkspaceDrain?.requestWorkspaceDrain(parsed.data);
       res.status(200).json({ processedJobCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // The task-runtime counterpart to the poll loop `startWorkerRuntime` runs. Retention has no
+  // per-item queue to push against, so a scheduled sweep is the whole trigger — and without this
+  // route the window would be enforced in docker-compose and nowhere else.
+  router.post("/internal/tasks/copilot-retention/sweep", async (_req, res, next) => {
+    try {
+      const result = await dependencies.copilotRetentionWorker.sweep();
+      // A null sweep is retention being switched off or a sweep already in flight — both are
+      // ordinary, and neither is worth failing a scheduled request over.
+      res.status(200).json({ deleted: result?.deleted ?? 0 });
     } catch (error) {
       next(error);
     }

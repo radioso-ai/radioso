@@ -192,6 +192,7 @@ describe("AgentTurnProbeService", () => {
         scope: "api.expensive_authenticated",
         subjectKey: `account:${ids.account}:workspace:${ids.workspace}:operator:${ids.operator}`,
         principalType: "operator_copilot",
+        operatorUserId: ids.operator,
         route: "test_agent_turn",
       },
     });

@@ -1,0 +1,127 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
+  CopilotRetentionWorker,
+} from "../../../src/modules/operatorCopilot/public.js";
+
+const now = new Date("2026-08-31T12:00:00.000Z");
+
+const harness = (options: {
+  retentionDays?: number;
+  batchSize?: number;
+  deletedPerBatch?: ReadonlyArray<number>;
+} = {}) => {
+  const batches = [...(options.deletedPerBatch ?? [0])];
+  const deleteConversationsUpdatedBefore = vi.fn(async (_input: { cutoff: Date; limit: number }) => batches.shift() ?? 0);
+  const record = vi.fn(async () => {});
+  const warn = vi.fn();
+  const info = vi.fn();
+  const worker = new CopilotRetentionWorker({
+    retention: { deleteConversationsUpdatedBefore },
+    audit: { record },
+    logger: { info, warn, error: vi.fn() },
+    retentionDays: options.retentionDays ?? 90,
+    batchSize: options.batchSize ?? 200,
+    now: () => now,
+  });
+  return { worker, deleteConversationsUpdatedBefore, record, info, warn };
+};
+
+describe("CopilotRetentionWorker", () => {
+  it("deletes conversations whose last activity is older than the retention window", async () => {
+    const { worker, deleteConversationsUpdatedBefore } = harness({ retentionDays: 30, deletedPerBatch: [7] });
+
+    const result = await worker.sweep();
+
+    expect(deleteConversationsUpdatedBefore).toHaveBeenCalledWith({
+      cutoff: new Date("2026-08-01T12:00:00.000Z"),
+      limit: 200,
+    });
+    expect(result).toEqual({ deleted: 7 });
+  });
+
+  it("keeps deleting while a batch comes back full, so a backlog drains without one unbounded statement", async () => {
+    const { worker, deleteConversationsUpdatedBefore } = harness({ batchSize: 2, deletedPerBatch: [2, 2, 1] });
+
+    const result = await worker.sweep();
+
+    expect(deleteConversationsUpdatedBefore).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ deleted: 5 });
+  });
+
+  it("records what it removed so a vanished copilot conversation is explainable", async () => {
+    const { worker, record } = harness({ retentionDays: 30, deletedPerBatch: [4] });
+
+    await worker.sweep();
+
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "copilot.retention.enforced",
+      eventStatus: "success",
+      metadata: expect.objectContaining({ deleted: 4, retentionDays: 30 }),
+    }));
+  });
+
+  it("stays silent when a sweep finds nothing, rather than auditing every idle tick", async () => {
+    const { worker, record } = harness({ deletedPerBatch: [0] });
+
+    await worker.sweep();
+
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("does nothing at all when retention is switched off", async () => {
+    const { worker, deleteConversationsUpdatedBefore } = harness({ retentionDays: 0 });
+
+    worker.start();
+    const result = await worker.sweep();
+    await worker.stop();
+
+    expect(result).toBeNull();
+    expect(deleteConversationsUpdatedBefore).not.toHaveBeenCalled();
+  });
+
+  it("keeps the loop alive when one sweep throws", async () => {
+    const deleteConversationsUpdatedBefore = vi.fn(async () => { throw new Error("deadlock"); });
+    const error = vi.fn();
+    const worker = new CopilotRetentionWorker({
+      retention: { deleteConversationsUpdatedBefore },
+      audit: { record: vi.fn(async () => {}) },
+      logger: { info: vi.fn(), warn: vi.fn(), error },
+      retentionDays: 90,
+      batchSize: 10,
+      now: () => now,
+    });
+
+    await expect(worker.sweep()).resolves.toBeNull();
+    expect(error).toHaveBeenCalled();
+  });
+
+  it("does not run two sweeps at once", async () => {
+    let release: (() => void) | undefined;
+    const deleteConversationsUpdatedBefore = vi.fn(async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return 0;
+    });
+    const worker = new CopilotRetentionWorker({
+      retention: { deleteConversationsUpdatedBefore },
+      audit: { record: vi.fn(async () => {}) },
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      retentionDays: 90,
+      batchSize: 10,
+      now: () => now,
+    });
+
+    const first = worker.sweep();
+    const second = await worker.sweep();
+    release?.();
+    await first;
+
+    expect(second).toBeNull();
+    expect(deleteConversationsUpdatedBefore).toHaveBeenCalledOnce();
+  });
+
+  it("defaults to a window long enough to keep recent operator work", () => {
+    expect(COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT).toBeGreaterThanOrEqual(30);
+  });
+});

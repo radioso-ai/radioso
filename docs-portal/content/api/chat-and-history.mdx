@@ -76,6 +76,24 @@ A turn without a reply still shows up here. If the visitor sent another message 
 
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 
+## Answer feedback
+
+Persisted assistant answers accept thumbs-up or thumbs-down feedback in the dashboard, public chat, and website embed. A thumbs-down request may include an optional `comment` of up to 2000 characters. Authenticated callers set and clear feedback on a message:
+
+```text
+PUT    /api/v1/answer-feedback/messages/{assistantMessageId}
+DELETE /api/v1/answer-feedback/messages/{assistantMessageId}
+```
+
+Public chat and embed sessions use the token-scoped variants:
+
+```text
+PUT    /api/v1/answer-feedback/public/chat/{token}/messages/{assistantMessageId}
+DELETE /api/v1/answer-feedback/public/chat/{token}/messages/{assistantMessageId}
+```
+
+Feedback feeds the operator Quality queue, where a thumbs-down turn can be triaged, preserved as an Eval case, and rerun after the underlying fix.
+
 ## Endpoint reference
 
 ```text
@@ -85,6 +103,8 @@ GET  /api/v1/agents/{agentId}
 PUT  /api/v1/agents/{agentId}
 POST /api/v1/agents/{agentId}/default
 POST /api/v1/assistant/chat
+PUT  /api/v1/answer-feedback/messages/{assistantMessageId}
+DELETE /api/v1/answer-feedback/messages/{assistantMessageId}
 GET  /api/v1/history
 GET  /api/v1/history/chat
 GET  /api/v1/history/chat/{conversationId}

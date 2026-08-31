@@ -39,6 +39,7 @@ import type {
 } from "./contracts.js";
 import type { ContextVariable, AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { ContextVariableService } from "../context-variables/public.js";
+import { isStale, versionDate, versionToken } from "./proposalVersioning.js";
 import { badRequest, conflict, notFound, AppError } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
@@ -949,9 +950,6 @@ const routinePayload = (value: unknown) => {
 
 const settingPatch = (settingKey: string, value: unknown): AgentInput => ({ [settingKey]: value }) as AgentInput;
 const settingValue = (settings: object, settingKey: string): unknown => Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
-const versionToken = (updatedAt: Date): string => updatedAt.toISOString();
-const versionDate = (token: string): Date => new Date(token);
-const isStale = (error: unknown): boolean => error instanceof AppError && (error.code === "conflict" || error.code === "not_found");
 
 /**
  * A context-variable proposal's version token encodes two independently-versioned timestamps

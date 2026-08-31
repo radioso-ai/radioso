@@ -175,7 +175,7 @@ describe("live and reloaded cards state the same thing", () => {
       id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", title: "Refund policy", status: "ready",
       metadata: {}, retrievalEnabled: true, retrievalExpiresAt: null, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
     })),
-    ingest: vi.fn(), updateMetadata: vi.fn(), updateRetrievalEligibility: vi.fn(),
+    ingest: vi.fn(), updateRetrievalSettings: vi.fn(),
   });
 
   it("agrees for a document removal", async () => {
@@ -224,9 +224,12 @@ describe("failure modes the adapters must tell apart", () => {
     id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", title: "Refund policy", status: "ready",
     metadata: {}, retrievalEnabled: true, retrievalExpiresAt: null, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
   };
-  const documentAdapter = (getDocument: () => Promise<typeof storedDocument>) => createDocumentCopilotProposalAdapter({
-    documentAuthoring: { getDocument, ingest: vi.fn(), updateMetadata: vi.fn(), updateRetrievalEligibility: vi.fn() },
-    documentDeletion: { delete: vi.fn() },
+  const documentAdapter = (
+    getDocument: () => Promise<typeof storedDocument>,
+    deleteDocument: () => Promise<unknown> = async () => undefined,
+  ) => createDocumentCopilotProposalAdapter({
+    documentAuthoring: { getDocument, ingest: vi.fn(), updateRetrievalSettings: vi.fn() },
+    documentDeletion: { delete: deleteDocument },
     workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
   });
   const deletePayload = { op: "delete" as const, name: "Refund policy", removesTarget: true as const };
@@ -234,14 +237,14 @@ describe("failure modes the adapters must tell apart", () => {
   // On its own this would also pass a blanket catch; it is the pair with the database-failure tests
   // below that shows the two are told apart.
   it("reads a deleted document as a stale proposal", async () => {
-    const adapter = documentAdapter(async () => { throw notFound("Document not found"); });
+    const adapter = documentAdapter(async () => storedDocument, async () => { throw notFound("Document not found"); });
 
     await expect(adapter.applyIfVersionMatches("workspace-1", { documentId: storedDocument.id }, deletePayload, "2026-08-30T10:00:00.000Z"))
       .resolves.toEqual({ outcome: "stale" });
   });
 
   it("reads a database failure as a failure, not as a document someone deleted", async () => {
-    const adapter = documentAdapter(async () => { throw new Error("connection terminated unexpectedly"); });
+    const adapter = documentAdapter(async () => storedDocument, async () => { throw new Error("connection terminated unexpectedly"); });
 
     const outcome = await adapter.applyIfVersionMatches("workspace-1", { documentId: storedDocument.id }, deletePayload, "2026-08-30T10:00:00.000Z");
 
@@ -304,8 +307,7 @@ describe("the composed document port", () => {
         content: "The entire stored body of the document.",
       }) as never,
       ingest: vi.fn(),
-      updateMetadata: vi.fn(),
-      updateRetrievalEligibility: vi.fn(),
+      updateRetrievalSettings: vi.fn(),
     });
 
     const document = await port.getDocument("workspace-1", "dddddddd-dddd-4ddd-8ddd-dddddddddddd");
@@ -364,7 +366,7 @@ describe("a maximal draft still produces a storable card", () => {
       metadata: {}, retrievalEnabled: true, retrievalExpiresAt: null, updatedAt: new Date("2026-08-30T10:00:00.000Z"),
     };
     const adapter = createDocumentCopilotProposalAdapter({
-      documentAuthoring: { getDocument: vi.fn(async () => storedDocument), ingest: vi.fn(), updateMetadata: vi.fn(), updateRetrievalEligibility: vi.fn() },
+      documentAuthoring: { getDocument: vi.fn(async () => storedDocument), ingest: vi.fn(), updateRetrievalSettings: vi.fn() },
       documentDeletion: { delete: vi.fn() },
       workspaceAccount: { resolveAccountId: vi.fn(async () => "account-1") },
     });

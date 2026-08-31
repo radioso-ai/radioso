@@ -65,8 +65,7 @@ export const createCopilotDocumentAuthoringPort = (
   documentIngestionService: {
     getDocument(workspaceId: string, documentId: string): Promise<CopilotDocumentSummary>;
     ingest: CopilotDocumentAuthoringPort["ingest"];
-    updateMetadata: CopilotDocumentAuthoringPort["updateMetadata"];
-    updateRetrievalEligibility: CopilotDocumentAuthoringPort["updateRetrievalEligibility"];
+    updateRetrievalSettings: CopilotDocumentAuthoringPort["updateRetrievalSettings"];
   },
 ): CopilotDocumentAuthoringPort => ({
   getDocument: async (workspaceId, documentId) => {
@@ -82,8 +81,7 @@ export const createCopilotDocumentAuthoringPort = (
     };
   },
   ingest: (input) => documentIngestionService.ingest(input),
-  updateMetadata: (input) => documentIngestionService.updateMetadata(input),
-  updateRetrievalEligibility: (input) => documentIngestionService.updateRetrievalEligibility(input),
+  updateRetrievalSettings: (input) => documentIngestionService.updateRetrievalSettings(input),
 });
 
 export const createCopilotWorkspaceAccountResolver = (

@@ -544,7 +544,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Named rather than inlined so the copilot's behavioural eval suite can drive a real turn through
   // the same catalog, prompt, and runner the dashboard uses. A suite that assembled its own would
   // measure a copilot nobody talks to.
+  // Resolved here rather than at registration time so a contributing module receives the same
+  // constructed infrastructure every other application-module provider does.
+  const copilotToolContributions = composition.copilotToolRegistrations.map((registration) =>
+    typeof registration === "function"
+      ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
+      : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
+    toolContributions: copilotToolContributions,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),

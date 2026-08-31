@@ -1,5 +1,7 @@
 export * from "./catalog.js";
 export * from "./contracts.js";
+export * from "./contribution.js";
+export * from "./applicationPrimitiveRegistry.js";
 export type {
   CopilotAgentTurnProbeInput,
   CopilotAgentTurnProbePort,

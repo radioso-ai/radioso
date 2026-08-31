@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
+import {
+  DocumentIngestionService,
+  type EmbeddingCoverageReconciliationPort,
+} from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentImportService } from "../../src/modules/documents/services/documentImportService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
@@ -2120,7 +2123,7 @@ describe("document metadata update", () => {
 // calls and therefore two writes: a failure in the second left the first applied while the caller
 // was told the whole update failed.
 describe("document retrieval settings", () => {
-  const createService = () => {
+  const createService = (embeddingCoverage?: EmbeddingCoverageReconciliationPort) => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -2135,6 +2138,10 @@ describe("document retrieval settings", () => {
       undefined,
       jobRepository,
       dispatcher,
+      undefined,
+      undefined,
+      undefined,
+      embeddingCoverage,
     );
     return { documentRepository, jobRepository, auditService, dispatcher, service };
   };
@@ -2197,6 +2204,30 @@ describe("document retrieval settings", () => {
     });
 
     expect(auditService.events.filter((event) => event.eventType === "document.retrieval.update")).toHaveLength(0);
+  });
+
+  // Both halves commit in one statement, so the work each half leaves behind has to survive the
+  // other half's follow-up failing. Reconciliation belongs to the eligibility half; the requeue the
+  // metadata replace already committed still has to reach a worker.
+  it("dispatches the metadata reprocessing job even when coverage reconciliation fails", async () => {
+    const reconcileWorkspace = vi.fn().mockRejectedValue(new Error("coverage reconciliation unavailable"));
+    const { service, documentRepository, dispatcher } = createService({ reconcileWorkspace });
+    const document = await readyDocument(documentRepository);
+
+    await expect(
+      service.updateRetrievalSettings({
+        workspaceId: "workspace-1",
+        documentId: document.id,
+        metadata: { audience: "admins" },
+        retrievalEnabled: false,
+      }),
+    ).rejects.toThrow("coverage reconciliation unavailable");
+
+    expect(reconcileWorkspace).toHaveBeenCalledWith("workspace-1");
+    expect(dispatcher.dispatch).toHaveBeenCalledTimes(1);
+    const stored = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+    expect(stored?.metadata).toEqual({ audience: "admins" });
+    expect(stored?.retrievalEnabled).toBe(false);
   });
 
   it("carries the caller's expected version into the write", async () => {

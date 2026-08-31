@@ -1675,6 +1675,53 @@ describe("EvalRunService metering", () => {
     expect(metering.commit).toHaveBeenCalledOnce();
   });
 
+  // The reservation is for provider spend, so the question is not "did the call succeed" but "did
+  // the provider already run". Persisting the result and judging it both happen after the replay,
+  // and both can throw — releasing there hands back budget that was genuinely consumed.
+  it("commits when the replay already ran and a later step throws", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "persist fails", assertions: [refundIncludes] });
+    repo.createRun = async () => { throw new Error("database unavailable"); };
+    const metering = meteringPolicy();
+    const service = new EvalRunService(
+      repo,
+      new StubRunner([{ chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }]),
+      passJudge(),
+      undefined,
+      undefined,
+      metering.policy,
+    );
+
+    await expect(service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, caseId: evalCase.id, mode: "retrieval_only" }))
+      .rejects.toThrow("database unavailable");
+
+    expect(metering.commit).toHaveBeenCalledOnce();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
+  it("commits when a workbench replay ran and a later step throws", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({ sourceAgentId: agent.id, originalAgentConfig: projectInternalAgentConfig(agent) });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "persist fails", assertions: [refundIncludes] });
+    repo.createRun = async () => { throw new Error("database unavailable"); };
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, metering.policy);
+
+    await expect(service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      accountId: "account-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: { agentConfigOverride: { customInstruction: "Workbench override." } },
+    })).rejects.toThrow("database unavailable");
+
+    expect(metering.commit).toHaveBeenCalledOnce();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
   it("releases the reservation when the run is rejected before anything is spent", async () => {
     const repo = new InMemoryEvalRepository({ snapshots: [] });
     const metering = meteringPolicy();

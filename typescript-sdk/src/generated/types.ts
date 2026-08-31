@@ -18709,7 +18709,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description No LLM capability */

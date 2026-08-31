@@ -184,3 +184,55 @@ and composition is the only layer that sees both sides.
 4. Update Ray operator documentation and the behavior-eval fixture, run focused
    tests/build/architecture checks, complete review passes, then record #1051's
    decision and refresh the epic state.
+
+## Agent-Scoped Retrieval Probe Slice (#1051, 2026-08-31)
+
+### Goal
+
+Make retrieval measurable per agent, and give Ray the diagnostic that sits
+between "the document is indexed" and "the turn was wrong": what this agent's
+retrieval actually returns for a query.
+
+### Knowledge, Ports, And Dependency Direction
+
+- `retrieval/domain/agentRetrievalScope.ts` knows the shape of agent scoping —
+  source scope, answering behavior, retrieval skill settings — and declares the
+  port that resolves one. It must not know how an agent is stored or loaded.
+- `app/composition/agentRetrievalScope.ts` adapts the agent repository to that
+  port. Composition is the only place that knows a scope comes from a record.
+- `retrieval/services/scopedRetrievalRun.ts` applies the port for both search
+  and answer, so the rule that an unresolvable agent fails the run lives once.
+- `operatorCopilot/tools/retrievalProbe.ts` knows the model-facing schemas,
+  result bounds, and page-agent fallback. `services/retrievalProbeService.ts`
+  spends the operator's expensive-operation budget and rejects a result
+  attributed to any agent other than the one asked about.
+- The MCP converse grounded-answer surface reads scope from the same domain
+  helper, so agent-attributed retrieval cannot drift between the two callers.
+
+### Constraints And Impact
+
+- The public contract changes: optional `agentId` on both retrieval endpoints,
+  `agentScope` on both responses, and `score` on answer evidence. OpenAPI, the
+  generated retrieval skill contract, the MCP server's generated types, and the
+  TypeScript SDK snapshot are regenerated in the same change.
+- Unscoped calls keep their behavior exactly, including their permission: the
+  agent-read requirement applies only to a request that names an agent.
+- Ray receives the search probe only. The answer endpoint costs a generation and
+  duplicates `test_agent_turn`, so it stays deferred in the coverage map while
+  still gaining `agentId` and `score` for API and SDK callers.
+- Observability: the retrieval answer audit event records the agent a scoped run
+  measured. Probe rate-limit refusals already reach audit through the shared
+  expensive-operation guard. No new metric or span; queries, chunk text, and
+  scores stay out of logs.
+
+### Delivery Slices
+
+1. Add failing tests for scope derivation, agent-scoped search, refusal on an
+   unresolvable agent, and score parity on answer evidence.
+2. Add the domain scope helper, the shared scoped-run resolver, service wiring,
+   and the converse-surface refactor onto the shared derivation.
+3. Add optional `agentId` to both routes with the conditional agent-read gate,
+   extend the response schemas, and regenerate every downstream artifact.
+4. Add the `retrieval_probe` descriptor, its copilot service, provenance,
+   owning primitive, coverage-map move, and behavior-eval case.
+5. Update API, SDK, and Ray operator documentation, then run local CI.

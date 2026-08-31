@@ -9,6 +9,7 @@ import {
   type CopilotWorkspaceAccountResolver,
 } from "./contracts/documentAuthoring.js";
 import type { CopilotDocumentProposalAdapter } from "./contracts.js";
+import { isStale, versionInstant, versionToken } from "./proposalVersioning.js";
 import { AppError, badRequest } from "../../shared/domain/errors.js";
 
 /**
@@ -45,9 +46,6 @@ const requiredDocumentId = (targetRef: { documentId: string | null }): string =>
   if (!targetRef.documentId) throw badRequest("This document change must name the document it changes");
   return targetRef.documentId;
 };
-
-const versionToken = (document: Pick<CopilotDocumentSummary, "updatedAt">): string =>
-  document.updatedAt.toISOString();
 
 const retrievalState = (document: CopilotDocumentSummary) => ({
   name: document.title,
@@ -93,7 +91,7 @@ export const createDocumentCopilotProposalAdapter = (
         return CREATE_VERSION_TOKEN;
       }
       if (!targetRef.documentId) return CREATE_VERSION_TOKEN;
-      return versionToken(await readDocument(workspaceId, targetRef.documentId));
+      return versionToken((await readDocument(workspaceId, targetRef.documentId)).updatedAt);
     },
 
     async preview(workspaceId, rawTargetRef, rawPayload) {
@@ -119,6 +117,14 @@ export const createDocumentCopilotProposalAdapter = (
       };
     },
 
+    canRetryAfterInterruptedApply(rawTargetRef, rawPayload) {
+      copilotDocumentTargetRefSchema.parse(rawTargetRef);
+      // A create's token is the constant `"create"`: nothing about the workspace after a first
+      // attempt says the document is already there, so a retry would ingest a second one and
+      // reserve a second document and storage quota against it.
+      return copilotDocumentPayloadSchema.parse(rawPayload).op !== "create";
+    },
+
     async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
       const targetRef = copilotDocumentTargetRefSchema.parse(rawTargetRef);
       const payload = copilotDocumentPayloadSchema.parse(rawPayload);
@@ -135,37 +141,37 @@ export const createDocumentCopilotProposalAdapter = (
         }
 
         const documentId = requiredDocumentId(targetRef);
-        // The documents service takes no expected-version argument, so the version check is this
-        // read compared against the draft's token, leaving a window between them. That is the same
-        // window the dashboard's own save has, so applying a proposal is no less safe than the edit
-        // it mirrors - but neither is atomic. Conditional writes are tracked separately.
-        const document = await readOrMissing(readDocument(workspaceId, documentId));
-        if (!document || versionToken(document) !== token) return { outcome: "stale" as const };
+        // The draft's token goes into the write's own predicate rather than being compared against
+        // a read here: the documents service refuses a row that moved, so there is no window
+        // between checking the version and writing over it. A refusal comes back as `conflict`,
+        // which is this adapter's `stale`.
+        // A token that names no instant cannot describe the row this write has to match, which is
+        // the same answer to the operator as a version that moved.
+        const expectedUpdatedAt = versionInstant(token);
+        if (!expectedUpdatedAt) return { outcome: "stale" as const };
 
         if (payload.op === "delete") {
-          await deps.documentDeletion.delete({ workspaceId, documentId });
+          await deps.documentDeletion.delete({ workspaceId, documentId, expectedUpdatedAt });
           return { outcome: "applied" as const, appliedRef: { documentId } };
         }
 
-        // Metadata is replaced first so the requeue it triggers carries the new tags, matching the
-        // order the documents PATCH route settles the same two writes in. They are two writes, so a
-        // failure in the second leaves the first applied while the proposal reports `failed` - again
-        // matching the route, which has no transaction around the pair either.
-        if (payload.metadata !== undefined) {
-          await deps.documentAuthoring.updateMetadata({ workspaceId, documentId, metadata: payload.metadata });
-        }
-        if (payload.retrievalEnabled !== undefined || payload.retrievalExpiresAt !== undefined) {
-          await deps.documentAuthoring.updateRetrievalEligibility({
-            workspaceId,
-            documentId,
-            ...(payload.retrievalEnabled !== undefined ? { retrievalEnabled: payload.retrievalEnabled } : {}),
-            ...(payload.retrievalExpiresAt !== undefined
-              ? { retrievalExpiresAt: payload.retrievalExpiresAt === null ? null : new Date(payload.retrievalExpiresAt) }
-              : {}),
-          });
-        }
+        // Metadata and eligibility settle in one call, so a proposal that named both can no longer
+        // land half of it and report that the whole change failed.
+        await deps.documentAuthoring.updateRetrievalSettings({
+          workspaceId,
+          documentId,
+          expectedUpdatedAt,
+          ...(payload.metadata !== undefined ? { metadata: payload.metadata } : {}),
+          ...(payload.retrievalEnabled !== undefined ? { retrievalEnabled: payload.retrievalEnabled } : {}),
+          ...(payload.retrievalExpiresAt !== undefined
+            ? { retrievalExpiresAt: payload.retrievalExpiresAt === null ? null : new Date(payload.retrievalExpiresAt) }
+            : {}),
+        });
         return { outcome: "applied" as const, appliedRef: { documentId } };
       } catch (error) {
+        // Only a change to a stored document can be stale. A create addresses no row, so a refusal
+        // there is a genuine failure however the owning service phrased it.
+        if (payload.op !== "create" && isStale(error)) return { outcome: "stale" as const };
         return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Document change apply failed" };
       }
     },
@@ -188,7 +194,7 @@ export const createDocumentCopilotProposalAdapter = (
       return {
         targetRef: { documentId: document.id },
         payload: copilotDocumentPayloadSchema.parse({ ...change, name: document.title }),
-        versionToken: versionToken(document),
+        versionToken: versionToken(document.updatedAt),
       };
     },
   };

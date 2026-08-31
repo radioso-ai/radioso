@@ -41,6 +41,7 @@ import type {
   DocumentListPage,
   DocumentRecord,
   DocumentRepositoryPort,
+  DocumentRetrievalSettingsResult,
   DocumentSourceResolverInput,
   DocumentSummary,
   DocumentSummaryRecord,
@@ -64,7 +65,7 @@ export type {
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
-  DocumentRetrievalEligibilityInput,
+  DocumentRetrievalSettingsResult,
   DocumentSourceInput,
   DocumentSourceKind,
   DocumentSourceResolverInput,
@@ -424,128 +425,131 @@ export class DocumentIngestionService {
     };
   }
 
-  // Replace a document's operator-authored metadata map. Document tags are
-  // projected onto the chunks at vectorize time, so the replace requeues the
-  // document rather than writing the map in place; the published chunks would
-  // otherwise keep carrying the previous tags. Unlike the inline update path,
-  // this is allowed for imported documents — it never touches their content.
-  async updateMetadata(input: {
+  /**
+   * Settles a document's retrieval-facing settings: the operator-authored metadata map, and
+   * whether the document is eligible for retrieval and until when. Partial — an absent field is
+   * left unchanged.
+   *
+   * One method rather than two because the two halves reach the database in a single statement.
+   * Split, a failure in the second left the first applied while the caller was told the update had
+   * failed, and a proposal card stated that terminal outcome to an operator.
+   *
+   * Replacing metadata requeues the document: tags are projected onto the chunks at vectorize
+   * time, so published chunks would otherwise keep carrying the previous ones. Unlike the inline
+   * update path this is allowed for imported documents, since it never touches their content.
+   * Re-enabling a document (`retrievalEnabled: true`) also clears an already-elapsed expiry, so
+   * the "auto-exclude after a date, unless the user re-enables it" contract holds — a passed
+   * expiry cannot immediately re-exclude a document the user just switched back on.
+   */
+  async updateRetrievalSettings(input: {
     workspaceId: string;
     documentId: string;
-    metadata: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
+    retrievalEnabled?: boolean;
+    retrievalExpiresAt?: Date | null;
+    /** The version the caller read. Present makes the write conditional on the row still holding it. */
+    expectedUpdatedAt?: Date;
   }): Promise<DocumentDetails> {
+    const metadata = input.metadata;
+    const settlesEligibility = input.retrievalEnabled !== undefined || input.retrievalExpiresAt !== undefined;
+    const auditedEvents: Array<"document.metadata.update" | "document.retrieval.update"> = [
+      ...(metadata !== undefined ? (["document.metadata.update"] as const) : []),
+      ...(settlesEligibility ? (["document.retrieval.update"] as const) : []),
+    ];
+    const recordFailure = async (reason: string): Promise<void> => {
+      for (const eventType of auditedEvents) {
+        await this.auditService.record({
+          workspaceId: input.workspaceId,
+          eventType,
+          eventStatus: "failure",
+          metadata: { documentId: input.documentId, reason },
+        });
+      }
+    };
+
     const existing = await this.documentRepository.findByIdAndWorkspaceId(input.documentId, input.workspaceId);
     if (!existing) {
       throw notFound("Document not found");
     }
 
-    let updated: DocumentRecord;
+    const eligibility = settlesEligibility
+      ? this.resolveRetrievalEligibility(existing, input)
+      : null;
+
+    let result: DocumentRetrievalSettingsResult;
     try {
-      updated = await this.documentRepository.updateMetadataAndQueue({
+      result = await this.documentRepository.updateRetrievalSettings({
         documentId: input.documentId,
         workspaceId: input.workspaceId,
-        metadata: input.metadata,
-        ...relinquishedEnrichment(existing, input.metadata),
+        ...(metadata !== undefined
+          ? { metadata, ...relinquishedEnrichment(existing, metadata) }
+          : {}),
+        ...(eligibility ?? {}),
+        ...(input.expectedUpdatedAt !== undefined ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
       });
     } catch (error) {
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.metadata.update",
-        eventStatus: "failure",
-        metadata: {
-          documentId: input.documentId,
-          reason: error instanceof Error ? error.message : "Failed to update document metadata",
-        },
-      });
+      await recordFailure(error instanceof Error ? error.message : "Failed to update document retrieval settings");
       throw error;
     }
 
+    if (result.outcome === "missing") {
+      await recordFailure("not_found");
+      throw notFound("Document not found");
+    }
+    if (result.outcome === "conflict") {
+      await recordFailure("version_conflict");
+      throw conflict("Document was updated by another writer; reload before saving again");
+    }
+
+    const updated = result.document;
     this.publishDocumentStatusChanged(input.workspaceId);
-    await this.auditService.record({
-      workspaceId: input.workspaceId,
-      eventType: "document.metadata.update",
-      eventStatus: "success",
-      metadata: {
+    // Both halves are committed by now, so each half's follow-up work stays together and the
+    // metadata half runs first: a failure reconciling embedding coverage — the eligibility half's
+    // concern — must not skip dispatching the requeue this write already committed.
+    if (metadata !== undefined) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.metadata.update",
+        eventStatus: "success",
+        metadata: {
+          documentId: updated.id,
+          revision: updated.revision,
+          status: updated.status,
+          metadataKeyCount: Object.keys(metadata).length,
+          ...(await this.queueSnapshotMetadata()),
+        },
+      });
+      await this.dispatchQueuedDocumentJob({
         documentId: updated.id,
+        workspaceId: input.workspaceId,
         revision: updated.revision,
-        status: updated.status,
-        metadataKeyCount: Object.keys(input.metadata).length,
-        ...(await this.queueSnapshotMetadata()),
-      },
-    });
-    await this.dispatchQueuedDocumentJob({
-      documentId: updated.id,
-      workspaceId: input.workspaceId,
-      revision: updated.revision,
-    });
+      });
+    }
+    if (settlesEligibility) {
+      await this.embeddingCoverage?.reconcileWorkspace(input.workspaceId);
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.retrieval.update",
+        eventStatus: "success",
+        metadata: {
+          documentId: updated.id,
+          retrievalEnabled: updated.retrievalEnabled,
+          retrievalExpiresAt: updated.retrievalExpiresAt ? updated.retrievalExpiresAt.toISOString() : null,
+        },
+      });
+    }
 
     return this.toDetails(updated);
   }
 
-  // Toggle a document's retrieval eligibility without re-processing it. Partial:
-  // an absent field is left unchanged. Re-enabling a document
-  // (`retrievalEnabled: true`) also clears an already-elapsed expiry, so the
-  // "auto-exclude after a date, unless the user re-enables it" contract holds —
-  // a passed expiry cannot immediately re-exclude a document the user just
-  // switched back on.
-  async updateRetrievalEligibility(input: {
-    workspaceId: string;
-    documentId: string;
-    retrievalEnabled?: boolean;
-    retrievalExpiresAt?: Date | null;
-  }): Promise<DocumentDetails> {
-    const existing = await this.documentRepository.findByIdAndWorkspaceId(input.documentId, input.workspaceId);
-    if (!existing) {
-      throw notFound("Document not found");
-    }
-
-    const nextEnabled = input.retrievalEnabled ?? existing.retrievalEnabled;
-    let nextExpiresAt =
-      input.retrievalExpiresAt !== undefined ? input.retrievalExpiresAt : existing.retrievalExpiresAt;
-    if (input.retrievalEnabled === true && nextExpiresAt !== null && nextExpiresAt.getTime() <= Date.now()) {
-      nextExpiresAt = null;
-    }
-
-    let updated: DocumentRecord | null;
-    try {
-      updated = await this.documentRepository.setRetrievalEligibility({
-        documentId: input.documentId,
-        workspaceId: input.workspaceId,
-        retrievalEnabled: nextEnabled,
-        retrievalExpiresAt: nextExpiresAt,
-      });
-    } catch (error) {
-      await this.auditService.record({
-        workspaceId: input.workspaceId,
-        eventType: "document.retrieval.update",
-        eventStatus: "failure",
-        metadata: {
-          documentId: input.documentId,
-          reason: error instanceof Error ? error.message : "Failed to update retrieval eligibility",
-        },
-      });
-      throw error;
-    }
-
-    if (!updated) {
-      throw notFound("Document not found");
-    }
-
-    this.publishDocumentStatusChanged(input.workspaceId);
-    await this.embeddingCoverage?.reconcileWorkspace(input.workspaceId);
-
-    await this.auditService.record({
-      workspaceId: input.workspaceId,
-      eventType: "document.retrieval.update",
-      eventStatus: "success",
-      metadata: {
-        documentId: updated.id,
-        retrievalEnabled: updated.retrievalEnabled,
-        retrievalExpiresAt: updated.retrievalExpiresAt ? updated.retrievalExpiresAt.toISOString() : null,
-      },
-    });
-
-    return this.toDetails(updated);
+  private resolveRetrievalEligibility(
+    existing: DocumentRecord,
+    input: { retrievalEnabled?: boolean; retrievalExpiresAt?: Date | null },
+  ): { retrievalEnabled: boolean; retrievalExpiresAt: Date | null } {
+    const retrievalEnabled = input.retrievalEnabled ?? existing.retrievalEnabled;
+    const requested = input.retrievalExpiresAt !== undefined ? input.retrievalExpiresAt : existing.retrievalExpiresAt;
+    const clearsElapsedExpiry = input.retrievalEnabled === true && requested !== null && requested.getTime() <= Date.now();
+    return { retrievalEnabled, retrievalExpiresAt: clearsElapsedExpiry ? null : requested };
   }
 
   async reprocess(input: {

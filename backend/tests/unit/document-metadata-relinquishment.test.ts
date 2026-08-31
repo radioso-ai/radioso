@@ -43,7 +43,7 @@ describe("manual metadata edits and extraction ownership", () => {
       "category",
     ]);
 
-    await service.updateMetadata({
+    await service.updateRetrievalSettings({
       workspaceId,
       documentId,
       metadata: { price: 12, category: "lighting" },
@@ -55,7 +55,7 @@ describe("manual metadata edits and extraction ownership", () => {
   it("relinquishes a generated key the operator removed", async () => {
     const { service, documentRepository, documentId } = await setup({ price: 10 }, ["price"]);
 
-    await service.updateMetadata({ workspaceId, documentId, metadata: {} });
+    await service.updateRetrievalSettings({ workspaceId, documentId, metadata: {} });
 
     expect(storedGeneratedKeys(documentRepository, documentId)).toEqual([]);
   });
@@ -63,7 +63,7 @@ describe("manual metadata edits and extraction ownership", () => {
   it("keeps ownership when the edit leaves generated values untouched", async () => {
     const { service, documentRepository, documentId } = await setup({ price: 10 }, ["price"]);
 
-    await service.updateMetadata({
+    await service.updateRetrievalSettings({
       workspaceId,
       documentId,
       metadata: { price: 10, colour: "red" },

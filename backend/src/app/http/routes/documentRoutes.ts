@@ -495,28 +495,18 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         retrievalExpiresAt?: string | null;
         metadata?: Record<string, unknown>;
       };
-      // Metadata is replaced first so the requeue it triggers carries the new
-      // tags, and the retrieval update below returns the settled document.
-      let document = body.metadata !== undefined
-        ? await dependencies.documentIngestionService.updateMetadata({
-            workspaceId,
-            documentId,
-            metadata: body.metadata,
-          })
-        : null;
-      if (body.retrievalEnabled !== undefined || body.retrievalExpiresAt !== undefined) {
-        document = await dependencies.documentIngestionService.updateRetrievalEligibility({
-          workspaceId,
-          documentId,
-          ...(body.retrievalEnabled !== undefined ? { retrievalEnabled: body.retrievalEnabled } : {}),
-          ...(body.retrievalExpiresAt !== undefined
-            ? { retrievalExpiresAt: body.retrievalExpiresAt === null ? null : new Date(body.retrievalExpiresAt) }
-            : {}),
-        });
-      }
-      if (!document) {
+      if (body.metadata === undefined && body.retrievalEnabled === undefined && body.retrievalExpiresAt === undefined) {
         throw badRequest("Provide retrievalEnabled, retrievalExpiresAt and/or metadata");
       }
+      const document = await dependencies.documentIngestionService.updateRetrievalSettings({
+        workspaceId,
+        documentId,
+        ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
+        ...(body.retrievalEnabled !== undefined ? { retrievalEnabled: body.retrievalEnabled } : {}),
+        ...(body.retrievalExpiresAt !== undefined
+          ? { retrievalExpiresAt: body.retrievalExpiresAt === null ? null : new Date(body.retrievalExpiresAt) }
+          : {}),
+      });
       res.status(200).json(document);
     } catch (error) {
       next(error);

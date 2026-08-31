@@ -131,8 +131,9 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     if (!proposal || proposal.status !== "pending") return null;
     if (!this.isClaimFree(proposal.id, input.claimTtlSeconds)) return null;
     const claimedAt = new Date();
+    const previousAttemptStartedAt = this.applyClaims.get(proposal.id) ?? null;
     this.applyClaims.set(proposal.id, claimedAt);
-    return { proposal, claimedAt };
+    return { proposal, claimedAt, previousAttemptStartedAt };
   }
 
   /** Clears only the exact claim `claimProposalApply` handed to this attempt, mirroring the real repository's fencing. */

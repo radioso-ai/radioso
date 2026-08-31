@@ -453,6 +453,26 @@ describe("settings services", () => {
     });
   });
 
+  // The version the caller read reaches the write itself, so an edit that lands between the read
+  // and the save is refused there rather than overwritten from the older snapshot.
+  it("carries the caller's expected version into the ingestion settings write", async () => {
+    const settings = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(settings),
+      upsert: vi.fn().mockResolvedValue(settings),
+    };
+    const service = new IngestionSettingsService(repository as never, { record: vi.fn() } as never);
+    const expectedUpdatedAt = new Date("2026-08-30T10:00:00.000Z");
+
+    await service.updateForWorkspace("workspace-1", settings, { expectedUpdatedAt });
+
+    expect(repository.upsert).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({ chunkingStrategy: settings.chunkingStrategy }),
+      { expectedUpdatedAt },
+    );
+  });
+
   it("preserves the saved embedding model when older ingestion clients omit it", async () => {
     const existing = {
       ...defaultIngestionSettings("workspace-1"),
@@ -485,6 +505,7 @@ describe("settings services", () => {
         embeddingModel: "text-embedding-3-large",
         pendingEmbeddingModel: null,
       }),
+      undefined,
     );
   });
 

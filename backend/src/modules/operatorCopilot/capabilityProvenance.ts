@@ -6,6 +6,7 @@ type ProductionDescriptorName =
   | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "document_chunks" | "document_search" | "document_status"
   | "eval_results" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
+  | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_lifecycle" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
@@ -37,6 +38,9 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   propose_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive coaching as a pending, operator-confirmed proposal.") },
   propose_directive_enablement: { backingOperationIds: ["updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a reversible directive enablement change as a pending, operator-confirmed proposal.") },
   propose_directive_removal: { backingOperationIds: ["deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive removal as a pending, operator-confirmed proposal, the same as any other directive change.") },
+  propose_document: { backingOperationIds: ["createDocument"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts a knowledge document as an operator-reviewable proposal rather than writing one into the workspace.") },
+  propose_document_removal: { backingOperationIds: ["deleteDocument"], applicationPrimitiveIds: ["documents.deletion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents permanent document removal as a pending, operator-confirmed proposal, the same as any other document change.") },
+  propose_document_retrieval: { backingOperationIds: ["updateDocumentRetrieval"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the document service receives a retrieval-eligibility or metadata change.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; routine lifecycle authority remains in the routine service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine", "reviseAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
   propose_routine_lifecycle: { backingOperationIds: ["publishAgentRoutine", "archiveAgentRoutine", "restoreAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray records an operator-confirmed lifecycle proposal while the routine service enforces transitions.") },

@@ -174,6 +174,8 @@ import {
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
+import { createCopilotWorkspaceAccountResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -1861,6 +1863,11 @@ export const createTestDependencies = (overrides: {
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createDocumentCopilotProposalAdapter({
+      documentAuthoring: documentIngestionService,
+      documentDeletion: documentDeletionService,
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
+    }),
   ] as const;
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const copilotCapabilityRunner = new AgenticCapabilityRunner({

@@ -10,6 +10,7 @@ import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/too
 import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import { createCopilotToolDescriptors } from "../../../src/modules/operatorCopilot/tools/index.js";
+import { copilotProposalTargetTypes } from "../../../src/modules/operatorCopilot/contracts.js";
 import { assertCopilotCapabilityProvenance } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
 import { createOpenApiDocument } from "../../../src/app/http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../../../src/app/http/openapi/operationPermissionRequirements.js";
@@ -82,7 +83,7 @@ const realCatalog = () => {
       getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
     },
     proposalRepository: { createProposal: stub() },
-    proposalAdapters: (["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const).map((targetType) => ({
+    proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
       targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(), validatePayload: stub(),
     })),
     auditService: { record: stub() },
@@ -146,7 +147,7 @@ describe("copilot catalog wiring", () => {
     ]);
   });
 
-  it("contributes bounded document diagnosis and maintenance through the real barrel", () => {
+  it("contributes bounded document diagnosis, maintenance, and proposals through the real barrel", () => {
     expect(realCatalog()
       .filter((descriptor) => descriptor.contributingModule === "documents")
       .map(({ name, shape, requiredPermissions }) => ({ name, shape, requiredPermissions }))).toEqual([
@@ -155,6 +156,9 @@ describe("copilot catalog wiring", () => {
       { name: "document_chunks", shape: "read", requiredPermissions: ["workspace.documents.read"] },
       { name: "reprocess_document", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
       { name: "recrawl_source", shape: "act", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "propose_document", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "propose_document_retrieval", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
+      { name: "propose_document_removal", shape: "propose", requiredPermissions: ["workspace.documents.manage"] },
     ]);
   });
 

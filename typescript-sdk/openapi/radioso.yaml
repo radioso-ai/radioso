@@ -22814,6 +22814,7 @@ paths:
                                       - routine
                                       - agent_skill
                                       - context_variable
+                                      - document
                                   targetLabel:
                                     type: string
                                   summary:

@@ -34,6 +34,9 @@ const catalogToolCoverage = {
   recrawlDocumentSource: "recrawl_source",
   reprocessDocumentSource: "reprocess_document",
   reprocessDocument: "reprocess_document",
+  createDocument: "propose_document",
+  updateDocumentRetrieval: "propose_document_retrieval",
+  deleteDocument: "propose_document_removal",
   listAgentSkills: "agent_skills",
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
@@ -63,7 +66,14 @@ const routineStructuralEditing = deferred(
   "Deferred: Ray edits routines by stable id, which cannot add or remove a step, so deleting a routine and reworking its graph stay in the routine editor.",
 );
 const wave2BehaviorAuthoring = deferred("Deferred to Wave 2 behavior authoring: Ray will create operator-confirmed proposals, not edit live behavior directly.");
-const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document and source changes need their own bounded proposal flows.");
+const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document source and crawl changes need their own bounded proposal flows.");
+// Ray reads documents as search snippets and paged chunks, both derived and partial. This
+// operation replaces a document's whole body, so a proposal for it would apply text Ray never
+// read in full under a card that says "update". Editing a document body stays with the operator;
+// propose_document_retrieval covers the retrieval-facing change Ray can actually justify.
+const documentBodyIsOperatorAuthored = permanent(
+  "Replacing a document's body is operator-authored: Ray only ever sees snippets and chunks of a document, so it cannot propose a faithful replacement for one.",
+);
 // Ingestion settings become proposable in Wave 3. Only the embedding-model switch inside such a
 // proposal stays never-list, because it triggers a bulk re-embed; cancelling a pending switch is a
 // safe de-escalation and is deliberately not treated as a boundary.
@@ -264,7 +274,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage([
     "listDocumentSearchHistory",
     "getDocumentSearchHistory",
-    "createDocument",
     "updateDocumentSource",
     "deleteDocumentSource",
     "pauseDocumentSourceCrawl",
@@ -273,12 +282,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "crawlWebsiteDocuments",
     "listWebsiteCrawlJobs",
     "deleteWebsiteCrawlJob",
-    "updateDocument",
-    "updateDocumentRetrieval",
-    "deleteDocument",
     "getDocumentTypeCatalog",
     "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
+  ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
   ...coverage([
     "createRetrievalAnswer",
     "setQualityTurnTriage",

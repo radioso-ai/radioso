@@ -22,4 +22,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   recrawlDocumentSource: ["workspace.documents.manage"],
   reprocessDocumentSource: ["workspace.documents.manage"],
   reprocessDocument: ["workspace.documents.manage"],
+  createDocument: ["workspace.documents.manage"],
+  updateDocumentRetrieval: ["workspace.documents.manage"],
+  deleteDocument: ["workspace.documents.manage"],
 };

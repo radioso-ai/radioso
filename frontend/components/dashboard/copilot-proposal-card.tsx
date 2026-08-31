@@ -150,11 +150,20 @@ export const targetReference = (
       ...(agentId ? { agentId } : {}),
     } : null
   }
-  const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
-  return typeof directiveId === 'string' ? {
-    entity: { type: 'directive', id: directiveId },
-    ...(agentId ? { agentId } : {}),
-  } : null
+  if (summary.targetType === 'document') {
+    // A create carries a null documentId until it is applied, the same as a drafted skill.
+    const documentId = applied.documentId ?? ref.documentId
+    return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null
+  }
+  if (summary.targetType === 'directive') {
+    const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
+    return typeof directiveId === 'string' ? {
+      entity: { type: 'directive', id: directiveId },
+      ...(agentId ? { agentId } : {}),
+    } : null
+  }
+  // A target type with no branch here links nowhere rather than borrowing the directive's.
+  return null
 }
 
 const statusMessage = (state: CopilotProposalCardState, detail: CopilotProposalDetail | null) => {

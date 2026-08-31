@@ -16,6 +16,8 @@ import { createDirectiveProposalCopilotTools } from "./directives.js";
 import type { DirectiveProposalCopilotToolDependencies } from "./directives.js";
 import { createDocumentKnowledgeCopilotTools, createDocumentSearchCopilotTools, createDocumentStatusCopilotTools } from "./documents.js";
 import type { DocumentKnowledgeCopilotToolDependencies, DocumentSearchCopilotToolDependencies, DocumentStatusCopilotToolDependencies, CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
+import { createDocumentProposalCopilotTools } from "./documentProposals.js";
+import type { DocumentProposalCopilotToolDependencies } from "./documentProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
@@ -51,7 +53,8 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & Omit<RoutineProposalCopilotToolDependencies, "agentLookup">
   & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">
   & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">
-  & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">;
+  & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">
+  & DocumentProposalCopilotToolDependencies;
 
 /** Composition-only barrel; each descriptor remains published from its owner module. */
 export const createCopilotToolDescriptors = (
@@ -78,6 +81,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSkillConfigProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createContextVariableProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createDocumentProposalCopilotTools(deps),
 ]);
 
 export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";

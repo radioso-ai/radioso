@@ -32,6 +32,7 @@ import type {
   CopilotProposalAdapterRegistry,
   CopilotWorkspaceRouteKeyResolver,
 } from "../../modules/operatorCopilot/public.js";
+import type { CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
 import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
@@ -52,6 +53,16 @@ import { contextVariableCopilotPrimitives } from "../../modules/context-variable
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
+export const createCopilotWorkspaceAccountResolver = (
+  deps: { readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById"> },
+): CopilotWorkspaceAccountResolver => ({
+  resolveAccountId: async (workspaceId) => {
+    const workspace = await deps.workspaceRepository.findById(workspaceId);
+    if (!workspace) throw new Error("Copilot workspace no longer exists");
+    return workspace.accountId;
+  },
+});
+
 export const createCopilotWorkspaceRouteKeyResolver = (
   deps: { readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById"> },
 ): CopilotWorkspaceRouteKeyResolver => ({

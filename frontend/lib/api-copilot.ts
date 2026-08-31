@@ -48,7 +48,7 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
@@ -98,6 +98,7 @@ export interface CopilotProposalTargetReference {
   routineId?: string | null
   skillId?: string | null
   variableId?: string | null
+  documentId?: string | null
   settingKey?: string | null
   id?: string | null
 }

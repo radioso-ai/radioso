@@ -35518,7 +35518,8 @@
                                         "agent_setting",
                                         "routine",
                                         "agent_skill",
-                                        "context_variable"
+                                        "context_variable",
+                                        "document"
                                       ]
                                     },
                                     "targetLabel": {
@@ -35832,7 +35833,8 @@
                         "agent_setting",
                         "routine",
                         "agent_skill",
-                        "context_variable"
+                        "context_variable",
+                        "document"
                       ]
                     },
                     "targetRef": {},
@@ -35846,7 +35848,8 @@
                             "agent_setting",
                             "routine",
                             "agent_skill",
-                            "context_variable"
+                            "context_variable",
+                            "document"
                           ]
                         },
                         "ref": {}

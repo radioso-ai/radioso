@@ -65,10 +65,11 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
-import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
+import { createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -425,6 +426,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createDocumentCopilotProposalAdapter({
+      documentAuthoring: documents.documentIngestionService,
+      documentDeletion: documents.documentDeletionService,
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
+    }),
   ] as const;
   const retrievalProbeService = new RetrievalProbeService({
     retrievalSearch: retrieval.retrievalSearchService,

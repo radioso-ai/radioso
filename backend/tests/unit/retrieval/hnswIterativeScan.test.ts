@@ -19,8 +19,8 @@ interface Recorded {
  * models the search itself failing once the setting has been accepted.
  */
 const databaseStub = (input: {
-  failSet?: unknown | ((sql: string) => unknown);
-  failQuery?: unknown;
+  failSet?: Error | ((sql: string) => Error | undefined);
+  failQuery?: Error;
   rows?: Record<string, unknown>[];
 }): { database: Database; recorded: Recorded } => {
   const recorded: Recorded = { transactions: [], direct: [] };

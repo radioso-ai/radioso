@@ -61,6 +61,14 @@ export type {
   RetrievalSourceFilter,
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
+export * from "./copilotPrimitiveRegistry.js";
+export { resolveAgentRetrievalScope } from "./domain/agentRetrievalScope.js";
+export type {
+  AgentRetrievalInputs,
+  AgentRetrievalScope,
+  AgentRetrievalScopePort,
+  AgentRetrievalScopeSource,
+} from "./domain/agentRetrievalScope.js";
 export type {
   VectorChunkFilter,
   VectorMetadataFilter,

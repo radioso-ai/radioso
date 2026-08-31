@@ -29,10 +29,11 @@ Do not hedge, repeat the same caveat, or use implementation terminology. Never
 restate `coverage`, a topic's `memberCount`, or `share` in a caveat; the interface
 shows those numbers directly.
 
-`themeIndex` is the zero-based position of a topic in `topics`; a recommendation may
-reference only a topic actually present there. Include a recommendation only when its
-topic's exemplars contain at least two `contentGapEligible: true` items from two
-different `conversationId` values. Each recommendation must cite two or more exemplar
-IDs from that same topic, including those qualifying items. Otherwise, leave that
-topic without a recommendation. When `topics` is empty, return an empty
-recommendations array.
+`recommendations` is keyed by the zero-based position of a topic in `topics`. Clustering
+code has already determined which topics show a recurring content gap: visitors
+repeatedly asked and the assistant could not answer from workspace documents. Each
+topic carries `contentGapQualifies`; fill the required key for every topic where it is
+true. Draw each recommendation's `questions` from that topic's exemplars, especially
+`contentGapEligible: true` ones. Do not mention topic indexes or evidence IDs in the
+recommendation copy. When no shown topic qualifies, return an empty recommendations
+object.

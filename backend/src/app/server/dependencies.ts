@@ -54,6 +54,7 @@ import { createConnectorIngestionPort } from "../../modules/connectors/services/
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
+import { normalizeBaseUrl } from "../../modules/websiteCrawler/public.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import {
   AgentTurnProbeService,
@@ -61,13 +62,17 @@ import {
   EvalCaseReplayService,
   EvalSuiteProbeService,
   OperatorCopilotService,
+  RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
-import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
+import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
+import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
+import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -150,6 +155,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceProviderCredentialsService,
   });
   const {
+    agentRetrievalScope,
     documents,
     embeddingBindingResolver,
     embeddingPorts,
@@ -205,6 +211,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
+    agentRetrievalScope,
     agentService,
     agentSkillRepository,
     auditEventRepository: infrastructure.auditEventRepository,
@@ -425,7 +432,30 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
+    createDocumentCopilotProposalAdapter({
+      documentAuthoring: createCopilotDocumentAuthoringPort(documents.documentIngestionService),
+      documentDeletion: documents.documentDeletionService,
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
+    }),
+    createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService }),
+    createWebsiteCrawlCopilotProposalAdapter({
+      websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
+      crawlPolicy: () => {
+        const config = resolveWebsiteCrawlerConfig();
+        return { enabled: env.WEBSITE_CRAWLER_ENABLED, defaultLimit: config.defaultLimit, maxLimit: config.maxLimit };
+      },
+    }),
   ] as const;
+  const retrievalProbeService = new RetrievalProbeService({
+    retrievalSearch: retrieval.retrievalSearchService,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(repositories.conversationRepository),
     agentReader: {
@@ -535,7 +565,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Named rather than inlined so the copilot's behavioural eval suite can drive a real turn through
   // the same catalog, prompt, and runner the dashboard uses. A suite that assembled its own would
   // measure a copilot nobody talks to.
+  // Resolved here rather than at registration time so a contributing module receives the same
+  // constructed infrastructure every other application-module provider does.
+  const copilotToolContributions = composition.copilotToolRegistrations.map((registration) =>
+    typeof registration === "function"
+      ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
+      : registration);
   const copilotToolCatalog = createCopilotToolCatalog({
+    toolContributions: copilotToolContributions,
     agentService: {
       get: agentService.get.bind(agentService),
       listExisting: agentService.listExisting.bind(agentService),
@@ -560,6 +597,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalCaseCapture: evalCaseCaptureService,
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
+    retrievalProbe: retrievalProbeService,
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,
       agentVersion: copilotAgentVersion,

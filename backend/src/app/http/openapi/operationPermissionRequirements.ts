@@ -6,6 +6,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   getOrCreateEvalCaseBySourceMessage: ["workspace.retrieval.query"],
   runEvalCases: ["workspace.retrieval.query"],
   createEvalRun: ["workspace.retrieval.query"],
+  searchRetrievalEvidence: ["workspace.retrieval.query"],
   validateAgentRoutine: ["workspace.agents.read"],
   createAssistantChatResponse: ["workspace.chat.use"],
   createAgentRoutine: ["workspace.agents.manage"],
@@ -21,4 +22,9 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   recrawlDocumentSource: ["workspace.documents.manage"],
   reprocessDocumentSource: ["workspace.documents.manage"],
   reprocessDocument: ["workspace.documents.manage"],
+  createDocument: ["workspace.documents.manage"],
+  updateDocumentRetrieval: ["workspace.documents.manage"],
+  deleteDocument: ["workspace.documents.manage"],
+  updateIngestionSettings: ["workspace.settings.manage"],
+  crawlWebsiteDocuments: ["workspace.documents.manage"],
 };

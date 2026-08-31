@@ -2,3 +2,10 @@
 
 [scripts]
 setup = "pnpm install --frozen-lockfile && pnpm --dir backend run build:workspace-deps"
+run_mode = "concurrent"
+
+[scripts.run.common-db-dev]
+available_in = [ "local" ]
+command = "scripts/run-common-db-dev.sh"
+default = true
+icon = "database"

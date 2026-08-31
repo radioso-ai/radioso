@@ -9212,6 +9212,25 @@
           "results"
         ]
       },
+      "RetrievalAgentScope": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retrievalEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "agentId",
+          "retrievalEnabled"
+        ]
+      },
       "RetrievalSearchRequest": {
         "type": "object",
         "properties": {
@@ -9219,6 +9238,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
           },
           "metadataFilter": {
             "type": "object",
@@ -9245,6 +9268,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
           },
           "conversationContext": {
             "type": "object",
@@ -9325,6 +9352,9 @@
               "results"
             ]
           },
+          "agentScope": {
+            "$ref": "#/components/schemas/RetrievalAgentScope"
+          },
           "rewrittenQuery": {
             "type": "object",
             "properties": {
@@ -9364,6 +9394,7 @@
         },
         "required": [
           "outcome",
+          "agentScope",
           "rewrittenQuery",
           "results"
         ]
@@ -9388,6 +9419,9 @@
           "metadata": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "score": {
+            "type": "number"
           }
         },
         "required": [
@@ -9406,6 +9440,9 @@
               "answer"
             ]
           },
+          "agentScope": {
+            "$ref": "#/components/schemas/RetrievalAgentScope"
+          },
           "answer": {
             "type": "string"
           },
@@ -9456,6 +9493,7 @@
         },
         "required": [
           "outcome",
+          "agentScope",
           "answer",
           "validation"
         ]
@@ -9469,6 +9507,9 @@
               "answer"
             ]
           },
+          "agentScope": {
+            "$ref": "#/components/schemas/RetrievalAgentScope"
+          },
           "answer": {
             "type": "string"
           },
@@ -9519,6 +9560,7 @@
         },
         "required": [
           "outcome",
+          "agentScope",
           "answer",
           "validation"
         ]
@@ -27062,6 +27104,26 @@
               }
             }
           },
+          "403": {
+            "description": "Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The agentId supplied does not resolve to an agent in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Expensive authenticated request rate limit exceeded",
             "content": {
@@ -35089,6 +35151,26 @@
               }
             }
           },
+          "403": {
+            "description": "Caller lacks the workspace.retrieval.query permission, or supplied agentId without workspace.agents.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The agentId supplied does not resolve to an agent in this workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Expensive authenticated request rate limit exceeded",
             "content": {
@@ -39642,12 +39724,29 @@
                     },
                     "canManage": {
                       "type": "boolean"
+                    },
+                    "applyableProposalTargets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "directive",
+                          "agent_setting",
+                          "routine",
+                          "agent_skill",
+                          "context_variable",
+                          "document",
+                          "ingestion_settings",
+                          "website_crawl"
+                        ]
+                      }
                     }
                   },
                   "required": [
                     "available",
                     "reason",
-                    "canManage"
+                    "canManage",
+                    "applyableProposalTargets"
                   ]
                 }
               }
@@ -39889,7 +39988,10 @@
                                         "agent_setting",
                                         "routine",
                                         "agent_skill",
-                                        "context_variable"
+                                        "context_variable",
+                                        "document",
+                                        "ingestion_settings",
+                                        "website_crawl"
                                       ]
                                     },
                                     "targetLabel": {
@@ -40203,7 +40305,10 @@
                         "agent_setting",
                         "routine",
                         "agent_skill",
-                        "context_variable"
+                        "context_variable",
+                        "document",
+                        "ingestion_settings",
+                        "website_crawl"
                       ]
                     },
                     "targetRef": {},
@@ -40217,7 +40322,10 @@
                             "agent_setting",
                             "routine",
                             "agent_skill",
-                            "context_variable"
+                            "context_variable",
+                            "document",
+                            "ingestion_settings",
+                            "website_crawl"
                           ]
                         },
                         "ref": {}
@@ -40417,7 +40525,7 @@
             }
           },
           "403": {
-            "description": "Missing agent management permission"
+            "description": "Missing the permission that governs what the proposal changes"
           },
           "409": {
             "description": "Proposal is not pending"

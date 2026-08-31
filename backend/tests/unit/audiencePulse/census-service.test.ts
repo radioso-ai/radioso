@@ -259,6 +259,23 @@ describe("CensusService.run (T020)", () => {
     expect(result.topics.reduce((sum, topic) => sum + topic.memberCount, 0)).toBe(clusterableFacets.length);
   });
 
+  it("orders report member ids nearest the centroid first, breaking distance ties by id", async () => {
+    const clusterableFacets = buildClusterableFacets();
+    const eligibleIds = clusterableFacets.map((facet) => facet.messageId);
+    const topicRepository = buildTopicRepository();
+    const result = await new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }))
+      .run({ workspaceId, windowStart, windowEnd });
+    const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
+
+    for (const topic of result.topics) {
+      const expected = saved.memberships
+        .filter((membership) => membership.topicId === topic.topicId)
+        .sort((left, right) => left.distance - right.distance || left.messageId.localeCompare(right.messageId))
+        .map((membership) => membership.messageId);
+      expect(topic.memberIds).toEqual(expected);
+    }
+  });
+
   it("derives a seed that does not depend on ids excluded before clustering", async () => {
     const clusterableFacets = buildClusterableFacets();
     const missingFacetId = randomUUID();

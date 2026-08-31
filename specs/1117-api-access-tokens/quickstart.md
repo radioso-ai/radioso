@@ -37,7 +37,7 @@ pnpm run test:e2e -- api-access-settings.spec.ts
 
 ## Manual acceptance path
 
-1. Upgrade a disposable installation containing a legacy workspace token. Confirm migration 157 records a safe tombstone and removes all verifier/ciphertext material.
+1. Upgrade a disposable installation containing a legacy workspace token. Confirm migration 158 records a safe tombstone and removes all verifier/ciphertext material.
 2. Confirm configured MCP stores complete their purge before readiness; make the store unavailable once and confirm readiness fails closed and retry succeeds later.
 3. Sign in as a member, create a member-ceiling personal token, copy/acknowledge it, and verify no secret is retained in browser local/session storage.
 4. Use the personal token on an explicitly eligible member API. Verify an administrator API and every lifecycle endpoint deny bearer-only access.

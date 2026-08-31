@@ -108,8 +108,35 @@ export interface CopilotAuditPort {
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
+/**
+ * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
+ * the owning domain, so it has to ask for that domain's permission rather than one permission for
+ * everything: gating a document deletion on agent management both blocks the document managers who
+ * should be able to apply it and lets an agent manager delete documents they cannot otherwise touch.
+ * Every target type appears here, so a new one cannot inherit an unrelated domain's authority by
+ * omission.
+ */
+export const copilotProposalPermissions = {
+  directive: ["workspace.agents.manage"],
+  agent_setting: ["workspace.agents.manage"],
+  routine: ["workspace.agents.manage"],
+  agent_skill: ["workspace.agents.manage"],
+  context_variable: ["workspace.agents.manage"],
+  document: ["workspace.documents.manage"],
+  ingestion_settings: ["workspace.settings.manage"],
+  website_crawl: ["workspace.documents.manage"],
+} as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
+
+/**
+ * How long the sentence a proposal card states may be. Enforced on the composed sentence rather than
+ * argued from its parts: a summary is built from a title, a URL, a rationale and whatever else the
+ * target needs, and proving every combination of those fits is arithmetic that goes stale the moment
+ * one of them changes. Composing then clamping cannot go stale.
+ */
+export const MAX_COPILOT_PROPOSAL_SUMMARY = 2_000;
+
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {
@@ -225,6 +252,52 @@ export interface CopilotContextVariableProposalAdapter extends CopilotProposalAd
   /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
   validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
 }
+
+/**
+ * A document change is supplied by Ray from a document it read the status and metadata of, never
+ * drafted from prose, so validation happens entirely in `validatePayload`.
+ */
+export interface CopilotDocumentProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "document";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
+ * An ingestion settings change is supplied by Ray from settings it read, and the write replaces
+ * every field at once, so `validatePayload` merges it against the stored row.
+ */
+export interface CopilotIngestionSettingsProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "ingestion_settings";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
+ * A crawl proposal is supplied by Ray from a URL an operator named or a source it read. Applying it
+ * starts a job rather than changing a stored row, so nothing about it can go stale.
+ */
+export interface CopilotWebsiteCrawlProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "website_crawl";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
+ * Every adapter a tool factory may be handed, discriminated by `targetType`. One declaration so a
+ * new target type reaches every proposal tool at once instead of being added to each one by hand.
+ */
+export type CopilotAnyProposalAdapter =
+  | CopilotDirectiveProposalAdapter
+  | CopilotAgentSettingProposalAdapter
+  | CopilotRoutineProposalAdapter
+  | CopilotAgentSkillProposalAdapter
+  | CopilotContextVariableProposalAdapter
+  | CopilotDocumentProposalAdapter
+  | CopilotIngestionSettingsProposalAdapter
+  | CopilotWebsiteCrawlProposalAdapter;
+
+export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;

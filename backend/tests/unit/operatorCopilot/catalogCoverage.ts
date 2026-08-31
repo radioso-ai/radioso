@@ -34,6 +34,9 @@ const catalogToolCoverage = {
   recrawlDocumentSource: "recrawl_source",
   reprocessDocumentSource: "reprocess_document",
   reprocessDocument: "reprocess_document",
+  createDocument: "propose_document",
+  updateDocumentRetrieval: "propose_document_retrieval",
+  deleteDocument: "propose_document_removal",
   listAgentSkills: "agent_skills",
   listAgentSkillCapabilities: "agent_skills",
   listMcpConnections: "agent_skills",
@@ -56,18 +59,28 @@ const catalogToolCoverage = {
   listWorkspaceProviderCredentials: "workspace_settings",
   getWorkspaceLlmModels: "workspace_settings",
   createAssistantChatResponse: "test_agent_turn",
+  searchRetrievalEvidence: "retrieval_probe",
+  updateIngestionSettings: "propose_ingestion_settings",
+  crawlWebsiteDocuments: "start_crawl",
 } as const;
 
 const routineStructuralEditing = deferred(
   "Deferred: Ray edits routines by stable id, which cannot add or remove a step, so deleting a routine and reworking its graph stay in the routine editor.",
 );
 const wave2BehaviorAuthoring = deferred("Deferred to Wave 2 behavior authoring: Ray will create operator-confirmed proposals, not edit live behavior directly.");
-const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document and source changes need their own bounded proposal flows.");
-// Ingestion settings become proposable in Wave 3. Only the embedding-model switch inside such a
-// proposal stays never-list, because it triggers a bulk re-embed; cancelling a pending switch is a
-// safe de-escalation and is deliberately not treated as a boundary.
-const wave3IngestionSettings = deferred(
-  `Deferred to Wave 3 ingestion settings proposals. ${copilotNeverList.embedding_model_switch_without_typed_confirmation.reason}`,
+const wave3KnowledgeBase = deferred("Deferred to Wave 3 knowledge base work: document source and crawl changes need their own bounded proposal flows.");
+// Ray reads documents as search snippets and paged chunks, both derived and partial. This
+// operation replaces a document's whole body, so a proposal for it would apply text Ray never
+// read in full under a card that says "update". Editing a document body stays with the operator;
+// propose_document_retrieval covers the retrieval-facing change Ray can actually justify.
+const documentBodyIsOperatorAuthored = permanent(
+  "Replacing a document's body is operator-authored: Ray only ever sees snippets and chunks of a document, so it cannot propose a faithful replacement for one.",
+);
+// Cancelling a pending embedding-model switch is a safe de-escalation rather than a boundary: it
+// stops a transition an operator started. It waits on a de-escalation act with its own guards,
+// not on the never-list entry that governs starting one.
+const pendingEmbeddingSwitchCancel = deferred(
+  "Deferred: cancelling a pending embedding-model switch stops a transition an operator started, and needs its own de-escalation act rather than a proposal card.",
 );
 const wave4Serving = deferred("Deferred to Wave 4 serving work: operator serving controls need an explicit runtime safety model.");
 // `replay_eval_case` reaches this operation only through a case: it derives the snapshot from one
@@ -175,10 +188,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "setWorkspaceProviderCredential",
     "removeWorkspaceProviderCredential",
   ], neverListExclusion("provider_credential_writes")),
-  ...coverage([
-    "updateIngestionSettings",
-    "cancelPendingEmbeddingModel",
-  ], wave3IngestionSettings),
+  ...coverage(["cancelPendingEmbeddingModel"], pendingEmbeddingSwitchCancel),
   ...coverage(["replyToConversation"], neverListExclusion("unattended_live_customer_reply")),
 
   ...coverage([
@@ -278,24 +288,19 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], wave2BehaviorAuthoring),
   ...coverage(["createEvalRun"], snapshotOnlyReplay),
   ...coverage([
-    "searchRetrievalEvidence",
     "listDocumentSearchHistory",
     "getDocumentSearchHistory",
-    "createDocument",
     "updateDocumentSource",
     "deleteDocumentSource",
     "pauseDocumentSourceCrawl",
     "resumeDocumentSourceCrawl",
     "importDocument",
-    "crawlWebsiteDocuments",
     "listWebsiteCrawlJobs",
     "deleteWebsiteCrawlJob",
-    "updateDocument",
-    "updateDocumentRetrieval",
-    "deleteDocument",
     "getDocumentTypeCatalog",
     "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
+  ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
   ...coverage([
     "createRetrievalAnswer",
     "setQualityTurnTriage",

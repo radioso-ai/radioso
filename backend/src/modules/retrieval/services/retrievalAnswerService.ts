@@ -20,6 +20,8 @@ import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import type { DirectiveSteeringPort } from "../../directives/public.js";
+import type { AgentRetrievalScopePort } from "../domain/agentRetrievalScope.js";
+import { resolveScopedRetrievalRun, type ScopedRetrievalRun } from "./scopedRetrievalRun.js";
 import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { appendDirectiveSteeringStage } from "../../chat/contracts/index.js";
 
@@ -31,6 +33,7 @@ export interface RetrievalAnswerServiceDependencies {
   usageLimitPolicy?: UsageLimitPolicy;
   auditService?: AuditPort;
   directiveSteering?: DirectiveSteeringPort;
+  agentRetrievalScope?: AgentRetrievalScopePort;
   metrics?: AnswerPresentationMetrics | null;
 }
 
@@ -61,7 +64,8 @@ export class RetrievalAnswerService {
       retrievalInvoked: true,
     } as const;
     try {
-      return await this.runAnswer(input, history, execution, usageContext);
+      const scoped = await resolveScopedRetrievalRun(this.dependencies.agentRetrievalScope, input);
+      return await this.runAnswer(input, history, execution, usageContext, scoped);
     } catch (error) {
       await this.recordAuditFailure(input, execution, error);
       throw error;
@@ -79,6 +83,7 @@ export class RetrievalAnswerService {
       surface: "retrieval" | "mcp_capability";
       attemptKey: string;
     },
+    scoped: ScopedRetrievalRun,
   ): Promise<RetrievalAnswerResult> {
     const interpretation = await this.dependencies.retrievalPipeline.interpret({
       workspaceId: input.workspaceId,
@@ -86,10 +91,10 @@ export class RetrievalAnswerService {
       history,
       responseIdentity: null,
       metadataFilter: input.metadataFilter,
-      sourceScope: input.sourceScope,
-      responseBehavior: input.responseBehavior,
-      responseBehaviorEnabled: input.responseBehaviorEnabled,
-      agentSkillSettings: input.agentSkillSettings,
+      sourceScope: input.sourceScope ?? scoped.inputs.sourceScope,
+      responseBehavior: input.responseBehavior ?? scoped.inputs.responseBehavior,
+      responseBehaviorEnabled: input.responseBehaviorEnabled ?? scoped.inputs.responseBehaviorEnabled,
+      agentSkillSettings: input.agentSkillSettings ?? scoped.inputs.agentSkillSettings,
       execution,
       usageContext,
     });
@@ -160,6 +165,7 @@ export class RetrievalAnswerService {
       await usageReservation.commit();
       const successResult = {
         outcome: "answer" as const,
+        agentScope: scoped.attribution,
         answer: presented.answer,
         citations: presented.citations,
         evidence: retrieval.contexts.map((context) => ({
@@ -168,6 +174,7 @@ export class RetrievalAnswerService {
           title: context.title,
           content: context.content,
           metadata: context.metadata,
+          score: context.relevanceScore ?? context.similarity,
         })),
         activitySummary: resolvedActivitySummary,
         activityTrace,
@@ -210,6 +217,9 @@ export class RetrievalAnswerService {
       eventStatus: "success",
       metadata: {
         execution,
+        // Which agent's settings produced this answer is the first question asked
+        // when a grounded answer surprises someone.
+        ...(input.agentId ? { agentId: input.agentId } : {}),
         ...(execution.surface === "retrieval" ? { query: input.query } : {}),
         outcome: "answer",
         citationCount: result.citations?.length ?? 0,

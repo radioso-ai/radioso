@@ -128,19 +128,20 @@ export const seedSkillMentionValue = (value: string, recognizedSkillNames: reado
 export const mentionsSkill = (value: string, skillName: string): boolean =>
   skillName !== '' && readSkillMentions(value, [skillName]).includes(skillName)
 
-// The field holds one logical line: Enter selects from the mention menu, it never splits the
-// value into a second paragraph.
-function SingleLinePlugin(): null {
+// A return inside the value is a line break, not a second paragraph. The stored instruction is
+// one string, so both shapes serialize to the same text — but one block keeps every read of the
+// document, and every mention it reports, on a single paragraph. The mention menu still takes
+// Enter first: the typeahead registers that key above this while it is open.
+function ReturnInsertsLineBreakPlugin(): null {
   const [editor] = useLexicalComposerContext()
-  useEffect(() => {
-    const block = () => true
-    const unregisterParagraph = editor.registerCommand(INSERT_PARAGRAPH_COMMAND, block, COMMAND_PRIORITY_CRITICAL)
-    const unregisterLineBreak = editor.registerCommand(INSERT_LINE_BREAK_COMMAND, block, COMMAND_PRIORITY_CRITICAL)
-    return () => {
-      unregisterParagraph()
-      unregisterLineBreak()
-    }
-  }, [editor])
+  useEffect(
+    () => editor.registerCommand(
+      INSERT_PARAGRAPH_COMMAND,
+      () => editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false),
+      COMMAND_PRIORITY_CRITICAL,
+    ),
+    [editor],
+  )
   return null
 }
 
@@ -237,9 +238,9 @@ function MentionChangePlugin({
   return <OnChangePlugin onChange={emit} />
 }
 
-// A one-line prose field where `#` inserts a skill chip. The value is the portable text the
-// grammar produces (`Refund the order using #issue_refund`), so it round-trips through
-// ordinary API string fields.
+// A prose field where `#` inserts a skill chip. The value is the portable text the grammar
+// produces (`Refund the order using #issue_refund`), so it round-trips through ordinary API
+// string fields, line breaks and all.
 export function SkillMentionInput({
   id,
   ariaLabel,
@@ -323,7 +324,7 @@ export function SkillMentionInput({
             ErrorBoundary={LexicalErrorBoundary}
           />
           <HistoryPlugin />
-          <SingleLinePlugin />
+          <ReturnInsertsLineBreakPlugin />
           <MentionChangePlugin onChange={onChange} onSkillsChange={onSkillsChange} />
           <ChipTypeaheadPlugin
             skillsOnly

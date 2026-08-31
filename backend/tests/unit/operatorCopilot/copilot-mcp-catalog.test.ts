@@ -166,6 +166,8 @@ describe("copilot dashboard links", () => {
     expect(buildCopilotDashboardLink("acme", { type: "agent", id: "agent-1" })).toBe("/w/acme/agents/agent-1");
     expect(buildCopilotDashboardLink("acme", { type: "routine", id: "routine-1", agentId: "agent-1" })).toBe("/w/acme/agents/agent-1/routines/routine-1");
     expect(buildCopilotDashboardLink("acme", { type: "document", id: "document-1" })).toBe("/w/acme/knowledge/documents/document-1");
+    expect(buildCopilotDashboardLink("acme", { type: "ingestion_settings" })).toBe("/w/acme/knowledge?knowledgeTab=ingestion");
+    expect(buildCopilotDashboardLink("acme", { type: "document_source", id: "source-1" })).toBe("/w/acme/knowledge?knowledgeTab=sources");
     expect(buildCopilotDashboardLink("acme", { type: "conversation", id: "conversation-1" })).toBe("/w/acme/activity?itemKind=chat&itemId=conversation-1");
     expect(buildCopilotDashboardLink("acme", { type: "quality_turn", id: "message-1" })).toBe("/w/acme/quality");
     expect(buildCopilotDashboardLink("acme", { type: "proposal", id: "proposal-1" })).toBe("/w/acme/copilot");

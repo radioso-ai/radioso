@@ -525,6 +525,14 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     }),
   );
 
+  const RetrievalAgentScopeSchema = registry.register(
+    "RetrievalAgentScope",
+    z.object({
+      agentId: z.string().uuid(),
+      retrievalEnabled: z.boolean(),
+    }).nullable(),
+  );
+
   const RetrievalSearchRequestSchema = registry.register("RetrievalSearchRequest", retrievalSearchSchema);
   const RetrievalAnswerRequestSchema = registry.register("RetrievalAnswerRequest", retrievalAnswerSchema);
 
@@ -544,6 +552,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     "RetrievalSearchResponse",
     z.object({
       outcome: z.literal("results"),
+      agentScope: RetrievalAgentScopeSchema,
       rewrittenQuery: z.object({
         semantic: z.string(),
         lexical: z.string(),
@@ -564,6 +573,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       title: z.string(),
       content: z.string(),
       metadata: z.record(z.unknown()).optional(),
+      score: z.number().optional(),
     }),
   );
 
@@ -571,6 +581,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     "RetrievalAnswerSuccess",
     z.object({
       outcome: z.literal("answer"),
+      agentScope: RetrievalAgentScopeSchema,
       answer: z.string(),
       citations: z.array(CitationSchema).optional(),
       validation: z.object({

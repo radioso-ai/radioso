@@ -10,10 +10,20 @@ export interface RetrievalConversationContext {
   followUpToMessageId?: string;
 }
 
+/**
+ * Attribution for a run that was measured with one agent's configuration.
+ * `null` means the run used workspace retrieval defaults and describes no agent.
+ */
+export interface RetrievalAgentScopeAttribution {
+  agentId: string;
+  retrievalEnabled: boolean;
+}
+
 export interface RetrievalSearchRequest {
   workspaceId: string;
   accountId?: string | null;
   requestId?: string | null;
+  agentId?: string | null;
   query: string;
   metadataFilter?: Record<string, unknown>;
   topK?: number;
@@ -22,6 +32,7 @@ export interface RetrievalSearchRequest {
 
 export interface RetrievalSearchResult {
   outcome: "results";
+  agentScope: RetrievalAgentScopeAttribution | null;
   rewrittenQuery: {
     semantic: string;
     lexical: string;
@@ -42,6 +53,7 @@ export interface RetrievalAnswerRequest {
   workspaceId: string;
   accountId?: string | null;
   requestId?: string | null;
+  agentId?: string | null;
   query: string;
   conversationContext?: RetrievalConversationContext;
   metadataFilter?: Record<string, unknown>;
@@ -54,6 +66,7 @@ export interface RetrievalAnswerRequest {
 
 export interface RetrievalAnswerSuccess {
   outcome: "answer";
+  agentScope: RetrievalAgentScopeAttribution | null;
   answer: string;
   citations?: ChatCitation[];
   evidence: Array<{
@@ -62,6 +75,7 @@ export interface RetrievalAnswerSuccess {
     title: string;
     content: string;
     metadata?: Record<string, unknown>;
+    score?: number;
   }>;
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;

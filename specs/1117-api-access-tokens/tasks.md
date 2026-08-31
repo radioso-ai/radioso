@@ -11,8 +11,8 @@
 - [ ] T003 [P] Add failing service-principal transition and effective-role tests in `backend/tests/unit/machineAccess/service-account.test.ts`.
 - [ ] T004 [P] Add failing personal tenure/effective-role tests in `backend/tests/unit/machineAccess/personal-principal.test.ts`.
 - [ ] T005 Add migration/repository integration tests covering new tables, constraints, hash-only rows, quotas, conditional rotation, stable pagination, and idempotent legacy tombstones in `backend/tests/integration/machine-access-repository.integration.test.ts` and `backend/tests/integration/machine-access-migration.integration.test.ts`.
-- [ ] T006 Add migration `backend/src/db/migrations/157_machine_access.sql` with `workspace_service_accounts`, `api_credentials`, and `legacy_workspace_credential_tombstones`, then irreversibly tombstone/destroy legacy workspace-token authenticating material.
-- [ ] T007 Update Kysely database types/schema snapshots for migration 157 in the existing `backend/src/db/` generated/type ownership files.
+- [ ] T006 Add migration `backend/src/db/migrations/158_machine_access.sql` with `workspace_service_accounts`, `api_credentials`, and `legacy_workspace_credential_tombstones`, then irreversibly tombstone/destroy legacy workspace-token authenticating material.
+- [ ] T007 Update Kysely database types/schema snapshots for migration 158 in the existing `backend/src/db/` generated/type ownership files.
 - [ ] T008 Implement machine-access domain values/entities/errors and narrow repository/tenure/role/clock/secret/audit/last-use ports in `backend/src/modules/machineAccess/` until T002–T004 pass.
 - [ ] T009 Implement versioned opaque token generation, safe-prefix extraction, and non-reversible verifier matching in `backend/src/modules/machineAccess/credentialSecretCodec.ts`.
 - [ ] T010 Implement transactional Kysely adapters in focused files under `backend/src/db/repositories/machineAccess/` until T005 passes.

@@ -31,6 +31,10 @@ through canonical chunk storage before chunks are used by retrieval.
 - `composition.ts`: storage, dispatcher, and module wiring for application
   composition, including the exported `DocumentSourceRecrawlService`.
 - `historySupport.ts`: narrow support surface for chat history presentation.
+- `public.ts`: document rules other modules validate against, including
+  `documentMetadataRecordSchema` — the scalar map and 16 KB ceiling every writer
+  of document metadata honours, whether it arrives over HTTP or from an applied
+  operator-copilot proposal.
 
 Production code outside this module should prefer these entry points over direct
 imports from `services/` or `infra/`.

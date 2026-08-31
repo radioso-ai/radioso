@@ -1,15 +1,9 @@
 import { z } from "zod";
 
 import type {
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotAuditPort,
   CopilotContextVariableProposalAdapter,
-  CopilotDirectiveProposalAdapter,
-  CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
-import type { CopilotRepositoryPort } from "../service.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import {
@@ -24,6 +18,8 @@ import {
   requiredPageAgent,
   type CopilotAgentLookupPort,
   type CopilotProposalEvidenceDependencies,
+  proposalAdapterFor,
+  type CopilotProposalToolDependencies,
 } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -129,7 +125,6 @@ const describeContextVariableAgent = (
     ? describeNamedAgent(input, context, agentLookup)
     : entity("agent", input.agentId ?? context?.pageContext.agentId);
 };
-
 export const createContextVariablesCopilotTools = (
   deps: ContextVariablesCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
@@ -159,17 +154,14 @@ export const createContextVariablesCopilotTools = (
   ];
 };
 
-export interface ContextVariableProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies {
+export interface ContextVariableProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
-  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>;
-  readonly auditService: CopilotAuditPort;
 }
 
 export const createContextVariableProposalCopilotTools = (
   deps: ContextVariableProposalCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
-  const adapter = proposalAdapter(deps.proposalAdapters);
+  const adapter = proposalAdapterFor(deps.proposalAdapters, "context_variable");
   const description = "Propose creating or updating a context variable's definition, an agent's enablement of it, or both, for the operator to review and apply. This does not change configuration. Values are supplied from what was already read, not invented.";
   return [
     {
@@ -217,12 +209,4 @@ export const createContextVariableProposalCopilotTools = (
       },
     },
   ];
-};
-
-const proposalAdapter = (
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter | CopilotAgentSkillProposalAdapter | CopilotContextVariableProposalAdapter>,
-): CopilotContextVariableProposalAdapter => {
-  const found = adapters.find((candidate) => candidate.targetType === "context_variable");
-  if (!found) throw new Error("No copilot proposal adapter registered for context_variable");
-  return found as CopilotContextVariableProposalAdapter;
 };

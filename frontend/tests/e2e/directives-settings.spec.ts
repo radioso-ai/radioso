@@ -1311,3 +1311,33 @@ test("agent directives hold conflict-resolver actions while the directive they r
   await expect.poll(() => directiveUpdates.length).toBe(2);
   expect(directiveUpdates.every((update) => update.method === "PATCH")).toBe(true);
 });
+
+test("a directive instruction keeps the lines its author wrote", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("two-line-tone");
+
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Answer in two sentences.");
+  await instruction.press("Enter");
+  await instruction.pressSequentially("Then offer to connect them with support.");
+  await page.getByRole("button", { name: "Save directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await expect.poll(() => directiveUpdates[0]?.body).toMatchObject({
+    name: "two-line-tone",
+    action: "Answer in two sentences.\nThen offer to connect them with support.",
+  });
+
+  // Reopening reads the stored value back as the two lines it was written as.
+  await page.getByRole("button", { name: "Edit two-line-tone" }).click();
+  const reopened = page.getByLabel("Instruction");
+  await expect(reopened).toContainText("Answer in two sentences.");
+  await expect(reopened).toContainText("Then offer to connect them with support.");
+});

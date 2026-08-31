@@ -6,7 +6,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { applyTestMigration, runTestMigrationsBefore } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
-const migrationFile = "157_machine_access.sql";
+const migrationFile = "158_machine_access.sql";
 
 const canReach = async (url?: string): Promise<boolean> => {
   if (!url) return false;
@@ -29,8 +29,8 @@ const isolatedUrl = (base: string, name: string): string => {
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("machine-access migration (157)", () => {
-  const databaseName = `mig157_${randomUUID().replaceAll("-", "")}`;
+describeIfDatabase("machine-access migration (158)", () => {
+  const databaseName = `mig158_${randomUUID().replaceAll("-", "")}`;
   let admin: Database;
   let database: Database;
 

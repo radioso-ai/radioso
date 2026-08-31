@@ -115,7 +115,7 @@ import {
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 import { createRoutineTurnProvider, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
 import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
-import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
+import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import { Database } from "../../../shared/infra/database.js";
@@ -208,6 +208,7 @@ export const buildChatServices = (input: {
   retrievalPipeline: RetrievalPipelinePort;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
   skillSettingsResolver?: SkillSettingsResolver;
+  agentRetrievalScope?: AgentRetrievalScopePort;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
@@ -836,6 +837,7 @@ export const buildChatServices = (input: {
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,
     directiveSteering,
+    agentRetrievalScope: input.agentRetrievalScope,
     metrics: input.metricsRegistry,
   });
   const workbenchReplayRunner = new WorkbenchReplayRunner({

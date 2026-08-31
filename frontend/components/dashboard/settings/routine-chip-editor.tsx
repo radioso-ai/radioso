@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, type JSX } from 'react'
+import { useEffect, useMemo, useRef, type JSX } from 'react'
 
 import { AtSign } from 'lucide-react'
 
@@ -20,7 +20,7 @@ import { $initializeFromParagraphs, $readProseParagraphs } from '@/components/da
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
 import { Button } from '@/components/ui/button'
 import type { RoutineSlotType } from '@/lib/api-types'
-import type { ChipDocVariable, ProseParagraph, ProseSegment } from '@/lib/routine-prose'
+import type { ChipDocVariable, ProseParagraph } from '@/lib/routine-prose'
 
 export type { RoutineEditorVariable }
 
@@ -95,16 +95,14 @@ export function RoutineInstructionEditor({
   initialContent: ProseParagraph[]
   variables: ChipDocVariable[]
   onCreateVariable: (variable: RoutineEditorVariable) => void
-  onChange: (segments: ProseSegment[]) => void
+  // Every line the author wrote, in order. A step instruction is one string, so the host
+  // decides how the lines join — the editor never drops the ones after the first.
+  onChange: (paragraphs: ProseParagraph[]) => void
   ariaLabel?: string
 }): JSX.Element {
   const reservedRefKinds = useMemo(
     () => Object.fromEntries(variables.map((variable) => [variable.id, 'variable' as RoutineChipKind])),
     [variables],
-  )
-  const handleParagraphChange = useCallback(
-    (paragraphs: ProseParagraph[]) => onChange(paragraphs[0]?.segments ?? [{ kind: 'text', text: '' }]),
-    [onChange],
   )
   // A variable's type, required, and mutable flags are owned by the Document row's own
   // controls; the chips here read them and never write back.
@@ -158,7 +156,7 @@ export function RoutineInstructionEditor({
             />
           </div>
           <HistoryPlugin />
-          <OnParagraphChangePlugin onParagraphChange={handleParagraphChange} />
+          <OnParagraphChangePlugin onParagraphChange={onChange} />
           <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} />
         </div>
       </RoutineVariablesProvider>

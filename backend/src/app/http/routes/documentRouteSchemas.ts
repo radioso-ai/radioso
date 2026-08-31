@@ -1,19 +1,12 @@
 import { z } from "zod";
 
+import { documentMetadataRecordSchema } from "../../../modules/documents/public.js";
+
 const MAX_DOCUMENT_LIST_LIMIT = 100;
-const MAX_DOCUMENT_METADATA_BYTES = 16384;
 
 const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
 
-// Document metadata is a flat map of scalars, bounded at 16 KB. The same shape
-// backs inline documents, imported documents, the document metadata PATCH, and
-// source-level document tags, so it is declared once here.
-export const documentMetadataRecordSchema = z
-  .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
-  .refine(
-    (value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_DOCUMENT_METADATA_BYTES,
-    { message: "Metadata must be 16 KB or less" },
-  );
+export { documentMetadataRecordSchema };
 
 export const documentEnrichmentOverrideSchema = z.enum(["on", "off"]);
 export const documentSourceEnrichmentOverrideSchema = z.enum(["inherit", "on", "off"]);

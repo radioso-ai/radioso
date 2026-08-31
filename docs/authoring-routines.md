@@ -63,7 +63,9 @@ rest state is the version a colleague reads to learn what the agent does.
 
 Open a step by its number to change what it does — **Ask or tell**, **Call a
 skill**, **Dispatch an action**, or **Approval**. The instruction you wrote stays
-with the step, and an approval gets its Approve and Decline choices seeded.
+with the step, and an approval gets its Approve and Decline choices seeded. Press
+Enter inside an instruction to break it across lines when a step needs a couple
+of sentences on their own lines; the breaks are part of what the agent reads.
 
 ### Capture information
 

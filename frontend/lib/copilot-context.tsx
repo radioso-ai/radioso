@@ -273,8 +273,9 @@ export function useCopilotEntity(
 export const resolveCopilotEntityLabel = (
   entities: readonly CopilotEntity[],
   type: string,
-  id: string,
-): string => entities.find((entity) => entity.type === type && entity.id === id)?.label ?? id
+  /** A singleton subject such as the workspace's ingestion settings carries no id. */
+  id: string | undefined,
+): string => entities.find((entity) => entity.type === type && entity.id === id)?.label ?? id ?? type
 
 export const deriveCopilotSuggestedQuestions = (
   view: string | null,

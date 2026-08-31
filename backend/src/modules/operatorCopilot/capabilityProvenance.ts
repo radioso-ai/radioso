@@ -6,10 +6,12 @@ type ProductionDescriptorName =
   | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "document_chunks" | "document_search" | "document_status"
   | "eval_results" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
+  | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
+  | "propose_ingestion_settings" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_lifecycle" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
-  | "recrawl_source" | "reprocess_document"
+  | "recrawl_source" | "reprocess_document" | "retrieval_probe"
   | "routine_definition" | "run_eval_suite" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_triage";
 
@@ -37,6 +39,11 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   propose_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive coaching as a pending, operator-confirmed proposal.") },
   propose_directive_enablement: { backingOperationIds: ["updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a reversible directive enablement change as a pending, operator-confirmed proposal.") },
   propose_directive_removal: { backingOperationIds: ["deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive removal as a pending, operator-confirmed proposal, the same as any other directive change.") },
+  propose_document: { backingOperationIds: ["createDocument"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts a knowledge document as an operator-reviewable proposal rather than writing one into the workspace.") },
+  propose_document_removal: { backingOperationIds: ["deleteDocument"], applicationPrimitiveIds: ["documents.deletion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents permanent document removal as a pending, operator-confirmed proposal, the same as any other document change.") },
+  propose_document_retrieval: { backingOperationIds: ["updateDocumentRetrieval"], applicationPrimitiveIds: ["documents.authoring.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the document service receives a retrieval-eligibility or metadata change.") },
+  propose_ingestion_settings: { backingOperationIds: ["updateIngestionSettings"], applicationPrimitiveIds: ["settings.ingestion.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the ingestion settings service receives a chunking or enrichment change.") },
+  start_crawl: { backingOperationIds: ["crawlWebsiteDocuments"], applicationPrimitiveIds: ["websiteCrawler.crawl.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a website crawl as a pending, operator-confirmed proposal, because starting one fetches an external site and spends crawl budget.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; routine lifecycle authority remains in the routine service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine", "reviseAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
   propose_routine_lifecycle: { backingOperationIds: ["publishAgentRoutine", "archiveAgentRoutine", "restoreAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray records an operator-confirmed lifecycle proposal while the routine service enforces transitions.") },
@@ -45,6 +52,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   replay_eval_case: { backingOperationIds: ["createEvalRun"], applicationPrimitiveIds: ["eval.case.replay"], ...rayOnly("Ray replays a selected case and carries bounded proposal evidence rather than exposing a general eval-run surface.") },
   recrawl_source: { backingOperationIds: ["recrawlDocumentSource"], applicationPrimitiveIds: ["documents.source-recrawl.act"] },
   reprocess_document: { backingOperationIds: ["reprocessDocument", "reprocessDocumentSource"], applicationPrimitiveIds: ["documents.reprocess.act", "documents.source-reprocess.act"] },
+  retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
   test_agent_turn: { backingOperationIds: ["createAssistantChatResponse"], applicationPrimitiveIds: ["operatorCopilot.safe-test.orchestration"], ...rayOnly("Ray adds operator provenance, bounded projection, and proposal evidence to the generic safe-test turn.") },
@@ -79,12 +87,28 @@ export const assertCopilotCapabilityProvenanceRegistry = (
   if (stale.length > 0) throw new Error(`Stale copilot capability provenance: ${stale.sort().join(", ")}`);
 };
 
+/**
+ * The identities a descriptor may cite. Contributed catalog tools declare their own operation and
+ * primitive identities (see `contribution.ts`), so these are assembled per
+ * application rather than read from the first-party registries directly.
+ */
+export interface CopilotCapabilityIdentityRegistries {
+  readonly publicOperationIds: ReadonlySet<string>;
+  readonly operationPermissions?: Readonly<Record<string, readonly string[]>>;
+  readonly ownerExportedPrimitiveIds?: ReadonlySet<string>;
+  /** Defaults to the first-party registry; an application widens it with contributed primitives. */
+  readonly applicationPrimitiveIds?: ReadonlySet<string>;
+}
+
 export const assertCopilotCapabilityProvenance = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
-  publicOperationIds: ReadonlySet<string>,
-  operationPermissions: Readonly<Record<string, readonly string[]>> = {},
-  ownerExportedPrimitiveIds: ReadonlySet<string> = new Set(),
+  registries: CopilotCapabilityIdentityRegistries,
 ): void => {
+  const publicOperationIds = registries.publicOperationIds;
+  const operationPermissions = registries.operationPermissions ?? {};
+  const ownerExportedPrimitiveIds = registries.ownerExportedPrimitiveIds ?? new Set<string>();
+  const applicationPrimitiveIds = registries.applicationPrimitiveIds
+    ?? new Set(Object.keys(copilotApplicationPrimitiveRegistry));
   const seen = new Set<string>();
   for (const descriptor of descriptors) {
     if (seen.has(descriptor.name)) throw new Error(`Duplicate copilot descriptor: ${descriptor.name}`);
@@ -108,7 +132,7 @@ export const assertCopilotCapabilityProvenance = (
       }
     }
     for (const primitiveId of primitiveIds) {
-      if (!(primitiveId in copilotApplicationPrimitiveRegistry)) throw new Error(`Unknown application primitive identity: ${primitiveId}`);
+      if (!applicationPrimitiveIds.has(primitiveId)) throw new Error(`Unknown application primitive identity: ${primitiveId}`);
       if (!copilotRayOwnedPrimitiveIds.includes(primitiveId as never) && !ownerExportedPrimitiveIds.has(primitiveId)) {
         throw new Error(`Application primitive is not exported by its owning module: ${primitiveId}`);
       }

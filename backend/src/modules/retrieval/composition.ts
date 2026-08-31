@@ -24,6 +24,7 @@ import { RetrievalExecutionTelemetryService } from "./services/retrievalExecutio
 import { RetrievalPipelineService } from "./services/retrievalPipelineService.js";
 import { RetrievalSearchService } from "./services/retrievalSearchService.js";
 import type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
+import type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";
 
 export { ChunkingStrategyRegistry } from "./domain/chunking/chunkingStrategyRegistry.js";
 export {
@@ -120,6 +121,7 @@ export const createDefaultRetrievalServices = (input: {
   telemetryService: TelemetryService;
   usageEventRecorder?: UsageEventRecorder;
   skillSettingsResolver?: SkillSettingsResolver;
+  agentRetrievalScope?: AgentRetrievalScopePort;
 }) => {
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalDefaultsProvider,
@@ -142,7 +144,7 @@ export const createDefaultRetrievalServices = (input: {
     input.chunkHydrator,
     new PgTemporalCandidateRepository(input.database),
   );
-  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
+  const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, input.agentRetrievalScope);
 
   return {
     retrievalPipeline,

@@ -1,1 +1,1 @@
-export const settingsCopilotPrimitives = ["settings.workspace.read"] as const;
+export const settingsCopilotPrimitives = ["settings.workspace.read", "settings.ingestion.propose"] as const;

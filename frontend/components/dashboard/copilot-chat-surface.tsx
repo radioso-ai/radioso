@@ -546,6 +546,12 @@ export function CopilotChatSurface({
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', agentRoutineId: entity.id }))
     } else if (entity.type === 'agent_skill') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', anchor: 'assistant-skills' }))
+    } else if (entity.type === 'document') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'documents', documentId: entity.id }))
+    } else if (entity.type === 'ingestion_settings') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'ingestion' }))
+    } else if (entity.type === 'document_source') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'sources' }))
     }
   }
 
@@ -660,7 +666,7 @@ export function CopilotChatSurface({
                           {proposals.length > 0 ? (
                             <div className="mt-4 space-y-3">
                               {proposals.map((proposal) => (
-                                <CopilotProposalCard key={proposal.id} proposal={proposal} canApply={session.availability?.canManage === true} defaultAgentId={pageContext.agentId} onOpenEntity={openEntity} />
+                                <CopilotProposalCard key={proposal.id} proposal={proposal} canApply={(session.availability?.applyableProposalTargets ?? []).includes(proposal.targetType)} defaultAgentId={pageContext.agentId} onOpenEntity={openEntity} />
                               ))}
                             </div>
                           ) : null}

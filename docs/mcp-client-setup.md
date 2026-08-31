@@ -172,7 +172,9 @@ The MCP endpoint serves the agent-converse surface. `ask_agent` runs the bound a
 
 Workspace retrieval and document operations remain REST surfaces. Personal and service-account REST credentials receive a generic unauthorized response from merged MCP, standalone exchange, and stdio preflight; they do not become MCP tool credentials.
 
-The MCP credential migration covers eligibility checks, controlled runtime-store purge, readiness, and upstream revalidation. It adds no OAuth flow, MCP tool-filtering surface, skills catalogue, or Ray access.
+Use `ask_agent` for a stateful conversation that follows the bound agent's persona, directives, and routines. Use `answer_grounded` for a one-shot, cited lookup against that agent's retrieval configuration. Agent document resources are read-only and expose only documents the bound agent can see.
+
+For programmatic document ingestion or maintenance, call the REST API with an eligible REST credential. That keeps a content pipeline's write authority separate from an MCP client that is talking to an agent.
 
 ### macOS GUI Launches
 

@@ -46,19 +46,6 @@ locals {
       : null
     )
   )
-  radioso_mcp_base_url = (
-    var.radioso_mcp_base_url_override != null
-    ? var.radioso_mcp_base_url_override
-    : (
-      var.connector_public_base_url != null
-      ? var.connector_public_base_url
-      : (
-        var.app_base_url_override != null
-        ? "${trimsuffix(var.app_base_url_override, "/")}/backend"
-        : null
-      )
-    )
-  )
   enterprise_application_modules = var.radioso_edition == "enterprise" ? "@radioso/enterprise-backend-module" : null
   otel_logs_endpoint = (
     var.otel_logs_endpoint != null

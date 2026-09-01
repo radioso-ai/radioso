@@ -74,7 +74,7 @@ interface AuthServiceDependencies {
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner: OrganizationCoreProvisioner;
   auditService: AuditService;
-  apiPrincipalAuthenticator?: Pick<ApiPrincipalAuthenticator, "authenticate">;
+  apiPrincipalAuthenticator?: Pick<ApiPrincipalAuthenticator, "authenticate"> & Partial<Pick<ApiPrincipalAuthenticator, "recordSuccessfulUse">>;
   personalCredentialTermination?: Pick<PersonalCredentialTenureService, "endAccount">;
   personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteAccount">;
 }
@@ -758,6 +758,12 @@ export class AuthService {
   }> {
     if (!this.dependencies.apiPrincipalAuthenticator) throw unauthorized();
     return this.dependencies.apiPrincipalAuthenticator.authenticate(token);
+  }
+
+  recordApiTokenUse(principal: AuthenticatedPrincipal): void {
+    if (principal.type === "personal_api_credential" || principal.type === "service_account_credential") {
+      this.dependencies.apiPrincipalAuthenticator?.recordSuccessfulUse?.(principal);
+    }
   }
 
   private async createSessionCookie(userId: string, accountId: string): Promise<string> {

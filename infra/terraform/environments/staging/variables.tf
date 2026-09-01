@@ -136,13 +136,6 @@ variable "public_chat_session_secret" {
   sensitive   = true
 }
 
-variable "radioso_mcp_signing_secret" {
-  description = "MCP session signing secret for staging."
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
 variable "connector_encryption_key" {
   description = "Connector encryption key for staging."
   type        = string
@@ -255,15 +248,9 @@ variable "connector_public_base_url" {
 }
 
 variable "radioso_mcp_enabled" {
-  description = "Whether to expose backend-hosted MCP in staging."
+  description = "Whether to deploy standalone MCP in staging."
   type        = bool
   default     = false
-}
-
-variable "radioso_mcp_base_url_override" {
-  description = "Optional backend base URL used by the hosted MCP runtime."
-  type        = string
-  default     = null
 }
 
 variable "app_base_url_override" {

@@ -56,7 +56,7 @@ describe('MCP channel card setup mode', () => {
     expect(setup.mode).toBe('disabled')
     expect(setup.label).toBe('MCP not enabled')
     expect(setup.error).toBe('MCP is not enabled on this deployment.')
-    expect(setup.remediation).toContain('RADIOSO_MCP_ENABLED')
+    expect(setup.remediation).toContain('standalone MCP deployment')
   })
 
   it('returns a clear error for invalid MCP URLs', () => {

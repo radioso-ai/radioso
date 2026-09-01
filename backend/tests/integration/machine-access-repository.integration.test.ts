@@ -404,7 +404,7 @@ describeIntegration("MachineAccessRepository", () => {
 
       await createAuditFailureTrigger("machine_access.service_credential.relabeled");
       await expect(service.relabelCredential({ ...createInput, serviceAccountId: created.account.id, credentialId: created.credential.id, label: "renamed", revision: created.credential.revision })).rejects.toThrow(/required audit unavailable/i);
-      expect(await repository.findCredential(created.credential.id)).toMatchObject({ label: "primary", revokedAt: null });
+      expect(await repository.findCredential(created.credential.id)).toMatchObject({ label: "Primary", revokedAt: null });
       await removeAuditFailureTrigger();
 
       await createAuditFailureTrigger("machine_access.service_credential.revoked");

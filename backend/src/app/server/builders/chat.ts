@@ -145,7 +145,8 @@ export const buildMcpConverseServices = (
   const audit = new AgentConverseAudit(dependencies.auditService);
   const sessionService = new AgentConverseSessionService({
     accessGrantService: dependencies.accessGrantService,
-    agentRepository: dependencies.agentRepository,
+    agentLookup: dependencies.agentRepository,
+    sessionMapping: dependencies.agentConverseSessionMappingRepository,
     publicChatSessionSecret: dependencies.env.PUBLIC_CHAT_SESSION_SECRET,
     audit,
   });

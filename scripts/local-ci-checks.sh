@@ -112,6 +112,10 @@ else
       packages/radioso-mcp-server/*)
         mcp_server=true
         ;;
+      packages/mcp-source-proof/*)
+        backend=true
+        mcp_server=true
+        ;;
       packages/crawler/*)
         backend=true
         crawler=true
@@ -286,7 +290,8 @@ fi
 
 if [ "$mcp_server" = true ]; then
   start_redis
-  run pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/mcp-server...
+  run pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/mcp-server... --filter @radioso/mcp-source-proof...
+  run_sh "cd packages/mcp-source-proof && pnpm run check"
   run_sh "cd packages/radioso-mcp-server && pnpm run build"
   run_sh "cd packages/radioso-mcp-server && pnpm test"
   run_sh "cd packages/radioso-mcp-server && pnpm run smoke:all"

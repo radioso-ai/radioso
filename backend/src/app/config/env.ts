@@ -133,8 +133,16 @@ const envSchema = z.object({
   // Agent-channel turns spend provider and retrieval budget. A single credential
   // cannot exhaust a workspace, and credential rotation cannot evade the shared cap.
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(300),
   AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
   AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(300),
+  // MCP session exchange is pre-authentication: source is the bounded gate and
+  // a token hash prevents one valid credential from being replayed freely.
+  MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
+  MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
+  RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(32)),
+  RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   DOCUMENT_STORAGE_DRIVER: z.enum(["local", "gcs"]).default("local"),
   DOCUMENT_STORAGE_LOCAL_PATH: z.string().min(1).default("../.context/document-storage"),
   DOCUMENT_STORAGE_BUCKET: emptyStringToUndefined(z.string().min(1)),
@@ -179,12 +187,6 @@ const envSchema = z.object({
   SLACK_SIGNING_SECRET: emptyStringToUndefined(z.string().min(1)),
   PUBLIC_CHAT_BASE_URL: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
-  RADIOSO_BASE_URL: emptyStringToUndefined(z.string().url()),
-  RADIOSO_MCP_ENABLED: booleanish(false),
-  RADIOSO_MCP_STANDALONE: booleanish(false),
-  RADIOSO_MCP_MOUNT_PATH: z.string().min(1).default("/mcp").refine((value) => value.startsWith("/"), {
-    message: "RADIOSO_MCP_MOUNT_PATH must start with /",
-  }),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {
   if (value.METRICS_ENABLED && !value.METRICS_AUTH_TOKEN) {

@@ -4343,7 +4343,7 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
-            expiresAt: string | null;
+            expiresAt: string;
             /** Format: date-time */
             lastUsedAt: string | null;
             /** Format: date-time */
@@ -11800,6 +11800,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Agent channel rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getAgent: {
@@ -11991,7 +12000,9 @@ export interface operations {
     issueAgentChannelCredential: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
             path: {
                 agentId: string;
             };
@@ -12053,7 +12064,9 @@ export interface operations {
     rotateAgentChannelCredential: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
             path: {
                 agentId: string;
                 credentialId: string;
@@ -12103,7 +12116,9 @@ export interface operations {
     revokeAgentChannelCredential: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
             path: {
                 agentId: string;
                 credentialId: string;
@@ -22347,6 +22362,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description MCP converse session rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     validateMcpConverseSession: {
@@ -22394,6 +22418,15 @@ export interface operations {
             };
             /** @description Underlying converse grant is no longer valid */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse session rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -22457,6 +22490,15 @@ export interface operations {
             };
             /** @description Turn superseded by a newer message in the same conversation */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse ask rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

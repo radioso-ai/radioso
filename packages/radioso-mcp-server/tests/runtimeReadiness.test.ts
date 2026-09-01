@@ -92,6 +92,7 @@ describe("MCP runtime-store readiness", () => {
         redisKeyPrefix: "radioso-mcp",
         requestTimeoutMs: 1_000,
         serverName: "radioso-test",
+        trustedProxyHops: 0,
       },
       runtimeStores: {
         close: vi.fn(async () => readiness.stop()),
@@ -120,6 +121,8 @@ describe("MCP runtime-store readiness", () => {
       redisUrl: "redis://127.0.0.1:1",
       requestTimeoutMs: 1_000,
       serverName: "radioso-test",
+      signingSecret: "readiness-test-signing-secret",
+      trustedProxyHops: 0,
     });
 
     try {

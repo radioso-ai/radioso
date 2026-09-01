@@ -178,6 +178,7 @@ export const startRemoteHarness = async (options: {
     requestTimeoutMs: 30_000,
     serverName: options.serverName ?? "radioso-smoke",
     signingSecret: "smoke-signing-secret",
+    trustedProxyHops: 0,
   };
   const runtime = await createRemoteHttpRuntime({
     auditSinks: [audit.sink],
@@ -208,6 +209,7 @@ export const initializeSession = async (baseUrl: string, accessToken: string) =>
   const initializePayload = await readJson(initializeResponse);
   assert.ok(initializeResponse.ok, `Expected initialize to succeed, got ${initializeResponse.status}`);
   assert.equal(initializePayload?.result?.protocolVersion, MCP_PROTOCOL_VERSION);
+  assert.equal(initializeResponse.headers.get("mcp-session-id"), null, "Expected standalone MCP to use stateless HTTP transport.");
 
   const initializedResponse = await mcpRequest(baseUrl, accessToken, {
     jsonrpc: "2.0",

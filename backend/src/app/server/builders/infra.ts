@@ -2,6 +2,7 @@ import { AccountInvitationRepository } from "../../../db/repositories/accountInv
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../../db/repositories/accountRepository.js";
 import { AccessGrantRepository } from "../../../db/repositories/accessGrantRepository.js";
+import { AgentConverseSessionMappingRepository } from "../../../db/repositories/agentConverseSessionMappingRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { IdentityNonceRepository } from "../../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
@@ -157,6 +158,7 @@ export const buildRepositories = (
   accountMembershipRepository: new AccountMembershipRepository(database.kysely),
   accountRepository: new AccountRepository(database.kysely),
   accessGrantRepository: new AccessGrantRepository(database.kysely),
+  agentConverseSessionMappingRepository: new AgentConverseSessionMappingRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),

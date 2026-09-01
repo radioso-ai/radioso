@@ -1,17 +1,25 @@
 import { z } from "zod";
 
+const controlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
+const boundedClientValue = (max: number) => z.string()
+  .min(1)
+  .max(max)
+  .refine((value) => !controlCharacter.test(value), "Client metadata must not contain control characters")
+  .refine((value) => value.trim().length > 0, "Client metadata must not be blank")
+  .transform((value) => value.trim());
+
 export const mcpConverseClientSchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  version: z.string().trim().min(1).optional(),
+  name: boundedClientValue(128).optional(),
+  version: boundedClientValue(64).optional(),
 }).optional();
 
 export const mcpConverseSessionRequestSchema = z.object({
-  launchToken: z.string().min(1),
+  launchToken: z.string().min(1).max(2048).refine((value) => !controlCharacter.test(value)),
   client: mcpConverseClientSchema,
 });
 
 export const mcpConverseSessionValidateRequestSchema = z.object({
-  sessionToken: z.string().min(1),
+  sessionToken: z.string().min(1).max(2048).refine((value) => !controlCharacter.test(value)),
 });
 
 export const mcpConverseAskRequestSchema = z.object({

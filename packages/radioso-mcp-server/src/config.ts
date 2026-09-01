@@ -15,7 +15,8 @@ const configSchema = z.object({
   RADIOSO_MCP_REDIS_URL: z.string().trim().url().optional(),
   RADIOSO_MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).optional(),
   RADIOSO_MCP_SERVER_NAME: z.string().trim().min(1).optional(),
-  RADIOSO_MCP_SIGNING_SECRET: z.string().trim().min(1).optional(),
+  RADIOSO_MCP_SIGNING_SECRET: z.string().trim().min(32).optional(),
+  RADIOSO_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
 });
 
 export interface RadiosoMcpConfig {
@@ -27,7 +28,8 @@ export interface RadiosoMcpConfig {
   redisUrl?: string;
   requestTimeoutMs: number;
   serverName: string;
-  signingSecret: string;
+  signingSecret?: string;
+  trustedProxyHops: number;
 }
 
 const normalizeEnv = (
@@ -42,7 +44,7 @@ const normalizeEnv = (
 
 type ParsedConfig = z.infer<typeof configSchema>;
 
-const buildConfig = (parsed: ParsedConfig, signingSecret: string): RadiosoMcpConfig => {
+const buildConfig = (parsed: ParsedConfig): RadiosoMcpConfig => {
   const config: RadiosoMcpConfig = {
     auditLogPath: parsed.RADIOSO_MCP_AUDIT_LOG_PATH,
     baseUrl: parsed.RADIOSO_BASE_URL.replace(/\/+$/, ""),
@@ -52,7 +54,8 @@ const buildConfig = (parsed: ParsedConfig, signingSecret: string): RadiosoMcpCon
     redisUrl: parsed.RADIOSO_MCP_REDIS_URL,
     requestTimeoutMs: parsed.RADIOSO_MCP_REQUEST_TIMEOUT_MS ?? 30_000,
     serverName: parsed.RADIOSO_MCP_SERVER_NAME ?? "radioso-context",
-    signingSecret,
+    signingSecret: parsed.RADIOSO_MCP_SIGNING_SECRET,
+    trustedProxyHops: parsed.RADIOSO_TRUSTED_PROXY_HOPS,
   };
 
   return config;
@@ -66,11 +69,11 @@ export const loadRemoteConfig = (
 ): RadiosoMcpConfig => {
   const parsed = parseConfig(env);
 
-  if (!parsed.RADIOSO_MCP_SIGNING_SECRET) {
-    throw new Error("RADIOSO_MCP_SIGNING_SECRET must be set in remote mode.");
+  if (parsed.RADIOSO_MCP_REDIS_URL && !parsed.RADIOSO_MCP_SIGNING_SECRET) {
+    throw new Error("RADIOSO_MCP_SIGNING_SECRET must be set when RADIOSO_MCP_REDIS_URL is configured.");
   }
 
-  return buildConfig(parsed, parsed.RADIOSO_MCP_SIGNING_SECRET);
+  return buildConfig(parsed);
 };
 
 export const loadConfig = loadRemoteConfig;

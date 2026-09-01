@@ -9,11 +9,15 @@ export interface McpConverseLocals {
 }
 
 export const extractBearerToken = (authorization: string | undefined): string | null => {
-  if (!authorization) {
+  if (!authorization || /[\u0000-\u001F\u007F-\u009F]/u.test(authorization)) {
     return null;
   }
   const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
-  return match?.[1]?.trim() || null;
+  const token = match?.[1]?.trim();
+  if (!token || token.length > 2048 || /[\u0000-\u001F\u007F-\u009F]/u.test(token)) {
+    return null;
+  }
+  return token;
 };
 
 const invalidConverseSession = (): AppError => new AppError(

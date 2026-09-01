@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { KeyRound, Plus, Server, Trash2 } from 'lucide-react'
 
 import { apiAccessApi, type ApiAccessSummary, type ApiCredentialMetadata, type OneTimeCredentialResponse, type ServiceAccountSummary } from '@/lib/api'
@@ -61,6 +61,9 @@ export function ApiAccessPanel({
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const scopeGeneration = useRef(0)
+  const loadGeneration = useRef(0)
+  const serviceDetailGeneration = useRef(0)
 
   const canManageServices = summary?.capabilities.manageServiceAccounts === true
   const canManagePersonal = summary?.capabilities.manageOwnPersonalTokens !== false
@@ -69,40 +72,76 @@ export function ApiAccessPanel({
   const canIssueAdminRole = summary?.effectiveRole !== 'member'
   const isOwnPersonalToken = (credential: ApiCredentialMetadata) => credential.ownerUserId === user?.userId
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (expectedScopeGeneration = scopeGeneration.current) => {
     if (!workspaceId) return
+    const requestGeneration = loadGeneration.current + 1
+    loadGeneration.current = requestGeneration
+    const isCurrent = () => scopeGeneration.current === expectedScopeGeneration && loadGeneration.current === requestGeneration
     setIsLoading(true)
     setError(null)
     try {
       const nextSummary = await apiAccessApi.getSummary(workspaceId)
+      if (!isCurrent()) return
       setSummary(nextSummary)
       if (view === 'personal') {
         const personal = await apiAccessApi.listPersonalTokens(workspaceId, {
           view: nextSummary.capabilities.auditWorkspacePersonalTokens ? 'workspace' : 'mine',
           page: personalPage,
         })
+        if (!isCurrent()) return
         setPersonalTokens(personal.items)
         setPersonalTotal(personal.total)
       }
       if (view === 'service' && nextSummary.capabilities.manageServiceAccounts) {
         const services = await apiAccessApi.listServiceAccounts(workspaceId, { page: servicePage })
+        if (!isCurrent()) return
         setServiceAccounts(services.items)
         setServiceTotal(services.total)
       } else {
+        if (!isCurrent()) return
         setServiceAccounts([])
         setServiceTotal(0)
       }
     } catch (loadError) {
-      setError(getApiErrorMessage(loadError, 'Failed to load API access.'))
+      if (isCurrent()) setError(getApiErrorMessage(loadError, 'Failed to load API access.'))
     } finally {
-      setIsLoading(false)
+      if (isCurrent()) setIsLoading(false)
     }
   }, [personalPage, servicePage, view, workspaceId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- workspace changes clear the one-time secret.
+    const generation = scopeGeneration.current + 1
+    scopeGeneration.current = generation
+    serviceDetailGeneration.current += 1
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- workspace changes clear workspace-bound state and one-time secrets.
+    setSummary(null)
+    setPersonalTokens([])
+    setPersonalPage(1)
+    setPersonalTotal(0)
+    setServiceAccounts([])
+    setServicePage(1)
+    setServiceTotal(0)
+    setPersonalFormOpen(false)
+    setServiceFormOpen(false)
+    setSelectedServiceAccount(null)
+    setServiceCredentials([])
+    setServiceCredentialPage(1)
+    setServiceCredentialTotal(0)
+    setAdditionalCredentialLabel('')
+    setAdditionalCredentialExpiry(defaultExpiryDate(365))
     setOneTime(null)
     setAcknowledged(false)
+    setIsLoading(Boolean(workspaceId))
+    setIsCreating(false)
+    setError(null)
+    setFormError(null)
+    return () => {
+      if (scopeGeneration.current === generation) scopeGeneration.current += 1
+    }
+  }, [view, workspaceId])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial and pagination loads synchronize API data.
     void load()
   }, [load])
 
@@ -115,6 +154,7 @@ export function ApiAccessPanel({
     if (!workspaceId || !draft.label.trim()) return
     const expiresAt = expiryInputToIso(draft.expiry)
     if (!expiresAt) return
+    const generation = scopeGeneration.current
     setIsCreating(true)
     setFormError(null)
     try {
@@ -123,13 +163,14 @@ export function ApiAccessPanel({
         roleCeiling: canIssueAdminRole ? draft.role : 'member',
         expiresAt,
       })
+      if (scopeGeneration.current !== generation) return
       showSecret(response)
       setPersonalFormOpen(false)
-      await load()
+      await load(generation)
     } catch (createError) {
-      setFormError(getApiErrorMessage(createError, 'Failed to issue personal token.'))
+      if (scopeGeneration.current === generation) setFormError(getApiErrorMessage(createError, 'Failed to issue personal token.'))
     } finally {
-      setIsCreating(false)
+      if (scopeGeneration.current === generation) setIsCreating(false)
     }
   }
 
@@ -137,6 +178,7 @@ export function ApiAccessPanel({
     if (!workspaceId || !draft.displayName.trim()) return
     const expiresAt = expiryInputToIso(draft.expiry)
     if (!expiresAt) return
+    const generation = scopeGeneration.current
     setIsCreating(true)
     setFormError(null)
     try {
@@ -144,23 +186,26 @@ export function ApiAccessPanel({
         displayName: draft.displayName.trim(), role: canIssueAdminRole ? draft.role : 'member',
         credentialExpiresAt: expiresAt,
       })
+      if (scopeGeneration.current !== generation) return
       showSecret({ credential: response.credential, secret: response.secret })
       setServiceFormOpen(false)
-      await load()
+      await load(generation)
     } catch (createError) {
-      setFormError(getApiErrorMessage(createError, 'Failed to create service account.'))
+      if (scopeGeneration.current === generation) setFormError(getApiErrorMessage(createError, 'Failed to create service account.'))
     } finally {
-      setIsCreating(false)
+      if (scopeGeneration.current === generation) setIsCreating(false)
     }
   }
 
   const revokePersonal = async (credential: ApiCredentialMetadata) => {
     if (!workspaceId || !window.confirm(`Revoke ${credential.label}?`)) return
+    const generation = scopeGeneration.current
     try {
       await apiAccessApi.revokePersonalToken(workspaceId, credential.id)
-      await load()
+      if (scopeGeneration.current !== generation) return
+      await load(generation)
     } catch (revokeError) {
-      setError(getApiErrorMessage(revokeError, 'Failed to revoke credential.'))
+      if (scopeGeneration.current === generation) setError(getApiErrorMessage(revokeError, 'Failed to revoke credential.'))
     }
   }
 
@@ -168,27 +213,47 @@ export function ApiAccessPanel({
     if (!workspaceId) return
     const label = window.prompt('New token label', credential.label)?.trim()
     if (!label || label === credential.label) return
-    try { await apiAccessApi.relabelPersonalToken(workspaceId, credential.id, label, credential.revision); await load() } catch (relabelError) { setError(getApiErrorMessage(relabelError, 'Failed to relabel credential.')) }
+    const generation = scopeGeneration.current
+    try {
+      await apiAccessApi.relabelPersonalToken(workspaceId, credential.id, label, credential.revision)
+      if (scopeGeneration.current !== generation) return
+      await load(generation)
+    } catch (relabelError) {
+      if (scopeGeneration.current === generation) setError(getApiErrorMessage(relabelError, 'Failed to relabel credential.'))
+    }
   }
 
   const rotatePersonal = async (credential: ApiCredentialMetadata) => {
     if (!workspaceId || !window.confirm(`Rotate ${credential.label}? The current secret stops working immediately.`)) return
-    try { showSecret(await apiAccessApi.rotatePersonalToken(workspaceId, credential.id, credential.revision)); await load() } catch (rotateError) { setError(getApiErrorMessage(rotateError, 'Failed to rotate credential.')) }
+    const generation = scopeGeneration.current
+    try {
+      const response = await apiAccessApi.rotatePersonalToken(workspaceId, credential.id, credential.revision)
+      if (scopeGeneration.current !== generation) return
+      showSecret(response)
+      await load(generation)
+    } catch (rotateError) {
+      if (scopeGeneration.current === generation) setError(getApiErrorMessage(rotateError, 'Failed to rotate credential.'))
+    }
   }
 
   const selectServiceAccount = async (account: ServiceAccountSummary, page = serviceCredentialPage) => {
     if (!workspaceId) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current + 1
+    serviceDetailGeneration.current = detailGeneration
+    const isCurrent = () => scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration
     try {
       const [current, credentials] = await Promise.all([
         apiAccessApi.getServiceAccount(workspaceId, account.id),
         apiAccessApi.listServiceCredentials(workspaceId, account.id, { page }),
       ])
+      if (!isCurrent()) return
       setSelectedServiceAccount(current)
       setServiceCredentials(credentials.items)
       setServiceCredentialPage(page)
       setServiceCredentialTotal(credentials.total)
     } catch (credentialsError) {
-      setError(getApiErrorMessage(credentialsError, 'Failed to load service credentials.'))
+      if (isCurrent()) setError(getApiErrorMessage(credentialsError, 'Failed to load service credentials.'))
     }
   }
 
@@ -196,55 +261,86 @@ export function ApiAccessPanel({
     if (!workspaceId || !selectedServiceAccount || !additionalCredentialLabel.trim()) return
     const expiresAt = expiryInputToIso(additionalCredentialExpiry)
     if (!expiresAt) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccountId = selectedServiceAccount.id
     try {
-      showSecret(await apiAccessApi.issueServiceCredential(workspaceId, selectedServiceAccount.id, {
+      const response = await apiAccessApi.issueServiceCredential(workspaceId, serviceAccountId, {
         label: additionalCredentialLabel.trim(),
         expiresAt,
-      }))
+      })
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
+      showSecret(response)
       setAdditionalCredentialLabel('')
       await selectServiceAccount(selectedServiceAccount)
-    } catch (issueError) { setError(getApiErrorMessage(issueError, 'Failed to issue credential.')) }
+    } catch (issueError) {
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) {
+        setError(getApiErrorMessage(issueError, 'Failed to issue credential.'))
+      }
+    }
   }
 
   const revokeServiceCredential = async (credential: ApiCredentialMetadata) => {
     if (!workspaceId || !selectedServiceAccount || !window.confirm(`Revoke ${credential.label}?`)) return
-    try { await apiAccessApi.revokeServiceCredential(workspaceId, selectedServiceAccount.id, credential.id); await selectServiceAccount(selectedServiceAccount) } catch (revokeError) { setError(getApiErrorMessage(revokeError, 'Failed to revoke credential.')) }
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccount = selectedServiceAccount
+    try {
+      await apiAccessApi.revokeServiceCredential(workspaceId, serviceAccount.id, credential.id)
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
+      await selectServiceAccount(serviceAccount)
+    } catch (revokeError) {
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) setError(getApiErrorMessage(revokeError, 'Failed to revoke credential.'))
+    }
   }
 
   const relabelServiceCredential = async (credential: ApiCredentialMetadata) => {
     if (!workspaceId || !selectedServiceAccount) return
     const label = window.prompt('New credential label', credential.label)?.trim()
     if (!label || label === credential.label) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccount = selectedServiceAccount
     try {
-      await apiAccessApi.relabelServiceCredential(workspaceId, selectedServiceAccount.id, credential.id, label, credential.revision)
-      await selectServiceAccount(selectedServiceAccount)
+      await apiAccessApi.relabelServiceCredential(workspaceId, serviceAccount.id, credential.id, label, credential.revision)
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
+      await selectServiceAccount(serviceAccount)
     } catch (relabelError) {
-      setError(getApiErrorMessage(relabelError, 'Failed to relabel credential.'))
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) setError(getApiErrorMessage(relabelError, 'Failed to relabel credential.'))
     }
   }
 
   const rotateServiceCredential = async (credential: ApiCredentialMetadata) => {
     if (!workspaceId || !selectedServiceAccount || !window.confirm(`Rotate ${credential.label}? The current secret stops working immediately.`)) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccount = selectedServiceAccount
     try {
-      showSecret(await apiAccessApi.rotateServiceCredential(workspaceId, selectedServiceAccount.id, credential.id, credential.revision))
-      await selectServiceAccount(selectedServiceAccount)
+      const response = await apiAccessApi.rotateServiceCredential(workspaceId, serviceAccount.id, credential.id, credential.revision)
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
+      showSecret(response)
+      await selectServiceAccount(serviceAccount)
     } catch (rotateError) {
-      setError(getApiErrorMessage(rotateError, 'Failed to rotate credential.'))
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) setError(getApiErrorMessage(rotateError, 'Failed to rotate credential.'))
     }
   }
 
   const changeServiceRole = async (role: 'member' | 'admin') => {
     if (!workspaceId || !selectedServiceAccount || role === selectedServiceAccount.role) return
     if (!window.confirm(`Change ${selectedServiceAccount.displayName} from ${selectedServiceAccount.role} to ${role}? This changes its live API authority immediately.`)) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccount = selectedServiceAccount
     try {
-      const updated = await apiAccessApi.updateServiceAccount(workspaceId, selectedServiceAccount.id, {
+      const updated = await apiAccessApi.updateServiceAccount(workspaceId, serviceAccount.id, {
         role,
         revision: selectedServiceAccount.revision,
       })
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
       setSelectedServiceAccount(updated)
-      await load()
+      await load(generation)
     } catch (roleError) {
-      setError(getApiErrorMessage(roleError, 'Failed to change service-account role.'))
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) setError(getApiErrorMessage(roleError, 'Failed to change service-account role.'))
     }
   }
 
@@ -252,15 +348,19 @@ export function ApiAccessPanel({
     if (!workspaceId || !selectedServiceAccount || selectedServiceAccount.status === 'archived') return
     const displayName = window.prompt('New service-account name', selectedServiceAccount.displayName)?.trim()
     if (!displayName || displayName === selectedServiceAccount.displayName) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccount = selectedServiceAccount
     try {
-      const updated = await apiAccessApi.updateServiceAccount(workspaceId, selectedServiceAccount.id, {
+      const updated = await apiAccessApi.updateServiceAccount(workspaceId, serviceAccount.id, {
         displayName,
         revision: selectedServiceAccount.revision,
       })
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
       setSelectedServiceAccount(updated)
-      await load()
+      await load(generation)
     } catch (renameError) {
-      setError(getApiErrorMessage(renameError, 'Failed to rename service account.'))
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) setError(getApiErrorMessage(renameError, 'Failed to rename service account.'))
     }
   }
 
@@ -272,18 +372,23 @@ export function ApiAccessPanel({
         ? 'Its credentials will stop working until it is enabled again.'
         : 'Its unrevoked credentials will work again.'
     if (!window.confirm(`${action[0]?.toUpperCase()}${action.slice(1)} ${selectedServiceAccount.displayName}? ${consequence}`)) return
+    const generation = scopeGeneration.current
+    const detailGeneration = serviceDetailGeneration.current
+    const serviceAccount = selectedServiceAccount
     try {
       const updated = await apiAccessApi.transitionServiceAccount(
         workspaceId,
-        selectedServiceAccount.id,
+        serviceAccount.id,
         action,
-        selectedServiceAccount.revision,
+        serviceAccount.revision,
       )
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
       setSelectedServiceAccount(updated)
-      await load()
+      await load(generation)
+      if (scopeGeneration.current !== generation || serviceDetailGeneration.current !== detailGeneration) return
       await selectServiceAccount(updated)
     } catch (transitionError) {
-      setError(getApiErrorMessage(transitionError, `Failed to ${action} service account.`))
+      if (scopeGeneration.current === generation && serviceDetailGeneration.current === detailGeneration) setError(getApiErrorMessage(transitionError, `Failed to ${action} service account.`))
     }
   }
 
@@ -327,6 +432,7 @@ export function ApiAccessPanel({
               <CredentialList
                 items={personalTokens}
                 emptyMessage="No personal tokens yet."
+                currentUserId={user?.userId}
                 onRevoke={revokePersonal}
                 onRelabel={relabelPersonal}
                 onRotate={rotatePersonal}
@@ -373,31 +479,33 @@ export function ApiAccessPanel({
                     account={account}
                     isSelected={selectedServiceAccount?.id === account.id}
                     onManage={() => void selectServiceAccount(account)}
-                  />
+                  >
+                    {selectedServiceAccount?.id === account.id ? (
+                      <ServiceAccountDetail
+                        account={selectedServiceAccount}
+                        credentials={serviceCredentials}
+                        credentialPage={serviceCredentialPage}
+                        credentialTotal={serviceCredentialTotal}
+                        credentialLabel={additionalCredentialLabel}
+                        credentialExpiry={additionalCredentialExpiry}
+                        onCredentialLabelChange={setAdditionalCredentialLabel}
+                        onCredentialExpiryChange={setAdditionalCredentialExpiry}
+                        onIssueCredential={() => void issueAdditionalCredential()}
+                        onChangeRole={(role) => void changeServiceRole(role)}
+                        onRename={() => void renameServiceAccount()}
+                        onTransition={(action) => void transitionServiceAccount(action)}
+                        onRevokeCredential={revokeServiceCredential}
+                        onRelabelCredential={relabelServiceCredential}
+                        onRotateCredential={rotateServiceCredential}
+                        onCredentialPage={(page) => void selectServiceAccount(selectedServiceAccount, page)}
+                        currentUserId={user?.userId}
+                      />
+                    ) : null}
+                  </ServiceAccountRow>
                 ))}
               </div>
             )}
             <PaginationControls page={servicePage} total={serviceTotal} onPage={setServicePage} />
-            {selectedServiceAccount ? (
-              <ServiceAccountDetail
-                account={selectedServiceAccount}
-                credentials={serviceCredentials}
-                credentialPage={serviceCredentialPage}
-                credentialTotal={serviceCredentialTotal}
-                credentialLabel={additionalCredentialLabel}
-                credentialExpiry={additionalCredentialExpiry}
-                onCredentialLabelChange={setAdditionalCredentialLabel}
-                onCredentialExpiryChange={setAdditionalCredentialExpiry}
-                onIssueCredential={() => void issueAdditionalCredential()}
-                onChangeRole={(role) => void changeServiceRole(role)}
-                onRename={() => void renameServiceAccount()}
-                onTransition={(action) => void transitionServiceAccount(action)}
-                onRevokeCredential={revokeServiceCredential}
-                onRelabelCredential={relabelServiceCredential}
-                onRotateCredential={rotateServiceCredential}
-                onCredentialPage={(page) => void selectServiceAccount(selectedServiceAccount, page)}
-              />
-            ) : null}
           </div>
         </SettingsCard>
       ) : null}
@@ -441,25 +549,30 @@ function ServiceAccountRow({
   account,
   isSelected,
   onManage,
+  children,
 }: {
   account: ServiceAccountSummary
   isSelected: boolean
   onManage: () => void
+  children?: ReactNode
 }) {
   return (
-    <div className={cn('flex flex-wrap items-center justify-between gap-3 p-3 transition-colors', isSelected && 'bg-muted/50')}>
-      <div className="min-w-0 space-y-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="truncate text-sm font-medium text-foreground">{account.displayName}</p>
-          <Badge variant={account.status === 'enabled' ? 'outline' : 'secondary'}>{account.status}</Badge>
+    <div className={cn('p-3 transition-colors', isSelected && 'bg-muted/50')}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="truncate text-sm font-medium text-foreground">{account.displayName}</h4>
+            <Badge variant={account.status === 'enabled' ? 'outline' : 'secondary'}>{account.status}</Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">{account.role} · {account.activeCredentialCount} active credential{account.activeCredentialCount === 1 ? '' : 's'} · last used {formatDate(account.lastUsedAt)}</p>
         </div>
-        <p className="text-xs text-muted-foreground">{account.role} · {account.activeCredentialCount} active credential{account.activeCredentialCount === 1 ? '' : 's'} · last used {formatDate(account.lastUsedAt)}</p>
+        <div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="outline" aria-label={`Manage credentials for ${account.displayName}`} onClick={onManage}>
+            Manage credentials
+          </Button>
+        </div>
       </div>
-      <div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex shrink-0 items-center gap-2">
-        <Button size="sm" variant="outline" aria-label={`Manage credentials for ${account.displayName}`} onClick={onManage}>
-          Manage credentials
-        </Button>
-      </div>
+      {children ? <div className="mt-4 border-t border-border pt-4">{children}</div> : null}
     </div>
   )
 }
@@ -481,6 +594,7 @@ function ServiceAccountDetail({
   onRelabelCredential,
   onRotateCredential,
   onCredentialPage,
+  currentUserId,
 }: {
   account: ServiceAccountSummary
   credentials: ApiCredentialMetadata[]
@@ -498,22 +612,17 @@ function ServiceAccountDetail({
   onRelabelCredential: (credential: ApiCredentialMetadata) => void
   onRotateCredential: (credential: ApiCredentialMetadata) => void
   onCredentialPage: (page: number) => void
+  currentUserId?: string
 }) {
   const isArchived = account.status === 'archived'
 
   return (
-    <section className="space-y-4 rounded-xl border border-border bg-muted/25 p-4">
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <h4 className="font-medium">{account.displayName} credentials</h4>
-          <ServiceAccountMetadata account={account} />
-        </div>
-        <Badge variant="outline">{account.status}</Badge>
-      </header>
+    <section className="space-y-4">
+      <ServiceAccountMetadata account={account} currentUserId={currentUserId} />
 
-      <div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex flex-wrap items-end gap-2 border-t border-border pt-4">
+      <div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex flex-wrap items-end gap-2">
         <div className="space-y-1.5">
-          <Label htmlFor="selected-service-role">Live role</Label>
+          <Label htmlFor="selected-service-role">Service account role</Label>
           <RoleSelect
             id="selected-service-role"
             value={account.role}
@@ -521,6 +630,7 @@ function ServiceAccountDetail({
             onChange={onChangeRole}
             className="w-36"
           />
+          <p className="max-w-xs text-xs text-muted-foreground">This role applies immediately to every active credential for this service account.</p>
         </div>
         {!isArchived ? (
           <Button size="sm" variant="outline" aria-label={`Rename service account ${account.displayName}`} onClick={onRename}>Rename</Button>
@@ -556,6 +666,7 @@ function ServiceAccountDetail({
       <CredentialList
         items={credentials}
         emptyMessage="No credentials yet."
+        currentUserId={currentUserId}
         onRevoke={onRevokeCredential}
         onRelabel={onRelabelCredential}
         onRotate={onRotateCredential}
@@ -568,6 +679,7 @@ function ServiceAccountDetail({
 function CredentialList({
   items,
   emptyMessage,
+  currentUserId,
   onRevoke,
   onRelabel,
   onRotate,
@@ -577,6 +689,7 @@ function CredentialList({
 }: {
   items: ApiCredentialMetadata[]
   emptyMessage: string
+  currentUserId?: string
   onRevoke: (credential: ApiCredentialMetadata) => void
   onRelabel?: (credential: ApiCredentialMetadata) => void
   onRotate?: (credential: ApiCredentialMetadata) => void
@@ -603,7 +716,7 @@ function CredentialList({
             <div className="min-w-0 space-y-1">
               <p className="truncate text-sm font-medium text-foreground">{credential.label}</p>
               <p className="text-xs text-muted-foreground">{credential.prefix}{credential.roleCeiling ? ` · role ${credential.roleCeiling}` : ''} · expires {formatDate(credential.expiresAt)}{credential.expiryWarningDays ? ` · expires in ${credential.expiryWarningDays} days` : ''} · last used {formatDate(credential.lastUsedAt)}</p>
-              <CredentialMetadata credential={credential} />
+              <CredentialMetadata credential={credential} currentUserId={currentUserId} />
             </div>
             <div role="group" aria-label={`Actions for credential ${credential.label}`} className="flex shrink-0 items-center gap-1">
               {mayRelabel ? <Button size="sm" variant="ghost" aria-label={`Rename ${credential.label}`} onClick={() => onRelabel(credential)} disabled={isRevoked}>Rename</Button> : null}
@@ -623,26 +736,29 @@ function MetadataRow({ children }: { children: ReactNode }) {
   )
 }
 
-function CredentialMetadata({ credential }: { credential: ApiCredentialMetadata }) {
-  const status = credential.status[0].toUpperCase() + credential.status.slice(1)
-  const hasMetadata = credential.status !== 'active' || credential.revokedAt || credential.revocationReason || credential.rotatedFromCredentialId
+const operatorLabel = (userId: string, currentUserId: string | undefined) => userId === currentUserId ? 'You' : 'a workspace member'
 
-  if (!hasMetadata) return null
+function CredentialMetadata({ credential, currentUserId }: { credential: ApiCredentialMetadata; currentUserId?: string }) {
+  const status = credential.status[0].toUpperCase() + credential.status.slice(1)
 
   return (
     <MetadataRow>
-      {credential.status !== 'active' ? <span>Status {status}</span> : null}
+      <span>Kind {credential.kind}</span>
+      <span>Status {status}</span>
+      {credential.ownerUserId ? <span>Owner {operatorLabel(credential.ownerUserId, currentUserId)}</span> : null}
+      {credential.createdByUserId ? <span>Created by {operatorLabel(credential.createdByUserId, currentUserId)}</span> : null}
+      <span>Created {formatDate(credential.createdAt)}</span>
       {credential.revokedAt ? <span>Revoked {formatDate(credential.revokedAt)}</span> : null}
+      {credential.revokedByUserId ? <span>Revoked by {operatorLabel(credential.revokedByUserId, currentUserId)}</span> : null}
       {credential.revocationReason ? <span>Reason {credential.revocationReason}</span> : null}
-      {credential.rotatedFromCredentialId ? <span>Rotated from {credential.rotatedFromCredentialId}</span> : null}
     </MetadataRow>
   )
 }
 
-function ServiceAccountMetadata({ account }: { account: ServiceAccountSummary }) {
+function ServiceAccountMetadata({ account, currentUserId }: { account: ServiceAccountSummary; currentUserId?: string }) {
   return (
     <MetadataRow>
-      <span>Created by {account.createdByUserId ?? 'Unknown'}</span>
+      <span>Created by {account.createdByUserId ? operatorLabel(account.createdByUserId, currentUserId) : 'a workspace member'}</span>
       <span>Created {formatDate(account.createdAt)}</span>
       <span>Updated {formatDate(account.updatedAt)}</span>
       <span>Disabled {formatDate(account.disabledAt)}</span>

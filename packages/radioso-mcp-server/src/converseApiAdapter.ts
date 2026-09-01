@@ -1,3 +1,5 @@
+import { createMcpSourceProof, MCP_SOURCE_PROOF_HEADERS } from "@radioso/mcp-source-proof";
+
 export class RadiosoApiError extends Error {
   constructor(
     message: string,
@@ -47,9 +49,14 @@ export interface ConverseAskResponse {
 }
 
 export interface ConverseApiAdapter {
-  exchange(body: ConverseSessionExchangeRequest): Promise<ConverseSessionExchangeResponse>;
-  validate(sessionToken: string): Promise<ConverseSessionValidateResponse>;
-  ask(sessionToken: string, body: { message: string }): Promise<ConverseAskResponse>;
+  exchange(body: ConverseSessionExchangeRequest, context?: ConverseSourceContext): Promise<ConverseSessionExchangeResponse>;
+  validate(sessionToken: string, context?: ConverseSourceContext): Promise<ConverseSessionValidateResponse>;
+  ask(sessionToken: string, body: { message: string }, context?: ConverseSourceContext): Promise<ConverseAskResponse>;
+  recordUse(sessionToken: string, context?: ConverseSourceContext): Promise<void>;
+}
+
+export interface ConverseSourceContext {
+  sourceDigest?: string;
 }
 
 type FetchLike = typeof fetch;
@@ -67,9 +74,28 @@ const readBody = async (response: Response): Promise<unknown> => {
 };
 
 export const createConverseApiAdapter = (
-  config: { baseUrl: string; requestTimeoutMs: number },
+  config: { baseUrl: string; requestTimeoutMs: number; signingSecret?: string },
   fetchImpl: FetchLike = fetch,
 ): ConverseApiAdapter => {
+  const sourceProofHeaders = (
+    path: string,
+    method: string,
+    context?: ConverseSourceContext,
+  ): Record<string, string> => {
+    if (!config.signingSecret || !context?.sourceDigest) return {};
+    const proof = createMcpSourceProof({
+      method,
+      path,
+      secret: config.signingSecret,
+      sourceDigest: context.sourceDigest,
+    });
+    return {
+      [MCP_SOURCE_PROOF_HEADERS.digest]: proof.sourceDigest,
+      [MCP_SOURCE_PROOF_HEADERS.signature]: proof.signature,
+      [MCP_SOURCE_PROOF_HEADERS.timestamp]: proof.timestamp,
+    };
+  };
+
   const request = async <TResult>(path: string, init: RequestInit): Promise<TResult> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -107,23 +133,42 @@ export const createConverseApiAdapter = (
   };
 
   return {
-    exchange: (body) =>
-      request("/api/v1/mcp/converse/session", {
+    exchange: (body, context) => {
+      const path = "/api/v1/mcp/converse/session";
+      return request(path, {
         method: "POST",
+        headers: sourceProofHeaders(path, "POST", context),
         body: JSON.stringify(body),
-      }),
-    validate: (sessionToken) =>
-      request("/api/v1/mcp/converse/session/validate", {
+      });
+    },
+    validate: (sessionToken, context) => {
+      const path = "/api/v1/mcp/converse/session/validate";
+      return request(path, {
         method: "POST",
+        headers: sourceProofHeaders(path, "POST", context),
         body: JSON.stringify({ sessionToken }),
-      }),
-    ask: (sessionToken, body) =>
-      request("/api/v1/mcp/converse/ask", {
+      });
+    },
+    ask: (sessionToken, body, context) => {
+      const path = "/api/v1/mcp/converse/ask";
+      return request(path, {
         method: "POST",
         headers: {
           authorization: `Bearer ${sessionToken}`,
+          ...sourceProofHeaders(path, "POST", context),
         },
         body: JSON.stringify(body),
-      }),
+      });
+    },
+    recordUse: (sessionToken, context) => {
+      const path = "/api/v1/mcp/converse/session/use";
+      return request(path, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${sessionToken}`,
+          ...sourceProofHeaders(path, "POST", context),
+        },
+      });
+    },
   };
 };

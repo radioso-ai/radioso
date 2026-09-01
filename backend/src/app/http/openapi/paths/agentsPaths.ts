@@ -8,6 +8,13 @@ export const registerAgentsPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const csrfHeaders = z.object({
+    "X-Radioso-CSRF": z.literal("1").openapi({
+      description: "Required non-simple header for cookie-authenticated agent channel credential mutations.",
+      param: { in: "header", name: "X-Radioso-CSRF" },
+    }),
+  });
+
   registry.registerPath({
     method: "get",
     path: "/api/v1/agents",
@@ -49,6 +56,7 @@ export const registerAgentsPaths = (
       204: { description: "Conversation start completed without a greeting" },
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Invalid, inactive, cross-audience, or cross-agent credential", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Agent channel rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 
@@ -114,6 +122,7 @@ export const registerAgentsPaths = (
     security: security.workspaceAdminSecurity,
     request: {
       params: schemas.AgentParamsSchema,
+      headers: csrfHeaders,
       body: {
         required: true,
         content: { "application/json": { schema: schemas.AgentChannelCredentialIssueRequestSchema } },
@@ -160,7 +169,7 @@ export const registerAgentsPaths = (
     summary: "Rotate an agent channel credential",
     operationId: "rotateAgentChannelCredential",
     security: security.workspaceAdminSecurity,
-    request: { params: schemas.AgentChannelCredentialParamsSchema },
+    request: { params: schemas.AgentChannelCredentialParamsSchema, headers: csrfHeaders },
     responses: {
       200: {
         description: "Agent channel credential rotated. The new secret is returned only in this response.",
@@ -179,7 +188,7 @@ export const registerAgentsPaths = (
     summary: "Revoke an agent channel credential",
     operationId: "revokeAgentChannelCredential",
     security: security.workspaceAdminSecurity,
-    request: { params: schemas.AgentChannelCredentialParamsSchema },
+    request: { params: schemas.AgentChannelCredentialParamsSchema, headers: csrfHeaders },
     responses: {
       204: { description: "Agent channel credential revoked" },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },

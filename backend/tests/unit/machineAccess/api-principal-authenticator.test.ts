@@ -90,6 +90,14 @@ describe("ApiPrincipalAuthenticator", () => {
         workspaceId: "workspace-1",
       },
     });
+    expect(repository.touchCredentialUse).not.toHaveBeenCalled();
+    authenticator.recordSuccessfulUse({
+      type: "personal_api_credential",
+      userId: "user-1",
+      credentialId: "credential-1",
+      role: "member",
+      workspaceId: "workspace-1",
+    });
     expect(repository.touchCredentialUse).toHaveBeenCalledWith({ credentialId: "credential-1", at: now });
     expect(authenticationObserver.recordAuthentication).toHaveBeenCalledWith({
       outcome: "success",
@@ -130,14 +138,27 @@ describe("ApiPrincipalAuthenticator", () => {
     const { authenticationObserver, authenticator, repository } = createHarness(credential);
     repository.touchCredentialUse.mockRejectedValueOnce(new Error("metadata unavailable"));
 
-    await expect(authenticator.authenticate(issued.secret)).resolves.toMatchObject({
+    const authenticated = await authenticator.authenticate(issued.secret);
+    expect(authenticated).toMatchObject({
       principal: { type: "service_account_credential", serviceAccountId: "service-1", role: "member" },
     });
+    expect(repository.touchCredentialUse).not.toHaveBeenCalled();
+    authenticator.recordSuccessfulUse(authenticated.principal);
     await Promise.resolve();
     expect(authenticationObserver.recordLastUsePersistenceFailure).toHaveBeenCalledOnce();
 
     repository.findServiceAccount.mockResolvedValueOnce({ ...serviceAccount, status: "disabled" });
     await expect(authenticator.authenticate(issued.secret)).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  it("does not throw when the last-use adapter fails synchronously", async () => {
+    const issued = issueMachineSecret("personal");
+    const { authenticationObserver, authenticator, repository } = createHarness(personalRecord(issued.tokenHash));
+    repository.touchCredentialUse.mockImplementationOnce(() => { throw new Error("metadata unavailable"); });
+    const authenticated = await authenticator.authenticate(issued.secret);
+
+    expect(() => authenticator.recordSuccessfulUse(authenticated.principal)).not.toThrow();
+    expect(authenticationObserver.recordLastUsePersistenceFailure).toHaveBeenCalledOnce();
   });
 
   it("returns the same unauthorized boundary for malformed, expired, and revoked credentials", async () => {

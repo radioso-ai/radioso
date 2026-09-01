@@ -3,6 +3,7 @@ import multer from "multer";
 
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
 import { AppError } from "../../../shared/domain/errors.js";
+import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
 const isPayloadTooLargeError = (error: unknown): error is { status?: number; type?: string } =>
   Boolean(
@@ -30,6 +31,7 @@ const isStructuredAppError = (error: unknown): error is {
 
 export const createErrorHandler = (errorReportingService?: ErrorReportingService) =>
   (error: unknown, req: Request, res: Response, next: NextFunction): void => {
+    markHttpResponseFailed(res);
     if (res.headersSent) {
       next(error);
       return;

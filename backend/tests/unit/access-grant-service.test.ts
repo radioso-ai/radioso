@@ -3,12 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DefaultOriginMatcher } from "../../src/modules/accessGrants/originMatcher.js";
 import { AccessGrantService } from "../../src/modules/accessGrants/services/accessGrantService.js";
-import { InMemoryAccessGrantRepository } from "../support/fakes.js";
+import { InMemoryAccessGrantLifecycleUnitOfWork, InMemoryAccessGrantRepository } from "../support/fakes.js";
 
 const createService = () => {
   const repository = new InMemoryAccessGrantRepository();
   const service = new AccessGrantService({
     repository,
+    lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
   });
@@ -160,6 +161,7 @@ describe("AccessGrantService", () => {
     const observer = { recordLastUsePersistenceFailure: vi.fn() };
     const service = new AccessGrantService({
       repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
       originMatcher: new DefaultOriginMatcher(),
       workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
       usageObserver: observer,
@@ -177,6 +179,7 @@ describe("AccessGrantService", () => {
     const observer = { recordLastUsePersistenceFailure: vi.fn() };
     const service = new AccessGrantService({
       repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
       originMatcher: new DefaultOriginMatcher(),
       workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
       usageObserver: observer,
@@ -189,9 +192,10 @@ describe("AccessGrantService", () => {
 
   it("attributes channel credential lifecycle records to the actor and stable audience", async () => {
     const repository = new InMemoryAccessGrantRepository();
-    const auditService = { record: vi.fn().mockResolvedValue(undefined) };
+    const auditService = { record: vi.fn().mockResolvedValue(undefined), logRecorded: vi.fn() };
     const service = new AccessGrantService({
       repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
       originMatcher: new DefaultOriginMatcher(),
       workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
       auditService,
@@ -208,7 +212,7 @@ describe("AccessGrantService", () => {
       expiresAt: futureExpiry(),
     });
 
-    expect(auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+    expect(auditService.logRecorded).toHaveBeenCalledWith(expect.objectContaining({
       accountId: "account-1",
       workspaceId: "workspace-1",
       eventType: "access_grant.issue",
@@ -221,9 +225,11 @@ describe("AccessGrantService", () => {
 
   it("records a narrow successful REST chat audit without the secret or chat content", async () => {
     const repository = new InMemoryAccessGrantRepository();
+    repository.touch = vi.fn().mockResolvedValue(undefined);
     const auditService = { record: vi.fn().mockResolvedValue(undefined) };
     const service = new AccessGrantService({
       repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
       originMatcher: new DefaultOriginMatcher(),
       workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
       auditService,
@@ -240,6 +246,9 @@ describe("AccessGrantService", () => {
       },
     });
 
+    await Promise.resolve();
+    expect(repository.touch).toHaveBeenCalledWith("grant-1", expect.any(Date));
+
     expect(auditService.record).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       eventType: "agent_api.chat",
@@ -253,5 +262,107 @@ describe("AccessGrantService", () => {
         role: "agent",
       },
     });
+  });
+
+  it("does not throw after a completed REST chat when audit persistence fails", async () => {
+    const repository = new InMemoryAccessGrantRepository();
+    const auditService = { record: vi.fn().mockRejectedValue(new Error("audit unavailable")) };
+    const observer = { recordCompletedAuditPersistenceFailure: vi.fn() };
+    const service = new AccessGrantService({
+      repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
+      originMatcher: new DefaultOriginMatcher(),
+      workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
+      auditService,
+      chatAuditObserver: observer,
+    });
+
+    expect(() => service.recordAgentChannelChatSucceeded({
+      grant: {
+        id: "grant-1", workspaceId: "workspace-1", agentId: "agent-1", principalKind: "agent-api", channel: "agent-api", role: "agent",
+      },
+    })).not.toThrow();
+    await Promise.resolve();
+
+    expect(observer.recordCompletedAuditPersistenceFailure).toHaveBeenCalledOnce();
+  });
+
+  it("does not reject a completed REST chat when last-use persistence fails", async () => {
+    const repository = new InMemoryAccessGrantRepository();
+    repository.touch = vi.fn().mockRejectedValue(new Error("database unavailable"));
+    const observer = { recordLastUsePersistenceFailure: vi.fn() };
+    const service = new AccessGrantService({
+      repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
+      originMatcher: new DefaultOriginMatcher(),
+      workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
+      usageObserver: observer,
+    });
+
+    expect(() => service.recordAgentChannelChatSucceeded({
+      grant: {
+        id: "grant-1", workspaceId: "workspace-1", agentId: "agent-1", principalKind: "agent-api", channel: "agent-api", role: "agent",
+      },
+    })).not.toThrow();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(observer.recordLastUsePersistenceFailure).toHaveBeenCalledOnce();
+  });
+
+  it("does not issue a grant or reveal its secret when transactional audit persistence fails", async () => {
+    const repository = new InMemoryAccessGrantRepository();
+    const lifecycleUnitOfWork = { issue: vi.fn().mockRejectedValue(new Error("audit unavailable")) };
+    const service = new AccessGrantService({
+      repository,
+      originMatcher: new DefaultOriginMatcher(),
+      workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
+      lifecycleUnitOfWork,
+    } as never);
+
+    await expect(service.issueGrant({
+      agentId: randomUUID(),
+      workspaceId: randomUUID(),
+      principalKind: "agent-api",
+      channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: futureExpiry(),
+    })).rejects.toThrow("audit unavailable");
+
+    expect(repository.items).toHaveLength(0);
+  });
+
+  it("does not rotate a grant or return a replacement secret when transactional audit persistence fails", async () => {
+    const repository = new InMemoryAccessGrantRepository();
+    const seed = new AccessGrantService({ repository, lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository), originMatcher: new DefaultOriginMatcher(), workspaceTokenSecret: "0123456789abcdef0123456789abcdef" });
+    const issued = await seed.issueGrant({
+      agentId: randomUUID(), workspaceId: randomUUID(), principalKind: "agent-api", channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] }, expiresAt: futureExpiry(),
+    });
+    const lifecycleUnitOfWork = { rotate: vi.fn().mockRejectedValue(new Error("audit unavailable")) };
+    const service = new AccessGrantService({
+      repository, originMatcher: new DefaultOriginMatcher(), workspaceTokenSecret: "0123456789abcdef0123456789abcdef", lifecycleUnitOfWork,
+    } as never);
+
+    await expect(service.rotateGrant({ grantId: issued.grant.id })).rejects.toThrow("audit unavailable");
+
+    expect((await repository.findById(issued.grant.id))?.tokenHash).toBe(issued.grant.tokenHash);
+  });
+
+  it("does not revoke a grant when transactional audit persistence fails", async () => {
+    const repository = new InMemoryAccessGrantRepository();
+    const seed = new AccessGrantService({ repository, lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository), originMatcher: new DefaultOriginMatcher(), workspaceTokenSecret: "0123456789abcdef0123456789abcdef" });
+    const issued = await seed.issueGrant({
+      agentId: randomUUID(), workspaceId: randomUUID(), principalKind: "agent-api", channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] }, expiresAt: futureExpiry(),
+    });
+    const lifecycleUnitOfWork = { revoke: vi.fn().mockRejectedValue(new Error("audit unavailable")) };
+    const service = new AccessGrantService({
+      repository, originMatcher: new DefaultOriginMatcher(), workspaceTokenSecret: "0123456789abcdef0123456789abcdef", lifecycleUnitOfWork,
+    } as never);
+
+    await expect(service.revokeGrant({ grantId: issued.grant.id })).rejects.toThrow("audit unavailable");
+
+    expect((await repository.findById(issued.grant.id))?.revokedAt).toBeNull();
   });
 });

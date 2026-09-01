@@ -13,7 +13,9 @@ export interface ToolExecutionResult {
 export interface RemoteToolAuthInfo {
   sessionId: string;
   clientName?: string;
+  conversationId?: string;
   converseSessionToken?: string;
+  sourceDigest?: string;
 }
 
 export interface ToolExecutionContext {

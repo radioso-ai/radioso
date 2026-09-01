@@ -93,6 +93,12 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "AgentChannelCredential"
+      },
+      "mcpConverseSessionBearerAuth": {
+        "description": "Short-lived bearer session issued by the MCP converse credential exchange. This credential authorizes only MCP ask_agent turns.",
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "McpConverseSession"
       }
     },
     "schemas": {
@@ -3640,7 +3646,9 @@
             ]
           },
           "label": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
           },
           "prefix": {
             "type": "string"
@@ -3659,10 +3667,7 @@
             "format": "date-time"
           },
           "expiresAt": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": "string",
             "format": "date-time"
           },
           "lastUsedAt": {
@@ -3705,7 +3710,7 @@
           "label": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 120
+            "maxLength": 80
           },
           "expiresAt": {
             "type": "string",
@@ -24689,6 +24694,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Agent channel rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -24904,6 +24919,18 @@
             "required": true,
             "name": "agentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
         "requestBody": {
@@ -25100,6 +25127,18 @@
             "required": true,
             "name": "credentialId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
         "responses": {
@@ -25177,6 +25216,18 @@
             "required": true,
             "name": "credentialId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
         "responses": {
@@ -43506,18 +43557,21 @@
                 "properties": {
                   "launchToken": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 2048
                   },
                   "client": {
                     "type": "object",
                     "properties": {
                       "name": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 128
                       },
                       "version": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 64
                       }
                     }
                   }
@@ -43597,6 +43651,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "MCP converse session rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -43617,7 +43681,8 @@
                 "properties": {
                   "sessionToken": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 2048
                   }
                 },
                 "required": [
@@ -43690,6 +43755,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "MCP converse session rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -43703,7 +43778,7 @@
         "operationId": "askMcpConverseAgent",
         "security": [
           {
-            "bearerAuth": []
+            "mcpConverseSessionBearerAuth": []
           }
         ],
         "requestBody": {
@@ -43793,6 +43868,16 @@
           },
           "409": {
             "description": "Turn superseded by a newer message in the same conversation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "MCP converse ask rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {

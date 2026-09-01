@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { AccessGrantRepository } from "../../src/db/repositories/accessGrantRepository.js";
+import { AccessGrantLifecycleUnitOfWork, AccessGrantRepository } from "../../src/db/repositories/accessGrantRepository.js";
+import { AccessGrantService } from "../../src/modules/accessGrants/services/accessGrantService.js";
+import { DefaultOriginMatcher } from "../../src/modules/accessGrants/originMatcher.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -16,6 +18,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("AccessGrantRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new AccessGrantRepository(database.kysely);
+  const lifecycleUnitOfWork = new AccessGrantLifecycleUnitOfWork(database.kysely);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -43,12 +46,19 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
 
   let savedId: string;
 
+  const lifecycleService = () => new AccessGrantService({
+    repository,
+    lifecycleUnitOfWork,
+    originMatcher: new DefaultOriginMatcher(),
+    workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
+  });
+
   it("save inserts a list-mode grant and round-trips the origin allowlist", async () => {
     const saved = await repository.save({
       agentId,
       workspaceId,
       label: "primary",
-      principalKind: "agent-api",
+      principalKind: "public-launch",
       role: "public",
       channel: "public-link",
       tokenPrefix: "rdso_aaa",
@@ -100,7 +110,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     const saved = await repository.save({
       agentId,
       workspaceId,
-      principalKind: "agent-api",
+      principalKind: "public-launch",
       role: "public",
       channel: "embed",
       tokenPrefix: "rdso_bbb",
@@ -151,6 +161,41 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     expect(page.grants.length).toBeGreaterThanOrEqual(2);
     expect(page.grants.map((g) => g.tokenHash)).toContain("grant-hash-1");
     expect(page.grants.map((g) => g.tokenHash)).toContain("grant-hash-2");
+  });
+
+  it("keeps exact PostgreSQL timestamp precision across keyset pages", async () => {
+    const ids = [randomUUID(), randomUUID(), randomUUID()];
+    const timestamps = [
+      "2099-01-01T00:00:00.000001Z",
+      "2099-01-01T00:00:00.000002Z",
+      "2099-01-01T00:00:00.000003Z",
+    ];
+    for (const [index, id] of ids.entries()) {
+      await database.query(
+        `INSERT INTO agent_access_grants
+          (id, agent_id, workspace_id, label, principal_kind, role, channel, token_prefix, token_hash, encrypted_token, origin_mode, origin_allowlist, enabled, expires_at, created_at)
+         VALUES ($1, $2, $3, $4, 'agent-api', 'agent', 'mcp-converse', $5, $6, NULL, 'allow-all', '{}', true, $7, $8::timestamptz)`,
+        [id, agentId, workspaceId, `precision-${index}`, `prefix-${index}`, `precision-hash-${index}`, "2100-01-01T00:00:00Z", timestamps[index]],
+      );
+    }
+
+    const seen: string[] = [];
+    let cursor: { createdAt: string; id: string } = { createdAt: "2098-01-01T00:00:00Z", id: "00000000-0000-4000-8000-000000000000" };
+    let lastCursor: { createdAt: string; id: string } | null = null;
+    const pageCursors: string[] = [];
+    for (let index = 0; index < ids.length; index += 1) {
+      const page = await repository.listByAgent(agentId, { channel: "mcp-converse", limit: 1, cursor });
+      const grant = page.grants.find((item) => item.tokenHash.startsWith("precision-hash-"));
+      expect(grant).toBeDefined();
+      seen.push(grant!.tokenHash);
+      lastCursor = page.nextCursor;
+      if (page.nextCursor) pageCursors.push(page.nextCursor.createdAt);
+      cursor = page.nextCursor ?? cursor;
+    }
+
+    expect(seen).toEqual(["precision-hash-0", "precision-hash-1", "precision-hash-2"]);
+    expect(pageCursors).toEqual(expect.arrayContaining([expect.stringContaining(".000001"), expect.stringContaining(".000002")]));
+    expect(lastCursor).toBeNull();
   });
 
   it("rotate replaces the secret on an active grant", async () => {
@@ -255,6 +300,43 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     expect(afterRevoke?.lastUsedAt?.getTime()).toBe(afterCoalescingWindow.getTime());
   });
 
+  it("rolls back issue, rotate, and revoke when lifecycle audit persistence fails", async () => {
+    const invalidAuditAccountId = randomUUID();
+    const service = lifecycleService();
+    const beforeIssue = await repository.listByAgent(agentId);
+
+    await expect(service.issueGrant({
+      agentId,
+      workspaceId,
+      accountId: invalidAuditAccountId,
+      principalKind: "agent-api",
+      channel: "agent-api",
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    })).rejects.toThrow();
+    expect((await repository.listByAgent(agentId)).grants).toHaveLength(beforeIssue.grants.length);
+
+    const target = await repository.save({
+      agentId,
+      workspaceId,
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "agent-api",
+      tokenPrefix: "rdso_atomic",
+      tokenHash: `atomic-${randomUUID()}`,
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const originalHash = target.tokenHash;
+
+    await expect(service.rotateGrant({ grantId: target.id, accountId: invalidAuditAccountId })).rejects.toThrow();
+    expect((await repository.findById(target.id))?.tokenHash).toBe(originalHash);
+
+    await expect(service.revokeGrant({ grantId: target.id, accountId: invalidAuditAccountId })).rejects.toThrow();
+    expect((await repository.findById(target.id))?.revokedAt).toBeNull();
+  });
+
   it("revoke preserves its original timestamp and returns null for unknown ids", async () => {
     const first = await repository.findById(savedId);
     const revoked = await repository.revoke(savedId, new Date(Date.now() + 60_000));
@@ -275,6 +357,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
       tokenHash: "grant-hash-uc",
       encryptedToken: null,
       originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
     });
 
     const updated = await repository.updateConstraints(constraintGrant.id, {

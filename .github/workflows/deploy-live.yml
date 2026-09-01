@@ -15,6 +15,7 @@ jobs:
       backend_service: radioso-live-eu-backend
       crawler_worker_service: radioso-live-eu-crawler-worker
       frontend_service: radioso-live-eu-frontend
+      mcp_service: radioso-live-eu-mcp
       worker_service: radioso-live-eu-worker
       require_main_branch: true
       radioso_edition: enterprise

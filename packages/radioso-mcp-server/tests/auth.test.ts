@@ -19,6 +19,7 @@ const createConverseApi = (): ConverseApiAdapter => ({
     valid: true,
     workspaceId: "workspace-1",
   }),
+  recordUse: vi.fn().mockResolvedValue(undefined),
 });
 
 describe("agent-channel MCP authentication", () => {
@@ -32,16 +33,49 @@ describe("agent-channel MCP authentication", () => {
 
     await expect(auth.resolveBearerSession("agent-channel-credential")).resolves.toMatchObject({
       clientName: "radioso-mcp-converse",
+      conversationId: "conversation-1",
       converseSessionToken: "converse-session-token",
     });
     expect(converseApi.exchange).toHaveBeenCalledWith({
       client: { name: "radioso-mcp-server" },
       launchToken: "agent-channel-credential",
-    });
+    }, { sourceDigest: undefined });
 
     await auth.resolveBearerSession("agent-channel-credential");
     expect(converseApi.exchange).toHaveBeenCalledTimes(1);
     expect(converseApi.validate).toHaveBeenCalledTimes(2);
+  });
+
+  it("coalesces concurrent cache misses for one agent credential into one backend exchange", async () => {
+    const converseApi = createConverseApi();
+    let releaseExchange!: () => void;
+    vi.mocked(converseApi.exchange).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        releaseExchange = resolve;
+      });
+      return {
+        agent: { id: "agent-1", name: "Agent" },
+        conversationId: "conversation-1",
+        expiresAt: "2026-04-21T12:10:00.000Z",
+        sessionToken: "converse-session-token",
+      };
+    });
+    const auth = createAuthService({
+      converseApi,
+      now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: createInMemorySessionStore(),
+    });
+
+    const first = auth.resolveBearerSession("agent-channel-credential");
+    const second = auth.resolveBearerSession("agent-channel-credential");
+    await vi.waitFor(() => expect(converseApi.exchange).toHaveBeenCalledTimes(1));
+
+    releaseExchange();
+    const [firstSession, secondSession] = await Promise.all([first, second]);
+
+    expect(firstSession).not.toBeNull();
+    expect(secondSession).toEqual(firstSession);
+    expect(converseApi.exchange).toHaveBeenCalledTimes(1);
   });
 
   it("removes a cached session when backend validation rejects it", async () => {
@@ -69,5 +103,52 @@ describe("agent-channel MCP authentication", () => {
     });
 
     await expect(auth.resolveBearerSession("invalid-credential")).resolves.toBeNull();
+  });
+
+  it("refreshes successful cached use within five minutes without notifying on every response", async () => {
+    const converseApi = createConverseApi();
+    let now = new Date("2026-04-21T12:00:00.000Z");
+    const auth = createAuthService({
+      converseApi,
+      now: () => now,
+      sessionStore: createInMemorySessionStore(),
+    });
+    const session = await auth.resolveBearerSession("agent-channel-credential");
+    if (!session) throw new Error("Expected a session");
+
+    auth.recordSuccessfulUse(session, "source-digest");
+    await vi.waitFor(() => expect(converseApi.recordUse).toHaveBeenCalledTimes(1));
+    now = new Date("2026-04-21T12:04:59.999Z");
+    auth.recordSuccessfulUse(session, "source-digest");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(converseApi.recordUse).toHaveBeenCalledTimes(1);
+
+    now = new Date("2026-04-21T12:05:00.000Z");
+    auth.recordSuccessfulUse(session, "source-digest");
+    await vi.waitFor(() => expect(converseApi.recordUse).toHaveBeenCalledTimes(2));
+    expect(converseApi.recordUse).toHaveBeenLastCalledWith("converse-session-token", { sourceDigest: "source-digest" });
+  });
+
+  it("keeps sync and async successful-use notification failures nonblocking and retryable", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.recordUse)
+      .mockRejectedValueOnce(new Error("async notification failure"))
+      .mockImplementationOnce(() => {
+        throw new Error("sync notification failure");
+      })
+      .mockResolvedValueOnce(undefined);
+    const auth = createAuthService({
+      converseApi,
+      now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: createInMemorySessionStore(),
+    });
+    const session = await auth.resolveBearerSession("agent-channel-credential");
+    if (!session) throw new Error("Expected a session");
+
+    expect(() => auth.recordSuccessfulUse(session)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(() => auth.recordSuccessfulUse(session)).not.toThrow();
+    expect(() => auth.recordSuccessfulUse(session)).not.toThrow();
+    await vi.waitFor(() => expect(converseApi.recordUse).toHaveBeenCalledTimes(3));
   });
 });

@@ -49,6 +49,11 @@ export interface AccessGrantUsageObserver {
   recordLastUsePersistenceFailure?(): void;
 }
 
+/** Bounded operational signal for non-critical completed channel-chat audits. */
+export interface AgentChannelChatAuditObserver {
+  recordCompletedAuditPersistenceFailure?(): void;
+}
+
 const controlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
 
 export const normalizeAccessGrantLabel = (value: string): string => {

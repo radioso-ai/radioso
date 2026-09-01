@@ -2,18 +2,23 @@ import type { RequestHandler, Response } from "express";
 
 import type { Env } from "../../config/env.js";
 import {
-  createRateLimitMiddleware,
-  type RateLimitAbuseControlPort,
+  createRateLimitBatchMiddleware,
   type RateLimitAuditPort,
+  type RateLimitBatchAbuseControlPort,
 } from "./rateLimit.js";
+import { createPreAuthSourceRateLimiter } from "./preAuthSourceRateLimiter.js";
 
 export interface AgentChannelRateLimiterDependencies {
   env: Pick<Env,
     | "AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS"
+    | "AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS"
     | "AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS"
     | "AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS"
+    | "RADIOSO_TRUSTED_PROXY_HOPS"
   >;
-  abuseControlService: RateLimitAbuseControlPort;
+  abuseControlService: RateLimitBatchAbuseControlPort & {
+    enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number }): Promise<unknown>;
+  };
   auditService: RateLimitAuditPort;
 }
 
@@ -53,33 +58,26 @@ export const agentChannelChatRateLimiters = (
   dependencies: AgentChannelRateLimiterDependencies,
   audience: AgentChannelAudience,
 ): RequestHandler[] => [
-  createRateLimitMiddleware({
+  createRateLimitBatchMiddleware({
     service: dependencies.abuseControlService,
     auditService: dependencies.auditService,
-    scope: "agent.channel.chat.grant",
-    limit: dependencies.env.AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS,
-    windowMs: dependencies.env.AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS,
-    resolveSubjectKey: (_req, res) => {
+    resolvePolicies: (_req, res) => {
       const identity = identityForAudience(res, audience);
-      return identity ? `grant:${identity.grantId}` : null;
-    },
-    resolveAuditContext: (_req, res) => {
-      const identity = identityForAudience(res, audience);
-      return identity ? {
-        workspaceId: identity.workspaceId,
-        metadata: { audience, agentId: identity.agentId },
-      } : {};
-    },
-  }),
-  createRateLimitMiddleware({
-    service: dependencies.abuseControlService,
-    auditService: dependencies.auditService,
-    scope: "agent.channel.chat.workspace",
-    limit: dependencies.env.AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS,
-    windowMs: dependencies.env.AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS,
-    resolveSubjectKey: (_req, res) => {
-      const identity = identityForAudience(res, audience);
-      return identity ? `workspace:${identity.workspaceId}:global` : null;
+      if (!identity) return [];
+      return [
+        {
+          scope: "agent.channel.chat.grant",
+          subjectKey: `grant:${identity.grantId}`,
+          limit: dependencies.env.AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: dependencies.env.AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS,
+        },
+        {
+          scope: "agent.channel.chat.workspace",
+          subjectKey: `workspace:${identity.workspaceId}:global`,
+          limit: dependencies.env.AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS,
+          windowMs: dependencies.env.AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS,
+        },
+      ];
     },
     resolveAuditContext: (_req, res) => {
       const identity = identityForAudience(res, audience);
@@ -90,3 +88,13 @@ export const agentChannelChatRateLimiters = (
     },
   }),
 ];
+
+export const createAgentChannelSourceRateLimiter = (
+  dependencies: AgentChannelRateLimiterDependencies,
+): RequestHandler => createPreAuthSourceRateLimiter({
+  service: dependencies.abuseControlService,
+  scope: "agent.channel.chat.source",
+  limit: dependencies.env.AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS,
+  trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
+  windowMs: dependencies.env.AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS,
+});

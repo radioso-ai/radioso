@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
+import type { Kysely } from "kysely";
+import { sql } from "kysely";
 
-import type { Db } from "../../shared/infra/kysely/types.js";
+import type { DB, Db } from "../../shared/infra/kysely/types.js";
+import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import { AuditEventRepository } from "./auditEventRepository.js";
 import type {
   AccessGrantChannel,
   AccessGrantRole,
@@ -8,6 +12,14 @@ import type {
   GrantPrincipalKind,
   OriginConstraint,
 } from "../../modules/accessGrants/domain.js";
+import type {
+  AccessGrantLifecycleAuditEvent,
+  AccessGrantRepositoryPort,
+  AccessGrantLifecycleUnitOfWorkPort,
+  AccessGrantLifecycleResult,
+  AccessGrantLifecycleSaveInput,
+  AccessGrantLifecycleRotateInput,
+} from "../../modules/accessGrants/ports.js";
 
 interface AccessGrantRow {
   id: string;
@@ -25,6 +37,7 @@ interface AccessGrantRow {
   enabled: boolean;
   expires_at: Date | null;
   created_at: Date;
+  created_at_text?: string;
   last_used_at: Date | null;
   revoked_at: Date | null;
 }
@@ -52,47 +65,6 @@ const mapGrant = (row: AccessGrantRow): AccessGrant => ({
   lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
   revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
 });
-
-export interface AccessGrantRepositoryPort {
-  findById(grantId: string): Promise<AccessGrant | null>;
-  findByTokenHash(tokenHash: string): Promise<AccessGrant | null>;
-  listByAgent(agentId: string, params?: {
-    workspaceId?: string;
-    principalKind?: GrantPrincipalKind;
-    channel?: AccessGrantChannel;
-    limit?: number;
-    cursor?: { createdAt: Date; id: string };
-  }): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: Date; id: string } | null }>;
-  save(params: {
-    agentId: string;
-    workspaceId: string;
-    label?: string | null;
-    principalKind: GrantPrincipalKind;
-    role: AccessGrantRole;
-    channel?: AccessGrantChannel;
-    tokenPrefix: string;
-    tokenHash: string;
-    encryptedToken: string | null;
-    originConstraint: OriginConstraint;
-    enabled?: boolean;
-    expiresAt?: Date | null;
-  }): Promise<AccessGrant>;
-  rotate(grantId: string, params: {
-    tokenPrefix: string;
-    tokenHash: string;
-    encryptedToken: string | null;
-    expectedTokenHash?: string;
-    requireActiveAgentChannel?: boolean;
-    now?: Date;
-  }): Promise<AccessGrant | null>;
-  revoke(grantId: string, revokedAt: Date): Promise<AccessGrant | null>;
-  touch(grantId: string, lastUsedAt: Date): Promise<void>;
-  updateConstraints(grantId: string, params: {
-    originConstraint?: OriginConstraint;
-    enabled?: boolean;
-    label?: string | null;
-  }): Promise<AccessGrant | null>;
-}
 
 const grantColumns = [
   "id",
@@ -140,12 +112,12 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
     principalKind?: GrantPrincipalKind;
     channel?: AccessGrantChannel;
     limit?: number;
-    cursor?: { createdAt: Date; id: string };
-  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: Date; id: string } | null }> {
+    cursor?: { createdAt: string; id: string };
+  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
     let query = this.db
       .selectFrom("agent_access_grants")
-      .select(grantColumns)
+      .select([...grantColumns, sql<string>`created_at::text`.as("created_at_text")])
       .where("agent_id", "=", agentId);
     if (params.workspaceId) query = query.where("workspace_id", "=", params.workspaceId);
     if (params.principalKind) query = query.where("principal_kind", "=", params.principalKind);
@@ -154,9 +126,9 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
     }
     if (params.cursor) {
       query = query.where((eb) => eb.or([
-        eb("created_at", ">", params.cursor!.createdAt),
+        eb("created_at", ">", sql<Date>`CAST(${params.cursor!.createdAt} AS timestamptz)`),
         eb.and([
-          eb("created_at", "=", params.cursor!.createdAt),
+          eb("created_at", "=", sql<Date>`CAST(${params.cursor!.createdAt} AS timestamptz)`),
           eb("id", ">", params.cursor!.id),
         ]),
       ]));
@@ -167,10 +139,10 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
       .limit(limit + 1)
       .execute();
     const grants = rows.slice(0, limit).map((row) => mapGrant(row as AccessGrantRow));
-    const last = rows.length > limit ? grants.at(-1) : undefined;
+    const lastRow = rows.length > limit ? rows[limit - 1] as AccessGrantRow : undefined;
     return {
       grants,
-      nextCursor: last ? { createdAt: last.createdAt, id: last.id } : null,
+      nextCursor: lastRow?.created_at_text ? { createdAt: lastRow.created_at_text, id: lastRow.id } : null,
     };
   }
 
@@ -242,7 +214,7 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
         .where("revoked_at", "is", null)
         .where((eb) => eb.or([
           eb("expires_at", "is", null),
-          eb("expires_at", ">", eb.val(params.now ?? new Date())),
+          eb("expires_at", ">", currentTimestamp()),
         ]));
     }
     const row = await query.returning(grantColumns).executeTakeFirst();
@@ -295,5 +267,49 @@ export class AccessGrantRepository implements AccessGrantRepositoryPort {
       .returning(grantColumns)
       .executeTakeFirst();
     return row ? mapGrant(row as AccessGrantRow) : null;
+  }
+}
+
+/** Postgres composition for the grant mutation + audit transaction boundary. */
+export class AccessGrantLifecycleUnitOfWork implements AccessGrantLifecycleUnitOfWorkPort {
+  constructor(private readonly db: Kysely<DB>) {}
+
+  async issue(input: {
+    grant: AccessGrantLifecycleSaveInput;
+    auditEvent: (grant: AccessGrant) => AccessGrantLifecycleAuditEvent;
+  }): Promise<AccessGrantLifecycleResult> {
+    return this.db.transaction().execute(async (trx) => {
+      const grant = await new AccessGrantRepository(trx).save(input.grant);
+      const auditEvent = input.auditEvent(grant);
+      await new AuditEventRepository(trx).create(auditEvent);
+      return { grant, auditEvent };
+    });
+  }
+
+  async rotate(input: {
+    grant: AccessGrantLifecycleRotateInput;
+    auditEvent: (grant: AccessGrant) => AccessGrantLifecycleAuditEvent;
+  }): Promise<AccessGrantLifecycleResult | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const grant = await new AccessGrantRepository(trx).rotate(input.grant.grantId, input.grant);
+      if (!grant) return null;
+      const auditEvent = input.auditEvent(grant);
+      await new AuditEventRepository(trx).create(auditEvent);
+      return { grant, auditEvent };
+    });
+  }
+
+  async revoke(input: {
+    grantId: string;
+    revokedAt: Date;
+    auditEvent: (grant: AccessGrant) => AccessGrantLifecycleAuditEvent;
+  }): Promise<AccessGrantLifecycleResult | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const grant = await new AccessGrantRepository(trx).revoke(input.grantId, input.revokedAt);
+      if (!grant) return null;
+      const auditEvent = input.auditEvent(grant);
+      await new AuditEventRepository(trx).create(auditEvent);
+      return { grant, auditEvent };
+    });
   }
 }

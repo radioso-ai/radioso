@@ -83,7 +83,7 @@ type ChannelId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 
 
 const CHANNEL_TITLES: Record<ChannelId, string> = {
   'web-chat': 'Web chat',
-  'api-channel': 'API channel',
+  'api-channel': 'Agent API',
   'mcp-channel': 'MCP channel',
   'slack-channel': 'Slack',
   'whatsapp-channel': 'WhatsApp',
@@ -772,7 +772,7 @@ export function WorkspaceAssistantChannelsTab({
               </div>
             </SettingsCard>
 
-            <ApiAccessPanel workspaceId={activeWorkspaceId} />
+            <ApiAccessPanel key={`${activeWorkspaceId ?? 'none'}:personal`} workspaceId={activeWorkspaceId} />
 
             <WebhookDestinationsPanel onSaveStateChange={onSaveStateChange} />
 

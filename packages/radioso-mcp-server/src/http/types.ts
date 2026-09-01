@@ -7,11 +7,13 @@ import type { AccessSessionRecord } from "../auth/sessionStore.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import type { RadiosoMcpServerHandle } from "../server.js";
 import type { RuntimeStoreReadiness } from "../state/runtimeStores.js";
+import type { PreAuthSourceBudget } from "./preAuthSourceBudget.js";
 
 export interface InternalMcpRequestAuthInfo extends McpRequestAuthInfo {
   accessToken: string;
   clientId: string;
   scopes: string[];
+  sourceDigest?: string;
   token: string;
 }
 
@@ -31,4 +33,5 @@ export interface RemoteHttpDependencies {
   auditLogger?: AuditLogger;
   config: RadiosoMcpConfig;
   readiness?: RuntimeStoreReadiness;
+  preAuthSourceBudget?: PreAuthSourceBudget;
 }

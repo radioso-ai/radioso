@@ -9,6 +9,7 @@ describe("machine-access observability", () => {
     const access = buildAccessServices({
       auditService: {} as never,
       env: { WORKSPACE_TOKEN_SECRET: "test-secret" },
+      lifecycleUnitOfWork: {} as never,
       logger: { warn() {} },
       metricsRegistry,
       repositories: {} as never,

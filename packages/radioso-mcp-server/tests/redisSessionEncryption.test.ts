@@ -27,4 +27,9 @@ describe("redis session secrets are encrypted at rest", () => {
     expect(deserializeSession(stored, signingSecret).converseSessionToken).toBe(token);
   });
 
+  it("round-trips the backend conversation id as non-secret correlation data", () => {
+    const stored = serializeSession(baseSession({ conversationId: "conversation-1" }), signingSecret);
+    expect(deserializeSession(stored, signingSecret).conversationId).toBe("conversation-1");
+  });
+
 });

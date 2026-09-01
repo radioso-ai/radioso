@@ -252,6 +252,7 @@ export const createRedisClientHandle = async ({
         clientName: input.clientName,
         expiresAt: new Date(input.expiresAt),
         issuedAt: new Date(input.issuedAt),
+        conversationId: input.conversationId,
         converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
       };

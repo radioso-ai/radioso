@@ -3,10 +3,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
-import { applyTestMigration, runTestMigrationsBefore } from "../support/databaseMigrations.js";
+import { applyTestMigration, runAllTestMigrations, runTestMigrationsBefore } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
-const migrationFile = "158_machine_access.sql";
+const migrationFile = "160_machine_access.sql";
 
 const canReach = async (url?: string): Promise<boolean> => {
   if (!url) return false;
@@ -29,8 +29,8 @@ const isolatedUrl = (base: string, name: string): string => {
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
-describeIfDatabase("machine-access migration (158)", () => {
-  const databaseName = `mig158_${randomUUID().replaceAll("-", "")}`;
+describeIfDatabase("machine-access migration (160)", () => {
+  const databaseName = `mig160_${randomUUID().replaceAll("-", "")}`;
   let admin: Database;
   let database: Database;
 
@@ -177,5 +177,118 @@ describeIfDatabase("machine-access migration (158)", () => {
        VALUES ($1, $2, $3, 'Invalid', 'member')`,
       [randomUUID(), workspaceId, secondAccountId],
     )).rejects.toThrow();
+  });
+});
+
+describeIfDatabase("machine-access migration parity", () => {
+  const freshDatabaseName = `mig_fresh_${randomUUID().replaceAll("-", "")}`;
+  const upgradeDatabaseName = `mig_upgrade_${randomUUID().replaceAll("-", "")}`;
+  let admin: Database;
+  let freshDatabase: Database;
+  let upgradeDatabase: Database;
+
+  const seedOriginMainState = async (database: Database, expiresAt: string | null = null) => {
+    const accountId = randomUUID();
+    const userId = randomUUID();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const conversationId = randomUUID();
+    const proposalId = randomUUID();
+    const grantId = randomUUID();
+    const tokenPrefix = "rdso_legacy_mcp";
+
+    await database.execute(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Parity', $2, 'hash')",
+      [accountId, `parity-${accountId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'hash')",
+      [userId, `parity-user-${userId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'Parity', $3)",
+      [workspaceId, accountId, `parity-${workspaceId}`],
+    );
+    await database.execute(
+      "INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Parity agent')",
+      [agentId, workspaceId],
+    );
+    await database.execute(
+      "INSERT INTO copilot_conversations (id, workspace_id, operator_user_id) VALUES ($1, $2, $3)",
+      [conversationId, workspaceId, userId],
+    );
+    await database.execute(
+      `INSERT INTO copilot_proposals
+        (id, workspace_id, operator_user_id, conversation_id, target_type, target_ref, payload, version_token)
+       VALUES ($1, $2, $3, $4, 'agent', '{}'::jsonb, '{}'::jsonb, 'origin-main-agent')`,
+      [proposalId, workspaceId, userId, conversationId],
+    );
+    await database.execute(
+      `INSERT INTO agent_access_grants
+        (id, agent_id, workspace_id, label, principal_kind, role, channel, token_prefix, token_hash,
+         encrypted_token, origin_mode, origin_allowlist, expires_at)
+       VALUES ($1, $2, $3, NULL, 'agent-api', 'agent', 'mcp-converse', $4, $5,
+               'legacy-ciphertext', 'allow-all', ARRAY[]::text[], $6)`,
+      [grantId, agentId, workspaceId, tokenPrefix, `hash-${grantId}`, expiresAt],
+    );
+
+    return { proposalId, grantId, tokenPrefix };
+  };
+
+  beforeAll(async () => {
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${freshDatabaseName}"`);
+    await admin.execute(`CREATE DATABASE "${upgradeDatabaseName}"`);
+    freshDatabase = new Database(isolatedUrl(integrationDatabaseUrl!, freshDatabaseName));
+    upgradeDatabase = new Database(isolatedUrl(integrationDatabaseUrl!, upgradeDatabaseName));
+  });
+
+  afterAll(async () => {
+    await freshDatabase?.close().catch(() => undefined);
+    await upgradeDatabase?.close().catch(() => undefined);
+    await admin?.execute(`DROP DATABASE IF EXISTS "${freshDatabaseName}" WITH (FORCE)`).catch(() => undefined);
+    await admin?.execute(`DROP DATABASE IF EXISTS "${upgradeDatabaseName}" WITH (FORCE)`).catch(() => undefined);
+    await admin?.close().catch(() => undefined);
+  });
+
+  it("keeps agent copilot proposals valid on a fresh schema", async () => {
+    await runAllTestMigrations(freshDatabase);
+    const state = await seedOriginMainState(freshDatabase, "2100-01-01T00:00:00Z");
+
+    const [proposal] = await freshDatabase.query<{ target_type: string }>(
+      "SELECT target_type FROM copilot_proposals WHERE id = $1",
+      [state.proposalId],
+    );
+    expect(proposal).toEqual({ target_type: "agent" });
+  });
+
+  it("preserves origin/main agent proposals and backfills legacy MCP labels during upgrade", async () => {
+    await runTestMigrationsBefore(upgradeDatabase, migrationFile);
+    const state = await seedOriginMainState(upgradeDatabase);
+
+    await applyTestMigration(upgradeDatabase, "160_machine_access.sql");
+    await applyTestMigration(upgradeDatabase, "161_api_credentials_optional_expiry.sql");
+    await applyTestMigration(upgradeDatabase, "162_agent_channel_credentials.sql");
+
+    const [proposal] = await upgradeDatabase.query<{ target_type: string }>(
+      "SELECT target_type FROM copilot_proposals WHERE id = $1",
+      [state.proposalId],
+    );
+    expect(proposal).toEqual({ target_type: "agent" });
+
+    const [grant] = await upgradeDatabase.query<{
+      label: string;
+      principal_kind: string;
+      encrypted_token: string | null;
+      expires_at: Date | null;
+      revoked_at: Date | null;
+    }>("SELECT label, principal_kind, encrypted_token, expires_at, revoked_at FROM agent_access_grants WHERE id = $1", [state.grantId]);
+    expect(grant).toEqual({
+      label: `MCP credential ${state.tokenPrefix}`,
+      principal_kind: "agent-api",
+      encrypted_token: null,
+      expires_at: expect.any(Date),
+      revoked_at: expect.any(Date),
+    });
   });
 });

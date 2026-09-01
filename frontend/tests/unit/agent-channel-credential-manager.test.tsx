@@ -80,14 +80,40 @@ describe('AgentChannelCredentialManager', () => {
       label!.dispatchEvent(new Event('change', { bubbles: true }))
       create!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.textContent).toContain('Shown once')
+    expect(document.body.textContent).toContain('Save this secret now')
 
     await act(async () => {
       root.render(<AgentChannelCredentialManager agentId="agent-1" audience="rest" />)
     })
 
-    expect(container.textContent).not.toContain('Shown once')
-    expect(container.textContent).not.toContain('one-time-secret')
+    expect(document.body.textContent).not.toContain('Save this secret now')
+    expect(document.body.textContent).not.toContain('one-time-secret')
+  })
+
+  it('requires acknowledgement before clearing an issued secret', async () => {
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-1" audience="mcp" />)
+    })
+    fillLabel(container, 'Desktop')
+    await act(async () => {
+      findButton('Create credential')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(document.body.textContent).toContain('one-time-secret')
+    const done = findButton('Done', document.body)
+    expect(done).toBeTruthy()
+    expect((done as HTMLButtonElement).disabled).toBe(true)
+
+    const checkbox = document.body.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(checkbox).toBeTruthy()
+    await act(async () => {
+      checkbox!.click()
+    })
+    expect((findButton('Done', document.body) as HTMLButtonElement).disabled).toBe(false)
+    await act(async () => {
+      findButton('Done', document.body)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(document.body.textContent).not.toContain('one-time-secret')
   })
 
   it('ignores a delayed inventory response from the previous agent audience', async () => {
@@ -114,6 +140,29 @@ describe('AgentChannelCredentialManager', () => {
     expect(container.textContent).toContain('Current audience')
   })
 
+  it('ignores a delayed inventory response from the previous agent', async () => {
+    const oldList = deferred<{ credentials: typeof credential[]; nextCursor: string | null }>()
+    const newList = deferred<{ credentials: typeof credential[]; nextCursor: string | null }>()
+    apiMocks.list.mockReset()
+    apiMocks.list.mockReturnValueOnce(oldList.promise).mockReturnValueOnce(newList.promise)
+
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-old" audience="mcp" />)
+    })
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-current" audience="mcp" />)
+    })
+
+    await act(async () => {
+      oldList.resolve({ credentials: [makeCredential({ label: 'Old agent' })], nextCursor: null })
+    })
+    expect(container.textContent).not.toContain('Old agent')
+    await act(async () => {
+      newList.resolve({ credentials: [makeCredential({ label: 'Current agent' })], nextCursor: null })
+    })
+    expect(container.textContent).toContain('Current agent')
+  })
+
   it('ignores a delayed issue response from the previous agent audience', async () => {
     const issue = deferred<{ credential: typeof credential; secret: string }>()
     apiMocks.issue.mockReturnValue(issue.promise)
@@ -133,9 +182,31 @@ describe('AgentChannelCredentialManager', () => {
       issue.resolve({ credential: makeCredential({ label: 'Old issued credential' }), secret: 'old-secret' })
     })
 
-    expect(container.textContent).not.toContain('Shown once')
+    expect(document.body.textContent).not.toContain('Save this secret now')
     expect(container.textContent).not.toContain('Old issued credential')
     expect(container.textContent).not.toContain('old-secret')
+  })
+
+  it('ignores a delayed issue response from the previous agent', async () => {
+    const issue = deferred<{ credential: typeof credential; secret: string }>()
+    apiMocks.issue.mockReturnValue(issue.promise)
+
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-old" audience="mcp" />)
+    })
+    fillLabel(container, 'Old agent')
+    await act(async () => {
+      findButton('Create credential')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-current" audience="mcp" />)
+    })
+    await act(async () => {
+      issue.resolve({ credential: makeCredential({ label: 'Old agent credential' }), secret: 'old-agent-secret' })
+    })
+
+    expect(document.body.textContent).not.toContain('Save this secret now')
+    expect(document.body.textContent).not.toContain('old-agent-secret')
   })
 
   it('ignores a delayed load-more response from the previous agent audience', async () => {
@@ -189,7 +260,36 @@ describe('AgentChannelCredentialManager', () => {
 
     expect(container.textContent).toContain('Current credential')
     expect(container.textContent).not.toContain('Stale rotated credential')
-    expect(container.textContent).not.toContain('Shown once')
+    expect(document.body.textContent).not.toContain('Save this secret now')
+  })
+
+  it('ignores a delayed rotate response from the previous agent', async () => {
+    const rotate = deferred<{ credential: typeof credential; secret: string }>()
+    apiMocks.list.mockReset()
+    apiMocks.list
+      .mockResolvedValueOnce({ credentials: [makeCredential({ label: 'Old credential' })], nextCursor: null })
+      .mockResolvedValueOnce({ credentials: [makeCredential({ label: 'Current credential' })], nextCursor: null })
+    apiMocks.rotate.mockReturnValue(rotate.promise)
+
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-old" audience="mcp" />)
+    })
+    await act(async () => {
+      findButton('Rotate', container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      findButton('Rotate credential', document.body)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-current" audience="mcp" />)
+    })
+    await act(async () => {
+      rotate.resolve({ credential: makeCredential({ label: 'Old agent rotated' }), secret: 'old-agent-rotate-secret' })
+    })
+
+    expect(container.textContent).toContain('Current credential')
+    expect(document.body.textContent).not.toContain('Old agent rotated')
+    expect(document.body.textContent).not.toContain('Save this secret now')
   })
 
   it('ignores a delayed revoke response from the previous agent audience', async () => {

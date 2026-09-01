@@ -44,6 +44,7 @@ export const registerMcpConversePaths = (
       },
       401: errorResponse("Invalid converse grant"),
       403: errorResponse("Grant channel or bound agent is not allowed"),
+      429: errorResponse("MCP converse session rate limit exceeded"),
     },
   });
 
@@ -66,6 +67,7 @@ export const registerMcpConversePaths = (
       },
       401: errorResponse("Invalid or expired converse session"),
       403: errorResponse("Underlying converse grant is no longer valid"),
+      429: errorResponse("MCP converse session rate limit exceeded"),
     },
   });
 
@@ -75,7 +77,7 @@ export const registerMcpConversePaths = (
     tags: ["MCP Converse"],
     summary: "Run one MCP ask_agent turn through the bound agent",
     operationId: "askMcpConverseAgent",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: [{ [security.mcpConverseSessionBearerAuthScheme.name]: [] }],
     request: {
       body: {
         required: true,
@@ -90,6 +92,7 @@ export const registerMcpConversePaths = (
       409: errorResponse("Turn superseded by a newer message in the same conversation"),
       401: errorResponse("Invalid converse session"),
       403: errorResponse("Converse session is no longer authorized"),
+      429: errorResponse("MCP converse ask rate limit exceeded"),
     },
   });
 

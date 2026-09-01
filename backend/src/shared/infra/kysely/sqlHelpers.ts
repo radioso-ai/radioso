@@ -74,6 +74,60 @@ export const jsonbConcat = (
 export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
 
 /**
+ * Atomically consumes one abuse-control entry. The `ON CONFLICT` update takes
+ * the row lock before it decides whether an active window can accept another
+ * attempt, so concurrent callers cannot each observe the same remaining slot.
+ */
+export const consumeAbuseControlEntry = (input: {
+  scope: string;
+  subjectKey: string;
+  limit: number;
+  windowMs: number;
+  blockMs: number;
+  now: Date;
+}): RawBuilder<{
+  scope: string;
+  subject_key: string;
+  attempt_count: number;
+  window_started_at: Date;
+  blocked_until: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}> => {
+  const now = sql`${input.now}::timestamptz`;
+  const windowCutoff = new Date(input.now.getTime() - input.windowMs);
+  const blockedUntil = sql`${now} + (${input.blockMs} * interval '1 millisecond')`;
+  const nextAttemptCount = sql`case
+    when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.attempt_count
+    when abuse_control_entries.window_started_at > ${windowCutoff} then abuse_control_entries.attempt_count + 1
+    else 1
+  end`;
+  const nextWindowStartedAt = sql`case
+    when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.window_started_at
+    when abuse_control_entries.window_started_at > ${windowCutoff} then abuse_control_entries.window_started_at
+    else ${now}
+  end`;
+  const nextBlockedUntil = sql`case
+    when abuse_control_entries.blocked_until > ${now} then abuse_control_entries.blocked_until
+    when (${nextAttemptCount}) > ${input.limit} then ${blockedUntil}
+    else null
+  end`;
+
+  return sql`insert into abuse_control_entries as abuse_control_entries (
+      scope, subject_key, attempt_count, window_started_at, blocked_until
+    ) values (
+      ${input.scope}, ${input.subjectKey}, 1, ${now},
+      case when ${input.limit} < 1 then ${blockedUntil} else null end
+    )
+    on conflict (scope, subject_key) do update set
+      attempt_count = ${nextAttemptCount},
+      window_started_at = ${nextWindowStartedAt},
+      blocked_until = ${nextBlockedUntil},
+      updated_at = now()
+    returning scope, subject_key, attempt_count, window_started_at, blocked_until, created_at, updated_at`;
+};
+
+/**
  * `clock_timestamp()` — the wall clock read fresh on each call (unlike `now()`, which is
  * fixed for the whole transaction). Used where rows inserted within one transaction must
  * get strictly increasing timestamps (e.g. message ordering). Do not substitute `now()`.

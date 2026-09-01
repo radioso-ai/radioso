@@ -33,7 +33,6 @@ import { createConnectorRoutes } from "../../../modules/connectors/http/connecto
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
-import { getMcpStatus } from "../../server/mcpStatus.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
 import { createApiAccessRoutes } from "./apiAccessRoutes.js";
 
@@ -96,11 +95,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    const mcp = getMcpStatus(dependencies.env);
-    res.status(mcp.ready ? 200 : 503).json({
-      mcp,
-      status: mcp.ready ? "ok" : "starting",
-    });
+    res.status(200).json({ status: "ok" });
   });
   if (dependencies.env.METRICS_ENABLED) {
     if (!dependencies.metricsRegistry || !dependencies.env.METRICS_AUTH_TOKEN) {

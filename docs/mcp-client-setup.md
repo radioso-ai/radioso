@@ -26,6 +26,7 @@ Open the agent's **Channels → MCP** card and create a credential with a label 
 ```http
 POST /api/v1/agents/{agentId}/channel-credentials
 Cookie: <signed-in dashboard session>
+X-Radioso-CSRF: 1
 X-Workspace-Id: <workspace UUID>
 Content-Type: application/json
 
@@ -115,9 +116,15 @@ clients do not need to serialize the first ask.
 
 The converse surface uses the credential-for-session exchange described above. Operator-minted credentials are static bearer secrets, so Radioso does not require an OAuth flow. Personal and service-account credentials do not authorize MCP.
 
+The exchange is rate limited before credential lookup. A source bucket runs first, followed by a bucket keyed by a one-way launch-token digest; this bounds durable work when a caller sends many different invalid tokens. Rejected and unavailable checks are counted in a low-cardinality metric. Individual pre-auth failures are not written as audit events because an invalid-token flood must not turn into an unbounded audit-write workload.
+
 ## Deployment
 
-Run `packages/radioso-mcp-server` as a separate HTTP process. Give its `/mcp` endpoint the original MCP credential; it performs the exchange internally. Use `RADIOSO_MCP_REDIS_URL` when multiple standalone instances need shared session state.
+Run `packages/radioso-mcp-server` as a separate HTTP process. Give its `/mcp` endpoint the original MCP credential; it performs the exchange internally. Each process may cache short-lived backend session tokens in memory. Redis is optional when you want that cache shared across standalone instances.
+
+For a Terraform-managed Cloud Run deployment, set `radioso_mcp_enabled = true`. Terraform starts a separate public MCP service from the production backend image and publishes its `/mcp` endpoint as the `mcp_url` output; the dashboard reads that address at runtime. Terraform also shares a generated `RADIOSO_MCP_SIGNING_SECRET` between MCP and the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=2`, matching Google's appended client/load-balancer suffix. Earlier caller-supplied forwarding values cannot choose the source budget. For manual deployments, keep the hop count at `0` unless you control the exact rightmost proxy chain.
+
+The service shares the deployment's `backend_max_instances` cap, so malformed public requests cannot pin the only MCP process. Cloud Run may scale the MCP process to zero. On its next request, the client presents the original credential again, the process exchanges it again, and the backend resumes the conversation mapped to that credential's current version in PostgreSQL. Rotating the credential starts a separate conversation. A Redis-backed cache uses the signing secret to encrypt stored backend session tokens.
 
 Before a Redis-backed runtime serves traffic, it removes historical session records carrying former upstream API-token fields. An unavailable configured store leaves the runtime unavailable while the purge retries.
 
@@ -138,7 +145,7 @@ To reconnect after a session expires, send the original MCP credential to `/mcp`
 
 ## Security Notes
 
-Standalone mode keeps a separate public surface. It is the better fit when cloud connectors need public HTTPS access but the main backend should remain private.
+Standalone mode keeps a separate public surface. In Terraform-managed Cloud Run, backend public invocation remains enabled so that service can call the agent-converse API.
 
 MCP credentials are secret bearers bound to one agent. Public chat and website embed launch credentials are separate credential types and are not accepted by the converse MCP surface. Personal, service-account, and REST-audience agent credentials do not authorize MCP.
 
@@ -217,13 +224,20 @@ ChatGPT custom apps and OpenAI API integrations also require a public remote MCP
 
 The Responses API can call a remote MCP server directly. A typical tool stanza looks like this:
 
-```json
-{
-  "type": "mcp",
-  "server_label": "radioso",
-  "server_url": "https://mcp.example.com/mcp",
-  "require_approval": "never"
-}
+```javascript
+const response = await client.responses.create({
+  model: "gpt-5",
+  input: "What is our refund window?",
+  tools: [{
+    type: "mcp",
+    server_label: "radioso",
+    server_url: "https://mcp.example.com/mcp",
+    authorization: process.env.RADIOSO_MCP_ACCESS_TOKEN,
+    require_approval: "never"
+  }]
+});
 ```
+
+`authorization` is the Responses API MCP tool's bearer credential field. Read the value from your secret manager (the example uses `RADIOSO_MCP_ACCESS_TOKEN`); do not commit the credential to source.
 
 `require_approval: "never"` skips the host-side prompt. The MCP surface contains `ask_agent`; it does not expose Ray or a skill catalogue.

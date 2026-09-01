@@ -24,7 +24,6 @@ The package has no stdio MCP entrypoint.
 ### Required Environment Variables
 
 - `RADIOSO_BASE_URL`
-- `RADIOSO_MCP_SIGNING_SECRET` must be explicitly set to a non-default secret in remote mode; it encrypts Redis-backed session material.
 
 ### Common Optional Environment Variables
 
@@ -35,9 +34,12 @@ The package has no stdio MCP entrypoint.
 - `RADIOSO_MCP_AUDIT_LOG_PATH`
 - `RADIOSO_MCP_REDIS_URL` enables a shared runtime store for sessions
 - `RADIOSO_MCP_REDIS_KEY_PREFIX` default `radioso-mcp`
+- `RADIOSO_MCP_SIGNING_SECRET` lets standalone MCP carry its digested client-source identity to the backend with a signed proof. It is also required with `RADIOSO_MCP_REDIS_URL`, where it encrypts persisted backend session material. Use at least 32 random characters.
+- `RADIOSO_TRUSTED_PROXY_HOPS` default `0`. Set it only when requests arrive through a proxy chain whose rightmost hops are controlled by your deployment.
 
+Hosted Terraform generates `RADIOSO_MCP_SIGNING_SECRET`, injects the same value into standalone MCP and the backend, and sets `RADIOSO_TRUSTED_PROXY_HOPS=2` for Google's appended `<client-ip>,<load-balancer-ip>` suffix. Caller-supplied values earlier in the header are ignored. For a manual deployment, set the same signing value in both processes and configure the hop count only when you control the rightmost proxy chain. With the default `0`, both services ignore forwarded addresses and budget requests by their direct socket peer.
 
-When `RADIOSO_MCP_REDIS_URL` is omitted, the standalone server uses in-memory state for one process. When it is set, session state moves into Redis so multiple standalone MCP instances can serve the same session.
+When `RADIOSO_MCP_REDIS_URL` is omitted, the standalone server keeps short-lived backend session tokens in memory. After a restart or cache miss, it exchanges the original credential again; the backend retains that credential version's conversation identity in PostgreSQL. When Redis is set, that cache is shared across standalone MCP instances and its session tokens are encrypted with the signing secret.
 
 Before standalone MCP reports readiness or serves traffic, Redis removes persisted records carrying historical upstream API-token fields. The purge is namespace-scoped and removes matching session records and token indexes. If the configured store is unavailable, standalone stays unavailable and retries.
 
@@ -63,7 +65,6 @@ The package includes smoke commands that do not touch your existing Radioso Post
 RADIOSO_BASE_URL=http://localhost:8080 \
 RADIOSO_MCP_BIND_HOST=127.0.0.1 \
 RADIOSO_MCP_BIND_PORT=8787 \
-RADIOSO_MCP_SIGNING_SECRET=dev-signing-secret \
 node dist/src/cli/http.js
 ```
 

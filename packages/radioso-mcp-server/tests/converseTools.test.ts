@@ -36,6 +36,7 @@ describe("converse MCP tools", () => {
       }),
       exchange: vi.fn(),
       validate: vi.fn(),
+      recordUse: vi.fn(),
     };
     const [askAgent] = createConverseToolDefinitions();
 
@@ -49,7 +50,7 @@ describe("converse MCP tools", () => {
       },
     );
 
-    expect(converseAdapter.ask).toHaveBeenCalledWith("session-token", { message: "Hello" });
+    expect(converseAdapter.ask).toHaveBeenCalledWith("session-token", { message: "Hello" }, { sourceDigest: undefined });
     expect(result).toMatchObject({
       data: { conversationId: "conversation-1" },
       summary: "Hello",

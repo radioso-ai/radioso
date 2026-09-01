@@ -2,9 +2,29 @@ import { z } from "zod";
 
 import { chatMessageSchema } from "./textInputLimits.js";
 
+const labelControlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
+
+/**
+ * Channel credential labels cross the HTTP/OpenAPI boundary unchanged. Keep
+ * their canonical display representation explicit here; the domain layer still
+ * normalizes labels for non-HTTP callers.
+ */
+export const agentChannelCredentialLabelSchema = z.string()
+  .min(1)
+  .max(80)
+  .refine((value) => value === value.trim(), {
+    message: "Credential labels must not have leading or trailing whitespace",
+  })
+  .refine((value) => value === value.normalize("NFC"), {
+    message: "Credential labels must use Unicode NFC normalization",
+  })
+  .refine((value) => !labelControlCharacter.test(value), {
+    message: "Credential labels must not contain control characters",
+  });
+
 export const agentChannelCredentialIssueSchema = z.object({
   audience: z.enum(["mcp", "rest"]),
-  label: z.string(),
+  label: agentChannelCredentialLabelSchema,
   expiresAt: z.string().datetime().transform((value) => new Date(value)),
 }).strict();
 

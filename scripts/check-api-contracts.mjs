@@ -13,7 +13,6 @@ const files = {
   sdkJson: path.join(repoRoot, "typescript-sdk", "openapi", "radioso.json"),
   sdkYaml: path.join(repoRoot, "typescript-sdk", "openapi", "radioso.yaml"),
   sdkTypes: path.join(repoRoot, "typescript-sdk", "src", "generated", "types.ts"),
-  mcpTypes: path.join(repoRoot, "packages", "radioso-mcp-server", "src", "generated", "openapiTypes.ts"),
 };
 
 const errors = [];
@@ -51,21 +50,14 @@ expectSame(files.backendYaml, files.sdkYaml, "typescript-sdk/openapi/radioso.yam
 const tempDir = mkdtempSync(path.join(os.tmpdir(), "radioso-api-contracts-"));
 try {
   const expectedSdkTypes = path.join(tempDir, "sdk-types.ts");
-  const expectedMcpTypes = path.join(tempDir, "mcp-types.ts");
   generateTypes({
     cwd: path.join(repoRoot, "typescript-sdk"),
     source: files.sdkJson,
     output: expectedSdkTypes,
   });
-  generateTypes({
-    cwd: path.join(repoRoot, "packages", "radioso-mcp-server"),
-    source: files.backendJson,
-    output: expectedMcpTypes,
-  });
 
   if (errors.length === 0) {
     expectSame(expectedSdkTypes, files.sdkTypes, "typescript-sdk/src/generated/types.ts");
-    expectSame(expectedMcpTypes, files.mcpTypes, "packages/radioso-mcp-server/src/generated/openapiTypes.ts");
   }
 } finally {
   rmSync(tempDir, { recursive: true, force: true });

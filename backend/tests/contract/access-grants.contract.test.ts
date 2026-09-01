@@ -17,6 +17,7 @@ describe("access grants contract", () => {
     const document = createOpenApiDocument();
     const paths = document.paths ?? {};
     const lifecyclePath = paths["/api/v1/agents/{agentId}/channel-credentials"];
+    const rotatePath = paths["/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate"];
     const revokePath = paths["/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke"];
     const listParameters = lifecyclePath?.get?.parameters ?? [];
     const metadata = document.components?.schemas?.AgentChannelCredentialMetadata as {
@@ -28,6 +29,16 @@ describe("access grants contract", () => {
       security: [{ agentChannelBearerAuth: [] }],
     });
     expect(lifecyclePath?.post?.operationId).toBe("issueAgentChannelCredential");
+    for (const operation of [lifecyclePath?.post, rotatePath?.post, revokePath?.post]) {
+      expect(operation?.parameters).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          in: "header",
+          name: "X-Radioso-CSRF",
+          required: true,
+          schema: expect.objectContaining({ type: "string", enum: ["1"] }),
+        }),
+      ]));
+    }
     expect(lifecyclePath?.get?.operationId).toBe("listAgentChannelCredentials");
     expect(listParameters).toEqual(expect.arrayContaining([
       expect.objectContaining({ in: "query", name: "audience", required: false }),

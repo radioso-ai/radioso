@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { KeyRound, RefreshCw, Trash2 } from 'lucide-react'
 
-import { defaultExpiryDate, expiryHint } from '@/components/dashboard/settings/api-access-dialogs'
+import { OneTimeSecretDialog, defaultExpiryDate, expiryHint } from '@/components/dashboard/settings/api-access-dialogs'
 import { CodeSnippet } from '@/components/shared/api-snippets'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -17,7 +17,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
@@ -58,6 +57,7 @@ export function AgentChannelCredentialManager({
 }) {
   const [credentials, setCredentials] = useState<AgentChannelCredential[]>([])
   const [issued, setIssued] = useState<{ credential: AgentChannelCredential; secret: string } | null>(null)
+  const [acknowledged, setAcknowledged] = useState(false)
   const [label, setLabel] = useState('')
   const [expiry, setExpiry] = useState(() => defaultExpiryDate(90))
   const [isLoading, setIsLoading] = useState(true)
@@ -73,8 +73,10 @@ export function AgentChannelCredentialManager({
     const generation = scopeGeneration.current + 1
     scopeGeneration.current = generation
     let active = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- scope changes clear agent-bound state before loading the new scope.
     setCredentials([])
     setIssued(null)
+    setAcknowledged(false)
     setLabel('')
     setExpiry(defaultExpiryDate(90))
     setIsLoadingMore(false)
@@ -234,20 +236,17 @@ export function AgentChannelCredentialManager({
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
 
       {issued ? (
-        <div className="space-y-3 rounded-xl bg-muted/50 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Shown once</Badge>
-            <p className="text-sm text-muted-foreground">Copy this secret now. Radioso will not show it again.</p>
-          </div>
-          <CopyValueField
-            label={`${audienceName} credential secret`}
-            value={issued.secret}
-            ariaLabel={`Copy ${audienceName} credential secret`}
-            className="w-full"
-            truncate
-          />
-          {secretConfigurationCode ? <CodeSnippet label={secretConfiguration?.label ?? 'Client config'} code={secretConfigurationCode} /> : null}
-        </div>
+        <OneTimeSecretDialog
+          response={issued}
+          acknowledged={acknowledged}
+          onAcknowledged={setAcknowledged}
+          onClose={() => {
+            setIssued(null)
+            setAcknowledged(false)
+          }}
+          copyAriaLabel={`Copy ${audienceName} credential secret`}
+          additionalContent={secretConfigurationCode ? <CodeSnippet label={secretConfiguration?.label ?? 'Client config'} code={secretConfigurationCode} /> : undefined}
+        />
       ) : null}
 
       <div className="space-y-3">
@@ -269,7 +268,7 @@ export function AgentChannelCredentialManager({
                     <Badge variant={active ? 'outline' : 'secondary'}>{credential.status}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Prefix {credential.prefix} · Expires {formatTimestamp(credential.expiresAt)} · Last used {formatTimestamp(credential.lastUsedAt)}
+                    Prefix {credential.prefix} · Created {formatTimestamp(credential.createdAt)} · Expires {formatTimestamp(credential.expiresAt)} · Last used {formatTimestamp(credential.lastUsedAt)} · Revoked {formatTimestamp(credential.revokedAt)}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">

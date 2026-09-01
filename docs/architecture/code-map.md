@@ -1176,7 +1176,9 @@ Related docs and specs:
 
 Owns the standalone MCP server package, MCP transport, read/write tool
 contracts, auth exchange helpers, policy, audit behavior, and package smoke
-tests.
+tests. The narrow source-proof package owns the signed wire contract used to
+carry an already-digested client source from the edge to the backend; admission
+policy and transport-peer resolution remain with their respective services.
 
 Should not own backend product behavior. It should call backend APIs through
 its adapter and generated or shared contracts.
@@ -1188,10 +1190,12 @@ Primary paths:
 - `packages/radioso-mcp-server/scripts/`
 - `packages/radioso-mcp-server/testing/`
 - `packages/radioso-mcp-server/tests/`
+- `packages/mcp-source-proof/src/index.ts`
+- `packages/mcp-source-proof/tests/`
 
 Useful searches:
 
-- `rg "tool|transport|auth|audit|policy" packages/radioso-mcp-server`
+- `rg "tool|transport|auth|audit|policy" packages/radioso-mcp-server packages/mcp-source-proof`
 - `rg "MCP|mcp" docs docs-portal/content specs packages/radioso-mcp-server`
 
 Focused checks:
@@ -1199,6 +1203,7 @@ Focused checks:
 - `cd packages/radioso-mcp-server && pnpm run build`
 - `cd packages/radioso-mcp-server && pnpm test`
 - `cd packages/radioso-mcp-server && pnpm run smoke:all`
+- `cd packages/mcp-source-proof && pnpm run check`
 
 Related docs and specs:
 

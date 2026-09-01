@@ -7,6 +7,25 @@ const DIST_ROOT = path.join(ROOT, "dist", "src");
 
 const copiedAssetExtensions = new Set([".json", ".md", ".sql"]);
 
+const assertMigrationArtifactsMatch = async () => {
+  const sourceDirectory = path.join(SRC_ROOT, "db", "migrations");
+  const destinationDirectory = path.join(DIST_ROOT, "db", "migrations");
+  const [sourceEntries, destinationEntries] = await Promise.all([
+    readdir(sourceDirectory),
+    readdir(destinationDirectory),
+  ]);
+  const sourceMigrations = sourceEntries.filter((entry) => entry.endsWith(".sql")).sort();
+  const destinationMigrations = destinationEntries.filter((entry) => entry.endsWith(".sql")).sort();
+
+  if (sourceMigrations.length !== destinationMigrations.length ||
+      sourceMigrations.some((migration, index) => migration !== destinationMigrations[index])) {
+    throw new Error(
+      `Compiled migration artifacts differ from source. Source: ${sourceMigrations.join(", ")}; ` +
+      `compiled: ${destinationMigrations.join(", ")}`,
+    );
+  }
+};
+
 const copyNonTsAssets = async (directory) => {
   const entries = await readdir(directory, { withFileTypes: true });
 
@@ -29,3 +48,4 @@ const copyNonTsAssets = async (directory) => {
 };
 
 await copyNonTsAssets(SRC_ROOT);
+await assertMigrationArtifactsMatch();

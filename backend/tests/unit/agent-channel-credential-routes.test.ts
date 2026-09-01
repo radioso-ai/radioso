@@ -82,6 +82,24 @@ const createApp = (dependencies = createDependencies()) => {
 };
 
 describe("agent channel credential routes", () => {
+  it.each([
+    ["leading or trailing whitespace", " Desktop client"],
+    ["non-NFC text", "A\u030A"],
+    ["empty text", ""],
+    ["a control character", "Desktop\u0000client"],
+    ["more than 80 characters", "x".repeat(81)],
+  ])("rejects a credential label with %s", async (_description, label) => {
+    const dependencies = createDependencies();
+
+    await request(createApp(dependencies))
+      .post(`/api/v1/agents/${agentId}/channel-credentials`)
+      .set("X-Radioso-CSRF", "1")
+      .send({ audience: "mcp", label, expiresAt: expiresAt.toISOString() })
+      .expect(400);
+
+    expect(dependencies.accessGrantService.issueGrant).not.toHaveBeenCalled();
+  });
+
   it("requires the API-access CSRF header for every channel-credential mutation", async () => {
     const dependencies = createDependencies();
     const app = createApp(dependencies);
@@ -188,8 +206,30 @@ describe("agent channel credential routes", () => {
       principalKind: "agent-api",
       channel: "agent-api",
       limit: 25,
-      cursor: { createdAt: expiresAt, id: grantId },
+      cursor: { createdAt: expiresAt.toISOString(), id: grantId },
     });
+  });
+
+  it("rejects malformed cursor IDs before calling the credential service", async () => {
+    const dependencies = createDependencies();
+    const cursor = Buffer.from(JSON.stringify({ createdAt: "2027-06-28T10:00:00.000001Z", id: "not-a-uuid" }), "utf8").toString("base64url");
+
+    await request(createApp(dependencies))
+      .get(`/api/v1/agents/${agentId}/channel-credentials?cursor=${cursor}`)
+      .expect(400);
+
+    expect(dependencies.accessGrantService.listAgentGrants).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed cursor timestamps before calling the credential service", async () => {
+    const dependencies = createDependencies();
+    const cursor = Buffer.from(JSON.stringify({ createdAt: "not-a-timestamp", id: grantId }), "utf8").toString("base64url");
+
+    await request(createApp(dependencies))
+      .get(`/api/v1/agents/${agentId}/channel-credentials?cursor=${cursor}`)
+      .expect(400);
+
+    expect(dependencies.accessGrantService.listAgentGrants).not.toHaveBeenCalled();
   });
 
   it("rejects rotation for credentials outside the requested agent or audience", async () => {

@@ -5,9 +5,10 @@ import type { AuthService } from "../../../modules/auth/services/authService.js"
 import { allowsMachinePrincipal, markApiPrincipalAuthenticator } from "../apiPrincipalRoutePolicy.js";
 import { attributeMachinePrincipalToRequestAudit } from "./requestAuditContextMiddleware.js";
 import type { MachineAccessSecurityObserver } from "../../../modules/machineAccess/public.js";
+import { onSuccessfulHttpResponse } from "./httpResponseCompletion.js";
 
 export interface ApiTokenDependencies {
-  authService: Pick<AuthService, "authenticateApiToken">;
+  authService: Pick<AuthService, "authenticateApiToken" | "recordApiTokenUse">;
   machineAccessSecurityObserver?: Pick<MachineAccessSecurityObserver, "recordAuthorizationDenial">;
 }
 
@@ -36,6 +37,7 @@ export const requireApiToken = (dependencies: ApiTokenDependencies): RequestHand
       res.locals.authMode = "bearer";
       res.locals.authPrincipal = session.principal;
       attributeMachinePrincipalToRequestAudit(session.principal);
+      onSuccessfulHttpResponse(res, () => dependencies.authService.recordApiTokenUse(session.principal));
       next();
     } catch (error) {
       next(error);

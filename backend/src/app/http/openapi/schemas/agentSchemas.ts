@@ -3,6 +3,7 @@ import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js"
 import {
   agentChannelChatSchema,
   agentChannelCredentialIssueSchema,
+  agentChannelCredentialLabelSchema,
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../../schemas/agentChannelSchemas.js";
@@ -230,11 +231,11 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       id: z.string().uuid(),
       audience: z.enum(["mcp", "rest"]),
-      label: z.string(),
+      label: agentChannelCredentialLabelSchema,
       prefix: z.string(),
       status: z.enum(["active", "expired", "revoked", "disabled"]),
       createdAt: z.string().datetime(),
-      expiresAt: z.string().datetime().nullable(),
+      expiresAt: z.string().datetime(),
       lastUsedAt: z.string().datetime().nullable(),
       revokedAt: z.string().datetime().nullable(),
     }),

@@ -8,6 +8,11 @@ resource "random_password" "worker_task_auth_token" {
   special = false
 }
 
+resource "random_password" "radioso_mcp_signing_secret" {
+  length  = 48
+  special = false
+}
+
 resource "google_sql_database_instance" "postgres" {
   name                = "${local.resource_name_prefix}-db"
   database_version    = "POSTGRES_16"

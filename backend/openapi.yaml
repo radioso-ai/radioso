@@ -48,6 +48,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: AgentChannelCredential
+    mcpConverseSessionBearerAuth:
+      description: Short-lived bearer session issued by the MCP converse credential exchange. This credential authorizes only MCP ask_agent turns.
+      type: http
+      scheme: bearer
+      bearerFormat: McpConverseSession
   schemas:
     ErrorResponse:
       type: object
@@ -2434,6 +2439,8 @@ components:
             - rest
         label:
           type: string
+          minLength: 1
+          maxLength: 80
         prefix:
           type: string
         status:
@@ -2447,9 +2454,7 @@ components:
           type: string
           format: date-time
         expiresAt:
-          type:
-            - string
-            - "null"
+          type: string
           format: date-time
         lastUsedAt:
           type:
@@ -2481,6 +2486,8 @@ components:
             - rest
         label:
           type: string
+          minLength: 1
+          maxLength: 80
         expiresAt:
           type: string
           format: date-time
@@ -16352,6 +16359,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Agent channel rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}:
     get:
       tags:
@@ -16479,6 +16492,14 @@ paths:
           required: true
           name: agentId
           in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated agent channel credential mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
       requestBody:
         required: true
         content:
@@ -16597,6 +16618,14 @@ paths:
           required: true
           name: credentialId
           in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated agent channel credential mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
       responses:
         "200":
           description: Agent channel credential rotated. The new secret is returned only in this response.
@@ -16642,6 +16671,14 @@ paths:
           required: true
           name: credentialId
           in: path
+        - schema:
+            type: string
+            enum:
+              - "1"
+            description: Required non-simple header for cookie-authenticated agent channel credential mutations.
+          required: true
+          in: header
+          name: X-Radioso-CSRF
       responses:
         "204":
           description: Agent channel credential revoked
@@ -17546,7 +17583,7 @@ paths:
       summary: Analyze a website and suggest an agent configuration
       description: Fetches and reads a public website, then returns a suggested agent name, instruction, greeting, locale, and chunking strategy. Persists nothing. Fetching an external site and running a model against it costs real time and budget, so the route carries its own durable rate limit.
       operationId: analyzeWebsiteForAgentWizard
-      security: *a52
+      security: *a57
       requestBody:
         required: true
         content:
@@ -17609,7 +17646,7 @@ paths:
       summary: Stream website analysis progress
       description: The same analysis as the non-streaming route, delivered as server-sent events so a caller can show crawl progress. Emits progress events, then one complete event carrying the suggested configuration, or one error event when the analysis fails after the headers are sent.
       operationId: streamAgentWizardWebsiteAnalysis
-      security: *a52
+      security: *a57
       requestBody:
         required: true
         content:
@@ -17671,7 +17708,7 @@ paths:
       summary: Create an agent from a website configuration
       description: Creates one agent from a reviewed wizard configuration and queues the website for ingestion. Returns the new agent and the crawl job when the deployment runs website crawling.
       operationId: createAgentFromWizard
-      security: *a52
+      security: *a57
       requestBody:
         required: true
         content:
@@ -27900,15 +27937,18 @@ paths:
                 launchToken:
                   type: string
                   minLength: 1
+                  maxLength: 2048
                 client:
                   type: object
                   properties:
                     name:
                       type: string
                       minLength: 1
+                      maxLength: 128
                     version:
                       type: string
                       minLength: 1
+                      maxLength: 64
               required:
                 - launchToken
       responses:
@@ -27957,6 +27997,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: MCP converse session rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/mcp/converse/session/validate:
     post:
       tags:
@@ -27973,6 +28019,7 @@ paths:
                 sessionToken:
                   type: string
                   minLength: 1
+                  maxLength: 2048
               required:
                 - sessionToken
       responses:
@@ -28018,6 +28065,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: MCP converse session rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/mcp/converse/ask:
     post:
       tags:
@@ -28025,7 +28078,7 @@ paths:
       summary: Run one MCP ask_agent turn through the bound agent
       operationId: askMcpConverseAgent
       security:
-        - bearerAuth: []
+        - mcpConverseSessionBearerAuth: []
       requestBody:
         required: true
         content:
@@ -28083,6 +28136,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Turn superseded by a newer message in the same conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: MCP converse ask rate limit exceeded
           content:
             application/json:
               schema:

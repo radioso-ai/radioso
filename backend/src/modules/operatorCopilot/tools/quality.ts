@@ -32,6 +32,11 @@ export interface CopilotQualityTurn {
     readonly latestDownUpdatedAt: string | null;
     readonly comments: ReadonlyArray<{ value: string; comment: string; updatedAt: string }>;
   };
+  /**
+   * The turn's current triage position and the version it was read at. The version is the fence
+   * `set_triage_state` echoes back, so a reader that omits it hands out rows nothing can act on.
+   */
+  readonly triage: { readonly state: string; readonly version: number };
 }
 
 export interface CopilotQualityTurnsQuery {

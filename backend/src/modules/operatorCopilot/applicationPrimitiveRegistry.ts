@@ -7,6 +7,7 @@ export const copilotRayOwnedPrimitiveIds = [
   "operatorCopilot.proposal.create",
   "operatorCopilot.safe-test.orchestration",
   "operatorCopilot.workspace-triage",
+  "operatorCopilot.needs-attention",
 ] as const;
 
 export const copilotApplicationPrimitiveRegistry = {
@@ -36,6 +37,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "operatorCopilot.proposal.create": { owningModule: "operatorCopilot", exportedPort: "CopilotRepositoryPort" },
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },
+  "operatorCopilot.needs-attention": { owningModule: "operatorCopilot", exportedPort: "NeedsAttentionCopilotToolDependencies" },
   "retrieval.evidence.probe": { owningModule: "retrieval", exportedPort: "RetrievalSearchService" },
   "routines.definition.read": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },
   "routines.proposal.prepare": { owningModule: "routines", exportedPort: "RoutineDraftAssistService" },

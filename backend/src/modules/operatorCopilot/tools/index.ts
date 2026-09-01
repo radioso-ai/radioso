@@ -32,7 +32,7 @@ import { createQualityCopilotTools } from "./quality.js";
 import type { CopilotQualitySignalsPort, QualityCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
 import type { CopilotRoutineDefinitionPort, RoutineDefinitionCopilotToolDependencies, RoutineProposalCopilotToolDependencies } from "./routines.js";
-import { createWorkspaceTriageCopilotTools } from "./triage.js";
+import { createNeedsAttentionCopilotTools, createWorkspaceTriageCopilotTools } from "./triage.js";
 import type { CopilotPendingApprovalsPort, CopilotTriageLogPort, WorkspaceTriageCopilotToolDependencies } from "./triage.js";
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
@@ -86,6 +86,7 @@ export const createCopilotToolDescriptors = (
   ...createContextVariablesCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
   ...createWorkspaceTriageCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createNeedsAttentionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createRoutineProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),

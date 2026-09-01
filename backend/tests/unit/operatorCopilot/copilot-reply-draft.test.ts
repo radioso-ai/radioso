@@ -24,6 +24,7 @@ const port = (overrides: Record<string, unknown> = {}) => ({
     draft: "We reissued the parcel this morning.",
     citations: [{ documentId: "document-1" }],
     groundedOnMessageCount: 6,
+    groundedOnSummary: true,
     ...overrides,
   })),
 });
@@ -81,9 +82,11 @@ describe("ReplyDraftProbeService", () => {
       draft: "We reissued the parcel this morning.",
       citations: [],
       groundedOnMessageCount: 4,
+      groundedOnSummary: false,
     })),
   }) => ({
     chatReplyDraft,
+    usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => undefined), release: vi.fn(async () => undefined) })) },
     abuseControl: { enforce: vi.fn(async () => undefined) },
     audit: { record: vi.fn(async () => undefined) },
     abusePolicy: { limit: 5, windowMs: 60_000 },

@@ -32,6 +32,7 @@ const options = (overrides: Partial<ReplyDraftRunnerOptions> = {}): ReplyDraftRu
   },
   messages: { listRecentByConversationId: vi.fn(async () => transcript) },
   agentConfig: { resolveConfig: vi.fn(async () => ({ name: "Support" })) },
+  summaries: { load: vi.fn(async () => ({ summary: "The customer is chasing a parcel from three weeks ago." })) },
   replay: {
     run: vi.fn(async () => ({
       answer: "We reissued the parcel this morning.",
@@ -74,6 +75,33 @@ describe("ReplyDraftRunner", () => {
       query: "It has been three weeks now.",
       history: transcript.slice(0, 2),
     }));
+  });
+
+  it("composes in safe-test mode, so the drafting turn cannot act on the customer's behalf", async () => {
+    // The ephemeral effect profile stops every write, and this stops every skill that reaches
+    // outside it: a notify, a webhook, a contact send, an external MCP tool. Drafting a reply must
+    // not refund an order. Deleting this line leaves every other test in the file passing.
+    const { opts, result } = draft();
+
+    await result;
+
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({ executionMode: "safe_test" }));
+  });
+
+  it("threads the rolling summary so the draft answers from the memory the agent has", async () => {
+    const { opts, result } = draft();
+
+    await expect(result).resolves.toMatchObject({ groundedOnSummary: true });
+    expect(opts.summaries.load).toHaveBeenCalledWith({ sessionId: CONVERSATION_ID });
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({
+      conversationSummary: "The customer is chasing a parcel from three weeks ago.",
+    }));
+  });
+
+  it("says so when the conversation has no summary yet, rather than implying full grounding", async () => {
+    const { result } = draft({ summaries: { load: vi.fn(async () => null) } } as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
   });
 
   it("refuses when the last turn is not a waiting customer message", async () => {

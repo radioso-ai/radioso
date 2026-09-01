@@ -31,7 +31,7 @@ import { websiteCrawlerCopilotPrimitives } from "../../../src/modules/websiteCra
 import { copilotResolvableToolPermissions, copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
 import { filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { AccountAccessService } from "../../../src/modules/account/services/accountAccessService.js";
-import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/triage.js";
+import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/escalationSources.js";
 import { buildDescriptors, dependencies } from "./copilot-tools-test-helpers.js";
 import { createAuditService, InMemoryAccountMembershipRepository } from "../../support/fakes.js";
 
@@ -81,7 +81,7 @@ const realCatalogDependencies = () => {
     evalResultsService: { listWithLatestRun: stub() },
     replyDraft: { draft: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
-    qualityTriageService: { resolutionReasons: ["knowledge_gap"] as [string, ...string[]], setTriageState: stub() },
+    qualityTriageService: { triageStates: ["open"] as [string, ...string[]], resolutionReasons: ["knowledge_gap"] as [string, ...string[]], setTriageState: stub() },
     retrievalProbe: { probe: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },

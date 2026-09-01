@@ -41,6 +41,7 @@ import {
   type PrepareChatSessionInput,
   type PreparedSession,
 } from "./chatSessionPreparer.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import {
   ChatTurnAssembly,
   type ChatRoutineProvider,
@@ -177,6 +178,14 @@ export type WorkbenchReplayRoutineStartState = Omit<RoutineState, "sessionId">;
 
 export interface WorkbenchReplayInput {
   workspaceId: string;
+  /**
+   * What the replayed turn is allowed to do to the outside world. Required, because the durable
+   * effects a replay avoids and the external effects a turn's skills perform are different things:
+   * the ephemeral profile stops every write, and only this decides whether a notify, a webhook, a
+   * contact send, or an external MCP tool actually fires. A replay that leaves it unstated fires
+   * them, so no caller gets to omit it.
+   */
+  executionMode: TurnExecutionMode;
   accountId?: string | null;
   sourceAgentId: string;
   baselineAgentConfig: InternalAgentConfig;
@@ -227,6 +236,7 @@ export class WorkbenchReplayRunner {
         input.pageContext,
       ),
       sourceChannel: "workbench_replay",
+      executionMode: input.executionMode,
       retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageAttribution: input.usageAttribution,
     };

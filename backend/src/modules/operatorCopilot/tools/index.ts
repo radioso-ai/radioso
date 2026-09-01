@@ -34,8 +34,10 @@ import { createQualityCopilotTools, createQualityTriageCopilotTools } from "./qu
 import type { CopilotQualitySignalsPort, CopilotQualityTriagePort, QualityCopilotToolDependencies, QualityTriageCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
 import type { CopilotRoutineDefinitionPort, RoutineDefinitionCopilotToolDependencies, RoutineProposalCopilotToolDependencies } from "./routines.js";
-import { createNeedsAttentionCopilotTools, createWorkspaceTriageCopilotTools } from "./triage.js";
-import type { CopilotPendingApprovalsPort, CopilotTriageLogPort, WorkspaceTriageCopilotToolDependencies } from "./triage.js";
+import { createWorkspaceTriageCopilotTools } from "./triage.js";
+import { createNeedsAttentionCopilotTools } from "./needsAttention.js";
+import type { WorkspaceTriageCopilotToolDependencies } from "./triage.js";
+import type { CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
 
@@ -117,4 +119,4 @@ export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./qual
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";
-export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./triage.js";
+export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";

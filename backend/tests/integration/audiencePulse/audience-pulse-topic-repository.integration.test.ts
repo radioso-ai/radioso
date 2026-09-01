@@ -70,12 +70,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
   });
 
   beforeEach(async () => {
-    await database.query("DELETE FROM topic_transitions");
-    await database.query("DELETE FROM topic_memberships");
-    await database.query("DELETE FROM topics");
-    await database.query("DELETE FROM topic_census_runs");
-    await database.query("DELETE FROM messages WHERE workspace_id IN (SELECT id FROM workspaces WHERE account_id = $1)", [accountId]);
-    await database.query("DELETE FROM conversations WHERE workspace_id IN (SELECT id FROM workspaces WHERE account_id = $1)", [accountId]);
+    await database.query("DELETE FROM workspaces WHERE account_id = $1", [accountId]);
   });
 
   afterAll(async () => {

@@ -59,6 +59,7 @@
     "test:unit": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:census && pnpm run build:mcp && pnpm run build:workspace-invalidation-contract && vitest run tests/unit",
     "test:composition": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:census && pnpm run build:mcp && pnpm run build:workspace-invalidation-contract && vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts tests/unit/audiencePulse/audience-pulse-module.test.ts tests/unit/audiencePulse/census-service-factory.test.ts",
     "test:integration": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:census && pnpm run build:mcp && pnpm run build:workspace-invalidation-contract && vitest run tests/integration --no-file-parallelism --testTimeout=30000",
+    "test:integration:prepare": "tsx scripts/prepareIntegrationDatabase.ts",
     "test:contract": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:census && pnpm run build:mcp && pnpm run build:workspace-invalidation-contract && pnpm run generate:openapi && node ../scripts/check-api-contracts.mjs && pnpm --dir .. run check:prompts && pnpm run generate:skills -- --check && vitest run tests/contract",
     "test:persistence": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:census && pnpm run build:mcp && pnpm run build:workspace-invalidation-contract && vitest run tests/integration/persistence.integration.test.ts",
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
@@ -116,6 +117,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@radioso/integration-test-support": "workspace:*",
     "@types/amqplib": "^0.10.8",
     "@types/cookie-parser": "^1.4.9",
     "@types/express": "^5.0.3",

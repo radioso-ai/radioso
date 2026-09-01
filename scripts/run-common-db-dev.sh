@@ -20,11 +20,10 @@ export NODE_ENV=development
 export PORT="$BACKEND_PORT"
 if [[ -n "${RADIOSO_COMMON_POSTGRES_PORT:-}" ]]; then
   export DATABASE_URL="postgres://postgres:postgres@localhost:${POSTGRES_PORT}/radioso"
-  export INTEGRATION_DATABASE_URL="$DATABASE_URL"
 else
   export DATABASE_URL="${DATABASE_URL:-postgres://postgres:postgres@localhost:${POSTGRES_PORT}/radioso}"
-  export INTEGRATION_DATABASE_URL="${INTEGRATION_DATABASE_URL:-$DATABASE_URL}"
 fi
+unset INTEGRATION_DATABASE_URL
 if [[ -n "${RADIOSO_FRONTEND_PORT:-}${CONDUCTOR_PORT:-}" ]]; then
   export APP_BASE_URL="http://localhost:${FRONTEND_PORT}"
   export PUBLIC_CHAT_BASE_URL="http://localhost:${FRONTEND_PORT}/chat"

@@ -49,6 +49,19 @@ pnpm run test:contract
 
 Backend work is test-driven: write the failing test first, then make it pass.
 
+The integration suite changes database contents and only runs against a database whose name ends in `_test` and carries Radioso's disposable-test marker. `pnpm run ci:local` creates and marks a fresh PostgreSQL container for you. For a focused manual run, point `INTEGRATION_DATABASE_URL` at a dedicated test database, acknowledge its exact name, and mark it once before running tests:
+
+```bash
+cd backend
+export INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/radioso_test
+export RADIOSO_INTEGRATION_DATABASE_NAME=radioso_test
+pnpm run test:integration:prepare
+unset RADIOSO_INTEGRATION_DATABASE_NAME
+pnpm run test:integration
+```
+
+The guard rejects an application database that resolves to the same live PostgreSQL database, an unmarked database, and names without the `_test` suffix. Use a disposable PostgreSQL instance: the suite creates and removes fixtures, schemas, generated databases, and extensions. The CI harness's test runner is cluster-privileged for that migration coverage, but its credential exists only inside the throwaway container.
+
 **Frontend** — Vitest for logic and Playwright for user journeys:
 
 ```bash

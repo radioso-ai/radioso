@@ -564,6 +564,34 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name  = "COPILOT_CONVERSATION_RETENTION_DAYS"');
     expect(computeTf).toContain("value = tostring(var.copilot_conversation_retention_days)");
     expect(terraformVariables).toContain('variable "copilot_conversation_retention_days"');
+
+    // A root variable an environment wrapper never declares is a knob the docs describe and the
+    // deployment cannot set. Terraform does not substitute a child default for an explicit null —
+    // the validation runs against the null and fails — so these carry their default in each
+    // wrapper, and the assertion below is what keeps the copies honest.
+    const environments = ["staging", "live", "live-eu"];
+    const copilotDefaults = { copilot_probe_budget_per_turn: "6", copilot_conversation_retention_days: "90" };
+    for (const environment of environments) {
+      const wrapperVariables = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/variables.tf`, import.meta.url),
+        "utf8",
+      );
+      const wrapperMain = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/main.tf`, import.meta.url),
+        "utf8",
+      );
+      for (const name of [...Object.keys(copilotDefaults), "copilot_retention_schedule"]) {
+        expect(wrapperVariables, `${environment} does not declare ${name}`).toContain(`variable "${name}"`);
+        expect(wrapperMain, `${environment} does not pass ${name} to the root module`).toMatch(
+          new RegExp(`${name}\\s+= var\\.${name}`),
+        );
+      }
+      for (const [name, expected] of Object.entries(copilotDefaults)) {
+        const rootDefault = new RegExp(`variable "${name}" \\{[\\s\\S]*?default\\s+= ${expected}`);
+        expect(terraformVariables, `root default for ${name} moved away from ${expected}`).toMatch(rootDefault);
+        expect(wrapperVariables, `${environment} default for ${name} drifted from the root`).toMatch(rootDefault);
+      }
+    }
     expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
     expect(computeTf).toContain('name  = "APP_BASE_URL"');
     expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');

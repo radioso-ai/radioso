@@ -461,6 +461,21 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         }],
       }),
     },
+    websiteAnalysisProbe: {
+      // Fixture rather than the real wizard: a live eval must never fetch a third-party site.
+      analyze: async ({ url }: { url: string }) => ({
+        sourceUrl: url,
+        suggestedName: "Sunny Support",
+        suggestedCustomInstruction: "Answer questions about Sunny's products, shipping, and returns using the site's own wording.",
+        suggestedGreetingMessage: "Hi! Ask me anything about Sunny.",
+        suggestedChunkingStrategy: { strategy: "structured_semantic" as const, reasoning: "The site is documentation-shaped, with headed sections per topic." },
+        faviconUrl: `${url}/favicon.ico`,
+        pagesAnalyzed: [{ url, title: "Sunny" }, { url: `${url}/shipping`, title: "Shipping" }],
+        suggestedLocale: "en",
+        suggestedPrivacyPolicyUrl: `${url}/privacy`,
+        suggestedContactEmail: "hello@sunny.example",
+      }),
+    },
     evalCaseCapture: { capture: unusedPort("evalCaseCapture.capture") },
     evalSuiteProbe: { run: unusedPort("evalSuiteProbe.run") },
     evalCaseReplay: { replay: unusedPort("evalCaseReplay.replay") },
@@ -501,6 +516,10 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         diagnostics: [],
       }),
       preview: async () => ({ targetLabel: "Support", current: null, proposed: {} }),
+      // Stands in for each adapter's own settling of a change into a stored payload. The tools that
+      // draft through this path do their own schema parse afterwards, which is what the
+      // deterministic run is checking, so the fixture passes the change through unchanged.
+      validatePayload: async (_workspaceId: string, targetRef: unknown, payload: unknown) => ({ targetRef, payload, versionToken: "v1" }),
       readVersionToken: async () => "v1",
       applyIfVersionMatches: async () => ({ outcome: "applied" as const, appliedRef: null }),
     })),

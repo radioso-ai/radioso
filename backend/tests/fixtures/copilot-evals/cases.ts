@@ -199,6 +199,34 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "new-agent-analyze-then-propose",
+    name: "A new agent is analyzed before it is proposed",
+    description: "The proposal has to describe an agent grounded in the site, so reading the site comes first; creating one outright is not on offer.",
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent"),
+    message: "Set up an agent for https://sunny.example — it should answer product and shipping questions.",
+    plan: [
+      { tool: "analyze_website", input: { url: "https://sunny.example" } },
+      {
+        tool: "propose_agent",
+        input: {
+          websiteUrl: "https://sunny.example",
+          name: "Sunny Support",
+          customInstruction: "Answer questions about Sunny's products, shipping, and returns using the site's own wording.",
+          greetingInstruction: "Hi! Ask me anything about Sunny.",
+          rationale: "The product and shipping pages carry every answer the agent needs.",
+        },
+      },
+    ],
+    finalMessage: "I read sunny.example and drafted an agent for you to review; applying it creates the agent and queues the site.",
+    assertions: [
+      { type: "tool_call_order", tools: ["analyze_website", "propose_agent"] },
+      { type: "proposal_drafted", targetType: "agent" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "member-role-triage",
     name: "A member gets the digest without the tools their role does not grant",
     description: "Guards the per-source gating decision: the digest must survive a role that holds no quality permission.",

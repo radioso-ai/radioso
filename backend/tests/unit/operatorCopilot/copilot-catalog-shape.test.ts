@@ -18,6 +18,7 @@ import { createOpenApiDocument } from "../../../src/app/http/openapi/openApiDocu
 import { operationPermissionRequirements } from "../../../src/app/http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../../src/modules/agents/public.js";
 import { agentSkillsCopilotPrimitives } from "../../../src/modules/agentSkills/public.js";
+import { agentWizardCopilotPrimitives } from "../../../src/modules/agentWizard/public.js";
 import { chatCopilotPrimitives } from "../../../src/modules/chat/public.js";
 import { contextVariableCopilotPrimitives } from "../../../src/modules/context-variables/public.js";
 import { documentCopilotPrimitives } from "../../../src/modules/documents/public.js";
@@ -46,6 +47,7 @@ const context = {
 const ownerExportedPrimitiveIds = new Set([
   ...agentCopilotPrimitives,
   ...agentSkillsCopilotPrimitives,
+  ...agentWizardCopilotPrimitives,
   ...chatCopilotPrimitives,
   ...contextVariableCopilotPrimitives,
   ...documentCopilotPrimitives,
@@ -364,6 +366,8 @@ describe("verification cost declarations", () => {
     test_agent_turn: { input: {}, expected: 1 },
     replay_eval_case: { input: {}, expected: 1 },
     retrieval_probe: { input: {}, expected: 1 },
+    // One completion over the crawled pages, whatever the site's size.
+    analyze_website: { input: {}, expected: 1 },
     run_eval_suite: { input: { caseIds: ["a", "b", "a"] }, expected: 2 },
   };
 

@@ -499,6 +499,75 @@ describe("AgentWizardService", () => {
     });
   });
 
+  it("returns the created agent when queueing its website fails, instead of throwing the id away", async () => {
+    // The agent row exists by the time the crawl is queued. Throwing here would leave a real agent
+    // in the workspace that the caller has no id for - no link, no way to finish it by hand, and
+    // every reason to create it a second time.
+    const enqueue = vi.fn().mockRejectedValue(new Error("Crawl queue is unavailable"));
+    const record = vi.fn().mockResolvedValue(undefined);
+    const service = new AgentWizardService({
+      textGenerationClient: { complete: vi.fn() },
+      agentService: {
+        create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example" }),
+        update: vi.fn(),
+      },
+      documentStorage: { upload: vi.fn() },
+      websiteCrawlJobService: { enqueue },
+      crawlerProvider: createCrawler(),
+      assertPublicWebsiteUrl: async () => {},
+      crawlerLimits: { defaultLimit: 250, maxLimit: 500 },
+      auditService: { record },
+    });
+
+    const result = await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: { websiteUrl: "https://example.com", name: "Example" },
+    });
+
+    expect(result).toMatchObject({
+      agentId: "agent-1",
+      crawlJobId: null,
+      incomplete: { step: "ingestion", reason: "Crawl queue is unavailable" },
+    });
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: "agent_wizard.create_agent",
+      eventStatus: "failure",
+      metadata: expect.objectContaining({ agentId: "agent-1", incompleteStep: "ingestion" }),
+    }));
+  });
+
+  it("returns the created agent when applying its settings fails", async () => {
+    const update = vi.fn().mockRejectedValue(new Error("Agent settings write rejected"));
+    const service = new AgentWizardService({
+      textGenerationClient: { complete: vi.fn() },
+      agentService: {
+        create: vi.fn().mockResolvedValue({ id: "agent-1", name: "Example" }),
+        update,
+      },
+      documentStorage: { upload: vi.fn() },
+      websiteCrawlJobService: { enqueue: vi.fn().mockResolvedValue({ jobId: "crawl-1", sourceId: null }) },
+      crawlerProvider: createCrawler(),
+      assertPublicWebsiteUrl: async () => {},
+      crawlerLimits: { defaultLimit: 250, maxLimit: 500 },
+      auditService: { record: vi.fn().mockResolvedValue(undefined) },
+    });
+
+    const result = await service.createAgentFromWizard({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      config: { websiteUrl: "https://example.com", name: "Example", assistantDefaultLocale: "it" },
+    });
+
+    // The crawl still runs: the settings write and the ingestion queue are independent, and the
+    // agent is more useful with its documents than without them.
+    expect(result).toMatchObject({
+      agentId: "agent-1",
+      crawlJobId: "crawl-1",
+      incomplete: { step: "configuration", reason: "Agent settings write rejected" },
+    });
+  });
+
   it("clamps the crawl limit to the server-side max", async () => {
     const enqueue = vi.fn().mockResolvedValue({ jobId: "crawl-1", sourceId: null });
     const websiteCrawlJobService = { enqueue };

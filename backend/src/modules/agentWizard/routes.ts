@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { badRequest } from "../../shared/domain/errors.js";
+import { agentWizardAnalyzeRequestSchema, agentWizardCreateRequestSchema } from "./contracts.js";
 import { AgentWizardError, type AgentWizardProgressEvent, type AgentWizardService } from "./service.js";
 
 type RouteDependencies = WorkspaceSessionDependencies & {
@@ -21,31 +22,6 @@ const parseBody = <T>(schema: z.ZodType<T>, value: unknown): T => {
 
   throw badRequest("Invalid request body", parsed.error.flatten());
 };
-
-const httpUrlSchema = z.string().url().max(2048).refine((value) => {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  } catch {
-    return false;
-  }
-}, "URL must use http or https");
-
-const analyzeWebsiteSchema = z.object({
-  url: httpUrlSchema,
-});
-
-const createFromWizardSchema = z.object({
-  websiteUrl: httpUrlSchema,
-  name: z.string().trim().min(1).max(200),
-  customInstruction: z.string().max(2000).default(""),
-  greetingInstruction: z.string().max(200).default(""),
-  chunkingStrategy: z.enum(["fixed_window", "structured_semantic"]).optional(),
-  faviconUrl: httpUrlSchema.nullable().optional(),
-  assistantDefaultLocale: z.string().max(35).nullable().optional(),
-  privacyPolicyUrl: httpUrlSchema.nullable().optional(),
-  contactEmail: z.string().max(320).nullable().optional(),
-});
 
 const ANALYSIS_RATE_LIMIT = {
   scope: "agent_wizard.analyze",
@@ -137,7 +113,7 @@ export const createAgentWizardRoutes = (
       if (!res.writableEnded) abort();
     });
     try {
-      const body = parseBody(analyzeWebsiteSchema, req.body);
+      const body = parseBody(agentWizardAnalyzeRequestSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       await enforceAnalysisRateLimit(dependencies, res.locals);
       const result = await service.analyzeWebsite({
@@ -174,7 +150,7 @@ export const createAgentWizardRoutes = (
       if (!res.writableEnded) abort();
     });
     try {
-      const body = parseBody(analyzeWebsiteSchema, req.body);
+      const body = parseBody(agentWizardAnalyzeRequestSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       await enforceAnalysisRateLimit(dependencies, res.locals);
 
@@ -221,7 +197,7 @@ export const createAgentWizardRoutes = (
       if (!res.writableEnded) abort();
     });
     try {
-      const body = parseBody(createFromWizardSchema, req.body);
+      const body = parseBody(agentWizardCreateRequestSchema, req.body);
       const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
       await enforceCreateRateLimit(dependencies, res.locals);
       const result = await service.createAgentFromWizard({

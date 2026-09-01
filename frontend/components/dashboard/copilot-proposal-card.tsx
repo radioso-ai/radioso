@@ -159,6 +159,14 @@ export const targetReference = (
     const documentId = applied.documentId ?? ref.documentId
     return typeof documentId === 'string' ? { entity: { type: 'document', id: documentId } } : null
   }
+  if (summary.targetType === 'agent') {
+    // The agent does not exist until the proposal is applied, so there is nothing to open before
+    // then - the same as a drafted skill or a drafted document.
+    const proposedAgentId = applied.agentId
+    return typeof proposedAgentId === 'string'
+      ? { entity: { type: 'agent', id: proposedAgentId }, agentId: proposedAgentId }
+      : null
+  }
   if (summary.targetType === 'website_crawl') {
     // A crawl has no target until it is applied and the job resolves a source.
     const sourceId = applied.sourceId

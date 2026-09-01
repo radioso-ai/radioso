@@ -141,7 +141,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -153,6 +153,7 @@ export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[numb
  */
 export const copilotProposalPermissions = {
   directive: ["workspace.agents.manage"],
+  agent: ["workspace.agents.manage"],
   agent_setting: ["workspace.agents.manage"],
   routine: ["workspace.agents.manage"],
   agent_skill: ["workspace.agents.manage"],
@@ -320,6 +321,17 @@ export interface CopilotIngestionSettingsProposalAdapter extends CopilotProposal
 }
 
 /**
+ * An agent proposal is supplied by Ray from a website it analyzed or an operator described. Applying
+ * it creates an agent and queues its website, so like a crawl it addresses no stored row and cannot
+ * go stale - and like a crawl it must never be retried after an interrupted apply.
+ */
+export interface CopilotAgentProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "agent";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
  * A crawl proposal is supplied by Ray from a URL an operator named or a source it read. Applying it
  * starts a job rather than changing a stored row, so nothing about it can go stale.
  */
@@ -335,6 +347,7 @@ export interface CopilotWebsiteCrawlProposalAdapter extends CopilotProposalAdapt
  */
 export type CopilotAnyProposalAdapter =
   | CopilotDirectiveProposalAdapter
+  | CopilotAgentProposalAdapter
   | CopilotAgentSettingProposalAdapter
   | CopilotRoutineProposalAdapter
   | CopilotAgentSkillProposalAdapter

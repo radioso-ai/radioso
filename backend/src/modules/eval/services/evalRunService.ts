@@ -20,7 +20,7 @@ import type {
   EvalRunResolvedConfig,
   EvalSnapshot,
 } from "../domain/types.js";
-import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy, type UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 import type { EvalLlmJudgePort } from "./evalJudge.js";
 import { buildReplayInputs, type EvalRetrievalRunnerPort } from "./evalRunner.js";
@@ -169,7 +169,7 @@ export class EvalRunService {
    * before it starts — an unknown snapshot, a case from another snapshot — releases.
    */
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
-    return this.metered(input, (markSpent) => this.executeReserved(input, markSpent));
+    return this.metered(input, (reserve) => this.executeReserved(input, reserve));
   }
 
   /**
@@ -183,30 +183,35 @@ export class EvalRunService {
    */
   private async metered<T>(
     input: Pick<EvalRunInput, "accountId" | "workspaceId">,
-    run: (markSpent: () => void) => Promise<T>,
+    run: (reserve: () => Promise<void>) => Promise<T>,
   ): Promise<T> {
-    const reservation = await this.usageLimitPolicy.reserveAnswer({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      surface: "eval_replay",
-    });
-    let spent = false;
+    let reservation: UsageLimitReservation | null = null;
+    // Taken by the run itself, immediately before it dispatches, rather than up front. Reserving
+    // earlier made an unknown snapshot or a mismatched case answer 429 instead of the documented
+    // 404 or 400 whenever the workspace allowance happened to be gone — a request's validity is
+    // not a function of how much quota is left.
+    const reserve = async (): Promise<void> => {
+      reservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: "eval_replay",
+      });
+    };
     try {
-      const outcome = await run(() => { spent = true; });
-      await reservation.commit();
+      const outcome = await run(reserve);
+      await (reservation as UsageLimitReservation | null)?.commit();
       return outcome;
     } catch (error) {
-      // The reservation is for provider spend, so the question a failure has to answer is not
-      // "did the call succeed" but "did the provider already run". Recording the result and
+      // Once reserved, the run has been dispatched, so the question a failure has to answer is
+      // not "did the call succeed" but "did the provider already run". Recording the result and
       // judging it both happen after the replay and both can throw; releasing there would hand
-      // back budget that was genuinely consumed.
-      if (spent) await reservation.commit();
-      else await reservation.release();
+      // back budget that was genuinely consumed. A failure before the reservation never took any.
+      await (reservation as UsageLimitReservation | null)?.commit();
       throw error;
     }
   }
 
-  private async executeReserved(input: EvalRunInput, markSpent: () => void): Promise<EvalRunOutcome> {
+  private async executeReserved(input: EvalRunInput, reserve: () => Promise<void>): Promise<EvalRunOutcome> {
     const snapshot = await this.repository.findSnapshot(input.workspaceId, input.snapshotId);
     if (!snapshot) {
       throw notFound("Snapshot not found");
@@ -229,7 +234,7 @@ export class EvalRunService {
       && snapshot.originalAgentConfig
       && snapshot.sourceAgentId
     ) {
-      return this.runWorkbenchReplay(input, markSpent);
+      return this.runWorkbenchReplay(input, reserve);
     }
     if (requiresWorkbenchReplay(overrides)) {
       // The retrieval fallback ignores both of these, so continuing would answer from the
@@ -263,7 +268,7 @@ export class EvalRunService {
       overrides.retrievalSettingsOverride,
     );
 
-    markSpent();
+    await reserve();
     try {
       if (input.mode === "full_assistant") {
         const result = await this.retrievalRunner.answer({
@@ -392,10 +397,10 @@ export class EvalRunService {
   }
 
   async executeWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
-    return this.metered(input, (markSpent) => this.runWorkbenchReplay(input, markSpent));
+    return this.metered(input, (reserve) => this.runWorkbenchReplay(input, reserve));
   }
 
-  private async runWorkbenchReplay(input: EvalRunInput, markSpent: () => void): Promise<EvalRunOutcome> {
+  private async runWorkbenchReplay(input: EvalRunInput, reserve: () => Promise<void>): Promise<EvalRunOutcome> {
     const startedAtMs = Date.now();
     if (!this.workbenchReplayRunner) {
       throw badRequest("Workbench replay runner is not configured");
@@ -437,7 +442,7 @@ export class EvalRunService {
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
 
-    markSpent();
+    await reserve();
     try {
       const result = await this.workbenchReplayRunner.run({
         workspaceId: input.workspaceId,

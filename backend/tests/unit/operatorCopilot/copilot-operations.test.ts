@@ -418,6 +418,32 @@ describe("copilot per-turn probe budget", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  // The contract declares verificationCost as a method, so a contributed descriptor may be
+  // class-backed and read `this` to answer. Handing the function over bare would strip that and
+  // fail the tool before it runs — a catalog-shaped failure, not a budget one.
+  it("keeps a descriptor's own binding when it declares its cost as a method", async () => {
+    const invoke = vi.fn(async () => ({ value: "ok" }));
+    // Declared with method shorthand and reading its own field, exactly as the interface permits.
+    // Nothing binds it here: whether `this` survives is entirely up to how the service calls it.
+    const methodBacked = {
+      ...descriptor("replay_eval_case", "probe", invoke),
+      perCall: 2,
+      verificationCost(): number {
+        return (this as unknown as { perCall: number }).perCall;
+      },
+    };
+    const { service } = buildService({
+      tools: [methodBacked as never],
+      probeBudgetPerTurn: 4,
+      runStreaming: streamInvoking("replay_eval_case", 3),
+    });
+
+    await runTurn(service);
+
+    // Two calls at 2 units each exhaust a budget of 4; the third is refused.
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
   it("defaults to a budget that admits one full eval suite run", () => {
     expect(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT).toBeGreaterThanOrEqual(MAX_COPILOT_EVAL_SUITE_CASES);
   });

@@ -137,6 +137,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
     this.applyClaims.delete(proposal.id);
+    // Mirrors the repository: resolving a proposal is activity on its conversation, which is what
+    // keeps retention from sweeping the thread out from under an operator who just dismissed one.
+    this.conversations = this.conversations.map((conversation) =>
+      conversation.id === proposal.conversationId ? { ...conversation, updatedAt: updated.updatedAt } : conversation);
     return updated;
   }
 

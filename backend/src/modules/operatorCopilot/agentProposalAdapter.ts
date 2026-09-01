@@ -20,6 +20,16 @@ export interface AgentCopilotProposalAdapterDependencies {
   readonly workspaceAccount: CopilotWorkspaceAccountResolver;
 }
 
+/**
+ * What the card tells the operator to finish. Named per step rather than passed through, because
+ * the underlying message is whatever the failing service said and an operator needs to know which
+ * half of the creation did not land and where to go for it.
+ */
+const incompleteReason = (incomplete: { step: "configuration" | "ingestion"; reason: string }): string =>
+  incomplete.step === "ingestion"
+    ? `The agent was created, but its website could not be queued for ingestion (${incomplete.reason}). It has no knowledge to answer from until the site is crawled - start the crawl from Knowledge.`
+    : `The agent was created, but its locale, branding, and contact settings could not be applied (${incomplete.reason}). Set them on the agent's settings page.`;
+
 /** The wizard's config, from a payload that has already been validated against the change schema. */
 const wizardConfig = (payload: CopilotAgentPayload) => ({
   websiteUrl: payload.websiteUrl,
@@ -66,7 +76,8 @@ export const createAgentCopilotProposalAdapter = (
       });
       // Reported applied whenever the agent row exists, including when a later step did not
       // finish. Calling that a failure would hide the id of an agent the workspace now has, which
-      // is how an operator ends up asking Ray to create the same agent twice.
+      // is how an operator ends up asking Ray to create the same agent twice - and reporting a
+      // clean success would hide that the agent has no knowledge yet, so the card says both.
       return {
         outcome: "applied" as const,
         appliedRef: {
@@ -74,6 +85,7 @@ export const createAgentCopilotProposalAdapter = (
           crawlJobId: result.crawlJobId,
           ...(result.incomplete ? { incomplete: result.incomplete } : {}),
         },
+        ...(result.incomplete ? { reason: incompleteReason(result.incomplete) } : {}),
       };
     } catch (error) {
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Agent could not be created" };

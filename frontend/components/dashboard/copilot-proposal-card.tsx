@@ -186,9 +186,23 @@ export const targetReference = (
   return null
 }
 
-const statusMessage = (state: CopilotProposalCardState, detail: CopilotProposalDetail | null) => {
+/**
+ * The one sentence the card states about its own status, from every source that can carry one. It
+ * takes the summary's reason rather than leaving the call site to fall back to it: the guard
+ * deciding whether to render and the span deciding what to render used to apply different
+ * fallbacks, so a reason that arrived only on the summary was counted by one and dropped by the
+ * other.
+ */
+const statusMessage = (
+  state: CopilotProposalCardState,
+  detail: CopilotProposalDetail | null,
+  proposalReason?: string | null,
+) => {
   if (state.status === 'stale') return 'The target changed since this proposal was drafted. Ask Ray to draft it again.'
-  if (state.status === 'failed') return state.reason ?? detail?.reason ?? detail?.failureReason ?? 'The proposal could not be applied.'
+  if (state.status === 'failed') return state.reason ?? detail?.reason ?? detail?.failureReason ?? proposalReason ?? 'The proposal could not be applied.'
+  // An apply can succeed at the thing the proposal is named for and still leave a step for the
+  // operator - creating an agent whose website did not queue is applied, and is not finished.
+  if (state.status === 'applied') return state.reason ?? detail?.reason ?? proposalReason ?? null
   return null
 }
 
@@ -232,6 +246,7 @@ export function CopilotProposalCard({
   // The detail read is authoritative; the streamed card only carries the summary until it loads.
   const evidenceSummary = detail?.evidence ?? proposal.evidence
   const entityTarget = targetReference(proposal, detail, effectiveState.appliedRef, defaultAgentId)
+  const statusText = statusMessage(effectiveState, detail, proposal.reason)
 
   const loadDetail = async () => {
     if (detail || isLoadingDetail) return
@@ -300,10 +315,10 @@ export function CopilotProposalCard({
         <p className="text-sm text-muted-foreground">{proposal.summary}</p>
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-2">
-        {statusMessage(effectiveState, detail) ?? (effectiveState.status === 'failed' ? proposal.reason : null) ? (
+        {statusText ? (
           <p className={`flex items-start gap-2 text-xs ${effectiveState.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`} role="status">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-            <span>{statusMessage(effectiveState, detail) ?? proposal.reason}</span>
+            <span>{statusText}</span>
           </p>
         ) : null}
         {evidenceSummary ? <ProposalEvidence summary={evidenceSummary} cases={detail?.evidenceCases ?? null} /> : null}

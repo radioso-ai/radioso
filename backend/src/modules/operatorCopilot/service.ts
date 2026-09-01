@@ -224,8 +224,8 @@ export class OperatorCopilotService {
       return { status: "failed" };
     }
     if (result.outcome === "applied") {
-      await this.updateProposalAndAudit(input, proposal, "applied", result.appliedRef, "copilot.proposal.applied", "success", "applied", claimGuard);
-      return { status: "applied", appliedRef: result.appliedRef };
+      await this.updateProposalAndAudit(input, proposal, "applied", result.appliedRef, "copilot.proposal.applied", "success", "applied", claimGuard, result.reason ?? null);
+      return { status: "applied", appliedRef: result.appliedRef, ...(result.reason ? { reason: result.reason } : {}) };
     }
     const status = result.outcome === "stale" ? "stale" : "failed";
     await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, claimGuard, result.outcome === "failed" ? result.reason : null);

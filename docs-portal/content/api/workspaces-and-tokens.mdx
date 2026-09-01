@@ -25,7 +25,7 @@ curl -sS -b cookies.txt \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access
 ```
 
-Personal tokens expire within 90 days. Service credentials expire within 365 days. A workspace policy may set shorter maxima. The default limits are 10 active personal tokens per user, 50 service accounts per workspace, and 5 active credentials per service account.
+By default, personal tokens and service-account credentials do not expire. Set `expiresAt` when a client should stop authenticating automatically at a known time. The default limits are 10 active personal tokens per user, 50 service accounts per workspace, and 5 active credentials per service account.
 
 ## Create a personal token
 
@@ -36,8 +36,7 @@ curl -sS -b cookies.txt -X POST \
   -H 'X-Workspace-Id: <workspace-id>' \
   -d '{
     "label":"CLI on laptop",
-    "roleCeiling":"member",
-    "expiresAt":"2026-11-29T12:00:00Z"
+    "roleCeiling":"member"
   }' \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
@@ -65,14 +64,13 @@ curl -sS -b cookies.txt -X POST \
     "displayName":"Nightly ingestion",
     "role":"member",
     "initialCredential":{
-      "label":"Production runner",
-      "expiresAt":"2027-08-31T12:00:00Z"
+      "label":"Production runner"
     }
   }' \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/service-accounts
 ```
 
-This response also contains the credential secret once. Later credentials under the same service account authenticate as the same service identity while retaining their own IDs, safe prefixes, expiries, and last-use records.
+This response also contains the credential secret once. Later credentials under the same service account authenticate as the same service identity while retaining their own IDs, safe prefixes, expiry settings, and last-use records.
 
 For a deployment with no interruption:
 
@@ -81,7 +79,7 @@ For a deployment with no interruption:
 3. Verify the workload with the new credential.
 4. Revoke the previous credential.
 
-Immediate rotation is intended for a credential you must invalidate at once. It revokes the predecessor and returns one replacement without extending the original expiry.
+Immediate rotation is intended for a credential you must invalidate at once. It revokes the predecessor and returns one replacement with the same expiry setting.
 
 ## MCP credentials are separate
 

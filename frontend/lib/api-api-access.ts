@@ -18,7 +18,7 @@ export interface ApiCredentialMetadata {
   serviceAccountId: string | null
   createdByUserId: string | null
   createdAt: string
-  expiresAt: string
+  expiresAt: string | null
   expiryWarningDays: 30 | 7 | 1 | null
   lastUsedAt: string | null
   revokedAt: string | null
@@ -48,8 +48,8 @@ export interface ApiAccessSummary {
     manageServiceAccounts: boolean
   }
   defaults: {
-    personalTokenLifetimeDays: number
-    serviceCredentialLifetimeDays: number
+    personalTokenLifetimeDays: null
+    serviceCredentialLifetimeDays: null
   }
   limits: {
     personalTokensPerUser: number
@@ -88,7 +88,7 @@ export interface CreateServiceAccountResponse {
 export interface PersonalTokenInput {
   label: string
   roleCeiling: 'member' | 'admin'
-  expiresAt: string
+  expiresAt?: string | null
 }
 
 export interface ServiceAccountInput {
@@ -96,13 +96,13 @@ export interface ServiceAccountInput {
   role: 'member' | 'admin'
   initialCredential: {
     label: string
-    expiresAt: string
+    expiresAt?: string | null
   }
 }
 
 export interface ServiceCredentialInput {
   label: string
-  expiresAt: string
+  expiresAt?: string | null
 }
 
 // A required non-simple header prevents cross-site form submission from

@@ -100,8 +100,7 @@ curl -sS -b cookies.txt -X POST \
   -H 'X-Workspace-Id: <workspace-id>' \
   -d '{
     "label":"First API client",
-    "roleCeiling":"member",
-    "expiresAt":"2026-11-29T12:00:00Z"
+    "roleCeiling":"member"
   }' \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```

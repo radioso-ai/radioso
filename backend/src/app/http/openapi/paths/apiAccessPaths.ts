@@ -12,6 +12,7 @@ const serviceAccountParams = workspaceParams.extend({ serviceAccountId: z.string
 const credentialParams = workspaceParams.extend({ credentialId: z.string().uuid() });
 const serviceCredentialParams = serviceAccountParams.extend({ credentialId: z.string().uuid() });
 const pageQuery = z.object({ page: z.number().int().min(1).optional(), limit: z.number().int().min(1).max(100).optional() });
+const optionalExpiry = z.string().datetime().nullable().optional();
 
 const credential = z.object({
   id: z.string().uuid(),
@@ -23,7 +24,7 @@ const credential = z.object({
   serviceAccountId: z.string().uuid().nullable(),
   createdByUserId: z.string().uuid(),
   createdAt: z.string().datetime(),
-  expiresAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
   status: z.enum(["active", "expired", "revoked", "suspended", "invalid"]),
   expiryWarningDays: z.union([z.literal(30), z.literal(7), z.literal(1)]).nullable(),
   lastUsedAt: z.string().datetime().nullable(),
@@ -89,7 +90,7 @@ export const registerApiAccessPaths = (
       200: { description: "API-access capabilities", content: { "application/json": { schema: z.object({
         effectiveRole: z.enum(["member", "admin", "owner"]),
         capabilities: z.object({ manageOwnPersonalTokens: z.boolean(), auditWorkspacePersonalTokens: z.boolean(), manageServiceAccounts: z.boolean() }),
-        defaults: z.object({ personalTokenLifetimeDays: z.literal(90), serviceCredentialLifetimeDays: z.literal(365) }),
+        defaults: z.object({ personalTokenLifetimeDays: z.null(), serviceCredentialLifetimeDays: z.null() }),
         limits: z.object({ personalTokensPerUser: z.literal(10), serviceAccountsPerWorkspace: z.literal(50), credentialsPerServiceAccount: z.literal(5), maximumPageSize: z.literal(100) }),
         legacyCredentialMigration: z.object({ status: z.enum(["destroyed", "not_applicable"]), migratedAt: z.string().datetime().nullable() }),
         mcpCredentialSupport: z.literal("unsupported"),
@@ -107,7 +108,7 @@ export const registerApiAccessPaths = (
   registry.registerPath({
     method: "post", path: "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens",
     tags: ["API Access"], summary: "Issue a personal API token", operationId: "issuePersonalApiToken", security: session,
-    request: { params: workspaceParams, headers: csrfHeaders, body: { required: true, content: { "application/json": { schema: z.object({ label, roleCeiling: role, expiresAt: z.string().datetime() }) } } } },
+    request: { params: workspaceParams, headers: csrfHeaders, body: { required: true, content: { "application/json": { schema: z.object({ label, roleCeiling: role, expiresAt: optionalExpiry }) } } } },
     responses: { 201: { description: "One-time personal-token secret", content: { "application/json": { schema: oneTimeCredential } } }, ...errors },
   });
   registry.registerPath({
@@ -138,7 +139,7 @@ export const registerApiAccessPaths = (
   registry.registerPath({
     method: "post", path: "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts",
     tags: ["API Access"], summary: "Create a service account and first credential", operationId: "createServiceAccount", security: session,
-    request: { params: workspaceParams, headers: csrfHeaders, body: { required: true, content: { "application/json": { schema: z.object({ displayName: label, role, initialCredential: z.object({ label, expiresAt: z.string().datetime() }) }) } } } },
+    request: { params: workspaceParams, headers: csrfHeaders, body: { required: true, content: { "application/json": { schema: z.object({ displayName: label, role, initialCredential: z.object({ label, expiresAt: optionalExpiry }) }) } } } },
     responses: { 201: { description: "Service account and one-time credential secret", content: { "application/json": { schema: z.object({ serviceAccount, credential, secret: z.string() }) } } }, ...errors },
   });
   registry.registerPath({
@@ -170,7 +171,7 @@ export const registerApiAccessPaths = (
   });
   registry.registerPath({
     method: "post", path: credentialsPath, tags: ["API Access"], summary: "Issue another service-account credential", operationId: "issueServiceAccountCredential", security: session,
-    request: { params: serviceAccountParams, headers: csrfHeaders, body: { required: true, content: { "application/json": { schema: z.object({ label, expiresAt: z.string().datetime() }) } } } },
+    request: { params: serviceAccountParams, headers: csrfHeaders, body: { required: true, content: { "application/json": { schema: z.object({ label, expiresAt: optionalExpiry }) } } } },
     responses: { 201: { description: "One-time service credential secret", content: { "application/json": { schema: oneTimeCredential } } }, ...errors },
   });
   const credentialPath = `${credentialsPath}/{credentialId}`;

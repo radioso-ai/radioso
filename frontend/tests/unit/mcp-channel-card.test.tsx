@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildClientConfig, resolveMcpChannelSetup, shouldProbeMcpHealth } from '@/components/dashboard/settings/mcp-channel-card'
+import { resolveMcpChannelSetup, shouldProbeMcpHealth } from '@/components/dashboard/settings/mcp-channel-card'
 
 describe('MCP channel card setup mode', () => {
   it('marks same-host merged MCP as unavailable', () => {
@@ -12,7 +12,6 @@ describe('MCP channel card setup mode', () => {
     expect(setup.mode).toBe('disabled')
     expect(setup.label).toBe('MCP unavailable')
     expect(setup.error).toContain('merged MCP endpoint is unavailable')
-    expect(setup.steps).toEqual([])
   })
 
   it('marks relative same-host merged MCP as unavailable', () => {
@@ -35,8 +34,7 @@ describe('MCP channel card setup mode', () => {
 
     expect(setup.mode).toBe('remote')
     expect(setup.label).toBe('Remote setup')
-    expect(setup.steps.some((step) => step.includes('Create an MCP converse credential'))).toBe(true)
-    expect(buildClientConfig(setup.mcpUrl, setup.authorizationPlaceholder)).toContain('Bearer <MCP converse grant token>')
+    expect(setup.mcpUrl).toBe('https://mcp.example.com/mcp')
     expect(shouldProbeMcpHealth(setup)).toBe(false)
   })
 

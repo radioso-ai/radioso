@@ -23,7 +23,7 @@ describe('apiAccessApi', () => {
     const fetchMock = vi.fn().mockResolvedValue(response({
       effectiveRole: 'member',
       capabilities: { manageOwnPersonalTokens: true, auditWorkspacePersonalTokens: false, manageServiceAccounts: false },
-      defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
+      defaults: { personalTokenLifetimeDays: null, serviceCredentialLifetimeDays: null },
       limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
       legacyCredentialMigration: { status: 'destroyed', migratedAt: '2026-08-31T00:00:00.000Z' },
       mcpCredentialSupport: 'unsupported',
@@ -59,11 +59,11 @@ describe('apiAccessApi', () => {
     await apiAccessApi.createPersonalToken('workspace-1', {
       label: 'CLI',
       roleCeiling: 'member',
-      expiresAt: '2026-09-30T00:00:00.000Z',
     })
     expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({ credentials: 'include' }))
     expect(fetchMock.mock.calls[1]?.[1]).not.toHaveProperty('Authorization')
     expect(new Headers(fetchMock.mock.calls[1]?.[1]?.headers).get('X-Radioso-CSRF')).toBe('1')
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({ label: 'CLI', roleCeiling: 'member' })
   })
 
   it('sends observed revisions for destructive and concurrent-safe lifecycle operations', async () => {

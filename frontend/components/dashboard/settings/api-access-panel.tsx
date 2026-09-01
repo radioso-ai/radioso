@@ -1,28 +1,35 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { KeyRound, Plus, Server, ShieldCheck, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { KeyRound, Plus, Server, Trash2 } from 'lucide-react'
 
 import { apiAccessApi, type ApiAccessSummary, type ApiCredentialMetadata, type OneTimeCredentialResponse, type ServiceAccountSummary } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Spinner } from '@/components/ui/spinner'
 import { useAuth } from '@/lib/auth-context'
+import { cn } from '@/lib/utils'
+import {
+  CreatePersonalTokenDialog,
+  CreateServiceAccountDialog,
+  OneTimeSecretDialog,
+  RoleSelect,
+  expiryHint,
+  type PersonalTokenDraft,
+  type ServiceAccountDraft,
+} from './api-access-dialogs'
 import { SettingsCard } from './settings-card'
 
-const defaultExpiry = (days: number) => {
-  const date = new Date()
-  // Date inputs are submitted at 23:59 UTC; stay inside the server's exact
-  // rolling lifetime rather than crossing it later in the selected day.
-  date.setDate(date.getDate() + Math.max(1, days - 1))
-  return date.toISOString().slice(0, 10)
-}
-
 const formatDate = (value: string | null) => value ? new Date(value).toLocaleDateString() : 'Never'
+
+const expiryInputToIso = (value: string) => {
+  if (!value) return undefined
+  const expiry = new Date(`${value}T23:59:59Z`)
+  return Number.isFinite(expiry.getTime()) ? expiry.toISOString() : undefined
+}
 
 export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | undefined }) {
   const { user } = useAuth()
@@ -33,32 +40,26 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   const [serviceAccounts, setServiceAccounts] = useState<ServiceAccountSummary[]>([])
   const [servicePage, setServicePage] = useState(1)
   const [serviceTotal, setServiceTotal] = useState(0)
-  const [personalLabel, setPersonalLabel] = useState('')
-  const [personalRole, setPersonalRole] = useState<'member' | 'admin'>('member')
-  const [personalExpiry, setPersonalExpiry] = useState(defaultExpiry(90))
   const [personalFormOpen, setPersonalFormOpen] = useState(false)
-  const [serviceName, setServiceName] = useState('')
   const [serviceFormOpen, setServiceFormOpen] = useState(false)
-  const [serviceRole, setServiceRole] = useState<'member' | 'admin'>('member')
-  const [serviceCredentialLabel, setServiceCredentialLabel] = useState('Initial credential')
-  const [serviceExpiry, setServiceExpiry] = useState(defaultExpiry(365))
   const [selectedServiceAccount, setSelectedServiceAccount] = useState<ServiceAccountSummary | null>(null)
   const [serviceCredentials, setServiceCredentials] = useState<ApiCredentialMetadata[]>([])
   const [serviceCredentialPage, setServiceCredentialPage] = useState(1)
   const [serviceCredentialTotal, setServiceCredentialTotal] = useState(0)
   const [additionalCredentialLabel, setAdditionalCredentialLabel] = useState('')
-  const [additionalCredentialExpiry, setAdditionalCredentialExpiry] = useState(defaultExpiry(365))
+  const [additionalCredentialExpiry, setAdditionalCredentialExpiry] = useState('')
   const [oneTime, setOneTime] = useState<OneTimeCredentialResponse | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const canManageServices = summary?.capabilities.manageServiceAccounts === true
   const canManagePersonal = summary?.capabilities.manageOwnPersonalTokens !== false
   const canAudit = summary?.capabilities.auditWorkspacePersonalTokens === true
   const canViewPersonal = canManagePersonal || canAudit
-  const selectedPersonalRole = personalRole === 'admin' && summary?.effectiveRole === 'member' ? 'member' : personalRole
+  const canIssueAdminRole = summary?.effectiveRole !== 'member'
   const isOwnPersonalToken = (credential: ApiCredentialMetadata) => credential.ownerUserId === user?.userId
 
   const load = useCallback(async () => {
@@ -101,42 +102,45 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
     setAcknowledged(false)
   }
 
-  const createPersonal = async () => {
-    if (!workspaceId || !personalLabel.trim()) return
-    if (!window.confirm(`Issue a ${selectedPersonalRole} personal token that expires on ${personalExpiry}? The secret will be shown once.`)) return
+  const createPersonal = async (draft: PersonalTokenDraft) => {
+    if (!workspaceId || !draft.label.trim()) return
+    const expiresAt = expiryInputToIso(draft.expiry)
     setIsCreating(true)
-    setError(null)
+    setFormError(null)
     try {
       const response = await apiAccessApi.createPersonalToken(workspaceId, {
-        label: personalLabel.trim(), roleCeiling: selectedPersonalRole, expiresAt: new Date(`${personalExpiry}T23:59:59Z`).toISOString(),
+        label: draft.label.trim(),
+        roleCeiling: canIssueAdminRole ? draft.role : 'member',
+        ...(expiresAt ? { expiresAt } : {}),
       })
       showSecret(response)
-      setPersonalLabel('')
       setPersonalFormOpen(false)
       await load()
     } catch (createError) {
-      setError(getApiErrorMessage(createError, 'Failed to issue personal token.'))
+      setFormError(getApiErrorMessage(createError, 'Failed to issue personal token.'))
     } finally {
       setIsCreating(false)
     }
   }
 
-  const createService = async () => {
-    if (!workspaceId || !serviceName.trim() || !serviceCredentialLabel.trim()) return
-    if (!window.confirm(`Create the ${serviceRole} service account “${serviceName.trim()}” and issue its first credential?`)) return
+  const createService = async (draft: ServiceAccountDraft) => {
+    if (!workspaceId || !draft.displayName.trim() || !draft.credentialLabel.trim()) return
+    const expiresAt = expiryInputToIso(draft.expiry)
     setIsCreating(true)
-    setError(null)
+    setFormError(null)
     try {
       const response = await apiAccessApi.createServiceAccount(workspaceId, {
-        displayName: serviceName.trim(), role: serviceRole,
-        initialCredential: { label: serviceCredentialLabel.trim(), expiresAt: new Date(`${serviceExpiry}T23:59:59Z`).toISOString() },
+        displayName: draft.displayName.trim(), role: canIssueAdminRole ? draft.role : 'member',
+        initialCredential: {
+          label: draft.credentialLabel.trim(),
+          ...(expiresAt ? { expiresAt } : {}),
+        },
       })
       showSecret({ credential: response.credential, secret: response.secret })
-      setServiceName('')
       setServiceFormOpen(false)
       await load()
     } catch (createError) {
-      setError(getApiErrorMessage(createError, 'Failed to create service account.'))
+      setFormError(getApiErrorMessage(createError, 'Failed to create service account.'))
     } finally {
       setIsCreating(false)
     }
@@ -182,9 +186,12 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
 
   const issueAdditionalCredential = async () => {
     if (!workspaceId || !selectedServiceAccount || !additionalCredentialLabel.trim()) return
-    if (!window.confirm(`Issue another credential for ${selectedServiceAccount.displayName}? The secret will be shown once.`)) return
+    const expiresAt = expiryInputToIso(additionalCredentialExpiry)
     try {
-      showSecret(await apiAccessApi.issueServiceCredential(workspaceId, selectedServiceAccount.id, { label: additionalCredentialLabel.trim(), expiresAt: new Date(`${additionalCredentialExpiry}T23:59:59Z`).toISOString() }))
+      showSecret(await apiAccessApi.issueServiceCredential(workspaceId, selectedServiceAccount.id, {
+        label: additionalCredentialLabel.trim(),
+        ...(expiresAt ? { expiresAt } : {}),
+      }))
       setAdditionalCredentialLabel('')
       await selectServiceAccount(selectedServiceAccount)
     } catch (issueError) { setError(getApiErrorMessage(issueError, 'Failed to issue credential.')) }
@@ -254,7 +261,7 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
       ? 'This permanently archives the identity and revokes every active credential.'
       : action === 'disable'
         ? 'Its credentials will stop working until it is enabled again.'
-        : 'Its unexpired, unrevoked credentials will work again.'
+        : 'Its unrevoked credentials will work again.'
     if (!window.confirm(`${action[0]?.toUpperCase()}${action.slice(1)} ${selectedServiceAccount.displayName}? ${consequence}`)) return
     try {
       const updated = await apiAccessApi.transitionServiceAccount(
@@ -271,35 +278,46 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
     }
   }
 
-  const expiryDays = summary?.defaults.personalTokenLifetimeDays ?? 90
-  const personalDescription = useMemo(() => canAudit ? 'Personal credentials across this workspace. Secrets are never recoverable.' : 'Credentials belonging to you. Secrets are never recoverable.', [canAudit])
+  const personalDescription = useMemo(() => canAudit ? 'Personal credentials across this workspace. Secrets are never recoverable.' : 'Credentials that act as you, for your own scripts and local development. Secrets are never recoverable.', [canAudit])
+
+  const openPersonalForm = () => {
+    setFormError(null)
+    setPersonalFormOpen(true)
+  }
+
+  const openServiceForm = () => {
+    setFormError(null)
+    setServiceFormOpen(true)
+  }
 
   if (!workspaceId) return null
 
   return (
     <div id="api-access" className="space-y-6 scroll-mt-24">
-      <SettingsCard icon={<KeyRound className="h-5 w-5 text-primary" />} title="API access" description="Issue and manage short-lived personal and service-account credentials for external clients.">
-        <div className="space-y-5">
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-foreground">
-            <p className="font-medium">Breaking change: the legacy shared workspace token is gone.</p>
-            <p className="mt-1 text-muted-foreground">Use a personal token for your own scripts or a service-account credential for automation. Every secret is shown once and cannot be recovered.</p>
-          </div>
-          {summary?.legacyCredentialMigration.status === 'destroyed' ? <p className="text-sm text-muted-foreground">The legacy credential was destroyed during migration.</p> : null}
+      <SettingsCard
+        icon={<KeyRound className="h-5 w-5 text-primary" />}
+        title="API access"
+        description={personalDescription}
+        headerEnd={canManagePersonal ? (
+          <Button type="button" size="sm" onClick={openPersonalForm}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create personal token
+          </Button>
+        ) : null}
+      >
+        <div className="space-y-4">
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
-          {isLoading ? <p className="text-sm text-muted-foreground">Loading API access…</p> : null}
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner className="h-4 w-4" />
+              Loading API access…
+            </div>
+          ) : null}
           {canViewPersonal ? (
-            <div className="space-y-3 rounded-xl bg-muted/40 p-4">
-              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /><h4 className="font-medium">Personal tokens</h4></div>
-              <p className="text-sm text-muted-foreground">{personalDescription}</p>
-              {!personalFormOpen ? <Button variant="outline" onClick={() => setPersonalFormOpen(true)}><Plus className="mr-2 h-4 w-4" />Create personal token</Button> : null}
-              {personalFormOpen ? <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
-                <div className="space-y-1"><Label htmlFor="personal-token-label">Token label</Label><Input id="personal-token-label" value={personalLabel} onChange={(event) => setPersonalLabel(event.target.value)} placeholder="Local development" /></div>
-                <div className="space-y-1"><Label htmlFor="personal-token-role">Role ceiling</Label><select id="personal-token-role" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedPersonalRole} onChange={(event) => setPersonalRole(event.target.value as 'member' | 'admin')}><option value="member">Member</option><option value="admin" disabled={summary?.effectiveRole === 'member'}>Admin</option></select></div>
-                <div className="space-y-1"><Label htmlFor="personal-token-expiry">Expires</Label><Input id="personal-token-expiry" type="date" max={defaultExpiry(expiryDays)} value={personalExpiry} onChange={(event) => setPersonalExpiry(event.target.value)} /></div>
-              </div> : null}
-              {personalFormOpen ? <Button onClick={createPersonal} disabled={isCreating || !personalLabel.trim()}><Plus className="mr-2 h-4 w-4" />Issue personal token</Button> : null}
+            <>
               <CredentialList
                 items={personalTokens}
+                emptyMessage="No personal tokens yet."
                 onRevoke={revokePersonal}
                 onRelabel={relabelPersonal}
                 onRotate={rotatePersonal}
@@ -308,36 +326,222 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
                 canRotate={isOwnPersonalToken}
               />
               <PaginationControls page={personalPage} total={personalTotal} onPage={setPersonalPage} />
-            </div>
+            </>
           ) : null}
         </div>
       </SettingsCard>
 
       {canManageServices ? (
-        <SettingsCard icon={<Server className="h-5 w-5 text-primary" />} title="Service accounts" description="Use named, independently revocable identities for production integrations and automation.">
+        <SettingsCard
+          icon={<Server className="h-5 w-5 text-primary" />}
+          title="Service accounts"
+          description="Named, independently revocable identities for production integrations and automation."
+          headerEnd={(
+            <Button type="button" size="sm" onClick={openServiceForm}>
+              <Plus className="mr-2 h-4 w-4" />
+              New service account
+            </Button>
+          )}
+        >
           <div className="space-y-4">
-            {!serviceFormOpen ? <Button variant="outline" onClick={() => setServiceFormOpen(true)}><Plus className="mr-2 h-4 w-4" />New service account</Button> : null}
-            {serviceFormOpen ? <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-1"><Label htmlFor="service-account-name">Service account name</Label><Input id="service-account-name" value={serviceName} onChange={(event) => setServiceName(event.target.value)} placeholder="Nightly ingestion" /></div>
-              <div className="space-y-1"><Label htmlFor="service-account-role">Role</Label><select id="service-account-role" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={serviceRole} onChange={(event) => setServiceRole(event.target.value as 'member' | 'admin')}><option value="member">Member</option><option value="admin" disabled={summary?.effectiveRole === 'member'}>Admin</option></select></div>
-            </div> : null}
-            {serviceFormOpen ? <><div className="grid gap-3 md:grid-cols-2"><div className="space-y-1"><Label htmlFor="service-credential-label">Initial credential label</Label><Input id="service-credential-label" value={serviceCredentialLabel} onChange={(event) => setServiceCredentialLabel(event.target.value)} /></div><div className="space-y-1"><Label htmlFor="service-credential-expiry">Expires</Label><Input id="service-credential-expiry" type="date" value={serviceExpiry} onChange={(event) => setServiceExpiry(event.target.value)} /></div></div><Button onClick={createService} disabled={isCreating || !serviceName.trim() || !serviceCredentialLabel.trim()}><Plus className="mr-2 h-4 w-4" />Create service account</Button></> : null}
-            <div className="divide-y divide-border rounded-lg border border-border">
-              {serviceAccounts.length === 0 ? <p className="p-3 text-sm text-muted-foreground">No service accounts yet.</p> : serviceAccounts.map((account) => <div key={account.id} className="flex items-center justify-between gap-3 p-3"><div><p className="font-medium">{account.displayName}</p><p className="text-xs text-muted-foreground">{account.role} · {account.activeCredentialCount} active credential{account.activeCredentialCount === 1 ? '' : 's'} · last used {formatDate(account.lastUsedAt)}</p></div><div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex items-center gap-2"><Badge variant={account.status === 'enabled' ? 'outline' : 'secondary'}>{account.status}</Badge><Button size="sm" variant="ghost" aria-label={`Manage credentials for ${account.displayName}`} onClick={() => void selectServiceAccount(account)}>Manage credentials</Button></div></div>)}
-            </div>
+            {serviceAccounts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border p-6 text-center">
+                <p className="text-sm font-medium text-foreground">No service accounts yet</p>
+                <p className="mt-1 text-sm text-muted-foreground">Give each integration its own identity so you can rotate or revoke it without touching the others.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                {serviceAccounts.map((account) => (
+                  <ServiceAccountRow
+                    key={account.id}
+                    account={account}
+                    isSelected={selectedServiceAccount?.id === account.id}
+                    onManage={() => void selectServiceAccount(account)}
+                  />
+                ))}
+              </div>
+            )}
             <PaginationControls page={servicePage} total={serviceTotal} onPage={setServicePage} />
-            {selectedServiceAccount ? <div className="space-y-3 rounded-lg border border-border p-4"><div className="flex items-start justify-between gap-3"><div><h4 className="font-medium">{selectedServiceAccount.displayName} credentials</h4><ServiceAccountMetadata account={selectedServiceAccount} /></div><Badge variant="outline">{selectedServiceAccount.status}</Badge></div><div role="group" aria-label={`Actions for service account ${selectedServiceAccount.displayName}`} className="flex flex-wrap items-end gap-3"><div className="space-y-1"><Label htmlFor="selected-service-role">Live role</Label><select id="selected-service-role" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={selectedServiceAccount.role} disabled={selectedServiceAccount.status === 'archived'} onChange={(event) => void changeServiceRole(event.target.value as 'member' | 'admin')}><option value="member">Member</option><option value="admin">Admin</option></select></div>{selectedServiceAccount.status !== 'archived' ? <Button variant="outline" aria-label={`Rename service account ${selectedServiceAccount.displayName}`} onClick={() => void renameServiceAccount()}>Rename</Button> : null}{selectedServiceAccount.status === 'enabled' ? <Button variant="outline" onClick={() => void transitionServiceAccount('disable')}>Disable</Button> : null}{selectedServiceAccount.status === 'disabled' ? <Button variant="outline" onClick={() => void transitionServiceAccount('enable')}>Enable</Button> : null}{selectedServiceAccount.status !== 'archived' ? <Button variant="destructive" onClick={() => void transitionServiceAccount('archive')}>Archive</Button> : null}</div><div className="grid gap-3 md:grid-cols-2"><div className="space-y-1"><Label htmlFor="additional-credential-label">Credential label</Label><Input id="additional-credential-label" value={additionalCredentialLabel} onChange={(event) => setAdditionalCredentialLabel(event.target.value)} placeholder="Canary runner" /></div><div className="space-y-1"><Label htmlFor="additional-credential-expiry">Expires</Label><Input id="additional-credential-expiry" type="date" value={additionalCredentialExpiry} onChange={(event) => setAdditionalCredentialExpiry(event.target.value)} /></div></div><Button onClick={issueAdditionalCredential} disabled={!additionalCredentialLabel.trim() || selectedServiceAccount.status !== 'enabled'}><Plus className="mr-2 h-4 w-4" />Issue credential</Button><CredentialList items={serviceCredentials} onRevoke={revokeServiceCredential} onRelabel={relabelServiceCredential} onRotate={rotateServiceCredential} /><PaginationControls page={serviceCredentialPage} total={serviceCredentialTotal} onPage={(page) => void selectServiceAccount(selectedServiceAccount, page)} /></div> : null}
+            {selectedServiceAccount ? (
+              <ServiceAccountDetail
+                account={selectedServiceAccount}
+                credentials={serviceCredentials}
+                credentialPage={serviceCredentialPage}
+                credentialTotal={serviceCredentialTotal}
+                credentialLabel={additionalCredentialLabel}
+                credentialExpiry={additionalCredentialExpiry}
+                onCredentialLabelChange={setAdditionalCredentialLabel}
+                onCredentialExpiryChange={setAdditionalCredentialExpiry}
+                onIssueCredential={() => void issueAdditionalCredential()}
+                onChangeRole={(role) => void changeServiceRole(role)}
+                onRename={() => void renameServiceAccount()}
+                onTransition={(action) => void transitionServiceAccount(action)}
+                onRevokeCredential={revokeServiceCredential}
+                onRelabelCredential={relabelServiceCredential}
+                onRotateCredential={rotateServiceCredential}
+                onCredentialPage={(page) => void selectServiceAccount(selectedServiceAccount, page)}
+              />
+            ) : null}
           </div>
         </SettingsCard>
       ) : null}
 
-      {oneTime ? <OneTimeSecret response={oneTime} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onClose={() => { setOneTime(null); setAcknowledged(false) }} /> : null}
+      {personalFormOpen ? (
+        <CreatePersonalTokenDialog
+          adminSelectable={canIssueAdminRole}
+          error={formError}
+          isSubmitting={isCreating}
+          onSubmit={(draft) => void createPersonal(draft)}
+          onOpenChange={setPersonalFormOpen}
+        />
+      ) : null}
+
+      {serviceFormOpen ? (
+        <CreateServiceAccountDialog
+          adminSelectable={canIssueAdminRole}
+          error={formError}
+          isSubmitting={isCreating}
+          onSubmit={(draft) => void createService(draft)}
+          onOpenChange={setServiceFormOpen}
+        />
+      ) : null}
+
+      {oneTime ? <OneTimeSecretDialog response={oneTime} acknowledged={acknowledged} onAcknowledged={setAcknowledged} onClose={() => { setOneTime(null); setAcknowledged(false) }} /> : null}
     </div>
+  )
+}
+
+function ServiceAccountRow({
+  account,
+  isSelected,
+  onManage,
+}: {
+  account: ServiceAccountSummary
+  isSelected: boolean
+  onManage: () => void
+}) {
+  return (
+    <div className={cn('flex flex-wrap items-center justify-between gap-3 p-3 transition-colors', isSelected && 'bg-muted/50')}>
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-medium text-foreground">{account.displayName}</p>
+          <Badge variant={account.status === 'enabled' ? 'outline' : 'secondary'}>{account.status}</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground">{account.role} · {account.activeCredentialCount} active credential{account.activeCredentialCount === 1 ? '' : 's'} · last used {formatDate(account.lastUsedAt)}</p>
+      </div>
+      <div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex shrink-0 items-center gap-2">
+        <Button size="sm" variant="outline" aria-label={`Manage credentials for ${account.displayName}`} onClick={onManage}>
+          Manage credentials
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ServiceAccountDetail({
+  account,
+  credentials,
+  credentialPage,
+  credentialTotal,
+  credentialLabel,
+  credentialExpiry,
+  onCredentialLabelChange,
+  onCredentialExpiryChange,
+  onIssueCredential,
+  onChangeRole,
+  onRename,
+  onTransition,
+  onRevokeCredential,
+  onRelabelCredential,
+  onRotateCredential,
+  onCredentialPage,
+}: {
+  account: ServiceAccountSummary
+  credentials: ApiCredentialMetadata[]
+  credentialPage: number
+  credentialTotal: number
+  credentialLabel: string
+  credentialExpiry: string
+  onCredentialLabelChange: (value: string) => void
+  onCredentialExpiryChange: (value: string) => void
+  onIssueCredential: () => void
+  onChangeRole: (role: 'member' | 'admin') => void
+  onRename: () => void
+  onTransition: (action: 'disable' | 'enable' | 'archive') => void
+  onRevokeCredential: (credential: ApiCredentialMetadata) => void
+  onRelabelCredential: (credential: ApiCredentialMetadata) => void
+  onRotateCredential: (credential: ApiCredentialMetadata) => void
+  onCredentialPage: (page: number) => void
+}) {
+  const isArchived = account.status === 'archived'
+
+  return (
+    <section className="space-y-4 rounded-xl border border-border bg-muted/25 p-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h4 className="font-medium">{account.displayName} credentials</h4>
+          <ServiceAccountMetadata account={account} />
+        </div>
+        <Badge variant="outline">{account.status}</Badge>
+      </header>
+
+      <div role="group" aria-label={`Actions for service account ${account.displayName}`} className="flex flex-wrap items-end gap-2 border-t border-border pt-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="selected-service-role">Live role</Label>
+          <RoleSelect
+            id="selected-service-role"
+            value={account.role}
+            disabled={isArchived}
+            onChange={onChangeRole}
+            className="w-36"
+          />
+        </div>
+        {!isArchived ? (
+          <Button size="sm" variant="outline" aria-label={`Rename service account ${account.displayName}`} onClick={onRename}>Rename</Button>
+        ) : null}
+        {account.status === 'enabled' ? <Button size="sm" variant="outline" onClick={() => onTransition('disable')}>Disable</Button> : null}
+        {account.status === 'disabled' ? <Button size="sm" variant="outline" onClick={() => onTransition('enable')}>Enable</Button> : null}
+        {!isArchived ? (
+          <Button size="sm" variant="destructive" className="ml-auto" onClick={() => onTransition('archive')}>Archive</Button>
+        ) : null}
+      </div>
+
+      <div className="space-y-3 border-t border-border pt-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">Issue another credential</p>
+          <p className="text-xs text-muted-foreground">{expiryHint}</p>
+        </div>
+        <div className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto]">
+          <div className="space-y-1.5">
+            <Label htmlFor="additional-credential-label">Credential label</Label>
+            <Input id="additional-credential-label" value={credentialLabel} onChange={(event) => onCredentialLabelChange(event.target.value)} placeholder="Canary runner" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="additional-credential-expiry">Expires</Label>
+            <Input id="additional-credential-expiry" type="date" value={credentialExpiry} onChange={(event) => onCredentialExpiryChange(event.target.value)} />
+          </div>
+          <Button onClick={onIssueCredential} disabled={!credentialLabel.trim() || account.status !== 'enabled'}>
+            <Plus className="mr-2 h-4 w-4" />
+            Issue credential
+          </Button>
+        </div>
+      </div>
+
+      <CredentialList
+        items={credentials}
+        emptyMessage="No credentials yet."
+        onRevoke={onRevokeCredential}
+        onRelabel={onRelabelCredential}
+        onRotate={onRotateCredential}
+      />
+      <PaginationControls page={credentialPage} total={credentialTotal} onPage={onCredentialPage} />
+    </section>
   )
 }
 
 function CredentialList({
   items,
+  emptyMessage,
   onRevoke,
   onRelabel,
   onRotate,
@@ -346,6 +550,7 @@ function CredentialList({
   canRotate = () => true,
 }: {
   items: ApiCredentialMetadata[]
+  emptyMessage: string
   onRevoke: (credential: ApiCredentialMetadata) => void
   onRelabel?: (credential: ApiCredentialMetadata) => void
   onRotate?: (credential: ApiCredentialMetadata) => void
@@ -353,25 +558,31 @@ function CredentialList({
   canRelabel?: (credential: ApiCredentialMetadata) => boolean
   canRotate?: (credential: ApiCredentialMetadata) => boolean
 }) {
+  if (items.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+    )
+  }
+
   return (
-    <div className="divide-y divide-border rounded-lg border border-border">
-      {items.length === 0 ? <p className="p-3 text-sm text-muted-foreground">No credentials yet.</p> : items.map((credential) => {
+    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-background">
+      {items.map((credential) => {
         const isRevoked = credential.status === 'revoked' || Boolean(credential.revokedAt)
         const mayRevoke = canRevoke(credential)
         const mayRelabel = onRelabel && canRelabel(credential)
         const mayRotate = onRotate && canRotate(credential)
 
         return (
-          <div key={credential.id} className="flex items-center justify-between gap-3 p-3">
+          <div key={credential.id} className={cn('flex flex-wrap items-center justify-between gap-3 p-3', isRevoked && 'opacity-70')}>
             <div className="min-w-0 space-y-1">
-              <p className="font-medium">{credential.label}</p>
-              <p className="text-xs text-muted-foreground">{credential.prefix} · expires {formatDate(credential.expiresAt)}{credential.expiryWarningDays ? ` · expires in ${credential.expiryWarningDays} days` : ''} · last used {formatDate(credential.lastUsedAt)}</p>
+              <p className="truncate text-sm font-medium text-foreground">{credential.label}</p>
+              <p className="text-xs text-muted-foreground">{credential.prefix}{credential.roleCeiling ? ` · role ${credential.roleCeiling}` : ''} · expires {formatDate(credential.expiresAt)}{credential.expiryWarningDays ? ` · expires in ${credential.expiryWarningDays} days` : ''} · last used {formatDate(credential.lastUsedAt)}</p>
               <CredentialMetadata credential={credential} />
             </div>
             <div role="group" aria-label={`Actions for credential ${credential.label}`} className="flex shrink-0 items-center gap-1">
               {mayRelabel ? <Button size="sm" variant="ghost" aria-label={`Rename ${credential.label}`} onClick={() => onRelabel(credential)} disabled={isRevoked}>Rename</Button> : null}
               {mayRotate ? <Button size="sm" variant="ghost" aria-label={`Rotate ${credential.label}`} onClick={() => onRotate(credential)} disabled={isRevoked}>Rotate</Button> : null}
-              {mayRevoke ? <Button size="sm" variant="ghost" aria-label={`${isRevoked ? 'Revoked' : 'Revoke'} ${credential.label}`} onClick={() => onRevoke(credential)} disabled={isRevoked}><Trash2 className="mr-1 h-3.5 w-3.5" />{isRevoked ? 'Revoked' : 'Revoke'}</Button> : null}
+              {mayRevoke ? <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" aria-label={`${isRevoked ? 'Revoked' : 'Revoke'} ${credential.label}`} onClick={() => onRevoke(credential)} disabled={isRevoked}><Trash2 className="mr-1 h-3.5 w-3.5" />{isRevoked ? 'Revoked' : 'Revoke'}</Button> : null}
             </div>
           </div>
         )
@@ -380,60 +591,37 @@ function CredentialList({
   )
 }
 
+function MetadataRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground [&>span:not(:last-child)]:after:ml-2 [&>span:not(:last-child)]:after:text-muted-foreground/50 [&>span:not(:last-child)]:after:content-['·']">{children}</div>
+  )
+}
+
 function CredentialMetadata({ credential }: { credential: ApiCredentialMetadata }) {
   const status = credential.status[0].toUpperCase() + credential.status.slice(1)
+  const hasMetadata = credential.status !== 'active' || credential.revokedAt || credential.revocationReason || credential.rotatedFromCredentialId
+
+  if (!hasMetadata) return null
 
   return (
-    <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
-      <span>Status {status}</span>
-      {credential.ownerUserId ? <span>Owner {credential.ownerUserId}</span> : null}
-      {credential.roleCeiling ? <span>Role ceiling {credential.roleCeiling}</span> : null}
-      {credential.createdByUserId ? <span>Created by {credential.createdByUserId}</span> : null}
-      <span>Created {formatDate(credential.createdAt)}</span>
+    <MetadataRow>
+      {credential.status !== 'active' ? <span>Status {status}</span> : null}
       {credential.revokedAt ? <span>Revoked {formatDate(credential.revokedAt)}</span> : null}
-      {credential.revokedByUserId ? <span>Revoked by {credential.revokedByUserId}</span> : null}
       {credential.revocationReason ? <span>Reason {credential.revocationReason}</span> : null}
       {credential.rotatedFromCredentialId ? <span>Rotated from {credential.rotatedFromCredentialId}</span> : null}
-    </div>
+    </MetadataRow>
   )
 }
 
 function ServiceAccountMetadata({ account }: { account: ServiceAccountSummary }) {
   return (
-    <div className="flex flex-wrap gap-x-2 gap-y-1 text-xs text-muted-foreground">
+    <MetadataRow>
       <span>Created by {account.createdByUserId ?? 'Unknown'}</span>
       <span>Created {formatDate(account.createdAt)}</span>
       <span>Updated {formatDate(account.updatedAt)}</span>
       <span>Disabled {formatDate(account.disabledAt)}</span>
       <span>Archived {formatDate(account.archivedAt)}</span>
-    </div>
-  )
-}
-
-function OneTimeSecret({ response, acknowledged, onAcknowledged, onClose }: { response: OneTimeCredentialResponse; acknowledged: boolean; onAcknowledged: (value: boolean) => void; onClose: () => void }) {
-  return (
-    <Dialog open onOpenChange={(open) => {
-      if (!open && acknowledged) onClose()
-    }}>
-      <DialogContent
-        showCloseButton={false}
-        onEscapeKeyDown={(event) => event.preventDefault()}
-        onPointerDownOutside={(event) => event.preventDefault()}
-      >
-        <DialogHeader>
-          <DialogTitle>Save this secret now</DialogTitle>
-          <DialogDescription>This credential secret cannot be recovered after you close this message. Store it in your server-side secret manager.</DialogDescription>
-        </DialogHeader>
-        <CopyValueField value={response.secret} ariaLabel="Copy one-time credential secret" className="w-full" />
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledged(event.target.checked)} className="mt-1" />
-          I have saved this secret securely and understand it cannot be recovered.
-        </label>
-        <DialogFooter>
-          <Button onClick={onClose} disabled={!acknowledged}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </MetadataRow>
   )
 }
 

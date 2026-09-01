@@ -4,7 +4,6 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ExternalLink, Plug } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
-import { CodeSnippet } from '@/components/shared/api-snippets'
 import { Badge } from '@/components/ui/badge'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
@@ -16,27 +15,14 @@ const subscribeBrowserOrigin = () => () => {}
 const getBrowserOrigin = () => (typeof window === 'undefined' ? '' : window.location.origin)
 const getServerOrigin = () => ''
 
-export const buildClientConfig = (mcpUrl: string, authorizationPlaceholder: string) => `{
-  "mcpServers": {
-    "radioso": {
-      "url": "${mcpUrl}",
-      "headers": {
-        "Authorization": "Bearer ${authorizationPlaceholder}"
-      }
-    }
-  }
-}`
-
 export type McpChannelSetupMode = 'same-host' | 'remote' | 'disabled'
 
 export interface McpChannelSetup {
-  authorizationPlaceholder: string
   error?: string
   label: string
   mcpUrl: string
   mode: McpChannelSetupMode
   remediation?: string
-  steps: string[]
 }
 
 export const resolveMcpChannelSetup = ({
@@ -49,13 +35,11 @@ export const resolveMcpChannelSetup = ({
   const trimmedUrl = mcpUrl.trim()
   if (!trimmedUrl) {
     return {
-      authorizationPlaceholder: '<MCP converse grant token>',
       error: 'MCP is not enabled on this deployment.',
       label: 'MCP not enabled',
       mcpUrl: '',
       mode: 'disabled',
       remediation: 'Enable backend MCP with RADIOSO_MCP_ENABLED=true or set NEXT_PUBLIC_MCP_URL to a reachable MCP server URL, then restart Radioso.',
-      steps: [],
     }
   }
 
@@ -64,13 +48,11 @@ export const resolveMcpChannelSetup = ({
     resolvedUrl = new URL(trimmedUrl, dashboardOrigin || 'http://localhost')
   } catch {
     return {
-      authorizationPlaceholder: '<MCP converse grant token>',
       error: 'The configured MCP URL is invalid.',
       label: 'MCP not enabled',
       mcpUrl: trimmedUrl,
       mode: 'disabled',
       remediation: 'Set NEXT_PUBLIC_MCP_URL to an absolute MCP server URL or a root-relative same-host MCP path.',
-      steps: [],
     }
   }
   const isRootRelativeUrl = trimmedUrl.startsWith('/')
@@ -78,26 +60,18 @@ export const resolveMcpChannelSetup = ({
 
   if (sameHost) {
     return {
-      authorizationPlaceholder: '<MCP converse grant token>',
       error: 'The same-host merged MCP endpoint is unavailable in this release. Use standalone MCP with an agent-converse grant instead.',
       label: 'MCP unavailable',
       mcpUrl: dashboardOrigin ? resolvedUrl.toString() : trimmedUrl,
       mode: 'disabled',
       remediation: 'Run the standalone MCP server at a separate origin, set NEXT_PUBLIC_MCP_URL to that URL, then create an agent-converse grant in the panel below.',
-      steps: [],
     }
   }
 
   return {
-    authorizationPlaceholder: '<MCP converse grant token>',
     label: 'Remote setup',
     mcpUrl: resolvedUrl.toString(),
     mode: 'remote',
-    steps: [
-      "Open your AI client's MCP settings (Cursor, Claude Desktop, or compatible).",
-      'Create an MCP converse credential for this agent in the panel below, then copy its one-time token into the secure client configuration.',
-      'Paste the config below, replacing the placeholder with the converse grant token.',
-    ],
   }
 }
 
@@ -209,33 +183,16 @@ export function McpChannelCard() {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-xl bg-muted/50 p-4">
-          <div className="flex items-center gap-2 text-foreground">
-            <Plug className="h-4 w-4" />
-            <Label className="text-foreground">Connect your client</Label>
-          </div>
-          <ol className="list-decimal space-y-1 pl-5 text-xs text-muted-foreground">
-            {resolvedSetup.steps.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-          {resolvedSetup.mode !== 'disabled' ? (
-            <CodeSnippet
-              label="MCP client config"
-              code={buildClientConfig(resolvedSetup.mcpUrl, resolvedSetup.authorizationPlaceholder)}
-            />
-          ) : null}
-          <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
-            <a
-              href={`${DOCS_URL}/guides/mcp`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              View MCP setup guide
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <a
+            href={`${DOCS_URL}/guides/mcp`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          >
+            View MCP setup guide
+            <ExternalLink className="h-3 w-3" />
+          </a>
         </div>
       </div>
     </SettingsCard>

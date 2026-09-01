@@ -175,7 +175,7 @@ export interface ApiCredentials {
   account_id: string;
   created_at: Generated<Timestamp>;
   created_by_user_id: string;
-  expires_at: Timestamp;
+  expires_at: Timestamp | null;
   id: string;
   kind: string;
   label: string;

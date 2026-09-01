@@ -15,7 +15,7 @@ const summary = (role: 'member' | 'admin' = 'admin') => ({
     auditWorkspacePersonalTokens: role === 'admin',
     manageServiceAccounts: role === 'admin',
   },
-  defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
+  defaults: { personalTokenLifetimeDays: null, serviceCredentialLifetimeDays: null },
   limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
   legacyCredentialMigration: { status: 'destroyed', migratedAt: '2026-08-31T00:00:00.000Z' },
   mcpCredentialSupport: 'unsupported',
@@ -32,8 +32,8 @@ const personalCredential: ApiCredentialMetadata = {
   serviceAccountId: null,
   createdByUserId: 'user-1',
   createdAt: '2026-08-31T00:00:00.000Z',
-  expiresAt: '2026-09-30T00:00:00.000Z',
-  expiryWarningDays: 30,
+  expiresAt: null,
+  expiryWarningDays: null,
   lastUsedAt: null,
   revokedAt: null,
   revokedByUserId: null,
@@ -84,12 +84,13 @@ test('member issues, revokes, and pages personal tokens without storing the one-
 
   await page.goto(`/w/${workspaceKey}/settings?tab=workspace&anchor=api-access`)
   await expect(page.getByRole('heading', { name: 'API access' })).toBeVisible()
-  await expect(page.getByText(/breaking change/i)).toBeVisible()
+  await expect(page.getByText(/breaking change/i)).toHaveCount(0)
+  await expect(page.getByText(/legacy credential/i)).toHaveCount(0)
 
   await page.getByRole('button', { name: /create personal token/i }).click()
+  await expect(page.getByLabel('Role')).toBeVisible()
   await page.getByLabel(/token label/i).fill('CLI on laptop')
-  await page.getByLabel(/expires/i).first().fill('2026-09-30')
-  page.once('dialog', (dialog) => dialog.accept())
+  await expect(page.getByLabel(/expires/i).first()).toHaveValue('')
   await page.getByRole('button', { name: /issue personal token/i }).click()
 
   await expect(page.getByText('radioso_pat_one_time_secret')).toBeVisible()
@@ -97,6 +98,7 @@ test('member issues, revokes, and pages personal tokens without storing the one-
   await page.getByRole('checkbox', { name: /cannot be recovered/i }).check()
   await page.getByRole('button', { name: /done|acknowledge/i }).click()
   await expect(page.getByText('radioso_pat_one_time_secret')).toHaveCount(0)
+  await expect(page.getByText(/expires Never/i).first()).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByText('CLI on laptop').locator('xpath=../..').getByRole('button', { name: 'Revoke CLI on laptop' }).click()
@@ -195,21 +197,19 @@ test('administrator audits workspace personal tokens without gaining another use
   await expect(ownRow.getByRole('button', { name: 'Revoke' })).toBeVisible()
 
   const colleagueRow = page.getByText('Colleague laptop').locator('xpath=../..')
-  await expect(colleagueRow.getByText('Owner user-2')).toBeVisible()
-  await expect(colleagueRow.getByText('Role ceiling admin')).toBeVisible()
-  await expect(colleagueRow.getByText('Created by user-3')).toBeVisible()
-  await expect(colleagueRow.getByText('Status Active')).toBeVisible()
-  await expect(colleagueRow.getByText('Created 8/29/2026')).toBeVisible()
+  await expect(colleagueRow.getByText('role admin')).toBeVisible()
+  await expect(colleagueRow.getByText('Owner user-2')).toHaveCount(0)
+  await expect(colleagueRow.getByText('Created by user-3')).toHaveCount(0)
+  await expect(colleagueRow.getByText('Status Active')).toHaveCount(0)
   await expect(colleagueRow.getByRole('button', { name: 'Rename' })).toHaveCount(0)
   await expect(colleagueRow.getByRole('button', { name: 'Rotate' })).toHaveCount(0)
   await expect(colleagueRow.getByRole('button', { name: 'Revoke' })).toBeVisible()
 
   const revokedRow = page.getByText('Rotated colleague token').locator('xpath=../..')
-  await expect(revokedRow.getByText('Owner user-2')).toBeVisible()
-  await expect(revokedRow.getByText('Role ceiling admin')).toBeVisible()
-  await expect(revokedRow.getByText('Created by user-3')).toBeVisible()
-  await expect(revokedRow.getByText('Created 8/29/2026')).toBeVisible()
-  await expect(revokedRow.getByText('Revoked by user-1')).toBeVisible()
+  await expect(revokedRow.getByText('role admin')).toBeVisible()
+  await expect(revokedRow.getByText('Owner user-2')).toHaveCount(0)
+  await expect(revokedRow.getByText('Created by user-3')).toHaveCount(0)
+  await expect(revokedRow.getByText('Revoked by user-1')).toHaveCount(0)
   await expect(revokedRow.getByText('Rotated from personal-previous')).toBeVisible()
   await expect(revokedRow.getByText('Status Revoked')).toBeVisible()
 
@@ -237,7 +237,6 @@ test('one-time secret uses a labelled modal dialog that traps focus until acknow
   await page.goto(`/w/${workspaceKey}/settings?tab=workspace&anchor=api-access`)
   await page.getByRole('button', { name: /create personal token/i }).click()
   await page.getByLabel(/token label/i).fill('Modal token')
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: /issue personal token/i }).click()
 
   const dialog = page.getByRole('dialog', { name: 'Save this secret now' })
@@ -324,7 +323,7 @@ test('administrator manages the service-account and credential lifecycle', async
   await expect(page.getByRole('heading', { name: 'Service accounts' })).toBeVisible()
   await page.getByRole('button', { name: /new service account|create service account/i }).click()
   await page.getByLabel('Service account name').fill('Nightly ingestion')
-  page.once('dialog', (dialog) => dialog.accept())
+  await expect(page.getByLabel(/expires/i).first()).toHaveValue('')
   await page.getByRole('button', { name: /create service account/i }).click()
 
   await expect(page.getByText('radioso_svc_first_secret')).toBeVisible()
@@ -342,7 +341,6 @@ test('administrator manages the service-account and credential lifecycle', async
   await page.getByRole('button', { name: 'Rename service account Nightly ingestion' }).click()
   await expect(page.getByRole('heading', { name: 'Production automation credentials' })).toBeVisible()
   await page.getByLabel('Credential label').fill('Canary runner')
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Issue credential' }).click()
   await expect(page.getByText('radioso_svc_canary_secret')).toBeVisible()
   await page.getByRole('checkbox', { name: /cannot be recovered/i }).check()

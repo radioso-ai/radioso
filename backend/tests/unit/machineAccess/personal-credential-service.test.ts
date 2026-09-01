@@ -127,6 +127,32 @@ describe("PersonalCredentialService", () => {
     }));
   });
 
+  it("issues forever personal credentials when expiry is omitted", async () => {
+    const { service } = createHarness();
+
+    const issued = await service.issue({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      userId: "owner-1",
+      label: "Forever",
+      roleCeiling: "member",
+    });
+
+    expect(issued.credential.expiresAt).toBeNull();
+    expect(issued.credential.status).toBeUndefined();
+    await expect(service.rotate({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      userId: "owner-1",
+      credentialId: issued.credential.id,
+      revision: issued.credential.revision,
+    })).resolves.toMatchObject({
+      credential: {
+        expiresAt: null,
+      },
+    });
+  });
+
   it("rolls back issue, relabel, and revoke when their required audit write fails", async () => {
     const { repository, service } = createHarness();
     repository.failAuditPersistence = new Error("audit unavailable");

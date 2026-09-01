@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const label = z.string().min(1).max(80);
-const expiry = z.string().datetime().transform((value) => new Date(value));
+const expiry = z.string().datetime().transform((value) => new Date(value)).nullish().transform((value) => value ?? null);
 
 export const apiAccessWorkspaceParamsSchema = z.object({ workspaceId: z.string().uuid() });
 export const apiAccessServiceAccountParamsSchema = apiAccessWorkspaceParamsSchema.extend({ serviceAccountId: z.string().uuid() });

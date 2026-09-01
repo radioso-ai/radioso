@@ -20,7 +20,7 @@ describe("personal API access", () => {
     const issued = await request(app)
       .post(base)
       .set(headers)
-      .send({ label: "Local automation", roleCeiling: "admin", expiresAt: expiresInDays(89) })
+      .send({ label: "Local automation", roleCeiling: "admin" })
       .expect(201);
 
     expect(issued.body.secret).toMatch(/^radioso_pat_v1_/);
@@ -28,6 +28,7 @@ describe("personal API access", () => {
       kind: "personal",
       label: "Local automation",
       roleCeiling: "admin",
+      expiresAt: null,
       revision: 1,
     });
     expect(issued.body.credential).not.toHaveProperty("tokenHash");
@@ -46,6 +47,7 @@ describe("personal API access", () => {
 
     const listed = await request(app).get(base).set(headers).expect(200);
     expect(listed.body).toMatchObject({ page: 1, limit: 50, total: 1 });
+    expect(listed.body.items[0]).toMatchObject({ expiresAt: null, status: "active", expiryWarningDays: null });
     expect(listed.body.items[0]).not.toHaveProperty("secret");
     expect(JSON.stringify(listed.body)).not.toContain(issued.body.secret);
 

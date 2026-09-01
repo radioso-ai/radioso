@@ -2,7 +2,7 @@ import { conflict, forbidden, notFound } from "../../../shared/domain/errors.js"
 import type { AccountAccessService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { MachineAccessAuditEvent, MachineAccessPersistencePort, ServiceAccountRecord } from "../ports.js";
-import { MACHINE_ACCESS_LIFETIMES, MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, requireMaximumExpiry, type MachineAccessRole, type ServiceAccountStatus } from "../domain.js";
+import { MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, normalizeCredentialExpiry, type MachineAccessRole, type ServiceAccountStatus } from "../domain.js";
 import { issueMachineSecret } from "../credentialSecretCodec.js";
 import { machineAccessAuditEvent } from "../auditMetadata.js";
 
@@ -27,7 +27,7 @@ export class ServiceAccountService {
   constructor(private readonly input: { repository: ServiceAccountRepository; accountAccess: AccountAccessService; audit: AuditService; now?: () => Date }) {}
   private now = () => (this.input.now ?? (() => new Date()))();
 
-  async createWithCredential(input: { accountId: string; workspaceId: string; actorUserId: string; displayName: string; role: MachineAccessRole; credentialLabel: string; expiresAt: Date }) {
+  async createWithCredential(input: { accountId: string; workspaceId: string; actorUserId: string; displayName: string; role: MachineAccessRole; credentialLabel: string; expiresAt?: Date | null }) {
     const actorRole = await this.requireServiceManage(input);
     assertAssignableRole(actorRole, input.role);
     const issued = await this.input.repository.createServiceAccountWithinLimit({
@@ -37,7 +37,7 @@ export class ServiceAccountService {
       role: input.role,
       createdByUserId: input.actorUserId,
       credentialLabel: normalizeCredentialLabel(input.credentialLabel),
-      expiresAt: requireMaximumExpiry(input.expiresAt, this.now(), MACHINE_ACCESS_LIFETIMES.serviceDays),
+      expiresAt: normalizeCredentialExpiry(input.expiresAt, this.now()),
       limit: MACHINE_ACCESS_LIMITS.maxNonArchivedServiceAccounts,
       issueSecret: () => issueMachineSecret("service"),
       actorAuthority: this.actorAuthority(input),
@@ -49,14 +49,14 @@ export class ServiceAccountService {
     return issued;
   }
 
-  async issueCredential(input: { accountId: string; workspaceId: string; actorUserId: string; serviceAccountId: string; label: string; expiresAt: Date }) {
+  async issueCredential(input: { accountId: string; workspaceId: string; actorUserId: string; serviceAccountId: string; label: string; expiresAt?: Date | null }) {
     await this.requireServiceManage(input);
     const issued = await this.input.repository.createServiceCredentialWithinLimit({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       serviceAccountId: input.serviceAccountId,
       label: normalizeCredentialLabel(input.label),
-      expiresAt: requireMaximumExpiry(input.expiresAt, this.now(), MACHINE_ACCESS_LIFETIMES.serviceDays),
+      expiresAt: normalizeCredentialExpiry(input.expiresAt, this.now()),
       createdByUserId: input.actorUserId,
       now: this.now(),
       limit: MACHINE_ACCESS_LIMITS.maxActiveCredentialsPerServiceAccount,

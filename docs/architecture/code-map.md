@@ -310,6 +310,35 @@ acts; a proposal needs an adapter for its target type, and the target-type set i
 closed by the public contract enum, repository narrowing, and the dashboard's
 card presentation.
 
+Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
+Every operator-initiated `copilot.*` audit event carries the operator principal
+and the calling surface; the retention sweep, which no operator starts, says
+`principalType: "system"` instead of naming one. The service stamps its own events through an actor-bound audit method
+rather than at each call site, and carries the surface onto the tool-invocation
+context for the events a tool records itself — a drafted proposal is audited by
+the tool that drafted it, so the surface has to reach that far or Ray's signature
+act is the one act nobody can attribute. Surface is a required input with no
+default, on the turn and on the tool context alike, so a second transport
+declares its own. Metering follows cost rather than call shape, and cost is declared rather than
+inferred: every descriptor states a `verificationCost` — required, and separate
+from `shape`, because shape answers what a tool changes rather than what it
+spends, and inferring one from the other exempted `run_eval_suite` (an `act`,
+since it moves a case's stored verdict) from the very budget it most needed. A
+turn's budget is counted in replayed turns and charged per call from the
+declared cost, so a suite run costs one per case asked for. It is enforced where
+descriptors become tools, so a tool added later is metered without new wiring,
+while
+the provider spend itself is reserved by the service that incurs it. An eval run
+reserves one answer, charged by a wrapper both of `EvalRunService`'s public entry
+points share: `execute` serves the plain runs route, `replay_eval_case`, and each
+case of `run_eval_suite`, while `executeWorkbenchReplay` serves the override and
+routine-start routes that call it directly. The work itself lives in private
+methods that never reserve, so one public method delegating to another charges
+once rather than twice. Both refusals are worded for the model that reads them out
+of a transcript, because an unexplained tool failure is one it retries. Retention sweeps copilot conversations past their
+window in the worker process; messages, proposals, and replay evidence cascade
+from the conversation row.
+
 Ray's behaviour is covered by its own eval suite, separate from the per-descriptor
 unit tests: one committed dataset scored at two fidelities. The deterministic
 fidelity replays each case's authored tool plan against the real catalog with a
@@ -347,6 +376,9 @@ Public and tool surfaces:
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)
 - `backend/src/modules/operatorCopilot/services/expensiveOperationGuard.ts` (shared rate limit for capabilities that spend model budget)
+- `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn verification budget, charged from each descriptor's declared cost)
+- `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
+- `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
 - `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
 - `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)

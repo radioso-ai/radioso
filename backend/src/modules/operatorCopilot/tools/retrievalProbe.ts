@@ -64,6 +64,8 @@ export const createRetrievalProbeCopilotTools = (
 ): ReadonlyArray<CopilotToolDescriptor<RetrievalProbeInput, RetrievalProbeOutput>> => [{
   name: "retrieval_probe",
   shape: "probe",
+  // One retrieval run per call: cheaper than a full turn, but still an embedding and a rerank.
+  verificationCost: () => 1,
   uiLabel: "Probing retrieval",
   contributingModule: "retrieval",
   dashboardSubject: { type: "agent" },

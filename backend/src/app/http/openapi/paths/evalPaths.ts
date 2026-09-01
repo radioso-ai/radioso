@@ -579,7 +579,7 @@ export const registerEvalPaths = (
       201: { description: "Eval case replay recorded", content: { "application/json": { schema: EvalCaseRunResponseSchema } } },
       400: { description: "Invalid replay request", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Eval case or snapshot not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      429: { description: "Workbench replay rate limit exceeded", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      429: { description: "Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over.", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       ...workspaceEvalErrorResponses,
     },
   });
@@ -615,6 +615,14 @@ export const registerEvalPaths = (
       },
       400: {
         description: "Invalid mode or case selection",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Workspace answer allowance exhausted. Each replayed case is charged as one answer, so a suite can run out part-way; the cases already recorded are kept.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
@@ -693,7 +701,7 @@ export const registerEvalPaths = (
         },
       },
       429: {
-        description: "Workbench replay rate limit exceeded",
+        description: "Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over.",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

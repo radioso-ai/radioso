@@ -552,6 +552,46 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
+    // The retention window is documented as an operator knob, and the sweep that reads it runs in
+    // the worker — so a Terraform deployment that never passes it leaves the docs describing a
+    // setting the deployment cannot honour.
+    // Both copilot knobs are documented as operator-tunable, and each has to reach the process that
+    // reads it — the budget in the API service where a Ray turn runs, the window in the worker
+    // where the sweep runs. A variable that never reaches its service is a setting in name only.
+    expect(computeTf).toContain('name  = "COPILOT_PROBE_BUDGET_PER_TURN"');
+    expect(computeTf).toContain("value = tostring(var.copilot_probe_budget_per_turn)");
+    expect(terraformVariables).toContain('variable "copilot_probe_budget_per_turn"');
+    expect(computeTf).toContain('name  = "COPILOT_CONVERSATION_RETENTION_DAYS"');
+    expect(computeTf).toContain("value = tostring(var.copilot_conversation_retention_days)");
+    expect(terraformVariables).toContain('variable "copilot_conversation_retention_days"');
+
+    // A root variable an environment wrapper never declares is a knob the docs describe and the
+    // deployment cannot set. Terraform does not substitute a child default for an explicit null —
+    // the validation runs against the null and fails — so these carry their default in each
+    // wrapper, and the assertion below is what keeps the copies honest.
+    const environments = ["staging", "live", "live-eu"];
+    const copilotDefaults = { copilot_probe_budget_per_turn: "6", copilot_conversation_retention_days: "90" };
+    for (const environment of environments) {
+      const wrapperVariables = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/variables.tf`, import.meta.url),
+        "utf8",
+      );
+      const wrapperMain = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/main.tf`, import.meta.url),
+        "utf8",
+      );
+      for (const name of [...Object.keys(copilotDefaults), "copilot_retention_schedule"]) {
+        expect(wrapperVariables, `${environment} does not declare ${name}`).toContain(`variable "${name}"`);
+        expect(wrapperMain, `${environment} does not pass ${name} to the root module`).toMatch(
+          new RegExp(`${name}\\s+= var\\.${name}`),
+        );
+      }
+      for (const [name, expected] of Object.entries(copilotDefaults)) {
+        const rootDefault = new RegExp(`variable "${name}" \\{[\\s\\S]*?default\\s+= ${expected}`);
+        expect(terraformVariables, `root default for ${name} moved away from ${expected}`).toMatch(rootDefault);
+        expect(wrapperVariables, `${environment} default for ${name} drifted from the root`).toMatch(rootDefault);
+      }
+    }
     expect(computeTf).toContain('name  = "PUBLIC_CHAT_BASE_URL"');
     expect(computeTf).toContain('name  = "APP_BASE_URL"');
     expect(computeTf).toContain('name  = "WORKER_TASKS_SERVICE_URL"');
@@ -616,8 +656,15 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain("schedule = local.document_worker_recovery_schedule");
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "crawler_worker_recovery"');
     expect(schedulerTf).toContain("schedule = local.crawler_worker_recovery_schedule");
-    expect((schedulerTf.match(/"X-Radioso-Worker-Token"\s+=\s+random_password\.worker_task_auth_token\.result/g) ?? [])).toHaveLength(3);
-    expect((schedulerTf.match(/oidc_token \{/g) ?? [])).toHaveLength(3);
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "copilot_retention"');
+    expect(schedulerTf).toContain("schedule = local.copilot_retention_schedule");
+    // Counted against the jobs actually declared rather than a fixed number: the invariant is
+    // that EVERY scheduled push authenticates, and a hardcoded count silently stops checking the
+    // job that pushed it past the number.
+    const schedulerJobCount = (schedulerTf.match(/resource "google_cloud_scheduler_job"/g) ?? []).length;
+    expect(schedulerJobCount).toBeGreaterThanOrEqual(4);
+    expect((schedulerTf.match(/"X-Radioso-Worker-Token"\s+=\s+random_password\.worker_task_auth_token\.result/g) ?? [])).toHaveLength(schedulerJobCount);
+    expect((schedulerTf.match(/oidc_token \{/g) ?? [])).toHaveLength(schedulerJobCount);
     expect(databaseTf).toContain('resource "random_password" "worker_task_auth_token"');
     expect(databaseTf).toMatch(/resource "random_password" "worker_task_auth_token" \{[\s\S]*?length\s+=\s+(?:3[2-9]|[4-9]\d|\d{3,})/);
     expect(secretsTf).toMatch(/"worker-task-auth-token"\s+=\s+random_password\.worker_task_auth_token\.result/);

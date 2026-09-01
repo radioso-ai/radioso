@@ -87,6 +87,7 @@ const documentProposalDescriptor = <TInput>(
   return {
     ...shared,
     shape: "propose",
+    verificationCost: () => 0,
     uiLabel: spec.uiLabel,
     contributingModule: "documents",
     dashboardSubject: { type: "proposal" },

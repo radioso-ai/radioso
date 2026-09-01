@@ -36,6 +36,9 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.facetExtractionWorker?.start();
   // Drain the async conversation-action outbox (spec 070) out of band from the turn.
   dependencies.actionDispatchWorker.start();
+  // Enforce the copilot conversation retention window. Started last and stopped first: it owns no
+  // queue, so a shutdown that skips a sweep loses nothing but a few hours of lateness.
+  dependencies.copilotRetentionWorker.start();
 
   let shuttingDown = false;
 
@@ -49,6 +52,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       shuttingDown = true;
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
       try {
+        await dependencies.copilotRetentionWorker.stop();
         await dependencies.actionDispatchWorker.stop();
         await dependencies.facetExtractionWorker?.stop();
         await dependencies.documentJobConsumer?.stop();

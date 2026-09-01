@@ -60,6 +60,7 @@ export const createWebsiteCrawlProposalCopilotTools = (
   return [{
     ...shared,
     shape: "propose",
+    verificationCost: () => 0,
     uiLabel: "Drafting a website crawl",
     contributingModule: "websiteCrawler",
     dashboardSubject: { type: "proposal" },

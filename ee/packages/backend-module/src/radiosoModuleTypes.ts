@@ -53,6 +53,12 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /**
+   * Where the turn came in. Present because a contributed tool audits its own effects: without it
+   * an EE tool recording a `copilot.*` event would have to omit the attribution OSS requires
+   * everywhere else, or invent a value.
+   */
+  readonly surface: "dashboard" | "mcp";
 }
 
 export interface CopilotAgentToolContext {
@@ -85,6 +91,15 @@ export interface CopilotCapabilityProvenance {
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
+  /**
+   * How much of a turn's verification budget one call spends, counted in replayed turns. `0` for a
+   * tool that commands no synchronous model work, which is every read.
+   *
+   * Separate from {@link shape} on purpose: shape says what a tool changes, not what it costs, and
+   * OSS meters the budget from this number alone. A contributed tool that spends model budget and
+   * declares `0` is unmetered.
+   */
+  verificationCost(input: TInput): number;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;

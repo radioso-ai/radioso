@@ -54,6 +54,12 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "OBSERVABILITY_SERVICE_NAME"
         value = "radioso-api"
       }
+      # Ray turns run in the API process, so the budget bounding what one turn may spend on
+      # replayed turns has to reach this service rather than the worker.
+      env {
+        name  = "COPILOT_PROBE_BUDGET_PER_TURN"
+        value = tostring(var.copilot_probe_budget_per_turn)
+      }
       env {
         name  = "PRODUCT_ANALYTICS_SINKS"
         value = var.product_analytics_sinks
@@ -583,6 +589,13 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "OBSERVABILITY_SERVICE_NAME"
         value = "radioso-worker"
+      }
+      # Retention is enforced by the worker's own sweep, so the window has to reach the worker.
+      # Without this the service falls back to its in-process default and the documented knob
+      # does nothing on a Terraform-managed deployment.
+      env {
+        name  = "COPILOT_CONVERSATION_RETENTION_DAYS"
+        value = tostring(var.copilot_conversation_retention_days)
       }
       env {
         name  = "PRODUCT_ANALYTICS_SINKS"

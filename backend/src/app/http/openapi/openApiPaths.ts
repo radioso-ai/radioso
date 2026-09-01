@@ -68,7 +68,7 @@ export const registerOpenApiPaths = (
   registerConnectorsPaths(registry, schemas, security);
   registerQualityPaths(registry, schemas, security);
   registerAudiencePulsePaths(registry, schemas, security);
-  registerCopilotPaths(registry, security);
+  registerCopilotPaths(registry, schemas, security);
   registerEvalPaths(registry, schemas, security);
   registerMcpConversePaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);

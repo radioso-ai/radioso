@@ -22996,6 +22996,12 @@ paths:
                 type: string
         "409":
           description: Conversation already running
+        "429":
+          description: Copilot turn rate limit exceeded for this operator, workspace, and account, or the workspace answer allowance is exhausted. The rate limit clears on its own; the allowance does not until the billing period turns over.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: No LLM capability
   /api/v1/copilot/proposals/{proposalId}:
@@ -24157,7 +24163,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Workbench replay rate limit exceeded
+          description: Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over.
           content:
             application/json:
               schema:
@@ -24274,6 +24280,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "403":
           description: Caller lacks workspace retrieval-query permission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Workspace answer allowance exhausted. Each replayed case is charged as one answer, so a suite can run out part-way; the cases already recorded are kept.
           content:
             application/json:
               schema:
@@ -24548,7 +24560,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Workbench replay rate limit exceeded
+          description: Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over.
           content:
             application/json:
               schema:

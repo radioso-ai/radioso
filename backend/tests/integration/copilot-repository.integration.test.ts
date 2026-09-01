@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { CopilotRepository } from "../../src/db/repositories/copilotRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
-import type { CopilotProposal } from "../../src/modules/operatorCopilot/public.js";
+import { copilotProposalTargetTypes, type CopilotProposal } from "../../src/modules/operatorCopilot/public.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -151,5 +151,26 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
       applyClaimGuard: { state: "free", claimTtlSeconds: 300 },
     });
     expect(plainDismiss?.status).toBe("dismissed");
+  });
+
+  // copilot_proposals.target_type carries a CHECK constraint, so a target type added to the runtime
+  // list without a migration widening it drafts fine against every in-memory test double and then
+  // fails on the first real write. Driving this from the list itself means the next target type
+  // cannot forget the migration.
+  it("stores a proposal for every declared target type", async () => {
+    for (const targetType of copilotProposalTargetTypes) {
+      const conversation = await repository.createConversation({ workspaceId, operatorUserId, title: `Target ${targetType}` });
+      const proposal = await repository.createProposal({
+        workspaceId,
+        operatorUserId,
+        conversationId: conversation.id,
+        targetType,
+        targetRef: { probe: targetType },
+        payload: { name: targetType },
+        versionToken: "v1",
+        evidence: null,
+      });
+      expect(proposal.targetType).toBe(targetType);
+    }
   });
 });

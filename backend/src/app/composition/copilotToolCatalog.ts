@@ -20,6 +20,7 @@ import {
   type CopilotContextVariablesPort,
   type CopilotWorkspaceSettingsPort,
 } from "../../modules/operatorCopilot/tools/index.js";
+import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAgentSkillProposalAdapter,
@@ -43,6 +44,7 @@ import { assertCopilotCapabilityProvenance, assertCopilotCapabilityProvenanceReg
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { operationPermissionRequirements } from "../http/openapi/operationPermissionRequirements.js";
 import { agentCopilotPrimitives } from "../../modules/agents/public.js";
+import { agentWizardCopilotPrimitives } from "../../modules/agentWizard/public.js";
 import { agentSkillsCopilotPrimitives } from "../../modules/agentSkills/public.js";
 import { chatCopilotPrimitives } from "../../modules/chat/public.js";
 import { documentCopilotPrimitives } from "../../modules/documents/public.js";
@@ -120,6 +122,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalEvidence: ProposalEvidenceDependencies;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly retrievalProbe: CopilotRetrievalProbePort;
+  readonly websiteAnalysisProbe: CopilotWebsiteAnalysisProbePort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
   readonly documentStatusService: CopilotDocumentStatusPort;
   readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
@@ -147,6 +150,7 @@ export const createCopilotToolCatalog = (deps: {
       : []));
   const ownerExportedPrimitiveIds = new Set([
     ...agentCopilotPrimitives,
+    ...agentWizardCopilotPrimitives,
     ...agentSkillsCopilotPrimitives,
     ...chatCopilotPrimitives,
     ...contextVariableCopilotPrimitives,

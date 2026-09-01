@@ -118,6 +118,25 @@ describe('CopilotProposalCard', () => {
     })
   })
 
+  it('resolves a proposed agent only once it has been created, never to the page\'s current agent', () => {
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-agent',
+      targetType: 'agent',
+      targetLabel: 'Acme Support',
+      summary: 'Create the agent "Acme Support", grounded in https://acme.example.com.',
+      status: 'pending',
+    }
+
+    // The agent does not exist until Apply, so a pending card links nowhere - and in particular not
+    // to whichever agent's page the operator happens to be reading Ray from.
+    expect(targetReference(proposal, { targetRef: { websiteUrl: 'https://acme.example.com' } } as unknown as CopilotProposalDetail, null, 'agent-on-this-page')).toBeNull()
+
+    expect(targetReference(proposal, null, { agentId: 'agent-new', crawlJobId: 'job-1' })).toEqual({
+      entity: { type: 'agent', id: 'agent-new' },
+      agentId: 'agent-new',
+    })
+  })
+
   it('resolves a context variable proposal to its agent, the same way an agent setting proposal does', () => {
     // A context variable's definition is workspace-scoped, not agent-scoped, so there is no
     // per-variable dashboard page to deep-link to yet — the card links to the agent that proposed

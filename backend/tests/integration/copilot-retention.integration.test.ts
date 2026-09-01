@@ -175,6 +175,41 @@ describeIntegration("CopilotRepository retention sweep (Postgres)", () => {
     expect(surviving).toHaveLength(1);
   });
 
+  // Dismissing is activity too. Apply re-dates the conversation through its claim; without the
+  // same treatment here, an operator who cleared a stale proposal today would watch the whole
+  // thread disappear on tonight's sweep.
+  it("keeps a conversation whose proposal an operator has just dismissed", async () => {
+    const conversationId = await seedConversation(new Date("2026-01-01T00:00:00.000Z"));
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId,
+      targetType: "directive",
+      targetRef: { agentId: randomUUID() },
+      payload: { name: "Example" },
+      versionToken: "v1",
+      evidence: null,
+    });
+
+    const dismissed = await repository.updateProposalOutcome({
+      id: proposal.id,
+      workspaceId,
+      operatorUserId,
+      status: "dismissed",
+      appliedRef: null,
+      reason: null,
+      applyClaimGuard: { state: "free", claimTtlSeconds: 300 },
+    });
+    expect(dismissed).not.toBeNull();
+
+    const deleted = await repository.deleteConversationsUpdatedBefore({
+      cutoff: new Date("2026-06-01T00:00:00.000Z"),
+      limit: 100,
+    });
+
+    expect(deleted).toBe(0);
+  });
+
   it("honours the batch limit so one sweep statement stays bounded", async () => {
     for (let index = 0; index < 3; index += 1) await seedConversation(new Date("2026-01-01T00:00:00.000Z"));
 

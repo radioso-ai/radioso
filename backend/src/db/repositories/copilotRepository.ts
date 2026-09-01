@@ -99,7 +99,17 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       ? query.where("apply_started_at", "=", applyClaimGuard.claimedAt)
       : query.where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(applyClaimGuard.claimTtlSeconds))]));
     const row = await query.returning(proposalColumns).executeTakeFirst();
-    return row ? mapProposal(row) : null;
+    if (!row) return null;
+    // Resolving a proposal — dismissing it, or finalizing an apply — is activity on its
+    // conversation, and retention deletes by the conversation's own last-activity date. Without
+    // this, an operator who cleared a stale proposal today would watch the thread it belongs to
+    // disappear on the next sweep. Claiming an apply re-dates it too, so an apply lands here
+    // already fresh and this is a harmless second touch.
+    await this.db.updateTable("copilot_conversations")
+      .set({ updated_at: new Date() })
+      .where("id", "=", row.conversation_id)
+      .execute();
+    return mapProposal(row);
   }
 
   /**

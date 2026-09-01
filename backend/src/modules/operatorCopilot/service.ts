@@ -380,7 +380,9 @@ export class OperatorCopilotService {
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
       .map((descriptor) => meteredCopilotTool(
         descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }) as AgentTool,
-        descriptor.verificationCost,
+        // Bound to its descriptor, not handed over bare: the contract declares a method, so a
+        // contributed descriptor may legitimately be class-backed and read `this` to answer.
+        (toolInput) => descriptor.verificationCost(toolInput),
         probeBudget,
       ));
   }

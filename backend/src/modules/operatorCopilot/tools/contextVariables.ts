@@ -132,7 +132,7 @@ export const createContextVariablesCopilotTools = (
   const description = "List a workspace's context variable definitions and the resolved agent's enablement of each one — source, resolver skill, and surfacing. Never reads a variable's per-visitor runtime value.";
   return [
     {
-      name: "context_variables", shape: "read", uiLabel: "Reading context variables", contributingModule: "contextVariables", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
+      name: "context_variables", shape: "read", verificationCost: () => 0, uiLabel: "Reading context variables", contributingModule: "contextVariables", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
       description,
       inputSchema: readerInputSchema, outputSchema: readerOutputSchema,
       createTool: (context) => ({
@@ -166,7 +166,7 @@ export const createContextVariableProposalCopilotTools = (
   const description = "Propose creating or updating a context variable's definition, an agent's enablement of it, or both, for the operator to review and apply. This does not change configuration. Values are supplied from what was already read, not invented.";
   return [
     {
-      name: "propose_context_variable", shape: "propose", uiLabel: "Drafting a context variable", contributingModule: "contextVariables", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      name: "propose_context_variable", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a context variable", contributingModule: "contextVariables", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description,
       inputSchema: proposalInputSchema,
       outputSchema: proposalOutputSchema,

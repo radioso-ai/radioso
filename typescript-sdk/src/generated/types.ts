@@ -18703,6 +18703,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Copilot turn rate limit exceeded for this operator, workspace, and account, or the workspace answer allowance is exhausted. The rate limit clears on its own; the allowance does not until the billing period turns over. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description No LLM capability */
             503: {
                 headers: {
@@ -19679,7 +19688,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workbench replay rate limit exceeded */
+            /** @description Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over. */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -19764,6 +19773,15 @@ export interface operations {
             };
             /** @description Caller lacks workspace retrieval-query permission */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace answer allowance exhausted. Each replayed case is charged as one answer, so a suite can run out part-way; the cases already recorded are kept. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -19941,7 +19959,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workbench replay rate limit exceeded */
+            /** @description Workbench replay rate limit exceeded, or the workspace answer allowance is exhausted. Each run is charged as one answer; the rate limit clears on its own, the allowance does not until the billing period turns over. */
             429: {
                 headers: {
                     [name: string]: unknown;

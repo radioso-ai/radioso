@@ -304,3 +304,21 @@ variable "worker_tasks_service_url_override" {
   type        = string
   default     = null
 }
+
+variable "copilot_probe_budget_per_turn" {
+  description = "Replayed turns one Ray turn may spend on verification in EU production. Kept in step with the root module default."
+  type        = number
+  default     = 6
+}
+
+variable "copilot_conversation_retention_days" {
+  description = "Days a Ray conversation is kept after its last activity in EU production; 0 keeps them indefinitely. Kept in step with the root module default."
+  type        = number
+  default     = 90
+}
+
+variable "copilot_retention_schedule" {
+  description = "Optional override for the EU production Ray retention sweep schedule. Null uses the root module default."
+  type        = string
+  default     = null
+}

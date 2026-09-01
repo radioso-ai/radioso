@@ -53,6 +53,21 @@ const assertUnclaimed = (
  * Flattens contributions into the descriptors and governance identities the catalog assembles,
  * refusing any declaration that collides with a first-party identity or with another contribution.
  */
+/**
+ * A contributed descriptor is compiled elsewhere, so the type that makes `verificationCost`
+ * mandatory in-repo is only advice to it: a module built against an older contract can hand over a
+ * descriptor without one. Caught at assembly rather than at invocation, where the missing field
+ * would surface as a failed tool call in the middle of an operator's turn.
+ */
+const assertDeclaresVerificationCost = (moduleId: string, descriptor: CopilotToolDescriptor): void => {
+  if (typeof descriptor.verificationCost !== "function") {
+    throw new Error(
+      `Copilot tool "${descriptor.name}" contributed by "${moduleId}" declares no verificationCost. `
+      + "Every descriptor states what one call spends against a turn's verification budget; return 0 if it commands no model work.",
+    );
+  }
+};
+
 export const resolveCopilotToolContributions = (
   contributions: ReadonlyArray<CopilotToolContribution>,
   firstParty: { readonly operationIds: ReadonlySet<string>; readonly applicationPrimitiveIds: ReadonlySet<string> },
@@ -63,6 +78,7 @@ export const resolveCopilotToolContributions = (
   const applicationPrimitiveIds = new Set<string>();
 
   for (const contribution of contributions) {
+    for (const descriptor of contribution.descriptors) assertDeclaresVerificationCost(contribution.moduleId, descriptor);
     descriptors.push(...contribution.descriptors);
     for (const [operationId, permissions] of Object.entries(contribution.operationPermissions ?? {})) {
       assertUnclaimed(contribution.moduleId, "operation", operationId, firstParty.operationIds, operationIds);

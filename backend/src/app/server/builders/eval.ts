@@ -77,6 +77,7 @@ export const buildEvalServices = (input: {
     new ChatGatewayLlmJudge(input.chat.chatGateway),
     input.chat.workbenchReplayRunner,
     input.logger,
+    input.infrastructure.usageLimitPolicy,
   );
   const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, input.logger);
   const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({

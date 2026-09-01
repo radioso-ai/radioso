@@ -143,6 +143,8 @@ export const createAgentTurnProbeCopilotTools = (
 ): ReadonlyArray<CopilotToolDescriptor<AgentTurnProbeInput, AgentTurnProbeOutput>> => [{
   name: "test_agent_turn",
   shape: "probe",
+  // One real agent turn per call.
+  verificationCost: () => 1,
   uiLabel: "Testing an agent turn",
   contributingModule: "chat",
   dashboardSubject: { type: "conversation" },

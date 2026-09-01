@@ -61,6 +61,7 @@ import {
   EvalCaseCaptureService,
   EvalCaseReplayService,
   EvalSuiteProbeService,
+  CopilotRetentionWorker,
   OperatorCopilotService,
   RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
@@ -652,6 +653,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     proposalAdapters: copilotProposalAdapters,
     prompt: copilotPrompt,
     tools: copilotToolCatalog,
+    probeBudgetPerTurn: env.COPILOT_PROBE_BUDGET_PER_TURN,
     currentAuthorization: {
       hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>
         access.accountAccessService.hasAllWorkspacePermissions({
@@ -662,6 +664,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
           permissions: requiredPermissions,
         }),
     },
+  });
+  // Retention runs in the worker process: it is periodic maintenance with no request behind it,
+  // and the HTTP process must not do it once per replica.
+  const copilotRetentionWorker = new CopilotRetentionWorker({
+    retention: repositories.copilotRepository,
+    audit: infrastructure.auditService,
+    logger,
+    retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
   });
   return {
     env,
@@ -783,6 +793,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorDb: infrastructure.database,
     chatInferencePipeline,
     operatorCopilotService,
+    copilotRetentionWorker,
     copilotToolCatalog,
     copilotCapabilityRunner,
     copilotPrompt,

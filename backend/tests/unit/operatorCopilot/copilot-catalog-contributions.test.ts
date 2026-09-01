@@ -14,6 +14,7 @@ import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot
 const descriptor = (overrides: Partial<CopilotToolDescriptor> = {}): CopilotToolDescriptor => ({
   name: "extension_tool",
   shape: "read",
+  verificationCost: () => 0,
   uiLabel: "Reading extension state",
   description: "Read extension state.",
   inputSchema: z.object({}),
@@ -48,6 +49,7 @@ const invocationContext = (permissions: ReadonlySet<string>) => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   permissions,
   currentAuthorization: {
     hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly AccountPermission[] }) =>
@@ -209,5 +211,16 @@ describe("copilot tool contributions", () => {
     await expect(denied.invoke({}, agentToolContext("call-2"))).resolves.toMatchObject({
       resolution: { status: "not_found" },
     });
+  });
+});
+
+describe("contributed verification cost", () => {
+  it("refuses a descriptor with no declared cost at assembly, not at the tool call", () => {
+    const { verificationCost: _omitted, ...withoutCost } = descriptor();
+
+    expect(() => resolveCopilotToolContributions(
+      [{ moduleId: "extension", descriptors: [withoutCost as never] }],
+      { operationIds: new Set(), applicationPrimitiveIds: new Set() },
+    )).toThrow(/declares no verificationCost/);
   });
 });

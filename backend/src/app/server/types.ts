@@ -112,6 +112,7 @@ import type {
 } from "../../modules/embeddingProfiles/public.js";
 import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
+import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
@@ -203,6 +204,7 @@ export interface AppDependencies {
   // Worker-process drain loop for the async conversation-action outbox (spec 070).
   // Present in every dependency build; only the worker runtime calls start/stop.
   actionDispatchWorker: ActionDispatchWorker;
+  copilotRetentionWorker: CopilotRetentionWorker;
   chatBootstrapService: ChatBootstrapService;
   chatHistoryService: ChatHistoryService;
   conversationForkService: ConversationForkService;

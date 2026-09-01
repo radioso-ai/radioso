@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { parseRealtimeConfig, realtimeEnvShape } from "../../modules/realtime/infrastructure/config.js";
+import {
+  COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
+  COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT,
+} from "../../modules/operatorCopilot/public.js";
 
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
@@ -119,6 +123,12 @@ const envSchema = z.object({
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
+  // Probe-shaped Ray tools spend real provider budget per call (a replayed agent turn, an eval
+  // suite run). This bounds how many one turn may spend; the turn's own step budget bounds only
+  // how many calls it makes, not what they cost.
+  COPILOT_PROBE_BUDGET_PER_TURN: z.coerce.number().int().positive().default(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT),
+  // Days a copilot conversation is kept after its last activity. 0 keeps them indefinitely.
+  COPILOT_CONVERSATION_RETENTION_DAYS: z.coerce.number().int().nonnegative().default(COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),

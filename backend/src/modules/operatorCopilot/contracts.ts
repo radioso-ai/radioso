@@ -46,6 +46,12 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /**
+   * Where the turn running this tool came in. Carried on the context because a tool audits its own
+   * effects — a drafted proposal is recorded by the tool that drafted it, not by the service — so
+   * without it the one act Ray actually performs is the one act nobody can attribute.
+   */
+  readonly surface: CopilotSurface;
   /** Present for transport-facing catalog calls so entity lookup cannot bypass tool permissions. */
   readonly permissions?: ReadonlySet<string>;
   /**
@@ -97,10 +103,37 @@ export type CopilotEntityDescription<TInput> =
       readonly kind: "not_found";
     };
 
+/**
+ * Where a copilot call entered the product. Required with no default on every entry point that
+ * audits, so a transport added later cannot inherit `dashboard` by omission: "who changed this,
+ * and from where" is the first question asked when a configuration change is a surprise, and an
+ * event written without the answer can never be reconstructed.
+ */
+export type CopilotSurface = "dashboard" | "mcp";
+
+/** The principal a copilot audit event is attributed to, and the surface it acted through. */
+export interface CopilotActor {
+  readonly operatorUserId: string;
+  readonly surface: CopilotSurface;
+}
+
 /** Narrow audit port owned by the copilot consumer. */
 export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
+
+/**
+ * Stamps the actor onto an event's metadata.
+ *
+ * Deliberately not extra fields on {@link CopilotAuditPort}: the audit service it binds to accepts
+ * a wider input type, so extra properties would typecheck at the boundary and then be dropped
+ * before the row is written — attribution that compiles and does not exist. Folding into metadata
+ * here keeps the one shape the table actually persists.
+ */
+export const withCopilotActor = (
+  actor: CopilotActor,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> => ({ ...metadata, operatorUserId: actor.operatorUserId, surface: actor.surface });
 
 /**
  * The single runtime list of proposal target types. Every completeness guard over target types
@@ -315,6 +348,23 @@ export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAda
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
   readonly shape: CopilotToolShape;
+  /**
+   * How much of a turn's verification budget one call spends, counted in replayed turns. `0` for a
+   * tool that commands no synchronous model work.
+   *
+   * Required rather than optional, and separate from {@link shape}, because those are the two ways
+   * this has already gone wrong. Shape answers what a tool changes; it does not answer what a tool
+   * costs, and inferring cost from it left `run_eval_suite` — an `act`, because it moves a case's
+   * stored verdict — spending five replays a call against no budget at all. An optional field would
+   * fail the same way by omission, so every descriptor states a number and a reviewer can see a
+   * wrong one.
+   *
+   * Takes the arguments because cost can depend on them: `run_eval_suite` costs one per case asked
+   * for, not one per call. Declared as a method rather than a function-typed property so a
+   * descriptor narrowed to its own input type stays assignable to the catalog's, the same way
+   * {@link describeEntity} does.
+   */
+  verificationCost(input: TInput): number;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;

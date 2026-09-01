@@ -15,6 +15,7 @@ const context = (permissions: ReadonlySet<string> = ALL_PERMISSIONS, agentId: st
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   permissions,
   currentAuthorization: {
     hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) =>

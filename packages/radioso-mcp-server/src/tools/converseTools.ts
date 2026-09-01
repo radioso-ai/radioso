@@ -17,7 +17,7 @@ export const createConverseToolDefinitions = (): GenericToolDefinition[] => [
       const parsed = askAgentSchema.parse(args);
       const response = await context.converseAdapter.ask(context.converseSessionToken, {
         message: parsed.message,
-      });
+      }, { sourceDigest: context.authInfo?.sourceDigest });
       return {
         data: response,
         summary: response.answer.text,

@@ -349,6 +349,13 @@ export const createOpenApiRegistry = () => {
     bearerFormat: "AgentChannelCredential",
   });
 
+  const mcpConverseSessionBearerAuthScheme = registry.registerComponent("securitySchemes", "mcpConverseSessionBearerAuth", {
+    description: "Short-lived bearer session issued by the MCP converse credential exchange. This credential authorizes only MCP ask_agent turns.",
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "McpConverseSession",
+  });
+
   const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes", "anonymousSessionCookie", {
     type: "apiKey",
     in: "cookie",
@@ -380,6 +387,7 @@ export const createOpenApiRegistry = () => {
       anonymousSessionCookieScheme,
       bearerAuthScheme,
       agentChannelBearerAuthScheme,
+      mcpConverseSessionBearerAuthScheme,
       sessionCookieScheme,
       workspaceAdminSecurity,
       workspaceSelectionScheme,

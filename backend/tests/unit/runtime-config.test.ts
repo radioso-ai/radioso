@@ -125,6 +125,7 @@ describe("runtime configuration", () => {
       "packages/connector-api/package.json",
       "packages/crawler/package.json",
       "packages/document-parser/package.json",
+      "packages/mcp-source-proof/package.json",
       "packages/radioso-mcp-server/package.json",
       "packages/skill-contract/package.json",
       "packages/usage-contract/package.json",
@@ -136,6 +137,7 @@ describe("runtime configuration", () => {
     expect(entrypoint).toContain("module_is_ready_from");
     expect(entrypoint).toContain("zod/package.json");
     expect(dockerfile).toContain("COPY packages/conversation-defaults ./packages/conversation-defaults");
+    expect(dockerfile).toContain("COPY packages/mcp-source-proof ./packages/mcp-source-proof");
     expect(dockerfile).toContain("@radioso/conversation-defaults...");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-engine");
     expect(entrypoint).toContain("backend/node_modules/@radioso/conversation-defaults");
@@ -157,14 +159,27 @@ describe("runtime configuration", () => {
       "COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json",
       "COPY packages/conversation-tools ./packages/conversation-tools",
       "COPY --chown=node:node --from=build /app/packages/conversation-tools/dist ./packages/conversation-tools/dist",
+      "COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json",
+      "COPY packages/mcp-source-proof ./packages/mcp-source-proof",
+      "COPY --chown=node:node --from=build /app/packages/mcp-source-proof/dist ./packages/mcp-source-proof/dist",
       "@radioso/conversation-tools...",
     ]) {
       expect(dockerfile).toContain(expected);
     }
 
     expect(workflow).toContain("packages/conversation-tools/**");
+    expect(workflow).toContain("packages/mcp-source-proof/**");
+    expect(workflow).toContain("packages/radioso-mcp-server/**");
+    expect(workflow).toContain("mcp_service: radioso-staging-mcp");
     expect(sharedDeployWorkflow).toContain('--build-arg RADIOSO_EDITION="${RADIOSO_EDITION}"');
-    expect(sharedDeployWorkflow.match(/--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\}"/g)).toHaveLength(3);
+    expect(sharedDeployWorkflow).toContain("mcp_service:");
+    expect(sharedDeployWorkflow).toContain('default: ""');
+    expect(sharedDeployWorkflow).toContain("MCP_SERVICE: ${{ inputs.mcp_service }}");
+    expect(sharedDeployWorkflow).toContain("Deploy MCP service if configured");
+    expect(sharedDeployWorkflow).toContain('gcloud run services describe "${MCP_SERVICE}"');
+    expect(sharedDeployWorkflow).toContain('gcloud run services update "${MCP_SERVICE}" --image "${BACKEND_IMAGE}"');
+    expect(sharedDeployWorkflow).toContain('echo "mcp_url=disabled"');
+    expect(sharedDeployWorkflow.match(/--update-env-vars "RADIOSO_EDITION=\$\{RADIOSO_EDITION\}"/g)).toHaveLength(4);
     expect(sharedDeployWorkflow).toContain(
       '--update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION},NEXT_PUBLIC_RADIOSO_EDITION=${RADIOSO_EDITION}"',
     );
@@ -410,38 +425,6 @@ describe("runtime configuration", () => {
     expect(env.WORKER_TASK_AUTH_TOKEN).toBe("0123456789abcdef0123456789abcdef");
   });
 
-  it("defaults backend MCP to disabled and non-standalone", () => {
-    const env = getEnv({
-      ...baseEnv,
-    });
-
-    expect(env.RADIOSO_MCP_ENABLED).toBe(false);
-    expect(env.RADIOSO_MCP_STANDALONE).toBe(false);
-    expect(env.RADIOSO_MCP_MOUNT_PATH).toBe("/mcp");
-  });
-
-  it("accepts standalone MCP discovery settings", () => {
-    const env = getEnv({
-      ...baseEnv,
-      RADIOSO_MCP_ENABLED: "true",
-      RADIOSO_MCP_STANDALONE: "true",
-      RADIOSO_MCP_MOUNT_PATH: "/internal/mcp",
-    });
-
-    expect(env.RADIOSO_MCP_ENABLED).toBe(true);
-    expect(env.RADIOSO_MCP_STANDALONE).toBe(true);
-    expect(env.RADIOSO_MCP_MOUNT_PATH).toBe("/internal/mcp");
-  });
-
-  it("rejects invalid standalone MCP mount paths", () => {
-    expect(() => getEnv({
-      ...baseEnv,
-      RADIOSO_MCP_ENABLED: "true",
-      RADIOSO_MCP_STANDALONE: "true",
-      RADIOSO_MCP_MOUNT_PATH: "mcp",
-    })).toThrow(/RADIOSO_MCP_MOUNT_PATH/);
-  });
-
   it("requires AMQP broker settings when AMQP worker dispatch is enabled", () => {
     expect(() => getEnv({
       ...baseEnv,
@@ -494,9 +477,9 @@ describe("runtime configuration", () => {
     expect(example).toContain("WORKER_AMQP_QUEUE_NAME=");
     expect(example).toContain("WORKER_AMQP_CRAWL_QUEUE_NAME=");
     expect(example).toContain("WORKER_AMQP_PREFETCH=1");
-    expect(example).toContain("RADIOSO_MCP_ENABLED=false");
-    expect(example).toContain("RADIOSO_MCP_STANDALONE=false");
-    expect(example).toContain("RADIOSO_MCP_MOUNT_PATH=/mcp");
+    expect(example).not.toContain("RADIOSO_MCP_ENABLED");
+    expect(example).not.toContain("RADIOSO_MCP_STANDALONE");
+    expect(example).not.toContain("RADIOSO_MCP_MOUNT_PATH");
     expect(example).toContain("MAIL_DRIVER=log");
     expect(example).toContain("MAIL_FROM_EMAIL=noreply@example.com");
     expect(example).toContain("MAIL_FROM_NAME=Radioso");
@@ -527,6 +510,25 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name  = "OBSERVABILITY_SERVICE_NAME"');
     expect(computeTf).toContain('value = "radioso-api"');
     expect(computeTf).toContain('value = "radioso-worker"');
+    expect(computeTf).toContain('resource "google_cloud_run_v2_service" "mcp"');
+    const mcpService = computeTf.slice(
+      computeTf.indexOf('resource "google_cloud_run_v2_service" "mcp"'),
+      computeTf.indexOf('resource "google_cloud_run_v2_service_iam_member" "mcp_public"'),
+    );
+    expect(mcpService).toContain("max_instance_count = var.backend_max_instances");
+    expect(computeTf).toContain('command = ["node"]');
+    expect(computeTf).toContain('args    = ["../packages/radioso-mcp-server/dist/src/cli/http.js"]');
+    expect(computeTf).toContain('name  = "RADIOSO_MCP_BIND_PORT"');
+    expect(computeTf).toContain('value = "8080"');
+    expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "mcp_public"');
+    expect(computeTf).toContain('name  = "RADIOSO_MCP_PUBLIC_URL"');
+    expect(computeTf.match(/name = "RADIOSO_MCP_SIGNING_SECRET"/g)).toHaveLength(2);
+    expect(computeTf.match(/name  = "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
+    expect(computeTf.match(/value = "2"/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(databaseTf).toContain('resource "random_password" "radioso_mcp_signing_secret"');
+    expect(secretsTf).toContain('"radioso-mcp-signing-secret" = random_password.radioso_mcp_signing_secret.result');
+    expect(terraformVariables).not.toContain('variable "radioso_mcp_signing_secret"');
+    expect(terraformWorkflow).not.toContain('RADIOSO_MCP_SIGNING_SECRET');
     // The retention window is documented as an operator knob, and the sweep that reads it runs in
     // the worker — so a Terraform deployment that never passes it leaves the docs describing a
     // setting the deployment cannot honour.
@@ -729,7 +731,7 @@ describe("runtime configuration", () => {
     expect(terraformWorkflow).toMatch(
       /if \[ -n "\$\{INITIAL_BACKEND_IMAGE\}" \] \|\| \[ -n "\$\{INITIAL_FRONTEND_IMAGE\}" \] \|\| \[ -n "\$\{INITIAL_WORKER_TASKS_SERVICE_URL\}" \]; then[\s\S]*?BACKEND_IMAGE="\$\{INITIAL_BACKEND_IMAGE\}"[\s\S]*?FRONTEND_IMAGE="\$\{INITIAL_FRONTEND_IMAGE\}"[\s\S]*?WORKER_URL="\$\{INITIAL_WORKER_TASKS_SERVICE_URL%\/\}"[\s\S]*?else[\s\S]*?gcloud run services describe/,
     );
-    expect(terraformWorkflow).toContain('if [ -n "${BACKEND_URL}" ]; then');
+    expect(terraformWorkflow).not.toContain('BACKEND_URL=');
     expect(terraformWorkflow).toContain(
       "Worker service URL could not be resolved; refusing to use Terraform's placeholder URL.",
     );
@@ -740,8 +742,10 @@ describe("runtime configuration", () => {
     expect(deployLive).toContain("github_environment: live-eu");
     expect(deployLive).toContain("artifact_repository: radioso-live-eu");
     expect(deployLive).toContain("backend_service: radioso-live-eu-backend");
+    expect(deployLive).toContain("mcp_service: radioso-live-eu-mcp");
     expect(deployLiveUs).toContain("github_environment: live");
     expect(deployLiveUs).toContain("backend_service: radioso-live-backend");
+    expect(deployLiveUs).toContain("mcp_service: radioso-live-mcp");
   });
 
   it("keeps the retained US live data plane independent from EU", async () => {

@@ -8,6 +8,7 @@ import type { WorkspaceSessionService } from "../../../modules/auth/services/wor
 import { allowsMachinePrincipal, markApiPrincipalAuthenticator } from "../apiPrincipalRoutePolicy.js";
 import { attributeMachinePrincipalToRequestAudit } from "./requestAuditContextMiddleware.js";
 import type { MachineAccessSecurityObserver } from "../../../modules/machineAccess/public.js";
+import { onSuccessfulHttpResponse } from "./httpResponseCompletion.js";
 
 const WORKSPACE_HEADER = "x-workspace-id";
 const BEARER_PREFIX = "Bearer ";
@@ -76,6 +77,7 @@ export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependenci
       res.locals.authMode = "bearer";
       res.locals.authPrincipal = auth.principal;
       attributeMachinePrincipalToRequestAudit(auth.principal);
+      onSuccessfulHttpResponse(res, () => dependencies.authService.recordApiTokenUse(auth.principal));
       next();
     } catch (error) {
       next(error);

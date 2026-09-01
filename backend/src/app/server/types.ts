@@ -129,6 +129,7 @@ import type {
 } from "../../modules/machineAccess/public.js";
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 
 export interface AppDependencies {
   env: Env;
@@ -246,6 +247,7 @@ export interface AppDependencies {
   agentSurfaceExtensions: AgentSurfaceExtensionRegistry;
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;
+  agentConverseSessionMappingRepository: AgentConverseSessionMappingPort;
   contextVariableService: ContextVariableService;
   contextVariableResolutionReader: ContextVariableResolutionReaderPort;
   identityNonceRepository: IdentityNonceRepositoryPort;

@@ -19,8 +19,9 @@ import {
 } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../../modules/workspace/public.js";
 import type { OrganizationCreationGuard } from "../../../shared/domain/organizationCreationGuard.js";
-import { Database } from "../../../shared/infra/database.js";
+import type { AccessGrantLifecycleUnitOfWorkPort } from "../../../modules/accessGrants/ports.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
+import type { Database } from "../../../shared/infra/database.js";
 import type { Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import {
@@ -40,8 +41,9 @@ export const buildAccessServices = (input: {
   logger: Pick<AppLogger, "warn">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   repositories: ReturnType<typeof buildRepositories>;
+  lifecycleUnitOfWork: AccessGrantLifecycleUnitOfWorkPort;
 }) => {
-  const { auditService, env, logger, metricsRegistry, repositories } = input;
+  const { auditService, env, logger, metricsRegistry, repositories, lifecycleUnitOfWork } = input;
   const machineAccessSecurityObserver: MachineAccessSecurityObserver = {
     recordAuthentication(event) {
       metricsRegistry?.incrementCounter("machine_access_authentication_total", {
@@ -79,12 +81,23 @@ export const buildAccessServices = (input: {
       logger.warn({ accessGrant: { operation: "last_use_persistence" } }, "access_grant_last_use_persistence_failed");
     },
   };
+  const agentChannelChatAuditObserver = {
+    recordCompletedAuditPersistenceFailure() {
+      metricsRegistry?.incrementCounter("agent_channel_chat_completed_audit_persistence_failures_total", {
+        help: "Completed agent channel chat audit persistence failures",
+        labels: {},
+      });
+      logger.warn({ agentChannelChat: { operation: "completed_audit_persistence" } }, "agent_channel_chat_completed_audit_persistence_failed");
+    },
+  };
   const accessGrantService = new AccessGrantService({
     repository: repositories.accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
     auditService,
     usageObserver: accessGrantUsageObserver,
+    chatAuditObserver: agentChannelChatAuditObserver,
+    lifecycleUnitOfWork,
   });
   const personalCredentialTenureService = new PersonalCredentialTenureService({
     repository: repositories.machineAccessRepository,

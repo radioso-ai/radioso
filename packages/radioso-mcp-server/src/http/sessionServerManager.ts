@@ -9,11 +9,16 @@ import { createConverseApiAdapter } from "../converseApiAdapter.js";
 import { createRadiosoMcpServer, getRemoteToolAuthInfo } from "../server.js";
 import type { InternalMcpRequestAuthInfo, SessionMcpServerHandle, SessionMcpServerManager } from "./types.js";
 
-const toInternalAuthInfo = (session: AccessSessionRecord, accessToken: string): InternalMcpRequestAuthInfo => ({
+const toInternalAuthInfo = (
+  session: AccessSessionRecord,
+  accessToken: string,
+  sourceDigest?: string,
+): InternalMcpRequestAuthInfo => ({
   ...toMcpRequestAuthInfo(session),
   accessToken,
   clientId: session.clientName ?? session.sessionId,
   scopes: ["ask_agent"],
+  sourceDigest,
   token: accessToken,
 });
 
@@ -51,6 +56,7 @@ export const createSessionMcpServerManager = ({
             code: error.code,
             details: error.details,
             entryPoint,
+            conversationId: context?.authInfo?.conversationId,
           },
           outcome: error.code.includes("invalid") ? "denied" : "error",
           sessionId: context?.authInfo?.sessionId,
@@ -66,6 +72,7 @@ export const createSessionMcpServerManager = ({
           eventType: "tool.executed",
           metadata: {
             entryPoint,
+            conversationId: context.authInfo?.conversationId,
           },
           outcome: "success",
           sessionId: context.authInfo?.sessionId,
@@ -85,6 +92,7 @@ export const createSessionMcpServerManager = ({
           converseAdapter: createConverseApiAdapter({
             baseUrl: config.baseUrl,
             requestTimeoutMs: config.requestTimeoutMs,
+            signingSecret: config.signingSecret,
           }),
           converseSessionToken,
           serverContext: ctx,
@@ -94,6 +102,9 @@ export const createSessionMcpServerManager = ({
     });
     const transport = new WebStandardStreamableHTTPServerTransport({
       enableJsonResponse: true,
+      // Stateless transport lets Cloud Run replace an idle instance without leaving
+      // clients with an MCP protocol session identifier tied to that process.
+      sessionIdGenerator: undefined,
     });
 
     await serverHandle.server.connect(transport);

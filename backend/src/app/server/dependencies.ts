@@ -50,6 +50,7 @@ import { buildAudiencePulseService } from "./builders/audiencePulse.js";
 import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
+import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
@@ -117,6 +118,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     repositories,
+    lifecycleUnitOfWork: new AccessGrantLifecycleUnitOfWork(infrastructure.database.kysely),
   });
   const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
     auditService: infrastructure.auditService,
@@ -836,6 +838,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
+    agentConverseSessionMappingRepository: repositories.agentConverseSessionMappingRepository,
     contextVariableService,
     contextVariableResolutionReader: chat.contextVariableResolutionReader,
     identityNonceRepository: repositories.identityNonceRepository,

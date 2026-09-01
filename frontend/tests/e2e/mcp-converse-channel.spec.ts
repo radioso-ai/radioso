@@ -44,7 +44,7 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
   // first created token is index 2.
   const issuedToken = "radioso_mcp_2_plaintext";
   await expect(page.getByText(issuedToken)).toBeVisible();
-  await expect(page.getByText("Shown once")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Save this secret now" })).toBeVisible();
   // Same-host merged MCP is intentionally unavailable. The grant lifecycle remains usable,
   // but no client config should be generated for the unsupported same-host transport.
   await expect(page.getByText(`Bearer ${issuedToken}`)).toHaveCount(0);
@@ -52,6 +52,10 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
 
   await page.getByRole("button", { name: "Copy MCP credential secret" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(issuedToken);
+  const issuedSecretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await issuedSecretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await issuedSecretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText(issuedToken)).toHaveCount(0);
 
   await expect.poll(() =>
     grantRequests.some((request) =>
@@ -83,6 +87,11 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
   await expect.poll(() => grantRequests.some((request) =>
     request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-grant/rotate`,
   )).toBe(true);
+  const rotatedSecretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await expect(rotatedSecretDialog.getByText("radioso_agent_rotated_existing-grant")).toBeVisible();
+  await rotatedSecretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await rotatedSecretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("radioso_agent_rotated_existing-grant")).toHaveCount(0);
 
   await existingGrantRow.getByRole("button", { name: "Revoke" }).click();
   const revokeDialog = page.getByRole("alertdialog", { name: "Revoke Acme pilot?" });
@@ -99,14 +108,28 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
 
 test("operator creates a separate role-free REST credential for the explicit agent chat endpoint", async ({ page }) => {
   const credentialRequests: Array<{ method: "GET" | "POST"; path: string; body?: unknown }> = [];
+  const existingRest: AgentChannelCredentialFixture = {
+    id: "existing-rest-grant",
+    audience: "rest",
+    label: "Existing REST client",
+    prefix: "radioso_rest_old",
+    status: "active",
+    createdAt: "2026-04-26T12:00:00.000Z",
+    expiresAt: "2026-11-29T23:59:59.000Z",
+    lastUsedAt: null,
+    revokedAt: null,
+  };
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
+    agentChannelCredentials: [existingRest],
     agentChannelCredentialRequests: credentialRequests,
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=api-channel`);
 
+  await expect(page.getByRole("link", { name: "Agent API" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent API", exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText(`/api/v1/agents/${defaultAgentId}/chat`, { exact: false }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Agent API credentials" })).toBeVisible();
   await expect(page.getByLabel("Role")).toHaveCount(0);
@@ -114,7 +137,11 @@ test("operator creates a separate role-free REST credential for the explicit age
   await expect(page.getByLabel("Expires")).not.toHaveValue("");
   await page.getByRole("button", { name: "Create credential" }).click();
 
-  await expect(page.getByText("radioso_rest_1_plaintext")).toBeVisible();
+  await expect(page.getByText("radioso_rest_2_plaintext")).toBeVisible();
+  const secretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await secretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await secretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("radioso_rest_2_plaintext")).toHaveCount(0);
   await expect.poll(() => credentialRequests.some((request) => {
     const body = request.body as { audience?: string; label?: string; expiresAt?: string } | undefined;
     return request.method === "POST"
@@ -123,4 +150,20 @@ test("operator creates a separate role-free REST credential for the explicit age
       && body.label === "Production chat client"
       && Boolean(body.expiresAt);
   })).toBe(true);
+
+  const existingRestRow = page
+    .locator("div")
+    .filter({ has: page.getByText("Existing REST client", { exact: true }) })
+    .filter({ has: page.getByRole("button", { name: "Rotate" }) })
+    .last();
+  await existingRestRow.getByRole("button", { name: "Rotate" }).click();
+  await page.getByRole("alertdialog", { name: "Rotate Existing REST client?" }).getByRole("button", { name: "Rotate credential" }).click();
+  const rotatedSecretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await expect(rotatedSecretDialog.getByText("radioso_agent_rotated_existing-rest-grant")).toBeVisible();
+  await rotatedSecretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await rotatedSecretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("radioso_agent_rotated_existing-rest-grant")).toHaveCount(0);
+  await expect.poll(() => credentialRequests.some((request) =>
+    request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-rest-grant/rotate`,
+  )).toBe(true);
 });

@@ -41,7 +41,7 @@ export const resolveMcpChannelSetup = ({
       label: 'MCP not enabled',
       mcpUrl: '',
       mode: 'disabled',
-      remediation: 'Enable backend MCP with RADIOSO_MCP_ENABLED=true or set NEXT_PUBLIC_MCP_URL to a reachable MCP server URL, then restart Radioso.',
+      remediation: 'Enable the standalone MCP deployment or set NEXT_PUBLIC_MCP_URL to a reachable MCP server URL, then restart Radioso.',
     }
   }
 
@@ -86,46 +86,31 @@ export const useMcpChannelSetup = () => {
 
   useEffect(() => {
     const controller = new AbortController()
-    const configuredSetup = resolveMcpChannelSetup({
-      dashboardOrigin: window.location.origin,
-      mcpUrl: MCP_URL || '/backend/mcp',
-    })
-    if (MCP_URL && !shouldProbeMcpHealth(configuredSetup)) {
+    if (MCP_URL) {
       return () => controller.abort()
     }
 
-    void fetch('/backend/health', {
+    void fetch('/runtime-config', {
       cache: 'no-store',
       signal: controller.signal,
     })
       .then(async (response) => {
         if (!response.ok) {
-          setRuntimeMcpError('The Radioso backend health endpoint is unavailable.')
+          setRuntimeMcpError('The Radioso runtime configuration is unavailable.')
           return null
         }
         return response.json()
       })
       .then((body: unknown) => {
-        const mcp = body && typeof body === 'object' && 'mcp' in body ? body.mcp : null
-        if (!mcp || typeof mcp !== 'object') {
-          return
-        }
-        const enabled = 'enabled' in mcp && mcp.enabled === true
-        const standalone = 'standalone' in mcp && mcp.standalone === true
-        const path = 'path' in mcp && typeof mcp.path === 'string' ? mcp.path : '/mcp'
-        if (enabled && !standalone) {
-          setRuntimeMcpUrl(`/backend${path.startsWith('/') ? path : `/${path}`}`)
-          return
-        }
-        if (!MCP_URL) {
-          setRuntimeMcpError('MCP is not enabled on this deployment.')
+        if (body && typeof body === 'object' && 'mcpUrl' in body && typeof body.mcpUrl === 'string') {
+          setRuntimeMcpUrl(body.mcpUrl)
         }
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === 'AbortError') {
           return
         }
-        setRuntimeMcpError('The Radioso backend health endpoint is unavailable.')
+        setRuntimeMcpError('The Radioso runtime configuration is unavailable.')
       })
 
     return () => controller.abort()
@@ -138,7 +123,7 @@ export const useMcpChannelSetup = () => {
         error: runtimeMcpError,
         label: 'MCP unavailable',
         mode: 'disabled' as const,
-        remediation: 'Check that backend health is reachable and that RADIOSO_MCP_ENABLED, RADIOSO_MCP_STANDALONE, and RADIOSO_MCP_MOUNT_PATH match the deployment.',
+        remediation: 'Check that the dashboard runtime configuration can reach the standalone MCP service.',
         steps: [],
       }
     : setup
@@ -154,11 +139,11 @@ export function McpChannelCard({ agentId }: { agentId: string }) {
       id="mcp-channel"
       icon={<Plug className="h-5 w-5 text-primary" />}
       title="MCP"
-      description="Let MCP clients chat with this agent through the same persona, directives, skills, and routines as the web chat."
+      description="Give MCP clients one chat tool for this agent, with the same persona, directives, skills, and routines as the web chat."
     >
       <div className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          MCP (Model Context Protocol) is an open standard. Compatible clients receive the agent&apos;s chat tool; direct
+          MCP (Model Context Protocol) is an open standard. Compatible clients receive one agent chat tool; direct
           workspace retrieval and administrative tools are not exposed by this credential.
         </p>
 
@@ -173,20 +158,14 @@ export function McpChannelCard({ agentId }: { agentId: string }) {
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label className="text-foreground">MCP server</Label>
-            <CopyValueField value={resolvedSetup.mcpUrl} ariaLabel="Copy MCP server URL" className="w-full" />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-foreground">Authentication</Label>
-            <p className="text-sm text-muted-foreground">Create an MCP credential below. It is bound to this agent, has no workspace role, and cannot be used with the REST Agent API.</p>
-          </div>
+        <div className="space-y-2">
+          <Label className="text-foreground">MCP server</Label>
+          <CopyValueField value={resolvedSetup.mcpUrl} ariaLabel="Copy MCP server URL" className="w-full" />
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <a
-            href={`${DOCS_URL}/guides/mcp`}
+            href={`${DOCS_URL}/guides/mcp-server`}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"

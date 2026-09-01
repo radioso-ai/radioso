@@ -177,6 +177,7 @@ Then issue a credential through the signed-in session. The session must have per
 agent_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
 curl -sS -b cookies.txt -X POST \
   -H 'Content-Type: application/json' \
+  -H 'X-Radioso-CSRF: 1' \
   -H 'X-Workspace-Id: <workspace-id>' \
   -d "{\"audience\":\"rest\",\"label\":\"First chat client\",\"expiresAt\":\"${agent_expiry}\"}" \
   https://api.radioso.ai/api/v1/agents/<agent-id>/channel-credentials

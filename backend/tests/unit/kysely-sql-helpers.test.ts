@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
-import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, consumeAbuseControlEntry, jsonbConcat, jsonbKeyText, jsonbSet, optionalTimestampMatch, setLocal, timestampMatchOrAbsent, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -46,6 +46,25 @@ describe("kysely sqlHelpers", () => {
 
   it("clockTimestamp emits clock_timestamp()", () => {
     expect(clockTimestamp().compile(db).sql).toBe("clock_timestamp()");
+  });
+
+  it("consumeAbuseControlEntry emits one parameterized conflict update", () => {
+    const now = new Date("2026-01-01T00:00:00.000Z");
+    const compiled = consumeAbuseControlEntry({
+      scope: "agent.channel.chat.grant",
+      subjectKey: "grant:one",
+      limit: 3,
+      windowMs: 60_000,
+      blockMs: 60_000,
+      now,
+    }).compile(db);
+
+    expect(compiled.sql).toContain("on conflict (scope, subject_key) do update");
+    expect(compiled.sql).toContain("attempt_count = case");
+    expect(compiled.sql).toContain("$3::timestamptz");
+    expect(compiled.parameters).toContain(now);
+    expect(compiled.parameters).toContain("agent.channel.chat.grant");
+    expect(compiled.parameters).toContain("grant:one");
   });
 
   it("jsonbConcat emits the || merge with a jsonb-cast right operand", () => {

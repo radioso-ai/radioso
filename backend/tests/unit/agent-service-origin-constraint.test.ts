@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AgentService } from "../../src/modules/agents/services/agentService.js";
-import { InMemoryAccessGrantRepository } from "../support/fakes.js";
+import { InMemoryAccessGrantLifecycleUnitOfWork, InMemoryAccessGrantRepository } from "../support/fakes.js";
 import { DefaultOriginMatcher } from "../../src/modules/accessGrants/originMatcher.js";
 import { AccessGrantService } from "../../src/modules/accessGrants/services/accessGrantService.js";
 
@@ -99,8 +99,10 @@ describe("AgentService public launch origin constraints", () => {
 });
 
 const createService = (agentSkills?: ConstructorParameters<typeof AgentService>[5]) => {
+  const accessGrantRepository = new InMemoryAccessGrantRepository();
   const accessGrantService = new AccessGrantService({
-    repository: new InMemoryAccessGrantRepository(),
+    repository: accessGrantRepository,
+    lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(accessGrantRepository),
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: "fedcba9876543210fedcba9876543210",
   });

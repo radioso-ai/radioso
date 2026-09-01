@@ -10,6 +10,66 @@ export interface RateLimitAbuseControlPort {
   }): Promise<unknown>;
 }
 
+export interface RateLimitBatchAbuseControlPort {
+  enforceBatch(inputs: readonly {
+    scope: string;
+    subjectKey: string;
+    limit: number;
+    windowMs: number;
+    blockMs?: number;
+  }[]): Promise<unknown>;
+}
+
+interface CreateRateLimitBatchMiddlewareInput {
+  service: RateLimitBatchAbuseControlPort;
+  auditService: RateLimitAuditPort;
+  resolvePolicies: (req: Request, res: Response) => Array<{
+    scope: string;
+    subjectKey: string;
+    limit: number;
+    windowMs: number;
+    blockMs?: number;
+  }>;
+  resolveAuditContext?: (req: Request, res: Response) => {
+    accountId?: string | null;
+    workspaceId?: string | null;
+    metadata?: Record<string, unknown>;
+  };
+}
+
+/** Applies related durable limits as one consumption so a rejected global cap cannot spend a grant cap. */
+export const createRateLimitBatchMiddleware = (input: CreateRateLimitBatchMiddlewareInput): RequestHandler => {
+  return async (req, res, next) => {
+    const policies = input.resolvePolicies(req, res);
+    if (policies.length === 0) {
+      next();
+      return;
+    }
+    try {
+      await input.service.enforceBatch(policies);
+      next();
+    } catch (error) {
+      const statusCode = error && typeof error === "object" && "statusCode" in error
+        ? (error as { statusCode?: unknown }).statusCode
+        : undefined;
+      if (statusCode === 429 || statusCode === 503) {
+        const auditContext = input.resolveAuditContext?.(req, res);
+        void input.auditService.record({
+          accountId: auditContext?.accountId ?? null,
+          workspaceId: auditContext?.workspaceId ?? null,
+          eventType: statusCode === 429 ? "security.rate_limit_enforced" : "security.rate_limit_unavailable",
+          eventStatus: statusCode === 429 ? "success" : "failure",
+          metadata: {
+            scopes: policies.map((policy) => policy.scope),
+            ...(auditContext?.metadata ?? {}),
+          },
+        }).catch(() => undefined);
+      }
+      next(error);
+    }
+  };
+};
+
 export interface RateLimitAuditPort {
   record(input: {
     accountId?: string | null;

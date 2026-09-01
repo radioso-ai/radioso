@@ -57,6 +57,7 @@ export const createRemoteHttpRuntime = async ({
     converseApi: createConverseApiAdapter({
       baseUrl: config.baseUrl,
       requestTimeoutMs: config.requestTimeoutMs,
+      signingSecret: config.signingSecret,
     }),
   });
   const server = createHttpServer({

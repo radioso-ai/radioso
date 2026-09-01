@@ -18,7 +18,14 @@ import type {
   WorkspaceGrantRepositoryPort,
   WorkspaceGrantRole,
 } from "../../src/db/repositories/workspaceGrantRepository.js";
-import type { AccessGrantRepositoryPort } from "../../src/db/repositories/accessGrantRepository.js";
+import type { AccessGrantRepositoryPort } from "../../src/modules/accessGrants/ports.js";
+import type { AgentConverseSessionMappingPort } from "../../src/modules/settings/contracts/agentConverseSession.js";
+import type {
+  AccessGrantLifecycleUnitOfWorkPort,
+  AccessGrantLifecycleResult,
+  AccessGrantLifecycleSaveInput,
+  AccessGrantLifecycleRotateInput,
+} from "../../src/modules/accessGrants/ports.js";
 import type {
   AccessGrant,
   AccessGrantChannel,
@@ -54,7 +61,13 @@ import type {
   BootstrapGreetingCacheRecord,
   BootstrapGreetingCacheRepositoryPort,
 } from "../../src/db/repositories/bootstrapGreetingCacheRepository.js";
-import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
+import type {
+  AbuseControlBatchConsumption,
+  AbuseControlConsumption,
+  AbuseControlConsumptionInput,
+  AbuseControlEntry,
+  AbuseControlRepositoryPort,
+} from "../../src/modules/security/contracts/abuseControl.js";
 import type {
   WorkspaceProviderCredentialRecord,
   WorkspaceProviderCredentialSummary,
@@ -314,19 +327,19 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     principalKind?: GrantPrincipalKind;
     channel?: AccessGrantChannel;
     limit?: number;
-    cursor?: { createdAt: Date; id: string };
-  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: Date; id: string } | null }> {
+    cursor?: { createdAt: string; id: string };
+  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
     const matching = this.items
       .filter((item) => item.agentId === agentId)
       .filter((item) => !params.workspaceId || item.workspaceId === params.workspaceId)
       .filter((item) => !params.principalKind || item.principalKind === params.principalKind)
       .filter((item) => !params.channel || item.channel === params.channel)
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))
-      .filter((item) => !params.cursor || item.createdAt > params.cursor.createdAt || (item.createdAt.getTime() === params.cursor.createdAt.getTime() && item.id > params.cursor.id));
+      .filter((item) => !params.cursor || item.createdAt.toISOString() > params.cursor.createdAt || (item.createdAt.toISOString() === params.cursor.createdAt && item.id > params.cursor.id));
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
     const grants = matching.slice(0, limit);
     const last = matching.length > limit ? grants.at(-1) : undefined;
-    return { grants, nextCursor: last ? { createdAt: last.createdAt, id: last.id } : null };
+    return { grants, nextCursor: last ? { createdAt: last.createdAt.toISOString(), id: last.id } : null };
   }
 
   async save(params: {
@@ -376,7 +389,6 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     encryptedToken: string | null;
     expectedTokenHash?: string;
     requireActiveAgentChannel?: boolean;
-    now?: Date;
   }): Promise<AccessGrant | null> {
     const grant = await this.findById(grantId);
     if (!grant) {
@@ -385,7 +397,7 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     if (params.expectedTokenHash && grant.tokenHash !== params.expectedTokenHash) return null;
     if (
       params.requireActiveAgentChannel &&
-      (grant.principalKind !== "agent-api" || grant.revokedAt || (grant.expiresAt && grant.expiresAt <= (params.now ?? new Date())))
+      (grant.principalKind !== "agent-api" || grant.revokedAt || (grant.expiresAt && grant.expiresAt <= new Date()))
     ) return null;
     grant.tokenPrefix = params.tokenPrefix;
     grant.tokenHash = params.tokenHash;
@@ -424,6 +436,51 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     grant.enabled = params.enabled ?? grant.enabled;
     grant.label = params.label === undefined ? grant.label : params.label;
     return grant;
+  }
+}
+
+export class InMemoryAgentConverseSessionMappingRepository implements AgentConverseSessionMappingPort {
+  private readonly publicSessionIds = new Map<string, string>();
+
+  async resolvePublicSessionId(input: {
+    grantId: string;
+    grantVersion: string;
+    proposedPublicSessionId: string;
+  }): Promise<string> {
+    const key = `${input.grantId}:${input.grantVersion}`;
+    const existing = this.publicSessionIds.get(key);
+    if (existing) return existing;
+    this.publicSessionIds.set(key, input.proposedPublicSessionId);
+    return input.proposedPublicSessionId;
+  }
+}
+
+export class InMemoryAccessGrantLifecycleUnitOfWork implements AccessGrantLifecycleUnitOfWorkPort {
+  constructor(private readonly repository: InMemoryAccessGrantRepository) {}
+
+  async issue(input: {
+    grant: AccessGrantLifecycleSaveInput;
+    auditEvent: (grant: AccessGrant) => import("../../src/modules/accessGrants/ports.js").AccessGrantLifecycleAuditEvent;
+  }): Promise<AccessGrantLifecycleResult> {
+    const grant = await this.repository.save(input.grant);
+    return { grant, auditEvent: input.auditEvent(grant) };
+  }
+
+  async rotate(input: {
+    grant: AccessGrantLifecycleRotateInput;
+    auditEvent: (grant: AccessGrant) => import("../../src/modules/accessGrants/ports.js").AccessGrantLifecycleAuditEvent;
+  }): Promise<AccessGrantLifecycleResult | null> {
+    const grant = await this.repository.rotate(input.grant.grantId, input.grant);
+    return grant ? { grant, auditEvent: input.auditEvent(grant) } : null;
+  }
+
+  async revoke(input: {
+    grantId: string;
+    revokedAt: Date;
+    auditEvent: (grant: AccessGrant) => import("../../src/modules/accessGrants/ports.js").AccessGrantLifecycleAuditEvent;
+  }): Promise<AccessGrantLifecycleResult | null> {
+    const grant = await this.repository.revoke(input.grantId, input.revokedAt);
+    return grant ? { grant, auditEvent: input.auditEvent(grant) } : null;
   }
 }
 
@@ -1523,6 +1580,41 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
     };
     this.items.set(key, record);
     return record;
+  }
+
+  async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
+    const existing = await this.find(input.scope, input.subjectKey);
+    const activeBlock = Boolean(existing?.blockedUntil && existing.blockedUntil > input.now);
+    const activeWindow = Boolean(existing && input.now.getTime() - existing.windowStartedAt.getTime() < input.windowMs);
+    const attemptCount = activeBlock ? existing!.attemptCount : activeWindow ? existing!.attemptCount + 1 : 1;
+    const blockedUntil = activeBlock
+      ? existing!.blockedUntil
+      : attemptCount > input.limit
+        ? new Date(input.now.getTime() + input.blockMs)
+        : null;
+    const entry = await this.save({
+      scope: input.scope,
+      subjectKey: input.subjectKey,
+      attemptCount,
+      windowStartedAt: activeBlock || activeWindow ? existing!.windowStartedAt : input.now,
+      blockedUntil,
+    });
+    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now) };
+  }
+
+  async consumeBatch(inputs: readonly AbuseControlConsumptionInput[]): Promise<AbuseControlBatchConsumption> {
+    const original = new Map(this.items);
+    const entries: AbuseControlConsumption[] = [];
+    for (const input of inputs) {
+      const consumed = await this.consume(input);
+      if (consumed.blocked) {
+        this.items.clear();
+        for (const [key, entry] of original) this.items.set(key, entry);
+        return { entries: [], rejected: consumed };
+      }
+      entries.push(consumed);
+    }
+    return { entries, rejected: null };
   }
 
   async deleteExpired(now: Date): Promise<void> {

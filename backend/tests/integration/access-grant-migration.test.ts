@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
-import { InMemoryAccessGrantRepository } from "../support/fakes.js";
+import { InMemoryAccessGrantLifecycleUnitOfWork, InMemoryAccessGrantRepository } from "../support/fakes.js";
 import { AccessGrantService } from "../../src/modules/accessGrants/services/accessGrantService.js";
 import { DefaultOriginMatcher } from "../../src/modules/accessGrants/originMatcher.js";
 
@@ -10,6 +10,7 @@ describe("access grant migration", () => {
     const repository = new InMemoryAccessGrantRepository();
     const service = new AccessGrantService({
       repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
       originMatcher: new DefaultOriginMatcher(),
       workspaceTokenSecret: "fedcba9876543210fedcba9876543210",
     });

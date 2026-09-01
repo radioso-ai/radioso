@@ -508,6 +508,7 @@ CREATE TABLE public.agent_access_grants (
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
     channel text DEFAULT 'public-link'::text NOT NULL,
+    CONSTRAINT agent_access_grants_agent_api_expiry_check CHECK (((principal_kind <> 'agent-api'::text) OR (expires_at IS NOT NULL))),
     CONSTRAINT agent_access_grants_channel_check CHECK ((channel = ANY (ARRAY['embed'::text, 'public-link'::text, 'mcp-converse'::text, 'agent-api'::text]))),
     CONSTRAINT agent_access_grants_origin_mode_check CHECK ((origin_mode = ANY (ARRAY['allow-all'::text, 'list'::text]))),
     CONSTRAINT agent_access_grants_principal_kind_check CHECK ((principal_kind = ANY (ARRAY['workspace-admin'::text, 'agent-api'::text, 'public-launch'::text]))),
@@ -535,6 +536,18 @@ CREATE TABLE public.agent_context_variables (
     CONSTRAINT agent_context_variables_check1 CHECK (((source = 'resolver'::text) OR ((max_age_seconds IS NULL) AND (resolver_timeout_ms IS NULL)))),
     CONSTRAINT agent_context_variables_source_check CHECK ((source = ANY (ARRAY['pushed'::text, 'browser'::text, 'resolver'::text]))),
     CONSTRAINT agent_context_variables_surfacing_check CHECK ((surfacing = ANY (ARRAY['always'::text, 'on_reference'::text, 'operator_only'::text])))
+);
+
+
+--
+-- Name: agent_converse_session_mappings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_converse_session_mappings (
+    grant_id uuid NOT NULL,
+    grant_version text NOT NULL,
+    public_session_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -3329,6 +3342,22 @@ ALTER TABLE ONLY public.agent_context_variables
 
 ALTER TABLE ONLY public.agent_context_variables
     ADD CONSTRAINT agent_context_variables_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: agent_converse_session_mappings agent_converse_session_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_converse_session_mappings
+    ADD CONSTRAINT agent_converse_session_mappings_pkey PRIMARY KEY (grant_id, grant_version);
+
+
+--
+-- Name: agent_converse_session_mappings agent_converse_session_mappings_public_session_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_converse_session_mappings
+    ADD CONSTRAINT agent_converse_session_mappings_public_session_id_key UNIQUE (public_session_id);
 
 
 --
@@ -7873,6 +7902,14 @@ ALTER TABLE ONLY public.agent_context_variables
 
 ALTER TABLE ONLY public.agent_context_variables
     ADD CONSTRAINT agent_context_variables_variable_id_fkey FOREIGN KEY (variable_id) REFERENCES public.context_variables(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_converse_session_mappings agent_converse_session_mappings_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_converse_session_mappings
+    ADD CONSTRAINT agent_converse_session_mappings_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.agent_access_grants(id) ON DELETE CASCADE;
 
 
 --

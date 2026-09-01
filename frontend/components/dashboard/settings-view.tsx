@@ -58,7 +58,7 @@ export function SettingsView({
       ) : activeTab === 'service-accounts' ? (
         <div className="h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
           <div className="mx-auto w-full max-w-5xl">
-            <ApiAccessPanel workspaceId={activeWorkspaceId} view="service" />
+            <ApiAccessPanel key={`${activeWorkspaceId ?? 'none'}:service`} workspaceId={activeWorkspaceId} view="service" />
           </div>
         </div>
       ) : (

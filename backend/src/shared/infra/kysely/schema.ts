@@ -103,6 +103,13 @@ export interface AgentContextVariables {
   variable_id: string;
 }
 
+export interface AgentConverseSessionMappings {
+  created_at: Generated<Timestamp>;
+  grant_id: string;
+  grant_version: string;
+  public_session_id: string;
+}
+
 export interface AgentDirectives {
   action: string;
   agent_id: string;
@@ -1275,6 +1282,7 @@ export interface DB {
   accounts: Accounts;
   agent_access_grants: AgentAccessGrants;
   agent_context_variables: AgentContextVariables;
+  agent_converse_session_mappings: AgentConverseSessionMappings;
   agent_directives: AgentDirectives;
   agent_document_sources: AgentDocumentSources;
   agent_skills: AgentSkills;

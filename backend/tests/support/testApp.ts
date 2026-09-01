@@ -249,7 +249,7 @@ import {
 import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
 import { RepositoryAgentSkillTurnSkillProvider } from "../../src/app/composition/builtIn/agentSkillTurnSkillProvider.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
-import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
+import type { AbuseControlRepositoryPort } from "../../src/modules/security/contracts/abuseControl.js";
 import {
   createAuditService,
   InMemoryAuditEventRepository,
@@ -279,6 +279,8 @@ import {
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
   InMemoryAccessGrantRepository,
+  InMemoryAgentConverseSessionMappingRepository,
+  InMemoryAccessGrantLifecycleUnitOfWork,
   InMemoryWorkspaceProviderCredentialsRepository,
   InMemoryWebhookDestinationRepository,
   InMemoryRoutineDefinitionRepository,
@@ -343,8 +345,13 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
+  AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,
   AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: 30,
   AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 300,
+  MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: 60_000,
+  MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 60,
+  MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  RADIOSO_TRUSTED_PROXY_HOPS: 0,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
   WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: false,
   DOCUMENT_STORAGE_DRIVER: "local",
@@ -376,10 +383,6 @@ export const createTestEnv = (): Env => ({
   SLACK_OAUTH_CLIENT_SECRET: undefined,
   SLACK_SIGNING_SECRET: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  RADIOSO_BASE_URL: undefined,
-  RADIOSO_MCP_ENABLED: false,
-  RADIOSO_MCP_STANDALONE: false,
-  RADIOSO_MCP_MOUNT_PATH: "/mcp",
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
@@ -705,6 +708,7 @@ export const createTestDependencies = (overrides: {
   });
   const auditEventRepository = new InMemoryAuditEventRepository();
   const accessGrantRepository = new InMemoryAccessGrantRepository();
+  const agentConverseSessionMappingRepository = new InMemoryAgentConverseSessionMappingRepository();
   const auditService = createAuditService(auditEventRepository);
   const productAnalyticsService = new ProductAnalyticsService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -1470,6 +1474,7 @@ export const createTestDependencies = (overrides: {
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
+    lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(accessGrantRepository),
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
     auditService,
@@ -2246,6 +2251,7 @@ export const createTestDependencies = (overrides: {
     userRepository,
     workspaceRepository,
     agentRepository,
+    agentConverseSessionMappingRepository,
     contextVariableService,
     contextVariableResolutionReader: contextVariableRepository,
     identityNonceRepository,

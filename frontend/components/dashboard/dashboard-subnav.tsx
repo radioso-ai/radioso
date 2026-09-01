@@ -52,7 +52,7 @@ const AGENT_GROUPS: AgentGroup[] = [
     defaultOpen: false,
     items: [
       { id: 'web-chat', label: 'Web chat', icon: Globe },
-      { id: 'api-channel', label: 'API', icon: KeyRound },
+      { id: 'api-channel', label: 'Agent API', icon: KeyRound },
       { id: 'mcp-channel', label: 'MCP', icon: Plug },
       { id: 'slack-channel', label: 'Slack', icon: MessageCircle },
       { id: 'whatsapp-channel', label: 'WhatsApp', icon: MessageCircle },

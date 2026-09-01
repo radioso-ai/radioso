@@ -29,6 +29,7 @@ describe("remote MCP HTTP error boundary", () => {
         ask: vi.fn(),
         exchange: vi.fn(),
         validate: vi.fn(),
+        recordUse: vi.fn(),
       },
       sessionStore: createInMemorySessionStore(),
     });
@@ -40,6 +41,7 @@ describe("remote MCP HTTP error boundary", () => {
         bindPort: 0,
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
+        trustedProxyHops: 0,
       },
     });
     servers.push(server);

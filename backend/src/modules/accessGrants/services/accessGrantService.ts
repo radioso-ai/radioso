@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { AccessGrantRepositoryPort } from "../../../db/repositories/accessGrantRepository.js";
 import { badRequest, conflict, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
 import {
   decryptSecret,
@@ -10,12 +9,19 @@ import {
   tokenPrefix,
 } from "../../auth/contracts/index.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import { requestAuditMetadata } from "../../../shared/observability/requestAuditContext.js";
+import type {
+  AccessGrantLifecycleAuditEvent,
+  AccessGrantRepositoryPort,
+  AccessGrantLifecycleUnitOfWorkPort,
+} from "../ports.js";
 import type {
   AccessGrant,
   AccessGrantChannel,
   AccessGrantEvaluation,
   AccessGrantRole,
   AccessGrantSecret,
+  AgentChannelChatAuditObserver,
   AccessGrantUsageObserver,
   GrantPrincipalKind,
   OriginConstraint,
@@ -27,8 +33,10 @@ interface AccessGrantServiceDependencies {
   repository: AccessGrantRepositoryPort;
   originMatcher: OriginMatcher;
   workspaceTokenSecret?: string;
-  auditService?: Pick<AuditService, "record">;
+  auditService?: Pick<AuditService, "record" | "logRecorded">;
+  lifecycleUnitOfWork: AccessGrantLifecycleUnitOfWorkPort;
   usageObserver?: AccessGrantUsageObserver;
+  chatAuditObserver?: AgentChannelChatAuditObserver;
 }
 
 export type AccessGrantLifecycleActor = {
@@ -71,28 +79,31 @@ export class AccessGrantService {
       }
     }
     const token = generateApiToken();
-    const grant = await this.dependencies.repository.save({
-      agentId: input.agentId,
-      workspaceId: input.workspaceId,
-      label: input.label == null ? null : this.normalizeLabel(input.label),
-      principalKind: input.principalKind,
-      role: input.role ?? this.defaultRole(input.principalKind, input.channel),
-      channel: input.channel ?? this.defaultChannel(input.principalKind),
-      tokenPrefix: tokenPrefix(token),
-      tokenHash: sha256(token),
-      encryptedToken: input.principalKind === "agent-api"
-        ? null
-        : encryptSecret(token, this.workspaceTokenSecret()),
-      originConstraint: input.originConstraint,
-      expiresAt: input.expiresAt ?? null,
+    const lifecycle = await this.dependencies.lifecycleUnitOfWork.issue({
+      grant: {
+        agentId: input.agentId,
+        workspaceId: input.workspaceId,
+        label: input.label == null ? null : this.normalizeLabel(input.label),
+        principalKind: input.principalKind,
+        role: input.role ?? this.defaultRole(input.principalKind, input.channel),
+        channel: input.channel ?? this.defaultChannel(input.principalKind),
+        tokenPrefix: tokenPrefix(token),
+        tokenHash: sha256(token),
+        encryptedToken: input.principalKind === "agent-api"
+          ? null
+          : encryptSecret(token, this.workspaceTokenSecret()),
+        originConstraint: input.originConstraint,
+        expiresAt: input.expiresAt ?? null,
+      },
+      auditEvent: (grant) => this.lifecycleEvent("access_grant.issue", "success", {
+        accountId: input.accountId,
+        actor: input.actor,
+        workspaceId: input.workspaceId,
+        grant,
+      }),
     });
-    await this.recordLifecycleEvent("access_grant.issue", "success", {
-      accountId: input.accountId,
-      actor: input.actor,
-      workspaceId: input.workspaceId,
-      grant,
-    });
-    return { grant, token };
+    this.logCommittedLifecycle(lifecycle.auditEvent);
+    return { grant: lifecycle.grant, token };
   }
 
   async migratePublicLaunchToken(input: PublicLaunchMigrationInput): Promise<AccessGrant> {
@@ -127,20 +138,29 @@ export class AccessGrantService {
       throw badRequest("Only active agent channel credentials can be rotated");
     }
     const token = generateApiToken();
-    const grant = await this.dependencies.repository.rotate(input.grantId, {
-      tokenPrefix: tokenPrefix(token),
-      tokenHash: sha256(token),
-      encryptedToken: current.principalKind === "agent-api"
-        ? null
-        : encryptSecret(token, this.workspaceTokenSecret()),
-      expectedTokenHash: requireActiveAgentChannel ? current.tokenHash : undefined,
-      requireActiveAgentChannel,
-      now,
+    const lifecycle = await this.dependencies.lifecycleUnitOfWork.rotate({
+      grant: {
+        grantId: input.grantId,
+        tokenPrefix: tokenPrefix(token),
+        tokenHash: sha256(token),
+        encryptedToken: current.principalKind === "agent-api"
+          ? null
+          : encryptSecret(token, this.workspaceTokenSecret()),
+        expectedTokenHash: requireActiveAgentChannel ? current.tokenHash : undefined,
+        requireActiveAgentChannel,
+      },
+      auditEvent: (grant) => this.lifecycleEvent("access_grant.rotate", "success", {
+        accountId: input.accountId,
+        actor: input.actor,
+        workspaceId: grant.workspaceId,
+        grant,
+        reason: input.reason,
+      }),
     });
-    if (!grant) {
+    if (!lifecycle) {
       if (requireActiveAgentChannel) {
         const latest = await this.dependencies.repository.findById(input.grantId);
-        if (latest && !this.isActiveAt(latest, now)) {
+        if (latest && !this.isActiveAt(latest, new Date())) {
           throw badRequest("Only active agent channel credentials can be rotated");
         }
         if (latest) {
@@ -149,14 +169,8 @@ export class AccessGrantService {
       }
       throw notFound("Access grant not found");
     }
-    await this.recordLifecycleEvent("access_grant.rotate", "success", {
-      accountId: input.accountId,
-      actor: input.actor,
-      workspaceId: grant.workspaceId,
-      grant,
-      reason: input.reason,
-    });
-    return { grant, token };
+    this.logCommittedLifecycle(lifecycle.auditEvent);
+    return { grant: lifecycle.grant, token };
   }
 
   async revokeGrant(input: {
@@ -165,18 +179,22 @@ export class AccessGrantService {
     actor?: AccessGrantLifecycleActor | null;
     reason?: string | null;
   }): Promise<AccessGrant> {
-    const grant = await this.dependencies.repository.revoke(input.grantId, new Date());
-    if (!grant) {
+    const lifecycle = await this.dependencies.lifecycleUnitOfWork.revoke({
+      grantId: input.grantId,
+      revokedAt: new Date(),
+      auditEvent: (grant) => this.lifecycleEvent("access_grant.revoke", "success", {
+        accountId: input.accountId,
+        actor: input.actor,
+        workspaceId: grant.workspaceId,
+        grant,
+        reason: input.reason,
+      }),
+    });
+    if (!lifecycle) {
       throw notFound("Access grant not found");
     }
-    await this.recordLifecycleEvent("access_grant.revoke", "success", {
-      accountId: input.accountId,
-      actor: input.actor,
-      workspaceId: grant.workspaceId,
-      grant,
-      reason: input.reason,
-    });
-    return grant;
+    this.logCommittedLifecycle(lifecycle.auditEvent);
+    return lifecycle.grant;
   }
 
   async updateGrantConstraints(input: {
@@ -223,8 +241,8 @@ export class AccessGrantService {
     principalKind?: GrantPrincipalKind;
     channel?: AccessGrantChannel;
     limit?: number;
-    cursor?: { createdAt: Date; id: string };
-  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: Date; id: string } | null }> {
+    cursor?: { createdAt: string; id: string };
+  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: string; id: string } | null }> {
     return this.dependencies.repository.listByAgent(agentId, params);
   }
 
@@ -309,10 +327,11 @@ export class AccessGrantService {
     });
   }
 
-  async recordAgentChannelChatSucceeded(input: {
+  recordAgentChannelChatSucceeded(input: {
     grant: Pick<AccessGrant, "id" | "workspaceId" | "agentId" | "principalKind" | "channel" | "role">;
-  }): Promise<void> {
-    await this.dependencies.auditService?.record({
+  }): void {
+    void this.touchGrant(input.grant.id).catch(() => this.recordLastUsePersistenceFailure());
+    const event = {
       workspaceId: input.grant.workspaceId,
       eventType: "agent_api.chat",
       eventStatus: "success",
@@ -324,7 +343,13 @@ export class AccessGrantService {
         principalKind: input.grant.principalKind,
         role: input.grant.role,
       },
-    });
+    } as const;
+    try {
+      const persistence = this.dependencies.auditService?.record(event);
+      void persistence?.catch(() => this.recordCompletedChatAuditFailure());
+    } catch {
+      this.recordCompletedChatAuditFailure();
+    }
   }
 
   private normalizeLabel(value: string): string {
@@ -336,6 +361,22 @@ export class AccessGrantService {
       this.dependencies.usageObserver?.recordLastUsePersistenceFailure?.();
     } catch {
       // Authentication and channel traffic must not depend on observability.
+    }
+  }
+
+  private recordCompletedChatAuditFailure(): void {
+    try {
+      this.dependencies.chatAuditObserver?.recordCompletedAuditPersistenceFailure?.();
+    } catch {
+      // The response has completed; audit telemetry cannot make it fail or retry.
+    }
+  }
+
+  private logCommittedLifecycle(event: AccessGrantLifecycleAuditEvent): void {
+    try {
+      this.dependencies.auditService?.logRecorded?.(event);
+    } catch {
+      // Logging follows the committed transaction and cannot change its outcome.
     }
   }
 
@@ -372,7 +413,7 @@ export class AccessGrantService {
     return "embed";
   }
 
-  private async recordLifecycleEvent(
+  private lifecycleEvent(
     eventType: "access_grant.issue" | "access_grant.rotate" | "access_grant.revoke",
     eventStatus: "success",
     input: {
@@ -382,8 +423,8 @@ export class AccessGrantService {
       grant: AccessGrant;
       reason?: string | null;
     },
-  ): Promise<void> {
-    await this.dependencies.auditService?.record({
+  ) {
+    return {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType,
@@ -397,8 +438,9 @@ export class AccessGrantService {
         label: input.grant.label,
         reason: input.reason ?? null,
         auditCorrelationId: randomUUID(),
+        ...requestAuditMetadata(eventType),
       },
-    });
+    };
   }
 }
 

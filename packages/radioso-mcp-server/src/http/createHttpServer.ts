@@ -4,6 +4,7 @@ import type { RemoteHttpDependencies } from "./types.js";
 import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
 import { isRequestBodyTooLargeError, writeJson, writeJsonRpcError } from "./nodeHttp.js";
+import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "./preAuthSourceBudget.js";
 
 export interface RadiosoRemoteHttpServer {
   close(): Promise<void>;
@@ -11,7 +12,11 @@ export interface RadiosoRemoteHttpServer {
   server: Server;
 }
 
-export const createHttpServer = ({ authService, auditLogger, config, readiness }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+export const createHttpServer = ({ authService, auditLogger, config, readiness, preAuthSourceBudget }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+  const sourceBudget = preAuthSourceBudget ?? createFixedWindowPreAuthSourceBudget({
+    maxAttempts: 60,
+    windowMs: 60_000,
+  });
   const sessionServerManager = createSessionMcpServerManager({
     auditLogger,
     config,
@@ -73,6 +78,10 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness }
       }
 
       if (url.pathname === "/mcp") {
+        if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+          writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
+          return;
+        }
         await handleMcp(req, res);
         return;
       }

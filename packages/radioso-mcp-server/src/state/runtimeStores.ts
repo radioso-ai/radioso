@@ -127,6 +127,9 @@ export const createRuntimeStoreHandle = async (
   options: RuntimeStoreHandleOptions = {},
 ): Promise<RuntimeStoreHandle> => {
   if (config.redisUrl) {
+    if (!config.signingSecret) {
+      throw new Error("RADIOSO_MCP_SIGNING_SECRET must be set when RADIOSO_MCP_REDIS_URL is configured.");
+    }
     const redisHandle = await createRedisClientHandle({
       keyPrefix: config.redisKeyPrefix,
       redisUrl: config.redisUrl,

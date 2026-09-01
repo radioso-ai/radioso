@@ -198,19 +198,21 @@ test('administrator audits workspace personal tokens without gaining another use
 
   const colleagueRow = page.getByText('Colleague laptop').locator('xpath=../..')
   await expect(colleagueRow.getByText('role admin')).toBeVisible()
-  await expect(colleagueRow.getByText('Owner user-2')).toHaveCount(0)
-  await expect(colleagueRow.getByText('Created by user-3')).toHaveCount(0)
-  await expect(colleagueRow.getByText('Status Active')).toHaveCount(0)
+  await expect(colleagueRow.getByText('Owner a workspace member')).toBeVisible()
+  await expect(colleagueRow.getByText('Created by a workspace member')).toBeVisible()
+  await expect(colleagueRow.getByText('Status Active')).toBeVisible()
   await expect(colleagueRow.getByRole('button', { name: 'Rename' })).toHaveCount(0)
   await expect(colleagueRow.getByRole('button', { name: 'Rotate' })).toHaveCount(0)
   await expect(colleagueRow.getByRole('button', { name: 'Revoke' })).toBeVisible()
 
   const revokedRow = page.getByText('Rotated colleague token').locator('xpath=../..')
   await expect(revokedRow.getByText('role admin')).toBeVisible()
-  await expect(revokedRow.getByText('Owner user-2')).toHaveCount(0)
-  await expect(revokedRow.getByText('Created by user-3')).toHaveCount(0)
-  await expect(revokedRow.getByText('Revoked by user-1')).toHaveCount(0)
-  await expect(revokedRow.getByText('Rotated from personal-previous')).toBeVisible()
+  await expect(revokedRow.getByText('Owner a workspace member')).toBeVisible()
+  await expect(revokedRow.getByText('Created by a workspace member')).toBeVisible()
+  await expect(revokedRow.getByText('Created 8/29/2026')).toBeVisible()
+  await expect(revokedRow.getByText('Revoked 8/30/2026')).toBeVisible()
+  await expect(revokedRow.getByText('Revoked by You')).toBeVisible()
+  await expect(revokedRow.getByText(/Rotated from/)).toHaveCount(0)
   await expect(revokedRow.getByText('Status Revoked')).toBeVisible()
 
   await expect(page.getByText('Expired credential').locator('xpath=../..').getByText('Status Expired')).toBeVisible()
@@ -294,6 +296,7 @@ test('administrator manages the service-account and credential lifecycle', async
     if (request.method() === 'PATCH' && path.endsWith('/service-1')) {
       const body = request.postDataJSON() as { displayName?: string; role?: 'member' | 'admin'; revision: number }
       serviceAccount = { ...serviceAccount, ...(body.displayName ? { displayName: body.displayName } : {}), ...(body.role ? { role: body.role } : {}), revision: serviceAccount.revision + 1, updatedAt: '2026-08-31T01:00:00.000Z' }
+      serviceAccounts = serviceAccounts.map((account) => account.id === serviceAccount.id ? serviceAccount : account)
       return route.fulfill({ json: serviceAccount })
     }
     if (request.method() === 'POST' && /\/service-1\/(disable|enable|archive)$/.test(path)) {
@@ -331,15 +334,15 @@ test('administrator manages the service-account and credential lifecycle', async
   await page.getByRole('button', { name: 'Done' }).click()
 
   await page.getByRole('button', { name: 'Manage credentials for Nightly ingestion' }).click()
-  await expect(page.getByRole('heading', { name: 'Nightly ingestion credentials' })).toBeVisible()
-  await expect(page.getByText('Created by user-1').last()).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Nightly ingestion' })).toHaveCount(1)
+  await expect(page.getByText('Created by You').last()).toBeVisible()
   await expect(page.getByText('Created 8/31/2026').last()).toBeVisible()
   await expect(page.getByText('Updated 8/31/2026')).toBeVisible()
   await expect(page.getByText('Disabled Never')).toBeVisible()
   await expect(page.getByText('Archived Never')).toBeVisible()
   page.once('dialog', (dialog) => dialog.accept('Production automation'))
   await page.getByRole('button', { name: 'Rename service account Nightly ingestion' }).click()
-  await expect(page.getByRole('heading', { name: 'Production automation credentials' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Production automation' })).toHaveCount(1)
   await page.getByLabel('Credential label').fill('Canary runner')
   await page.getByRole('button', { name: 'Issue credential' }).click()
   await expect(page.getByText('radioso_svc_canary_secret')).toBeVisible()
@@ -361,8 +364,9 @@ test('administrator manages the service-account and credential lifecycle', async
   await expect(page.getByText('Canary runner').locator('xpath=../..').getByRole('button', { name: 'Revoked Canary runner' })).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
-  await page.getByLabel('Live role').selectOption('admin')
-  await expect(page.getByLabel('Live role')).toHaveValue('admin')
+  await expect(page.getByText('This role applies immediately to every active credential for this service account.')).toBeVisible()
+  await page.getByLabel('Service account role').selectOption('admin')
+  await expect(page.getByLabel('Service account role')).toHaveValue('admin')
 
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: 'Disable' }).click()

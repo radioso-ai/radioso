@@ -51,7 +51,6 @@ export const requireRestAgentChannelCredential = (
       throw invalidCredential();
     }
 
-    await dependencies.accessGrantService.touchGrant(grant.id);
     res.locals.workspaceId = grant.workspaceId;
     res.locals.agentChannelGrant = grant;
     next();

@@ -32,24 +32,16 @@ export function ApiChannelCard({ agentId }: { agentId: string }) {
     <SettingsCard
       id="api-channel"
       icon={<Code2 className="h-5 w-5 text-primary" />}
-      title="API"
+      title="Agent API"
       description="Chat with this agent from server-side code or scripts through an agent-bound credential."
     >
       <div className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label className="text-foreground">Agent chat endpoint</Label>
-            <CopyValueField value={chatEndpoint} ariaLabel="Copy Agent API chat endpoint" className="w-full" />
-          </div>
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <Label className="text-foreground">Authentication</Label>
-              <p className="text-sm text-muted-foreground">
-                Create an Agent API credential below. It is bound to this agent, has no workspace role, and cannot be used with MCP.
-              </p>
-            </div>
-          </div>
+        <div className="space-y-2">
+          <Label className="text-foreground">Agent chat endpoint</Label>
+          <CopyValueField value={chatEndpoint} ariaLabel="Copy Agent API chat endpoint" className="w-full" />
         </div>
+
+        <AgentChannelCredentialManager key={`${agentId}:rest`} agentId={agentId} audience="rest" />
 
         <div className="space-y-3 rounded-xl bg-muted/50 p-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -75,7 +67,6 @@ export function ApiChannelCard({ agentId }: { agentId: string }) {
           </div>
         </div>
 
-        <AgentChannelCredentialManager key={`${agentId}:rest`} agentId={agentId} audience="rest" />
       </div>
     </SettingsCard>
   )

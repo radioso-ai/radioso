@@ -3,7 +3,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 
-import type { OneTimeCredentialResponse } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -217,11 +216,15 @@ export function OneTimeSecretDialog({
   acknowledged,
   onAcknowledged,
   onClose,
+  additionalContent,
+  copyAriaLabel = 'Copy one-time credential secret',
 }: {
-  response: OneTimeCredentialResponse
+  response: { secret: string }
   acknowledged: boolean
   onAcknowledged: (value: boolean) => void
   onClose: () => void
+  additionalContent?: ReactNode
+  copyAriaLabel?: string
 }) {
   return (
     <Dialog open onOpenChange={(open) => {
@@ -236,7 +239,8 @@ export function OneTimeSecretDialog({
           <DialogTitle>Save this secret now</DialogTitle>
           <DialogDescription>This credential secret cannot be recovered after you close this message. Store it in your server-side secret manager.</DialogDescription>
         </DialogHeader>
-        <CopyValueField value={response.secret} ariaLabel="Copy one-time credential secret" className="w-full" />
+        <CopyValueField value={response.secret} ariaLabel={copyAriaLabel} className="w-full" />
+        {additionalContent}
         <label className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm">
           <input type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledged(event.target.checked)} className="mt-0.5" />
           I have saved this secret securely and understand it cannot be recovered.

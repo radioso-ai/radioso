@@ -5,6 +5,8 @@ export interface AccessSessionRecord {
   clientName?: string;
   expiresAt: Date;
   issuedAt: Date;
+  /** Backend conversation/public-session identifier for audit correlation. */
+  conversationId?: string;
   converseSessionToken?: string;
   sessionId: string;
 }
@@ -18,6 +20,7 @@ export interface SessionStore {
     clientName?: string;
     expiresAt: Date;
     issuedAt: Date;
+    conversationId?: string;
     converseSessionToken?: string;
     sessionId: string;
   }): Promise<AccessSessionRecord>;
@@ -27,6 +30,7 @@ const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   ...session,
   expiresAt: new Date(session.expiresAt),
   issuedAt: new Date(session.issuedAt),
+  conversationId: session.conversationId,
   converseSessionToken: session.converseSessionToken,
 });
 
@@ -74,6 +78,7 @@ export const createInMemorySessionStore = (): SessionStore => {
         clientName: input.clientName,
         expiresAt: new Date(input.expiresAt),
         issuedAt: new Date(input.issuedAt),
+        conversationId: input.conversationId,
         converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
       };

@@ -13,6 +13,11 @@ type ApiPrincipalRepository = Pick<
   "findCredentialByHash" | "findServiceAccount" | "touchCredentialUse"
 >;
 
+type MachineApiPrincipal = Extract<
+  AuthenticatedPrincipal,
+  { type: "personal_api_credential" | "service_account_credential" }
+>;
+
 const presentedKind = (secret: string): "personal" | "service" | "unknown" => {
   if (/^radioso_pat_v1_[A-Za-z0-9_-]{43}$/.test(secret)) return "personal";
   if (/^radioso_svc_v1_[A-Za-z0-9_-]{43}$/.test(secret)) return "service";
@@ -43,7 +48,6 @@ export class ApiPrincipalAuthenticator {
       if (!membership || membership.userId !== credential.ownerUserId || membership.accountId !== credential.accountId) return this.deny("personal", "personal_membership_inactive");
       const liveRole = await this.input.accountAccess.resolveWorkspaceRole({ accountId: membership.accountId, userId: membership.userId, workspaceId: credential.workspaceId });
       if (!liveRole) return this.deny("personal", "personal_role_unavailable");
-      this.persistLastUse({ credentialId: credential.id, at: this.now() });
       this.observe({ outcome: "success", principalKind: "personal", reason: "authenticated" });
       return { accountId: membership.accountId, workspaceId: credential.workspaceId, principal: { type: "personal_api_credential", userId: credential.ownerUserId, credentialId: credential.id, role: minimumRole(credential.roleCeiling, liveRole === "owner" ? "admin" : liveRole), workspaceId: credential.workspaceId } };
     }
@@ -51,9 +55,16 @@ export class ApiPrincipalAuthenticator {
     const account = await this.input.repository.findServiceAccount(credential.serviceAccountId);
     if (!account || account.accountId !== credential.accountId || account.workspaceId !== credential.workspaceId) return this.deny("service", "service_binding_invalid");
     if (account.status !== "enabled") return this.deny("service", "service_account_disabled");
-    this.persistLastUse({ credentialId: credential.id, serviceAccountId: account.id, at: this.now() });
     this.observe({ outcome: "success", principalKind: "service", reason: "authenticated" });
     return { accountId: account.accountId, workspaceId: credential.workspaceId, principal: { type: "service_account_credential", serviceAccountId: account.id, credentialId: credential.id, role: account.role, workspaceId: credential.workspaceId } };
+  }
+
+  recordSuccessfulUse(principal: MachineApiPrincipal): void {
+    this.persistLastUse({
+      credentialId: principal.credentialId,
+      ...(principal.type === "service_account_credential" ? { serviceAccountId: principal.serviceAccountId } : {}),
+      at: this.now(),
+    });
   }
 
   private deny(
@@ -73,12 +84,18 @@ export class ApiPrincipalAuthenticator {
   }
 
   private persistLastUse(input: { credentialId: string; serviceAccountId?: string; at: Date }): void {
-    void this.input.repository.touchCredentialUse(input).catch(() => {
-      try {
-        this.input.authenticationObserver?.recordLastUsePersistenceFailure?.();
-      } catch {
-        // Authentication must not depend on telemetry availability.
-      }
-    });
+    try {
+      void this.input.repository.touchCredentialUse(input).catch(() => this.observeLastUseFailure());
+    } catch {
+      this.observeLastUseFailure();
+    }
+  }
+
+  private observeLastUseFailure(): void {
+    try {
+      this.input.authenticationObserver?.recordLastUsePersistenceFailure?.();
+    } catch {
+      // Authentication must not depend on telemetry availability.
+    }
   }
 }

@@ -76,11 +76,11 @@ describe("workspace events OpenAPI contract", () => {
   });
 
   it("types the browser-only stream without adding API-token convenience or MCP surfaces", async () => {
-    const [generatedClient, generatedTypes, mcpReadTools, mcpWriteTools] = await Promise.all([
+    const [generatedClient, generatedTypes, mcpServer, mcpConverseTools] = await Promise.all([
       readFile(new URL("../../../typescript-sdk/src/generated/client.ts", import.meta.url), "utf8"),
       readFile(new URL("../../../typescript-sdk/src/generated/types.ts", import.meta.url), "utf8"),
-      readFile(new URL("../../../packages/radioso-mcp-server/src/tools/readTools.ts", import.meta.url), "utf8"),
-      readFile(new URL("../../../packages/radioso-mcp-server/src/tools/writeTools.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../../packages/radioso-mcp-server/src/server.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../../packages/radioso-mcp-server/src/tools/converseTools.ts", import.meta.url), "utf8"),
     ]);
 
     expect(generatedClient).not.toContain("streamWorkspaceEvents");
@@ -89,6 +89,9 @@ describe("workspace events OpenAPI contract", () => {
     const generatedInvalidateData = generatedTypes.match(/WorkspaceEventInvalidateData: \{[\s\S]*?^        \};/m)?.[0];
     expect(generatedInvalidateData).toContain("changeKinds: string[];");
     expect(generatedInvalidateData).not.toContain("WorkspaceInvalidationKind");
-    expect(`${mcpReadTools}\n${mcpWriteTools}`).not.toMatch(/workspace[_ -]?events|streamWorkspaceEvents/i);
+    expect(mcpServer).toContain("const toolDefinitions = converseToolDefinitions;");
+    const mcpToolNames = [...mcpConverseTools.matchAll(/name:\s*"([^"]+)"/g)].map((match) => match[1]);
+    expect(mcpToolNames).toEqual(["ask_agent"]);
+    expect(`${mcpServer}\n${mcpConverseTools}`).not.toMatch(/workspace[_ -]?events|streamWorkspaceEvents/i);
   });
 });

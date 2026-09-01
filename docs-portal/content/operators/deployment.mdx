@@ -50,7 +50,7 @@ Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private ba
 
 The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so personal/service API credentials, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
-Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL`, `RADIOSO_MCP_SIGNING_SECRET`, and the standalone bind settings on that process, then send the original MCP-audience agent credential to its `/mcp` endpoint. See [MCP server](/guides/mcp-server) for the client flow.
+Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL` and the standalone bind settings, then send the original MCP-audience agent credential to its `/mcp` endpoint. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and configures Google's two-hop forwarding suffix so each client keeps a separate pre-authentication budget. Manual deployments leave `RADIOSO_TRUSTED_PROXY_HOPS=0` unless the rightmost proxy chain is controlled by the operator. The process may cache short-lived backend session tokens in memory; Postgres retains the conversation binding for the credential version, so restart and scale-to-zero cache misses resume that conversation. `RADIOSO_MCP_REDIS_URL` is optional for a shared cache, where the signing secret also encrypts cached tokens. See [MCP server](/guides/mcp-server) for the client flow.
 
 ## Enterprise Edition deployment
 

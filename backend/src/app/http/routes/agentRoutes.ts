@@ -9,7 +9,8 @@ import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { requireApiAccessCsrf } from "../middleware/requireApiAccessCsrf.js";
 import { requireRestAgentChannelCredential, type AgentChannelCredentialLocals } from "../middleware/requireAgentChannelCredential.js";
-import { agentChannelChatRateLimiters } from "../middleware/agentChannelRateLimiter.js";
+import { agentChannelChatRateLimiters, createAgentChannelSourceRateLimiter } from "../middleware/agentChannelRateLimiter.js";
+import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
 import { sendChatJson, sendChatSse } from "../presenters/chatPresenter.js";
 import {
   agentChannelChatSchema,
@@ -17,7 +18,7 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
@@ -144,39 +145,46 @@ const audienceForChannel = (channel: AccessGrant["channel"]): "mcp" | "rest" | n
   return null;
 };
 
-const encodeCredentialCursor = (cursor: { createdAt: Date; id: string }): string =>
-  Buffer.from(JSON.stringify({ createdAt: cursor.createdAt.toISOString(), id: cursor.id }), "utf8").toString("base64url");
+const encodeCredentialCursor = (cursor: { createdAt: string; id: string }): string =>
+  Buffer.from(JSON.stringify({ createdAt: cursor.createdAt, id: cursor.id }), "utf8").toString("base64url");
 
-const decodeCredentialCursor = (value: string | undefined): { createdAt: Date; id: string } | undefined => {
+const decodeCredentialCursor = (value: string | undefined): { createdAt: string; id: string } | undefined => {
   if (!value) return undefined;
   try {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as { createdAt?: unknown; id?: unknown };
-    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string" || !parsed.id) throw new Error("invalid cursor");
+    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string" || !parsed.id || !z.string().uuid().safeParse(parsed.id).success) throw new Error("invalid cursor");
+    if (!/^\d{4}-\d{2}-\d{2}(?:T| )\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}(?::?\d{2})?)$/.test(parsed.createdAt)) throw new Error("invalid cursor");
     const createdAt = new Date(parsed.createdAt);
     if (!Number.isFinite(createdAt.getTime())) throw new Error("invalid cursor");
-    return { createdAt, id: parsed.id };
+    return { createdAt: parsed.createdAt, id: parsed.id };
   } catch {
     throw badRequest("Invalid credential pagination cursor");
   }
 };
 
-const presentAgentChannelCredential = (grant: AccessGrant) => ({
-  id: grant.id,
-  audience: audienceForChannel(grant.channel),
-  label: grant.label,
-  prefix: grant.tokenPrefix,
-  status: grant.revokedAt
-    ? "revoked"
-    : !grant.enabled
-      ? "disabled"
-      : grant.expiresAt && grant.expiresAt.getTime() <= Date.now()
-        ? "expired"
-        : "active",
-  createdAt: grant.createdAt.toISOString(),
-  expiresAt: grant.expiresAt?.toISOString() ?? null,
-  lastUsedAt: grant.lastUsedAt ? grant.lastUsedAt.toISOString() : null,
-  revokedAt: grant.revokedAt ? grant.revokedAt.toISOString() : null,
-});
+const presentAgentChannelCredential = (grant: AccessGrant) => {
+  if (!grant.expiresAt) {
+    throw new AppError(500, "internal_error", "Agent-channel credential is missing its required expiry.");
+  }
+
+  return {
+    id: grant.id,
+    audience: audienceForChannel(grant.channel),
+    label: grant.label,
+    prefix: grant.tokenPrefix,
+    status: grant.revokedAt
+      ? "revoked"
+      : !grant.enabled
+        ? "disabled"
+        : grant.expiresAt.getTime() <= Date.now()
+          ? "expired"
+          : "active",
+    createdAt: grant.createdAt.toISOString(),
+    expiresAt: grant.expiresAt.toISOString(),
+    lastUsedAt: grant.lastUsedAt ? grant.lastUsedAt.toISOString() : null,
+    revokedAt: grant.revokedAt ? grant.revokedAt.toISOString() : null,
+  };
+};
 
 const presentAgentChannelCredentialSecret = ({ grant, token }: AccessGrantSecret) => ({
   credential: presentAgentChannelCredential(grant),
@@ -279,6 +287,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   const agentManage = requireWorkspacePermission(dependencies, "workspace.agents.manage");
   const runUploadSingle = createAssistantLogoUploadHandler();
   const rateLimitRestAgentChat = agentChannelChatRateLimiters(dependencies, "rest");
+  const rateLimitRestAgentSource = createAgentChannelSourceRateLimiter(dependencies);
 
   router.get("/", workspaceSession, agentRead, async (_req, res, next) => {
     try {
@@ -305,9 +314,10 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
 
   router.post(
     "/:agentId/chat",
+    rateLimitRestAgentSource,
+    validateBody(agentChannelChatSchema),
     requireRestAgentChannelCredential(dependencies),
     ...rateLimitRestAgentChat,
-    validateBody(agentChannelChatSchema),
     async (req, res, next) => {
       try {
         const { agentChannelGrant } = res.locals as typeof res.locals & AgentChannelCredentialLocals;
@@ -324,12 +334,16 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           sourceOrigin: null,
         };
         if (req.body.stream) {
+          onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({
+            grant: agentChannelGrant,
+          }));
           await sendChatSse(res, dependencies.assistantChatService.streamAnswer(chatInput));
-          await dependencies.accessGrantService.recordAgentChannelChatSucceeded({ grant: agentChannelGrant });
           return;
         }
         const response = await dependencies.assistantChatService.answer(chatInput);
-        await dependencies.accessGrantService.recordAgentChannelChatSucceeded({ grant: agentChannelGrant });
+        onSuccessfulHttpResponse(res, () => dependencies.accessGrantService.recordAgentChannelChatSucceeded({
+          grant: agentChannelGrant,
+        }));
         if (!response) {
           res.status(204).end();
           return;

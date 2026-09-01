@@ -530,6 +530,35 @@ Open clarifications (non-blocking; default answers stated):
   refused. The probe MUST report whether the agent grounds its answers at all,
   so an empty result for a retrieval-free agent is not read as a knowledge gap.
 
+- **FR-023**: The catalog MUST expose a `needs_attention` read tool that lists
+  the escalations a human must act on — pending approvals, waiting handoffs, and
+  active negative feedback — longest wait first, each source read under its own
+  permission and reporting whether it was read. Each row MUST carry the
+  identifiers its follow-up action needs: the assistant message id and the
+  observed triage version for a quality row, the deciding agent and handle for
+  an approval, and the ownership claimant for a handoff. The list MUST be
+  bounded per request and MUST state the rows each source matched, so a bounded
+  page is distinguishable from an exhausted queue. It is the working list for
+  the human-actionable sources; `workspace_triage` remains the ranked digest
+  across every source.
+- **FR-024**: The catalog MUST expose `set_triage_state` as an `act` under
+  `workspace.quality.manage`, transitioning one assistant turn between the
+  quality triage states and recording a resolution reason on a terminal state.
+  The call MUST carry the triage version the operator's copilot observed, and a
+  version conflict MUST return the current record instead of overwriting it.
+  Resolution validity MUST be decided by the quality module's own rules rather
+  than restated in the catalog.
+- **FR-025**: The catalog MUST expose `draft_reply` as a `probe` that composes a
+  suggested operator reply grounded in the live conversation's own transcript
+  and the agent's current configuration. It MUST persist nothing — no message,
+  no conversation, no proposal — and MUST return the draft together with a
+  dashboard link to the conversation. Sending a message to a customer, taking a
+  conversation over, handing it back, transferring its ownership, forking it,
+  and resolving a pending decision MUST be never-list entries that return the
+  boundary reason and a deep link. A reply is not a proposal target: a
+  proposal's apply path would be the send, which is the boundary this
+  requirement draws.
+
 ### Wave 3 Knowledge-Base Acceptance Scenarios
 
 1. **Given** a processed workspace document, **When** Ray requests a bounded
@@ -552,6 +581,26 @@ Open clarifications (non-blocking; default answers stated):
    names the agent it measured; an unresolvable agent fails the probe instead of
    returning a workspace-default measurement.
 
+### Wave 4 Serving Acceptance Scenarios
+
+1. **Given** a workspace with a waiting handoff, a pending approval, and
+   thumbs-down feedback with a comment, **When** Ray reads `needs_attention`,
+   **Then** the rows arrive longest-wait first with the handles their follow-up
+   actions need, and a source the operator cannot read is reported as
+   unauthorized rather than as an empty section.
+2. **Given** a quality turn Ray has just read, **When** Ray sets its triage
+   state with the version it observed, **Then** the transition is recorded with
+   its resolution reason; **When** another operator has changed the row since,
+   **Then** the call reports the conflict and the current record and changes
+   nothing.
+3. **Given** a live customer conversation, **When** Ray drafts a reply, **Then**
+   the draft is grounded in that conversation's transcript, no message or
+   conversation row is written, and the result links to the conversation for a
+   human to send.
+4. **Given** a request to send, take over, hand back, transfer, fork, or resolve
+   a decision on a live conversation, **When** Ray is asked to perform it,
+   **Then** Ray states the boundary and returns the dashboard link instead of
+   acting.
 ### Key Entities
 
 - **CopilotConversation**: an operator's chat with the copilot; belongs to a

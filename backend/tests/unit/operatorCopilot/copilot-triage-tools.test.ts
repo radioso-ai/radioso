@@ -57,6 +57,7 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
     latestDownUpdatedAt: "2026-08-26T07:30:00.000Z",
     comments: [{ value: "down", comment: "This was wrong.", updatedAt: "2026-08-26T07:30:00.000Z" }],
   },
+  triage: { state: "open", version: 0 },
   ...overrides,
 });
 
@@ -105,7 +106,7 @@ describe("workspace_triage", () => {
     const result = await digest(dependencies({
       pendingApprovals: {
         listPending: vi.fn(async () => [
-          { conversationId: "conversation-approval", agentId: "agent-1", reason: "Refund over limit", createdAt: new Date("2026-08-26T06:00:00.000Z") },
+          { handle: "decision-handle-1", conversationId: "conversation-approval", agentId: "agent-1", reason: "Refund over limit", createdAt: new Date("2026-08-26T06:00:00.000Z") },
         ]),
       },
       chatHistoryService: {
@@ -212,6 +213,7 @@ describe("workspace_triage", () => {
 
   it("drops a source read when its permission is revoked before the rows are emitted", async () => {
     const listPending = vi.fn(async () => [{
+      handle: "decision-handle-1",
       conversationId: "conversation-approval",
       agentId: "agent-1",
       reason: "Refund over limit",
@@ -241,7 +243,7 @@ describe("workspace_triage", () => {
     const result = await digest(dependencies({
       pendingApprovals: {
         listPending: vi.fn(async () => [
-          { conversationId: "conversation-9", agentId: "agent-1", reason: "Refund over limit", createdAt: new Date("2026-08-26T06:00:00.000Z") },
+          { handle: "decision-handle-9", conversationId: "conversation-9", agentId: "agent-1", reason: "Refund over limit", createdAt: new Date("2026-08-26T06:00:00.000Z") },
         ]),
       },
       qualitySignalsService: {
@@ -293,7 +295,7 @@ describe("workspace_triage", () => {
     const result = await digest(dependencies({
       pendingApprovals: {
         listPending: vi.fn(async () => [
-          { conversationId: "conversation-approval", agentId: "agent-1", reason: null, createdAt: new Date("2026-08-26T06:00:00.000Z") },
+          { handle: "decision-handle-1", conversationId: "conversation-approval", agentId: "agent-1", reason: null, createdAt: new Date("2026-08-26T06:00:00.000Z") },
         ]),
       },
       documentStatusService: {
@@ -329,7 +331,7 @@ describe("workspace_triage", () => {
       qualitySignalsService: { getQualityStats, listLowQualityTurns },
       pendingApprovals: {
         listPending: vi.fn(async () => [
-          { conversationId: "conversation-other", agentId: "agent-2", reason: "Other agent", createdAt: new Date("2026-08-26T06:00:00.000Z") },
+          { handle: "decision-handle-other", conversationId: "conversation-other", agentId: "agent-2", reason: "Other agent", createdAt: new Date("2026-08-26T06:00:00.000Z") },
         ]),
       },
       documentStatusService: {
@@ -354,6 +356,7 @@ describe("workspace_triage", () => {
     const result = await digest(dependencies({
       pendingApprovals: {
         listPending: vi.fn(async () => overflowing((index) => ({
+          handle: `decision-handle-${index}`,
           conversationId: `conversation-approval-${index}`,
           agentId: "agent-1",
           reason: `Approval ${index}`,
@@ -409,7 +412,7 @@ describe("workspace_triage", () => {
   it("answers for the whole workspace even when one agent is on screen", async () => {
     const getQualityStats = vi.fn(async () => ({ backlog: {} }));
     const listPending = vi.fn(async () => [
-      { conversationId: "conversation-other", agentId: "agent-2", reason: "Other agent", createdAt: new Date("2026-08-26T06:00:00.000Z") },
+      { handle: "decision-handle-other", conversationId: "conversation-other", agentId: "agent-2", reason: "Other agent", createdAt: new Date("2026-08-26T06:00:00.000Z") },
     ]);
     const result = await digest(
       dependencies({ qualitySignalsService: { getQualityStats, listLowQualityTurns: vi.fn(async () => ({ items: [], total: 0 })) }, pendingApprovals: { listPending } }),

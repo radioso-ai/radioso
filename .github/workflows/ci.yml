@@ -1,6 +1,9 @@
 name: CI
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       base_ref:
@@ -35,7 +38,7 @@ jobs:
       - id: filter
         name: Detect CI-relevant changes
         env:
-          BASE_REF: ${{ inputs.base_ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref || inputs.base_ref || github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
@@ -609,3 +612,71 @@ jobs:
       - name: Test Enterprise Edition packages
         working-directory: ee
         run: pnpm test
+
+  ci-gate:
+    name: CI Gate
+    needs:
+      - changes
+      - backend
+      - frontend
+      - docs-portal
+      - typescript-sdk
+      - mcp-server
+      - crawler
+      - census
+      - ee
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      CHANGES_RESULT: ${{ needs.changes.result }}
+      RUN_CI: ${{ needs.changes.outputs.run_ci }}
+      BACKEND_SELECTED: ${{ needs.changes.outputs.backend }}
+      BACKEND_RESULT: ${{ needs.backend.result }}
+      FRONTEND_SELECTED: ${{ needs.changes.outputs.frontend }}
+      FRONTEND_RESULT: ${{ needs.frontend.result }}
+      DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
+      DOCS_RESULT: ${{ needs['docs-portal'].result }}
+      TYPESCRIPT_SDK_SELECTED: ${{ needs.changes.outputs.typescript_sdk }}
+      TYPESCRIPT_SDK_RESULT: ${{ needs['typescript-sdk'].result }}
+      MCP_SERVER_SELECTED: ${{ needs.changes.outputs.mcp_server }}
+      MCP_SERVER_RESULT: ${{ needs['mcp-server'].result }}
+      CRAWLER_SELECTED: ${{ needs.changes.outputs.crawler }}
+      CRAWLER_RESULT: ${{ needs.crawler.result }}
+      CENSUS_SELECTED: ${{ needs.changes.outputs.census }}
+      CENSUS_RESULT: ${{ needs.census.result }}
+      EE_SELECTED: ${{ needs.changes.outputs.ee }}
+      EE_RESULT: ${{ needs.ee.result }}
+    steps:
+      - name: Verify selected CI checks
+        run: |
+          set -euo pipefail
+
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Change detection did not complete successfully: $CHANGES_RESULT"
+            exit 1
+          fi
+
+          if [ "$RUN_CI" != "true" ]; then
+            echo "::error::No CI checks were selected; refusing to pass the merge gate."
+            exit 1
+          fi
+
+          check_selected_job() {
+            local label="$1"
+            local selected="$2"
+            local result="$3"
+
+            if [ "$selected" = "true" ] && [ "$result" != "success" ]; then
+              echo "::error::${label} was selected but completed with result: ${result}"
+              exit 1
+            fi
+          }
+
+          check_selected_job "Backend" "$BACKEND_SELECTED" "$BACKEND_RESULT"
+          check_selected_job "Frontend" "$FRONTEND_SELECTED" "$FRONTEND_RESULT"
+          check_selected_job "Docs Portal" "$DOCS_SELECTED" "$DOCS_RESULT"
+          check_selected_job "TypeScript SDK" "$TYPESCRIPT_SDK_SELECTED" "$TYPESCRIPT_SDK_RESULT"
+          check_selected_job "MCP Server" "$MCP_SERVER_SELECTED" "$MCP_SERVER_RESULT"
+          check_selected_job "Crawler Package" "$CRAWLER_SELECTED" "$CRAWLER_RESULT"
+          check_selected_job "Census Package" "$CENSUS_SELECTED" "$CENSUS_RESULT"
+          check_selected_job "Enterprise Edition" "$EE_SELECTED" "$EE_RESULT"

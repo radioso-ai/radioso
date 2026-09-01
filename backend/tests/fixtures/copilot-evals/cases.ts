@@ -9,7 +9,7 @@
  * The baseline behind this dataset is recorded *before* Wave 2 broadens the write catalog, so
  * "did tool selection get worse as the catalog grew" stays answerable.
  */
-import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
+import { copilotResolvableToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
 import type { CopilotEvalCase } from "../../support/copilotEvalSuite.js";
 import {
   COPILOT_EVAL_AGENT_ID,
@@ -17,18 +17,23 @@ import {
   COPILOT_EVAL_DOCUMENT_ID,
   COPILOT_EVAL_MESSAGE_ID,
   COPILOT_EVAL_ROUTINE_ID,
+  copilotEvalToolCatalog,
 } from "../../support/copilotEvalRunner.js";
 
-/** An operator who holds everything the turn route resolves — an owner or admin. */
-const FULL_OPERATOR: string[] = [...copilotToolPermissions];
+/**
+ * An operator who holds everything the turn route resolves — an owner or admin. Derived the same
+ * way the route derives it, from the assembled catalog: a tool whose permission is missing here is
+ * simply never exposed, so the case measures Ray choosing between fewer tools than it really has.
+ */
+const FULL_OPERATOR: string[] = [...copilotResolvableToolPermissions(copilotEvalToolCatalog())];
 
 /**
- * A member: every permission the turn route resolves except `workspace.quality.read`, which is the
- * one `accountAccessService.roleAllows` withholds from this role. That single gap is why the triage
- * digest gates per source instead of requiring the union of its sources' permissions — an all-of
- * gate would take the whole digest away from the operators it exists to orient.
+ * A member: every permission the turn route resolves except the quality pair, which is what
+ * `accountAccessService.roleAllows` withholds from this role. That gap is why the triage digest
+ * gates per source instead of requiring the union of its sources' permissions — an all-of gate
+ * would take the whole digest away from the operators it exists to orient.
  */
-const MEMBER: string[] = FULL_OPERATOR.filter((permission) => permission !== "workspace.quality.read");
+const MEMBER: string[] = FULL_OPERATOR.filter((permission) => !permission.startsWith("workspace.quality."));
 
 const page = (
   view: CopilotEvalCase["pageContext"]["view"],
@@ -443,6 +448,43 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     requires: ["conversation_with_assistant_turn"],
     message: "Just answer this customer for me — tell them the refund is approved.",
   }),
+  {
+    id: "serving-queue-then-triage",
+    name: "The working list is read before a turn is closed on it",
+    description: "Tool selection across two similar reads: the queue an operator works through is not the digest that orients a session, and the act that closes a row needs the version that read reports.",
+    tags: ["tool_selection", "serving"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("activity"),
+    message: "Show me everything still waiting on a person, then mark the complaint about shipping resolved — it was a knowledge gap.",
+    plan: [
+      { tool: "needs_attention", input: {} },
+      { tool: "set_triage_state", input: { assistantMessageId: COPILOT_EVAL_MESSAGE_ID, state: "resolved", expectedVersion: 2, resolution: { reason: "knowledge_gap" } } },
+    ],
+    finalMessage: "One complaint about shipping is closed as a knowledge gap.",
+    assertions: [
+      { type: "tool_called", tool: "needs_attention" },
+      { type: "tool_call_order", tools: ["needs_attention", "set_triage_state"] },
+      { type: "no_proposal_drafted" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
+    id: "serving-reply-draft",
+    name: "A reply is drafted for the operator to send",
+    description: "Drafting is available where sending is not, so a request to answer a waiting customer produces text rather than a refusal or a message.",
+    tags: ["tool_selection", "serving"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("history", { conversationId: COPILOT_EVAL_CONVERSATION_ID }),
+    requires: ["conversation_with_assistant_turn"],
+    message: "Write me something I can send back to this customer.",
+    plan: [{ tool: "draft_reply", input: { conversationId: COPILOT_EVAL_CONVERSATION_ID } }],
+    finalMessage: "Here is a draft you can edit and send from the conversation.",
+    assertions: [
+      { type: "tool_called", tool: "draft_reply" },
+      { type: "no_proposal_drafted" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
   boundaryCase({
     id: "boundary-conversation-ownership",
     name: "Refuses to take over a live conversation",

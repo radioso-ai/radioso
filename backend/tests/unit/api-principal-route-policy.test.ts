@@ -40,7 +40,7 @@ describe("API principal route policy", () => {
   it.each([
     ["POST", "/api/v1/settings/general/anonymous-chat-token/rotate"],
     ["POST", "/api/v1/settings/general/website-embed-token/rotate"],
-    ["POST", "/api/v1/agents/agent-1/mcp-converse-grants"],
+    ["POST", "/api/v1/agents/agent-1/channel-credentials"],
     ["GET", "/api/v1/agents/agent-1/context-variables/signing-key"],
     ["GET", "/api/v1/settings/credentials"],
     ["GET", "/api/v1/workspace/mcp/context"],

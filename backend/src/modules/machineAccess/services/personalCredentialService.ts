@@ -2,7 +2,7 @@ import { conflict, forbidden } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ApiCredentialRecord, MachineAccessAuditEvent, MachineAccessPersistencePort } from "../ports.js";
-import { MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, normalizeCredentialExpiry, type MachineAccessRole } from "../domain.js";
+import { MACHINE_ACCESS_LIFETIMES, MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, normalizeCredentialExpiry, type MachineAccessRole } from "../domain.js";
 import { issueMachineSecret } from "../credentialSecretCodec.js";
 import { machineAccessAuditEvent } from "../auditMetadata.js";
 
@@ -34,7 +34,7 @@ export class PersonalCredentialService {
     if (!role) throw forbidden();
     assertAssignableRole(role, input.roleCeiling);
     const label = normalizeCredentialLabel(input.label);
-    const expiresAt = normalizeCredentialExpiry(input.expiresAt, this.now());
+    const expiresAt = normalizeCredentialExpiry(input.expiresAt, this.now(), MACHINE_ACCESS_LIFETIMES.personalDays);
     const issued = await this.input.repository.createPersonalWithinLimit({
       accountId: input.accountId,
       workspaceId: input.workspaceId,

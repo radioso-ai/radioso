@@ -58,9 +58,10 @@ describe("MCP converse auth separation", () => {
     const { token } = await ctx.dependencies.accessGrantService.issueGrant({
       agentId: agent.id,
       workspaceId: session.workspaceId,
-      principalKind: "public-launch",
+      principalKind: "agent-api",
       channel: "mcp-converse",
       originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
     });
 
     await expect(ctx.dependencies.accessGrantService.resolvePublicLaunchGrant(token)).resolves.toBeNull();

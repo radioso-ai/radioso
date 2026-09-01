@@ -68,13 +68,11 @@ import {
 } from "../../../modules/chat/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { createDefaultActionDrainDispatcher } from "../../composition/defaultComposition.js";
-import { DocumentSourceContentService, AgentConverseResourceService } from "../../../modules/documents/composition.js";
 import {
   ModelSenseLabelGateway,
   PostgresSenseEmbeddingReader,
   RetrievalAnswerService,
   SenseGroupingService,
-  AgentConverseGroundedAnswerService,
   type RetrievalSensePolicy,
   type RetrievalPipelinePort,
 } from "../../../modules/retrieval/composition.js";
@@ -157,18 +155,7 @@ export const buildMcpConverseServices = (
     audit,
     publisher: dependencies.workspaceInvalidationPublisher,
   });
-  const groundedAnswerService = new AgentConverseGroundedAnswerService({
-    agentRepository: dependencies.agentRepository,
-    retrievalAnswerService: dependencies.retrievalAnswerService,
-    audit,
-  });
-  const resourceService = new AgentConverseResourceService({
-    agentRepository: dependencies.agentRepository,
-    documentRepository: dependencies.documentRepository,
-    documentSourceContentService: new DocumentSourceContentService(dependencies.documentStorage),
-    audit,
-  });
-  return { audit, sessionService, converseService, groundedAnswerService, resourceService };
+  return { audit, sessionService, converseService };
 };
 
 export const buildChatServices = (input: {

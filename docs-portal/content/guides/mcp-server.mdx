@@ -1,80 +1,86 @@
 ---
 title: "MCP server"
-description: "Connect an MCP client to Radioso through the standalone HTTP agent-converse surface."
-last_updated: 2026-08-31
+description: "Connect an MCP client to one Radioso agent with an audience-bound credential."
+last_updated: 2026-09-01
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # MCP server
 
-Radioso's standalone MCP server lets a client talk to one agent. Workspace document work uses the REST API, and the MCP server uses a per-agent converse grant.
+Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
 
 ## Two surfaces, two boundaries
 
 - **Workspace document work** uses the REST API with a personal token or service-account credential.
-- **Agent converse** binds a client to one agent's persona, directives, routines, history, and retrieval settings. A workspace administrator creates its per-agent converse grant from the signed-in dashboard. The client then exchanges that grant for a short-lived converse session.
+- **Agent chat over MCP** binds a client to one agent's persona, directives, routines, history, and retrieval settings. A signed-in user with permission to manage that agent creates an MCP-audience credential. The server exchanges it for a short-lived converse session.
 
-The dashboard session is the management boundary. It creates and revokes converse grants and manages workspace settings; API credentials do not mint grants or reveal secrets.
+The dashboard session is the management boundary. It issues, rotates, and revokes agent credentials; agent credentials do not manage credentials or workspace settings.
 
 ## Enable it
 
 <Steps>
 ### Choose a deployment shape
 
-Run `packages/radioso-mcp-server` as a standalone process. The backend's merged setting reports `merged_auth_unavailable` and does not mount a usable `/mcp` route in this release.
+Run `packages/radioso-mcp-server` as a standalone process.
 
-Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and an explicit `RADIOSO_MCP_SIGNING_SECRET` shared by the MCP process and backend. Set `RADIOSO_MCP_REDIS_URL` on both processes when they need shared session state.
+Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and an explicit `RADIOSO_MCP_SIGNING_SECRET`. Set `RADIOSO_MCP_REDIS_URL` on each MCP process when multiple instances need shared session state.
 
 ### Confirm the backend connection
 
 Standalone mode needs a reachable backend for agent-converse requests.
 
-### Create the supported grant
+### Create the agent credential
 
-Sign in to the dashboard, open the agent's **Channels → MCP** settings, and create a converse grant there. Copy the one-time grant secret into the secure configuration of the client or connector that will send it to standalone `/mcp`. Standalone performs the exchange internally; the grant secret is not shown again.
+Sign in to the dashboard, open the agent's **Channels → MCP** card, and create a credential with a label and expiry. Copy the one-time secret into the secure configuration of the client or connector that will send it to standalone `/mcp`. Radioso stores only its hash, so the secret is not shown again.
 </Steps>
 
+The dashboard uses the shared agent-credential lifecycle endpoints:
+
+```text
+POST /api/v1/agents/{agentId}/channel-credentials
+GET  /api/v1/agents/{agentId}/channel-credentials?audience=mcp
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke
+```
+
+The create request sets `audience` to `mcp` and includes `label` and `expiresAt`. Lifecycle calls require a signed-in session with agent-manage permission. The operator-minted secret is a static bearer, so Radioso does not require OAuth for this connection.
+
 <Callout type="info" emoji="i">
-  Workspace document MCP currently rejects personal and service API credentials. Agent converse grants are created by a signed-in workspace administrator; they are not created with an API bearer header.
+  Personal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat.
 </Callout>
 
 ## Agent converse setup
 
-The dashboard grant is bound to one agent. Send the original grant to standalone `/mcp`; the server exchanges it for a short-lived session and stores that session. A session token returned by the direct REST converse endpoint is for direct REST calls, not for `/mcp`. Revoke the grant from the dashboard when the client should lose access; the server re-checks grant state for every request.
+The dashboard credential is bound to one agent and the MCP audience. Send its original secret to standalone `/mcp`; the server exchanges it for a short-lived session and stores that session. A session token returned by the internal converse endpoint is for direct calls to that endpoint, not for `/mcp`. Revoke the credential from the dashboard when the client should lose access; the server re-checks credential state for every request.
 
-The converse surface provides:
+The converse surface provides **`ask_agent`**, which sends a message through the agent's full turn loop and continues its conversation. Retrieval can participate in that turn when the agent's configuration calls for it. Direct document search and grounded-answer generation remain REST API workflows.
 
-- **`ask_agent`** — sends a message through the agent's full turn loop and continues its conversation.
-- **`answer_grounded`** — returns a grounded answer using the bound agent's retrieval settings without creating a conversational turn.
-- **Agent documents as resources** — lists and reads documents the bound agent can see.
-
-The converse session does not grant access to other agents, workspace administration, account management, API-access settings, connector secrets, or provider keys.
+The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
 
 ## Workspace document tools
 
-Workspace document tools are not available through MCP credential setup. A personal token or service-account credential sent as `Authorization: Bearer ...` is rejected. Use the dashboard or the REST document routes for workspace document work.
+MCP credential setup exposes agent chat, not a document-management surface. Use the dashboard or the REST document routes with a personal or service-account credential for workspace document work.
 
 ## Deployment notes
 
 Standalone mode is useful when the MCP process needs separate public HTTPS exposure. Hosted remote clients such as Claude or ChatGPT need a public HTTPS URL; a localhost URL is reachable only from a client running on the same machine.
 
-The MCP server's deployment signing secret authenticates traffic between a standalone MCP process and the backend. It is different from API credentials, converse grants, public-chat launch values, provider keys, and connector secrets.
+The MCP server's deployment signing secret encrypts Redis-backed session material. It is different from agent credentials, personal tokens, service-account credentials, public-chat launch values, provider keys, and connector secrets.
 
 ## Authentication boundaries
 
-- Workspace document tools reject personal and service API credentials.
-- Agent converse grants are created and revoked through the signed-in dashboard session.
-- Agent converse requests accept only a valid converse session created from an active grant.
+- MCP accepts an MCP-audience credential or a valid converse session created from one.
+- Agent credentials are created, rotated, and revoked through a signed-in session with permission to manage the bound agent.
+- A REST-audience credential is rejected by MCP even when it belongs to the same agent.
 - Public-chat launch values and website-embed values cannot be reused for MCP converse.
-- MCP does not reveal REST, provider, connector, public-launch, or signing-key secrets.
+- MCP does not reveal agent, workspace, provider, connector, public-launch, or signing-key secrets.
 
 ## Common failure modes
 
-- **The MCP endpoint returns `401`.** The endpoint accepts an agent-converse grant or its standalone session. Use the dashboard to create or rotate the grant, then send the original grant to standalone `/mcp`.
+- **The MCP endpoint returns `401`.** Confirm that the bearer is an active, unexpired MCP-audience credential for this agent. A personal token, service-account credential, or REST-audience agent credential is rejected.
 - **The converse client cannot connect.** Confirm the MCP URL is reachable over HTTPS for hosted clients, and check `RADIOSO_BASE_URL` and `RADIOSO_MCP_SIGNING_SECRET` in standalone mode.
-- **A converse session is rejected.** The grant may be revoked, expired, disabled, or issued for a different agent. Create or revoke grants from the agent's MCP settings with a current dashboard session.
-- **A write tool waits in the client UI.** The MCP host is honoring `requiresApproval: true`; approve the operation in that host.
+- **A converse session is rejected.** Its credential may be revoked, expired, or issued for a different agent. Create or revoke credentials from the agent's MCP card with a current dashboard session.
 
 ## Read next
 

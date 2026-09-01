@@ -1,8 +1,7 @@
 import type { ApiCredentialRecord, ServiceAccountRecord } from "../../../modules/machineAccess/ports.js";
 import { deriveCredentialStatus } from "../../../modules/machineAccess/domain.js";
 
-const expiryWarningDays = (expiresAt: Date | null, now = new Date()): 30 | 7 | 1 | null => {
-  if (!expiresAt) return null;
+const expiryWarningDays = (expiresAt: Date, now = new Date()): 30 | 7 | 1 | null => {
   if (expiresAt.getTime() <= now.getTime()) return null;
   const days = Math.ceil((expiresAt.getTime() - now.getTime()) / 86_400_000);
   return days <= 1 ? 1 : days <= 7 ? 7 : days <= 30 ? 30 : null;
@@ -18,7 +17,7 @@ export const presentApiCredential = (credential: ApiCredentialRecord) => ({
   serviceAccountId: credential.serviceAccountId,
   createdByUserId: credential.createdByUserId,
   createdAt: credential.createdAt.toISOString(),
-  expiresAt: credential.expiresAt?.toISOString() ?? null,
+  expiresAt: credential.expiresAt.toISOString(),
   status: credential.status ?? deriveCredentialStatus({ ...credential, now: new Date() }),
   expiryWarningDays: expiryWarningDays(credential.expiresAt),
   lastUsedAt: credential.lastUsedAt?.toISOString() ?? null,

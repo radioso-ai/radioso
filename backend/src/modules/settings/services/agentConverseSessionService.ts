@@ -135,7 +135,7 @@ export class AgentConverseSessionService {
       await this.dependencies.audit?.recordValidationDenied({ payload, reason: "grant_revoked" });
       throw converseError(403, "grant_revoked", "MCP converse grant is no longer active.");
     }
-    if (grant.principalKind !== "public-launch" || grant.channel !== "mcp-converse") {
+    if (grant.principalKind !== "agent-api" || grant.channel !== "mcp-converse") {
       await this.dependencies.audit?.recordValidationDenied({ grant, payload, reason: "grant_channel_not_allowed" });
       throw converseError(403, "grant_channel_not_allowed", "MCP converse grant channel is not allowed.");
     }

@@ -1,11 +1,11 @@
-# Implementation Plan: Personal API Tokens and Workspace Service Accounts
+# Implementation Plan: Workspace and Agent API Credentials
 
 **Branch**: `role-based-mcp-access-design` | **Date**: 2026-08-31 | **Spec**: [spec.md](./spec.md)
 **Input**: Approved feature specification in `specs/1117-api-access-tokens/spec.md`
 
 ## Summary
 
-Replace the recoverable workspace-wide administrator token with hash-only personal API credentials and first-class workspace service accounts whose credentials are independently replaceable. A new `machineAccess` domain owns principals, credential lifecycle, tenure binding, authentication, quotas, and safe metadata; existing account access remains the role/permission authority. Lifecycle APIs are interactive-session-only, ordinary API routes explicitly opt into machine principals, and legacy verifier material plus controlled MCP sessions are destroyed without a compatibility period. The dashboard, OpenAPI contract, generated SDK snapshot, MCP runtimes, and documentation change in the same delivery.
+Replace the recoverable workspace-wide administrator token with hash-only personal API credentials and first-class workspace service accounts whose credentials are independently replaceable. The `machineAccess` domain owns those role-bearing principals while the existing `accessGrants` aggregate owns role-free, one-agent channel credentials with distinct MCP and REST audiences. Lifecycle APIs remain interactive-session-only; the REST channel adds an explicit bound-agent chat route and MCP narrows its agent surface to stateful chat only. The dashboard separates service accounts into their own Settings page and embeds each channel's credential lifecycle in its channel card. OpenAPI, SDK snapshots, MCP runtime/package contracts, and documentation move together.
 
 ## Technical Context
 
@@ -27,11 +27,11 @@ Replace the recoverable workspace-wide administrator token with hash-only person
 - Backend stories use test-first ordering. Frontend visible journeys use Playwright; unit tests cover only adapters/state/validation.
 - The existing Node/React/PostgreSQL stack is unchanged. This feature has no LLM/provider or prompt-template behavior.
 - Secrets are generated only after limits and transitions validate, returned once, and persisted only as versioned non-reversible hashes plus safe prefixes. No new environment secret is required.
-- `backend/src/modules/machineAccess/` owns domain decisions. HTTP, persistence, account access, MCP, and composition depend on narrow ports and do not absorb lifecycle rules.
+- `backend/src/modules/machineAccess/` owns role-bearing workspace credential decisions; `backend/src/modules/accessGrants/` owns agent/audience binding and channel secret lifecycle. HTTP, persistence, account access, chat, MCP, and composition depend on narrow ports and do not absorb lifecycle rules.
 - `backend/src/app/composition/` wires repositories, authenticator, last-use writer, expiry-warning lifecycle, route policy, and MCP purge/readiness integration.
 - Code-first OpenAPI sources change first; `backend/openapi.json`, `backend/openapi.yaml`, and `typescript-sdk/` snapshots are regenerated.
 - Message-queue review: document-worker dispatch, AMQP payloads, retry semantics, tests, and docs are unaffected because credential authentication terminates at HTTP/MCP boundaries. Expiry warning scanning is an application lifecycle, not a worker contract.
-- Documentation updates cover setup/authentication, API/SDK use, MCP rejection, migration/release guidance, and product UI.
+- Documentation updates cover setup/authentication, API/SDK use, workspace-versus-agent credential selection, MCP chat-only behavior, migration/release guidance, and product UI.
 - Ray/Operator Copilot gets permanent coverage-map exclusions for every lifecycle operation because identity, access, and secret management remain on its never-list.
 
 ## Project Structure
@@ -70,8 +70,8 @@ frontend/
 └── tests/e2e/                        # visible lifecycle and storage journeys
 
 packages/radioso-mcp-server/
-├── src/                             # credential preflight, purge, readiness
-└── tests/                           # merged/standalone/stdio rejection and purge behavior
+├── src/                             # audience preflight, chat-only catalogue, purge, readiness
+└── tests/                           # audience isolation, chat-only surface, and purge behavior
 
 typescript-sdk/
 ├── openapi/                         # synchronized contract snapshot
@@ -84,13 +84,13 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 
 ## Module Ownership & Seams
 
-- **Transport Layer**: Focused API-access routes validate cookies/CSRF, workspace path ownership, input/output schemas, pagination, and capability calls. They map domain errors to HTTP and never generate/hash tokens or decide roles.
-- **Orchestration Layer**: Credential and service-account application services coordinate domain validation, repository transactions, safe audits, warning events, and one-time issuance responses.
-- **Domain Layer**: `machineAccess` owns personal tenure binding, service-principal state, live effective-role calculation, credential state/rotation, normalized display text, expiry, quotas, and authenticated-principal construction. `AccountAccessService` alone maps roles to permissions.
-- **Persistence/Integration Layer**: New Kysely repositories store principals, credentials, and tombstones; crypto implements versioned opaque-secret hashing; MCP runtime stores implement idempotent legacy-session purge; last-use updates are a best-effort port.
-- **Application Composition**: Composition builds the repositories and services, injects them into `AuthService` and routes, registers the default-deny route policy, starts the expiry scanner, and gates MCP readiness on purge completion.
-- **Files Kept Small**: `AuthService`, `AccountAccessService`, account route assemblies, `mcpMount.ts`, generic frontend API clients, workspace settings tabs, and MCP transport entry points receive delegation calls only—not lifecycle business rules.
-- **Planned Extractions**: Credential secret codec, credential repository port, service-account repository port, access-tenure resolver, API-principal authenticator, route eligibility policy, last-use recorder, expiry warning scanner, MCP purge store port, and dedicated frontend API-access adapter/components.
+- **Transport Layer**: Focused API-access and agent-channel lifecycle routes validate session/CSRF, path ownership, input/output schemas, pagination, and capability calls. The REST agent-chat route authenticates an expected audience and verifies the path binding before calling chat. Transport never generates/hashes tokens, decides roles, or selects a default agent.
+- **Orchestration Layer**: Machine credential and service-account services coordinate role-bearing lifecycle. `AccessGrantService` coordinates role-free channel issue/list/rotate/revoke/resolve lifecycle. Existing chat orchestration receives a resolved agent principal and remains credential-agnostic.
+- **Domain Layer**: `machineAccess` owns personal tenure binding, service-principal state, effective-role calculation, credential state/rotation, expiry, and quotas. `accessGrants` owns immutable agent/workspace/audience binding, secret lifecycle, and evaluation. `AccountAccessService` alone maps roles to permissions.
+- **Persistence/Integration Layer**: Kysely repositories store principals, credentials, grants, and tombstones; secret codecs retain only versioned hash verifiers and safe prefixes for newly issued credentials; MCP runtime stores implement idempotent legacy-session purge; last-use updates remain best effort.
+- **Application Composition**: Composition builds repositories and services, injects expected-audience authenticators into REST/MCP transports, registers workspace default-deny route policy, starts expiry scanning, and gates MCP readiness on purge completion.
+- **Files Kept Small**: `AuthService`, `AccountAccessService`, chat services, account route assemblies, `mcpMount.ts`, generic frontend API clients, workspace Settings composition, and MCP transport entry points receive narrow calls only—not cross-domain lifecycle rules.
+- **Planned Extractions**: Reuse the access-grant repository/service port; add expected-audience resolution and an agent-chat principal middleware; extract shared agent credential management UI used inside separate MCP and API cards; split API-access presentation by Settings page without duplicating data-fetching rules.
 - **Required Refactor Stories**: Before bearer rollout, replace implicit workspace-token auth with an explicit principal/route policy seam and replace dashboard bearer fallback/storage with session requests. These are functional prerequisites, not deferred cleanup.
 
 ## Delivery Phases
@@ -101,6 +101,7 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 4. Add frontend adapter/state tests and Playwright journeys, then remove workspace-token caching/fallback and deliver separate personal/service-account lifecycle UI with transient one-time-secret handling.
 5. Regenerate OpenAPI and SDK snapshots, update docs/release guidance after reading the documentation prompt, run focused suites and local CI, and complete senior-engineer plus engineering-manager review.
 6. Harden integration-test database isolation with failing guard/script regressions, harness-owned disposable database marking, removal of development database aliasing, scoped repository cleanup, a real PostgreSQL negative/positive smoke test, and one additional senior-engineer review. The already-completed single engineering-manager review is not repeated because this follow-up does not change product scope or architecture.
+7. Add failing access-grant, REST route, MCP catalogue/auth, OpenAPI, frontend adapter, and Playwright tests for role-free agent channel credentials and the revised Settings information architecture. Implement expected-audience grant resolution, explicit bound-agent REST chat, MCP chat-only enforcement, unified channel-card lifecycle UI, `Primary` service credential creation, SDK/docs regeneration, real local API/browser/MCP verification, and a fresh independent engineering review because this phase expands product architecture.
 
 ## Observability & Audit
 
@@ -109,6 +110,7 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 - Record last use asynchronously/best-effort after successful authentication and coalesce writes within five minutes; metadata failure neither grants nor denies access.
 - Add startup/readiness logging for MCP purge attempts and failures without credential/session material. A configured inaccessible store remains unready and retries.
 - Correlate credential-authenticated audited API actions with stable principal and credential IDs. Do not record raw headers or hash/verifier values.
+- Record channel credential issue/rotate/revoke and bounded authentication outcomes with audience, grant, workspace, and agent IDs in audit metadata; keep audience/outcome/reason as the only metric labels. Existing chat tracing already covers turn latency and failures, so this phase adds no duplicate chat span or prompt/content logging.
 
 ## Integration Database Safety Follow-up
 
@@ -128,6 +130,9 @@ The local validation incident exposed a test-infrastructure boundary failure rat
 - There is no compatibility mode or auto-migration into a personal/service credential. Legacy API and MCP use stops immediately.
 - Controlled MCP runtime stores purge legacy sessions before readiness; backend verifier removal keeps stale external copies unusable.
 - Ordinary routes without an explicit machine-principal policy are denied by default. Lifecycle and other sensitive surfaces require a valid interactive session and never fall back to bearer auth.
+- Agent channel credentials are not machine-access principals. They terminate at a dedicated MCP or REST agent-chat authenticator, require an exact persisted audience and agent binding, and cannot enter ordinary workspace route policy.
+- Existing `mcp-converse` transport/session paths may remain as internal names, but newly issued MCP grants use the `agent-api` principal kind and the user-facing contract says `MCP credential`. Existing MCP grants are forward-migrated because backward compatibility is not required.
+- Document-worker dispatch, AMQP payloads, connector contracts, retries, and queue documentation remain unchanged: both agent transports call the existing synchronous chat boundary and never place credentials in worker payloads.
 - Rollback across migration 158 requires a compatible pre-migration database backup; application code alone cannot reconstruct destroyed secrets.
 
 ## Planning Tooling Note

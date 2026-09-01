@@ -14,7 +14,7 @@ export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' |
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type ActivityTab = 'needs-attention' | 'all'
-export type SettingsTab = 'workspace' | 'providers'
+export type SettingsTab = 'workspace' | 'service-accounts' | 'providers'
 export type AccountTab = 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact'
@@ -351,7 +351,7 @@ const parseKnowledgeTab = (value: string | null): KnowledgeTab | undefined => {
 }
 
 const parseSettingsTab = (value: string | null): SettingsTab | undefined => {
-  if (value === 'workspace' || value === 'providers') {
+  if (value === 'workspace' || value === 'service-accounts' || value === 'providers') {
     return value
   }
   if (value === 'general') {

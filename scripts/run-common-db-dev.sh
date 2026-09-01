@@ -54,4 +54,13 @@ printf 'Frontend: http://localhost:%s\n' "$FRONTEND_PORT"
 printf 'Backend:  http://localhost:%s\n' "$BACKEND_PORT"
 printf 'Database: localhost:%s/radioso (common)\n' "$POSTGRES_PORT"
 
-wait -n "${pids[@]}"
+while true; do
+  for pid in "${pids[@]}"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      wait_status=0
+      wait "$pid" || wait_status=$?
+      exit "$wait_status"
+    fi
+  done
+  sleep 1
+done

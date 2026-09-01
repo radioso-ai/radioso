@@ -31,11 +31,6 @@ export interface RemoteHarness {
   close(): Promise<void>;
 }
 
-export interface CredentialRejectionSmokeSummary {
-  code: string;
-  status: number;
-}
-
 export interface ConverseSmokeSummary {
   answer: string;
   agentId: string;
@@ -157,9 +152,10 @@ export const startBackendHarness = async (): Promise<BackendHarness> => {
       const { token } = await dependencies.accessGrantService.issueGrant({
         agentId: agent.id,
         workspaceId: session.workspaceId,
-        principalKind: "public-launch",
+        principalKind: "agent-api",
         channel: "mcp-converse",
         originConstraint: { mode: "allow-all", origins: [] },
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       });
       return { agentId: agent.id, token, workspaceId: session.workspaceId };
     },
@@ -167,9 +163,6 @@ export const startBackendHarness = async (): Promise<BackendHarness> => {
 };
 
 export const startRemoteHarness = async (options: {
-  allowedReadTools?: string[];
-  allowedWriteTools?: string[];
-  approvalRequiredWriteTools?: string[];
   backendBaseUrl: string;
   redisKeyPrefix?: string;
   redisUrl?: string;
@@ -177,16 +170,6 @@ export const startRemoteHarness = async (options: {
 }): Promise<RemoteHarness> => {
   const audit = createInMemoryAuditSink();
   const config: RadiosoMcpConfig = {
-    accessTokenTtlSeconds: 900,
-    allowedReadTools:
-      options.allowedReadTools ?? [
-        "describe_capabilities",
-        "list_documents",
-        "get_document",
-        "answer_grounded",
-      ],
-    allowedWriteTools: options.allowedWriteTools ?? ["create_document"],
-    approvalRequiredWriteTools: options.approvalRequiredWriteTools ?? ["create_document"],
     baseUrl: options.backendBaseUrl,
     bindHost: "127.0.0.1",
     bindPort: 0,
@@ -270,48 +253,6 @@ export const callTool = async (
   };
 };
 
-export const assertWorkspaceCredentialRejected = async (baseUrl: string, workspaceToken: string) => {
-  const response = await fetch(`${baseUrl}/v1/auth/exchange`, {
-    body: JSON.stringify({
-      clientName: "smoke-client",
-      radiosoApiToken: workspaceToken,
-      requestedTools: ["describe_capabilities"],
-    }),
-    headers: {
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
-  const payload = await readJson(response);
-  assert.equal(response.status, 401, `Expected workspace credential rejection, got ${response.status}: ${JSON.stringify(payload)}`);
-  assert.equal(payload?.error?.code, "unauthorized");
-  return {
-    code: String(payload.error.code),
-    status: response.status,
-  } satisfies CredentialRejectionSmokeSummary;
-};
-
-export const runWorkspaceCredentialRejectionSmoke = async (
-  logger: SmokeLogger,
-): Promise<CredentialRejectionSmokeSummary> => {
-  const backend = await startBackendHarness();
-  const remote = await startRemoteHarness({ backendBaseUrl: backend.baseUrl });
-
-  try {
-    logger.step("checking health endpoint");
-    const healthResponse = await fetch(`${remote.baseUrl}/healthz`);
-    const healthPayload = await readJson(healthResponse);
-    assert.equal(healthResponse.status, 200);
-    assert.equal(healthPayload.serverName, "radioso-smoke");
-
-    logger.step("verifying REST credential rejection at the MCP exchange");
-    return await assertWorkspaceCredentialRejected(remote.baseUrl, "radioso_workspace_credential_rejected");
-  } finally {
-    await remote.close();
-    await backend.close();
-  }
-};
-
 export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<ConverseSmokeSummary> => {
   const backend = await startBackendHarness();
   const remote = await startRemoteHarness({ backendBaseUrl: backend.baseUrl });
@@ -327,7 +268,7 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     const tools = await listTools(remote.baseUrl, grant.token);
     assert.deepEqual(
       tools.result.tools.map((tool) => tool.name).sort(),
-      ["answer_grounded", "ask_agent"].sort(),
+      ["ask_agent"],
     );
     assert.ok(!tools.result.tools.some((tool) => tool.name === "describe_capabilities"));
     assert.ok(!tools.result.tools.some((tool) => tool.name === "list_documents"));
@@ -342,7 +283,7 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
     assert.equal(typeof ask.structuredContent.answer.text, "string");
     assert.ok(ask.structuredContent.answer.text.length > 0);
 
-    logger.step("listing agent resources with the converse grant bearer");
+    logger.step("confirming no direct agent resources are exposed");
     const resourcesResponse = await mcpRequest(remote.baseUrl, grant.token, {
       id: "resources-list-1",
       jsonrpc: "2.0",
@@ -350,9 +291,9 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
       params: {},
     });
     const resourcesPayload = await readJson(resourcesResponse);
-    // Must NOT be capability_forbidden — the converse grant authorizes the resource surface.
-    assert.equal(resourcesResponse.status, 200, `Expected resources/list to succeed, got ${resourcesResponse.status}: ${JSON.stringify(resourcesPayload)}`);
-    assert.ok(Array.isArray(resourcesPayload?.result?.resources));
+    assert.equal(resourcesResponse.status, 200, `Expected resources/list to return an empty catalogue, got ${resourcesResponse.status}: ${JSON.stringify(resourcesPayload)}`);
+    assert.equal(resourcesPayload?.result?.resources, undefined);
+    assert.ok(resourcesPayload?.error, "Expected resources/list to be unavailable for an agent chat credential");
 
     return {
       answer: ask.structuredContent.answer.text,
@@ -365,10 +306,10 @@ export const runConverseGrantSmoke = async (logger: SmokeLogger): Promise<Conver
   }
 };
 
-export const runSharedStoreRejectionSmoke = async (
+export const runSharedStoreConverseSmoke = async (
   redisUrl: string,
   logger: SmokeLogger,
-): Promise<CredentialRejectionSmokeSummary> => {
+): Promise<ConverseSmokeSummary> => {
   const backend = await startBackendHarness();
   const redisKeyPrefix = `radioso-mcp-shared-smoke-${Math.random().toString(36).slice(2, 10)}`;
   const runtimeA = await startRemoteHarness({
@@ -385,11 +326,23 @@ export const runSharedStoreRejectionSmoke = async (
   });
 
   try {
-    logger.step("verifying REST credential rejection on both shared-store nodes");
-    const rejectedCredential = "radioso_workspace_credential_rejected";
-    const rejection = await assertWorkspaceCredentialRejected(runtimeA.baseUrl, rejectedCredential);
-    await assertWorkspaceCredentialRejected(runtimeB.baseUrl, rejectedCredential);
-    return rejection;
+    logger.step("issuing an agent MCP credential for the shared store");
+    const grant = await backend.issueConverseGrant("mcp-converse-redis-smoke@example.com");
+
+    logger.step("using the credential through both shared-store nodes");
+    await initializeSession(runtimeA.baseUrl, grant.token);
+    await initializeSession(runtimeB.baseUrl, grant.token);
+    const ask = await callTool(runtimeB.baseUrl, grant.token, "ask_agent", {
+      message: "Hello from the Redis MCP smoke test.",
+    });
+    assert.equal(ask.response.status, 200);
+    assert.equal(typeof ask.structuredContent.answer.text, "string");
+
+    return {
+      agentId: grant.agentId,
+      answer: ask.structuredContent.answer.text,
+      workspaceId: grant.workspaceId,
+    };
   } finally {
     await runtimeB.close();
     await runtimeA.close();

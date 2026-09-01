@@ -3,7 +3,6 @@ import type { RequestHandler } from "express";
 import { AppError } from "../../../shared/domain/errors.js";
 import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
 import type { AgentConversePrincipal } from "../../../modules/settings/contracts/agentConverseSession.js";
-import type { AgentConverseAudit } from "../../../modules/chat/contracts/index.js";
 
 export interface McpConverseLocals {
   mcpConversePrincipal: AgentConversePrincipal;
@@ -24,23 +23,8 @@ const invalidConverseSession = (): AppError => new AppError(
   { code: "invalid_session" },
 );
 
-export const rejectWorkspaceBearerToken = (_audit?: AgentConverseAudit): RequestHandler => async (req, _res, next) => {
-  try {
-    const token = extractBearerToken(req.header("authorization"));
-    if (!token) {
-      next();
-      return;
-    }
-
-    throw invalidConverseSession();
-  } catch (error) {
-    next(error);
-  }
-};
-
 export const requireMcpConverseSession = (
   sessionService: Pick<AgentConverseSessionPort, "validate">,
-  _audit?: AgentConverseAudit,
 ): RequestHandler => async (req, res, next) => {
   try {
     const token = extractBearerToken(req.header("authorization"));

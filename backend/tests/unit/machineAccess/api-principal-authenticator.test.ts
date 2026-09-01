@@ -140,28 +140,6 @@ describe("ApiPrincipalAuthenticator", () => {
     await expect(authenticator.authenticate(issued.secret)).rejects.toMatchObject({ statusCode: 401 });
   });
 
-  it("authenticates credentials with no expiry", async () => {
-    const personal = issueMachineSecret("personal");
-    const personalHarness = createHarness({ ...personalRecord(personal.tokenHash), expiresAt: null });
-    await expect(personalHarness.authenticator.authenticate(personal.secret)).resolves.toMatchObject({
-      principal: { type: "personal_api_credential", credentialId: "credential-1" },
-    });
-
-    const service = issueMachineSecret("service");
-    const serviceHarness = createHarness({
-      ...personalRecord(service.tokenHash),
-      kind: "service",
-      roleCeiling: null,
-      ownerUserId: null,
-      accessTenureMembershipId: null,
-      serviceAccountId: "service-1",
-      expiresAt: null,
-    });
-    await expect(serviceHarness.authenticator.authenticate(service.secret)).resolves.toMatchObject({
-      principal: { type: "service_account_credential", serviceAccountId: "service-1" },
-    });
-  });
-
   it("returns the same unauthorized boundary for malformed, expired, and revoked credentials", async () => {
     const issued = issueMachineSecret("personal");
     const malformed = createHarness(personalRecord(issued.tokenHash));

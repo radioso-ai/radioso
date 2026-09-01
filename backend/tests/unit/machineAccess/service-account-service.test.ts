@@ -37,7 +37,6 @@ const createServiceAccount = (service: ServiceAccountService) => service.createW
   actorUserId: "admin-1",
   displayName: "Deployment runner",
   role: "admin",
-  credentialLabel: "Primary",
   expiresAt,
 });
 
@@ -53,6 +52,7 @@ describe("ServiceAccountService", () => {
     expect(created.secret).toMatch(/^radioso_svc_v1_/);
     expect(created.account).toMatchObject({ status: "enabled", role: "admin", activeCredentialCount: 1 });
     expect(created.credential.serviceAccountId).toBe(created.account.id);
+    expect(created.credential.label).toBe("Primary");
     expect(admin.repository.credentials.get(created.credential.id)).not.toHaveProperty("secret");
     expect(admin.audit.events).toContainEqual(expect.objectContaining({
       eventType: "machine_access.service_credential.issued",
@@ -133,40 +133,38 @@ describe("ServiceAccountService", () => {
     })).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it("creates forever service-account credentials when expiry is omitted", async () => {
+  it("rejects service-account credentials when expiry is omitted", async () => {
     const { service } = createHarness();
 
-    const created = await service.createWithCredential({
+    await expect(service.createWithCredential({
       accountId: "account-1",
       workspaceId: "workspace-1",
       actorUserId: "admin-1",
       displayName: "Forever runner",
       role: "member",
-      credentialLabel: "Primary",
-    });
-    expect(created.credential.expiresAt).toBeNull();
-    expect(created.account.activeCredentialCount).toBe(1);
+    })).rejects.toMatchObject({ statusCode: 400 });
 
-    const issued = await service.issueCredential({
+    const created = await createServiceAccount(service);
+    await expect(service.issueCredential({
       accountId: "account-1",
       workspaceId: "workspace-1",
       actorUserId: "admin-1",
       serviceAccountId: created.account.id,
       label: "Secondary",
-    });
-    expect(issued.credential.expiresAt).toBeNull();
-    await expect(service.rotateCredential({
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it("rejects service credentials beyond the 365-day lifetime", async () => {
+    const { service } = createHarness();
+
+    await expect(service.createWithCredential({
       accountId: "account-1",
       workspaceId: "workspace-1",
       actorUserId: "admin-1",
-      serviceAccountId: created.account.id,
-      credentialId: issued.credential.id,
-      revision: issued.credential.revision,
-    })).resolves.toMatchObject({
-      credential: {
-        expiresAt: null,
-      },
-    });
+      displayName: "Too long",
+      role: "member",
+      expiresAt: new Date("2027-08-31T00:00:00.001Z"),
+    })).rejects.toMatchObject({ statusCode: 400 });
   });
 
   it("archives once, invalidates every child, and records the automatic cause", async () => {

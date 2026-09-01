@@ -34,7 +34,7 @@ const mapCredential = (row: Record<string, unknown>): ApiCredentialRecord => ({
   ownerUserId: row.owner_user_id as string | null, accessTenureMembershipId: row.access_tenure_membership_id as string | null,
   serviceAccountId: row.service_account_id as string | null, createdByUserId: String(row.created_by_user_id),
   createdAt: new Date(String(row.created_at)), updatedAt: new Date(String(row.updated_at)),
-  expiresAt: row.expires_at ? new Date(String(row.expires_at)) : null,
+  expiresAt: new Date(String(row.expires_at)),
   lastUsedAt: row.last_used_at ? new Date(String(row.last_used_at)) : null, revokedAt: row.revoked_at ? new Date(String(row.revoked_at)) : null,
   revokedByUserId: row.revoked_by_user_id as string | null, revocationReason: row.revocation_reason as string | null,
   rotatedFromCredentialId: row.rotated_from_credential_id as string | null, revision: Number(row.revision),
@@ -127,7 +127,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     accessTenureMembershipId: string;
     roleCeiling: MachineAccessRole;
     label: string;
-    expiresAt: Date | null;
+    expiresAt: Date;
     createdByUserId: string;
     now: Date;
     limit: number;
@@ -145,7 +145,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
       const count = await trx.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count"))
         .where("workspace_id", "=", input.workspaceId).where("owner_user_id", "=", input.ownerUserId)
         .where("kind", "=", "personal").where("revoked_at", "is", null)
-        .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", input.now)]))
+        .where("expires_at", ">", input.now)
         .executeTakeFirstOrThrow();
       if (Number(count.count) >= input.limit) return null;
 
@@ -259,7 +259,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         ? 0
         : await trx.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count"))
           .where("service_account_id", "=", input.id).where("revoked_at", "is", null)
-          .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", input.now)])).executeTakeFirstOrThrow();
+          .where("expires_at", ">", input.now).executeTakeFirstOrThrow();
       const result = {
         status: "updated" as const,
         account: {
@@ -282,7 +282,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     role: MachineAccessRole;
     createdByUserId: string;
     credentialLabel: string;
-    expiresAt: Date | null;
+    expiresAt: Date;
     limit: number;
     issueSecret: () => { secret: string; tokenPrefix: string; tokenHash: string };
     actorAuthority?: import("../../modules/machineAccess/ports.js").ServiceAccountMutationActor;
@@ -319,7 +319,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
   async countActiveServiceCredentials(serviceAccountId: string): Promise<number> {
     const row = await this.db.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count"))
       .where("service_account_id", "=", serviceAccountId).where("kind", "=", "service").where("revoked_at", "is", null)
-      .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", new Date())])).executeTakeFirstOrThrow();
+      .where("expires_at", ">", new Date()).executeTakeFirstOrThrow();
     return Number(row.count);
   }
 
@@ -328,7 +328,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
     workspaceId: string;
     serviceAccountId: string;
     label: string;
-    expiresAt: Date | null;
+    expiresAt: Date;
     createdByUserId: string;
     now: Date;
     limit: number;
@@ -353,7 +353,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
       const count = await trx.selectFrom("api_credentials").select(({ fn }) => fn.countAll<number>().as("count"))
         .where("service_account_id", "=", input.serviceAccountId).where("kind", "=", "service")
         .where("revoked_at", "is", null)
-        .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", input.now)])).executeTakeFirstOrThrow();
+        .where("expires_at", ">", input.now).executeTakeFirstOrThrow();
       if (Number(count.count) >= input.limit) return { status: "limit" as const };
 
       const issued = input.issueSecret();
@@ -414,7 +414,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
       await this.requireServiceActorAuthority(trx, input.actorAuthority);
       let query = trx.updateTable("api_credentials").set({ label: input.label, updated_at: new Date(), revision: (eb) => eb("revision", "+", 1) })
         .where("id", "=", input.id).where("revoked_at", "is", null)
-        .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", new Date())]));
+        .where("expires_at", ">", new Date());
       if (input.expectedRevision !== undefined) query = query.where("revision", "=", input.expectedRevision);
       const row = await query.returningAll().executeTakeFirst();
       if (!row) return null;
@@ -459,7 +459,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
 
       const previous = await trx.selectFrom("api_credentials").selectAll().where("id", "=", input.credentialId)
         .where("revision", "=", input.expectedRevision).where("revoked_at", "is", null)
-        .where((eb) => eb.or([eb("expires_at", "is", null), eb("expires_at", ">", new Date())]))
+        .where("expires_at", ">", new Date())
         .forUpdate().executeTakeFirst();
       if (!previous) return null;
       if (previous.kind === "personal") {

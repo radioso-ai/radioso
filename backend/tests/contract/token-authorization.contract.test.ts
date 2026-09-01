@@ -99,7 +99,6 @@ describe("token authorization contract", () => {
       actorUserId: session.userId,
       displayName: "Contract service",
       role: "member",
-      credentialLabel: "Contract credential",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
     });
     const requests = [
@@ -138,7 +137,6 @@ describe("token authorization contract", () => {
       actorUserId: session.userId,
       displayName: "Agent service",
       role: "member",
-      credentialLabel: "Agent credential",
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
     });
     const initial = await request(app).get("/api/v1/agents").set(headers).expect(200);

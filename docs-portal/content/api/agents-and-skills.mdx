@@ -1,6 +1,7 @@
 ---
-title: Agents and skills
-description: Configure workspace agents, directives, named agent skills, and inspect the read-only skills catalog exposed by the API.
+title: "Agents and skills"
+description: "Configure workspace agents, directives, named agent skills, and inspect the read-only skills catalog exposed by the API."
+last_updated: 2026-09-01
 ---
 
 # Agents and skills
@@ -264,9 +265,9 @@ Radioso sends the request with `POST`, follows redirects only to publicly routab
 
 ## Read-only skills catalog
 
-The skills catalog is read-only. It helps API, SDK, MCP, and assistant clients understand what work is available and which stable contract owns it.
+The skills catalog is read-only. It helps API, SDK, and assistant clients understand what work is available and which stable contract owns it.
 
-For example, `retrieval.answer` points to the retrieval answer API and MCP grounded-answer tool. It does not require callers to switch to a generic `POST /skills/{name}/execute` contract.
+For example, `retrieval.answer` points to the retrieval answer API. It does not require callers to switch to a generic `POST /skills/{name}/execute` contract.
 
 Skill entries include:
 

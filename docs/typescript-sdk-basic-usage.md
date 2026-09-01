@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -361,14 +361,14 @@ const skill = await client.agents.skills.create(agentId, {
 Capability-specific skills have their own namespaces:
 `client.agents.emailSkills`, `client.agents.externalSkills`,
 `client.agents.webhookSkills`, and `client.agents.slackSkills`. External skills
-connect to MCP servers through `client.agents.mcpConnections`. Create
-agent-converse grants from the signed-in dashboard's MCP channel settings; the
-SDK uses bearer authentication and does not expose that session-authenticated
-grant lifecycle.
+connect to MCP servers through `client.agents.mcpConnections`. Create agent
+channel credentials from the signed-in dashboard's MCP or API card; their
+lifecycle requires an interactive session rather than a workspace bearer
+credential.
 
 ## Non-Streaming Chat
 
-SDK chat methods target the assistant chat surface. Use them for human-facing assistant conversations that should keep history and may answer directly or with retrieval-backed evidence.
+SDK chat methods target the role-aware assistant surface for operator automation. Use them for conversations that should keep workspace history and may answer directly or with retrieval-backed evidence. An external client confined to one agent should instead use a REST-audience agent credential with `POST /api/v1/agents/{agentId}/chat`.
 
 ```ts
 const response = await client.chat.create({

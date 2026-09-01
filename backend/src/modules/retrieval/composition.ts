@@ -107,9 +107,6 @@ export {
   type RetrievalStrategyPipeline,
 } from "./services/retrievalAnswerExecutor.js";
 export { GatewayQueryRewritePortAdapter } from "./services/gatewayQueryRewritePortAdapter.js";
-// App-wiring entrypoint for the MCP converse surface (composed in app/composition).
-export { AgentConverseGroundedAnswerService } from "./services/agentConverseGroundedAnswerService.js";
-
 export const createDefaultRetrievalServices = (input: {
   database: Database;
   queryEmbeddings: QueryEmbeddingPort;

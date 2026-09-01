@@ -77,7 +77,7 @@
 - [x] T044 [US5] Implement a composition-owned daily expiry-warning lifecycle with an injected clock/event sink and idempotent 30/7/1-day event behavior; do not add AMQP payloads.
 - [x] T045 [US5] Implement a coalesced asynchronous last-use writer that meets the five-minute bound and records only successful credential authentication.
 - [x] T046 [US5] Complete lifecycle audit events and automatic invalidation/tombstone audit attribution with bounded reason and request correlation fields.
-- [x] T047 [US5] Add API-access summary endpoint tests/implementation for effective role, capabilities, lifetime defaults/maxima, limits, legacy migration status, and `mcpCredentialSupport: "unsupported"`.
+- [x] T047 [US5] Add API-access summary endpoint tests/implementation for effective role, capabilities, lifetime defaults/maxima, limits, and legacy migration status. Agent-bound MCP credential support is described by the channel credential contract instead of the workspace API-access summary.
 
 ## Phase 7: User Story 6 — Configure API access clearly (P2)
 
@@ -115,6 +115,30 @@
 - [x] T071 Verify guard rejection against the persistent development database with before/after data counts, run guarded suites against harness-provisioned disposable PostgreSQL databases, and exercise personal-token issuance/revocation through the live API and frontend.
 - [x] T072 Obtain one independent senior-engineer review of the safety follow-up, resolve material findings, run `pnpm run ci:local -- --all`, update the existing PR, commit, and push.
 
+## Phase 10: User Story 7 — Role-free agent channel credentials and revised settings
+
+**Goal**: MCP and REST clients receive separate, one-agent, chat-only credentials with no workspace role, while Settings and channel UI mirror the underlying identity boundaries.
+
+- [ ] T073 [P] [US7] Add failing access-grant unit/integration tests for `agent-api` MCP/REST audiences, mandatory expiry, hash-only persistence, one-time reveal, cross-audience rejection, last use, rotation/session invalidation, revocation, and agent/workspace isolation.
+- [ ] T074 [P] [US7] Add failing REST route/contract tests for `POST /api/v1/agents/{agentId}/chat`, including start/resume, JSON/SSE, exact path binding, no default-agent fallback, conversation binding, and rejection of session/personal/service/MCP/public-launch credentials.
+- [ ] T075 [P] [US7] Add failing lifecycle route/OpenAPI tests for list/issue/rotate/revoke at `/api/v1/agents/{agentId}/channel-credentials`, session/CSRF and agent-management permission, safe role-free metadata, and permanent Ray coverage exclusions.
+- [ ] T076 [P] [US7] Add failing MCP backend/package tests proving only a bound MCP-audience credential exchanges, each derived session revalidates grant version/audience/state, and the active catalogue/resources contain only stateful `ask_agent` chat.
+- [ ] T077 [P] [US6] Add failing frontend adapter/route tests and Playwright journeys for the dedicated Service Accounts tab, server-named `Primary` first credential, mandatory expiry defaults, unified MCP card, and REST agent credential management.
+- [ ] T078 [US7] Add migration/schema changes for `agent-api` channel audience and nullable legacy ciphertext, forward-migrate existing MCP grants from `public-launch` to `agent-api`, regenerate Kysely/schema artifacts, and keep public-launch behavior separate.
+- [ ] T079 [US7] Extend `AccessGrantService` and its repository port with expected-audience resolution, hash-only channel issuance, mandatory expiry, safe presentation, and bounded lifecycle/auth audit metadata until T073 passes.
+- [ ] T080 [US7] Replace MCP-specific lifecycle routes with the audience-typed channel-credential contract and wire session-only centralized agent-management authorization until T075 passes.
+- [ ] T081 [US7] Implement dedicated REST agent-credential authentication and `POST /api/v1/agents/{agentId}/chat` as a thin transport over the existing chat service until T074 passes.
+- [ ] T082 [US7] Narrow backend MCP converse endpoints and the MCP server catalogue to stateful chat only, remove direct grounded-answer/resources for this credential, and make MCP auth require the stored audience until T076 passes.
+- [ ] T083 [US6] Change service-account creation to accept `credentialExpiresAt`, assign the first credential label `Primary` in the service, and reject missing/non-future/out-of-bound issuance expiry.
+- [ ] T084 [US6] Add the Service Accounts Settings tab and render personal API access separately without duplicating lifecycle state or API adapters.
+- [ ] T085 [US7] Build a shared role-free agent credential management component embedded in separate MCP and API cards; merge MCP setup and lifecycle into one card and use only user-facing MCP/REST chat terminology.
+- [ ] T086 [US7] Update the API card to selected-agent chat examples and the explicit path, remove document/routine/workspace-token guidance, and make frontend/Playwright tests pass.
+- [ ] T087 Read `docs/document-writer-prompt.md`, update API/MCP/settings docs and local architecture briefs, register Ray exclusions, record unchanged worker/AMQP impact, regenerate backend OpenAPI plus TypeScript SDK and MCP snapshots, and run their build/tests.
+- [ ] T088 Run focused backend unit/integration/contract suites, frontend unit/Playwright suites, MCP build/test/smoke, SDK build/test, docs lint/build, and database/schema drift checks.
+- [ ] T089 Start the real local stack and verify through the actual frontend, REST agent chat, and MCP client: issue credentials, complete chat turns, prove cross-audience/ordinary-route denial, and prove prior secrets fail after rotation/revocation.
+- [ ] T090 Obtain an independent senior-engineer review, delegate fixes iteratively to Terra/Luna agents where the pool permits, rerun affected checks after each pass, and obtain one engineering-manager review for the expanded architecture.
+- [ ] T091 Run `pnpm run ci:local -- --all`, update task evidence and the existing PR, commit with Conventional Commits, and push the current branch without renaming it.
+
 ## Dependencies
 
 - Foundation T001–T012 blocks all stories.
@@ -124,6 +148,7 @@
 - MCP package work T036/T038/T039 can proceed alongside backend US1–US3, but merged readiness and legacy removal wait for the backend principal boundary.
 - Frontend tests can be authored against `contracts/api-access.md` in parallel; frontend integration waits for lifecycle routes.
 - OpenAPI/SDK generation and documentation follow stable behavior. Full validation and reviews follow all implementation phases.
+- Phase 10 test tasks T073–T077 precede their implementations. T078–T083 establish backend contracts before UI T084–T086; generated artifacts/docs and live acceptance follow stable behavior.
 
 ## Parallel ownership guide
 

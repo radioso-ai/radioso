@@ -1,20 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { runConverseGrantSmoke, runWorkspaceCredentialRejectionSmoke } from "../testing/remoteSmokeHarness.js";
+import { runConverseGrantSmoke } from "../testing/remoteSmokeHarness.js";
 
 describe("remote MCP backend integration", () => {
-  it(
-    "rejects workspace credentials before an MCP session is created",
-    async () => {
-      const summary = await runWorkspaceCredentialRejectionSmoke({
-        step: () => {},
-      });
-
-      expect(summary).toEqual({ code: "unauthorized", status: 401 });
-    },
-    30_000,
-  );
-
   it(
     "accepts an MCP converse grant bearer and exposes only the converse surface",
     async () => {

@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 ---
 
 import { Callout } from 'nextra/components'
@@ -50,9 +50,7 @@ Set `REALTIME_INTERNAL_URL` on the frontend to the realtime service's private ba
 
 The stream uses the signed dashboard session cookie and `x-workspace-id`. It is a browser transport endpoint, so personal/service API credentials, the TypeScript SDK, and MCP do not use it. Frames contain workspace identity and invalidation kinds rather than document or conversation content.
 
-Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL`, `RADIOSO_MCP_SIGNING_SECRET`, and the standalone bind settings on that process, then send the original per-agent converse grant to its `/mcp` endpoint. The backend's merged setting reports `mode: "unsupported"` with `reason: "merged_auth_unavailable"` and does not mount `/mcp`; see [MCP server](/guides/mcp-server) for the client flow.
-
-When a backend deployment has `RADIOSO_MCP_ENABLED=true`, `RADIOSO_MCP_STANDALONE=false`, and `RADIOSO_MCP_REDIS_URL` configured, startup runs a purge-only maintenance lifecycle against that Redis namespace. Backend health remains unready while the purge retries and reports ready after it succeeds. This cleanup does not expose an MCP transport.
+Radioso's MCP server runs as a standalone HTTP process. Configure `RADIOSO_BASE_URL`, `RADIOSO_MCP_SIGNING_SECRET`, and the standalone bind settings on that process, then send the original MCP-audience agent credential to its `/mcp` endpoint. See [MCP server](/guides/mcp-server) for the client flow.
 
 ## Enterprise Edition deployment
 
@@ -96,6 +94,14 @@ Public chat and website embed rate limits are operator tuning knobs, not workspa
 - `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`
 
 The session limit applies to a visitor session. The global limit applies across public chat traffic for the process, and both are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share.
+
+## Agent channel chat rate limits
+
+REST agent chat and MCP `ask` calls each spend two durable limits before model work starts. One bucket follows the agent-channel credential, while the other covers all agent-channel credentials in the workspace. This keeps a single leaked credential contained and prevents a credential pool from consuming a workspace's whole provider budget.
+
+- `AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds.
+- `AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS` defaults to 30 requests per credential and window.
+- `AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 300 requests per workspace and window.
 
 ## Authenticated request limits
 

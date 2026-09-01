@@ -4,9 +4,11 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { ExternalLink, Plug } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { AgentChannelCredentialManager } from '@/components/dashboard/settings/agent-channel-credential-manager'
 import { Badge } from '@/components/ui/badge'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
+import { buildConverseClientConfig } from '@/lib/mcp-converse-client-config'
 
 export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? ''
 const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
@@ -60,11 +62,11 @@ export const resolveMcpChannelSetup = ({
 
   if (sameHost) {
     return {
-      error: 'The same-host merged MCP endpoint is unavailable in this release. Use standalone MCP with an agent-converse grant instead.',
+      error: 'The same-host merged MCP endpoint is unavailable in this release. Use standalone MCP with an agent-bound MCP credential instead.',
       label: 'MCP unavailable',
       mcpUrl: dashboardOrigin ? resolvedUrl.toString() : trimmedUrl,
       mode: 'disabled',
-      remediation: 'Run the standalone MCP server at a separate origin, set NEXT_PUBLIC_MCP_URL to that URL, then create an agent-converse grant in the panel below.',
+      remediation: 'Run the standalone MCP server at a separate origin, set NEXT_PUBLIC_MCP_URL to that URL, then create an MCP credential below.',
     }
   }
 
@@ -144,7 +146,7 @@ export const useMcpChannelSetup = () => {
   return resolvedSetup
 }
 
-export function McpChannelCard() {
+export function McpChannelCard({ agentId }: { agentId: string }) {
   const resolvedSetup = useMcpChannelSetup()
 
   return (
@@ -152,13 +154,12 @@ export function McpChannelCard() {
       id="mcp-channel"
       icon={<Plug className="h-5 w-5 text-primary" />}
       title="MCP"
-      description="Let AI tools like Cursor, Claude Desktop, or ChatGPT talk to this agent and search its grounded data."
+      description="Let MCP clients chat with this agent through the same persona, directives, skills, and routines as the web chat."
     >
       <div className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          MCP (Model Context Protocol) is an open standard. Compatible AI clients can talk to this agent through its
-          full turn loop — persona, directives, and routines included — or query its documents directly, through a
-          single connection with no custom integration code on your side.
+          MCP (Model Context Protocol) is an open standard. Compatible clients receive the agent&apos;s chat tool; direct
+          workspace retrieval and administrative tools are not exposed by this credential.
         </p>
 
         <div className="flex items-center">
@@ -178,8 +179,8 @@ export function McpChannelCard() {
             <CopyValueField value={resolvedSetup.mcpUrl} ariaLabel="Copy MCP server URL" className="w-full" />
           </div>
           <div className="space-y-2">
-            <Label className="text-foreground">MCP credentials</Label>
-            <p className="text-sm text-muted-foreground">{resolvedSetup.mode === 'disabled' && resolvedSetup.error?.includes('same-host merged MCP') ? 'Workspace MCP authentication is unavailable on the backend origin. Run standalone MCP and create an agent-converse grant in the panel below.' : 'Workspace API credentials are not accepted by MCP. Create an agent MCP converse credential in the panel below and keep its one-time token in your client’s secure configuration.'}</p>
+            <Label className="text-foreground">Authentication</Label>
+            <p className="text-sm text-muted-foreground">Create an MCP credential below. It is bound to this agent, has no workspace role, and cannot be used with the REST Agent API.</p>
           </div>
         </div>
 
@@ -194,6 +195,16 @@ export function McpChannelCard() {
             <ExternalLink className="h-3 w-3" />
           </a>
         </div>
+
+        <AgentChannelCredentialManager
+          key={`${agentId}:mcp`}
+          agentId={agentId}
+          audience="mcp"
+          secretConfiguration={resolvedSetup.mode === 'remote' ? {
+            label: 'MCP client config',
+            buildCode: (secret) => buildConverseClientConfig(resolvedSetup.mcpUrl, secret),
+          } : undefined}
+        />
       </div>
     </SettingsCard>
   )

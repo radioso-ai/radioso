@@ -39,6 +39,7 @@ export const createOpenApiDocument = (
       { name: "Workspace" },
       { name: "Realtime" },
       { name: "Assistant" },
+      { name: "Agent Channels" },
       { name: "History" },
       { name: "Context Variables" },
       { name: "Retrieval" },
@@ -47,6 +48,7 @@ export const createOpenApiDocument = (
       { name: "Connectors" },
       { name: "Audience Pulse" },
       { name: "Copilot" },
+      { name: "MCP Converse" },
     ],
   });
 

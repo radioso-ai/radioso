@@ -68,10 +68,9 @@ export const createApiAccessRoutes = (dependencies: Dependencies): Router => {
       res.json({
         effectiveRole,
         capabilities: { manageOwnPersonalTokens, auditWorkspacePersonalTokens, manageServiceAccounts },
-        defaults: { personalTokenLifetimeDays: null, serviceCredentialLifetimeDays: null },
+        defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
         limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
         legacyCredentialMigration,
-        mcpCredentialSupport: "unsupported",
       });
     } catch (error) { next(error); }
   });
@@ -90,7 +89,7 @@ export const createApiAccessRoutes = (dependencies: Dependencies): Router => {
       const { workspaceId } = apiAccessWorkspaceParamsSchema.parse(req.params);
       const locals = res.locals as { accountId: string; userId: string; workspaceId: string };
       requireRouteWorkspace(workspaceId, locals.workspaceId);
-      const created = await dependencies.serviceAccountService.createWithCredential({ accountId: locals.accountId, workspaceId, actorUserId: locals.userId, displayName: req.body.displayName, role: req.body.role, credentialLabel: req.body.initialCredential.label, expiresAt: req.body.initialCredential.expiresAt });
+      const created = await dependencies.serviceAccountService.createWithCredential({ accountId: locals.accountId, workspaceId, actorUserId: locals.userId, displayName: req.body.displayName, role: req.body.role, expiresAt: req.body.credentialExpiresAt });
       res.status(201).json({ serviceAccount: presentServiceAccount(created.account), credential: presentApiCredential(created.credential), secret: created.secret });
     } catch (error) { next(error); }
   });

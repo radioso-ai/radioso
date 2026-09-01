@@ -25,13 +25,13 @@ describe("API access credential presentation", () => {
     expect(deriveCredentialStatus({ ...active, serviceAccountStatus: null, now })).toBe("invalid");
   });
 
-  it("presents forever credentials without expiry warnings", () => {
-    const forever = { ...credential, expiresAt: null };
+  it("presents the required expiry and its warning window", () => {
+    const expiring = { ...credential, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000) };
 
-    expect(presentApiCredential(forever)).toMatchObject({
-      expiresAt: null,
+    expect(presentApiCredential(expiring)).toMatchObject({
+      expiresAt: expiring.expiresAt.toISOString(),
       status: "active",
-      expiryWarningDays: null,
+      expiryWarningDays: 1,
     });
   });
 });

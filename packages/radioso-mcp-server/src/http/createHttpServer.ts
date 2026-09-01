@@ -1,7 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { RemoteHttpDependencies } from "./types.js";
-import { createAuthExchangeHandler } from "./authRoutes.js";
 import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
 import { isRequestBodyTooLargeError, writeJson, writeJsonRpcError } from "./nodeHttp.js";
@@ -18,7 +17,6 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness }
     config,
     entryPoint: "standalone",
   });
-  const handleExchange = createAuthExchangeHandler({ auditLogger, authService });
   const handleMcp = createMcpRouteHandler({
     authService,
     config,
@@ -71,11 +69,6 @@ export const createHttpServer = ({ authService, auditLogger, config, readiness }
           serverName: config.serverName,
           status: "ok",
         });
-        return;
-      }
-
-      if (req.method === "POST" && url.pathname === "/v1/auth/exchange") {
-        await handleExchange(req, res);
         return;
       }
 

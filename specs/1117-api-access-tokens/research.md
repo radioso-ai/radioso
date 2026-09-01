@@ -186,3 +186,54 @@
 **Alternatives considered**:
 
 - Add read-only inventory to Ray: rejected because even credential metadata is part of identity/access management and would establish the wrong trust boundary.
+
+## Decision 18: Agent channels use role-free access grants
+
+**Decision**: Reuse the existing `agent_access_grants` aggregate for MCP and REST agent chat. Newly issued channel grants use `principalKind: agent-api`, role `agent`, and an immutable transport audience in `channel`. Workspace roles authorize lifecycle calls only and are never copied into the channel credential.
+
+**Rationale**: The aggregate already owns one-agent/workspace binding, expiry, rotation, revocation, last use, and MCP session invalidation. Extending it completes the reserved `agent-api` principal instead of forcing chat credentials into the role-bearing `machineAccess` model.
+
+**Alternatives considered**:
+
+- Use personal or service credentials for chat: rejected because they carry broader workspace authority.
+- Add channel credentials to `api_credentials`: rejected because its invariant requires a human or service principal and a workspace role.
+- Create a third credential table: rejected because it would duplicate the access-grant lifecycle and persistence seam.
+
+## Decision 19: MCP and REST have distinct audiences and secrets
+
+**Decision**: Operators mint separate MCP and REST agent credentials. Authentication looks up the opaque verifier and requires the stored audience requested by the transport; token text does not encode or classify the audience.
+
+**Rationale**: A leaked MCP client secret cannot silently become a general REST secret, and each integration can be rotated/revoked independently while keeping one lifecycle convention.
+
+**Alternatives considered**:
+
+- One raw secret valid on both transports: rejected because it widens the blast radius and makes use attribution ambiguous.
+- Prefix-based audience detection: rejected because policy belongs to persisted typed state, not token string shape.
+
+## Decision 20: The agent credential surface is chat-only
+
+**Decision**: MCP registers only `ask_agent` for an agent credential; direct `answer_grounded` and document resources are removed. REST exposes an explicit `POST /api/v1/agents/{agentId}/chat` route that verifies the credential/path binding before entering the normal chat turn loop.
+
+**Rationale**: Assistant behavior and retrieval are separate product surfaces. The agent may retrieve internally while answering, but a direct retrieval or document-reading API is a different capability and requires its own credential decision.
+
+**Alternatives considered**:
+
+- Keep MCP direct retrieval because it is agent-scoped: rejected because it bypasses persona, directives, routines, and the chat boundary the credential represents.
+- Reuse `/assistant/chat` with caller-supplied `agentId`: rejected because that route accepts workspace principals and resolves a default agent when omitted.
+
+## Decision 21: Service accounts and channel credentials move to purpose-owned UI
+
+**Decision**: Workspace Settings retains personal API tokens and gains a dedicated Service Accounts tab. Service-account creation asks for the stable account name, role, and expiry; the server labels the first credential `Primary`. The agent Channels page embeds MCP setup and MCP credential lifecycle in one card and gives REST agent chat its own credential lifecycle inside the API card.
+
+**Rationale**: The navigation and forms mirror the underlying objects: service accounts are stable workspace principals, while MCP and REST credentials configure one agent channel. Hiding the first credential label avoids asking for two names before the distinction is useful.
+
+**Alternatives considered**:
+
+- Keep personal and service identities in one large card: rejected because it obscures two different management jobs.
+- Keep MCP setup and credential management in separate cards: rejected because users experience them as one connection workflow.
+
+## Decision 22: Operator-minted channel credentials do not require OAuth
+
+**Decision**: This phase uses opaque bearer credentials minted by a signed-in operator. OAuth remains deferred for third-party delegated installation, consent, refresh, and discovery.
+
+**Rationale**: The operator is explicitly provisioning a credential for one known agent and client. Adding an authorization server would not improve the current trust decision and would multiply protocol and lifecycle scope.

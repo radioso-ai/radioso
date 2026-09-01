@@ -74,7 +74,7 @@ export interface AgentAccessGrants {
   channel: Generated<string>;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
-  encrypted_token: string;
+  encrypted_token: string | null;
   expires_at: Timestamp | null;
   id: Generated<string>;
   label: string | null;
@@ -175,7 +175,7 @@ export interface ApiCredentials {
   account_id: string;
   created_at: Generated<Timestamp>;
   created_by_user_id: string;
-  expires_at: Timestamp | null;
+  expires_at: Timestamp;
   id: string;
   kind: string;
   label: string;

@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
+import {
+  agentChannelChatSchema,
+  agentChannelCredentialIssueSchema,
+  agentChannelCredentialListQuerySchema,
+  agentChannelCredentialParamsSchema,
+} from "../../schemas/agentChannelSchemas.js";
 import { agentSurfacePositions, authoredDirectiveSurfaceValues } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
@@ -219,63 +225,46 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-  const AgentMcpConverseGrantMetadataSchema = registry.register(
-    "AgentMcpConverseGrantMetadata",
+  const AgentChannelCredentialMetadataSchema = registry.register(
+    "AgentChannelCredentialMetadata",
     z.object({
       id: z.string().uuid(),
-      label: z.string().nullable(),
-      tokenPrefix: z.string(),
-      enabled: z.boolean(),
+      audience: z.enum(["mcp", "rest"]),
+      label: z.string(),
+      prefix: z.string(),
+      status: z.enum(["active", "expired", "revoked", "disabled"]),
       createdAt: z.string().datetime(),
+      expiresAt: z.string().datetime().nullable(),
       lastUsedAt: z.string().datetime().nullable(),
       revokedAt: z.string().datetime().nullable(),
     }),
   );
 
-  const AgentMcpConverseGrantSecretSchema = registry.register(
-    "AgentMcpConverseGrantSecret",
+  const AgentChannelCredentialIssueRequestSchema = registry.register(
+    "AgentChannelCredentialIssueRequest",
+    agentChannelCredentialIssueSchema,
+  );
+
+  const AgentChannelCredentialIssueResponseSchema = registry.register(
+    "AgentChannelCredentialIssueResponse",
     z.object({
-      id: z.string().uuid(),
-      label: z.string().nullable(),
-      tokenPrefix: z.string(),
-      createdAt: z.string().datetime(),
+      credential: AgentChannelCredentialMetadataSchema,
+      secret: z.string(),
     }),
   );
 
-  const AgentMcpConverseGrantIssueRequestSchema = registry.register(
-    "AgentMcpConverseGrantIssueRequest",
+  const AgentChannelCredentialListResponseSchema = registry.register(
+    "AgentChannelCredentialListResponse",
     z.object({
-      label: z.string().min(1).max(120).optional(),
+      credentials: z.array(AgentChannelCredentialMetadataSchema),
+      nextCursor: z.string().nullable(),
     }),
   );
 
-  const AgentMcpConverseGrantIssueResponseSchema = registry.register(
-    "AgentMcpConverseGrantIssueResponse",
-    z.object({
-      grant: AgentMcpConverseGrantSecretSchema,
-      token: z.string(),
-    }),
+  const AgentChannelChatRequestSchema = registry.register(
+    "AgentChannelChatRequest",
+    agentChannelChatSchema,
   );
-
-  const AgentMcpConverseGrantSecretResponseSchema = registry.register(
-    "AgentMcpConverseGrantSecretResponse",
-    z.object({
-      grant: AgentMcpConverseGrantSecretSchema,
-      token: z.string(),
-    }),
-  );
-
-  const AgentMcpConverseGrantListResponseSchema = registry.register(
-    "AgentMcpConverseGrantListResponse",
-    z.object({
-      grants: z.array(AgentMcpConverseGrantMetadataSchema),
-    }),
-  );
-
-  const AgentMcpConverseGrantParamsSchema = z.object({
-    agentId: z.string().uuid(),
-    grantId: z.string().uuid(),
-  });
 
   const AuthoredDirectiveParamsSchema = z.object({
     agentId: z.string().uuid(),
@@ -664,12 +653,13 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ConversationAgentRequestSchema,
     AgentChannelLifecycleSchema,
     AgentChannelsLifecycleResponseSchema,
-    AgentMcpConverseGrantIssueRequestSchema,
-    AgentMcpConverseGrantIssueResponseSchema,
-    AgentMcpConverseGrantListResponseSchema,
-    AgentMcpConverseGrantMetadataSchema,
-    AgentMcpConverseGrantParamsSchema,
-    AgentMcpConverseGrantSecretResponseSchema,
+    AgentChannelChatRequestSchema,
+    AgentChannelCredentialIssueRequestSchema,
+    AgentChannelCredentialIssueResponseSchema,
+    AgentChannelCredentialListResponseSchema,
+    AgentChannelCredentialListQuerySchema: agentChannelCredentialListQuerySchema,
+    AgentChannelCredentialMetadataSchema,
+    AgentChannelCredentialParamsSchema: agentChannelCredentialParamsSchema,
     AgentParamsSchema,
     AuthoredDirectiveConditionSchema,
     AuthoredDirectiveBindingSchema,

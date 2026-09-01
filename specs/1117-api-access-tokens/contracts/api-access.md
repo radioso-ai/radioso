@@ -97,8 +97,7 @@ Returns the session user's effective workspace role and UI capabilities, secure 
   "legacyCredentialMigration": {
     "status": "destroyed | not_applicable",
     "migratedAt": "RFC3339 UTC | null"
-  },
-  "mcpCredentialSupport": "unsupported"
+  }
 }
 ```
 
@@ -173,14 +172,11 @@ Creates one service account and its first credential atomically.
 {
   "displayName": "Nightly ingestion",
   "role": "member | admin",
-  "initialCredential": {
-    "label": "Production runner",
-    "expiresAt": "RFC3339 UTC"
-  }
+  "credentialExpiresAt": "RFC3339 UTC"
 }
 ```
 
-The assigned role cannot exceed the acting user's effective role. Returns `201`:
+The assigned role cannot exceed the acting user's effective role. The server labels the first credential `Primary`; callers label only additional credentials once that distinction is useful. Returns `201`:
 
 ```json
 {
@@ -280,14 +276,98 @@ Authorization: Bearer <personal-or-service-credential>
 - Route coverage policy may still require an interactive session.
 - A valid interactive session keeps precedence over bearer auth when both are present on an ordinary workspace route.
 
-## MCP contract change
+## Agent channel credential endpoints
 
-- Merged MCP rejects both new API credential kinds after principal resolution.
-- `/api/v1/workspace/mcp/context` rejects both kinds, causing standalone exchange to fail closed.
-- Stdio performs the same MCP-eligibility preflight and rejects both kinds.
-- Agent-converse continues accepting only its separate grant/session credential class and must not classify by token string shape.
+All lifecycle endpoints require an interactive session plus the centralized agent-management permission. A personal token, service credential, public-launch token, or agent credential never satisfies these endpoints.
+
+### Shared metadata
+
+```json
+{
+  "id": "uuid",
+  "audience": "mcp | rest",
+  "label": "Customer support client",
+  "prefix": "radioso_<safe-prefix>",
+  "status": "active | expired | revoked | disabled",
+  "createdAt": "RFC3339 UTC",
+  "expiresAt": "RFC3339 UTC",
+  "lastUsedAt": "RFC3339 UTC | null",
+  "revokedAt": "RFC3339 UTC | null"
+}
+```
+
+Metadata contains no role because a channel credential is not a workspace principal.
+
+### `GET /api/v1/agents/{agentId}/channel-credentials`
+
+Optional query `audience=mcp|rest` filters the safe inventory. The path agent must belong to the active workspace.
+
+### `POST /api/v1/agents/{agentId}/channel-credentials`
+
+```json
+{
+  "audience": "mcp | rest",
+  "label": "Customer support client",
+  "expiresAt": "RFC3339 UTC"
+}
+```
+
+Returns `201`:
+
+```json
+{
+  "credential": { "...": "agent channel credential metadata" },
+  "secret": "<opaque one-time secret>"
+}
+```
+
+The secret is retained only as a hash verifier and appears in no later response.
+
+### `POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate`
+
+Immediately replaces the verifier and returns one replacement secret with the same agent, workspace, audience, label, and absolute expiry. Existing derived MCP sessions fail their next validation.
+
+### `POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke`
+
+Idempotently revokes the selected channel credential. A credential belonging to another agent returns `404` without revealing the binding.
+
+## REST agent chat
+
+### `POST /api/v1/agents/{agentId}/chat`
+
+Authentication is exclusively:
+
+```http
+Authorization: Bearer <rest-agent-credential>
+```
+
+Request:
+
+```json
+{
+  "message": "How can I reset my password?",
+  "conversationId": "uuid (optional resume)",
+  "startConversation": false,
+  "stream": false,
+  "userExpectedLocale": "en (optional)"
+}
+```
+
+- `message` is required unless `startConversation` is true.
+- `startConversation` cannot include `conversationId` and cannot stream.
+- `conversationId` may resume only a conversation already bound to this workspace and agent.
+- The path `agentId` must equal the credential's immutable binding; the route never resolves the workspace default agent and accepts no body `agentId`.
+- Responses reuse the assistant chat JSON/SSE contract without debug/operator-only fields.
+- Interactive sessions, personal/service credentials, MCP credentials, and public-launch credentials are rejected with the generic channel-credential `401`.
+
+## MCP agent chat
+
+- MCP exchange accepts only an active `mcp`-audience channel credential bound to one agent. It rejects personal, service, REST-agent, and public-launch credentials without token-shape classification.
+- A short-lived MCP session revalidates the underlying grant ID, version, audience, workspace/agent binding, enabled state, expiry, rotation, and revocation before each operation.
+- The MCP catalogue for this principal contains only `ask_agent`, which runs the stateful agent turn loop.
+- `answer_grounded`, direct resource listing/reading, workspace document tools, write tools, Ray/operator tools, and skill-catalogue management are absent.
 - All paths use generic invalid-credential/session responses.
-- No OAuth, tool filtering, skill catalogue, Ray MCP, or new MCP credential is introduced.
+- OAuth is not required for operator-minted credentials; delegated OAuth installation remains out of scope.
 
 ## Route-policy capabilities
 
@@ -298,13 +378,14 @@ The account access policy adds session capabilities with role mappings:
 | `workspace.api_access.personal.manage_self` | yes | yes | yes |
 | `workspace.api_access.personal.audit` | no | yes | yes |
 | `workspace.api_access.service.manage` | no | yes | yes |
+| Existing centralized agent-management permission (channel lifecycle) | policy-defined | yes | yes |
 
-Machine principals are denied all three through the HTTP route policy even if their effective role is administrator.
+Machine principals are denied all lifecycle capabilities through the HTTP route policy even if their effective role is administrator. Agent channel credentials bypass neither this table nor ordinary route policy; they are consumed only by the dedicated agent-chat transport.
 
 ## Message-queue impact
 
-Document-worker dispatch, AMQP payload shapes, retry semantics, queue tests, and queue documentation are unaffected. Credentials terminate at HTTP/MCP authentication boundaries. Expiry warnings use an application lifecycle hook and do not create a worker message contract.
+Document-worker dispatch, AMQP payload shapes, retry semantics, queue tests, and queue documentation are unaffected. Credentials terminate at HTTP/MCP authentication boundaries, and both transports call the existing synchronous chat service. Expiry warnings use an application lifecycle hook and do not create a worker message contract.
 
 ## Ray coverage
 
-All API-access operation IDs receive a permanent Operator Copilot coverage-map exclusion because identity, access, and secret management are on Ray's never-list.
+All API-access and agent-channel credential lifecycle operation IDs receive a permanent Operator Copilot coverage-map exclusion because identity, access, and secret management are on Ray's never-list. The REST agent chat operation is a runtime channel rather than an operator action and is also excluded from Ray's management catalogue.

@@ -127,30 +127,29 @@ describe("PersonalCredentialService", () => {
     }));
   });
 
-  it("issues forever personal credentials when expiry is omitted", async () => {
+  it("rejects personal credentials when expiry is omitted", async () => {
     const { service } = createHarness();
 
-    const issued = await service.issue({
+    await expect(service.issue({
       accountId: "account-1",
       workspaceId: "workspace-1",
       userId: "owner-1",
       label: "Forever",
       roleCeiling: "member",
-    });
+    })).rejects.toMatchObject({ statusCode: 400 });
+  });
 
-    expect(issued.credential.expiresAt).toBeNull();
-    expect(issued.credential.status).toBeUndefined();
-    await expect(service.rotate({
+  it("rejects personal credentials beyond the 90-day lifetime", async () => {
+    const { service } = createHarness();
+
+    await expect(service.issue({
       accountId: "account-1",
       workspaceId: "workspace-1",
       userId: "owner-1",
-      credentialId: issued.credential.id,
-      revision: issued.credential.revision,
-    })).resolves.toMatchObject({
-      credential: {
-        expiresAt: null,
-      },
-    });
+      label: "Too long",
+      roleCeiling: "member",
+      expiresAt: new Date("2026-11-30T00:00:00.001Z"),
+    })).rejects.toMatchObject({ statusCode: 400 });
   });
 
   it("rolls back issue, relabel, and revoke when their required audit write fails", async () => {

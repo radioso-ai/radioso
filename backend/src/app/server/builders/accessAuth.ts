@@ -70,11 +70,21 @@ export const buildAccessServices = (input: {
       logger.warn({ machineAccess: { operation: "last_use_persistence" } }, "machine_access_last_use_persistence_failed");
     },
   };
+  const accessGrantUsageObserver = {
+    recordLastUsePersistenceFailure() {
+      metricsRegistry?.incrementCounter("access_grant_last_use_persistence_failures_total", {
+        help: "Access grant last-use persistence failures",
+        labels: {},
+      });
+      logger.warn({ accessGrant: { operation: "last_use_persistence" } }, "access_grant_last_use_persistence_failed");
+    },
+  };
   const accessGrantService = new AccessGrantService({
     repository: repositories.accessGrantRepository,
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
     auditService,
+    usageObserver: accessGrantUsageObserver,
   });
   const personalCredentialTenureService = new PersonalCredentialTenureService({
     repository: repositories.machineAccessRepository,

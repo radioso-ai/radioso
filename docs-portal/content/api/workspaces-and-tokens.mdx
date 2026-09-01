@@ -1,11 +1,12 @@
 ---
-title: Personal tokens and service accounts
-description: Create role-bounded credentials for people and durable service identities for unattended API clients.
+title: "Personal tokens and service accounts"
+description: "Create role-bounded credentials for people and durable service identities for unattended API clients."
+last_updated: 2026-09-01
 ---
 
 # Personal tokens and service accounts
 
-Use a personal token for automation you run as yourself. Use a service account for CI, production services, and jobs that must keep the same identity when a team member leaves. Both authenticate eligible REST API calls with `Authorization: Bearer <token>`.
+Use a personal token for workspace automation you run as yourself. Use a service account for CI, production services, and jobs that need a stable non-human identity. Both authenticate role-aware REST API calls with `Authorization: Bearer <token>`.
 
 Credential management itself is available only through a signed-in browser session. Mutation requests must also send `X-Radioso-CSRF: 1`; a bearer token cannot mint, reveal, rotate, or manage another credential.
 
@@ -14,6 +15,8 @@ Credential management itself is available only through a signed-in browser sessi
 A personal token remains attached to your current workspace membership. Its role ceiling can be `member` or `admin`, but never exceeds your live role. Demotion takes effect on the next request; leaving and later rejoining the workspace does not revive an older token.
 
 A service account is a workspace-owned identity with its own live `member` or `admin` role. It can have several credentials, so you can deploy a replacement before revoking the old credential. Disabling the account suspends every credential. Archiving it permanently invalidates them while preserving the audit identity.
+
+Credentials created under an agent's **Channels** settings are a different kind. They have no workspace role, are bound to exactly one agent and one audience (`mcp` or `rest`), and can only talk to that agent. A personal or service credential cannot be substituted for one of these agent credentials, and an agent credential cannot administer the workspace.
 
 ## Open API access settings
 
@@ -25,19 +28,17 @@ curl -sS -b cookies.txt \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access
 ```
 
-By default, personal tokens and service-account credentials do not expire. Set `expiresAt` when a client should stop authenticating automatically at a known time. The default limits are 10 active personal tokens per user, 50 service accounts per workspace, and 5 active credentials per service account.
+Every credential needs an expiry. A personal token can last up to 90 days; a service-account credential can last up to 365 days. The other default limits are 10 active personal tokens per user, 50 service accounts per workspace, and 5 active credentials per service account.
 
 ## Create a personal token
 
 ```bash
+personal_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
 curl -sS -b cookies.txt -X POST \
   -H 'Content-Type: application/json' \
   -H 'X-Radioso-CSRF: 1' \
   -H 'X-Workspace-Id: <workspace-id>' \
-  -d '{
-    "label":"CLI on laptop",
-    "roleCeiling":"member"
-  }' \
+  -d "{\"label\":\"CLI on laptop\",\"roleCeiling\":\"member\",\"expiresAt\":\"${personal_expiry}\"}" \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 
@@ -53,20 +54,15 @@ curl -sS \
 
 ## Create a service account
 
-An administrator or owner creates the stable identity and its first credential together:
+Open **Settings → Service accounts**. An administrator or owner creates the stable identity and its first credential together. The form asks for the account name, role, and credential expiry; the server names the first credential `Primary`, so there is no second name to invent during setup.
 
 ```bash
+service_expiry="$(node -p 'new Date(Date.now() + 180 * 86400000).toISOString()')"
 curl -sS -b cookies.txt -X POST \
   -H 'Content-Type: application/json' \
   -H 'X-Radioso-CSRF: 1' \
   -H 'X-Workspace-Id: <workspace-id>' \
-  -d '{
-    "displayName":"Nightly ingestion",
-    "role":"member",
-    "initialCredential":{
-      "label":"Production runner"
-    }
-  }' \
+  -d "{\"displayName\":\"Nightly ingestion\",\"role\":\"member\",\"credentialExpiresAt\":\"${service_expiry}\"}" \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/service-accounts
 ```
 
@@ -81,15 +77,11 @@ For a deployment with no interruption:
 
 Immediate rotation is intended for a credential you must invalidate at once. It revokes the predecessor and returns one replacement with the same expiry setting.
 
-## MCP credentials are separate
+## Agent chat credentials are separate
 
-Personal tokens and service-account credentials authenticate eligible REST API routes. The MCP server rejects both credential kinds. Agent converse uses its own per-agent grant and short-lived session; those values are not ordinary REST API tokens.
+Personal tokens and service-account credentials authenticate eligible workspace REST routes. They do not authenticate the MCP server or `POST /api/v1/agents/{agentId}/chat`.
 
-## Upgrading from a shared workspace token
-
-The database upgrade destroys every shared workspace-token secret and verifier. Existing API clients stop authenticating, and any old workspace-token-backed MCP sessions become unusable. Controlled MCP runtime stores purge their stored sessions before reporting ready. The current MCP workspace-document surface rejects personal and service API credentials; use the supported agent-converse grant flow instead.
-
-Before upgrading, take a database backup suitable for restoring the previous application version. After upgrading, sign in and create a personal token or service account credential for each REST API client. Downgrading the application requires restoring that compatible backup; destroyed credentials cannot be reconstructed.
+Create a separate agent credential from the agent's **Channels → MCP** or **Channels → API** card. Each credential has one audience, an expiry, and one agent. Its secret is returned once and stored as a hash. A signed-in user with permission to manage that agent can issue, rotate, or revoke it; the agent credential itself cannot manage credentials.
 
 ## Common failure modes
 

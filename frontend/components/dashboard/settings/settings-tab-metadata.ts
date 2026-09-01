@@ -31,6 +31,18 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       },
     ],
   },
+  'service-accounts': {
+    id: 'service-accounts',
+    title: 'Service accounts',
+    summary: 'Manage standalone workspace identities for integrations and automation.',
+    sections: [
+      {
+        id: 'service-accounts',
+        label: 'Service accounts',
+        summary: 'Create, disable, archive, and rotate credentials for non-human identities.',
+      },
+    ],
+  },
   providers: {
     id: 'providers',
     title: 'Providers',

@@ -9,6 +9,7 @@ describe("service-account API access", () => {
     const session = await issueTestSession(app, "service-api-access@example.com");
     const headers = { Cookie: session.cookie, "X-Radioso-CSRF": "1", "X-Workspace-Id": session.workspaceId };
     const base = `/api/v1/account/workspaces/${session.workspaceId}/api-access/service-accounts`;
+    const credentialExpiresAt = new Date(Date.now() + 180 * 24 * 60 * 60 * 1_000).toISOString();
 
     const created = await request(app)
       .post(base)
@@ -16,9 +17,7 @@ describe("service-account API access", () => {
       .send({
         displayName: "CI deployment",
         role: "admin",
-        initialCredential: {
-          label: "Primary",
-        },
+        credentialExpiresAt,
       })
       .expect(201);
 
@@ -32,7 +31,8 @@ describe("service-account API access", () => {
     });
     expect(created.body.credential.serviceAccountId).toBe(created.body.serviceAccount.id);
     expect(created.body.credential).toMatchObject({
-      expiresAt: null,
+      label: "Primary",
+      expiresAt: credentialExpiresAt,
       status: "active",
       expiryWarningDays: null,
     });
@@ -81,7 +81,7 @@ describe("service-account API access", () => {
       .set(headers)
       .expect(200);
     expect(credentials.body).toMatchObject({ page: 1, limit: 50, total: 1 });
-    expect(credentials.body.items[0]).toMatchObject({ expiresAt: null, status: "suspended", expiryWarningDays: null });
+    expect(credentials.body.items[0]).toMatchObject({ label: "Primary", expiresAt: credentialExpiresAt, status: "suspended", expiryWarningDays: null });
     expect(JSON.stringify(credentials.body)).not.toContain(created.body.secret);
   });
 
@@ -96,10 +96,7 @@ describe("service-account API access", () => {
       .send({
         displayName: "Archived integration",
         role: "member",
-        initialCredential: {
-          label: "Primary",
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString(),
-        },
+        credentialExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString(),
       })
       .expect(201);
 

@@ -33,7 +33,6 @@ const createServiceAccount = (service: ServiceAccountService) => service.createW
   actorUserId: "creator-1",
   displayName: "Deployment runner",
   role: "admin",
-  credentialLabel: "Primary",
   expiresAt,
 });
 

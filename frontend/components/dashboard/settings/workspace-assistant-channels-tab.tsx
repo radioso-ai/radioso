@@ -13,7 +13,6 @@ import { AssistantRoutinesSection } from '@/components/dashboard/settings/assist
 import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
-import { McpConverseChannelCard } from '@/components/dashboard/settings/mcp-converse-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
 import { McpConnectionsSection } from '@/components/dashboard/settings/skills/McpConnectionsSection'
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
@@ -925,14 +924,13 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (
           <section id="api-channel" className="space-y-6 scroll-mt-24">
-            <ApiChannelCard />
+            {agentId ? <ApiChannelCard agentId={agentId} /> : null}
           </section>
           ) : null}
 
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
-            <McpChannelCard />
-            {agentId ? <McpConverseChannelCard agentId={agentId} /> : null}
+            {agentId ? <McpChannelCard agentId={agentId} /> : null}
             {agentId ? <McpConnectionsSection agentId={agentId} /> : null}
           </section>
           ) : null}

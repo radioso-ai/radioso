@@ -5,12 +5,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if [[ -f ".env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env"
-  set +a
-fi
+source "$ROOT_DIR/scripts/bootstrap/source-sanitized-workspace-env.sh"
+source_sanitized_workspace_env "$ROOT_DIR"
 
 FRONTEND_PORT="${RADIOSO_FRONTEND_PORT:-${CONDUCTOR_PORT:-3000}}"
 BACKEND_PORT="${RADIOSO_BACKEND_PORT:-$((FRONTEND_PORT + 1))}"
@@ -23,7 +19,6 @@ if [[ -n "${RADIOSO_COMMON_POSTGRES_PORT:-}" ]]; then
 else
   export DATABASE_URL="${DATABASE_URL:-postgres://postgres:postgres@localhost:${POSTGRES_PORT}/radioso}"
 fi
-unset INTEGRATION_DATABASE_URL
 if [[ -n "${RADIOSO_FRONTEND_PORT:-}${CONDUCTOR_PORT:-}" ]]; then
   export APP_BASE_URL="http://localhost:${FRONTEND_PORT}"
   export PUBLIC_CHAT_BASE_URL="http://localhost:${FRONTEND_PORT}/chat"

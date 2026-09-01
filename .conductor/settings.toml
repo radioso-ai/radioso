@@ -1,8 +1,8 @@
 "$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
 
 [scripts]
-setup = "pnpm install --frozen-lockfile && pnpm --dir backend run build:workspace-deps"
-run_mode = "concurrent"
+setup = "node scripts/bootstrap/retire-integration-database-url.mjs && pnpm install --frozen-lockfile && pnpm --dir backend run build:workspace-deps"
+run_mode = "nonconcurrent"
 
 [scripts.run.common-db-dev]
 available_in = [ "local" ]

@@ -49,6 +49,7 @@ const catalogToolCoverage = {
   listEvalCases: "eval_results",
   listLowQualityTurns: "quality_signals",
   getQualityStats: "quality_signals",
+  setQualityTurnTriage: "set_triage_state",
   getAudiencePulse: "audience_topics",
   getAudiencePulseRefreshStatus: "audience_topics",
   getPlatformSettings: "workspace_settings",
@@ -286,7 +287,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
   ...coverage([
     "createRetrievalAnswer",
-    "setQualityTurnTriage",
     "refreshAudiencePulse",
     "getAudiencePulseEvidenceAnchor",
     // Operator HITL controls, gated on workspace.conversation.takeover and driven from Needs

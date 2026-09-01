@@ -80,6 +80,8 @@ import { AgentWizardService } from "../../modules/agentWizard/service.js";
 import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
+import type { QualityResolutionReason, QualityTriageState } from "../../modules/quality/contracts/index.js";
+import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -648,6 +650,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       cases: copilotEvalCaseReader,
     },
     qualitySignalsService,
+    qualityTriageService: {
+      resolutionReasons: QUALITY_RESOLUTION_REASONS,
+      // The tool builds its input schema from `resolutionReasons` above and from the four triage
+      // states, so both values are already drawn from this module's own vocabulary by the time
+      // they arrive; the quality service validates the state/reason pairing regardless.
+      setTriageState: (workspaceId, input) => qualitySignalsService.setTriageState(workspaceId, {
+        ...input,
+        state: input.state as QualityTriageState,
+        resolution: input.resolution
+          ? { reason: input.resolution.reason as QualityResolutionReason, note: input.resolution.note ?? null }
+          : null,
+      }),
+    },
     audiencePulseService,
     documentStatusService: documents.documentIngestionService,
     documentSourceStatusService: documents.documentIngestionService,

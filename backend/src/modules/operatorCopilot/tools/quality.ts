@@ -80,3 +80,114 @@ export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies):
     },
   },
 ];
+
+/**
+ * One turn's triage position, as the quality module reports it after a transition attempt.
+ * `conflict` carries the row that won, because a competing operator's write is an answer Ray
+ * has to see rather than an error to retry blindly.
+ */
+export interface CopilotQualityTriageRecord {
+  readonly state: string;
+  readonly version: number;
+  readonly resolution: { readonly reason: string; readonly note: string | null } | null;
+  readonly closedAt: string | null;
+  readonly updatedAt: string | null;
+}
+
+export type CopilotQualityTriageResult =
+  | { readonly kind: "updated"; readonly record: CopilotQualityTriageRecord }
+  | { readonly kind: "conflict"; readonly current: CopilotQualityTriageRecord }
+  | { readonly kind: "not_found" };
+
+export interface CopilotQualityTriagePort {
+  /**
+   * The resolution vocabulary, owned by Quality and carried across the boundary so the catalog
+   * neither keeps its own copy of the reasons nor restates which of them a state accepts.
+   */
+  readonly resolutionReasons: readonly [string, ...string[]];
+  setTriageState(workspaceId: string, input: {
+    assistantMessageId: string;
+    state: string;
+    expectedVersion: number;
+    resolution?: { reason: string; note?: string | null } | null;
+    updatedBy?: string | null;
+  }): Promise<CopilotQualityTriageResult>;
+}
+
+export interface QualityTriageCopilotToolDependencies {
+  readonly qualityTriageService: CopilotQualityTriagePort;
+}
+
+const TRIAGE_STATES = ["open", "acknowledged", "resolved", "dismissed"] as const;
+
+const setTriageStateDescription = "Record where an assistant turn stands in operator triage: open, acknowledged, resolved, or dismissed, with a resolution reason on a terminal state. Pass the triage version the turn was read at — needs_attention and quality_signals both report it — and a competing operator's change comes back as a conflict with the current record instead of overwriting them. This changes nothing a customer sees.";
+
+const triageRecordFields = {
+  state: z.string(),
+  version: z.number().int().nonnegative(),
+  resolution: z.object({ reason: z.string(), note: z.string().nullable() }).nullable(),
+  closedAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+};
+
+export const createQualityTriageCopilotTools = (
+  deps: QualityTriageCopilotToolDependencies,
+): ReadonlyArray<CopilotToolDescriptor> => {
+  const inputSchema = z.object({
+    assistantMessageId: idSchema,
+    state: z.enum(TRIAGE_STATES),
+    /** The fence: the version the row was read at, so a stale transition loses rather than wins. */
+    expectedVersion: z.number().int().min(0),
+    resolution: z.object({
+      reason: z.enum(deps.qualityTriageService.resolutionReasons),
+      note: z.string().max(500).nullish(),
+    }).nullish(),
+  }).strict();
+
+  const outputSchema = z.object({
+    outcome: z.enum(["updated", "conflict"]),
+    ...triageRecordFields,
+  }).strict();
+
+  return [{
+    name: "set_triage_state",
+    shape: "act",
+    verificationCost: () => 0,
+    uiLabel: "Recording a triage decision",
+    contributingModule: "quality",
+    dashboardSubject: { type: "quality_turn" },
+    requiredPermissions: ["workspace.quality.manage"],
+    description: setTriageStateDescription,
+    inputSchema,
+    outputSchema,
+    createTool: (context) => ({
+      name: "set_triage_state",
+      description: setTriageStateDescription,
+      inputSchema,
+      outputSchema,
+      invoke: async (input) => {
+        const { assistantMessageId, state, expectedVersion, resolution } = input as z.infer<typeof inputSchema>;
+        const result = await deps.qualityTriageService.setTriageState(context.workspaceId, {
+          assistantMessageId,
+          state,
+          expectedVersion,
+          ...(resolution === undefined ? {} : { resolution }),
+          updatedBy: context.operatorUserId,
+        });
+        if (result.kind === "not_found") {
+          throw new Error("Assistant turn not found");
+        }
+        const record = result.kind === "updated" ? result.record : result.current;
+        return outputSchema.parse({
+          outcome: result.kind,
+          state: record.state,
+          version: record.version,
+          resolution: record.resolution,
+          closedAt: record.closedAt,
+          updatedAt: record.updatedAt,
+        });
+      },
+    }),
+    describeEntity: () => ({ type: "quality_turn" }),
+  }];
+};

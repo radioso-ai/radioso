@@ -11,6 +11,8 @@ import { createContextVariableProposalCopilotTools, createContextVariablesCopilo
 import type { ContextVariableProposalCopilotToolDependencies, ContextVariablesCopilotToolDependencies, CopilotContextVariablesAgentPort } from "./contextVariables.js";
 import type { AudiencePulseCopilotToolDependencies, CopilotAudiencePulsePort } from "./audiencePulse.js";
 import { createChatCopilotTools } from "./chat.js";
+import { createReplyDraftCopilotTools } from "./replyDraft.js";
+import type { CopilotReplyDraftPort, ReplyDraftCopilotToolDependencies } from "./replyDraft.js";
 import type { ChatCopilotToolDependencies, CopilotConversationHistoryPort } from "./chat.js";
 import { createAgentTurnProbeCopilotTools } from "./agentTurnProbe.js";
 import type { AgentTurnProbeCopilotToolDependencies, CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
@@ -41,6 +43,7 @@ export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkill
 
 export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & ChatCopilotToolDependencies
+  & ReplyDraftCopilotToolDependencies
   & Omit<AgentTurnProbeCopilotToolDependencies, "agentLookup">
   & DocumentSearchCopilotToolDependencies
   & DocumentStatusCopilotToolDependencies
@@ -74,6 +77,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentConfigurationCopilotTools(deps),
   ...createRoutineDefinitionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createChatCopilotTools(deps),
+  ...createReplyDraftCopilotTools(deps),
   ...createAgentTurnProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentSearchCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -105,6 +109,7 @@ export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotContextVariablesPort } from "./contextVariables.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";
+export type { CopilotReplyDraftPort } from "./replyDraft.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 export type { CopilotEvalResultsPort } from "./eval.js";

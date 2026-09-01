@@ -99,11 +99,13 @@ export {
   type RetrieveAnswerSkillEffectiveSettings,
 } from "./agentConfig.js";
 export {
+  projectInternalAgentExternalSkills,
   resolveExternalSkillRefs,
   serializeExternalSkills,
   type AgentExternalSkillsConfig,
   type ExternalSkillConfig,
   type ExternalSkillsRefResolution,
+  type InternalAgentExternalSkillSources,
   type InternalAgentExternalSkillsConfig,
   type InternalExternalSkillConfig,
   type InternalMcpConnectionConfig,

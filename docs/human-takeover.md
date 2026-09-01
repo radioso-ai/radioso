@@ -234,6 +234,16 @@ inspecting and testing a conversation — replying, taking over, handing back,
 and approving or rejecting a pending decision all happen from the reading
 pane instead.
 
+Ray reads the same queue. Ask it what is waiting and it lists the open
+approvals, handoffs, and commented negative feedback longest wait first, each
+row carrying the decision or turn behind it; ask it to close a reviewed turn and
+it writes the triage state and resolution reason against the version it read,
+reporting a conflict when another operator moved the row first. It also drafts a
+reply by replaying the agent over the conversation's own transcript, and hands
+you the text to edit and send from the composer. Sending, claiming, handing
+back, transferring, forking, and deciding an approval stay with the operator,
+and Ray answers a request for any of them with the reason and the link.
+
 **Quality** is a separate top-level section with two pages. **Review** is the
 answer-quality triage view, covering answer quality in two zones with
 different scopes. **Health** covers a rolling 7- or 30-day window: answer

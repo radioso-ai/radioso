@@ -4,7 +4,7 @@ import { copilotApplicationPrimitiveRegistry, copilotRayOwnedPrimitiveIds } from
 type ProductionDescriptorName =
   | "agent_configuration" | "agent_skills" | "analyze_website" | "audience_topics" | "context_variables"
   | "conversation_history_search"
-  | "conversation_transcript" | "create_eval_case_from_turn" | "document_chunks" | "document_search" | "document_status"
+  | "conversation_transcript" | "create_eval_case_from_turn" | "draft_reply" | "document_chunks" | "document_search" | "document_status"
   | "eval_results" | "needs_attention" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "propose_ingestion_settings" | "start_crawl"
@@ -31,6 +31,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   conversation_history_search: { backingOperationIds: ["listHistory", "listChatHistory", "listHistorySearches", "getHistorySearch"] },
   conversation_transcript: { backingOperationIds: ["getHistoryConversation", "tailHistoryConversation", "getLegacyHistoryConversation"], applicationPrimitiveIds: ["chat.conversation.identity.read"] },
   create_eval_case_from_turn: { backingOperationIds: ["getOrCreateEvalCaseBySourceMessage"], applicationPrimitiveIds: ["eval.case.capture"] },
+  draft_reply: { applicationPrimitiveIds: ["chat.reply-draft.probe"], ...rayOnly("Ray bounds an ephemeral draft run, spends the operator budget for it, and keeps the result on the drafting side of the send boundary.") },
   document_search: { backingOperationIds: ["searchDocuments", "getDocument"], applicationPrimitiveIds: ["documents.source-status.read"] },
   document_status: { backingOperationIds: ["listDocuments", "listDocumentSources", "listDocumentsBySource"], applicationPrimitiveIds: ["documents.status.read", "documents.source-status.read"] },
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },

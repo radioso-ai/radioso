@@ -83,7 +83,15 @@ const documentBodyIsOperatorAuthored = permanent(
 const pendingEmbeddingSwitchCancel = deferred(
   "Deferred: cancelling a pending embedding-model switch stops a transition an operator started, and needs its own de-escalation act rather than a proposal card.",
 );
-const wave4Serving = deferred("Deferred to Wave 4 serving work: operator serving controls need an explicit runtime safety model.");
+// The grounded-answer endpoint spends a generation to produce what `test_agent_turn` already
+// produces with the agent's own behaviour attached, so exposing it would give Ray two ways to ask
+// the same question and one of them would answer as nobody in particular.
+const groundedAnswerDuplicatesTurnProbe = deferred(
+  "Deferred: createRetrievalAnswer costs a generation and duplicates test_agent_turn, so it waits on a reason to exist alongside it.",
+);
+const audiencePulseMaintenance = deferred(
+  "Deferred: refreshing the audience pulse and resolving its evidence anchors are analytics maintenance acts that need their own cost and freshness guards.",
+);
 // `replay_eval_case` reaches this operation only through a case: it derives the snapshot from one
 // and never attaches the run. Replaying a bare snapshot, and replaying one *into* a case's record,
 // are still uncovered, so the operation stays on the ratchet rather than reading as done.
@@ -285,18 +293,19 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateDocumentTypeCatalog",
   ], wave3KnowledgeBase),
   ...coverage(["updateDocument"], documentBodyIsOperatorAuthored),
+  ...coverage(["createRetrievalAnswer"], groundedAnswerDuplicatesTurnProbe),
+  ...coverage(["refreshAudiencePulse", "getAudiencePulseEvidenceAnchor"], audiencePulseMaintenance),
+  // Who is answerable to a waiting customer is the operator's decision, and `forkConversation`
+  // belongs here rather than with the end-user surfaces: it is an operator control that lifts a
+  // live conversation into a test session. Ray reads the queue and drafts a reply; the person
+  // holding the conversation claims, releases, and forks it.
   ...coverage([
-    "createRetrievalAnswer",
-    "refreshAudiencePulse",
-    "getAudiencePulseEvidenceAnchor",
-    // Operator HITL controls, gated on workspace.conversation.takeover and driven from Needs
-    // Attention. They are exactly the serving controls Wave 4 has to give a runtime safety model,
-    // so they are planned work rather than a boundary.
     "takeOverConversation",
     "transferConversationOwnership",
     "handBackConversation",
-    "resolveDecision",
-  ], wave4Serving),
+    "forkConversation",
+  ], neverListExclusion("live_conversation_ownership")),
+  ...coverage(["resolveDecision"], neverListExclusion("pending_decision_resolution")),
   ...coverage([
     "completeMcpConnectionOauth",
     "completeWorkspaceOauthCallback",
@@ -304,7 +313,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "clearAnswerFeedback",
     "upsertPublicAnswerFeedback",
     "clearPublicAnswerFeedback",
-    "forkConversation",
     "createMcpConverseSession",
     "validateMcpConverseSession",
     "askMcpConverseAgent",

@@ -204,6 +204,14 @@ imports from `services/`.
   `PreparedSession.conversationSummary` instead of loading the store. The applied summary
   is also echoed on `WorkbenchReplayResolvedConfig`/`EvalRunResolvedConfig.conversationSummary`
   for live-vs-replay comparison. Replay is hermetic — it never regenerates or persists the summary.
+- Draft a reply without becoming a turn: `services/replyDraftRunner.ts` composes what
+  the agent would say next in a live conversation by running the workbench replay over
+  that conversation's own transcript, with the last customer message as the query. It is
+  the ephemeral effect profile end to end, so the run writes no message, conversation,
+  routine state, or summary; the operator surface that asks for it (Ray's `draft_reply`)
+  owns the budget, the boundary, and the projection. The agent config it replays is
+  resolved by its caller through `ReplyDraftAgentConfigPort`, because chat replays an
+  agent rather than assembling one.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
 - Fork a conversation into a test session: `services/conversationForkService.ts`

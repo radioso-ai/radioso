@@ -14,6 +14,8 @@ export const copilotNeverList = {
   provider_credential_writes: { reason: "Provider credentials are secrets and must never be written by the copilot.", dashboardSubject: { type: "workspace_settings" } },
   embedding_model_switch_without_typed_confirmation: { reason: "Embedding-model changes require a typed operator confirmation outside the copilot.", dashboardSubject: { type: "workspace_settings" } },
   unattended_live_customer_reply: { reason: "The copilot must not send unattended replies into a live customer conversation.", dashboardSubject: { type: "conversation" } },
+  live_conversation_ownership: { reason: "Taking over, handing back, transferring, or forking a live conversation decides who is answerable to a customer, and stays with the operator.", dashboardSubject: { type: "conversation" } },
+  pending_decision_resolution: { reason: "Releasing or refusing a pending approval acts on a live customer conversation on the agent's behalf, and stays with the operator.", dashboardSubject: { type: "conversation" } },
 } as const satisfies Record<string, { readonly reason: string; readonly dashboardSubject: CopilotEntityReference }>;
 
 export type CopilotNeverListEntry = keyof typeof copilotNeverList;

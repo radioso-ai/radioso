@@ -433,9 +433,18 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         total: 1,
       }),
     },
+    replyDraft: {
+      draft: async (input: { conversationId: string }) => ({
+        agentId: COPILOT_EVAL_AGENT_ID,
+        conversationId: input.conversationId,
+        draft: "We reissued the parcel this morning and it arrives on Thursday.",
+        citations: [],
+        groundedOnMessageCount: 4,
+      }),
+    },
     qualityTriageService: {
       resolutionReasons: ["knowledge_gap", "retrieval_issue", "agent_behavior", "platform_bug", "expected_behavior", "out_of_scope", "invalid_feedback", "other"] as [string, ...string[]],
-      setTriageState: async (_workspaceId, input) => ({
+      setTriageState: async (_workspaceId: string, input: { state: string; expectedVersion: number; resolution?: { reason: string; note?: string | null } | null }) => ({
         kind: "updated" as const,
         record: {
           state: input.state,

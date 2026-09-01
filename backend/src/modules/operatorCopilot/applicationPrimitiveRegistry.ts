@@ -19,6 +19,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "agents.setting.propose": { owningModule: "agents", exportedPort: "AgentService" },
   "chat.conversation.trace.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
   "chat.conversation.identity.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
+  "chat.reply-draft.probe": { owningModule: "chat", exportedPort: "ReplyDraftRunner" },
   "documents.authoring.propose": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
   "documents.deletion.propose": { owningModule: "documents", exportedPort: "DocumentDeletionService" },
   "documents.status.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },

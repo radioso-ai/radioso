@@ -118,6 +118,48 @@ describe('CopilotProposalCard', () => {
     })
   })
 
+  it('says what an applied proposal still leaves the operator to finish', () => {
+    // Creating an agent writes the agent, then its settings, then queues its website. A run where
+    // the last step failed is applied - the agent is real - and is not finished, so a card that
+    // showed nothing here would tell the operator their agent is ready to answer when it has
+    // nothing to answer from.
+    act(() => root.render(
+      <CopilotProposalCard
+        proposal={{
+          id: 'proposal-agent',
+          targetType: 'agent',
+          targetLabel: 'Acme Support',
+          summary: 'Create the agent "Acme Support", grounded in https://acme.example.com.',
+          status: 'applied',
+          reason: 'The agent was created, but its website could not be queued for ingestion (Crawl queue is unavailable). It has no knowledge to answer from until the site is crawled - start the crawl from Knowledge.',
+        }}
+        canApply
+        onOpenEntity={vi.fn()}
+      />,
+    ))
+
+    expect(container.textContent).toContain('could not be queued for ingestion')
+    expect(container.textContent).toContain('start the crawl from Knowledge')
+  })
+
+  it('stays quiet on an applied proposal that finished cleanly', () => {
+    act(() => root.render(
+      <CopilotProposalCard
+        proposal={{
+          id: 'proposal-agent-clean',
+          targetType: 'agent',
+          targetLabel: 'Acme Support',
+          summary: 'Create the agent "Acme Support", grounded in https://acme.example.com.',
+          status: 'applied',
+        }}
+        canApply
+        onOpenEntity={vi.fn()}
+      />,
+    ))
+
+    expect(container.querySelector('[role="status"]')).toBeNull()
+  })
+
   it('resolves a proposed agent only once it has been created, never to the page\'s current agent', () => {
     const proposal: CopilotProposalSummary = {
       id: 'proposal-agent',

@@ -225,7 +225,13 @@ export interface CopilotProposalAdapter {
   readVersionToken(workspaceId: string, targetRef: unknown, payload?: unknown): Promise<string>;
   preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown | null; proposed: unknown }>;
   applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string): Promise<
-    | { outcome: "applied"; appliedRef: unknown }
+    /**
+     * `reason` on an applied outcome states what an operator still has to finish. It exists because
+     * an apply can succeed at the thing the proposal is named for and still not complete: creating
+     * an agent writes the agent, then its settings, then queues its website, and reporting a clean
+     * "applied" when one of the later steps failed trades one wrong card for another.
+     */
+    | { outcome: "applied"; appliedRef: unknown; reason?: string }
     | { outcome: "stale" }
     | { outcome: "failed"; reason: string }
   >;

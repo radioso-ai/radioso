@@ -195,6 +195,24 @@ describe("propose_agent", () => {
         incomplete: { step: "ingestion", reason: "Crawl queue is unavailable" },
       },
     });
+    // The card has to say what is left: an agent whose site never queued has nothing to answer
+    // from, and a clean "applied" would read as ready.
+    expect(outcome).toMatchObject({ reason: expect.stringContaining("Crawl queue is unavailable") });
+    expect((outcome as { reason: string }).reason).toContain("Knowledge");
+  });
+
+  it("says nothing extra when the whole apply finished", async () => {
+    const { adapter } = adapterFor();
+    const validated = await adapter.validatePayload("workspace-1", { websiteUrl: change.websiteUrl }, change);
+
+    const outcome = await adapter.applyIfVersionMatches(
+      "workspace-1",
+      validated.targetRef,
+      validated.payload,
+      validated.versionToken,
+    );
+
+    expect(outcome).not.toHaveProperty("reason");
   });
 
   it("reports a failed creation as a failed apply rather than throwing", async () => {

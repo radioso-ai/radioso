@@ -141,3 +141,67 @@ test("main auto-completes a partial env file during non-interactive startup", as
     await fs.rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("main rewrites a valid legacy env file to remove the retired integration database URL", async () => {
+  const writes = [];
+  const stdoutChunks = [];
+  const legacySource = [
+    "# Keep this operator note exactly as written.",
+    "CUSTOM_DEPLOYMENT_SETTING = preserve-me",
+    "INTEGRATION_DATABASE_URL=postgres://postgres:postgres@localhost:5432/radioso_test",
+    "# This comment follows the retired setting.",
+    "PORT=8080",
+    "",
+  ].join("\n");
+
+  const exitCode = await main([], {
+    detectEnvState: async () => ({
+      values: {
+        PORT: "8080",
+        NODE_ENV: "development",
+        DATABASE_URL: "postgres://postgres:postgres@localhost:5432/radioso",
+        INTEGRATION_DATABASE_URL: "postgres://postgres:postgres@localhost:5432/radioso_test",
+        LLM_PROVIDER: "openai",
+        SESSION_COOKIE_NAME: "radioso_session",
+        SESSION_COOKIE_SECRET: "session-secret",
+        WORKSPACE_TOKEN_SECRET: "workspace-secret",
+        PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
+        SESSION_TTL_HOURS: "168",
+        CONNECTOR_ENCRYPTION_KEY: "connector-secret",
+        WORKER_TASK_AUTH_TOKEN: "worker-task-token",
+        DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
+        WORKER_DISPATCH_DRIVER: "noop",
+        DOCUMENT_PROCESSING_JOB_LEASE_MS: "300000",
+        DOCUMENT_STORAGE_DRIVER: "local",
+        DOCUMENT_STORAGE_LOCAL_PATH: "../.context/document-storage",
+        PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
+      },
+      state: "valid",
+    }),
+    runPreflightChecks: async () => [],
+    readEnvFileSource: async () => legacySource,
+    writeEnvFileAtomic: async (filePath, source) => writes.push({ filePath, source }),
+    startComposeStack: async () => ({
+      ok: true,
+      readyServices: ["frontend", "backend"],
+      failedServices: [],
+      applicationUrls: ["http://127.0.0.1:3000", "http://127.0.0.1:8080"],
+    }),
+    stdout: { write: (chunk) => stdoutChunks.push(chunk) },
+    envPath: "/tmp/radioso-valid-legacy.env",
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(writes.length, 1);
+  assert.equal(
+    writes[0].source,
+    [
+      "# Keep this operator note exactly as written.",
+      "CUSTOM_DEPLOYMENT_SETTING = preserve-me",
+      "# This comment follows the retired setting.",
+      "PORT=8080",
+      "",
+    ].join("\n"),
+  );
+  assert.match(stdoutChunks.join(""), /Removed retired configuration from \.env/);
+});

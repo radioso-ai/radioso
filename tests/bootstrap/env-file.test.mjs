@@ -37,6 +37,18 @@ test("buildEnvValues preserves existing values unless overridden", () => {
   assert.equal(values.WORKER_TASK_AUTH_TOKEN, "");
 });
 
+test("buildEnvValues removes the retired integration database URL", () => {
+  const values = buildEnvValues(
+    {
+      LLM_PROVIDER: "openai",
+      INTEGRATION_DATABASE_URL: "postgres://postgres:postgres@localhost:5432/radioso_test",
+    },
+    {},
+  );
+
+  assert.equal(values.INTEGRATION_DATABASE_URL, undefined);
+});
+
 test("renderEnvFile includes the worker task authentication token", () => {
   const content = renderEnvFile({
     WORKER_TASK_AUTH_TOKEN: "a".repeat(64),

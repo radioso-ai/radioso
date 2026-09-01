@@ -540,6 +540,52 @@ describeIntegration("MachineAccessRepository", () => {
     }
   });
 
+  it("claims each expiry-warning threshold exactly when a credential enters its warning window", async () => {
+    const now = new Date("2026-09-01T00:00:00.000Z");
+    const dayMs = 24 * 60 * 60 * 1_000;
+    const createCredential = async (label: string, expiresAt: Date) => {
+      const created = await repository.createServiceAccountWithinLimit({
+        accountId,
+        workspaceId,
+        displayName: `Expiry warning ${label}`,
+        role: "member",
+        createdByUserId: userId,
+        credentialLabel: label,
+        expiresAt,
+        limit: 50,
+        issueSecret: () => ({
+          secret: `expiry-warning-${label}`,
+          tokenPrefix: "radioso_svc_v1_expiry",
+          tokenHash: `expiry-warning-${label}-${randomUUID()}`,
+        }),
+      });
+      expect(created).not.toBeNull();
+      if (!created) throw new Error("Expected expiry-warning credential");
+      return created.credential;
+    };
+
+    const atThirtyDays = await createCredential("thirty", new Date(now.getTime() + 30 * dayMs));
+    const atSevenDays = await createCredential("seven", new Date(now.getTime() + 7 * dayMs));
+    const atOneDay = await createCredential("one", new Date(now.getTime() + dayMs));
+    const outsideWindow = await createCredential("outside", new Date(now.getTime() + 30 * dayMs + 1));
+    const expired = await createCredential("expired", now);
+
+    const claims = await repository.claimExpiryWarnings(now);
+    const thresholdsFor = (credentialId: string) => claims
+      .filter((claim) => claim.credentialId === credentialId)
+      .map((claim) => claim.thresholdDays)
+      .sort((left, right) => left - right);
+
+    expect(thresholdsFor(atThirtyDays.id)).toEqual([30]);
+    expect(thresholdsFor(atSevenDays.id)).toEqual([7, 30]);
+    expect(thresholdsFor(atOneDay.id)).toEqual([1, 7, 30]);
+    expect(thresholdsFor(outsideWindow.id)).toEqual([]);
+    expect(thresholdsFor(expired.id)).toEqual([]);
+    expect((await repository.claimExpiryWarnings(now)).filter((claim) =>
+      [atThirtyDays.id, atSevenDays.id, atOneDay.id, outsideWindow.id, expired.id].includes(claim.credentialId),
+    )).toEqual([]);
+  });
+
   it("never persists or omits an invalidation audit for a replacement raced with archive", async () => {
     const created = await repository.createServiceAccountWithinLimit({
       workspaceId,

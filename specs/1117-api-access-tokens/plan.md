@@ -100,6 +100,7 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 3. Add migration and MCP tests, then implement verifier destruction, tombstones, controlled runtime-store purge/readiness/retry, and rejection of every new API credential class across merged, standalone, stdio, and agent-converse paths.
 4. Add frontend adapter/state tests and Playwright journeys, then remove workspace-token caching/fallback and deliver separate personal/service-account lifecycle UI with transient one-time-secret handling.
 5. Regenerate OpenAPI and SDK snapshots, update docs/release guidance after reading the documentation prompt, run focused suites and local CI, and complete senior-engineer plus engineering-manager review.
+6. Harden integration-test database isolation with failing guard/script regressions, harness-owned disposable database marking, removal of development database aliasing, scoped repository cleanup, a real PostgreSQL negative/positive smoke test, and one additional senior-engineer review. The already-completed single engineering-manager review is not repeated because this follow-up does not change product scope or architecture.
 
 ## Observability & Audit
 
@@ -108,6 +109,18 @@ docs/ and docs-portal/content/       # operator, REST/SDK, migration, and MCP gu
 - Record last use asynchronously/best-effort after successful authentication and coalesce writes within five minutes; metadata failure neither grants nor denies access.
 - Add startup/readiness logging for MCP purge attempts and failures without credential/session material. A configured inaccessible store remains unready and retries.
 - Correlate credential-authenticated audited API actions with stable principal and credential IDs. Do not record raw headers or hash/verifier values.
+
+## Integration Database Safety Follow-up
+
+The local validation incident exposed a test-infrastructure boundary failure rather than an API-access migration defect: the development launcher aliased `INTEGRATION_DATABASE_URL` to `DATABASE_URL`, and local CI trusted an inherited integration URL. A destructive repository test could therefore target the persistent development database. The follow-up hardening uses these boundaries:
+
+- **Guard ownership**: the dependency-free `packages/integration-test-support/` policy compares live PostgreSQL cluster/database identities, requires an explicit test-only name, and verifies a database marker. Backend and Enterprise Edition own only their PostgreSQL reader adapters; the policy does not know application schema, accounts, workspaces, or product credentials.
+- **Harness ownership**: local CI and GitHub CI provision and mark disposable databases before invoking backend or Enterprise Edition database suites. Ordinary development launchers know only the application database and never synthesize an integration-test URL.
+- **Test ownership**: repository tests create uniquely identified fixtures and clean up only those fixtures. They do not truncate shared application tables.
+- **Dependency direction**: Vitest global setup and the explicit preparation command depend on the narrow guard; application/runtime modules never depend on test infrastructure. Shell harnesses call the preparation command rather than duplicating marker rules.
+- **Override rule**: manually prepared databases require an exact acknowledged database name matching the connection target. A boolean bypass is intentionally unsupported.
+- **Observability**: failures identify only sanitized host/database identity and the missing safety condition. This is test infrastructure, so no runtime metrics, audit events, or OpenTelemetry spans are added.
+- **Contract review**: no public API, SDK, MCP, connector, worker, or AMQP contract changes are involved; generated snapshots and queue payloads are unaffected.
 
 ## Contract, Migration, and Rollback
 

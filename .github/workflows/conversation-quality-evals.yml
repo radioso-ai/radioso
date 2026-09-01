@@ -78,7 +78,6 @@ jobs:
           fi
           cp ../.env.example ./.env.evals
           sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
-          sed -i "s|^INTEGRATION_DATABASE_URL=.*|INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
           sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" ./.env.evals
           # Deterministic dummy signing secrets — the workspace is throwaway and never exposed.
           # The connector key must be base64 of exactly 32 bytes or getEnv() rejects the file.

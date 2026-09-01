@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-30
+last_updated: 2026-09-01
 ---
 
 # Code Map
@@ -22,6 +22,37 @@ Start with the user-facing surface, then follow the ownership boundary:
 
 If a feature needs several unrelated areas, write a short feature brief in
 `.context/` first. See [Agent Context Workflow](../agent-context-workflow.md).
+
+## Integration Test Database Safety
+
+PostgreSQL-backed integration tests change database contents. The Vitest guard runs before integration files load and accepts only a database whose name ends in `_test`, carries the disposable-test marker, and resolves to a different live PostgreSQL database than `DATABASE_URL`. Local and GitHub CI provision and mark fresh databases through `backend/scripts/prepareIntegrationDatabase.ts`; application startup does not set `INTEGRATION_DATABASE_URL`. The Enterprise Edition test lane uses the same marked database boundary.
+
+For a focused run outside the CI harness, create a disposable PostgreSQL database first, then acknowledge and mark that exact database:
+
+```bash
+cd backend
+export INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55432/radioso_test
+export RADIOSO_INTEGRATION_DATABASE_NAME=radioso_test
+pnpm run test:integration:prepare
+unset RADIOSO_INTEGRATION_DATABASE_NAME
+pnpm exec vitest run tests/integration/<focused-test>.test.ts --no-file-parallelism
+```
+
+The preparation command writes the marker but does not create the database. Keep the test database on a disposable server or container because migration suites create and drop generated databases and extensions as part of their coverage. The automated harness creates a cluster-privileged runner inside that throwaway container; its credential is not used for application databases.
+
+Primary paths:
+
+- `packages/integration-test-support/src/index.ts`
+- `backend/tests/support/integrationDatabaseSafety.ts`
+- `ee/packages/backend-module/integrationDatabaseGlobalSetup.ts`
+- `backend/tests/support/integrationDatabaseGlobalSetup.ts`
+- `backend/scripts/prepareIntegrationDatabase.ts`
+- `scripts/local-ci-checks.sh`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/integrationDatabaseSafety.test.ts tests/unit/integrationDatabaseCleanupPolicy.test.ts`
+- `node --test tests/bootstrap/integration-database-safety.test.mjs`
 
 ## Backend HTTP Surface
 

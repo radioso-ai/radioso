@@ -105,6 +105,16 @@
 - [x] T064 Perform exactly one engineering-manager review against spec, architecture, observability, migration, generated artifacts, and validation evidence; resolve blockers.
 - [x] T065 Update this task list, commit with a Conventional Commit, push the current branch without renaming it, and create a pull request targeting `main` with local-CI evidence and the destructive migration warning.
 
+## Phase 9: Integration-test database safety follow-up
+
+- [x] T066 Add failing unit/bootstrap regressions for same-database rejection, test-name enforcement, marker verification, exact-name preparation acknowledgement, disposable local-CI provisioning, and development-launcher separation.
+- [x] T067 Implement a central integration-database safety policy and preparation command, wire backend and Enterprise Edition Vitest startup to its dependency-safe adapters, and provision the marker from local and GitHub CI without exposing credentials in diagnostics.
+- [x] T068 Remove `INTEGRATION_DATABASE_URL` aliasing from `scripts/run-common-db-dev.sh`, stop local CI from trusting inherited integration URLs, and update `.env.example` plus bootstrap environment contracts so normal application startup does not configure a test database.
+- [x] T069 Replace the unscoped `TRUNCATE accounts CASCADE` in `backend/tests/integration/message-repository-tail.test.ts`, convert the remaining shared-public unscoped cleanup sites to scoped or generated-database isolation, and enforce the policy with a static regression.
+- [x] T070 After reading the documentation prompt, document the guarded integration-test workflow and exact-name manual preparation command in contributor/architecture guidance.
+- [x] T071 Verify guard rejection against the persistent development database with before/after data counts, run guarded suites against harness-provisioned disposable PostgreSQL databases, and exercise personal-token issuance/revocation through the live API and frontend.
+- [x] T072 Obtain one independent senior-engineer review of the safety follow-up, resolve material findings, run `pnpm run ci:local -- --all`, update the existing PR, commit, and push.
+
 ## Dependencies
 
 - Foundation T001–T012 blocks all stories.

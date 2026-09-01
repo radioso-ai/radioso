@@ -17,6 +17,10 @@ USAGE
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 cd "$ROOT_DIR"
 
+# Integration checks always use a database created by this process. Never trust
+# a shell or .env value that may point at a persistent development database.
+unset INTEGRATION_DATABASE_URL
+
 RUN_ALL=false
 BASE_REF="${BASE_REF:-origin/main}"
 
@@ -166,11 +170,6 @@ require_docker() {
 }
 
 start_postgres() {
-  if [ -n "${INTEGRATION_DATABASE_URL:-}" ]; then
-    echo "Using existing INTEGRATION_DATABASE_URL."
-    return
-  fi
-
   require_docker
   postgres_container="radioso-local-ci-postgres-$$"
   run docker run -d --name "$postgres_container" \
@@ -183,7 +182,18 @@ start_postgres() {
   postgres_port="$(docker port "$postgres_container" 5432/tcp | sed 's/.*://')"
   for _ in $(seq 1 40); do
     if docker exec "$postgres_container" pg_isready -U postgres -d radioso_test >/dev/null 2>&1; then
+      run docker exec "$postgres_container" psql -v ON_ERROR_STOP=1 -U postgres -d radioso_test \
+        -c "CREATE EXTENSION IF NOT EXISTS vector" \
+        -c "CREATE EXTENSION IF NOT EXISTS pgcrypto" \
+        -c "CREATE ROLE radioso_test_runner LOGIN PASSWORD 'radioso_test_runner' SUPERUSER CREATEDB" \
+        -c "GRANT ALL PRIVILEGES ON DATABASE radioso_test TO radioso_test_runner" \
+        -c "GRANT ALL ON SCHEMA public TO radioso_test_runner"
+
       export INTEGRATION_DATABASE_URL="postgres://postgres:postgres@127.0.0.1:${postgres_port}/radioso_test"
+      export RADIOSO_INTEGRATION_DATABASE_NAME=radioso_test
+      run_sh "cd backend && pnpm run test:integration:prepare"
+      unset RADIOSO_INTEGRATION_DATABASE_NAME
+      export INTEGRATION_DATABASE_URL="postgres://radioso_test_runner:radioso_test_runner@127.0.0.1:${postgres_port}/radioso_test"
       return
     fi
     sleep 1
@@ -295,7 +305,10 @@ if [ "$census" = true ]; then
 fi
 
 if [ "$ee" = true ]; then
-  run pnpm install --frozen-lockfile --filter './ee/packages/*...'
+  run pnpm install --frozen-lockfile --filter radioso-backend... --filter './ee/packages/*...'
+  if [ -z "$postgres_container" ]; then
+    start_postgres
+  fi
   run_sh "cd ee && pnpm run build"
   run_sh "cd ee && pnpm test"
 fi

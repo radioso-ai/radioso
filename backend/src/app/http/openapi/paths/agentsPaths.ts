@@ -1,4 +1,5 @@
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import { z } from "zod";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
@@ -20,6 +21,34 @@ export const registerAgentsPaths = (
         content: { "application/json": { schema: schemas.AgentListResponseSchema } },
       },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/chat",
+    tags: ["Agent Channels"],
+    summary: "Run chat through a REST credential bound to this agent",
+    operationId: "createAgentChannelChatResponse",
+    security: [{ [security.agentChannelBearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AgentChannelChatRequestSchema } },
+      },
+    },
+    responses: {
+      200: {
+        description: "Agent chat response returned as JSON or SSE",
+        content: {
+          "application/json": { schema: schemas.AssistantChatResponseSchema },
+          "text/event-stream": { schema: z.string() },
+        },
+      },
+      204: { description: "Conversation start completed without a greeting" },
+      400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Invalid, inactive, cross-audience, or cross-agent credential", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 
@@ -78,22 +107,22 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "post",
-    path: "/api/v1/agents/{agentId}/mcp-converse-grants",
-    tags: ["Agents"],
-    summary: "Issue an MCP converse grant for an agent",
-    operationId: "issueAgentMcpConverseGrant",
+    path: "/api/v1/agents/{agentId}/channel-credentials",
+    tags: ["Agent Channels"],
+    summary: "Issue an MCP or REST chat credential for an agent",
+    operationId: "issueAgentChannelCredential",
     security: security.workspaceAdminSecurity,
     request: {
       params: schemas.AgentParamsSchema,
       body: {
         required: true,
-        content: { "application/json": { schema: schemas.AgentMcpConverseGrantIssueRequestSchema } },
+        content: { "application/json": { schema: schemas.AgentChannelCredentialIssueRequestSchema } },
       },
     },
     responses: {
       201: {
-        description: "MCP converse grant issued. The token is returned only in this response.",
-        content: { "application/json": { schema: schemas.AgentMcpConverseGrantIssueResponseSchema } },
+        description: "Agent channel credential issued. The secret is returned only in this response.",
+        content: { "application/json": { schema: schemas.AgentChannelCredentialIssueResponseSchema } },
       },
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
@@ -104,16 +133,19 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/agents/{agentId}/mcp-converse-grants",
-    tags: ["Agents"],
-    summary: "List MCP converse grants for an agent",
-    operationId: "listAgentMcpConverseGrants",
+    path: "/api/v1/agents/{agentId}/channel-credentials",
+    tags: ["Agent Channels"],
+    summary: "List MCP and REST chat credentials for an agent with cursor pagination",
+    operationId: "listAgentChannelCredentials",
     security: security.workspaceAdminSecurity,
-    request: { params: schemas.AgentParamsSchema },
+    request: {
+      params: schemas.AgentParamsSchema,
+      query: schemas.AgentChannelCredentialListQuerySchema,
+    },
     responses: {
       200: {
-        description: "MCP converse grant metadata returned without token material",
-        content: { "application/json": { schema: schemas.AgentMcpConverseGrantListResponseSchema } },
+        description: "Role-free channel credential metadata returned without secret material",
+        content: { "application/json": { schema: schemas.AgentChannelCredentialListResponseSchema } },
       },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
@@ -123,36 +155,36 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "post",
-    path: "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate",
-    tags: ["Agents"],
-    summary: "Rotate an MCP converse grant for an agent",
-    operationId: "rotateAgentMcpConverseGrant",
+    path: "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate",
+    tags: ["Agent Channels"],
+    summary: "Rotate an agent channel credential",
+    operationId: "rotateAgentChannelCredential",
     security: security.workspaceAdminSecurity,
-    request: { params: schemas.AgentMcpConverseGrantParamsSchema },
+    request: { params: schemas.AgentChannelCredentialParamsSchema },
     responses: {
       200: {
-        description: "MCP converse grant rotated. The new token is returned only in this response.",
-        content: { "application/json": { schema: schemas.AgentMcpConverseGrantSecretResponseSchema } },
+        description: "Agent channel credential rotated. The new secret is returned only in this response.",
+        content: { "application/json": { schema: schemas.AgentChannelCredentialIssueResponseSchema } },
       },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Agent or MCP converse grant not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or channel credential not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 
   registry.registerPath({
-    method: "delete",
-    path: "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}",
-    tags: ["Agents"],
-    summary: "Revoke an MCP converse grant for an agent",
-    operationId: "revokeAgentMcpConverseGrant",
+    method: "post",
+    path: "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke",
+    tags: ["Agent Channels"],
+    summary: "Revoke an agent channel credential",
+    operationId: "revokeAgentChannelCredential",
     security: security.workspaceAdminSecurity,
-    request: { params: schemas.AgentMcpConverseGrantParamsSchema },
+    request: { params: schemas.AgentChannelCredentialParamsSchema },
     responses: {
-      204: { description: "MCP converse grant revoked" },
+      204: { description: "Agent channel credential revoked" },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      404: { description: "Agent or MCP converse grant not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or channel credential not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

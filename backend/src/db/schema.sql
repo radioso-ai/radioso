@@ -499,7 +499,7 @@ CREATE TABLE public.agent_access_grants (
     role text DEFAULT 'public'::text NOT NULL,
     token_prefix text NOT NULL,
     token_hash text NOT NULL,
-    encrypted_token text NOT NULL,
+    encrypted_token text,
     origin_mode text NOT NULL,
     origin_allowlist text[] DEFAULT ARRAY[]::text[] NOT NULL,
     enabled boolean DEFAULT true NOT NULL,
@@ -508,7 +508,7 @@ CREATE TABLE public.agent_access_grants (
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
     channel text DEFAULT 'public-link'::text NOT NULL,
-    CONSTRAINT agent_access_grants_channel_check CHECK ((channel = ANY (ARRAY['embed'::text, 'public-link'::text, 'mcp-converse'::text]))),
+    CONSTRAINT agent_access_grants_channel_check CHECK ((channel = ANY (ARRAY['embed'::text, 'public-link'::text, 'mcp-converse'::text, 'agent-api'::text]))),
     CONSTRAINT agent_access_grants_origin_mode_check CHECK ((origin_mode = ANY (ARRAY['allow-all'::text, 'list'::text]))),
     CONSTRAINT agent_access_grants_principal_kind_check CHECK ((principal_kind = ANY (ARRAY['workspace-admin'::text, 'agent-api'::text, 'public-launch'::text]))),
     CONSTRAINT agent_access_grants_role_check CHECK ((role = ANY (ARRAY['public'::text, 'agent'::text])))
@@ -658,7 +658,7 @@ CREATE TABLE public.api_credentials (
     created_by_user_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone,
+    expires_at timestamp with time zone NOT NULL,
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
     revoked_by_user_id uuid,
@@ -5762,7 +5762,7 @@ CREATE INDEX idx_agents_workspace_id ON public.agents USING btree (workspace_id)
 -- Name: idx_api_credentials_expiry_warning_scan; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_api_credentials_expiry_warning_scan ON public.api_credentials USING btree (expires_at, id) WHERE ((revoked_at IS NULL) AND (expires_at IS NOT NULL));
+CREATE INDEX idx_api_credentials_expiry_warning_scan ON public.api_credentials USING btree (expires_at, id) WHERE (revoked_at IS NULL);
 
 
 --

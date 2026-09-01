@@ -309,8 +309,24 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     return this.items.find((item) => item.tokenHash === tokenHash) ?? null;
   }
 
-  async listByAgent(agentId: string): Promise<AccessGrant[]> {
-    return this.items.filter((item) => item.agentId === agentId);
+  async listByAgent(agentId: string, params: {
+    workspaceId?: string;
+    principalKind?: GrantPrincipalKind;
+    channel?: AccessGrantChannel;
+    limit?: number;
+    cursor?: { createdAt: Date; id: string };
+  } = {}): Promise<{ grants: AccessGrant[]; nextCursor: { createdAt: Date; id: string } | null }> {
+    const matching = this.items
+      .filter((item) => item.agentId === agentId)
+      .filter((item) => !params.workspaceId || item.workspaceId === params.workspaceId)
+      .filter((item) => !params.principalKind || item.principalKind === params.principalKind)
+      .filter((item) => !params.channel || item.channel === params.channel)
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id))
+      .filter((item) => !params.cursor || item.createdAt > params.cursor.createdAt || (item.createdAt.getTime() === params.cursor.createdAt.getTime() && item.id > params.cursor.id));
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
+    const grants = matching.slice(0, limit);
+    const last = matching.length > limit ? grants.at(-1) : undefined;
+    return { grants, nextCursor: last ? { createdAt: last.createdAt, id: last.id } : null };
   }
 
   async save(params: {
@@ -322,7 +338,7 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     channel?: AccessGrantChannel;
     tokenPrefix: string;
     tokenHash: string;
-    encryptedToken: string;
+    encryptedToken: string | null;
     originConstraint: OriginConstraint;
     enabled?: boolean;
     expiresAt?: Date | null;
@@ -357,12 +373,20 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
   async rotate(grantId: string, params: {
     tokenPrefix: string;
     tokenHash: string;
-    encryptedToken: string;
+    encryptedToken: string | null;
+    expectedTokenHash?: string;
+    requireActiveAgentChannel?: boolean;
+    now?: Date;
   }): Promise<AccessGrant | null> {
     const grant = await this.findById(grantId);
     if (!grant) {
       return null;
     }
+    if (params.expectedTokenHash && grant.tokenHash !== params.expectedTokenHash) return null;
+    if (
+      params.requireActiveAgentChannel &&
+      (grant.principalKind !== "agent-api" || grant.revokedAt || (grant.expiresAt && grant.expiresAt <= (params.now ?? new Date())))
+    ) return null;
     grant.tokenPrefix = params.tokenPrefix;
     grant.tokenHash = params.tokenHash;
     grant.encryptedToken = params.encryptedToken;
@@ -376,7 +400,7 @@ export class InMemoryAccessGrantRepository implements AccessGrantRepositoryPort 
     if (!grant) {
       return null;
     }
-    grant.revokedAt = revokedAt;
+    grant.revokedAt ??= revokedAt;
     return grant;
   }
 

@@ -1,8 +1,8 @@
 # MCP Server Internals
 
 This package owns the standalone Radioso MCP server runtime: HTTP transport, MCP
-tool handlers, agent-converse grant exchange, policy, audit logging, runtime
-state, and the backend API adapter.
+tool handlers, agent-channel credential validation, audit logging, runtime
+state, and the backend converse API adapter.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../docs/architecture/code-map.md).
@@ -10,8 +10,8 @@ For the broader repository map, see
 ## Boundaries
 
 The MCP server knows about MCP tool contracts, transport-specific request
-handling, auth/session state, policy checks, audit output, and backend API calls
-through `radiosoApiAdapter.ts`.
+handling, auth/session state, audit output, and backend conversation calls
+through `converseApiAdapter.ts`.
 
 It should not own backend product behavior. If a tool needs new product
 behavior, add or change the backend API contract first, then update this package
@@ -20,21 +20,19 @@ as a client.
 ## Read First
 
 - `server.ts`: MCP server construction.
-- `tools/readTools.ts` and `tools/writeTools.ts`: tool definitions and handlers.
-- `radiosoApiAdapter.ts`: backend API client boundary.
+- `tools/converseTools.ts`: the sole `ask_agent` tool definition and handler.
+- `converseApiAdapter.ts`: backend agent-converse API boundary.
 - `http/requestHandler.ts`, `http/runtime.ts`, `http/createHttpServer.ts`: HTTP
   transport runtime.
-- `auth/`: auth exchange and session handling.
-- `policy/`: capability and workspace policy checks.
+- `auth/`: agent-channel credential validation and session handling.
 - `audit/auditLogger.ts`: audit event output.
 
 ## Common Change Paths
 
-- New MCP tool: update tool handlers, result formatting, tests, and docs.
-- Backend contract change: regenerate or sync types, update
-  `radiosoApiAdapter.ts`, and adjust tool tests.
+- New MCP tool: update `tools/converseTools.ts`, result formatting, tests, and docs. The public catalog is intentionally limited to `ask_agent`.
+- Backend contract change: update `converseApiAdapter.ts` and adjust tool tests.
 - HTTP auth/session behavior: update `auth/`, `http/`, and auth tests.
-- Policy or audit behavior: update `policy/`, `audit/`, and matching tests.
+- Audit behavior: update `audit/` and matching tests.
 
 ## Tests
 

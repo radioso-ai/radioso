@@ -19,11 +19,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm run sync:openapi && tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json",
     "smoke:all": "pnpm run smoke:http && pnpm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
-    "sync:openapi": "node ./scripts/sync-openapi-types.mjs",
     "test": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm run build && vitest run"
   },
   "dependencies": {

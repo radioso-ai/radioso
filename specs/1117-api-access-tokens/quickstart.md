@@ -46,7 +46,10 @@ pnpm run test:e2e -- api-access-settings.spec.ts
 7. Revoke one service credential, change the account role, disable/re-enable it, then archive it. Confirm sibling isolation, live role changes, suspension, selective restoration, and permanent archive invalidation.
 8. Rotate a credential twice concurrently at one revision. Confirm exactly one new secret, immediate predecessor invalidation, unchanged absolute expiry, and a conflict without secret for the loser.
 9. Verify safe paginated metadata, quotas, expiry warnings, audit attribution, bounded diagnostic fields, and absence of secret/verifier values in logs, traces, events, or API responses.
-10. Present personal and service credentials to merged MCP, standalone exchange, stdio preflight, and agent-converse. Confirm generic rejection in every mode.
+10. Present personal and service credentials to MCP and confirm generic rejection. Create an MCP agent credential and confirm only `ask_agent` is advertised; direct retrieval and document resources are absent.
+11. Create a separate REST agent credential, call `POST /api/v1/agents/{agentId}/chat`, resume the returned conversation, and confirm MCP/REST credentials cannot be swapped or used for another agent or an ordinary workspace API.
+12. Rotate the MCP credential and revoke the REST credential; confirm previous secrets and derived MCP sessions fail on their next request.
+13. In the dashboard, confirm Service accounts is its own Settings tab, the first service credential is named `Primary`, and MCP setup plus credential management render as one card.
 
 ## Generated contracts
 
@@ -71,3 +74,5 @@ pnpm run ci:local -- origin/main
 ```
 
 Use `pnpm run ci:local -- --all` if the final diff reaches beyond the planned backend/frontend/MCP/SDK/docs surfaces. Record the exact command and outcome in the pull request.
+
+The live acceptance run must use the locally running stack, issue real credentials through the dashboard, complete one real REST agent chat turn and one real MCP `ask_agent` turn, and then verify rotation/revocation denial. Mocked or synthetic-only browser/API assertions do not satisfy final acceptance.

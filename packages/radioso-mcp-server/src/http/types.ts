@@ -13,7 +13,6 @@ export interface InternalMcpRequestAuthInfo extends McpRequestAuthInfo {
   clientId: string;
   scopes: string[];
   token: string;
-  upstreamApiToken?: string;
 }
 
 export interface SessionMcpServerHandle {

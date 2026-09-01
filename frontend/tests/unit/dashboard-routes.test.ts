@@ -418,6 +418,18 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips the service accounts settings page', () => {
+    expect(parseDashboardRoute(['settings'], new URLSearchParams({ tab: 'service-accounts' }))).toEqual({
+      section: 'settings',
+      settingsTab: 'service-accounts',
+    })
+    expect(buildDashboardHref('account-1', {
+      section: 'settings',
+      settingsTab: 'service-accounts',
+      workspacePublicRouteKey: 'workspace-key',
+    })).toBe('/w/workspace-key/settings?tab=service-accounts')
+  })
+
   it('builds legacy account routes with an explicit workspace selection', () => {
     expect(buildAccountRoute('account-9', 'agents', undefined, 'workspace-12'))
       .toBe('/account/account-9/agents?workspace=workspace-12')

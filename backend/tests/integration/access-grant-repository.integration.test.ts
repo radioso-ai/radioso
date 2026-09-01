@@ -48,7 +48,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
       agentId,
       workspaceId,
       label: "primary",
-      principalKind: "public-launch",
+      principalKind: "agent-api",
       role: "public",
       channel: "public-link",
       tokenPrefix: "rdso_aaa",
@@ -67,25 +67,26 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     expect(saved.createdAt).toBeInstanceOf(Date);
   });
 
-  it("save inserts an agent-role MCP converse grant and round-trips its channel", async () => {
+  it("save inserts an agent-bound MCP credential and round-trips its channel", async () => {
     const saved = await repository.save({
       agentId,
       workspaceId,
       label: "claudio converse",
-      principalKind: "public-launch",
+      principalKind: "agent-api",
       role: "agent",
       channel: "mcp-converse",
       tokenPrefix: "rdso_mcp",
       tokenHash: "grant-hash-mcp",
-      encryptedToken: "enc-mcp",
+      encryptedToken: null,
       originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
     });
 
     expect(saved).toMatchObject({
       agentId,
       workspaceId,
       label: "claudio converse",
-      principalKind: "public-launch",
+      principalKind: "agent-api",
       role: "agent",
       channel: "mcp-converse",
     });
@@ -146,14 +147,13 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
   });
 
   it("listByAgent returns grants ordered by created_at then id", async () => {
-    const grants = await repository.listByAgent(agentId);
-    expect(grants.length).toBeGreaterThanOrEqual(2);
-    expect(grants.map((g) => g.tokenHash)).toContain("grant-hash-1");
-    expect(grants.map((g) => g.tokenHash)).toContain("grant-hash-2");
+    const page = await repository.listByAgent(agentId);
+    expect(page.grants.length).toBeGreaterThanOrEqual(2);
+    expect(page.grants.map((g) => g.tokenHash)).toContain("grant-hash-1");
+    expect(page.grants.map((g) => g.tokenHash)).toContain("grant-hash-2");
   });
 
-  it("rotate replaces the secret and clears last_used_at/revoked_at", async () => {
-    await repository.revoke(savedId, new Date());
+  it("rotate replaces the secret on an active grant", async () => {
     const rotated = await repository.rotate(savedId, {
       tokenPrefix: "rdso_rot",
       tokenHash: "grant-hash-rot",
@@ -166,30 +166,118 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     expect(await repository.rotate(randomUUID(), { tokenPrefix: "x", tokenHash: "y", encryptedToken: "z" })).toBeNull();
   });
 
-  it("touch updates last_used_at only when not revoked", async () => {
+  it("allows exactly one concurrent active-agent-channel rotation and never reactivates revoked or expired grants", async () => {
+    const active = await repository.save({
+      agentId,
+      workspaceId,
+      label: "concurrent rotation",
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "agent-api",
+      tokenPrefix: "radioso_active",
+      tokenHash: "grant-hash-active",
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const rotation = {
+      tokenPrefix: "radioso_rotate",
+      tokenHash: "grant-hash-rotated",
+      encryptedToken: null,
+      expectedTokenHash: active.tokenHash,
+      requireActiveAgentChannel: true,
+      now: new Date(),
+    };
+    const results = await Promise.all([
+      repository.rotate(active.id, rotation),
+      repository.rotate(active.id, rotation),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+
+    const revoked = await repository.save({
+      agentId,
+      workspaceId,
+      label: "revoked rotation",
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "agent-api",
+      tokenPrefix: "radioso_revoke",
+      tokenHash: "grant-hash-revoked",
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    await repository.revoke(revoked.id, new Date());
+    await expect(repository.rotate(revoked.id, {
+      ...rotation,
+      tokenHash: "grant-hash-revoked-rotate",
+      expectedTokenHash: revoked.tokenHash,
+    })).resolves.toBeNull();
+
+    const expired = await repository.save({
+      agentId,
+      workspaceId,
+      label: "expired rotation",
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "mcp-converse",
+      tokenPrefix: "radioso_expire",
+      tokenHash: "grant-hash-expired",
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() - 1),
+    });
+    await expect(repository.rotate(expired.id, {
+      ...rotation,
+      tokenHash: "grant-hash-expired-rotate",
+      expectedTokenHash: expired.tokenHash,
+    })).resolves.toBeNull();
+  });
+
+  it("touch coalesces last_used_at writes for five minutes and never updates revoked grants", async () => {
     const at = new Date(Date.now() + 60 * 1000);
     await repository.touch(savedId, at);
     const found = await repository.findById(savedId);
     expect(found?.lastUsedAt?.getTime()).toBe(at.getTime());
 
+    const withinCoalescingWindow = new Date(at.getTime() + 60 * 1000);
+    await repository.touch(savedId, withinCoalescingWindow);
+    expect((await repository.findById(savedId))?.lastUsedAt?.getTime()).toBe(at.getTime());
+
+    const afterCoalescingWindow = new Date(at.getTime() + 6 * 60 * 1000);
+    await repository.touch(savedId, afterCoalescingWindow);
+    expect((await repository.findById(savedId))?.lastUsedAt?.getTime()).toBe(afterCoalescingWindow.getTime());
+
     await repository.revoke(savedId, new Date());
-    const later = new Date(Date.now() + 120 * 1000);
+    const later = new Date(afterCoalescingWindow.getTime() + 60 * 1000);
     await repository.touch(savedId, later);
     const afterRevoke = await repository.findById(savedId);
-    expect(afterRevoke?.lastUsedAt?.getTime()).toBe(at.getTime());
+    expect(afterRevoke?.lastUsedAt?.getTime()).toBe(afterCoalescingWindow.getTime());
   });
 
-  it("revoke sets revoked_at and returns null for unknown ids", async () => {
-    const revoked = await repository.revoke(savedId, new Date());
+  it("revoke preserves its original timestamp and returns null for unknown ids", async () => {
+    const first = await repository.findById(savedId);
+    const revoked = await repository.revoke(savedId, new Date(Date.now() + 60_000));
     expect(revoked?.revokedAt).toBeInstanceOf(Date);
+    expect(revoked?.revokedAt?.getTime()).toBe(first?.revokedAt?.getTime());
     expect(await repository.revoke(randomUUID(), new Date())).toBeNull();
   });
 
   it("updateConstraints merges with current values and returns null for unknown ids", async () => {
-    // rotate first to un-revoke and have a clean grant to mutate
-    await repository.rotate(savedId, { tokenPrefix: "rdso_uc", tokenHash: "grant-hash-uc", encryptedToken: "enc-uc" });
+    const constraintGrant = await repository.save({
+      agentId,
+      workspaceId,
+      label: "primary",
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "agent-api",
+      tokenPrefix: "radioso_uc",
+      tokenHash: "grant-hash-uc",
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+    });
 
-    const updated = await repository.updateConstraints(savedId, {
+    const updated = await repository.updateConstraints(constraintGrant.id, {
       originConstraint: { mode: "list", origins: ["https://c.example"] },
       enabled: false,
     });
@@ -198,7 +286,7 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     // label was not provided, so it is preserved
     expect(updated?.label).toBe("primary");
 
-    const labelCleared = await repository.updateConstraints(savedId, { label: null });
+    const labelCleared = await repository.updateConstraints(constraintGrant.id, { label: null });
     expect(labelCleared?.label).toBeNull();
     // origin/enabled preserved from previous update
     expect(labelCleared?.enabled).toBe(false);

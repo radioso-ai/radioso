@@ -10,7 +10,6 @@ import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddlewar
 import { createRequestAuditContextMiddleware } from "../http/middleware/requestAuditContextMiddleware.js";
 import { createOpenApiDocument } from "../http/openapi/openApiDocument.js";
 import { createApiRouter } from "../http/routes/index.js";
-import { mountMergedMcp } from "./mcpMount.js";
 import type { AppDependencies } from "./types.js";
 
 /**
@@ -38,7 +37,6 @@ export const createApp = (dependencies: AppDependencies) => {
   app.use(createRequestAuditContextMiddleware());
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
-  mountMergedMcp(app, dependencies);
   app.use(async (req, _res, next) => {
     if (!shouldCaptureRequestBody(req.headers["content-type"])) {
       next();

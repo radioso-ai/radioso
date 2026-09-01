@@ -14,7 +14,13 @@ import { cn } from '@/lib/utils'
 export type CredentialRole = 'member' | 'admin'
 
 export type PersonalTokenDraft = { label: string; role: CredentialRole; expiry: string }
-export type ServiceAccountDraft = { displayName: string; role: CredentialRole; credentialLabel: string; expiry: string }
+export type ServiceAccountDraft = { displayName: string; role: CredentialRole; expiry: string }
+
+export const defaultExpiryDate = (days: number, now = new Date()) => {
+  const expiry = new Date(now)
+  expiry.setUTCDate(expiry.getUTCDate() + days)
+  return expiry.toISOString().slice(0, 10)
+}
 
 /** Matches the Input primitive so selects and text fields line up on the same baseline. */
 export const nativeSelectClassName =
@@ -49,8 +55,7 @@ export function RoleSelect({
   )
 }
 
-/** Expiry is optional: an empty date means the credential never expires. */
-export const expiryHint = 'Leave empty to never expire.'
+export const expiryHint = 'Required. Rotate or replace the credential before this date.'
 
 function Field({ htmlFor, label, hint, children }: { htmlFor: string; label: string; hint?: string; children: ReactNode }) {
   return (
@@ -138,7 +143,7 @@ export function CreatePersonalTokenDialog({
 }) {
   const [label, setLabel] = useState('')
   const [role, setRole] = useState<CredentialRole>('member')
-  const [expiry, setExpiry] = useState('')
+  const [expiry, setExpiry] = useState(() => defaultExpiryDate(90))
 
   return (
     <CreateDialogShell
@@ -146,7 +151,7 @@ export function CreatePersonalTokenDialog({
       description="A personal token acts as you, for your own scripts and local development. The secret is shown once."
       error={error}
       submitLabel="Issue personal token"
-      submitDisabled={!label.trim()}
+      submitDisabled={!label.trim() || !expiry}
       isSubmitting={isSubmitting}
       onSubmit={() => onSubmit({ label, role, expiry })}
       onOpenChange={onOpenChange}
@@ -181,8 +186,7 @@ export function CreateServiceAccountDialog({
 }) {
   const [displayName, setDisplayName] = useState('')
   const [role, setRole] = useState<CredentialRole>('member')
-  const [credentialLabel, setCredentialLabel] = useState('Initial credential')
-  const [expiry, setExpiry] = useState('')
+  const [expiry, setExpiry] = useState(() => defaultExpiryDate(365))
 
   return (
     <CreateDialogShell
@@ -190,9 +194,9 @@ export function CreateServiceAccountDialog({
       description="A standalone identity for one integration, with its own credentials you can rotate or revoke on their own."
       error={error}
       submitLabel="Create service account"
-      submitDisabled={!displayName.trim() || !credentialLabel.trim()}
+      submitDisabled={!displayName.trim() || !expiry}
       isSubmitting={isSubmitting}
-      onSubmit={() => onSubmit({ displayName, role, credentialLabel, expiry })}
+      onSubmit={() => onSubmit({ displayName, role, expiry })}
       onOpenChange={onOpenChange}
     >
       <Field htmlFor="service-account-name" label="Service account name">
@@ -201,14 +205,9 @@ export function CreateServiceAccountDialog({
       <Field htmlFor="service-account-role" label="Role" hint="Caps what every credential on this account may do.">
         <RoleSelect id="service-account-role" value={role} onChange={setRole} adminSelectable={adminSelectable} />
       </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field htmlFor="service-credential-label" label="Initial credential label">
-          <Input id="service-credential-label" value={credentialLabel} onChange={(event) => setCredentialLabel(event.target.value)} />
-        </Field>
-        <Field htmlFor="service-credential-expiry" label="Expires" hint={expiryHint}>
-          <Input id="service-credential-expiry" type="date" value={expiry} onChange={(event) => setExpiry(event.target.value)} />
-        </Field>
-      </div>
+      <Field htmlFor="service-credential-expiry" label="Primary credential expires" hint={expiryHint}>
+        <Input id="service-credential-expiry" type="date" value={expiry} onChange={(event) => setExpiry(event.target.value)} />
+      </Field>
     </CreateDialogShell>
   )
 }

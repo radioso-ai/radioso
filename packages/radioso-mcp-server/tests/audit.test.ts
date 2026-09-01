@@ -14,7 +14,7 @@ describe("audit logger", () => {
         approvalToken: "mcp_appr_secret",
         clientName: "cursor-local",
         nested: {
-          upstreamApiToken: "radioso_secret",
+          converseSessionToken: "radioso_secret",
         },
       },
       outcome: "success",
@@ -30,7 +30,7 @@ describe("audit logger", () => {
         accessToken: "[redacted]",
         approvalToken: "[redacted]",
         nested: {
-          upstreamApiToken: "[redacted]",
+          converseSessionToken: "[redacted]",
         },
       },
     });

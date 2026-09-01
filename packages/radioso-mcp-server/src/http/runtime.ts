@@ -8,9 +8,6 @@ import {
 import { createAuthService } from "../auth/authService.js";
 import type { RadiosoMcpConfig } from "../config.js";
 import { createConverseApiAdapter } from "../converseApiAdapter.js";
-import { RadiosoApiError } from "../radiosoApiAdapter.js";
-import { createCapabilityPolicyRegistry } from "../policy/capabilityPolicy.js";
-import { createWorkspacePolicyResolver, loadWorkspacePolicyOverrides } from "../policy/workspacePolicy.js";
 import {
   createRuntimeStoreHandle,
   type LegacySessionPurgeReadinessObserver,
@@ -19,28 +16,12 @@ import {
 
 import { createHttpServer, type RadiosoRemoteHttpServer } from "./createHttpServer.js";
 
-const rejectWorkspaceTokenExchange = async (): Promise<never> => {
-  throw new RadiosoApiError(
-    "MCP credential is invalid or unauthorized.",
-    401,
-    "unauthorized",
-  );
-};
-
 export interface CreateRemoteHttpRuntimeOptions {
   auditLogger?: AuditLogger;
   auditSinks?: AuditSink[];
   config: RadiosoMcpConfig;
   legacySessionPurgeReadinessObserver?: LegacySessionPurgeReadinessObserver;
   runtimeStores?: RuntimeStoreHandle;
-  workspacePolicyOverrides?: Record<
-    string,
-    {
-      allowedReadTools?: string[];
-      allowedWriteTools?: string[];
-      approvalRequiredWriteTools?: string[];
-    }
-  >;
 }
 
 export interface RemoteHttpRuntime {
@@ -57,7 +38,6 @@ export const createRemoteHttpRuntime = async ({
   config,
   legacySessionPurgeReadinessObserver,
   runtimeStores,
-  workspacePolicyOverrides,
 }: CreateRemoteHttpRuntimeOptions): Promise<RemoteHttpRuntime> => {
   const resolvedAuditLogger =
     auditLogger ??
@@ -68,32 +48,16 @@ export const createRemoteHttpRuntime = async ({
       ],
     );
 
-  const basePolicyConfig = {
-    allowedReadTools: config.allowedReadTools,
-    allowedWriteTools: config.allowedWriteTools,
-    approvalRequiredWriteTools: config.approvalRequiredWriteTools,
-  };
-  const policy = createCapabilityPolicyRegistry(basePolicyConfig);
-  const workspacePolicyResolver = createWorkspacePolicyResolver(
-    basePolicyConfig,
-    workspacePolicyOverrides ?? loadWorkspacePolicyOverrides(config.workspacePoliciesPath),
-  );
   const resolvedRuntimeStores = runtimeStores ?? await createRuntimeStoreHandle(config, {
     legacySessionPurgeReadinessObserver,
   });
   resolvedRuntimeStores.readiness.start();
   const authService = createAuthService({
-    accessTokenTtlSeconds: config.accessTokenTtlSeconds,
-    auditLogger: resolvedAuditLogger,
-    policy,
-    resolvePolicy: (workspaceId) => workspacePolicyResolver.resolve(workspaceId),
     sessionStore: resolvedRuntimeStores.sessionStore,
-    signingSecret: config.signingSecret,
     converseApi: createConverseApiAdapter({
       baseUrl: config.baseUrl,
       requestTimeoutMs: config.requestTimeoutMs,
     }),
-    validateWorkspaceToken: rejectWorkspaceTokenExchange,
   });
   const server = createHttpServer({
     authService,

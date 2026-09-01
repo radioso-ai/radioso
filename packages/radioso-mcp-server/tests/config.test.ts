@@ -1,20 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { loadConfig } from "../src/config.js";
-import {
-  DEFAULT_ALLOWED_READ_TOOLS,
-  DEFAULT_ALLOWED_WRITE_TOOLS,
-  DEFAULT_APPROVAL_REQUIRED_WRITE_TOOLS,
-} from "../src/policy/capabilityPolicy.js";
 
 describe("loadConfig", () => {
   it("reads the remote runtime env vars and applies defaults", () => {
     const config = loadConfig({
       RADIOSO_BASE_URL: "http://localhost:8080",
-      RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: "900",
-      RADIOSO_MCP_ALLOWED_READ_TOOLS: "describe_capabilities,search_documents",
-      RADIOSO_MCP_ALLOWED_WRITE_TOOLS: "create_document,update_document",
-      RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: "create_document,update_document",
       RADIOSO_MCP_AUDIT_LOG_PATH: "/tmp/radioso-mcp-audit.jsonl",
       RADIOSO_MCP_BIND_HOST: "0.0.0.0",
       RADIOSO_MCP_BIND_PORT: "8787",
@@ -25,10 +16,6 @@ describe("loadConfig", () => {
 
     expect(config).toEqual({
       baseUrl: "http://localhost:8080",
-      accessTokenTtlSeconds: 900,
-      allowedReadTools: ["describe_capabilities", "search_documents"],
-      allowedWriteTools: ["create_document", "update_document"],
-      approvalRequiredWriteTools: ["create_document", "update_document"],
       auditLogPath: "/tmp/radioso-mcp-audit.jsonl",
       bindHost: "0.0.0.0",
       bindPort: 8787,
@@ -37,7 +24,6 @@ describe("loadConfig", () => {
       requestTimeoutMs: 15000,
       serverName: "radioso-test",
       signingSecret: "dev-signing-secret",
-      workspacePoliciesPath: undefined,
     });
   });
 

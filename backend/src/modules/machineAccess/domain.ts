@@ -22,6 +22,11 @@ export const MACHINE_ACCESS_LIMITS = {
   defaultPageSize: 50,
 } as const;
 
+export const MACHINE_ACCESS_LIFETIMES = {
+  personalDays: 90,
+  serviceDays: 365,
+} as const;
+
 const controlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
 
 export const normalizeCredentialLabel = (value: string): string => {
@@ -39,9 +44,17 @@ export const requireFutureExpiry = (expiresAt: Date, now: Date): Date => {
   return expiresAt;
 };
 
-export const normalizeCredentialExpiry = (expiresAt: Date | null | undefined, now: Date): Date | null => {
-  if (expiresAt == null) return null;
-  return requireFutureExpiry(expiresAt, now);
+export const normalizeCredentialExpiry = (
+  expiresAt: Date | null | undefined,
+  now: Date,
+  maximumDays: number,
+): Date => {
+  if (expiresAt == null) throw badRequest("Credential expiry is required");
+  const normalized = requireFutureExpiry(expiresAt, now);
+  if (normalized.getTime() > now.getTime() + maximumDays * 24 * 60 * 60 * 1000) {
+    throw badRequest(`Credential expiry cannot exceed ${maximumDays} days`);
+  }
+  return normalized;
 };
 
 export const minimumRole = (left: MachineAccessRole, right: MachineAccessRole): MachineAccessRole =>
@@ -55,7 +68,7 @@ export const isServiceAccountActive = (status: ServiceAccountStatus): boolean =>
 
 export const deriveCredentialStatus = (input: {
   kind: MachineCredentialKind;
-  expiresAt: Date | null;
+  expiresAt: Date;
   revokedAt: Date | null;
   ownerUserId: string | null;
   accessTenureMembershipId: string | null;
@@ -65,7 +78,7 @@ export const deriveCredentialStatus = (input: {
   now: Date;
 }): MachineCredentialStatus => {
   if (input.revokedAt) return "revoked";
-  if (input.expiresAt && input.expiresAt.getTime() <= input.now.getTime()) return "expired";
+  if (input.expiresAt.getTime() <= input.now.getTime()) return "expired";
   if (input.kind === "personal") {
     return input.ownerUserId && input.accessTenureMembershipId && input.roleCeiling ? "active" : "invalid";
   }

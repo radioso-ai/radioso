@@ -1011,6 +1011,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run chat through a REST credential bound to this agent */
+        post: operations["createAgentChannelChatResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}": {
         parameters: {
             query?: never;
@@ -1046,25 +1063,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/mcp-converse-grants": {
+    "/api/v1/agents/{agentId}/channel-credentials": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List MCP converse grants for an agent */
-        get: operations["listAgentMcpConverseGrants"];
+        /** List MCP and REST chat credentials for an agent with cursor pagination */
+        get: operations["listAgentChannelCredentials"];
         put?: never;
-        /** Issue an MCP converse grant for an agent */
-        post: operations["issueAgentMcpConverseGrant"];
+        /** Issue an MCP or REST chat credential for an agent */
+        post: operations["issueAgentChannelCredential"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate": {
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate": {
         parameters: {
             query?: never;
             header?: never;
@@ -1073,15 +1090,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate an MCP converse grant for an agent */
-        post: operations["rotateAgentMcpConverseGrant"];
+        /** Rotate an agent channel credential */
+        post: operations["rotateAgentChannelCredential"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}": {
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke": {
         parameters: {
             query?: never;
             header?: never;
@@ -1090,9 +1107,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
-        /** Revoke an MCP converse grant for an agent */
-        delete: operations["revokeAgentMcpConverseGrant"];
+        /** Revoke an agent channel credential */
+        post: operations["revokeAgentChannelCredential"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3215,57 +3232,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mcp/converse/grounded-answer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Run an agent-aware grounded answer through the bound agent retrieval configuration */
-        post: operations["answerMcpConverseGrounded"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mcp/converse/resources": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List read-only resources visible to the bound agent */
-        get: operations["listMcpConverseResources"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mcp/converse/resources/{resourceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read one sanitized resource visible to the bound agent */
-        get: operations["readMcpConverseResource"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -4305,40 +4271,48 @@ export interface components {
             anonymousChat: components["schemas"]["AgentChannelLifecycle"];
             websiteEmbed: components["schemas"]["AgentChannelLifecycle"];
         };
-        AgentMcpConverseGrantMetadata: {
+        AgentChannelCredentialMetadata: {
             /** Format: uuid */
             id: string;
-            label: string | null;
-            tokenPrefix: string;
-            enabled: boolean;
+            /** @enum {string} */
+            audience: "mcp" | "rest";
+            label: string;
+            prefix: string;
+            /** @enum {string} */
+            status: "active" | "expired" | "revoked" | "disabled";
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            expiresAt: string | null;
             /** Format: date-time */
             lastUsedAt: string | null;
             /** Format: date-time */
             revokedAt: string | null;
         };
-        AgentMcpConverseGrantSecret: {
-            /** Format: uuid */
-            id: string;
-            label: string | null;
-            tokenPrefix: string;
+        AgentChannelCredentialIssueRequest: {
+            /** @enum {string} */
+            audience: "mcp" | "rest";
+            label: string;
             /** Format: date-time */
-            createdAt: string;
+            expiresAt: string;
         };
-        AgentMcpConverseGrantIssueRequest: {
-            label?: string;
+        AgentChannelCredentialIssueResponse: {
+            credential: components["schemas"]["AgentChannelCredentialMetadata"];
+            secret: string;
         };
-        AgentMcpConverseGrantIssueResponse: {
-            grant: components["schemas"]["AgentMcpConverseGrantSecret"];
-            token: string;
+        AgentChannelCredentialListResponse: {
+            credentials: components["schemas"]["AgentChannelCredentialMetadata"][];
+            nextCursor: string | null;
         };
-        AgentMcpConverseGrantSecretResponse: {
-            grant: components["schemas"]["AgentMcpConverseGrantSecret"];
-            token: string;
-        };
-        AgentMcpConverseGrantListResponse: {
-            grants: components["schemas"]["AgentMcpConverseGrantMetadata"][];
+        AgentChannelChatRequest: {
+            /** Format: uuid */
+            conversationId?: string;
+            message?: string;
+            /** @default false */
+            startConversation: boolean;
+            /** @default false */
+            stream: boolean;
+            userExpectedLocale?: string;
         };
         AuthoredDirectiveCondition: {
             /** @enum {string} */
@@ -8410,8 +8384,10 @@ export interface operations {
                             manageServiceAccounts: boolean;
                         };
                         defaults: {
-                            personalTokenLifetimeDays: null;
-                            serviceCredentialLifetimeDays: null;
+                            /** @enum {number} */
+                            personalTokenLifetimeDays: 90;
+                            /** @enum {number} */
+                            serviceCredentialLifetimeDays: 365;
                         };
                         limits: {
                             /** @enum {number} */
@@ -8429,8 +8405,6 @@ export interface operations {
                             /** Format: date-time */
                             migratedAt: string | null;
                         };
-                        /** @enum {string} */
-                        mcpCredentialSupport: "unsupported";
                     };
                 };
             };
@@ -8521,7 +8495,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -8607,7 +8581,7 @@ export interface operations {
                     /** @enum {string} */
                     roleCeiling: "member" | "admin";
                     /** Format: date-time */
-                    expiresAt?: string | null;
+                    expiresAt: string;
                 };
             };
         };
@@ -8637,7 +8611,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -8748,7 +8722,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string | null;
+                        expiresAt: string;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -8857,7 +8831,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -8961,7 +8935,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string | null;
+                        expiresAt: string;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -9139,11 +9113,8 @@ export interface operations {
                     displayName: string;
                     /** @enum {string} */
                     role: "member" | "admin";
-                    initialCredential: {
-                        label: string;
-                        /** Format: date-time */
-                        expiresAt?: string | null;
-                    };
+                    /** Format: date-time */
+                    credentialExpiresAt: string;
                 };
             };
         };
@@ -9196,7 +9167,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -9787,7 +9758,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -9872,7 +9843,7 @@ export interface operations {
                 "application/json": {
                     label: string;
                     /** Format: date-time */
-                    expiresAt?: string | null;
+                    expiresAt: string;
                 };
             };
         };
@@ -9902,7 +9873,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -10014,7 +9985,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string | null;
+                        expiresAt: string;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -10124,7 +10095,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string | null;
+                            expiresAt: string;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -10229,7 +10200,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string | null;
+                        expiresAt: string;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -11640,6 +11611,58 @@ export interface operations {
             };
         };
     };
+    createAgentChannelChatResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChannelChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent chat response returned as JSON or SSE */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Conversation start completed without a greeting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid, inactive, cross-audience, or cross-agent credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAgent: {
         parameters: {
             query?: never;
@@ -11773,9 +11796,13 @@ export interface operations {
             };
         };
     };
-    listAgentMcpConverseGrants: {
+    listAgentChannelCredentials: {
         parameters: {
-            query?: never;
+            query?: {
+                audience?: "mcp" | "rest";
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 agentId: string;
@@ -11784,13 +11811,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description MCP converse grant metadata returned without token material */
+            /** @description Role-free channel credential metadata returned without secret material */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentMcpConverseGrantListResponse"];
+                    "application/json": components["schemas"]["AgentChannelCredentialListResponse"];
                 };
             };
             /** @description Authentication required */
@@ -11822,7 +11849,7 @@ export interface operations {
             };
         };
     };
-    issueAgentMcpConverseGrant: {
+    issueAgentChannelCredential: {
         parameters: {
             query?: never;
             header?: never;
@@ -11833,17 +11860,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AgentMcpConverseGrantIssueRequest"];
+                "application/json": components["schemas"]["AgentChannelCredentialIssueRequest"];
             };
         };
         responses: {
-            /** @description MCP converse grant issued. The token is returned only in this response. */
+            /** @description Agent channel credential issued. The secret is returned only in this response. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentMcpConverseGrantIssueResponse"];
+                    "application/json": components["schemas"]["AgentChannelCredentialIssueResponse"];
                 };
             };
             /** @description Request validation failed */
@@ -11884,25 +11911,25 @@ export interface operations {
             };
         };
     };
-    rotateAgentMcpConverseGrant: {
+    rotateAgentChannelCredential: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 agentId: string;
-                grantId: string;
+                credentialId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description MCP converse grant rotated. The new token is returned only in this response. */
+            /** @description Agent channel credential rotated. The new secret is returned only in this response. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentMcpConverseGrantSecretResponse"];
+                    "application/json": components["schemas"]["AgentChannelCredentialIssueResponse"];
                 };
             };
             /** @description Authentication required */
@@ -11923,7 +11950,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Agent or MCP converse grant not found */
+            /** @description Agent or channel credential not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -11934,19 +11961,19 @@ export interface operations {
             };
         };
     };
-    revokeAgentMcpConverseGrant: {
+    revokeAgentChannelCredential: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 agentId: string;
-                grantId: string;
+                credentialId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description MCP converse grant revoked */
+            /** @description Agent channel credential revoked */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -11971,7 +11998,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Agent or MCP converse grant not found */
+            /** @description Agent or channel credential not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -22062,164 +22089,6 @@ export interface operations {
             };
             /** @description Turn superseded by a newer message in the same conversation */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    answerMcpConverseGrounded: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    query: string;
-                    maxResults?: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Agent-scoped grounded answer */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        answer: string;
-                        citations: {
-                            /** @enum {string} */
-                            documentId: "";
-                            /** @enum {string} */
-                            chunkId: "";
-                            title: string;
-                            /** Format: uri */
-                            sourceUrl?: string;
-                        }[];
-                        retrieval: {
-                            /** @enum {boolean} */
-                            agentScoped: true;
-                        };
-                    };
-                };
-            };
-            /** @description Invalid converse session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Converse session is not allowed to query retrieval */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    listMcpConverseResources: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Agent-scoped resources */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        resources: {
-                            uri: string;
-                            name: string;
-                            mimeType: string;
-                        }[];
-                    };
-                };
-            };
-            /** @description Invalid converse session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Converse session is not allowed to read resources */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    readMcpConverseResource: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                resourceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Sanitized agent-scoped resource */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        uri: string;
-                        name: string;
-                        mimeType: string;
-                        text: string;
-                    };
-                };
-            };
-            /** @description Invalid converse session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Converse session is not allowed to read resources */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -159,11 +159,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "listAccessibleAccounts",
     "listAccountUsers",
   ], accountScope),
-  // Grant metadata, not grant tokens: this endpoint documents its own response as "returned without
-  // token material". Its siblings listMcpConnections and getMcpConnection are already agent_skills
-  // reads, so treating the grants as a permanent secret boundary was inconsistent on its face.
-  // Issuing, rotating and revoking grants remain never-list under access_grants.
-  ...coverage(["listAgentMcpConverseGrants"], wave2BehaviorAuthoring),
   ...coverage(["deleteWorkspace"], neverListExclusion("workspace_delete")),
   ...coverage([
     "createAccountInvitation",
@@ -174,14 +169,16 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage([
     "setWorkspaceGrant",
     "removeWorkspaceGrant",
-    "issueAgentMcpConverseGrant",
-    "revokeAgentMcpConverseGrant",
+    "createAgentChannelChatResponse",
+    "listAgentChannelCredentials",
+    "issueAgentChannelCredential",
+    "revokeAgentChannelCredential",
   ], neverListExclusion("access_grants")),
   ...coverage([
     "rotateWebhookDestinationSecret",
     "rotateAnonymousChatToken",
     "rotateWebsiteEmbedToken",
-    "rotateAgentMcpConverseGrant",
+    "rotateAgentChannelCredential",
   ], neverListExclusion("secret_rotation")),
   ...coverage([
     "setWorkspaceProviderCredential",
@@ -324,9 +321,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "createMcpConverseSession",
     "validateMcpConverseSession",
     "askMcpConverseAgent",
-    "answerMcpConverseGrounded",
-    "listMcpConverseResources",
-    "readMcpConverseResource",
     "createPublicChatResponse",
     "listPublicChatHistory",
     "getPublicChatHistoryConversation",

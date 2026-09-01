@@ -48,8 +48,8 @@ export interface ApiAccessSummary {
     manageServiceAccounts: boolean
   }
   defaults: {
-    personalTokenLifetimeDays: null
-    serviceCredentialLifetimeDays: null
+    personalTokenLifetimeDays: number
+    serviceCredentialLifetimeDays: number
   }
   limits: {
     personalTokensPerUser: number
@@ -61,7 +61,6 @@ export interface ApiAccessSummary {
     status: 'destroyed' | 'not_applicable'
     migratedAt: string | null
   }
-  mcpCredentialSupport: 'unsupported'
 }
 
 export interface ServiceAccountSummary {
@@ -88,21 +87,18 @@ export interface CreateServiceAccountResponse {
 export interface PersonalTokenInput {
   label: string
   roleCeiling: 'member' | 'admin'
-  expiresAt?: string | null
+  expiresAt: string
 }
 
 export interface ServiceAccountInput {
   displayName: string
   role: 'member' | 'admin'
-  initialCredential: {
-    label: string
-    expiresAt?: string | null
-  }
+  credentialExpiresAt: string
 }
 
 export interface ServiceCredentialInput {
   label: string
-  expiresAt?: string | null
+  expiresAt: string
 }
 
 // A required non-simple header prevents cross-site form submission from

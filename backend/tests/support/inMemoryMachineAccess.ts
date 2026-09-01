@@ -431,7 +431,7 @@ export class InMemoryMachineAccessRepository implements Pick<
     label: string;
     tokenPrefix: string;
     tokenHash: string;
-    expiresAt: Date | null;
+    expiresAt: Date;
     createdByUserId: string;
   }): ApiCredentialRecord {
     return {

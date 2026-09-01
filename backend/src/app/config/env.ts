@@ -25,7 +25,6 @@ const booleanish = (defaultValue: boolean) =>
     return value;
   }, z.boolean());
 
-const mcpToolList = emptyStringToUndefined(z.string().min(1));
 const otelTraceSampler = emptyStringToUndefined(z.enum([
   "always_on",
   "always_off",
@@ -92,7 +91,6 @@ const envSchema = z.object({
   WORKSPACE_TOKEN_SECRET_PREVIOUS: emptyStringToUndefined(z.string().min(16)),
   PUBLIC_CHAT_SESSION_SECRET: emptyStringToUndefined(z.string().min(16)),
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
-  RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   AUTH_AUTO_VERIFY_EMAIL: booleanish(false),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
@@ -132,6 +130,11 @@ const envSchema = z.object({
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),
+  // Agent-channel turns spend provider and retrieval budget. A single credential
+  // cannot exhaust a workspace, and credential rotation cannot evade the shared cap.
+  AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
+  AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
+  AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(300),
   DOCUMENT_STORAGE_DRIVER: z.enum(["local", "gcs"]).default("local"),
   DOCUMENT_STORAGE_LOCAL_PATH: z.string().min(1).default("../.context/document-storage"),
   DOCUMENT_STORAGE_BUCKET: emptyStringToUndefined(z.string().min(1)),
@@ -182,19 +185,6 @@ const envSchema = z.object({
   RADIOSO_MCP_MOUNT_PATH: z.string().min(1).default("/mcp").refine((value) => value.startsWith("/"), {
     message: "RADIOSO_MCP_MOUNT_PATH must start with /",
   }),
-  RADIOSO_MCP_MERGED_CORS_ORIGINS: z.string().min(1).default("*"),
-  RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
-  RADIOSO_MCP_ALLOWED_READ_TOOLS: mcpToolList,
-  RADIOSO_MCP_ALLOWED_WRITE_TOOLS: mcpToolList,
-  RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: mcpToolList,
-  RADIOSO_MCP_AUDIT_LOG_PATH: emptyStringToUndefined(z.string().min(1)),
-  RADIOSO_MCP_BIND_HOST: z.string().min(1).default("127.0.0.1"),
-  RADIOSO_MCP_BIND_PORT: z.coerce.number().int().min(1).max(65535).default(8787),
-  RADIOSO_MCP_REDIS_KEY_PREFIX: z.string().min(1).default("radioso-mcp"),
-  RADIOSO_MCP_REDIS_URL: emptyStringToUndefined(z.string().url()),
-  RADIOSO_MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().max(120_000).default(30_000),
-  RADIOSO_MCP_SERVER_NAME: z.string().min(1).default("radioso-context"),
-  RADIOSO_MCP_WORKSPACE_POLICIES_PATH: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {
   if (value.METRICS_ENABLED && !value.METRICS_AUTH_TOKEN) {
@@ -287,22 +277,6 @@ const envSchema = z.object({
         });
       }
     }
-  }
-
-  if (value.RADIOSO_MCP_ENABLED && !value.RADIOSO_MCP_STANDALONE && !value.RADIOSO_BASE_URL && !value.APP_BASE_URL) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["RADIOSO_BASE_URL"],
-      message: "RADIOSO_BASE_URL or APP_BASE_URL is required when backend MCP is enabled",
-    });
-  }
-
-  if (value.RADIOSO_MCP_ENABLED && !value.RADIOSO_MCP_STANDALONE && !value.RADIOSO_MCP_SIGNING_SECRET) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["RADIOSO_MCP_SIGNING_SECRET"],
-      message: "RADIOSO_MCP_SIGNING_SECRET is required when backend MCP is enabled",
-    });
   }
 
   if (value.NODE_ENV === "production" && value.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK) {

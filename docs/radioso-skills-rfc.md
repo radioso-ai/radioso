@@ -1,7 +1,7 @@
 ---
 title: "Radioso Skills Vocabulary and Catalog"
 description: "The shipped skills model: how Radioso describes grounded work as discoverable, capability-checked, diagnosable skills with a read-only catalog."
-last_updated: 2026-07-27
+last_updated: 2026-09-01
 ---
 
 # Radioso Skills Vocabulary and Catalog
@@ -165,11 +165,10 @@ Built-in catalog entries include:
 |---|---|---|
 | `assistant.chat` | assistant | `POST /api/v1/assistant/chat` |
 | `retrieval.search` | retrieval | `POST /api/v1/retrieval/search` |
-| `retrieval.answer` | retrieval | `POST /api/v1/retrieval/answer` and MCP `answer_grounded` |
-| `documents.ingest` | documents | `POST /api/v1/document` and MCP `create_document` |
-| `documents.search` | documents | `POST /api/v1/document/search` and MCP `search_documents` |
-| `documents.delete` | documents | `DELETE /api/v1/document/{documentId}` and MCP `delete_document` |
-| `mcp.describe_capabilities` | MCP | MCP `describe_capabilities` |
+| `retrieval.answer` | retrieval | `POST /api/v1/retrieval/answer` |
+| `documents.ingest` | documents | `POST /api/v1/document` |
+| `documents.search` | documents | `POST /api/v1/document/search` |
+| `documents.delete` | documents | `DELETE /api/v1/document/{documentId}` |
 
 These entries are discovery metadata. Callers still use the listed existing contracts to perform work.
 

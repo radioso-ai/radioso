@@ -15,10 +15,9 @@ const summary = (role: 'member' | 'admin' = 'admin') => ({
     auditWorkspacePersonalTokens: role === 'admin',
     manageServiceAccounts: role === 'admin',
   },
-  defaults: { personalTokenLifetimeDays: null, serviceCredentialLifetimeDays: null },
+  defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
   limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
   legacyCredentialMigration: { status: 'destroyed', migratedAt: '2026-08-31T00:00:00.000Z' },
-  mcpCredentialSupport: 'unsupported',
 })
 
 const personalCredential: ApiCredentialMetadata = {
@@ -70,7 +69,8 @@ test('member issues, revokes, and pages personal tokens without storing the one-
       return
     }
     if (request.method() === 'POST' && path.endsWith('/personal-tokens')) {
-      issuedToken = personalCredential
+      const body = request.postDataJSON() as { expiresAt: string }
+      issuedToken = { ...personalCredential, expiresAt: body.expiresAt }
       await route.fulfill({ status: 201, json: { credential: issuedToken, secret: 'radioso_pat_one_time_secret' } })
       return
     }
@@ -90,7 +90,7 @@ test('member issues, revokes, and pages personal tokens without storing the one-
   await page.getByRole('button', { name: /create personal token/i }).click()
   await expect(page.getByLabel('Role')).toBeVisible()
   await page.getByLabel(/token label/i).fill('CLI on laptop')
-  await expect(page.getByLabel(/expires/i).first()).toHaveValue('')
+  await expect(page.getByLabel(/expires/i).first()).not.toHaveValue('')
   await page.getByRole('button', { name: /issue personal token/i }).click()
 
   await expect(page.getByText('radioso_pat_one_time_secret')).toBeVisible()
@@ -98,7 +98,7 @@ test('member issues, revokes, and pages personal tokens without storing the one-
   await page.getByRole('checkbox', { name: /cannot be recovered/i }).check()
   await page.getByRole('button', { name: /done|acknowledge/i }).click()
   await expect(page.getByText('radioso_pat_one_time_secret')).toHaveCount(0)
-  await expect(page.getByText(/expires Never/i).first()).toBeVisible()
+  await expect(page.getByText(/expires/i).first()).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
   await page.getByText('CLI on laptop').locator('xpath=../..').getByRole('button', { name: 'Revoke CLI on laptop' }).click()
@@ -258,11 +258,11 @@ test('administrator manages the service-account and credential lifecycle', async
     disabledAt: null, archivedAt: null,
     lastUsedAt: null, activeCredentialCount: 1, revision: 1,
   }
-  const initialCredential: ApiCredentialMetadata = {
+  const primaryCredential: ApiCredentialMetadata = {
     ...personalCredential,
     id: 'service-credential-1',
     kind: 'service',
-    label: 'Initial credential',
+    label: 'Primary',
     prefix: 'radioso_svc_initial',
     roleCeiling: null,
     ownerUserId: null,
@@ -280,13 +280,13 @@ test('administrator manages the service-account and credential lifecycle', async
     if (request.method() === 'GET' && path.endsWith('/service-accounts')) return route.fulfill({ json: { items: serviceAccounts, page: 1, limit: 50, total: serviceAccounts.length } })
     if (request.method() === 'POST' && path.endsWith('/service-accounts')) {
       serviceAccounts = [serviceAccount]
-      credentials = [initialCredential]
-      return route.fulfill({ status: 201, json: { serviceAccount, credential: initialCredential, secret: 'radioso_svc_first_secret' } })
+      credentials = [primaryCredential]
+      return route.fulfill({ status: 201, json: { serviceAccount, credential: primaryCredential, secret: 'radioso_svc_first_secret' } })
     }
     if (request.method() === 'GET' && path.endsWith('/credentials')) return route.fulfill({ json: { items: credentials, page: 1, limit: 50, total: credentials.length } })
     if (request.method() === 'GET' && path.endsWith('/service-1')) return route.fulfill({ json: serviceAccount })
     if (request.method() === 'POST' && path.endsWith('/credentials')) {
-      const issued: ApiCredentialMetadata = { ...initialCredential, id: 'service-credential-2', label: 'Canary runner', prefix: 'radioso_svc_canary', revision: 1 }
+      const issued: ApiCredentialMetadata = { ...primaryCredential, id: 'service-credential-2', label: 'Canary runner', prefix: 'radioso_svc_canary', revision: 1 }
       credentials = [issued, ...credentials]
       serviceAccount = { ...serviceAccount, activeCredentialCount: 2, revision: serviceAccount.revision + 1 }
       return route.fulfill({ status: 201, json: { credential: issued, secret: 'radioso_svc_canary_secret' } })
@@ -319,11 +319,11 @@ test('administrator manages the service-account and credential lifecycle', async
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled API access request: ${request.method()} ${path}` } } })
   })
 
-  await page.goto(`/w/${workspaceKey}/settings?tab=workspace&anchor=api-access`)
-  await expect(page.getByRole('heading', { name: 'Service accounts' })).toBeVisible()
+  await page.goto(`/w/${workspaceKey}/settings?tab=service-accounts`)
+  await expect(page.getByRole('heading', { name: 'Service accounts', level: 1 })).toBeVisible()
   await page.getByRole('button', { name: /new service account|create service account/i }).click()
   await page.getByLabel('Service account name').fill('Nightly ingestion')
-  await expect(page.getByLabel(/expires/i).first()).toHaveValue('')
+  await expect(page.getByLabel(/primary credential expires/i)).not.toHaveValue('')
   await page.getByRole('button', { name: /create service account/i }).click()
 
   await expect(page.getByText('radioso_svc_first_secret')).toBeVisible()
@@ -347,7 +347,7 @@ test('administrator manages the service-account and credential lifecycle', async
   await page.getByRole('button', { name: 'Done' }).click()
 
   page.once('dialog', (dialog) => dialog.accept('Production runner'))
-  await page.getByText('Initial credential').locator('xpath=../..').getByRole('button', { name: 'Rename Initial credential' }).click()
+  await page.getByText('Primary').locator('xpath=../..').getByRole('button', { name: 'Rename Primary' }).click()
   await expect(page.getByText('Production runner')).toBeVisible()
 
   page.once('dialog', (dialog) => dialog.accept())
@@ -388,4 +388,7 @@ test('administrator manages the service-account and credential lifecycle', async
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/\/service-1\/enable$/) }),
     expect.objectContaining({ method: 'POST', path: expect.stringMatching(/\/service-1\/archive$/) }),
   ]))
+  expect(requests.find((request) => request.method === 'POST' && /\/service-accounts$/.test(request.path))?.body).toEqual(
+    expect.objectContaining({ displayName: 'Nightly ingestion', role: 'member', credentialExpiresAt: expect.any(String) }),
+  )
 })

@@ -1,10 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  rejectWorkspaceBearerToken,
-  requireMcpConverseSession,
-} from "../../src/app/http/middleware/requireMcpConverseSession.js";
+import { requireMcpConverseSession } from "../../src/app/http/middleware/requireMcpConverseSession.js";
 import { AppError } from "../../src/shared/domain/errors.js";
 
 const requestWithBearer = (token: string): Request => ({
@@ -58,18 +55,6 @@ describe("MCP converse credential-class separation", () => {
     await middleware(requestWithBearer("radioso_pat_opaque"), { locals: {} } as Response, next);
 
     expect(validate).toHaveBeenCalledWith("radioso_pat_opaque");
-    expect(next).toHaveBeenCalledWith(expect.objectContaining({
-      code: "unauthorized",
-      details: { code: "invalid_session" },
-    }));
-  });
-
-  it("rejects bearer authentication on converse exchange without naming a credential class", async () => {
-    const middleware = rejectWorkspaceBearerToken();
-    const next = vi.fn() as NextFunction;
-
-    await middleware(requestWithBearer("any-format"), {} as Response, next);
-
     expect(next).toHaveBeenCalledWith(expect.objectContaining({
       code: "unauthorized",
       details: { code: "invalid_session" },

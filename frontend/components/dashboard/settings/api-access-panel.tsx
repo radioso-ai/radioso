@@ -17,6 +17,7 @@ import {
   CreateServiceAccountDialog,
   OneTimeSecretDialog,
   RoleSelect,
+  defaultExpiryDate,
   expiryHint,
   type PersonalTokenDraft,
   type ServiceAccountDraft,
@@ -27,11 +28,17 @@ const formatDate = (value: string | null) => value ? new Date(value).toLocaleDat
 
 const expiryInputToIso = (value: string) => {
   if (!value) return undefined
-  const expiry = new Date(`${value}T23:59:59Z`)
+  const expiry = new Date(`${value}T00:00:00Z`)
   return Number.isFinite(expiry.getTime()) ? expiry.toISOString() : undefined
 }
 
-export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | undefined }) {
+export function ApiAccessPanel({
+  workspaceId,
+  view = 'personal',
+}: {
+  workspaceId: string | null | undefined
+  view?: 'personal' | 'service'
+}) {
   const { user } = useAuth()
   const [summary, setSummary] = useState<ApiAccessSummary | null>(null)
   const [personalTokens, setPersonalTokens] = useState<ApiCredentialMetadata[]>([])
@@ -47,7 +54,7 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   const [serviceCredentialPage, setServiceCredentialPage] = useState(1)
   const [serviceCredentialTotal, setServiceCredentialTotal] = useState(0)
   const [additionalCredentialLabel, setAdditionalCredentialLabel] = useState('')
-  const [additionalCredentialExpiry, setAdditionalCredentialExpiry] = useState('')
+  const [additionalCredentialExpiry, setAdditionalCredentialExpiry] = useState(() => defaultExpiryDate(365))
   const [oneTime, setOneTime] = useState<OneTimeCredentialResponse | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -69,13 +76,15 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
     try {
       const nextSummary = await apiAccessApi.getSummary(workspaceId)
       setSummary(nextSummary)
-      const personal = await apiAccessApi.listPersonalTokens(workspaceId, {
-        view: nextSummary.capabilities.auditWorkspacePersonalTokens ? 'workspace' : 'mine',
-        page: personalPage,
-      })
-      setPersonalTokens(personal.items)
-      setPersonalTotal(personal.total)
-      if (nextSummary.capabilities.manageServiceAccounts) {
+      if (view === 'personal') {
+        const personal = await apiAccessApi.listPersonalTokens(workspaceId, {
+          view: nextSummary.capabilities.auditWorkspacePersonalTokens ? 'workspace' : 'mine',
+          page: personalPage,
+        })
+        setPersonalTokens(personal.items)
+        setPersonalTotal(personal.total)
+      }
+      if (view === 'service' && nextSummary.capabilities.manageServiceAccounts) {
         const services = await apiAccessApi.listServiceAccounts(workspaceId, { page: servicePage })
         setServiceAccounts(services.items)
         setServiceTotal(services.total)
@@ -88,7 +97,7 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
     } finally {
       setIsLoading(false)
     }
-  }, [personalPage, servicePage, workspaceId])
+  }, [personalPage, servicePage, view, workspaceId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- workspace changes clear the one-time secret.
@@ -105,13 +114,14 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   const createPersonal = async (draft: PersonalTokenDraft) => {
     if (!workspaceId || !draft.label.trim()) return
     const expiresAt = expiryInputToIso(draft.expiry)
+    if (!expiresAt) return
     setIsCreating(true)
     setFormError(null)
     try {
       const response = await apiAccessApi.createPersonalToken(workspaceId, {
         label: draft.label.trim(),
         roleCeiling: canIssueAdminRole ? draft.role : 'member',
-        ...(expiresAt ? { expiresAt } : {}),
+        expiresAt,
       })
       showSecret(response)
       setPersonalFormOpen(false)
@@ -124,17 +134,15 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   }
 
   const createService = async (draft: ServiceAccountDraft) => {
-    if (!workspaceId || !draft.displayName.trim() || !draft.credentialLabel.trim()) return
+    if (!workspaceId || !draft.displayName.trim()) return
     const expiresAt = expiryInputToIso(draft.expiry)
+    if (!expiresAt) return
     setIsCreating(true)
     setFormError(null)
     try {
       const response = await apiAccessApi.createServiceAccount(workspaceId, {
         displayName: draft.displayName.trim(), role: canIssueAdminRole ? draft.role : 'member',
-        initialCredential: {
-          label: draft.credentialLabel.trim(),
-          ...(expiresAt ? { expiresAt } : {}),
-        },
+        credentialExpiresAt: expiresAt,
       })
       showSecret({ credential: response.credential, secret: response.secret })
       setServiceFormOpen(false)
@@ -187,10 +195,11 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   const issueAdditionalCredential = async () => {
     if (!workspaceId || !selectedServiceAccount || !additionalCredentialLabel.trim()) return
     const expiresAt = expiryInputToIso(additionalCredentialExpiry)
+    if (!expiresAt) return
     try {
       showSecret(await apiAccessApi.issueServiceCredential(workspaceId, selectedServiceAccount.id, {
         label: additionalCredentialLabel.trim(),
-        ...(expiresAt ? { expiresAt } : {}),
+        expiresAt,
       }))
       setAdditionalCredentialLabel('')
       await selectServiceAccount(selectedServiceAccount)
@@ -293,8 +302,8 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   if (!workspaceId) return null
 
   return (
-    <div id="api-access" className="space-y-6 scroll-mt-24">
-      <SettingsCard
+    <div id={view === 'service' ? 'service-accounts' : 'api-access'} className="space-y-6 scroll-mt-24">
+      {view === 'personal' ? <SettingsCard
         icon={<KeyRound className="h-5 w-5 text-primary" />}
         title="API access"
         description={personalDescription}
@@ -329,9 +338,9 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
             </>
           ) : null}
         </div>
-      </SettingsCard>
+      </SettingsCard> : null}
 
-      {canManageServices ? (
+      {view === 'service' && canManageServices ? (
         <SettingsCard
           icon={<Server className="h-5 w-5 text-primary" />}
           title="Service accounts"
@@ -344,6 +353,13 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
           )}
         >
           <div className="space-y-4">
+            {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner className="h-4 w-4" />
+                Loading service accounts…
+              </div>
+            ) : null}
             {serviceAccounts.length === 0 ? (
               <div className="rounded-lg border border-dashed border-border p-6 text-center">
                 <p className="text-sm font-medium text-foreground">No service accounts yet</p>
@@ -386,7 +402,17 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
         </SettingsCard>
       ) : null}
 
-      {personalFormOpen ? (
+      {view === 'service' && !isLoading && !canManageServices ? (
+        <SettingsCard
+          icon={<Server className="h-5 w-5 text-primary" />}
+          title="Service accounts"
+          description="Named identities for production integrations and automation."
+        >
+          <p className="text-sm text-muted-foreground">Only workspace owners and admins can manage service accounts.</p>
+        </SettingsCard>
+      ) : null}
+
+      {view === 'personal' && personalFormOpen ? (
         <CreatePersonalTokenDialog
           adminSelectable={canIssueAdminRole}
           error={formError}
@@ -396,7 +422,7 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
         />
       ) : null}
 
-      {serviceFormOpen ? (
+      {view === 'service' && serviceFormOpen ? (
         <CreateServiceAccountDialog
           adminSelectable={canIssueAdminRole}
           error={formError}
@@ -520,7 +546,7 @@ function ServiceAccountDetail({
             <Label htmlFor="additional-credential-expiry">Expires</Label>
             <Input id="additional-credential-expiry" type="date" value={credentialExpiry} onChange={(event) => onCredentialExpiryChange(event.target.value)} />
           </div>
-          <Button onClick={onIssueCredential} disabled={!credentialLabel.trim() || account.status !== 'enabled'}>
+          <Button onClick={onIssueCredential} disabled={!credentialLabel.trim() || !credentialExpiry || account.status !== 'enabled'}>
             <Plus className="mr-2 h-4 w-4" />
             Issue credential
           </Button>

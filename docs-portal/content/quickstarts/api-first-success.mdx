@@ -1,14 +1,14 @@
 ---
-title: API first success
-description: Reach first success with plain HTTP by registering, issuing an API credential, uploading content, and asking an agent a grounded question.
-last_updated: 2026-08-31
+title: "API first success"
+description: "Reach first success with plain HTTP by registering, issuing scoped credentials, uploading content, and asking an agent a grounded question."
+last_updated: 2026-09-01
 ---
 
 import { Steps } from 'nextra/components'
 
 # API first success
 
-You can reach a grounded answer without opening the web app once. This path is for teams that already know they want agent behavior but want it behind their own scripts, jobs, or UI. The assistant chat API is how you talk to an agent from that code.
+You can reach a grounded answer without using the dashboard after setup. This path is for teams that want agent behavior behind their own scripts, jobs, or UI. A personal token uploads the workspace document; a role-free REST agent credential talks to one agent.
 
 ## Before you start
 
@@ -18,14 +18,15 @@ The examples on this page call `https://api.radioso.ai`.
 
 ## The happy path
 
-From nothing to a grounded answer takes six calls:
+From nothing to a grounded answer follows this sequence:
 
 1. check whether registration is available
 2. create or access an account
 3. establish a session
 4. issue a personal API credential
 5. upload one document
-6. ask one agent question whose answer should obviously come from that document
+6. create a REST credential for the chosen agent
+7. ask one agent question whose answer should obviously come from that document
 
 <Steps>
 ### Check registration availability
@@ -42,11 +43,15 @@ Production registration sends a verification email and does not return a session
 
 ### Issue a personal API credential
 
-Use the session-authenticated API-access route to create a role-bounded personal token. Its secret is shown once; inventory responses cannot recover it later. For unattended workloads, create a service-account credential instead from the same dashboard API-access area.
+Use the session-authenticated API-access route to create a role-bounded personal token with an expiry no more than 90 days away. Its secret is shown once; inventory responses cannot recover it later. For unattended workspace automation, create a service account under **Settings → Service accounts** instead.
 
-### Upload content and ask a grounded agent question
+### Upload content
 
-Use the personal token, or the service-account credential, for eligible document and chat routes.
+Use the personal token, or a service-account credential, for the document route.
+
+### Create an agent credential and ask a grounded question
+
+Use the signed-in session to issue a REST-audience credential from the agent's **Channels → API** card. Send that credential only to `POST /api/v1/agents/{agentId}/chat` for its bound agent.
 </Steps>
 
 ## One concrete example
@@ -94,14 +99,12 @@ curl -sS -c cookies.txt \
 ## Issue a personal API credential
 
 ```bash
+personal_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
 curl -sS -b cookies.txt -X POST \
   -H 'Content-Type: application/json' \
   -H 'X-Radioso-CSRF: 1' \
   -H 'X-Workspace-Id: <workspace-id>' \
-  -d '{
-    "label":"First API client",
-    "roleCeiling":"member"
-  }' \
+  -d "{\"label\":\"First API client\",\"roleCeiling\":\"member\",\"expiresAt\":\"${personal_expiry}\"}" \
   https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 
@@ -118,9 +121,7 @@ The issue response contains safe metadata and the one-time secret:
 {"credential":{"id":"...","prefix":"radioso_pat_ab12"},"secret":"radioso_pat_..."}
 ```
 
-The dashboard provides the same flow under **Settings → API access**. Copy the secret into your client's secret manager before acknowledging it; later inventory responses cannot recover it.
-
-![Workspace Settings with separate personal-token and service-account sections in API access](/screenshots/dashboard-settings.png)
+The dashboard provides the same personal-token flow from the workspace API access controls. Copy the secret into your client's secret manager before acknowledging it; later inventory responses cannot recover it.
 
 If the credential is exposed, rotate or revoke it from API access settings. Use a service account instead when the client should keep working independently of your membership.
 
@@ -161,27 +162,38 @@ await client.documents.importFile({
 
 You can also use the raw HTTP document routes directly, including the multipart `POST /api/v1/document/import` path.
 
+## Create a REST agent credential
+
+List the workspace's agents with the personal token and choose the one the integration should use:
+
+```bash
+curl -sS https://api.radioso.ai/api/v1/agents \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN"
+```
+
+Then issue a credential through the signed-in session. The session must have permission to manage that agent.
+
+```bash
+agent_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
+curl -sS -b cookies.txt -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -d "{\"audience\":\"rest\",\"label\":\"First chat client\",\"expiresAt\":\"${agent_expiry}\"}" \
+  https://api.radioso.ai/api/v1/agents/<agent-id>/channel-credentials
+```
+
+Store this response's `secret` separately as `RADIOSO_AGENT_API_TOKEN`. It is bound to the chosen agent and does not carry the personal token's workspace role.
+
 ## Ask one question that should have an obvious answer
 
 ```bash
-curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
-  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+curl -sS -X POST https://api.radioso.ai/api/v1/agents/<agent-id>/chat \
+  -H "Authorization: Bearer $RADIOSO_AGENT_API_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"message":"What is the refund window?","stream":false}'
 ```
 
-`client.chat.create` wraps the same route:
-
-```ts
-const response = await client.chat.create({
-  message: 'What is the refund window?',
-  stream: false,
-})
-
-console.log(response.answer)
-```
-
-Either way, the response is the grounded answer plus the citations that support it — here is the exact shape:
+The response is the grounded answer plus the citations that support it — here is the exact shape:
 
 ```json
 {

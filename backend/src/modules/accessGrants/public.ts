@@ -5,6 +5,7 @@ export type {
   AccessGrantEvaluation,
   AccessGrantRole,
   AccessGrantSecret,
+  AccessGrantUsageObserver,
   GrantPrincipalKind,
   OriginConstraint,
 } from "./domain.js";

@@ -9,6 +9,8 @@ users ── account_memberships (continuous tenure)
 
 workspaces ── workspace_service_accounts ── service api_credentials
      │
+     ├── agents ── agent_access_grants (MCP or REST chat audience)
+     │
      └── legacy_workspace_credential_tombstones (non-authenticating evidence)
 ```
 
@@ -145,6 +147,42 @@ Durably deduplicates each 30-, 7-, and 1-day warning without putting notificatio
 
 The composite primary key `(credential_id, threshold_days)` permits one event per threshold. An audit-write failure releases the claim so a later scan can retry.
 
+## Agent Channel Access Grant
+
+### Purpose
+
+A role-free credential bound to one agent and one external chat transport. It is not a user, service account, account membership, or ordinary workspace API principal.
+
+The existing `agent_access_grants` aggregate remains shared with public launch grants, but channel grants use a distinct invariant:
+
+| Field | Channel-credential rule |
+|---|---|
+| `id` | Stable lifecycle/audit identifier |
+| `workspace_id`, `agent_id` | Required immutable binding; agent must belong to workspace |
+| `label` | Required normalized display label, never authorization input |
+| `principal_kind` | `agent-api` |
+| `role` | `agent`; transport vocabulary only, not a workspace role |
+| `channel` | `mcp-converse` or `agent-api`; immutable credential audience |
+| `token_prefix` | Safe identifying prefix |
+| `token_hash` | Unique non-reversible verifier |
+| `encrypted_token` | Null for all newly issued channel credentials; retained only where legacy public-launch migration still requires it |
+| `origin_mode`, `origin_allowlist` | `allow-all`/empty for server-to-server channel credentials |
+| `enabled`, `expires_at`, `last_used_at`, `revoked_at`, `created_at` | Lifecycle metadata; expiry required for new channel credentials |
+
+Audience is stored state. MCP and REST issue independently generated secrets and resolve only the exact expected `channel`; token prefixes do not route authentication. Rotation replaces the verifier in place, clears last use, and changes the grant version so derived MCP sessions fail their next validation. Revocation is permanent.
+
+### Agent chat principal
+
+| Field | Meaning |
+|---|---|
+| `type` | `agent_chat_credential` or derived `public_chat_session` transport identity |
+| `grantId`, `grantVersion` | Exact channel credential and rotation version |
+| `workspaceId`, `agentId` | Immutable chat boundary |
+| `audience` | `mcp` or `rest` |
+| `conversationId` | Existing or newly created conversation binding |
+
+This principal has no `role`, user ID, service-account ID, account membership, or workspace permission set. Only the dedicated agent-chat transport consumes it.
+
 ## Legacy Workspace Credential Tombstone
 
 ### Purpose
@@ -192,7 +230,7 @@ Existing session principal; unchanged.
 | `accountId`, `workspaceId` | Tenant boundary |
 | `role` | Live service-account role |
 
-Both machine principal variants are rejected for owner authority and for HTTP operations whose route policy is session-only. Both are rejected by MCP in this feature.
+Both machine principal variants are rejected for owner authority and for HTTP operations whose route policy is session-only. Both are rejected by MCP and REST agent-chat authentication; those transports consume only their matching agent chat principal.
 
 ## Lifecycle Transactions
 
@@ -234,9 +272,18 @@ Both machine principal variants are rejected for owner authority and for HTTP op
 
 After successful principal resolution, schedule a conditional credential update only when `last_used_at` is older than five minutes. For service credentials, conditionally update service-account aggregate use in the same best-effort operation. Failures emit a safe operational signal and never change the request's authorization result.
 
+### Agent channel issue and rotation
+
+1. Require an interactive session and centralized agent-management permission.
+2. Resolve the path agent inside the actor's workspace.
+3. Generate one secret after validation; persist its hash, safe prefix, audience, binding, and expiry without ciphertext.
+4. Return plaintext once and write a safe lifecycle audit event.
+5. On rotation, require the exact bound grant, replace its verifier atomically, clear last use, and return one replacement secret. Existing derived MCP sessions fail because their grant version no longer matches.
+
 ## Retention and deletion
 
 - Workspace deletion cascades active service accounts and credentials because the tenant no longer exists.
 - Explicit credential revocation and service-account archive retain safe lifecycle records for audit/inventory.
+- Revoked agent channel grants retain only safe lifecycle metadata and a non-usable verifier record; raw channel secrets are never retained.
 - Personal user or membership deletion invalidates authentication immediately while retained identifiers preserve attribution.
 - Legacy tombstones remain independent of workspace deletion and contain no authenticating material.

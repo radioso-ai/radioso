@@ -1,87 +1,19 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { createRadiosoMcpServer, createStaticExecutionContextResolver } from "../src/server.js";
+import { createRadiosoMcpServer } from "../src/server.js";
 
 describe("createRadiosoMcpServer", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
-
-  it("exposes all read and write tool definitions", () => {
-    const resolveExecutionContext = vi.fn();
+  it("exposes only the agent conversation tool", () => {
     const server = createRadiosoMcpServer({
-      resolveExecutionContext,
-      serverName: "radioso-test",
-    });
-
-    const toolNames = server.toolDefinitions.map((tool) => tool.name);
-
-    expect(server.toolDefinitions).toHaveLength(9);
-    expect(toolNames).toContain("answer_grounded");
-    expect(toolNames).not.toContain("get_retrieval_settings");
-    expect(toolNames).not.toContain("update_retrieval_settings");
-  });
-
-  it("filters tool registration to the allowed session catalog", () => {
-    const server = createRadiosoMcpServer({
-      allowedTools: ["describe_capabilities", "list_documents"],
       resolveExecutionContext: vi.fn(),
       serverName: "radioso-test",
     });
 
-    expect(server.toolDefinitions.map((tool) => tool.name)).toEqual([
-      "describe_capabilities",
-      "list_documents",
-    ]);
+    expect(server.toolDefinitions.map((tool) => tool.name)).toEqual(["ask_agent"]);
   });
 
-  it("refuses to boot without an execution-context seam", () => {
-    expect(() =>
-      createRadiosoMcpServer({
-        serverName: "radioso-test",
-      }),
-    ).toThrow(/baseConfig or resolveExecutionContext/i);
-  });
-
-  it("routes grounded-answer requests through retrieval", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ outcome: "answer", answer: "ok" }), {
-        headers: { "content-type": "application/json" },
-        status: 200,
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const resolver = createStaticExecutionContextResolver({
-      apiToken: "radioso_stdio",
-      baseUrl: "http://localhost:8080",
-      requestTimeoutMs: 30_000,
-      serverName: "radioso-test",
-    });
-
-    const context = await resolver(
-      { name: "answer_grounded" } as any,
-      {},
-      {} as any,
-    );
-
-    await context.adapter.answerGrounded({ query: "hello" });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://localhost:8080/api/v1/retrieval/answer",
-      expect.objectContaining({
-        body: JSON.stringify({ query: "hello", includeDebug: true }),
-        method: "POST",
-        headers: expect.objectContaining({
-          authorization: "Bearer radioso_stdio",
-          "content-type": "application/json",
-          "x-radioso-capability-client": "mcp",
-        }),
-      }),
-    );
-    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
-    expect(headers).not.toHaveProperty("x-radioso-source-channel");
-    expect(headers).not.toHaveProperty("x-radioso-source-signature");
-    expect(headers).not.toHaveProperty("x-radioso-source-timestamp");
+  it("requires an execution-context resolver", () => {
+    expect(() => createRadiosoMcpServer({ serverName: "radioso-test" }))
+      .toThrow(/execution-context resolver/i);
   });
 });

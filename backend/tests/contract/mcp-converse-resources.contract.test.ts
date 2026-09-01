@@ -14,16 +14,16 @@ const createAppWithMcpConverse = () =>
     }],
   });
 
-describe("MCP converse grounded answer and resources contract", () => {
-  it("registers US2 OpenAPI paths", () => {
+describe("MCP agent credential chat-only contract", () => {
+  it("does not register direct retrieval or resource paths", () => {
     const document = createOpenApiDocument();
 
-    expect(document.paths?.["/api/v1/mcp/converse/grounded-answer"]?.post).toBeDefined();
-    expect(document.paths?.["/api/v1/mcp/converse/resources"]?.get).toBeDefined();
-    expect(document.paths?.["/api/v1/mcp/converse/resources/{resourceId}"]?.get).toBeDefined();
+    expect(document.paths?.["/api/v1/mcp/converse/grounded-answer"]).toBeUndefined();
+    expect(document.paths?.["/api/v1/mcp/converse/resources"]).toBeUndefined();
+    expect(document.paths?.["/api/v1/mcp/converse/resources/{resourceId}"]).toBeUndefined();
   });
 
-  it("validates grounded answer request bodies and requires converse sessions for resources", async () => {
+  it("returns not found for direct retrieval and resource paths", async () => {
     const { app } = createAppWithMcpConverse();
 
     const grounded = await request(app)
@@ -34,8 +34,8 @@ describe("MCP converse grounded answer and resources contract", () => {
     const read = await request(app)
       .get("/api/v1/mcp/converse/resources/not-a-session");
 
-    expect(grounded.status).toBe(401);
-    expect(list.status).toBe(401);
-    expect(read.status).toBe(401);
+    expect(grounded.status).toBe(404);
+    expect(list.status).toBe(404);
+    expect(read.status).toBe(404);
   });
 });

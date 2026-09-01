@@ -1,7 +1,7 @@
-import { runWorkspaceCredentialRejectionSmoke } from "../testing/remoteSmokeHarness.js";
+import { runConverseGrantSmoke } from "../testing/remoteSmokeHarness.js";
 
 const main = async () => {
-  const summary = await runWorkspaceCredentialRejectionSmoke({
+  const summary = await runConverseGrantSmoke({
     step(message) {
       console.info(`[smoke:http] ${message}`);
     },
@@ -11,8 +11,8 @@ const main = async () => {
   console.info(
     JSON.stringify(
       {
-        code: summary.code,
-        status: summary.status,
+        agentId: summary.agentId,
+        answerLength: summary.answer.length,
       },
       null,
       2,

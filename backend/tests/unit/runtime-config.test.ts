@@ -418,52 +418,28 @@ describe("runtime configuration", () => {
     expect(env.RADIOSO_MCP_ENABLED).toBe(false);
     expect(env.RADIOSO_MCP_STANDALONE).toBe(false);
     expect(env.RADIOSO_MCP_MOUNT_PATH).toBe("/mcp");
-    expect(env.RADIOSO_MCP_MERGED_CORS_ORIGINS).toBe("*");
   });
 
-  it("accepts merged MCP deployment settings", () => {
+  it("accepts standalone MCP discovery settings", () => {
     const env = getEnv({
       ...baseEnv,
-      RADIOSO_BASE_URL: "https://radioso.example.com",
       RADIOSO_MCP_ENABLED: "true",
-      RADIOSO_MCP_STANDALONE: "false",
+      RADIOSO_MCP_STANDALONE: "true",
       RADIOSO_MCP_MOUNT_PATH: "/internal/mcp",
-      RADIOSO_MCP_MERGED_CORS_ORIGINS: "https://cursor.example,https://client.example",
-      RADIOSO_MCP_SIGNING_SECRET: "0123456789abcdef",
-      RADIOSO_MCP_REDIS_URL: "redis://localhost:6379",
-      RADIOSO_MCP_REDIS_KEY_PREFIX: "radioso-mcp-test",
-      RADIOSO_MCP_ALLOWED_READ_TOOLS: "describe_capabilities,list_documents",
-      RADIOSO_MCP_ALLOWED_WRITE_TOOLS: "create_document",
-      RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: "create_document",
-      RADIOSO_MCP_AUDIT_LOG_PATH: "/tmp/radioso-mcp-audit.jsonl",
     });
 
     expect(env.RADIOSO_MCP_ENABLED).toBe(true);
-    expect(env.RADIOSO_MCP_STANDALONE).toBe(false);
+    expect(env.RADIOSO_MCP_STANDALONE).toBe(true);
     expect(env.RADIOSO_MCP_MOUNT_PATH).toBe("/internal/mcp");
-    expect(env.RADIOSO_MCP_MERGED_CORS_ORIGINS).toBe("https://cursor.example,https://client.example");
-    expect(env.RADIOSO_MCP_REDIS_URL).toBe("redis://localhost:6379");
-    expect(env.RADIOSO_MCP_ALLOWED_READ_TOOLS).toBe("describe_capabilities,list_documents");
-    expect(env.RADIOSO_MCP_AUDIT_LOG_PATH).toBe("/tmp/radioso-mcp-audit.jsonl");
   });
 
-  it("rejects invalid merged MCP mount paths", () => {
+  it("rejects invalid standalone MCP mount paths", () => {
     expect(() => getEnv({
       ...baseEnv,
-      RADIOSO_BASE_URL: "https://radioso.example.com",
       RADIOSO_MCP_ENABLED: "true",
+      RADIOSO_MCP_STANDALONE: "true",
       RADIOSO_MCP_MOUNT_PATH: "mcp",
-      RADIOSO_MCP_SIGNING_SECRET: "0123456789abcdef",
     })).toThrow(/RADIOSO_MCP_MOUNT_PATH/);
-  });
-
-  it("requires a signing secret when merged MCP is enabled", () => {
-    expect(() => getEnv({
-      ...baseEnv,
-      RADIOSO_BASE_URL: "https://radioso.example.com",
-      RADIOSO_MCP_ENABLED: "true",
-      RADIOSO_MCP_SIGNING_SECRET: "",
-    })).toThrow(/RADIOSO_MCP_SIGNING_SECRET/);
   });
 
   it("requires AMQP broker settings when AMQP worker dispatch is enabled", () => {
@@ -521,7 +497,6 @@ describe("runtime configuration", () => {
     expect(example).toContain("RADIOSO_MCP_ENABLED=false");
     expect(example).toContain("RADIOSO_MCP_STANDALONE=false");
     expect(example).toContain("RADIOSO_MCP_MOUNT_PATH=/mcp");
-    expect(example).toContain("RADIOSO_MCP_MERGED_CORS_ORIGINS=*");
     expect(example).toContain("MAIL_DRIVER=log");
     expect(example).toContain("MAIL_FROM_EMAIL=noreply@example.com");
     expect(example).toContain("MAIL_FROM_NAME=Radioso");

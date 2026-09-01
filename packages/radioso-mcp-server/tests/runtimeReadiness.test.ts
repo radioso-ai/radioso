@@ -86,17 +86,12 @@ describe("MCP runtime-store readiness", () => {
     const runtime = await createRemoteHttpRuntime({
       auditSinks: [],
       config: {
-        accessTokenTtlSeconds: 900,
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: [],
-        approvalRequiredWriteTools: [],
         baseUrl: "http://radioso.test",
         bindHost: "127.0.0.1",
         bindPort: 0,
         redisKeyPrefix: "radioso-mcp",
         requestTimeoutMs: 1_000,
         serverName: "radioso-test",
-        signingSecret: "dev-signing-secret",
       },
       runtimeStores: {
         close: vi.fn(async () => readiness.stop()),
@@ -116,46 +111,8 @@ describe("MCP runtime-store readiness", () => {
     await runtime.close();
   });
 
-  it("forwards the optional lifecycle observer through in-memory store composition", async () => {
-    const events: unknown[] = [];
-    const runtimeStores = await createRuntimeStoreHandle({
-      accessTokenTtlSeconds: 900,
-      allowedReadTools: [],
-      allowedWriteTools: [],
-      approvalRequiredWriteTools: [],
-      baseUrl: "http://radioso.test",
-      bindHost: "127.0.0.1",
-      bindPort: 8787,
-      redisKeyPrefix: "radioso-mcp-readiness-test",
-      requestTimeoutMs: 1_000,
-      serverName: "radioso-test",
-      signingSecret: "dev-signing-secret",
-    }, {
-      legacySessionPurgeReadinessObserver: {
-        emit(event) {
-          events.push(event);
-        },
-      },
-    });
-
-    try {
-      runtimeStores.readiness.start();
-      await runtimeStores.readiness.waitUntilReady();
-      expect(events).toEqual([
-        { attempt: 1, type: "attempt" },
-        { attempt: 1, type: "success" },
-      ]);
-    } finally {
-      await runtimeStores.close();
-    }
-  });
-
   it("constructs an unavailable Redis runtime as unready so purge retries can run", async () => {
     const runtimeStores = await createRuntimeStoreHandle({
-      accessTokenTtlSeconds: 900,
-      allowedReadTools: [],
-      allowedWriteTools: [],
-      approvalRequiredWriteTools: [],
       baseUrl: "http://radioso.test",
       bindHost: "127.0.0.1",
       bindPort: 8787,
@@ -163,7 +120,6 @@ describe("MCP runtime-store readiness", () => {
       redisUrl: "redis://127.0.0.1:1",
       requestTimeoutMs: 1_000,
       serverName: "radioso-test",
-      signingSecret: "dev-signing-secret",
     });
 
     try {

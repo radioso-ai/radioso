@@ -135,7 +135,7 @@ export const createRuntimeStoreHandle = async (
 
     const readiness = createRuntimeStoreReadiness({
       purge: async () => {
-        await redisHandle.sessionStore.purgeLegacyApiTokenSessions();
+        await redisHandle.purgeLegacyApiTokenSessions();
       },
       observer: options.legacySessionPurgeReadinessObserver,
     });
@@ -153,10 +153,7 @@ export const createRuntimeStoreHandle = async (
 
   const sessionStore = createInMemorySessionStore();
   const readiness = createRuntimeStoreReadiness({
-    purge: async () => {
-      await sessionStore.purgeLegacyApiTokenSessions();
-    },
-    observer: options.legacySessionPurgeReadinessObserver,
+    purge: async () => undefined,
   });
 
   return {
@@ -190,7 +187,7 @@ export const createLegacySessionPurgeRuntime = async ({
   const redisHandle = await createRedisClientHandle({ keyPrefix, redisUrl, signingSecret: signingSecret ?? "" });
   const readiness = createRuntimeStoreReadiness({
     purge: async () => {
-      await redisHandle.sessionStore.purgeLegacyApiTokenSessions();
+      await redisHandle.purgeLegacyApiTokenSessions();
     },
     retryDelayMs,
     observer,

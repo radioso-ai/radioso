@@ -38,12 +38,13 @@ export interface OpenApiSchemaCatalog {
   AgentLogoSchema: z.ZodTypeAny;
   AgentChannelLifecycleSchema: z.ZodTypeAny;
   AgentChannelsLifecycleResponseSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantIssueRequestSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantIssueResponseSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantListResponseSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantMetadataSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantParamsSchema: RouteParameterSchema;
-  AgentMcpConverseGrantSecretResponseSchema: z.ZodTypeAny;
+  AgentChannelChatRequestSchema: z.ZodTypeAny;
+  AgentChannelCredentialIssueRequestSchema: z.ZodTypeAny;
+  AgentChannelCredentialIssueResponseSchema: z.ZodTypeAny;
+  AgentChannelCredentialListResponseSchema: z.ZodTypeAny;
+  AgentChannelCredentialListQuerySchema: RouteParameterSchema;
+  AgentChannelCredentialMetadataSchema: z.ZodTypeAny;
+  AgentChannelCredentialParamsSchema: RouteParameterSchema;
   AgentParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
   AgentContextVariableEnablementListResponseSchema: z.ZodTypeAny;
@@ -333,6 +334,13 @@ export const createOpenApiRegistry = () => {
     bearerFormat: "APIKey",
   });
 
+  const agentChannelBearerAuthScheme = registry.registerComponent("securitySchemes", "agentChannelBearerAuth", {
+    description: "Short-lived bearer credential issued for one agent channel. This credential authorizes only REST agent chat and carries no workspace role.",
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "AgentChannelCredential",
+  });
+
   const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes", "anonymousSessionCookie", {
     type: "apiKey",
     in: "cookie",
@@ -362,6 +370,7 @@ export const createOpenApiRegistry = () => {
     security: {
       anonymousSessionCookieScheme,
       bearerAuthScheme,
+      agentChannelBearerAuthScheme,
       sessionCookieScheme,
       workspaceAdminSecurity,
       workspaceSelectionScheme,

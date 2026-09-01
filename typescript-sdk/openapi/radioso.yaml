@@ -17,6 +17,7 @@ tags:
   - name: Workspace
   - name: Realtime
   - name: Assistant
+  - name: Agent Channels
   - name: History
   - name: Context Variables
   - name: Retrieval
@@ -25,6 +26,7 @@ tags:
   - name: Connectors
   - name: Audience Pulse
   - name: Copilot
+  - name: MCP Converse
 components:
   securitySchemes:
     sessionCookie:
@@ -41,6 +43,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: APIKey
+    agentChannelBearerAuth:
+      description: Short-lived bearer credential issued for one agent channel. This credential authorizes only REST agent chat and carries no workspace role.
+      type: http
+      scheme: bearer
+      bearerFormat: AgentChannelCredential
   schemas:
     ErrorResponse:
       type: object
@@ -2414,22 +2421,35 @@ components:
       required:
         - anonymousChat
         - websiteEmbed
-    AgentMcpConverseGrantMetadata:
+    AgentChannelCredentialMetadata:
       type: object
       properties:
         id:
           type: string
           format: uuid
+        audience:
+          type: string
+          enum:
+            - mcp
+            - rest
         label:
+          type: string
+        prefix:
+          type: string
+        status:
+          type: string
+          enum:
+            - active
+            - expired
+            - revoked
+            - disabled
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
           type:
             - string
             - "null"
-        tokenPrefix:
-          type: string
-        enabled:
-          type: boolean
-        createdAt:
-          type: string
           format: date-time
         lastUsedAt:
           type:
@@ -2443,68 +2463,78 @@ components:
           format: date-time
       required:
         - id
+        - audience
         - label
-        - tokenPrefix
-        - enabled
+        - prefix
+        - status
         - createdAt
+        - expiresAt
         - lastUsedAt
         - revokedAt
-    AgentMcpConverseGrantSecret:
+    AgentChannelCredentialIssueRequest:
       type: object
       properties:
-        id:
+        audience:
           type: string
-          format: uuid
-        label:
-          type:
-            - string
-            - "null"
-        tokenPrefix:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-      required:
-        - id
-        - label
-        - tokenPrefix
-        - createdAt
-    AgentMcpConverseGrantIssueRequest:
-      type: object
-      properties:
+          enum:
+            - mcp
+            - rest
         label:
           type: string
           minLength: 1
           maxLength: 120
-    AgentMcpConverseGrantIssueResponse:
+        expiresAt:
+          type: string
+          format: date-time
+      required:
+        - audience
+        - label
+        - expiresAt
+      additionalProperties: false
+    AgentChannelCredentialIssueResponse:
       type: object
       properties:
-        grant:
-          $ref: "#/components/schemas/AgentMcpConverseGrantSecret"
-        token:
+        credential:
+          $ref: "#/components/schemas/AgentChannelCredentialMetadata"
+        secret:
           type: string
       required:
-        - grant
-        - token
-    AgentMcpConverseGrantSecretResponse:
+        - credential
+        - secret
+    AgentChannelCredentialListResponse:
       type: object
       properties:
-        grant:
-          $ref: "#/components/schemas/AgentMcpConverseGrantSecret"
-        token:
-          type: string
-      required:
-        - grant
-        - token
-    AgentMcpConverseGrantListResponse:
-      type: object
-      properties:
-        grants:
+        credentials:
           type: array
           items:
-            $ref: "#/components/schemas/AgentMcpConverseGrantMetadata"
+            $ref: "#/components/schemas/AgentChannelCredentialMetadata"
+        nextCursor:
+          type:
+            - string
+            - "null"
       required:
-        - grants
+        - credentials
+        - nextCursor
+    AgentChannelChatRequest:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        startConversation:
+          type: boolean
+          default: false
+        stream:
+          type: boolean
+          default: false
+        userExpectedLocale:
+          type: string
+          maxLength: 35
+      additionalProperties: false
     AuthoredDirectiveCondition:
       oneOf:
         - type: object
@@ -12081,9 +12111,13 @@ paths:
                     type: object
                     properties:
                       personalTokenLifetimeDays:
-                        type: "null"
+                        type: number
+                        enum:
+                          - 90
                       serviceCredentialLifetimeDays:
-                        type: "null"
+                        type: number
+                        enum:
+                          - 365
                     required:
                       - personalTokenLifetimeDays
                       - serviceCredentialLifetimeDays
@@ -12127,17 +12161,12 @@ paths:
                     required:
                       - status
                       - migratedAt
-                  mcpCredentialSupport:
-                    type: string
-                    enum:
-                      - unsupported
                 required:
                   - effectiveRole
                   - capabilities
                   - defaults
                   - limits
                   - legacyCredentialMigration
-                  - mcpCredentialSupport
         "400":
           description: Invalid lifecycle request
           content:
@@ -12254,9 +12283,7 @@ paths:
                           type: string
                           format: date-time
                         expiresAt:
-                          type:
-                            - string
-                            - "null"
+                          type: string
                           format: date-time
                         status:
                           type: string
@@ -12405,13 +12432,12 @@ paths:
                   type: string
                   enum: *a53
                 expiresAt:
-                  type:
-                    - string
-                    - "null"
+                  type: string
                   format: date-time
               required:
                 - label
                 - roleCeiling
+                - expiresAt
       responses:
         "201":
           description: One-time personal-token secret
@@ -12457,9 +12483,7 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type:
-                          - string
-                          - "null"
+                        type: string
                         format: date-time
                       status:
                         type: string
@@ -12644,9 +12668,7 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type:
-                      - string
-                      - "null"
+                    type: string
                     format: date-time
                   status:
                     type: string
@@ -12824,9 +12846,7 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type:
-                          - string
-                          - "null"
+                        type: string
                         format: date-time
                       status:
                         type: string
@@ -12994,9 +13014,7 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type:
-                      - string
-                      - "null"
+                    type: string
                     format: date-time
                   status:
                     type: string
@@ -13268,24 +13286,13 @@ paths:
                 role:
                   type: string
                   enum: *a53
-                initialCredential:
-                  type: object
-                  properties:
-                    label:
-                      type: string
-                      minLength: 1
-                      maxLength: 80
-                    expiresAt:
-                      type:
-                        - string
-                        - "null"
-                      format: date-time
-                  required:
-                    - label
+                credentialExpiresAt:
+                  type: string
+                  format: date-time
               required:
                 - displayName
                 - role
-                - initialCredential
+                - credentialExpiresAt
       responses:
         "201":
           description: Service account and one-time credential secret
@@ -13390,9 +13397,7 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type:
-                          - string
-                          - "null"
+                        type: string
                         format: date-time
                       status:
                         type: string
@@ -14227,9 +14232,7 @@ paths:
                           type: string
                           format: date-time
                         expiresAt:
-                          type:
-                            - string
-                            - "null"
+                          type: string
                           format: date-time
                         status:
                           type: string
@@ -14376,12 +14379,11 @@ paths:
                   minLength: 1
                   maxLength: 80
                 expiresAt:
-                  type:
-                    - string
-                    - "null"
+                  type: string
                   format: date-time
               required:
                 - label
+                - expiresAt
       responses:
         "201":
           description: One-time service credential secret
@@ -14427,9 +14429,7 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type:
-                          - string
-                          - "null"
+                        type: string
                         format: date-time
                       status:
                         type: string
@@ -14620,9 +14620,7 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type:
-                      - string
-                      - "null"
+                    type: string
                     format: date-time
                   status:
                     type: string
@@ -14806,9 +14804,7 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type:
-                          - string
-                          - "null"
+                        type: string
                         format: date-time
                       status:
                         type: string
@@ -14982,9 +14978,7 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type:
-                      - string
-                      - "null"
+                    type: string
                     format: date-time
                   status:
                     type: string
@@ -16104,6 +16098,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/chat:
+    post:
+      tags:
+        - Agent Channels
+      summary: Run chat through a REST credential bound to this agent
+      operationId: createAgentChannelChatResponse
+      security:
+        - agentChannelBearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentChannelChatRequest"
+      responses:
+        "200":
+          description: Agent chat response returned as JSON or SSE
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantChatResponse"
+            text/event-stream:
+              schema:
+                type: string
+        "204":
+          description: Conversation start completed without a greeting
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid, inactive, cross-audience, or cross-agent credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}:
     get:
       tags:
@@ -16217,12 +16256,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/agents/{agentId}/mcp-converse-grants:
+  /api/v1/agents/{agentId}/channel-credentials:
     post:
       tags:
-        - Agents
-      summary: Issue an MCP converse grant for an agent
-      operationId: issueAgentMcpConverseGrant
+        - Agent Channels
+      summary: Issue an MCP or REST chat credential for an agent
+      operationId: issueAgentChannelCredential
       security: *a57
       parameters:
         - schema:
@@ -16236,14 +16275,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AgentMcpConverseGrantIssueRequest"
+              $ref: "#/components/schemas/AgentChannelCredentialIssueRequest"
       responses:
         "201":
-          description: MCP converse grant issued. The token is returned only in this response.
+          description: Agent channel credential issued. The secret is returned only in this response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentMcpConverseGrantIssueResponse"
+                $ref: "#/components/schemas/AgentChannelCredentialIssueResponse"
         "400":
           description: Request validation failed
           content:
@@ -16270,9 +16309,9 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
       tags:
-        - Agents
-      summary: List MCP converse grants for an agent
-      operationId: listAgentMcpConverseGrants
+        - Agent Channels
+      summary: List MCP and REST chat credentials for an agent with cursor pagination
+      operationId: listAgentChannelCredentials
       security: *a57
       parameters:
         - schema:
@@ -16281,13 +16320,36 @@ paths:
           required: true
           name: agentId
           in: path
+        - schema:
+            type: string
+            enum:
+              - mcp
+              - rest
+          required: false
+          name: audience
+          in: query
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 500
+          required: false
+          name: cursor
+          in: query
       responses:
         "200":
-          description: MCP converse grant metadata returned without token material
+          description: Role-free channel credential metadata returned without secret material
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentMcpConverseGrantListResponse"
+                $ref: "#/components/schemas/AgentChannelCredentialListResponse"
         "401":
           description: Authentication required
           content:
@@ -16306,12 +16368,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate:
+  /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate:
     post:
       tags:
-        - Agents
-      summary: Rotate an MCP converse grant for an agent
-      operationId: rotateAgentMcpConverseGrant
+        - Agent Channels
+      summary: Rotate an agent channel credential
+      operationId: rotateAgentChannelCredential
       security: *a57
       parameters:
         - schema:
@@ -16324,15 +16386,15 @@ paths:
             type: string
             format: uuid
           required: true
-          name: grantId
+          name: credentialId
           in: path
       responses:
         "200":
-          description: MCP converse grant rotated. The new token is returned only in this response.
+          description: Agent channel credential rotated. The new secret is returned only in this response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AgentMcpConverseGrantSecretResponse"
+                $ref: "#/components/schemas/AgentChannelCredentialIssueResponse"
         "401":
           description: Authentication required
           content:
@@ -16346,17 +16408,17 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Agent or MCP converse grant not found
+          description: Agent or channel credential not found
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/agents/{agentId}/mcp-converse-grants/{grantId}:
-    delete:
+  /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke:
+    post:
       tags:
-        - Agents
-      summary: Revoke an MCP converse grant for an agent
-      operationId: revokeAgentMcpConverseGrant
+        - Agent Channels
+      summary: Revoke an agent channel credential
+      operationId: revokeAgentChannelCredential
       security: *a57
       parameters:
         - schema:
@@ -16369,11 +16431,11 @@ paths:
             type: string
             format: uuid
           required: true
-          name: grantId
+          name: credentialId
           in: path
       responses:
         "204":
-          description: MCP converse grant revoked
+          description: Agent channel credential revoked
         "401":
           description: Authentication required
           content:
@@ -16387,7 +16449,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: Agent or MCP converse grant not found
+          description: Agent or channel credential not found
           content:
             application/json:
               schema:
@@ -27635,186 +27697,6 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Turn superseded by a newer message in the same conversation
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/mcp/converse/grounded-answer:
-    post:
-      tags:
-        - MCP Converse
-      summary: Run an agent-aware grounded answer through the bound agent retrieval configuration
-      operationId: answerMcpConverseGrounded
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                query:
-                  type: string
-                  minLength: 1
-                maxResults:
-                  type: integer
-                  minimum: 1
-                  maximum: 20
-              required:
-                - query
-      responses:
-        "200":
-          description: Agent-scoped grounded answer
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  answer:
-                    type: string
-                  citations:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        documentId:
-                          type: string
-                          enum:
-                            - ""
-                        chunkId:
-                          type: string
-                          enum:
-                            - ""
-                        title:
-                          type: string
-                        sourceUrl:
-                          type: string
-                          format: uri
-                      required:
-                        - documentId
-                        - chunkId
-                        - title
-                  retrieval:
-                    type: object
-                    properties:
-                      agentScoped:
-                        type: boolean
-                        enum:
-                          - true
-                    required:
-                      - agentScoped
-                required:
-                  - answer
-                  - citations
-                  - retrieval
-        "401":
-          description: Invalid converse session
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Converse session is not allowed to query retrieval
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/mcp/converse/resources:
-    get:
-      tags:
-        - MCP Converse
-      summary: List read-only resources visible to the bound agent
-      operationId: listMcpConverseResources
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: Agent-scoped resources
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  resources:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        uri:
-                          type: string
-                        name:
-                          type: string
-                        mimeType:
-                          type: string
-                      required:
-                        - uri
-                        - name
-                        - mimeType
-                required:
-                  - resources
-        "401":
-          description: Invalid converse session
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Converse session is not allowed to read resources
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/mcp/converse/resources/{resourceId}:
-    get:
-      tags:
-        - MCP Converse
-      summary: Read one sanitized resource visible to the bound agent
-      operationId: readMcpConverseResource
-      security:
-        - bearerAuth: []
-      parameters:
-        - schema:
-            type: string
-            minLength: 1
-          required: true
-          name: resourceId
-          in: path
-      responses:
-        "200":
-          description: Sanitized agent-scoped resource
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  uri:
-                    type: string
-                  name:
-                    type: string
-                  mimeType:
-                    type: string
-                  text:
-                    type: string
-                required:
-                  - uri
-                  - name
-                  - mimeType
-                  - text
-        "401":
-          description: Invalid converse session
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "403":
-          description: Converse session is not allowed to read resources
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "404":
-          description: Resource not found
           content:
             application/json:
               schema:

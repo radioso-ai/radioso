@@ -196,10 +196,10 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("DELETE", "/api/v1/agents/:agentId/assistant-logo", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/default", "workspace.agents.manage"),
   sessionOnly("GET", "/api/v1/agents/:agentId/context-variables/signing-key"),
-  sessionOnly("POST", "/api/v1/agents/:agentId/mcp-converse-grants"),
-  sessionOnly("GET", "/api/v1/agents/:agentId/mcp-converse-grants"),
-  sessionOnly("POST", "/api/v1/agents/:agentId/mcp-converse-grants/:grantId/rotate"),
-  sessionOnly("DELETE", "/api/v1/agents/:agentId/mcp-converse-grants/:grantId"),
+  sessionOnly("POST", "/api/v1/agents/:agentId/channel-credentials", "workspace.agents.manage"),
+  sessionOnly("GET", "/api/v1/agents/:agentId/channel-credentials", "workspace.agents.manage"),
+  sessionOnly("POST", "/api/v1/agents/:agentId/channel-credentials/:credentialId/rotate", "workspace.agents.manage"),
+  sessionOnly("POST", "/api/v1/agents/:agentId/channel-credentials/:credentialId/revoke", "workspace.agents.manage"),
 
   // Credential-management and operator surfaces intentionally have an explicit
   // session-only policy rather than relying on default denial. This makes new

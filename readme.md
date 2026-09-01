@@ -131,18 +131,20 @@ The long versions: [Conversational directives](./docs/architecture/conversationa
 
 ## Talking to your agent
 
-Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed. One naming note — the persona you configure is an **agent**; the HTTP surface you call to talk to it is named **assistant**, as in `/api/v1/assistant/chat`. Same thing, two names.
+Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed.
 
-**Get an API credential.** Sign in and open **API access** for the workspace. Create a personal token for automation that acts as you, or a service account with independently rotatable credentials for CI and unattended workloads. A secret is shown once and cannot be recovered: personal authority is capped by both the selected role and your live workspace role, while service credentials use the service account's live role. Workspace payloads carry both `id` and `publicRouteKey`: use `id` in API calls and `publicRouteKey` in dashboard URLs (`/w/<key>/...`). Existing installations that used the removed shared workspace token must follow the [API access credential upgrade](./docs/api-access-migration.md). Full account and session flows: [Authentication](https://docs.radioso.ai/guides/authentication).
+**Choose the credential for the job.** Personal tokens carry the issuing user's live workspace membership and expire within 90 days. Service accounts are stable workspace identities for CI and unattended workloads; create them under **Settings → Service accounts**, and give each credential an expiry of at most 365 days. Their credentials authorize eligible role-aware workspace APIs.
 
-**Ask a question.** Chat calls use the workspace default agent unless `agentId` says otherwise. Each turn runs through the engine above: it selects `retrieval.answer` when evidence is needed, applies whatever directives match, and resumes an active routine if there is one.
+Agent chat uses a separate credential created on that agent's **Channels → API** or **Channels → MCP** card. It has no `member` or `admin` role: it is bound to one agent and one audience, expires at the time you choose, and is shown once. Workspace payloads carry both `id` and `publicRouteKey`: use `id` in API calls and `publicRouteKey` in dashboard URLs (`/w/<key>/...`). Full account and session flows: [Authentication](https://docs.radioso.ai/guides/authentication).
+
+**Ask a question.** Put the chosen agent's id in the path and use a REST-audience agent credential. Each turn runs through the engine above: it selects `retrieval.answer` when evidence is needed, applies whatever directives match, and resumes an active routine if there is one.
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <api-credential>" \
+  -H "Authorization: Bearer <agent-rest-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"message":"What does the FAQ say about refunds?","stream":false}' \
-  http://localhost:8080/api/v1/assistant/chat
+  http://localhost:8080/api/v1/agents/<agent-id>/chat
 ```
 
 **Grounded retrieval without the persona.** When you want search or answer generation over workspace content with no assistant behavior, call retrieval directly:
@@ -175,7 +177,7 @@ curl -sS \
 
 ### TypeScript SDK
 
-The SDK wraps agent-backed chat, streaming, and document management, and follows the same lean-response contract (`response.debug` when you asked for it):
+The SDK wraps role-aware workspace chat, streaming, and document management, and follows the same lean-response contract (`response.debug` when you asked for it):
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
@@ -196,13 +198,15 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 }
 ```
 
+That client uses the personal or service-account credential supplied as `apiToken`. A client that should only converse with one agent uses a separate REST-audience agent credential with `POST /api/v1/agents/{agentId}/chat`.
+
 Start with [Getting started](https://docs.radioso.ai/sdk/typescript-getting-started) and [Basic usage](https://docs.radioso.ai/sdk/basic-usage).
 
 ### MCP
 
-Radioso's supported MCP surface is the standalone HTTP server. It lets a client talk to one agent through its turn loop (`ask_agent`), request a grounded answer using that agent's retrieval settings, and read the agent's documents as resources. A workspace admin creates its per-agent converse grant from the signed-in dashboard session (the dashboard uses `POST /api/v1/agents/{agentId}/mcp-converse-grants`); send the original grant to standalone `/mcp`, where the server exchanges it for a short-lived session. Personal and service API credentials are REST credentials and are not MCP credentials.
+Radioso's supported MCP surface is the standalone HTTP server. It exposes `ask_agent`, which talks to exactly one agent through its full turn loop. A signed-in user with permission to manage that agent creates an MCP-audience credential from **Channels → MCP**; the dashboard uses `POST /api/v1/agents/{agentId}/channel-credentials`. Send the one-time secret to standalone `/mcp`, where the server exchanges it for a short-lived session. Personal and service API credentials are workspace credentials and are not MCP credentials. Operator-minted MCP credentials use a static bearer, so Radioso does not require an OAuth flow.
 
-The backend's same-host merged MCP setting reports `mode: "unsupported"` with `reason: "merged_auth_unavailable"` and does not mount `/mcp`. If a merged configuration still points to `RADIOSO_MCP_REDIS_URL`, backend health waits for purge-only session cleanup while no MCP route is exposed. The package has no stdio MCP entrypoint. Run the standalone HTTP server and give it the original agent-converse grant. Hosted clients such as Claude Desktop and ChatGPT require a public HTTPS deployment; local clients can use the standalone HTTP URL.
+The package has no stdio MCP entrypoint. Run the standalone HTTP server and give it the original MCP-audience agent credential. Hosted clients such as Claude Desktop and ChatGPT require a public HTTPS deployment; local clients can use the standalone HTTP URL.
 
 ### Website embed
 

@@ -1,32 +1,14 @@
 import type { ApplicationModule, ApplicationRouteMount } from "../applicationModule.js";
 import { createAgentWizardRoutes } from "../../../modules/agentWizard/routes.js";
-import { AgentWizardService } from "../../../modules/agentWizard/service.js";
-import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 
 export const createAgentWizardApplicationModule = (): ApplicationModule => ({
   id: "radioso-agent-wizard",
   name: "Radioso Agent Wizard",
   register(context) {
-    const createRouter: ApplicationRouteMount["createRouter"] = (dependencies) => {
-      const service = new AgentWizardService({
-        // The wizard port only needs generated text; adapt the inference
-        // pipeline result object to its narrow string contract.
-        textGenerationClient: {
-          complete: async ({ signal: _signal, ...input }) =>
-            (await dependencies.chatInferencePipeline.complete(input)).text,
-        },
-        agentService: dependencies.agentService,
-        documentStorage: dependencies.documentStorage,
-        websiteCrawlJobService: dependencies.websiteCrawlJobService,
-        crawlerProvider: dependencies.crawlerProvider,
-        assertPublicWebsiteUrl: dependencies.assertPublicWebsiteUrl,
-        crawlerLimits: dependencies.websiteCrawlerLimits,
-        auditService: dependencies.auditService,
-        fetchImpl: fetchPublicUrl,
-      });
-
-      return createAgentWizardRoutes(dependencies, service);
-    };
+    // The service itself is composed once in the application dependencies, because Ray's
+    // analyze_website probe and propose_agent adapter reach the same wizard these routes do.
+    const createRouter: ApplicationRouteMount["createRouter"] = (dependencies) =>
+      createAgentWizardRoutes(dependencies, dependencies.agentWizardService);
 
     context.registerRouteMount({
       path: "/api/v1/agent-wizard",

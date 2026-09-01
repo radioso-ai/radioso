@@ -16,6 +16,8 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   archiveAgentRoutine: ["workspace.agents.manage"],
   restoreAgentRoutine: ["workspace.agents.manage"],
   updateAgent: ["workspace.agents.manage"],
+  analyzeWebsiteForAgentWizard: ["workspace.agents.manage"],
+  createAgentFromWizard: ["workspace.agents.manage"],
   createAgentDirective: ["workspace.agents.manage"],
   updateAgentDirective: ["workspace.agents.manage"],
   deleteAgentDirective: ["workspace.agents.manage"],

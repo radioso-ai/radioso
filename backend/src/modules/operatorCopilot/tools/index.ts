@@ -28,8 +28,8 @@ import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./ev
 import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
 import type { CopilotRetrievalProbePort, RetrievalProbeCopilotToolDependencies } from "./retrievalProbe.js";
-import { createQualityCopilotTools } from "./quality.js";
-import type { CopilotQualitySignalsPort, QualityCopilotToolDependencies } from "./quality.js";
+import { createQualityCopilotTools, createQualityTriageCopilotTools } from "./quality.js";
+import type { CopilotQualitySignalsPort, CopilotQualityTriagePort, QualityCopilotToolDependencies, QualityTriageCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
 import type { CopilotRoutineDefinitionPort, RoutineDefinitionCopilotToolDependencies, RoutineProposalCopilotToolDependencies } from "./routines.js";
 import { createNeedsAttentionCopilotTools, createWorkspaceTriageCopilotTools } from "./triage.js";
@@ -49,6 +49,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & EvalVerificationCopilotToolDependencies
   & Omit<RetrievalProbeCopilotToolDependencies, "agentLookup">
   & QualityCopilotToolDependencies
+  & QualityTriageCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
   & ContextVariablesCopilotToolDependencies
@@ -79,6 +80,7 @@ export const createCopilotToolDescriptors = (
   ...createEvalVerificationCopilotTools(deps),
   ...createRetrievalProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createQualityTriageCopilotTools(deps),
   ...createAudiencePulseCopilotTools(deps),
   ...createDocumentStatusCopilotTools(deps),
   ...createDocumentKnowledgeCopilotTools(deps),
@@ -106,7 +108,7 @@ export type { CopilotConversationHistoryPort } from "./chat.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 export type { CopilotEvalResultsPort } from "./eval.js";
-export type { CopilotQualitySignalsPort } from "./quality.js";
+export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./quality.js";
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";

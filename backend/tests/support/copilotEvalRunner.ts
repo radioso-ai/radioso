@@ -428,12 +428,26 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
           answerPreview: "Shipping to Italy is nine euro.",
           createdAt: "2026-08-26T07:30:05.000Z",
           feedback: { downCount: 1, latestDownUpdatedAt: "2026-08-26T07:40:00.000Z", comments: [{ value: "down", comment: "That price is wrong.", updatedAt: "2026-08-26T07:40:00.000Z" }] },
+          triage: { state: "open", version: 2 },
         }],
         total: 1,
       }),
     },
+    qualityTriageService: {
+      resolutionReasons: ["knowledge_gap", "retrieval_issue", "agent_behavior", "platform_bug", "expected_behavior", "out_of_scope", "invalid_feedback", "other"] as [string, ...string[]],
+      setTriageState: async (_workspaceId, input) => ({
+        kind: "updated" as const,
+        record: {
+          state: input.state,
+          version: input.expectedVersion + 1,
+          resolution: input.resolution ? { reason: input.resolution.reason, note: input.resolution.note ?? null } : null,
+          closedAt: "2026-08-26T09:00:00.000Z",
+          updatedAt: "2026-08-26T09:00:00.000Z",
+        },
+      }),
+    },
     pendingApprovals: {
-      listPending: async () => [{ conversationId: COPILOT_EVAL_CONVERSATION_ID, agentId: COPILOT_EVAL_AGENT_ID, reason: "refund_over_limit", createdAt: evalDate("2026-08-26T08:00:00.000Z") }],
+      listPending: async () => [{ handle: "decision-refund-over-limit", conversationId: COPILOT_EVAL_CONVERSATION_ID, agentId: COPILOT_EVAL_AGENT_ID, reason: "refund_over_limit", createdAt: evalDate("2026-08-26T08:00:00.000Z") }],
     },
     audiencePulseService: { read: unusedPort("audiencePulseService.read") },
     agentSkillsService: { list: async () => [] },

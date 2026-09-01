@@ -80,6 +80,7 @@ const realCatalogDependencies = () => {
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
+    qualityTriageService: { resolutionReasons: ["knowledge_gap"] as [string, ...string[]], setTriageState: stub() },
     retrievalProbe: { probe: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },

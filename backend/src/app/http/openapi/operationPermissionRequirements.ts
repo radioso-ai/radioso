@@ -9,6 +9,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   searchRetrievalEvidence: ["workspace.retrieval.query"],
   validateAgentRoutine: ["workspace.agents.read"],
   createAssistantChatResponse: ["workspace.chat.use"],
+  setQualityTurnTriage: ["workspace.quality.manage"],
   createAgentRoutine: ["workspace.agents.manage"],
   updateAgentRoutine: ["workspace.agents.manage"],
   reviseAgentRoutine: ["workspace.agents.manage"],

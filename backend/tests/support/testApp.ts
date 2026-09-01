@@ -1849,6 +1849,10 @@ export const createTestDependencies = (overrides: {
     getQualityStats: async () => ({ backlog: {} }),
     listLowQualityTurns: async () => ({ items: [], total: 0 }),
   };
+  const qualityTriageService = {
+    resolutionReasons: ["knowledge_gap", "retrieval_issue", "agent_behavior", "platform_bug", "expected_behavior", "out_of_scope", "invalid_feedback", "other"] as [string, ...string[]],
+    setTriageState: async () => ({ kind: "not_found" as const }),
+  };
   const audiencePulseService = {
     read: async () => ({ kind: "not_generated" }),
     refresh: async () => ({ kind: "not_generated" }),
@@ -1995,6 +1999,7 @@ export const createTestDependencies = (overrides: {
     },
     pendingApprovals: approvalDecisionService,
     qualitySignalsService,
+    qualityTriageService,
     audiencePulseService,
     documentStatusService: documentIngestionService,
     documentSourceStatusService: documentIngestionService,

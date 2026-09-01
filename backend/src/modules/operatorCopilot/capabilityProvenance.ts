@@ -12,7 +12,7 @@ type ProductionDescriptorName =
   | "propose_routine_edit" | "propose_routine_lifecycle" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
   | "recrawl_source" | "reprocess_document" | "retrieval_probe"
-  | "routine_definition" | "run_eval_suite" | "test_agent_turn" | "turn_trace" | "validate_routine"
+  | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
   | "workspace_settings" | "workspace_triage";
 
 const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
@@ -58,6 +58,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   retrieval_probe: { backingOperationIds: ["searchRetrievalEvidence"], applicationPrimitiveIds: ["retrieval.evidence.probe"] },
   routine_definition: { backingOperationIds: ["listAgentRoutines", "getAgentRoutine"], applicationPrimitiveIds: ["routines.definition.read"] },
   run_eval_suite: { backingOperationIds: ["runEvalCases"], applicationPrimitiveIds: ["eval.suite.run"] },
+  set_triage_state: { backingOperationIds: ["setQualityTurnTriage"] },
   test_agent_turn: { backingOperationIds: ["createAssistantChatResponse"], applicationPrimitiveIds: ["operatorCopilot.safe-test.orchestration"], ...rayOnly("Ray adds operator provenance, bounded projection, and proposal evidence to the generic safe-test turn.") },
   turn_trace: { applicationPrimitiveIds: ["chat.conversation.trace.read"] },
   validate_routine: { backingOperationIds: ["validateAgentRoutine"], applicationPrimitiveIds: ["routines.validation"] },

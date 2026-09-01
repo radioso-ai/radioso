@@ -92,3 +92,36 @@
   unresolvable agent fails instead of falling back to workspace defaults, and
   Ray's probe cannot report a workspace-default measurement as an agent's
   behavior.
+
+## Serving Tools (#1052)
+
+- [X] T036 Add failing tests for the working-list read, the version-fenced triage
+  act, and the ephemeral reply draft in
+  `backend/tests/unit/operatorCopilot/copilot-needs-attention.test.ts`,
+  `copilot-quality-triage.test.ts`, `copilot-reply-draft.test.ts`, and
+  `backend/tests/unit/reply-draft-runner.test.ts`
+- [X] T037 Add the `needs_attention` descriptor over the escalation source reads,
+  widening the approvals port with the decision handle and the quality-turn port
+  with the triage state and version those rows are acted on by
+- [X] T038 Add the `set_triage_state` act, carrying the resolution vocabulary on
+  the port so the state/reason pairing stays in the quality domain
+- [X] T039 Add `services/replyDraftRunner.ts` in chat, the `draft_reply` probe and
+  its copilot service, and the shared external-skill projection both the eval
+  snapshot and the draft resolve an agent config through
+- [X] T040 Record the send, ownership, and decision boundaries on the never-list
+  with hard-gated eval cases, move the serving operations off the Wave 4
+  deferral, and tighten the coverage ratchet
+- [X] T041 Update Ray operator documentation, the handoff reference, the chat and
+  quality module briefs, and the code map, and run local CI
+
+### Dependencies And Independent Test Criteria
+
+- T036 is the red phase and precedes T037-T040.
+- T038 depends on T037 for the version the act is fenced against; T040 depends on
+  T039 because the drafting boundary is what makes the sending exclusion a stated
+  policy rather than a gap.
+- This slice is independently complete when an operator can move from "what is
+  waiting on me" to a recorded triage decision and an editable reply draft inside
+  one Ray thread, a competing operator's triage write is reported instead of
+  overwritten, and every request to send, claim, release, fork, or decide comes
+  back as the boundary and a link.

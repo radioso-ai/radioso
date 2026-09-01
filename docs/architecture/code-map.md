@@ -403,6 +403,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/documentProposals.ts`, `contracts/documentAuthoring.ts`, and `documentProposalAdapter.ts` (`propose_document`, `propose_document_retrieval`, `propose_document_removal`)
 - `backend/src/modules/operatorCopilot/tools/ingestionSettingsProposals.ts`, `contracts/ingestionSettingsAuthoring.ts`, and `ingestionSettingsProposalAdapter.ts` (`propose_ingestion_settings`)
 - `backend/src/modules/operatorCopilot/tools/websiteCrawlProposals.ts`, `contracts/websiteCrawlAuthoring.ts`, and `websiteCrawlProposalAdapter.ts` (`start_crawl`)
+- `backend/src/modules/operatorCopilot/tools/agentProposals.ts`, `contracts/agentAuthoring.ts`, `agentProposalAdapter.ts`, and `services/websiteAnalysisProbeService.ts` (`analyze_website`, `propose_agent`; the wizard service they reach is composed in `backend/src/app/server/dependencies.ts` and shared with `backend/src/modules/agentWizard/`)
 - `backend/src/modules/operatorCopilot/proposalEvidence.ts` and `services/proposalEvidenceService.ts` (replay evidence carried on a proposal)
 - `backend/src/db/repositories/copilotReplayEvidenceRepository.ts` (evidence rows a proposal cites)
 - `frontend/components/dashboard/copilot-proposal-card.tsx` (evidence section on the card)

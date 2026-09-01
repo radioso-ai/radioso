@@ -333,6 +333,12 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   updateAgentDirective: "propose_directive",
   deleteAgentDirective: "propose_directive_removal",
   updateAgent: "propose_agent_setting",
+  analyzeWebsiteForAgentWizard: "analyze_website",
+  streamAgentWizardWebsiteAnalysis: "analyze_website",
+  createAgentFromWizard: "propose_agent",
+  // propose_agent creates from an analyzed website and always queues that site for ingestion, so
+  // the bare-create surface - an agent with a name and nothing to ground on - is not one it reaches.
+  createAgent: deferred("Deferred: propose_agent creates an agent from an analyzed website; creating a bare agent with no source is a different surface Ray has no bounded flow for."),
   createAgentSkill: "propose_skill_config",
   updateAgentSkill: "propose_skill_config",
   // Disabling a skill is the reversible equivalent already reachable through propose_skill_config

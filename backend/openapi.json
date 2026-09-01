@@ -14599,6 +14599,293 @@
           "signingKey"
         ]
       },
+      "AgentWizardAnalyzeRequest": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "AgentWizardAnalysis": {
+        "type": "object",
+        "properties": {
+          "suggestedName": {
+            "type": "string"
+          },
+          "suggestedCustomInstruction": {
+            "type": "string"
+          },
+          "suggestedGreetingMessage": {
+            "type": "string"
+          },
+          "suggestedChunkingStrategy": {
+            "type": "object",
+            "properties": {
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "fixed_window",
+                  "structured_semantic"
+                ]
+              },
+              "reasoning": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "strategy",
+              "reasoning"
+            ]
+          },
+          "screenshotBase64": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "screenshotUnavailableReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "faviconUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pagesAnalyzed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "url",
+                "title"
+              ]
+            }
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "suggestedLocale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggestedPrivacyPolicyUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggestedContactEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "suggestedName",
+          "suggestedCustomInstruction",
+          "suggestedGreetingMessage",
+          "suggestedChunkingStrategy",
+          "screenshotBase64",
+          "screenshotUnavailableReason",
+          "faviconUrl",
+          "pagesAnalyzed",
+          "sourceUrl",
+          "suggestedLocale",
+          "suggestedPrivacyPolicyUrl",
+          "suggestedContactEmail"
+        ]
+      },
+      "AgentWizardProgressEvent": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "progress"
+            ]
+          },
+          "step": {
+            "type": "string",
+            "enum": [
+              "crawling",
+              "analyzing",
+              "generating",
+              "complete"
+            ]
+          },
+          "page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "type",
+          "step"
+        ]
+      },
+      "AgentWizardStreamError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "statusCode": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "statusCode"
+        ]
+      },
+      "AgentWizardCreateRequest": {
+        "type": "object",
+        "properties": {
+          "websiteUrl": {
+            "type": "string",
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "customInstruction": {
+            "type": "string",
+            "maxLength": 2000,
+            "default": ""
+          },
+          "greetingInstruction": {
+            "type": "string",
+            "maxLength": 200,
+            "default": ""
+          },
+          "chunkingStrategy": {
+            "type": "string",
+            "enum": [
+              "fixed_window",
+              "structured_semantic"
+            ]
+          },
+          "faviconUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 35
+          },
+          "privacyPolicyUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "contactEmail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "websiteUrl",
+          "name"
+        ]
+      },
+      "AgentWizardCreateResponse": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "crawlJobId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "incomplete": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string",
+                "enum": [
+                  "configuration",
+                  "ingestion"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "reason"
+            ]
+          }
+        },
+        "required": [
+          "agentId",
+          "crawlJobId"
+        ]
+      },
+      "AgentWizardAnalysisStream": {
+        "type": "string",
+        "description": "A server-sent event stream with named progress, complete, and error events. Each progress event's data field matches AgentWizardProgressEvent; the single complete event carries the whole AgentWizardAnalysis; an error event carries AgentWizardStreamError and is emitted in place of complete when the analysis fails after the headers are sent. The stream ends after complete or error.",
+        "example": "event: progress\ndata: {\"type\":\"progress\",\"step\":\"crawling\",\"page\":1,\"total\":8,\"url\":\"https://acme.example.com\",\"title\":\"Acme\"}\n\nevent: progress\ndata: {\"type\":\"progress\",\"step\":\"generating\"}\n\nevent: complete\ndata: {\"suggestedName\":\"Acme Support\",\"sourceUrl\":\"https://acme.example.com\",\"pagesAnalyzed\":[]}\n"
+      },
       "AudiencePulseGrounding": {
         "type": "object",
         "properties": {
@@ -26370,6 +26657,306 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-wizard/analyze-website": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Analyze a website and suggest an agent configuration",
+        "description": "Fetches and reads a public website, then returns a suggested agent name, instruction, greeting, locale, and chunking strategy. Persists nothing. Fetching an external site and running a model against it costs real time and budget, so the route carries its own durable rate limit.",
+        "operationId": "analyzeWebsiteForAgentWizard",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentWizardAnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Suggested configuration derived from the site",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWizardAnalysis"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body or URL is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Workspace session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.agents.manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The site could not be reached, required authentication, or carried too little content to analyze",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Analysis rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Rate-limit state or workspace inference capability is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Website analysis exceeded its time budget",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-wizard/analyze-website/stream": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Stream website analysis progress",
+        "description": "The same analysis as the non-streaming route, delivered as server-sent events so a caller can show crawl progress. Emits progress events, then one complete event carrying the suggested configuration, or one error event when the analysis fails after the headers are sent.",
+        "operationId": "streamAgentWizardWebsiteAnalysis",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentWizardAnalyzeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server-sent progress events followed by the suggested configuration, or an error event",
+            "headers": {
+              "Cache-Control": {
+                "description": "Disables intermediary transformation and caching.",
+                "schema": {
+                  "type": "string",
+                  "const": "no-cache, no-transform"
+                }
+              },
+              "Connection": {
+                "description": "Keeps the HTTP connection open for the event stream.",
+                "schema": {
+                  "type": "string",
+                  "const": "keep-alive"
+                }
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWizardAnalysisStream"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body or URL is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Workspace session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.agents.manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Analysis rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Rate-limit state is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agent-wizard/create": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create an agent from a website configuration",
+        "description": "Creates one agent from a reviewed wizard configuration and queues the website for ingestion. Returns the new agent and the crawl job when the deployment runs website crawling.",
+        "operationId": "createAgentFromWizard",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentWizardCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created; the response names any step after creation that did not finish",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentWizardCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request body or one of its URLs is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Workspace session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.agents.manage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Creation rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Rate-limit state is unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -39830,6 +40417,7 @@
                         "type": "string",
                         "enum": [
                           "directive",
+                          "agent",
                           "agent_setting",
                           "routine",
                           "agent_skill",
@@ -40084,6 +40672,7 @@
                                       "type": "string",
                                       "enum": [
                                         "directive",
+                                        "agent",
                                         "agent_setting",
                                         "routine",
                                         "agent_skill",
@@ -40411,6 +41000,7 @@
                       "type": "string",
                       "enum": [
                         "directive",
+                        "agent",
                         "agent_setting",
                         "routine",
                         "agent_skill",
@@ -40428,6 +41018,7 @@
                           "type": "string",
                           "enum": [
                             "directive",
+                            "agent",
                             "agent_setting",
                             "routine",
                             "agent_skill",

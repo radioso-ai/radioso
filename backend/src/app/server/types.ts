@@ -93,6 +93,7 @@ import type { DocumentSourceRepositoryPort } from "../../db/repositories/documen
 import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provider.js";
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
+import type { AgentWizardService } from "../../modules/agentWizard/service.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import type { EmailService } from "../../modules/mail/public.js";
@@ -262,6 +263,7 @@ export interface AppDependencies {
   connectorIngestionPort: ConnectorIngestionPort;
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;
+  agentWizardService: AgentWizardService;
   operatorCopilotService: OperatorCopilotService;
   /**
    * The three pieces the copilot turn is assembled from, published alongside the service so the

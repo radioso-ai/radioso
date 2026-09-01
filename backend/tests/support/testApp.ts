@@ -179,6 +179,9 @@ import { createDocumentCopilotProposalAdapter } from "../../src/modules/operator
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
+import { createAgentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/agentProposalAdapter.js";
+import { WebsiteAnalysisProbeService } from "../../src/modules/operatorCopilot/services/websiteAnalysisProbeService.js";
+import { AgentWizardService } from "../../src/modules/agentWizard/service.js";
 import { createCopilotDocumentAuthoringPort, createCopilotWorkspaceAccountResolver } from "../../src/app/composition/copilotToolCatalog.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
@@ -1863,6 +1866,24 @@ export const createTestDependencies = (overrides: {
       return skill ? { enabled: skill.enabled, config: skill.config ?? {} } : null;
     },
   };
+  const crawlerProvider = {
+    async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
+    async crawlSite() { return []; },
+    async isBrowserTransportAvailable() { return false; },
+  };
+  const websiteCrawlerLimits = { defaultLimit: 100, maxLimit: 1000 };
+  const agentWizardService = new AgentWizardService({
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) => (await chatInferencePipeline.complete(input)).text,
+    },
+    agentService,
+    documentStorage,
+    websiteCrawlJobService,
+    crawlerProvider,
+    assertPublicWebsiteUrl: async () => {},
+    crawlerLimits: websiteCrawlerLimits,
+    auditService,
+  });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
@@ -1875,12 +1896,31 @@ export const createTestDependencies = (overrides: {
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
+    createAgentCopilotProposalAdapter({
+      agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
+    }),
     createWebsiteCrawlCopilotProposalAdapter({
       websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: websiteCrawlJobService.enqueue.bind(websiteCrawlJobService) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
       crawlPolicy: () => ({ enabled: true, defaultLimit: 1000, maxLimit: 1000 }),
     }),
   ] as const;
+  const websiteAnalysisProbeService = new WebsiteAnalysisProbeService({
+    agentWizardAnalysis: {
+      analyzeWebsite: async ({ url, workspaceId, accountId }) => {
+        const { screenshotBase64: _screenshot, screenshotUnavailableReason: _reason, ...analysis } =
+          await agentWizardService.analyzeWebsite({ url, workspaceId, accountId });
+        return analysis;
+      },
+    },
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const copilotWorkspaceRouteKeyResolver = createCopilotWorkspaceRouteKeyResolver({ workspaceRepository });
   const copilotCapabilityRunner = new AgenticCapabilityRunner({
     runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }),
@@ -1900,6 +1940,7 @@ export const createTestDependencies = (overrides: {
     chatHistoryService,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
+    websiteAnalysisProbe: websiteAnalysisProbeService,
     documentSearchService,
     documentChunks: chunkRepository,
     documentMaintenance: {
@@ -2202,13 +2243,10 @@ export const createTestDependencies = (overrides: {
     },
     connectorDb: connectorDb as any,
     chatInferencePipeline,
-    crawlerProvider: {
-      async fetchPageWithScreenshot() { return { url: "", title: null, text: "", links: [], screenshot: null, faviconUrl: null }; },
-      async crawlSite() { return []; },
-      async isBrowserTransportAvailable() { return false; },
-    },
+    crawlerProvider,
     assertPublicWebsiteUrl: async () => {},
-    websiteCrawlerLimits: { defaultLimit: 100, maxLimit: 1000 },
+    websiteCrawlerLimits,
+    agentWizardService,
   };
 
   void connectorRegistry.initializeAll({

@@ -1998,6 +1998,7 @@ export const createTestDependencies = (overrides: {
       cases: copilotEvalCaseReader,
     },
     pendingApprovals: approvalDecisionService,
+    replyDraft: { draft: async () => { throw new Error("reply draft is not wired in the test app"); } },
     qualitySignalsService,
     qualityTriageService,
     audiencePulseService,

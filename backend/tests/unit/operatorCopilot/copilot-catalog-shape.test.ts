@@ -79,6 +79,7 @@ const realCatalogDependencies = () => {
     documentMaintenance: { reprocessDocument: stub(), reprocessSource: stub(), recrawlSource: stub() },
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
+    replyDraft: { draft: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
     qualityTriageService: { resolutionReasons: ["knowledge_gap"] as [string, ...string[]], setTriageState: stub() },
     retrievalProbe: { probe: stub() },
@@ -367,6 +368,8 @@ describe("verification cost declarations", () => {
     test_agent_turn: { input: {}, expected: 1 },
     replay_eval_case: { input: {}, expected: 1 },
     retrieval_probe: { input: {}, expected: 1 },
+    // One ephemeral turn over the live conversation, whatever its length.
+    draft_reply: { input: {}, expected: 1 },
     // One completion over the crawled pages, whatever the site's size.
     analyze_website: { input: {}, expected: 1 },
     run_eval_suite: { input: { caseIds: ["a", "b", "a"] }, expected: 2 },

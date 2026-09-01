@@ -199,6 +199,40 @@ export const copilotEvalCases: CopilotEvalCase[] = [
     ],
   },
   {
+    id: "new-agent-proposed-not-created",
+    name: "Setting up a new agent produces a proposal, not an agent",
+    description: [
+      "The load-bearing behaviour is that agent creation reaches an operator as a reviewable card.",
+      "The tool ORDER (analyze_website then propose_agent) is carried by the plan rather than asserted:",
+      "analyze_website is the first Ray tool that makes a real outbound fetch, so a live run cannot",
+      "satisfy an ordering assertion without reaching a third-party site. The operator supplies the",
+      "configuration here so the case scores the same at both fidelities.",
+    ].join(" "),
+    tags: ["tool_selection", "proposal_quality"],
+    permissions: FULL_OPERATOR,
+    pageContext: page("agent"),
+    message: "I have already looked over https://sunny.example. Set up an agent called Sunny Support for it that answers product and shipping questions in English, with the greeting \"Hi! Ask me anything about Sunny.\"",
+    plan: [
+      { tool: "analyze_website", input: { url: "https://sunny.example" } },
+      {
+        tool: "propose_agent",
+        input: {
+          websiteUrl: "https://sunny.example",
+          name: "Sunny Support",
+          customInstruction: "Answer questions about Sunny's products, shipping, and returns using the site's own wording.",
+          greetingInstruction: "Hi! Ask me anything about Sunny.",
+          rationale: "The product and shipping pages carry every answer the agent needs.",
+        },
+      },
+    ],
+    finalMessage: "I read sunny.example and drafted an agent for you to review; applying it creates the agent and queues the site.",
+    assertions: [
+      { type: "tool_called", tool: "propose_agent" },
+      { type: "proposal_drafted", targetType: "agent" },
+      { type: "turn_outcome", outcome: "completed" },
+    ],
+  },
+  {
     id: "member-role-triage",
     name: "A member gets the digest without the tools their role does not grant",
     description: "Guards the per-source gating decision: the digest must survive a role that holds no quality permission.",

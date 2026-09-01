@@ -74,6 +74,10 @@ import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotPropos
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
+import { createAgentCopilotProposalAdapter } from "../../modules/operatorCopilot/agentProposalAdapter.js";
+import { WebsiteAnalysisProbeService } from "../../modules/operatorCopilot/services/websiteAnalysisProbeService.js";
+import { AgentWizardService } from "../../modules/agentWizard/service.js";
+import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
@@ -424,9 +428,34 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     embeddingBindingResolver,
     facetDrain: facetExtractionWorkspaceDrain,
   });
+  const websiteCrawlerLimits = (() => {
+    const config = resolveWebsiteCrawlerConfig();
+    return { defaultLimit: config.defaultLimit, maxLimit: config.maxLimit };
+  })();
+  // Composed here rather than inside the wizard's route mount so the dashboard wizard and Ray's
+  // analyze-then-propose flow run through one service instance and cannot drift apart.
+  const agentWizardService = new AgentWizardService({
+    // The wizard port only needs generated text; adapt the inference pipeline result object to its
+    // narrow string contract.
+    textGenerationClient: {
+      complete: async ({ signal: _signal, ...input }) => (await chatInferencePipeline.complete(input)).text,
+    },
+    agentService,
+    documentStorage: documents.documentStorage,
+    websiteCrawlJobService: documents.websiteCrawlJobService,
+    crawlerProvider,
+    assertPublicWebsiteUrl,
+    crawlerLimits: websiteCrawlerLimits,
+    auditService: infrastructure.auditService,
+    fetchImpl: fetchPublicUrl,
+  });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createAgentCopilotProposalAdapter({
+      agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
+      workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
+    }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService, logger }),
     createAgentSkillCopilotProposalAdapter({ agentService, agentSkillsService, skillCapabilityRegistry }),
     createContextVariableCopilotProposalAdapter({ contextVariables: contextVariableService }),
@@ -447,6 +476,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   ] as const;
   const retrievalProbeService = new RetrievalProbeService({
     retrievalSearch: retrieval.retrievalSearchService,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
+  const websiteAnalysisProbeService = new WebsiteAnalysisProbeService({
+    agentWizardAnalysis: {
+      analyzeWebsite: async ({ url, workspaceId, accountId }) => {
+        const { screenshotBase64: _screenshot, screenshotUnavailableReason: _reason, ...analysis } =
+          await agentWizardService.analyzeWebsite({ url, workspaceId, accountId, timeoutMs: 90_000 });
+        return analysis;
+      },
+    },
     abuseControl: chat.abuseControlService,
     audit: infrastructure.auditService,
     abusePolicy: {
@@ -596,6 +640,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteProbe: evalSuiteProbeService,
     evalCaseReplay: evalCaseReplayService,
     retrievalProbe: retrievalProbeService,
+    websiteAnalysisProbe: websiteAnalysisProbeService,
     proposalEvidence: {
       evidence: copilotReplayEvidenceRepository,
       agentVersion: copilotAgentVersion,
@@ -803,9 +848,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     copilotRepository: repositories.copilotRepository,
     crawlerProvider,
     assertPublicWebsiteUrl,
-    websiteCrawlerLimits: (() => {
-      const config = resolveWebsiteCrawlerConfig();
-      return { defaultLimit: config.defaultLimit, maxLimit: config.maxLimit };
-    })(),
+    websiteCrawlerLimits,
+    agentWizardService,
   };
 };

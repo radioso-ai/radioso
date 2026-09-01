@@ -2,6 +2,8 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import { attachCopilotCapabilityProvenance } from "../capabilityProvenance.js";
 import { createAgentConfigurationCopilotTools, createAgentSettingProposalCopilotTools } from "./agents.js";
 import type { AgentConfigurationCopilotToolDependencies, AgentSettingProposalCopilotToolDependencies, CopilotAgentConfigurationPort } from "./agents.js";
+import { createAgentProposalCopilotTools, createWebsiteAnalysisProbeCopilotTools } from "./agentProposals.js";
+import type { AgentProposalCopilotToolDependencies, WebsiteAnalysisProbeCopilotToolDependencies } from "./agentProposals.js";
 import { createAgentSkillConfigProposalCopilotTools, createAgentSkillsCopilotTools } from "./agentSkills.js";
 import type { AgentSkillConfigProposalCopilotToolDependencies, AgentSkillsCopilotToolDependencies, CopilotAgentSkillsAgentPort, CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 import { createAudiencePulseCopilotTools } from "./audiencePulse.js";
@@ -58,6 +60,8 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & Omit<AgentSettingProposalCopilotToolDependencies, "agentLookup">
   & Omit<AgentSkillConfigProposalCopilotToolDependencies, "agentLookup">
   & Omit<ContextVariableProposalCopilotToolDependencies, "agentLookup">
+  & AgentProposalCopilotToolDependencies
+  & WebsiteAnalysisProbeCopilotToolDependencies
   & DocumentProposalCopilotToolDependencies
   & IngestionSettingsProposalCopilotToolDependencies
   & WebsiteCrawlProposalCopilotToolDependencies;
@@ -87,6 +91,8 @@ export const createCopilotToolDescriptors = (
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSkillConfigProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createContextVariableProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createWebsiteAnalysisProbeCopilotTools(deps),
+  ...createAgentProposalCopilotTools(deps),
   ...createDocumentProposalCopilotTools(deps),
   ...createIngestionSettingsProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),

@@ -15,6 +15,7 @@ import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
 import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
 import { registerUsageDetailsSchemas } from "./schemas/usageDetailsSchemas.js";
 import { registerContextVariableSchemas } from "./schemas/contextVariableSchemas.js";
+import { registerAgentWizardSchemas } from "./schemas/agentWizardSchemas.js";
 import { registerAudiencePulseSchemas } from "./schemas/audiencePulseSchemas.js";
 import { registerWorkspaceEventsSchemas } from "./schemas/workspaceEventsSchemas.js";
 
@@ -189,6 +190,13 @@ export interface OpenApiSchemaCatalog {
   QualityTriageStateSchema: z.ZodTypeAny;
   QualityTriageRecordSchema: z.ZodTypeAny;
   SetQualityTriageRequestSchema: z.ZodTypeAny;
+  AgentWizardAnalyzeRequestSchema: z.ZodTypeAny;
+  AgentWizardAnalysisSchema: z.ZodTypeAny;
+  AgentWizardProgressEventSchema: z.ZodTypeAny;
+  AgentWizardStreamErrorSchema: z.ZodTypeAny;
+  AgentWizardAnalysisStreamSchema: z.ZodTypeAny;
+  AgentWizardCreateRequestSchema: z.ZodTypeAny;
+  AgentWizardCreateResponseSchema: z.ZodTypeAny;
   AudiencePulseEvidenceAnchorRequestSchema: z.ZodTypeAny;
   AudiencePulseEvidenceAnchorResponseSchema: z.ZodTypeAny;
   AudiencePulseReadResponseSchema: z.ZodTypeAny;
@@ -353,6 +361,7 @@ export const createOpenApiRegistry = () => {
   registerUsageTrendSchemas(registry, schemas);
   registerUsageDetailsSchemas(registry, schemas);
   registerContextVariableSchemas(registry, schemas);
+  registerAgentWizardSchemas(registry, schemas);
   registerAudiencePulseSchemas(registry, schemas);
   registerWorkspaceEventsSchemas(registry, schemas);
 

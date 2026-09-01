@@ -146,9 +146,10 @@ conversation.
 
 ## Review proposals
 
-When Ray identifies a configuration change, it can draft a proposal for a
-directive, an agent setting, a routine, a skill's configuration, a context
-variable, a document, a website crawl, or the workspace's ingestion settings. The proposal card names the target, summarizes the
+When Ray identifies a configuration change, it can draft a proposal for a new
+agent, a directive, an agent setting, a routine, a skill's configuration, a
+context variable, a document, a website crawl, or the workspace's ingestion
+settings. The proposal card names the target, summarizes the
 change, and shows the current and proposed values before anything is written.
 Expand **Show changes** to inspect the field-level diff.
 
@@ -221,7 +222,7 @@ workspace, which is a cost decision with a typed confirmation of its own in
 **Knowledge → Ingestion**. Ray describes the change and hands you the link.
 
 **Apply** asks for the permission that governs what the proposal changes, not one
-permission for all of them: `workspace.agents.manage` for a directive, agent
+permission for all of them: `workspace.agents.manage` for an agent, directive, agent
 setting, routine, skill, or context variable; `workspace.documents.manage` for a
 document or a crawl; `workspace.settings.manage` for ingestion settings. An
 operator who manages knowledge but not agents sees Apply on the document cards
@@ -244,6 +245,51 @@ explains that the change was not applied. Ask Ray to draft the change again
 so the proposal reflects the current configuration. Applied proposals link to
 the target entity, while failed proposals show the reason returned by the
 management service.
+
+## Create an agent
+
+Ask Ray to build an agent for a site and it reads the site first. Give it a URL
+— "set up an agent for https://acme.example.com" — and it fetches the landing
+page and a sample of what that page links to, then comes back with a name, an
+answering instruction, a greeting, a locale, the contact and privacy links it
+found, and a chunking strategy with the reasoning behind the choice. Nothing is
+created at this point, and nothing is stored.
+
+Reading a site costs real time and reaches an external server, so the analysis
+is rate-limited against the same budget as Ray's other expensive work. A site
+that refuses automated visitors, needs a login, or carries too little text comes
+back as a plain failure rather than a guess.
+
+You can take the suggestion, change any part of it in conversation — a different
+name, a stricter instruction, a locale the site does not declare — and Ray drafts
+the agent as a proposal. The card names the agent, the site it will be grounded
+in, and the reasoning Ray gave for the configuration. **Apply** creates the agent
+and queues that site for ingestion, so the agent has something to ground on as
+soon as the first documents finish processing.
+
+The chunking strategy is the one suggestion the agent card leaves out. Chunking
+is a workspace-wide ingestion setting, so adopting it re-chunks every source you
+already have, not just the site you are adding. Ray keeps it in the analysis, and
+if you want it, asks for it as an ingestion settings proposal of its own.
+
+A proposal Ray never applied leaves nothing behind, which is the point: a first
+guess at an agent for an unfamiliar site is worth reviewing, and a dismissed card
+costs less than an agent to clean up.
+
+Applying happens in steps — the agent, then its locale and contact settings, then
+the website. If a step after the agent fails, the card still reports the agent as
+created and links to it, and names the step that did not finish. An agent that
+exists is worth telling you about even when its site did not queue: you can start
+the crawl from **Knowledge**, or ask Ray to crawl it, without creating the agent a
+second time.
+
+Two limits are worth knowing. Ray never deletes an agent — it describes what you
+would be removing and links you to the agent's settings, where the confirmation
+lives. And it always creates from a website: to set one up by hand, choose **New
+agent** in the agents list and take the **create manually** option.
+
+Once an agent exists, changing it is a different proposal — see the agent
+setting card in [Review proposals](#review-proposals).
 
 ## Change a routine
 

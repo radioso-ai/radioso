@@ -2,10 +2,10 @@ import type { CopilotCapabilityProvenance, CopilotToolDescriptor } from "./contr
 import { copilotApplicationPrimitiveRegistry, copilotRayOwnedPrimitiveIds } from "./applicationPrimitiveRegistry.js";
 
 type ProductionDescriptorName =
-  | "agent_configuration" | "agent_skills" | "audience_topics" | "context_variables"
+  | "agent_configuration" | "agent_skills" | "analyze_website" | "audience_topics" | "context_variables"
   | "conversation_history_search"
   | "conversation_transcript" | "create_eval_case_from_turn" | "document_chunks" | "document_search" | "document_status"
-  | "eval_results" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
+  | "eval_results" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "propose_ingestion_settings" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
@@ -25,6 +25,7 @@ const rayOnly = (reason: string) => ({ rayOnly: { reason } }) as const;
 export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorName, CopilotCapabilityProvenance>> = {
   agent_configuration: { backingOperationIds: ["listAgents", "getAgent", "listAgentDirectives"], applicationPrimitiveIds: ["agents.configuration.read"] },
   agent_skills: { backingOperationIds: ["listAgentSkills", "listAgentSkillCapabilities"], applicationPrimitiveIds: ["agents.configuration.read"] },
+  analyze_website: { backingOperationIds: ["analyzeWebsiteForAgentWizard", "streamAgentWizardWebsiteAnalysis"], applicationPrimitiveIds: ["agentWizard.analysis.probe"] },
   audience_topics: { backingOperationIds: ["getAudiencePulse", "getAudiencePulseRefreshStatus"] },
   context_variables: { backingOperationIds: ["listContextVariables", "listAgentContextVariables"], applicationPrimitiveIds: ["agents.configuration.read"] },
   conversation_history_search: { backingOperationIds: ["listHistory", "listChatHistory", "listHistorySearches", "getHistorySearch"] },
@@ -34,6 +35,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   document_status: { backingOperationIds: ["listDocuments", "listDocumentSources", "listDocumentsBySource"], applicationPrimitiveIds: ["documents.status.read", "documents.source-status.read"] },
   document_chunks: { applicationPrimitiveIds: ["documents.chunks.read"] },
   eval_results: { backingOperationIds: ["listEvalCases"] },
+  propose_agent: { backingOperationIds: ["createAgentFromWizard"], applicationPrimitiveIds: ["agentWizard.agent.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent wizard creates an agent and queues its website.") },
   propose_agent_setting: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the agent service receives a setting mutation.") },
   propose_context_variable: { backingOperationIds: ["createContextVariable", "updateContextVariable", "upsertAgentContextVariable"], applicationPrimitiveIds: ["contextVariables.definition.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the context-variable service applies a definition or enablement mutation.") },
   propose_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents directive coaching as a pending, operator-confirmed proposal.") },

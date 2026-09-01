@@ -1151,6 +1151,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agent-wizard/analyze-website": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Analyze a website and suggest an agent configuration
+         * @description Fetches and reads a public website, then returns a suggested agent name, instruction, greeting, locale, and chunking strategy. Persists nothing. Fetching an external site and running a model against it costs real time and budget, so the route carries its own durable rate limit.
+         */
+        post: operations["analyzeWebsiteForAgentWizard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-wizard/analyze-website/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream website analysis progress
+         * @description The same analysis as the non-streaming route, delivered as server-sent events so a caller can show crawl progress. Emits progress events, then one complete event carrying the suggested configuration, or one error event when the analysis fails after the headers are sent.
+         */
+        post: operations["streamAgentWizardWebsiteAnalysis"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agent-wizard/create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an agent from a website configuration
+         * @description Creates one agent from a reviewed wizard configuration and queues the website for ingestion. Returns the new agent and the crawl job when the deployment runs website crawling.
+         */
+        post: operations["createAgentFromWizard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/context-variables": {
         parameters: {
             query?: never;
@@ -6732,6 +6792,85 @@ export interface components {
         ContextVariableSigningKeyResponse: {
             signingKey: string;
         };
+        AgentWizardAnalyzeRequest: {
+            /** Format: uri */
+            url: string;
+        };
+        AgentWizardAnalysis: {
+            suggestedName: string;
+            suggestedCustomInstruction: string;
+            suggestedGreetingMessage: string;
+            suggestedChunkingStrategy: {
+                /** @enum {string} */
+                strategy: "fixed_window" | "structured_semantic";
+                reasoning: string;
+            };
+            screenshotBase64: string | null;
+            screenshotUnavailableReason: string | null;
+            faviconUrl: string | null;
+            pagesAnalyzed: {
+                url: string;
+                title: string | null;
+            }[];
+            sourceUrl: string;
+            suggestedLocale: string | null;
+            suggestedPrivacyPolicyUrl: string | null;
+            suggestedContactEmail: string | null;
+        };
+        AgentWizardProgressEvent: {
+            /** @enum {string} */
+            type: "progress";
+            /** @enum {string} */
+            step: "crawling" | "analyzing" | "generating" | "complete";
+            page?: number;
+            total?: number;
+            url?: string;
+            title?: string | null;
+        };
+        AgentWizardStreamError: {
+            code: string;
+            message: string;
+            statusCode: number;
+        };
+        AgentWizardCreateRequest: {
+            /** Format: uri */
+            websiteUrl: string;
+            name: string;
+            /** @default  */
+            customInstruction: string;
+            /** @default  */
+            greetingInstruction: string;
+            /** @enum {string} */
+            chunkingStrategy?: "fixed_window" | "structured_semantic";
+            /** Format: uri */
+            faviconUrl?: string | null;
+            assistantDefaultLocale?: string | null;
+            /** Format: uri */
+            privacyPolicyUrl?: string | null;
+            contactEmail?: string | null;
+        };
+        AgentWizardCreateResponse: {
+            /** Format: uuid */
+            agentId: string;
+            crawlJobId: string | null;
+            incomplete?: {
+                /** @enum {string} */
+                step: "configuration" | "ingestion";
+                reason: string;
+            };
+        };
+        /**
+         * @description A server-sent event stream with named progress, complete, and error events. Each progress event's data field matches AgentWizardProgressEvent; the single complete event carries the whole AgentWizardAnalysis; an error event carries AgentWizardStreamError and is emitted in place of complete when the analysis fails after the headers are sent. The stream ends after complete or error.
+         * @example event: progress
+         *     data: {"type":"progress","step":"crawling","page":1,"total":8,"url":"https://acme.example.com","title":"Acme"}
+         *
+         *     event: progress
+         *     data: {"type":"progress","step":"generating"}
+         *
+         *     event: complete
+         *     data: {"suggestedName":"Acme Support","sourceUrl":"https://acme.example.com","pagesAnalyzed":[]}
+         */
+        AgentWizardAnalysisStream: string;
         AudiencePulseGrounding: {
             grounded: number;
             degraded: number;
@@ -11045,6 +11184,235 @@ export interface operations {
             };
             /** @description Agent not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    analyzeWebsiteForAgentWizard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWizardAnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Suggested configuration derived from the site */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWizardAnalysis"];
+                };
+            };
+            /** @description Request body or URL is invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.agents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The site could not be reached, required authentication, or carried too little content to analyze */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Analysis rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate-limit state or workspace inference capability is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Website analysis exceeded its time budget */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    streamAgentWizardWebsiteAnalysis: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWizardAnalyzeRequest"];
+            };
+        };
+        responses: {
+            /** @description Server-sent progress events followed by the suggested configuration, or an error event */
+            200: {
+                headers: {
+                    /** @description Disables intermediary transformation and caching. */
+                    "Cache-Control"?: "no-cache, no-transform";
+                    /** @description Keeps the HTTP connection open for the event stream. */
+                    Connection?: "keep-alive";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["AgentWizardAnalysisStream"];
+                };
+            };
+            /** @description Request body or URL is invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.agents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Analysis rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate-limit state is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgentFromWizard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentWizardCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent created; the response names any step after creation that did not finish */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentWizardCreateResponse"];
+                };
+            };
+            /** @description Request body or one of its URLs is invalid */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.agents.manage */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Creation rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate-limit state is unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -18505,7 +18873,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl")[];
                     };
                 };
             };
@@ -18600,7 +18968,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -18742,11 +19110,11 @@ export interface operations {
                         /** Format: uuid */
                         id: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl";
                             ref?: unknown;
                         };
                         targetLabel: string;

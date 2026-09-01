@@ -81,9 +81,21 @@ export interface WizardCreateInput {
   contactEmail?: string | null;
 }
 
+/**
+ * What did not finish after the agent row already existed. The agent is real either way, so a
+ * failure in one of the steps that decorate or feed it is reported rather than thrown: throwing
+ * loses the id of an agent that now exists, which leaves the caller unable to link to it, finish it
+ * by hand, or tell an operator not to create it a second time.
+ */
+export interface WizardCreateIncomplete {
+  step: "configuration" | "ingestion";
+  reason: string;
+}
+
 export interface WizardCreateResult {
   agentId: string;
   crawlJobId: string | null;
+  incomplete?: WizardCreateIncomplete;
 }
 
 export interface CrawlerPort {
@@ -264,6 +276,9 @@ const classifyFetchError = (error: unknown): AgentWizardError => {
     "We could not reach that website. Check the URL and make sure it is publicly accessible.",
   );
 };
+
+const errorReason = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 
 const createAnalysisSignal = (
   parentSignal: AbortSignal | undefined,
@@ -693,8 +708,13 @@ export class AgentWizardService {
         webhook: null,
       };
     }
+    let incomplete: WizardCreateIncomplete | undefined;
     if (Object.keys(updatePayload).length > 0) {
-      await this.dependencies.agentService.update(input.workspaceId, agent.id, updatePayload);
+      try {
+        await this.dependencies.agentService.update(input.workspaceId, agent.id, updatePayload);
+      } catch (error) {
+        incomplete = { step: "configuration", reason: errorReason(error, "Agent settings could not be applied") };
+      }
     }
 
     // The LLM-suggested chunking strategy is captured in the audit event
@@ -709,22 +729,29 @@ export class AgentWizardService {
     if (input.config.websiteUrl) {
       const { defaultLimit, maxLimit } = this.dependencies.crawlerLimits;
       const limit = Math.max(1, Math.min(defaultLimit, maxLimit));
-      const crawlResult = await this.dependencies.websiteCrawlJobService.enqueue({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        url: input.config.websiteUrl,
-        limit,
-      });
-      crawlJobId = crawlResult.jobId;
+      try {
+        const crawlResult = await this.dependencies.websiteCrawlJobService.enqueue({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          url: input.config.websiteUrl,
+          limit,
+        });
+        crawlJobId = crawlResult.jobId;
+      } catch (error) {
+        // An ingestion failure is the more common of the two and the more recoverable: the site can
+        // be queued again from Knowledge, or by asking Ray to crawl it, without touching the agent.
+        incomplete ??= { step: "ingestion", reason: errorReason(error, "The website could not be queued for ingestion") };
+      }
     }
 
     await this.dependencies.auditService.record({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "agent_wizard.create_agent",
-      eventStatus: "success",
+      eventStatus: incomplete ? "failure" : "success",
       metadata: {
         agentId: agent.id,
+        ...(incomplete ? { incompleteStep: incomplete.step, incompleteReason: incomplete.reason } : {}),
         agentName: input.config.name,
         websiteUrl: input.config.websiteUrl,
         chunkingStrategy: input.config.chunkingStrategy,
@@ -735,7 +762,7 @@ export class AgentWizardService {
       },
     }).catch(() => {});
 
-    return { agentId: agent.id, crawlJobId };
+    return { agentId: agent.id, crawlJobId, ...(incomplete ? { incomplete } : {}) };
   }
 
   private async fetchHomepageViaHttp(

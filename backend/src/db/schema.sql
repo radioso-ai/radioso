@@ -5577,6 +5577,13 @@ CREATE INDEX copilot_conversations_operator_updated_idx ON public.copilot_conver
 
 
 --
+-- Name: copilot_conversations_updated_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_conversations_updated_at_idx ON public.copilot_conversations USING btree (updated_at);
+
+
+--
 -- Name: copilot_messages_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5591,10 +5598,24 @@ CREATE INDEX copilot_proposals_conversation_message_idx ON public.copilot_propos
 
 
 --
+-- Name: copilot_proposals_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_message_idx ON public.copilot_proposals USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
 -- Name: copilot_proposals_operator_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals USING btree (workspace_id, operator_user_id, created_at DESC);
+
+
+--
+-- Name: copilot_replay_evidence_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_replay_evidence_conversation_idx ON public.copilot_replay_evidence USING btree (conversation_id);
 
 
 --

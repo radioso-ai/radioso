@@ -18,6 +18,7 @@ const invocationContext = (permissions: ReadonlySet<string>) => ({
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   copilotConversationId: "copilot-conversation-1",
   permissions,
   currentAuthorization: {

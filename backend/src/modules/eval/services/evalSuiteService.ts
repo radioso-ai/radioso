@@ -1,3 +1,4 @@
+import { isUsageLimitExceededError } from "../../../shared/domain/usageLimitPolicy.js";
 import { summarizeSuite, type EvalSuiteSummary } from "../domain/suite.js";
 import type { EvalCase, EvalRun, EvalRunMode, EvalRunStatus } from "../domain/types.js";
 import type { EvalRunInput, EvalRunOutcome } from "./evalRunService.js";
@@ -100,6 +101,11 @@ export class EvalSuiteService {
         });
         ranStates.set(evalCase.id, outcome.case ?? evalCase);
       } catch (error) {
+        // Running out of workspace quota is not a property of the case, so it is not isolated to
+        // one. Every remaining case would refuse identically, and answering 200 with per-case
+        // errors would tell the caller its suite ran when the workspace simply stopped being
+        // allowed to spend — while the single-case run paths return the quota refusal. Let it out.
+        if (isUsageLimitExceededError(error)) throw error;
         // One case failing to run must not abort the rest of the suite.
         // `execute` can throw before any run is recorded (missing snapshot,
         // lost agent identity, …), leaving the case's persisted status stale.

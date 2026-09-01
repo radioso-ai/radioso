@@ -103,6 +103,20 @@ Authenticated assistant chat and the retrieval answer and search routes share on
 
 Audience Pulse has its own budget: each account and workspace can make three explicit refresh attempts every 15 minutes. Opening the saved report costs nothing — only pressing refresh counts. Audience Pulse is available to cookie-authenticated dashboard sessions; workspace API tokens and bearer requests cannot reach it.
 
+Ray turns draw on the same `EXPENSIVE_AUTHENTICATED_RATE_LIMIT_*` window, in a bucket per operator as well as per account and workspace. A Ray turn is a loop the operator starts and a model runs, so bucketing per operator keeps one busy session from refusing turns for a colleague in the same workspace.
+
+## Ray verification budget
+
+Ray's verification tools spend real model budget on every call: a test turn runs the agent for real, a case replay re-runs a recorded turn, and a suite run does that once per case. One Ray turn may spend six replayed turns, tunable with `COPILOT_PROBE_BUDGET_PER_TURN`, and a suite run is charged per case — asking for five cases spends five. When the budget runs out Ray answers with what it already measured and asks the operator to send another turn.
+
+Each replayed turn also counts against the same answer meter a live customer turn does, so a suite run of five cases is charged as five answers. A suite that exhausts the workspace's allowance part-way stops there and returns the quota refusal; the cases it already recorded are kept. On a Terraform-managed deployment the matching variable is `copilot_probe_budget_per_turn`, which passes the value to the API service where Ray turns run.
+
+## Ray conversation retention
+
+Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely; the Terraform variable is `copilot_conversation_retention_days`.
+
+The sweep runs in the document worker, so retention happens only where that process runs. Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/copilot-retention/sweep`, which the bundled Terraform provisions as a daily Cloud Scheduler job. A deployment that runs neither the worker poll loop nor that schedule keeps Ray conversations forever, whatever the window says.
+
 ## Reverse proxy client IPs
 
 Express `trust proxy` stays off by default, and `TRUST_PROXY_HOPS=0` is the secure setting for a deployment with no proxy in front of the backend. When the backend runs behind reverse proxies you control and rate limits must see the real client IP from `X-Forwarded-For`, set `TRUST_PROXY_HOPS` to the exact number of trusted hops. On Cloud Run behind the frontend API proxy that is typically `1` or `2`, depending on the topology.

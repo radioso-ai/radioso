@@ -102,7 +102,7 @@ const declaredSettingsValues = (config: Record<string, unknown>, fields: Readonl
 };
 export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "agent_skills", shape: "read", uiLabel: "Reading agent skills", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
+    name: "agent_skills", shape: "read", verificationCost: () => 0, uiLabel: "Reading agent skills", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
     description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Every config key name is listed, but a value is included only for a key the capability declares as a safe-to-show setting.",
     inputSchema, outputSchema,
     createTool: (context) => ({
@@ -161,7 +161,7 @@ export const createAgentSkillConfigProposalCopilotTools = (
   const description = "Propose creating or updating a skill's configuration for the operator to review and apply. This does not change configuration. Values are supplied from settings already read, not invented.";
   return [
     {
-      name: "propose_skill_config", shape: "propose", uiLabel: "Drafting a skill configuration", contributingModule: "agentSkills", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
+      name: "propose_skill_config", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a skill configuration", contributingModule: "agentSkills", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description,
       inputSchema: skillConfigInputSchema,
       outputSchema: proposalOutputSchema,

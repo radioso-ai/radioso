@@ -280,6 +280,39 @@ variable "action_dispatch_recovery_max_jobs" {
   }
 }
 
+variable "copilot_probe_budget_per_turn" {
+  description = "Replayed turns one Ray turn may spend across its verification tools. A suite run is charged one per case, so this is a ceiling on model-backed work per turn rather than on tool calls."
+  type        = number
+  default     = 6
+
+  # Whole numbers only. Terraform's number type accepts 1.5 happily; the backend parses this env
+  # var as an integer and refuses to start, so a fractional value turns a config typo into a boot
+  # failure rather than a plan error.
+  validation {
+    condition     = var.copilot_probe_budget_per_turn >= 1 && floor(var.copilot_probe_budget_per_turn) == var.copilot_probe_budget_per_turn
+    error_message = "copilot_probe_budget_per_turn must be a whole number of at least 1."
+  }
+}
+
+variable "copilot_conversation_retention_days" {
+  description = "Days a Ray conversation is kept after its last activity before the worker sweep removes it, along with its messages and proposals. 0 keeps conversations indefinitely."
+  type        = number
+  default     = 90
+
+  # Whole numbers only, for the same reason the probe budget is: the worker parses this as an
+  # integer at startup.
+  validation {
+    condition     = var.copilot_conversation_retention_days >= 0 && floor(var.copilot_conversation_retention_days) == var.copilot_conversation_retention_days
+    error_message = "copilot_conversation_retention_days must be a whole number of zero or greater."
+  }
+}
+
+variable "copilot_retention_schedule" {
+  description = "Optional cron schedule for the Ray conversation retention sweep. The worker enforces COPILOT_CONVERSATION_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps copilot conversations forever."
+  type        = string
+  default     = null
+}
+
 # --- Document storage ---
 
 variable "document_storage_bucket_name" {

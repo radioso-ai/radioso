@@ -17,7 +17,7 @@ export interface AudiencePulseCopilotToolDependencies {
 
 export const createAudiencePulseCopilotTools = (deps: AudiencePulseCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "audience_topics", shape: "read", uiLabel: "Reading audience topics", contributingModule: "audiencePulse", dashboardSubject: { type: "audience_topics" }, requiredPermissions: ["workspace.quality.read"],
+    name: "audience_topics", shape: "read", verificationCost: () => 0, uiLabel: "Reading audience topics", contributingModule: "audiencePulse", dashboardSubject: { type: "audience_topics" }, requiredPermissions: ["workspace.quality.read"],
     description: "Read the latest stored Audience Pulse topic census and whether its preparation is still running. This never starts a new analysis.",
     inputSchema: z.object({}), outputSchema: z.object({ result: unknownRecord, preparation: z.object({ pending: z.boolean() }) }),
     createTool: (context) => ({ name: "audience_topics", description: "Read the latest stored Audience Pulse topic census and whether its preparation is still running. This never starts a new analysis.", inputSchema: z.object({}), outputSchema: z.object({ result: unknownRecord, preparation: z.object({ pending: z.boolean() }) }), invoke: async () => {

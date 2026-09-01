@@ -31,3 +31,8 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-staging/radioso-staging/fro
 # app_base_url_override       = "https://your-public-app-domain.example"
 # public_chat_base_url_override = "https://your-public-app-domain.example/chat"
 # worker_tasks_service_url_override = "https://your-worker-url.a.run.app"
+
+# Ray operator copilot
+# copilot_probe_budget_per_turn       = 6    # replayed turns one Ray turn may spend verifying
+# copilot_conversation_retention_days = 90   # 0 keeps Ray conversations indefinitely
+# copilot_retention_schedule          = "30 4 * * *"

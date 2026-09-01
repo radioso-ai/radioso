@@ -7,6 +7,7 @@ import type {
   CopilotProposalApplyClaimGuard,
   CopilotProposalClaim,
   CopilotRepositoryPort,
+  CopilotRetentionPort,
 } from "../../src/modules/operatorCopilot/public.js";
 
 /**
@@ -14,7 +15,7 @@ import type {
  * app, the service unit tests, and the Ray eval suite. The collections are public so a test can
  * assert on what a turn persisted without going through the port.
  */
-export class InMemoryCopilotRepository implements CopilotRepositoryPort {
+export class InMemoryCopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort {
   conversations: CopilotConversation[] = [];
   messages: CopilotMessage[] = [];
   proposals: CopilotProposal[] = [];
@@ -22,6 +23,19 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
   // (only claiming/finalizing needs it), the same narrowing the real repository does by not
   // including the column in `proposalColumns`.
   private readonly applyClaims = new Map<string, Date>();
+
+  /** Mirrors the real sweep, including the cascade the FKs perform on the owning conversation. */
+  async deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
+    const expired = this.conversations
+      .filter((conversation) => conversation.updatedAt < input.cutoff)
+      .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())
+      .slice(0, input.limit);
+    const ids = new Set(expired.map((conversation) => conversation.id));
+    this.conversations = this.conversations.filter((conversation) => !ids.has(conversation.id));
+    this.messages = this.messages.filter((message) => !ids.has(message.conversationId));
+    this.proposals = this.proposals.filter((proposal) => !ids.has(proposal.conversationId));
+    return ids.size;
+  }
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
     const timestamp = new Date();
@@ -123,6 +137,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
     this.applyClaims.delete(proposal.id);
+    // Mirrors the repository: resolving a proposal is activity on its conversation, which is what
+    // keeps retention from sweeping the thread out from under an operator who just dismissed one.
+    this.conversations = this.conversations.map((conversation) =>
+      conversation.id === proposal.conversationId ? { ...conversation, updatedAt: updated.updatedAt } : conversation);
     return updated;
   }
 
@@ -133,6 +151,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort {
     const claimedAt = new Date();
     const previousAttemptStartedAt = this.applyClaims.get(proposal.id) ?? null;
     this.applyClaims.set(proposal.id, claimedAt);
+    // Mirrors the repository: claiming an apply re-dates the conversation, which is what keeps the
+    // retention sweep from removing it while the apply is in flight.
+    this.conversations = this.conversations.map((conversation) =>
+      conversation.id === proposal.conversationId ? { ...conversation, updatedAt: claimedAt } : conversation);
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
 

@@ -39,6 +39,7 @@ export const createIngestionSettingsProposalCopilotTools = (
   return [{
     ...shared,
     shape: "propose",
+    verificationCost: () => 0,
     uiLabel: "Drafting an ingestion settings change",
     contributingModule: "settings",
     dashboardSubject: { type: "proposal" },

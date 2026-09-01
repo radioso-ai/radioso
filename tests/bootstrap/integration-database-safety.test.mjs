@@ -26,6 +26,23 @@ test("normal application environment files do not configure an integration datab
   assert.doesNotMatch(contract, /^\s*"INTEGRATION_DATABASE_URL",?$/m);
 });
 
+test("Docker application containers override a stale integration database URL from .env", async () => {
+  const compose = await fs.readFile("docker-compose.yml", "utf8");
+  const serviceStarts = [...compose.matchAll(/^  [a-z][a-z-]*:\n/gm)].map((match) => match.index);
+
+  for (const service of ["backend", "backend-worker", "backend-crawler-worker", "frontend"]) {
+    const serviceStart = compose.indexOf(`  ${service}:`);
+    assert.ok(serviceStart >= 0, `${service} must exist in docker-compose.yml`);
+    const nextService = serviceStarts.find((start) => start > serviceStart);
+    const serviceDefinition = compose.slice(serviceStart, nextService === -1 ? undefined : nextService);
+    assert.match(
+      serviceDefinition,
+      /^      INTEGRATION_DATABASE_URL:\s*""$/m,
+      `${service} must clear any legacy INTEGRATION_DATABASE_URL inherited from .env`,
+    );
+  }
+});
+
 test("enterprise database tests verify any configured integration database", async () => {
   const config = await fs.readFile("ee/packages/backend-module/vitest.config.ts", "utf8");
   const setup = await fs.readFile("ee/packages/backend-module/integrationDatabaseGlobalSetup.ts", "utf8");

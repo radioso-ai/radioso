@@ -9,6 +9,20 @@ test("the common development launcher never aliases the integration database", a
   assert.doesNotMatch(source, /INTEGRATION_DATABASE_URL=.*DATABASE_URL/);
 });
 
+test("the common development launcher retires stale integration configuration before sourcing .env", async () => {
+  const source = await fs.readFile("scripts/run-common-db-dev.sh", "utf8");
+
+  assert.match(source, /source-sanitized-workspace-env\.sh/);
+  assert.match(source, /source_sanitized_workspace_env "\$ROOT_DIR"/);
+});
+
+test("Conductor serializes the shared common-database launcher and sanitizes each workspace .env during setup", async () => {
+  const settings = await fs.readFile(".conductor/settings.toml", "utf8");
+
+  assert.match(settings, /run_mode\s*=\s*"nonconcurrent"/);
+  assert.match(settings, /setup\s*=\s*"node scripts\/bootstrap\/retire-integration-database-url\.mjs &&/);
+});
+
 test("local CI always provisions and marks its own disposable integration database", async () => {
   const source = await fs.readFile("scripts/local-ci-checks.sh", "utf8");
 

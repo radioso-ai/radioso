@@ -137,6 +137,44 @@ describeIntegration("CopilotRepository retention sweep (Postgres)", () => {
     expect(surviving).toHaveLength(1);
   });
 
+  // Applying a proposal is activity on its conversation, and it is the one activity that mutates a
+  // domain outside this table. Without re-dating the conversation, a sweep could delete it while
+  // the apply was mid-flight: the domain change would land and the row that records the outcome
+  // would already be gone, so the change would exist with nothing explaining it.
+  it("keeps a conversation whose proposal an operator is applying", async () => {
+    const conversationId = await seedConversation(new Date("2026-01-01T00:00:00.000Z"));
+    const proposal = await repository.createProposal({
+      workspaceId,
+      operatorUserId,
+      conversationId,
+      targetType: "directive",
+      targetRef: { agentId: randomUUID() },
+      payload: { name: "Example" },
+      versionToken: "v1",
+      evidence: null,
+    });
+
+    const claim = await repository.claimProposalApply({
+      id: proposal.id,
+      workspaceId,
+      operatorUserId,
+      claimTtlSeconds: 300,
+    });
+    expect(claim).not.toBeNull();
+
+    const deleted = await repository.deleteConversationsUpdatedBefore({
+      cutoff: new Date("2026-06-01T00:00:00.000Z"),
+      limit: 100,
+    });
+
+    expect(deleted).toBe(0);
+    const surviving = await database.query<{ id: string }>(
+      `SELECT id FROM copilot_proposals WHERE id = $1`,
+      [proposal.id],
+    );
+    expect(surviving).toHaveLength(1);
+  });
+
   it("honours the batch limit so one sweep statement stays bounded", async () => {
     for (let index = 0; index < 3; index += 1) await seedConversation(new Date("2026-01-01T00:00:00.000Z"));
 

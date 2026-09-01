@@ -103,6 +103,7 @@ const realCatalog = () => createCopilotToolDescriptors(
 const contributedDescriptor = (overrides: Record<string, unknown> = {}) => ({
   name: "extension_usage",
   shape: "read" as const,
+  verificationCost: () => 0,
   uiLabel: "Reading extension state",
   description: "Read extension state.",
   inputSchema: z.object({}),

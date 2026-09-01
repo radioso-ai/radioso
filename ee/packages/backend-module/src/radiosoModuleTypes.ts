@@ -53,6 +53,12 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /**
+   * Where the turn came in. Present because a contributed tool audits its own effects: without it
+   * an EE tool recording a `copilot.*` event would have to omit the attribution OSS requires
+   * everywhere else, or invent a value.
+   */
+  readonly surface: "dashboard" | "mcp";
 }
 
 export interface CopilotAgentToolContext {

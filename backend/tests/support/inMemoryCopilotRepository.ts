@@ -147,6 +147,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     const claimedAt = new Date();
     const previousAttemptStartedAt = this.applyClaims.get(proposal.id) ?? null;
     this.applyClaims.set(proposal.id, claimedAt);
+    // Mirrors the repository: claiming an apply re-dates the conversation, which is what keeps the
+    // retention sweep from removing it while the apply is in flight.
+    this.conversations = this.conversations.map((conversation) =>
+      conversation.id === proposal.conversationId ? { ...conversation, updatedAt: claimedAt } : conversation);
     return { proposal, claimedAt, previousAttemptStartedAt };
   }
 

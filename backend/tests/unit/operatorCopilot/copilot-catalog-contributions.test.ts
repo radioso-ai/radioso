@@ -213,3 +213,14 @@ describe("copilot tool contributions", () => {
     });
   });
 });
+
+describe("contributed verification cost", () => {
+  it("refuses a descriptor with no declared cost at assembly, not at the tool call", () => {
+    const { verificationCost: _omitted, ...withoutCost } = descriptor();
+
+    expect(() => resolveCopilotToolContributions(
+      [{ moduleId: "extension", descriptors: [withoutCost as never] }],
+      { operationIds: new Set(), applicationPrimitiveIds: new Set() },
+    )).toThrow(/declares no verificationCost/);
+  });
+});

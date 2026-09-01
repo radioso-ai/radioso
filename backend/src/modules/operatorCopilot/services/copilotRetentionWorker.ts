@@ -133,7 +133,24 @@ export class CopilotRetentionWorker {
     await this.options.audit.record({
       eventType: "copilot.retention.enforced",
       eventStatus: "success",
-      metadata: { deleted, retentionDays: this.options.retentionDays, cutoff: cutoff.toISOString() },
-    }).catch(() => undefined);
+      metadata: {
+        deleted,
+        retentionDays: this.options.retentionDays,
+        cutoff: cutoff.toISOString(),
+        // Every other copilot.* event names the operator and the surface they acted through. This
+        // one has neither: the sweep is the schedule acting on its own, and inventing an operator
+        // would be worse than saying so. Stated rather than left absent, so a reader of the audit
+        // trail can tell a system action from an event that lost its attribution.
+        principalType: "system",
+      },
+      // The deletion has already committed and the line above already explains it, so a failed
+      // write must not fail the sweep. It is logged rather than swallowed: this is the record that
+      // answers "where did this conversation go", and losing it silently is how that stops working.
+    }).catch((error: unknown) => {
+      this.options.logger.error(
+        { err: error instanceof Error ? error.message : String(error), deleted },
+        "Copilot conversation retention audit failed after the delete committed",
+      );
+    });
   }
 }

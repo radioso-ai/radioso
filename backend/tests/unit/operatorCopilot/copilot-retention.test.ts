@@ -58,7 +58,9 @@ describe("CopilotRetentionWorker", () => {
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.retention.enforced",
       eventStatus: "success",
-      metadata: expect.objectContaining({ deleted: 4, retentionDays: 30 }),
+      // Says system rather than leaving the actor absent: every other copilot.* event names an
+      // operator and a surface, so a silent gap here would read as attribution that went missing.
+      metadata: expect.objectContaining({ deleted: 4, retentionDays: 30, principalType: "system" }),
     }));
   });
 
@@ -79,6 +81,24 @@ describe("CopilotRetentionWorker", () => {
 
     expect(result).toEqual({ status: "skipped", reason: "disabled" });
     expect(deleteConversationsUpdatedBefore).not.toHaveBeenCalled();
+  });
+
+  it("reports the sweep as done but logs loudly when the audit write fails after the delete", async () => {
+    const deleteConversationsUpdatedBefore = vi.fn(async () => 3);
+    const error = vi.fn();
+    const worker = new CopilotRetentionWorker({
+      retention: { deleteConversationsUpdatedBefore },
+      audit: { record: vi.fn(async () => { throw new Error("audit sink down"); }) },
+      logger: { info: vi.fn(), warn: vi.fn(), error },
+      retentionDays: 90,
+      batchSize: 10,
+      now: () => now,
+    });
+
+    // The rows are already gone, so the sweep did happen; the missing record is the problem, and
+    // it has to be visible rather than swallowed.
+    await expect(worker.sweep()).resolves.toEqual({ status: "swept", deleted: 3 });
+    expect(error).toHaveBeenCalled();
   });
 
   it("keeps the loop alive when one sweep throws", async () => {

@@ -35804,7 +35804,7 @@
             "description": "Conversation already running"
           },
           "429": {
-            "description": "Copilot turn rate limit exceeded for this operator, workspace, and account",
+            "description": "Copilot turn rate limit exceeded for this operator, workspace, and account, or the workspace answer allowance is exhausted. The rate limit clears on its own; the allowance does not until the billing period turns over.",
             "content": {
               "application/json": {
                 "schema": {

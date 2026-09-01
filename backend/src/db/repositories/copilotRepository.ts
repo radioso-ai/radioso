@@ -137,9 +137,16 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns)
         .executeTakeFirst();
-      return row
-        ? { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null }
-        : null;
+      if (!row) return null;
+      // Applying is activity on the conversation, and re-dating it here is what keeps retention
+      // from deleting the row mid-apply: the domain mutation happens after this transaction
+      // commits, and the delete rechecks its cutoff against the current version of this row. In
+      // the same transaction as the claim so the two cannot be observed apart.
+      await trx.updateTable("copilot_conversations")
+        .set({ updated_at: claimedAt })
+        .where("id", "=", row.conversation_id)
+        .execute();
+      return { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null };
     });
   }
 

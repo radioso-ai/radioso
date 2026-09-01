@@ -32,6 +32,17 @@ export class CopilotProbeBudgetExhaustedError extends Error {
   }
 }
 
+/** Raised when a descriptor's declared cost cannot be charged, rather than charging nothing. */
+export class CopilotVerificationCostError extends Error {
+  constructor(toolName: string, cost: unknown) {
+    super(
+      `${toolName} declared an unusable verification cost (${String(cost)}) and was not run. `
+      + "Do not retry this call. Answer with what you already have and tell the operator this tool is misconfigured.",
+    );
+    this.name = "CopilotVerificationCostError";
+  }
+}
+
 /** One turn's remaining allowance. Created per turn, never shared across turns. */
 export interface CopilotProbeBudget {
   spend(toolName: string, cost: number): void;
@@ -67,6 +78,11 @@ export const meteredCopilotTool = (
   invoke: async (input, context) => {
     // Asked per call rather than once, because a tool's cost can depend on its arguments.
     const cost = verificationCost(input);
+    // A cost that is not a usable number is a broken declaration, not a free call: NaN and
+    // negatives both compare false against the remaining budget, so trusting the arithmetic here
+    // would let a provider-backed tool run untouched on exactly the descriptors least worth
+    // trusting. Refusing keeps the budget's guarantee independent of what a contributor wrote.
+    if (!Number.isFinite(cost) || cost < 0) throw new CopilotVerificationCostError(tool.name, cost);
     if (cost > 0) budget.spend(tool.name, cost);
     return tool.invoke(input, context);
   },

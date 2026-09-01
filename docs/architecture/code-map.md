@@ -311,8 +311,9 @@ closed by the public contract enum, repository narrowing, and the dashboard's
 card presentation.
 
 Ray's operational envelope has three parts, all keyed off the turn/tool boundary.
-Every `copilot.*` audit event carries the operator principal and the calling
-surface. The service stamps its own events through an actor-bound audit method
+Every operator-initiated `copilot.*` audit event carries the operator principal
+and the calling surface; the retention sweep, which no operator starts, says
+`principalType: "system"` instead of naming one. The service stamps its own events through an actor-bound audit method
 rather than at each call site, and carries the surface onto the tool-invocation
 context for the events a tool records itself — a drafted proposal is audited by
 the tool that drafted it, so the surface has to reach that far or Ray's signature

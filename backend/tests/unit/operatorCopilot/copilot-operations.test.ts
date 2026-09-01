@@ -389,6 +389,35 @@ describe("copilot per-turn probe budget", () => {
     expect(invoke).not.toHaveBeenCalled();
   });
 
+  // The type makes the declaration mandatory in-repo, which is only advice to a module compiled
+  // elsewhere. These two are what keep the budget's guarantee independent of what a contributor
+  // wrote: a cost that cannot be charged refuses the call rather than running it for free.
+  it("refuses a tool whose declared cost is not a usable number", async () => {
+    const invoke = vi.fn(async () => ({ value: "ok" }));
+    const { service } = buildService({
+      tools: [descriptor("run_eval_suite", "act", invoke, () => Number.NaN)],
+      probeBudgetPerTurn: 6,
+      runStreaming: streamInvoking("run_eval_suite", 1),
+    });
+
+    await runTurn(service);
+
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("refuses a tool that claims a negative cost rather than crediting the budget", async () => {
+    const invoke = vi.fn(async () => ({ value: "ok" }));
+    const { service } = buildService({
+      tools: [descriptor("run_eval_suite", "act", invoke, () => -5)],
+      probeBudgetPerTurn: 1,
+      runStreaming: streamInvoking("run_eval_suite", 2),
+    });
+
+    await runTurn(service);
+
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("defaults to a budget that admits one full eval suite run", () => {
     expect(COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT).toBeGreaterThanOrEqual(MAX_COPILOT_EVAL_SUITE_CASES);
   });

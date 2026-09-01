@@ -327,7 +327,7 @@ export interface ChatCopilotToolDependencies {
 
 export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "conversation_transcript", shape: "read", uiLabel: "Reading conversation transcript", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
+    name: "conversation_transcript", shape: "read", verificationCost: () => 0, uiLabel: "Reading conversation transcript", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
     description: "Read a bounded customer transcript with shallow per-turn outcomes, routing, feedback, and ownership. Use turn_trace for one turn's full diagnostic spine.",
     inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: conversationTranscriptOutputSchema,
     createTool: (context) => ({
@@ -347,7 +347,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
     describeEntity: ({ conversationId }, context) => entity("conversation", conversationId ?? context?.pageContext.conversationId),
   },
   {
-    name: "turn_trace", shape: "read", uiLabel: "Reading turn trace", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
+    name: "turn_trace", shape: "read", verificationCost: () => 0, uiLabel: "Reading turn trace", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
     description: "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason.",
     inputSchema: z.object({ messageId: idSchema }), outputSchema: turnTraceOutputSchema,
     createTool: (context) => ({
@@ -365,7 +365,7 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
     }),
   },
   {
-    name: "conversation_history_search", shape: "read", uiLabel: "Searching conversations", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
+    name: "conversation_history_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching conversations", contributingModule: "chat", dashboardSubject: { type: "conversation" }, requiredPermissions: ["workspace.history.read"],
     description: "List recent customer conversations in this workspace for investigation.",
     inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations.map(asRecord) }).conversations as Record<string, unknown>[] }) }),

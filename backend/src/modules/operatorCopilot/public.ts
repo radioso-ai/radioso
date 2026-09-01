@@ -44,3 +44,14 @@ export type {
   CopilotRetrievalSearchPort,
 } from "./contracts/retrievalProbe.js";
 export * from "./toolShape.js";
+export * from "./probeBudget.js";
+export {
+  COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
+  COPILOT_RETENTION_BATCH_SIZE_DEFAULT,
+  CopilotRetentionWorker,
+} from "./services/copilotRetentionWorker.js";
+export type {
+  CopilotRetentionLoggerPort,
+  CopilotRetentionPort,
+  CopilotRetentionWorkerOptions,
+} from "./services/copilotRetentionWorker.js";

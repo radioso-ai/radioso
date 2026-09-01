@@ -20,6 +20,7 @@ import type {
   EvalRunResolvedConfig,
   EvalSnapshot,
 } from "../domain/types.js";
+import { NoopUsageLimitPolicy, type UsageLimitPolicy, type UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
 import type { EvalLlmJudgePort } from "./evalJudge.js";
 import { buildReplayInputs, type EvalRetrievalRunnerPort } from "./evalRunner.js";
@@ -152,9 +153,65 @@ export class EvalRunService {
     private readonly judge: EvalLlmJudgePort,
     private readonly workbenchReplayRunner?: EvalWorkbenchReplayRunnerPort,
     private readonly logger?: EvalReplayLoggerPort,
+    private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
   ) {}
 
+  /**
+   * One eval run costs one answer, in either mode.
+   *
+   * A `full_assistant` run replays a real turn — model calls, retrieval, routines — and until this
+   * reservation existed it did so against no meter at all, on every surface that drives it: the
+   * runs route, Ray's `replay_eval_case`, and `run_eval_suite`, which loops this method per case.
+   * Metering here rather than at any one of those callers is what makes the charge match the cost:
+   * the caller decides how many runs to ask for, this method knows what a run actually spends.
+   *
+   * A run whose replay errored still commits. The provider was already called; only a run rejected
+   * before it starts — an unknown snapshot, a case from another snapshot — releases.
+   */
   async execute(input: EvalRunInput): Promise<EvalRunOutcome> {
+    return this.metered(input, (reserve) => this.executeReserved(input, reserve));
+  }
+
+  /**
+   * Charges exactly one answer for the work `run` performs.
+   *
+   * Both public entry points wrap themselves in this, and the work itself lives in private methods
+   * that never reserve. That split is the point: a public method delegating to another public
+   * method would charge twice for one replay, and a reservation living on only one of them would
+   * leave the other free — which is what the workbench-override routes were doing, since they call
+   * {@link executeWorkbenchReplay} rather than {@link execute}.
+   */
+  private async metered<T>(
+    input: Pick<EvalRunInput, "accountId" | "workspaceId">,
+    run: (reserve: () => Promise<void>) => Promise<T>,
+  ): Promise<T> {
+    let reservation: UsageLimitReservation | null = null;
+    // Taken by the run itself, immediately before it dispatches, rather than up front. Reserving
+    // earlier made an unknown snapshot or a mismatched case answer 429 instead of the documented
+    // 404 or 400 whenever the workspace allowance happened to be gone — a request's validity is
+    // not a function of how much quota is left.
+    const reserve = async (): Promise<void> => {
+      reservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: "eval_replay",
+      });
+    };
+    try {
+      const outcome = await run(reserve);
+      await (reservation as UsageLimitReservation | null)?.commit();
+      return outcome;
+    } catch (error) {
+      // Once reserved, the run has been dispatched, so the question a failure has to answer is
+      // not "did the call succeed" but "did the provider already run". Recording the result and
+      // judging it both happen after the replay and both can throw; releasing there would hand
+      // back budget that was genuinely consumed. A failure before the reservation never took any.
+      await (reservation as UsageLimitReservation | null)?.commit();
+      throw error;
+    }
+  }
+
+  private async executeReserved(input: EvalRunInput, reserve: () => Promise<void>): Promise<EvalRunOutcome> {
     const snapshot = await this.repository.findSnapshot(input.workspaceId, input.snapshotId);
     if (!snapshot) {
       throw notFound("Snapshot not found");
@@ -177,7 +234,7 @@ export class EvalRunService {
       && snapshot.originalAgentConfig
       && snapshot.sourceAgentId
     ) {
-      return this.executeWorkbenchReplay(input);
+      return this.runWorkbenchReplay(input, reserve);
     }
     if (requiresWorkbenchReplay(overrides)) {
       // The retrieval fallback ignores both of these, so continuing would answer from the
@@ -211,6 +268,7 @@ export class EvalRunService {
       overrides.retrievalSettingsOverride,
     );
 
+    await reserve();
     try {
       if (input.mode === "full_assistant") {
         const result = await this.retrievalRunner.answer({
@@ -339,6 +397,10 @@ export class EvalRunService {
   }
 
   async executeWorkbenchReplay(input: EvalRunInput): Promise<EvalRunOutcome> {
+    return this.metered(input, (reserve) => this.runWorkbenchReplay(input, reserve));
+  }
+
+  private async runWorkbenchReplay(input: EvalRunInput, reserve: () => Promise<void>): Promise<EvalRunOutcome> {
     const startedAtMs = Date.now();
     if (!this.workbenchReplayRunner) {
       throw badRequest("Workbench replay runner is not configured");
@@ -380,6 +442,7 @@ export class EvalRunService {
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
 
+    await reserve();
     try {
       const result = await this.workbenchReplayRunner.run({
         workspaceId: input.workspaceId,

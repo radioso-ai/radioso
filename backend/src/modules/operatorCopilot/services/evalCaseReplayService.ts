@@ -12,7 +12,7 @@ import type {
   CopilotEvalCaseReplayRunnerPort,
   CopilotReplayEvidenceRepositoryPort,
 } from "../contracts/evalCases.js";
-import { enforceCopilotExpensiveOperation } from "./expensiveOperationGuard.js";
+import { enforceCopilotExpensiveOperation, withCopilotSpendRefusals } from "./expensiveOperationGuard.js";
 
 /** Directive names are unique per agent (`UNIQUE(agent_id, name)`, migration 076), and canonical
  * directive serialization never carries an id, so a directive's name is the only stable key that
@@ -72,7 +72,7 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       input.overrides,
     );
 
-    const { run } = await this.dependencies.runs.execute({
+    const { run } = await withCopilotSpendRefusals(() => this.dependencies.runs.execute({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       snapshotId: evalCase.snapshotId,
@@ -80,7 +80,7 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
       mode: "full_assistant",
       overrides,
       attachToCase: false,
-    });
+    }));
 
     // Recorded from the run the replay just wrote, not from anything the assistant reports, so a
     // proposal that cites this measurement cites what actually happened.

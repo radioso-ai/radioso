@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
+import { serviceUnavailable } from "../../shared/domain/errors.js";
 import type { AppDependencies } from "../server/types.js";
 
 const documentProcessingTaskSchema = z.object({
@@ -28,7 +29,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -128,6 +129,25 @@ export const createDocumentWorkerTaskRoutes = (
       // fenced, so duplicate tasks simply find no jobs and do no provider work.
       await dependencies.facetExtractionWorkspaceDrain?.requestWorkspaceDrain(parsed.data);
       res.status(200).json({ processedJobCount });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // The task-runtime counterpart to the poll loop `startWorkerRuntime` runs. Retention has no
+  // per-item queue to push against, so a scheduled sweep is the whole trigger — and without this
+  // route the window would be enforced in docker-compose and nowhere else.
+  router.post("/internal/tasks/copilot-retention/sweep", async (_req, res, next) => {
+    try {
+      const result = await dependencies.copilotRetentionWorker.sweep();
+      if (result.status === "failed") {
+        // Retryable on purpose. Retention has no queue behind it, so a scheduled push reported as
+        // success is the whole enforcement for that interval quietly not happening.
+        next(serviceUnavailable("Copilot retention sweep failed", { reason: result.error }));
+        return;
+      }
+      // Switched off or already in flight are both ordinary, and neither is worth a retry.
+      res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
     } catch (error) {
       next(error);
     }

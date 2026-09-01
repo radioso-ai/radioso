@@ -95,7 +95,7 @@ describe("US3 copilot proposals", () => {
 
     const events = [];
     for await (const event of service.runTurn({
-      workspaceId,
+      surface: "dashboard", workspaceId,
       accountId,
       operatorUserId,
       conversationId: conversation.id,
@@ -157,7 +157,7 @@ describe("US3 copilot proposals", () => {
 
     const events = [];
     for await (const event of service.runTurn({
-      workspaceId,
+      surface: "dashboard", workspaceId,
       accountId,
       operatorUserId,
       conversationId: conversation.id,
@@ -197,7 +197,7 @@ describe("US3 copilot proposals", () => {
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
       { name: "propose_directive", shape: "propose" },
@@ -233,7 +233,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken, preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     const result = await descriptors.find((descriptor) => descriptor.name === "propose_directive_enablement")?.createTool(context).invoke({ directiveId, agentId, enabled: false }, {} as never);
 
@@ -267,7 +267,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "directive-version"), preview, applyIfVersionMatches: vi.fn(), draft: vi.fn() }],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
     const tool = descriptors.find((descriptor) => descriptor.name === "propose_directive_enablement")?.createTool(context);
 
     await expect(tool?.invoke({ directiveId, agentId, enabled: true }, {} as never))
@@ -296,7 +296,7 @@ describe("US3 copilot proposals", () => {
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     const result = await descriptors.find((descriptor) => descriptor.name === "propose_directive_removal")?.createTool(context).invoke({ directiveId, agentId }, {} as never);
 
@@ -332,7 +332,7 @@ describe("US3 copilot proposals", () => {
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     await expect(descriptors.find((descriptor) => descriptor.name === "propose_directive_removal")?.createTool(context).invoke({ directiveId, agentId }, {} as never))
       .rejects.toThrow(/no longer exists/i);
@@ -355,7 +355,7 @@ describe("US3 copilot proposals", () => {
       ],
       auditService: auditService(),
     });
-    const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
+    const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
     const routineTool = descriptors.find((descriptor) => descriptor.name === "propose_routine");
     const result = await routineTool?.createTool(context).invoke({ intent: "Draft a return-intake flow" }, {} as never);
@@ -396,6 +396,7 @@ describe("US3 copilot proposals", () => {
       workspaceId,
       accountId,
       operatorUserId,
+      surface: "dashboard" as const,
       copilotConversationId: "conversation-1",
       currentAuthorization: { hasAllPermissions: authorization },
       pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
@@ -427,6 +428,7 @@ describe("US3 copilot proposals", () => {
       workspaceId,
       accountId,
       operatorUserId,
+      surface: "dashboard" as const,
       copilotConversationId: "conversation-1",
       currentAuthorization: { hasAllPermissions: authorization },
       pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
@@ -461,6 +463,7 @@ describe("US3 copilot proposals", () => {
       workspaceId,
       accountId,
       operatorUserId,
+      surface: "dashboard" as const,
       copilotConversationId: "conversation-1",
       currentAuthorization: { hasAllPermissions: authorization },
       pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] },
@@ -487,7 +490,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(async () => "new"), preview: vi.fn(), applyIfVersionMatches }],
     });
 
-    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "stale" });
+    expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "stale" });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("stale");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "stale" }) }));
@@ -510,12 +513,12 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
     });
 
-    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).rejects.toBeInstanceOf(CopilotAuthorizationError);
     expect(applyIfVersionMatches).not.toHaveBeenCalled();
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("pending");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
       eventType: "copilot.proposal.apply_denied",
-      metadata: { proposalId: proposal.id, outcome: "authorization_denied" },
+      metadata: { proposalId: proposal.id, outcome: "authorization_denied", operatorUserId, surface: "dashboard" },
     }));
   });
 
@@ -535,11 +538,11 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches }],
     });
 
-    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
       .rejects.toBeInstanceOf(CopilotAuthorizationError);
     expect(repository.hasApplyClaim(proposal.id)).toBe(false);
 
-    await expect(service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
+    await expect(service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id }))
       .resolves.toEqual({ status: "applied", appliedRef: { directiveId } });
     expect(applyIfVersionMatches).toHaveBeenCalledOnce();
   });
@@ -560,7 +563,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => { throw new Error("target unavailable"); }) }],
     });
 
-    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed" });
+    expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed" });
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("failed");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "failed" }) }));
   });
@@ -582,7 +585,7 @@ describe("US3 copilot proposals", () => {
       proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
     });
 
-    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed", reason: "Directive validation failed." });
+    expect(await service.applyProposal({ surface: "dashboard", workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed", reason: "Directive validation failed." });
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.reason).toBe("Directive validation failed.");
     expect((await repository.listMessages({ conversationId: "conversation-1" }))[0]?.proposals?.[0]?.reason).toBe("Directive validation failed.");
   });
@@ -605,7 +608,7 @@ describe("US3 copilot proposals", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId, accountId, operatorUserId, conversationId: conversation.id, message: "Draft it", pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.manage"]) })) events.push(event);
+    for await (const event of service.runTurn({ surface: "dashboard", workspaceId, accountId, operatorUserId, conversationId: conversation.id, message: "Draft it", pageContext: { view: "agent", agentId, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.manage"]) })) events.push(event);
 
     expect(events).toContainEqual({ event: "proposal", data: { proposalId: proposal.id, targetType: "routine", targetLabel: "Return intake", summary: "Draft routine" } });
   });
@@ -614,6 +617,7 @@ describe("US3 copilot proposals", () => {
 const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
   name,
   shape: "propose" as const,
+  verificationCost: () => 0,
   uiLabel: "Drafting a directive",
   description: "Draft",
   requiredPermissions: [requiredPermission] as const,
@@ -1661,7 +1665,7 @@ describe("proposals carrying replay evidence", () => {
     return { descriptor, createProposal };
   };
 
-  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
+  const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
   it("stores the measurement on the proposal and reports it to the operator", async () => {
     const { descriptor, createProposal } = harness();
@@ -1766,7 +1770,7 @@ describe("propose_skill_config replay evidence", () => {
     return { descriptor, createProposal };
   };
 
-  const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
+  const context = { workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1", currentAuthorization, pageContext: { view: "other" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
   it("refuses a proposal that turns the default-answer skill off, citing a replay that measured it on", async () => {
     // Regression coverage for propose_skill_config actually forwarding `enabled` into the cited
@@ -1865,7 +1869,7 @@ describe("routine edit and lifecycle proposal tools", () => {
   });
 
   const toolContext = {
-    workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1",
+    workspaceId, accountId, operatorUserId, surface: "dashboard" as const, copilotConversationId: "conversation-1",
     currentAuthorization,
     pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] },
   };

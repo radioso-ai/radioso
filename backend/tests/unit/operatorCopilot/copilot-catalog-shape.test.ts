@@ -38,6 +38,7 @@ const context = {
   workspaceId: "workspace-1",
   accountId: "account-1",
   operatorUserId: "operator-1",
+  surface: "dashboard" as const,
   currentAuthorization: { hasAllPermissions: vi.fn(async () => true) },
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
@@ -102,6 +103,7 @@ const realCatalog = () => createCopilotToolDescriptors(
 const contributedDescriptor = (overrides: Record<string, unknown> = {}) => ({
   name: "extension_usage",
   shape: "read" as const,
+  verificationCost: () => 0,
   uiLabel: "Reading extension state",
   description: "Read extension state.",
   inputSchema: z.object({}),
@@ -143,6 +145,7 @@ describe("copilot catalog contributions through the real factory", () => {
       workspaceId: "workspace-1",
       accountId: "account-1",
       operatorUserId: "operator-1",
+      surface: "dashboard" as const,
       currentAuthorization: { hasAllPermissions: async () => true },
       pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
     } as never).invoke({}, { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" } as never);
@@ -349,5 +352,36 @@ describe("copilot catalog shape", () => {
         shape: "read",
       },
     ]);
+  });
+});
+
+describe("verification cost declarations", () => {
+  // Cost is declared per descriptor rather than inferred from shape, because the two answer
+  // different questions and inferring one from the other already shipped a hole: `run_eval_suite`
+  // is an `act` (it moves a case's stored verdict) and was therefore exempt from a budget keyed on
+  // `shape: "probe"` — while being the only tool that replays several cases in one call.
+  const MODEL_SPENDING_TOOLS: Record<string, { input: unknown; expected: number }> = {
+    test_agent_turn: { input: {}, expected: 1 },
+    replay_eval_case: { input: {}, expected: 1 },
+    retrieval_probe: { input: {}, expected: 1 },
+    run_eval_suite: { input: { caseIds: ["a", "b", "a"] }, expected: 2 },
+  };
+
+  it("charges every tool that commands a synchronous model run", () => {
+    const byName = new Map(realCatalog().map((descriptor) => [descriptor.name, descriptor]));
+
+    for (const [name, { input, expected }] of Object.entries(MODEL_SPENDING_TOOLS)) {
+      const descriptor = byName.get(name);
+      expect(descriptor, `${name} is missing from the catalog`).toBeDefined();
+      expect(descriptor!.verificationCost(input), `${name} declares no verification cost`).toBe(expected);
+    }
+  });
+
+  it("leaves the rest of the catalog free, so a read is never rationed", () => {
+    const free = realCatalog().filter((descriptor) => !(descriptor.name in MODEL_SPENDING_TOOLS));
+
+    for (const descriptor of free) {
+      expect(descriptor.verificationCost({}), `${descriptor.name} charges a budget it does not spend`).toBe(0);
+    }
   });
 });

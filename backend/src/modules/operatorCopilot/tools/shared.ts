@@ -3,6 +3,8 @@ import { z } from "zod";
 import {
   copilotProposalTargetTypes,
   MAX_COPILOT_PROPOSAL_SUMMARY,
+  withCopilotActor,
+  type CopilotActor,
   type CopilotAnyProposalAdapter,
   type CopilotAuditPort,
   type CopilotEntityDescription,
@@ -104,10 +106,16 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
 };
 export const recordProposalCreated = async (
   auditService: CopilotAuditPort,
-  context: { accountId: string; workspaceId: string },
+  context: CopilotActor & { accountId: string; workspaceId: string },
   proposal: CopilotProposal,
 ): Promise<void> => {
-  await auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType } });
+  await auditService.record({
+    accountId: context.accountId,
+    workspaceId: context.workspaceId,
+    eventType: "copilot.proposal.created",
+    eventStatus: "success",
+    metadata: withCopilotActor(context, { proposalId: proposal.id, targetType: proposal.targetType }),
+  });
 };
 
 /**

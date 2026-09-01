@@ -103,16 +103,16 @@ describe("copilot eval suite probe", () => {
     summary: { total: 1, scored: 1, passing: 1, failing: 0, error: 0, pending: 0, unscored: 0 },
   };
 
-  const harness = (options: { enforce?: AbuseControlPort["enforce"] } = {}) => {
+  const harness = (options: { enforce?: AbuseControlPort["enforce"]; run?: () => Promise<unknown> } = {}) => {
     const order: string[] = [];
     const enforce = options.enforce ?? vi.fn(async () => {
       order.push("enforce");
       return undefined;
     });
-    const run = vi.fn(async () => {
+    const run = (options.run ?? vi.fn(async () => {
       order.push("run");
       return suiteResult;
-    });
+    })) as never;
     const record = vi.fn(async () => undefined);
     const service = new EvalSuiteProbeService({
       suite: { run },
@@ -150,7 +150,7 @@ describe("copilot eval suite probe", () => {
     });
     const { service, run, record } = harness({ enforce });
 
-    await expect(service.runCases({ ...subject, caseIds: [ids.case] })).rejects.toThrow("Too many requests");
+    await expect(service.runCases({ ...subject, caseIds: [ids.case] })).rejects.toThrow(/do not retry this call in this turn/i);
 
     expect(run).not.toHaveBeenCalled();
     expect(record).toHaveBeenCalledWith(expect.objectContaining({
@@ -158,6 +158,18 @@ describe("copilot eval suite probe", () => {
       eventStatus: "success",
       metadata: expect.objectContaining({ principalType: "operator_copilot", route: "run_eval_suite" }),
     }));
+  });
+
+  // Re-thrown by EvalSuiteService rather than scored as a per-case error, so it reaches the model
+  // — which then needs to be told that waiting will not help, unlike a rate limit.
+  it("turns an exhausted answer allowance into a refusal the model can act on", async () => {
+    const run = vi.fn(async () => {
+      throw Object.assign(new Error("Usage limit exceeded"), { code: "usage_limit_exceeded", statusCode: 429 });
+    });
+    const { service } = harness({ run });
+
+    await expect(service.runCases({ ...subject, caseIds: [ids.case] }))
+      .rejects.toThrow(/do not retry this call or any other verification in this turn/i);
   });
 
   it("refuses a selection larger than one call can finish", async () => {
@@ -281,7 +293,7 @@ describe("copilot eval case replay", () => {
     });
     const { service, execute, record } = harness({ enforce });
 
-    await expect(service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation })).rejects.toThrow("Too many requests");
+    await expect(service.replayCase({ ...subject, caseId: ids.case, copilotConversationId: ids.conversation })).rejects.toThrow(/do not retry this call in this turn/i);
 
     expect(execute).not.toHaveBeenCalled();
     expect(record).toHaveBeenCalledWith(expect.objectContaining({

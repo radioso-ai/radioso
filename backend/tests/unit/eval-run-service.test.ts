@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationAgent } from "../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig.js";
@@ -1583,5 +1583,191 @@ describe("EvalRunService detached runs", () => {
       mode: "full_assistant",
       overrides: { agentConfigOverride: { customInstruction: "Proposed instruction." } },
     })).rejects.toThrow(/full agent config snapshot/);
+  });
+});
+
+describe("EvalRunService metering", () => {
+  const meteringPolicy = () => {
+    const commit = vi.fn(async () => {});
+    const release = vi.fn(async () => {});
+    const reserveAnswer = vi.fn(async (_input: { accountId?: string | null; workspaceId: string; surface: string }) => ({ commit, release }));
+    return {
+      commit,
+      release,
+      reserveAnswer,
+      policy: {
+        reserveAnswer,
+        reserveDocument: vi.fn(),
+        reserveIndexedStorage: vi.fn(),
+        reserveMonthlyIndexedContent: vi.fn(),
+      },
+    };
+  };
+
+  it("reserves and commits one answer per run, so a replayed turn is metered like the turn it imitates", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "metered", assertions: [refundIncludes] });
+    const metering = meteringPolicy();
+    const service = new EvalRunService(
+      repo,
+      new StubRunner([{ chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }]),
+      passJudge(),
+      undefined,
+      undefined,
+      metering.policy,
+    );
+
+    await service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, caseId: evalCase.id, mode: "retrieval_only" });
+
+    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay" });
+    expect(metering.commit).toHaveBeenCalledOnce();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
+  it("still commits when the replayed turn itself errors, because the provider was already billed", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "errored", assertions: [refundIncludes] });
+    const metering = meteringPolicy();
+    const failing = new StubRunner([]);
+    failing.retrieve = async () => { throw new Error("provider exploded"); };
+    const service = new EvalRunService(repo, failing, passJudge(), undefined, undefined, metering.policy);
+
+    const { run } = await service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, caseId: evalCase.id, mode: "retrieval_only" });
+
+    expect(run.status).toBe("error");
+    expect(metering.commit).toHaveBeenCalledOnce();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
+  it("meters the workbench replay entry point the eval routes call directly", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({ sourceAgentId: agent.id, originalAgentConfig: projectInternalAgentConfig(agent) });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "override replay", assertions: [refundIncludes] });
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, metering.policy);
+
+    await service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      accountId: "account-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: { agentConfigOverride: { customInstruction: "Workbench override." } },
+    });
+
+    expect(metering.reserveAnswer).toHaveBeenCalledWith({ accountId: "account-1", workspaceId: "ws-1", surface: "eval_replay" });
+    expect(metering.commit).toHaveBeenCalledOnce();
+  });
+
+  it("charges a full_assistant run once, not twice, when execute delegates to the replay path", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({ sourceAgentId: agent.id, originalAgentConfig: projectInternalAgentConfig(agent) });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, metering.policy);
+
+    await service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, mode: "full_assistant" });
+
+    expect(metering.reserveAnswer).toHaveBeenCalledOnce();
+    expect(metering.commit).toHaveBeenCalledOnce();
+  });
+
+  // The reservation is for provider spend, so the question is not "did the call succeed" but "did
+  // the provider already run". Persisting the result and judging it both happen after the replay,
+  // and both can throw — releasing there hands back budget that was genuinely consumed.
+  it("commits when the replay already ran and a later step throws", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "persist fails", assertions: [refundIncludes] });
+    repo.createRun = async () => { throw new Error("database unavailable"); };
+    const metering = meteringPolicy();
+    const service = new EvalRunService(
+      repo,
+      new StubRunner([{ chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }]),
+      passJudge(),
+      undefined,
+      undefined,
+      metering.policy,
+    );
+
+    await expect(service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, caseId: evalCase.id, mode: "retrieval_only" }))
+      .rejects.toThrow("database unavailable");
+
+    expect(metering.commit).toHaveBeenCalledOnce();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
+  it("commits when a workbench replay ran and a later step throws", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({ sourceAgentId: agent.id, originalAgentConfig: projectInternalAgentConfig(agent) });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "persist fails", assertions: [refundIncludes] });
+    repo.createRun = async () => { throw new Error("database unavailable"); };
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), new StubWorkbenchReplayRunner(), undefined, metering.policy);
+
+    await expect(service.executeWorkbenchReplay({
+      workspaceId: "ws-1",
+      accountId: "account-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      overrides: { agentConfigOverride: { customInstruction: "Workbench override." } },
+    })).rejects.toThrow("database unavailable");
+
+    expect(metering.commit).toHaveBeenCalledOnce();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
+  it("never reserves for a run that is rejected before it is dispatched", async () => {
+    const repo = new InMemoryEvalRepository({ snapshots: [] });
+    const metering = meteringPolicy();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), undefined, undefined, metering.policy);
+
+    await expect(service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: "missing", mode: "retrieval_only" }))
+      .rejects.toMatchObject({ statusCode: 404 });
+
+    expect(metering.reserveAnswer).not.toHaveBeenCalled();
+    expect(metering.commit).not.toHaveBeenCalled();
+    expect(metering.release).not.toHaveBeenCalled();
+  });
+
+  // Reserving before validation made a request's documented outcome depend on how much quota was
+  // left: with the allowance gone, an unknown snapshot answered 429 instead of 404, and a client
+  // reading the contract would retry a request that can never succeed.
+  it("still answers 404 for an unknown snapshot when the allowance is exhausted", async () => {
+    const repo = new InMemoryEvalRepository({ snapshots: [] });
+    const exhausted = {
+      reserveAnswer: vi.fn(async () => { throw Object.assign(new Error("Usage limit exceeded"), { code: "usage_limit_exceeded", statusCode: 429 }); }),
+      reserveDocument: vi.fn(),
+      reserveIndexedStorage: vi.fn(),
+      reserveMonthlyIndexedContent: vi.fn(),
+    };
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), undefined, undefined, exhausted);
+
+    await expect(service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: "missing", mode: "retrieval_only" }))
+      .rejects.toMatchObject({ statusCode: 404 });
+    expect(exhausted.reserveAnswer).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a dispatchable run when the allowance is exhausted", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({ workspaceId: "ws-1", snapshotId: snapshot.id, name: "gated", assertions: [refundIncludes] });
+    const exhausted = {
+      reserveAnswer: vi.fn(async () => { throw Object.assign(new Error("Usage limit exceeded"), { code: "usage_limit_exceeded", statusCode: 429 }); }),
+      reserveDocument: vi.fn(),
+      reserveIndexedStorage: vi.fn(),
+      reserveMonthlyIndexedContent: vi.fn(),
+    };
+    const runner = new StubRunner([{ chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }]);
+    const service = new EvalRunService(repo, runner, passJudge(), undefined, undefined, exhausted);
+
+    // The gate still holds where it matters: a run that would have dispatched is refused.
+    await expect(service.execute({ workspaceId: "ws-1", accountId: "account-1", snapshotId: snapshot.id, caseId: evalCase.id, mode: "retrieval_only" }))
+      .rejects.toMatchObject({ code: "usage_limit_exceeded" });
   });
 });

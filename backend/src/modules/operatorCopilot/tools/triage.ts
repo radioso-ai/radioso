@@ -116,6 +116,7 @@ export const createWorkspaceTriageCopilotTools = (
 ): ReadonlyArray<CopilotToolDescriptor<WorkspaceTriageInput, WorkspaceTriageOutput>> => [{
   name: "workspace_triage",
   shape: "read",
+  verificationCost: () => 0,
   uiLabel: "Checking what needs attention",
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "needs_attention" },

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { nowMinusSeconds } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalEvidence, CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
+import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
 import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
@@ -45,11 +45,36 @@ export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalC
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const textValue = (value: unknown, fallback: string): string => typeof value === "string" ? value : fallback;
 
-export class CopilotRepository implements CopilotRepositoryPort {
+export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentionPort {
   constructor(private readonly db: Db) {}
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> { const row = await this.db.insertInto("copilot_conversations").values({ id: randomUUID(), workspace_id: input.workspaceId, operator_user_id: input.operatorUserId, title: input.title }).returning(conversationColumns).executeTakeFirstOrThrow(); return mapConversation(row); }
   async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> { const row = await this.db.selectFrom("copilot_conversations").select(conversationColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapConversation(row) : null; }
   async listConversations(input: { workspaceId: string; operatorUserId: string }): Promise<ReadonlyArray<CopilotConversation>> { return (await this.db.selectFrom("copilot_conversations").select(conversationColumns).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).orderBy("updated_at", "desc").execute()).map(mapConversation); }
+  /**
+   * Deletes by id from a bounded, ordered subquery rather than by predicate: an unqualified
+   * `DELETE ... WHERE updated_at < cutoff` locks every matching row in one statement, and the
+   * first sweep after this ships is the largest one the deployment will ever run.
+   *
+   * The cutoff is repeated on the outer delete, not left to the subquery. The subquery chooses
+   * which rows this batch considers; the predicate is the policy, and Postgres rechecks the outer
+   * qual against the current row version when a concurrent transaction updated it. Without the
+   * repeat, an operator who resumed a long-idle conversation in the moment between the subquery's
+   * snapshot and the delete acquiring its row lock would have it deleted mid-turn, taking its
+   * messages and proposals with it.
+   */
+  async deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number> {
+    const result = await this.db
+      .deleteFrom("copilot_conversations")
+      .where("updated_at", "<", input.cutoff)
+      .where("id", "in", (eb) => eb
+        .selectFrom("copilot_conversations")
+        .select("id")
+        .where("updated_at", "<", input.cutoff)
+        .orderBy("updated_at", "asc")
+        .limit(input.limit))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
   async deleteConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> { const result = await this.db.deleteFrom("copilot_conversations").where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return Number(result.numDeletedRows) > 0; }
   async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> { const row = await this.db.insertInto("copilot_messages").values({ id: randomUUID(), conversation_id: input.conversationId, role: input.role, content: input.content, outcome: input.outcome ?? null, activity: input.activity ? JSON.stringify(input.activity) : null }).returning(messageColumns).executeTakeFirstOrThrow(); return mapMessage(row); }
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { const [messages, proposals] = await Promise.all([this.db.selectFrom("copilot_messages").select(messageColumns).where("conversation_id", "=", input.conversationId).orderBy("created_at", "asc").execute(), this.db.selectFrom("copilot_proposals").select(proposalColumns).where("conversation_id", "=", input.conversationId).where("message_id", "is not", null).orderBy("created_at", "asc").execute()]); const cardsByMessage = new Map<string, CopilotProposalCard[]>(); for (const proposal of proposals.map(mapProposal)) { if (proposal.messageId) cardsByMessage.set(proposal.messageId, [...(cardsByMessage.get(proposal.messageId) ?? []), presentProposalCard(proposal)]); } return messages.map((row) => { const message = mapMessage(row); const cards = cardsByMessage.get(message.id); return cards ? { ...message, proposals: cards } : message; }); }
@@ -74,7 +99,17 @@ export class CopilotRepository implements CopilotRepositoryPort {
       ? query.where("apply_started_at", "=", applyClaimGuard.claimedAt)
       : query.where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(applyClaimGuard.claimTtlSeconds))]));
     const row = await query.returning(proposalColumns).executeTakeFirst();
-    return row ? mapProposal(row) : null;
+    if (!row) return null;
+    // Resolving a proposal — dismissing it, or finalizing an apply — is activity on its
+    // conversation, and retention deletes by the conversation's own last-activity date. Without
+    // this, an operator who cleared a stale proposal today would watch the thread it belongs to
+    // disappear on the next sweep. Claiming an apply re-dates it too, so an apply lands here
+    // already fresh and this is a harmless second touch.
+    await this.db.updateTable("copilot_conversations")
+      .set({ updated_at: new Date() })
+      .where("id", "=", row.conversation_id)
+      .execute();
+    return mapProposal(row);
   }
 
   /**
@@ -112,9 +147,16 @@ export class CopilotRepository implements CopilotRepositoryPort {
         .where((eb) => eb.or([eb("apply_started_at", "is", null), eb("apply_started_at", "<=", nowMinusSeconds(input.claimTtlSeconds))]))
         .returning(proposalColumns)
         .executeTakeFirst();
-      return row
-        ? { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null }
-        : null;
+      if (!row) return null;
+      // Applying is activity on the conversation, and re-dating it here is what keeps retention
+      // from deleting the row mid-apply: the domain mutation happens after this transaction
+      // commits, and the delete rechecks its cutoff against the current version of this row. In
+      // the same transaction as the claim so the two cannot be observed apart.
+      await trx.updateTable("copilot_conversations")
+        .set({ updated_at: claimedAt })
+        .where("id", "=", row.conversation_id)
+        .execute();
+      return { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null };
     });
   }
 

@@ -179,7 +179,7 @@ export const observeCopilotTurn = async (
   let outcome: CopilotObservedTurn["outcome"] = "failed";
   let turnConversationId = conversationId;
   for await (const event of service.runTurn({
-    workspaceId,
+    surface: "dashboard", workspaceId,
     accountId,
     operatorUserId,
     conversationId,

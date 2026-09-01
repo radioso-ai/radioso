@@ -27,7 +27,7 @@ For each client:
 
 1. Sign in to the dashboard and open **Settings → API access**.
 2. Create the personal token or service account and credential with the narrowest suitable role.
-3. Set an expiry and copy the secret from the one-time response into the client's secret manager.
+3. Choose an expiry if the client should stop automatically, and copy the secret from the one-time response into the client's secret manager.
 4. Verify the client against an eligible REST API route.
 5. Record the credential ID and safe prefix in your operational inventory, not the secret itself.
 

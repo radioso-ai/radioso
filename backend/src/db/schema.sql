@@ -658,7 +658,7 @@ CREATE TABLE public.api_credentials (
     created_by_user_id uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone,
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
     revoked_by_user_id uuid,
@@ -5741,7 +5741,7 @@ CREATE INDEX idx_agents_workspace_id ON public.agents USING btree (workspace_id)
 -- Name: idx_api_credentials_expiry_warning_scan; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_api_credentials_expiry_warning_scan ON public.api_credentials USING btree (expires_at, id) WHERE (revoked_at IS NULL);
+CREATE INDEX idx_api_credentials_expiry_warning_scan ON public.api_credentials USING btree (expires_at, id) WHERE ((revoked_at IS NULL) AND (expires_at IS NOT NULL));
 
 
 --

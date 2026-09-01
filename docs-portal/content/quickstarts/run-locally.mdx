@@ -114,14 +114,14 @@ curl -sS -c cookies.txt \
   http://localhost:8080/api/v1/auth/login
 ```
 
-Issue a personal token with the session cookie. Pick an `expiresAt` value no more than 90 days away:
+Issue a personal token with the session cookie. Add `expiresAt` only when you want the token to stop working at a known time:
 
 ```bash
 curl -sS -b cookies.txt -X POST \
   -H 'Content-Type: application/json' \
   -H 'X-Radioso-CSRF: 1' \
   -H 'X-Workspace-Id: <workspace-id>' \
-  -d '{"label":"Local development","roleCeiling":"member","expiresAt":"<RFC3339-UTC>"}' \
+  -d '{"label":"Local development","roleCeiling":"member"}' \
   http://localhost:8080/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 

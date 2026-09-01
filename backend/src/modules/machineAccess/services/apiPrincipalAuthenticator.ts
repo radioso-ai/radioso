@@ -36,7 +36,7 @@ export class ApiPrincipalAuthenticator {
     if (!credential) return this.deny(secretKind, "unknown");
     if (credential.kind !== secretKind) return this.deny(secretKind, credential.kind === "personal" ? "personal_binding_invalid" : "service_binding_invalid");
     if (credential.revokedAt) return this.deny(secretKind, "revoked");
-    if (credential.expiresAt.getTime() <= this.now().getTime()) return this.deny(secretKind, "expired");
+    if (credential.expiresAt && credential.expiresAt.getTime() <= this.now().getTime()) return this.deny(secretKind, "expired");
     if (credential.kind === "personal") {
       if (!credential.ownerUserId || !credential.accessTenureMembershipId || !credential.roleCeiling) return this.deny("personal", "personal_binding_invalid");
       const membership = await this.input.accountAccess.findActiveMembershipById(credential.accessTenureMembershipId);

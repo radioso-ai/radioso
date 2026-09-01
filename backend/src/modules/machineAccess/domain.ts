@@ -21,7 +21,6 @@ export const MACHINE_ACCESS_LIMITS = {
   maxPageSize: 100,
   defaultPageSize: 50,
 } as const;
-export const MACHINE_ACCESS_LIFETIMES = { personalDays: 90, serviceDays: 365 } as const;
 
 const controlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
 
@@ -40,10 +39,9 @@ export const requireFutureExpiry = (expiresAt: Date, now: Date): Date => {
   return expiresAt;
 };
 
-export const requireMaximumExpiry = (expiresAt: Date, now: Date, maximumDays: number): Date => {
-  requireFutureExpiry(expiresAt, now);
-  if (expiresAt.getTime() > now.getTime() + maximumDays * 86_400_000) throw badRequest("Credential expiry exceeds the maximum lifetime");
-  return expiresAt;
+export const normalizeCredentialExpiry = (expiresAt: Date | null | undefined, now: Date): Date | null => {
+  if (expiresAt == null) return null;
+  return requireFutureExpiry(expiresAt, now);
 };
 
 export const minimumRole = (left: MachineAccessRole, right: MachineAccessRole): MachineAccessRole =>
@@ -57,7 +55,7 @@ export const isServiceAccountActive = (status: ServiceAccountStatus): boolean =>
 
 export const deriveCredentialStatus = (input: {
   kind: MachineCredentialKind;
-  expiresAt: Date;
+  expiresAt: Date | null;
   revokedAt: Date | null;
   ownerUserId: string | null;
   accessTenureMembershipId: string | null;
@@ -67,7 +65,7 @@ export const deriveCredentialStatus = (input: {
   now: Date;
 }): MachineCredentialStatus => {
   if (input.revokedAt) return "revoked";
-  if (input.expiresAt.getTime() <= input.now.getTime()) return "expired";
+  if (input.expiresAt && input.expiresAt.getTime() <= input.now.getTime()) return "expired";
   if (input.kind === "personal") {
     return input.ownerUserId && input.accessTenureMembershipId && input.roleCeiling ? "active" : "invalid";
   }

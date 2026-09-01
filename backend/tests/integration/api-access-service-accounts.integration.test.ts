@@ -18,7 +18,6 @@ describe("service-account API access", () => {
         role: "admin",
         initialCredential: {
           label: "Primary",
-          expiresAt: new Date(Date.now() + 364 * 24 * 60 * 60 * 1_000).toISOString(),
         },
       })
       .expect(201);
@@ -32,6 +31,11 @@ describe("service-account API access", () => {
       revision: 1,
     });
     expect(created.body.credential.serviceAccountId).toBe(created.body.serviceAccount.id);
+    expect(created.body.credential).toMatchObject({
+      expiresAt: null,
+      status: "active",
+      expiryWarningDays: null,
+    });
 
     await request(app)
       .get("/api/v1/settings/general")
@@ -77,6 +81,7 @@ describe("service-account API access", () => {
       .set(headers)
       .expect(200);
     expect(credentials.body).toMatchObject({ page: 1, limit: 50, total: 1 });
+    expect(credentials.body.items[0]).toMatchObject({ expiresAt: null, status: "suspended", expiryWarningDays: null });
     expect(JSON.stringify(credentials.body)).not.toContain(created.body.secret);
   });
 

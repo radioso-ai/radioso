@@ -24,4 +24,14 @@ describe("API access credential presentation", () => {
     expect(deriveCredentialStatus({ ...active, serviceAccountStatus: "archived", now })).toBe("invalid");
     expect(deriveCredentialStatus({ ...active, serviceAccountStatus: null, now })).toBe("invalid");
   });
+
+  it("presents forever credentials without expiry warnings", () => {
+    const forever = { ...credential, expiresAt: null };
+
+    expect(presentApiCredential(forever)).toMatchObject({
+      expiresAt: null,
+      status: "active",
+      expiryWarningDays: null,
+    });
+  });
 });

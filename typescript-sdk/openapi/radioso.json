@@ -17929,16 +17929,10 @@
                       "type": "object",
                       "properties": {
                         "personalTokenLifetimeDays": {
-                          "type": "number",
-                          "enum": [
-                            90
-                          ]
+                          "type": "null"
                         },
                         "serviceCredentialLifetimeDays": {
-                          "type": "number",
-                          "enum": [
-                            365
-                          ]
+                          "type": "null"
                         }
                       },
                       "required": [
@@ -18195,7 +18189,10 @@
                             "format": "date-time"
                           },
                           "expiresAt": {
-                            "type": "string",
+                            "type": [
+                              "string",
+                              "null"
+                            ],
                             "format": "date-time"
                           },
                           "status": {
@@ -18424,14 +18421,16 @@
                     ]
                   },
                   "expiresAt": {
-                    "type": "string",
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "format": "date-time"
                   }
                 },
                 "required": [
                   "label",
-                  "roleCeiling",
-                  "expiresAt"
+                  "roleCeiling"
                 ]
               }
             }
@@ -18500,7 +18499,10 @@
                           "format": "date-time"
                         },
                         "expiresAt": {
-                          "type": "string",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
                           "format": "date-time"
                         },
                         "status": {
@@ -18792,7 +18794,10 @@
                       "format": "date-time"
                     },
                     "expiresAt": {
-                      "type": "string",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
                       "format": "date-time"
                     },
                     "status": {
@@ -19072,7 +19077,10 @@
                           "format": "date-time"
                         },
                         "expiresAt": {
-                          "type": "string",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
                           "format": "date-time"
                         },
                         "status": {
@@ -19339,7 +19347,10 @@
                       "format": "date-time"
                     },
                     "expiresAt": {
-                      "type": "string",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
                       "format": "date-time"
                     },
                     "status": {
@@ -19768,13 +19779,15 @@
                         "maxLength": 80
                       },
                       "expiresAt": {
-                        "type": "string",
+                        "type": [
+                          "string",
+                          "null"
+                        ],
                         "format": "date-time"
                       }
                     },
                     "required": [
-                      "label",
-                      "expiresAt"
+                      "label"
                     ]
                   }
                 },
@@ -19934,7 +19947,10 @@
                           "format": "date-time"
                         },
                         "expiresAt": {
-                          "type": "string",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
                           "format": "date-time"
                         },
                         "status": {
@@ -21233,7 +21249,10 @@
                             "format": "date-time"
                           },
                           "expiresAt": {
-                            "type": "string",
+                            "type": [
+                              "string",
+                              "null"
+                            ],
                             "format": "date-time"
                           },
                           "status": {
@@ -21464,13 +21483,15 @@
                     "maxLength": 80
                   },
                   "expiresAt": {
-                    "type": "string",
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "format": "date-time"
                   }
                 },
                 "required": [
-                  "label",
-                  "expiresAt"
+                  "label"
                 ]
               }
             }
@@ -21539,7 +21560,10 @@
                           "format": "date-time"
                         },
                         "expiresAt": {
-                          "type": "string",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
                           "format": "date-time"
                         },
                         "status": {
@@ -21840,7 +21864,10 @@
                       "format": "date-time"
                     },
                     "expiresAt": {
-                      "type": "string",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
                       "format": "date-time"
                     },
                     "status": {
@@ -22129,7 +22156,10 @@
                           "format": "date-time"
                         },
                         "expiresAt": {
-                          "type": "string",
+                          "type": [
+                            "string",
+                            "null"
+                          ],
                           "format": "date-time"
                         },
                         "status": {
@@ -22405,7 +22435,10 @@
                       "format": "date-time"
                     },
                     "expiresAt": {
-                      "type": "string",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
                       "format": "date-time"
                     },
                     "status": {

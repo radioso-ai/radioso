@@ -68,7 +68,7 @@ export const createApiAccessRoutes = (dependencies: Dependencies): Router => {
       res.json({
         effectiveRole,
         capabilities: { manageOwnPersonalTokens, auditWorkspacePersonalTokens, manageServiceAccounts },
-        defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
+        defaults: { personalTokenLifetimeDays: null, serviceCredentialLifetimeDays: null },
         limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
         legacyCredentialMigration,
         mcpCredentialSupport: "unsupported",

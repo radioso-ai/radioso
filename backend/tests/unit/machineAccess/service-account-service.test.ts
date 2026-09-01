@@ -133,6 +133,42 @@ describe("ServiceAccountService", () => {
     })).rejects.toMatchObject({ statusCode: 409 });
   });
 
+  it("creates forever service-account credentials when expiry is omitted", async () => {
+    const { service } = createHarness();
+
+    const created = await service.createWithCredential({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      actorUserId: "admin-1",
+      displayName: "Forever runner",
+      role: "member",
+      credentialLabel: "Primary",
+    });
+    expect(created.credential.expiresAt).toBeNull();
+    expect(created.account.activeCredentialCount).toBe(1);
+
+    const issued = await service.issueCredential({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      actorUserId: "admin-1",
+      serviceAccountId: created.account.id,
+      label: "Secondary",
+    });
+    expect(issued.credential.expiresAt).toBeNull();
+    await expect(service.rotateCredential({
+      accountId: "account-1",
+      workspaceId: "workspace-1",
+      actorUserId: "admin-1",
+      serviceAccountId: created.account.id,
+      credentialId: issued.credential.id,
+      revision: issued.credential.revision,
+    })).resolves.toMatchObject({
+      credential: {
+        expiresAt: null,
+      },
+    });
+  });
+
   it("archives once, invalidates every child, and records the automatic cause", async () => {
     const { audit, repository, service } = createHarness();
     const created = await createServiceAccount(service);

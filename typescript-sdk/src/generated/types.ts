@@ -8410,10 +8410,8 @@ export interface operations {
                             manageServiceAccounts: boolean;
                         };
                         defaults: {
-                            /** @enum {number} */
-                            personalTokenLifetimeDays: 90;
-                            /** @enum {number} */
-                            serviceCredentialLifetimeDays: 365;
+                            personalTokenLifetimeDays: null;
+                            serviceCredentialLifetimeDays: null;
                         };
                         limits: {
                             /** @enum {number} */
@@ -8523,7 +8521,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -8609,7 +8607,7 @@ export interface operations {
                     /** @enum {string} */
                     roleCeiling: "member" | "admin";
                     /** Format: date-time */
-                    expiresAt: string;
+                    expiresAt?: string | null;
                 };
             };
         };
@@ -8639,7 +8637,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -8750,7 +8748,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string;
+                        expiresAt: string | null;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -8859,7 +8857,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -8963,7 +8961,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string;
+                        expiresAt: string | null;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -9144,7 +9142,7 @@ export interface operations {
                     initialCredential: {
                         label: string;
                         /** Format: date-time */
-                        expiresAt: string;
+                        expiresAt?: string | null;
                     };
                 };
             };
@@ -9198,7 +9196,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -9789,7 +9787,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -9874,7 +9872,7 @@ export interface operations {
                 "application/json": {
                     label: string;
                     /** Format: date-time */
-                    expiresAt: string;
+                    expiresAt?: string | null;
                 };
             };
         };
@@ -9904,7 +9902,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -10016,7 +10014,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string;
+                        expiresAt: string | null;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;
@@ -10126,7 +10124,7 @@ export interface operations {
                             /** Format: date-time */
                             createdAt: string;
                             /** Format: date-time */
-                            expiresAt: string;
+                            expiresAt: string | null;
                             /** @enum {string} */
                             status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                             expiryWarningDays: 30 | 7 | 1 | null;
@@ -10231,7 +10229,7 @@ export interface operations {
                         /** Format: date-time */
                         createdAt: string;
                         /** Format: date-time */
-                        expiresAt: string;
+                        expiresAt: string | null;
                         /** @enum {string} */
                         status: "active" | "expired" | "revoked" | "suspended" | "invalid";
                         expiryWarningDays: 30 | 7 | 1 | null;

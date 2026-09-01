@@ -2,7 +2,7 @@ import { conflict, forbidden } from "../../../shared/domain/errors.js";
 import type { AccountAccessService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ApiCredentialRecord, MachineAccessAuditEvent, MachineAccessPersistencePort } from "../ports.js";
-import { MACHINE_ACCESS_LIFETIMES, MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, requireMaximumExpiry, type MachineAccessRole } from "../domain.js";
+import { MACHINE_ACCESS_LIMITS, assertAssignableRole, deriveCredentialStatus, normalizeCredentialLabel, normalizeCredentialExpiry, type MachineAccessRole } from "../domain.js";
 import { issueMachineSecret } from "../credentialSecretCodec.js";
 import { machineAccessAuditEvent } from "../auditMetadata.js";
 
@@ -22,7 +22,7 @@ export class PersonalCredentialService {
   constructor(private readonly input: { repository: PersonalCredentialRepository; accountAccess: AccountAccessService; audit: AuditService; now?: () => Date }) {}
   private now = () => (this.input.now ?? (() => new Date()))();
 
-  async issue(input: { accountId: string; workspaceId: string; userId: string; label: string; roleCeiling: MachineAccessRole; expiresAt: Date }): Promise<{ credential: ApiCredentialRecord; secret: string }> {
+  async issue(input: { accountId: string; workspaceId: string; userId: string; label: string; roleCeiling: MachineAccessRole; expiresAt?: Date | null }): Promise<{ credential: ApiCredentialRecord; secret: string }> {
     await this.input.accountAccess.requirePermission({
       accountId: input.accountId,
       userId: input.userId,
@@ -34,7 +34,7 @@ export class PersonalCredentialService {
     if (!role) throw forbidden();
     assertAssignableRole(role, input.roleCeiling);
     const label = normalizeCredentialLabel(input.label);
-    const expiresAt = requireMaximumExpiry(input.expiresAt, this.now(), MACHINE_ACCESS_LIFETIMES.personalDays);
+    const expiresAt = normalizeCredentialExpiry(input.expiresAt, this.now());
     const issued = await this.input.repository.createPersonalWithinLimit({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -99,7 +99,7 @@ export class PersonalCredentialService {
       workspaceId: input.workspaceId,
     });
     const credential = await this.requireOwned(input);
-    if (credential.revokedAt || credential.expiresAt <= this.now()) throw conflict("Credential is no longer active");
+    if (credential.revokedAt || (credential.expiresAt && credential.expiresAt <= this.now())) throw conflict("Credential is no longer active");
     const issued = issueMachineSecret("personal");
     const replacement = await this.input.repository.replaceCredential({
       credentialId: credential.id,

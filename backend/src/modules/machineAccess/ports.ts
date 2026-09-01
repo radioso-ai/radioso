@@ -38,7 +38,7 @@ export interface ApiCredentialRecord {
   createdByUserId: string;
   createdAt: Date;
   updatedAt: Date;
-  expiresAt: Date;
+  expiresAt: Date | null;
   lastUsedAt: Date | null;
   revokedAt: Date | null;
   revokedByUserId: string | null;
@@ -174,7 +174,7 @@ export interface MachineAccessPersistencePort {
     accessTenureMembershipId: string;
     roleCeiling: MachineAccessRole;
     label: string;
-    expiresAt: Date;
+    expiresAt: Date | null;
     createdByUserId: string;
     now: Date;
     limit: number;
@@ -188,7 +188,7 @@ export interface MachineAccessPersistencePort {
     role: MachineAccessRole;
     createdByUserId: string;
     credentialLabel: string;
-    expiresAt: Date;
+    expiresAt: Date | null;
     limit: number;
     issueSecret: () => IssuedSecret;
     actorAuthority?: ServiceAccountMutationActor;
@@ -199,7 +199,7 @@ export interface MachineAccessPersistencePort {
     workspaceId: string;
     serviceAccountId: string;
     label: string;
-    expiresAt: Date;
+    expiresAt: Date | null;
     createdByUserId: string;
     now: Date;
     limit: number;

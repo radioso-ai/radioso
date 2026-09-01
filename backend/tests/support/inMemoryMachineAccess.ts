@@ -47,7 +47,7 @@ export class InMemoryMachineAccessRepository implements Pick<
       && credential.workspaceId === input.workspaceId
       && credential.ownerUserId === input.ownerUserId
       && credential.revokedAt === null
-      && credential.expiresAt > input.now
+      && (!credential.expiresAt || credential.expiresAt > input.now)
     );
     if (active.length >= input.limit) return null;
     const issued = input.issueSecret();
@@ -300,7 +300,7 @@ export class InMemoryMachineAccessRepository implements Pick<
 
   async relabelCredential(input: InputOf<"relabelCredential">): Promise<ApiCredentialRecord | null> {
     const credential = this.credentials.get(input.id);
-    if (!credential || credential.revokedAt || credential.expiresAt <= new Date()
+    if (!credential || credential.revokedAt || (credential.expiresAt && credential.expiresAt <= new Date())
       || (input.expectedRevision !== undefined && credential.revision !== input.expectedRevision)) return null;
     const updated = { ...credential, label: input.label, updatedAt: new Date(), revision: credential.revision + 1 };
     this.credentials.set(updated.id, updated);
@@ -315,7 +315,7 @@ export class InMemoryMachineAccessRepository implements Pick<
 
   async replaceCredential(input: InputOf<"replaceCredential">): Promise<ApiCredentialRecord | null> {
     const previous = this.credentials.get(input.credentialId);
-    if (!previous || previous.revokedAt || previous.expiresAt <= new Date() || previous.revision !== input.expectedRevision) return null;
+    if (!previous || previous.revokedAt || (previous.expiresAt && previous.expiresAt <= new Date()) || previous.revision !== input.expectedRevision) return null;
     if (previous.serviceAccountId && this.serviceAccounts.get(previous.serviceAccountId)?.status !== "enabled") return null;
     const now = new Date();
     const credentialsBefore = new Map(this.credentials);
@@ -359,7 +359,7 @@ export class InMemoryMachineAccessRepository implements Pick<
   async claimExpiryWarnings(now: Date): Promise<CredentialExpiryWarningClaim[]> {
     const claims: CredentialExpiryWarningClaim[] = [];
     for (const credential of this.credentials.values()) {
-      if (credential.revokedAt || credential.expiresAt <= now) continue;
+      if (credential.revokedAt || !credential.expiresAt || credential.expiresAt <= now) continue;
       const daysRemaining = (credential.expiresAt.getTime() - now.getTime()) / (24 * 60 * 60 * 1_000);
       for (const thresholdDays of [30, 7, 1] as const) {
         const key = `${credential.id}:${thresholdDays}`;
@@ -391,7 +391,7 @@ export class InMemoryMachineAccessRepository implements Pick<
     return [...this.credentials.values()].filter((credential) =>
       credential.serviceAccountId === serviceAccountId
       && credential.revokedAt === null
-      && credential.expiresAt > now
+      && (!credential.expiresAt || credential.expiresAt > now)
     );
   }
 
@@ -431,7 +431,7 @@ export class InMemoryMachineAccessRepository implements Pick<
     label: string;
     tokenPrefix: string;
     tokenHash: string;
-    expiresAt: Date;
+    expiresAt: Date | null;
     createdByUserId: string;
   }): ApiCredentialRecord {
     return {

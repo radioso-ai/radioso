@@ -31,6 +31,7 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=mcp-channel`);
 
   await expect(page.getByRole("heading", { name: "MCP converse credential" })).toBeVisible();
+  await expect(page.getByText("Connect your client")).toHaveCount(0);
   await expect(page.getByText("Acme pilot")).toBeVisible();
 
   await page.getByLabel("Credential label").fill("Customer handoff");

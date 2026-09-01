@@ -12081,13 +12081,9 @@ paths:
                     type: object
                     properties:
                       personalTokenLifetimeDays:
-                        type: number
-                        enum:
-                          - 90
+                        type: "null"
                       serviceCredentialLifetimeDays:
-                        type: number
-                        enum:
-                          - 365
+                        type: "null"
                     required:
                       - personalTokenLifetimeDays
                       - serviceCredentialLifetimeDays
@@ -12258,7 +12254,9 @@ paths:
                           type: string
                           format: date-time
                         expiresAt:
-                          type: string
+                          type:
+                            - string
+                            - "null"
                           format: date-time
                         status:
                           type: string
@@ -12407,12 +12405,13 @@ paths:
                   type: string
                   enum: *a53
                 expiresAt:
-                  type: string
+                  type:
+                    - string
+                    - "null"
                   format: date-time
               required:
                 - label
                 - roleCeiling
-                - expiresAt
       responses:
         "201":
           description: One-time personal-token secret
@@ -12458,7 +12457,9 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type: string
+                        type:
+                          - string
+                          - "null"
                         format: date-time
                       status:
                         type: string
@@ -12643,7 +12644,9 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type: string
+                    type:
+                      - string
+                      - "null"
                     format: date-time
                   status:
                     type: string
@@ -12821,7 +12824,9 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type: string
+                        type:
+                          - string
+                          - "null"
                         format: date-time
                       status:
                         type: string
@@ -12989,7 +12994,9 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type: string
+                    type:
+                      - string
+                      - "null"
                     format: date-time
                   status:
                     type: string
@@ -13269,11 +13276,12 @@ paths:
                       minLength: 1
                       maxLength: 80
                     expiresAt:
-                      type: string
+                      type:
+                        - string
+                        - "null"
                       format: date-time
                   required:
                     - label
-                    - expiresAt
               required:
                 - displayName
                 - role
@@ -13382,7 +13390,9 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type: string
+                        type:
+                          - string
+                          - "null"
                         format: date-time
                       status:
                         type: string
@@ -14217,7 +14227,9 @@ paths:
                           type: string
                           format: date-time
                         expiresAt:
-                          type: string
+                          type:
+                            - string
+                            - "null"
                           format: date-time
                         status:
                           type: string
@@ -14364,11 +14376,12 @@ paths:
                   minLength: 1
                   maxLength: 80
                 expiresAt:
-                  type: string
+                  type:
+                    - string
+                    - "null"
                   format: date-time
               required:
                 - label
-                - expiresAt
       responses:
         "201":
           description: One-time service credential secret
@@ -14414,7 +14427,9 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type: string
+                        type:
+                          - string
+                          - "null"
                         format: date-time
                       status:
                         type: string
@@ -14605,7 +14620,9 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type: string
+                    type:
+                      - string
+                      - "null"
                     format: date-time
                   status:
                     type: string
@@ -14789,7 +14806,9 @@ paths:
                         type: string
                         format: date-time
                       expiresAt:
-                        type: string
+                        type:
+                          - string
+                          - "null"
                         format: date-time
                       status:
                         type: string
@@ -14963,7 +14982,9 @@ paths:
                     type: string
                     format: date-time
                   expiresAt:
-                    type: string
+                    type:
+                      - string
+                      - "null"
                     format: date-time
                   status:
                     type: string

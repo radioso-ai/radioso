@@ -236,7 +236,8 @@ pane instead.
 
 Ray reads the same queue. Ask it what is waiting and it lists the open
 approvals, handoffs, and commented negative feedback longest wait first, each
-row carrying the decision or turn behind it; ask it to close a reviewed turn and
+row carrying the decision or turn behind it and the number of rows each source
+matched; ask it to close a reviewed turn and
 it writes the triage state and resolution reason against the version it read,
 reporting a conflict when another operator moved the row first. It also drafts a
 reply by replaying the agent over the conversation's own transcript, and hands

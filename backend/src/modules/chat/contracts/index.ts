@@ -19,7 +19,6 @@ export type {
 export type { ChatGateway } from "./chatGateway.js";
 export type { AssistantTurnOutcome } from "../services/assistantTurnOutcomeTypes.js";
 export type { WorkbenchReplayResult } from "../services/workbenchReplayRunner.js";
-export type { ChatReplyDraftInput, ChatReplyDraftResult, ReplyDraftAgentConfigPort, ReplyDraftConversationReadPort } from "../services/replyDraftRunner.js";
 export type { PublicConversationEventBus } from "../services/publicConversationEventBus.js";
 export { ASSISTANT_TURN_OUTCOME, SKILL_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
 export type { TurnDeclineReason } from "../services/assistantTurnOutcomeTypes.js";

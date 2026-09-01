@@ -1850,6 +1850,7 @@ export const createTestDependencies = (overrides: {
     listLowQualityTurns: async () => ({ items: [], total: 0 }),
   };
   const qualityTriageService = {
+    triageStates: ["open", "acknowledged", "resolved", "dismissed"] as [string, ...string[]],
     resolutionReasons: ["knowledge_gap", "retrieval_issue", "agent_behavior", "platform_bug", "expected_behavior", "out_of_scope", "invalid_feedback", "other"] as [string, ...string[]],
     setTriageState: async () => ({ kind: "not_found" as const }),
   };

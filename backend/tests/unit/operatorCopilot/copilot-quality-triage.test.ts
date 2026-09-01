@@ -27,6 +27,7 @@ const dependencies = (
   setTriageState: CopilotQualityTriagePort["setTriageState"] = vi.fn(async () => ({ kind: "updated" as const, record: record() })),
 ): QualityTriageCopilotToolDependencies => ({
   qualityTriageService: {
+    triageStates: ["open", "acknowledged", "resolved", "dismissed"] as const,
     resolutionReasons: ["knowledge_gap", "retrieval_issue", "expected_behavior"] as const,
     setTriageState,
   },
@@ -117,6 +118,27 @@ describe("set_triage_state", () => {
       state: "resolved",
       expectedVersion: 1,
       resolution: { reason: "made_up_reason" },
+    }).success).toBe(false);
+  });
+
+  it("requires the observed version, because an optional fence is no fence", () => {
+    const [descriptor] = createQualityTriageCopilotTools(dependencies());
+
+    // Made optional with a zero default, every stale transition would win against an untriaged row
+    // and no other test in this file would notice.
+    expect(descriptor!.inputSchema.safeParse({
+      assistantMessageId: MESSAGE_ID,
+      state: "acknowledged",
+    }).success).toBe(false);
+  });
+
+  it("takes the state vocabulary from the quality module rather than keeping its own copy", () => {
+    const [descriptor] = createQualityTriageCopilotTools(dependencies());
+
+    expect(descriptor!.inputSchema.safeParse({
+      assistantMessageId: MESSAGE_ID,
+      state: "escalated",
+      expectedVersion: 1,
     }).success).toBe(false);
   });
 

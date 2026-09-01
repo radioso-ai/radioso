@@ -1,3 +1,4 @@
+import type { UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "./expensiveOperation.js";
 
 export interface CopilotReplyDraftInput {
@@ -15,6 +16,7 @@ export interface CopilotReplyDraftResult {
   draft: string;
   citations: ReadonlyArray<unknown>;
   groundedOnMessageCount: number;
+  groundedOnSummary: boolean;
 }
 
 export interface CopilotReplyDraftPort {
@@ -38,9 +40,12 @@ export interface CopilotChatReplyDraftPort {
     draft: string;
     citations: ReadonlyArray<unknown>;
     groundedOnMessageCount: number;
+    groundedOnSummary: boolean;
   }>;
 }
 
 export interface ReplyDraftProbeServiceDependencies extends CopilotExpensiveOperationGuardDependencies {
   chatReplyDraft: CopilotChatReplyDraftPort;
+  /** A draft costs the workspace an answer, so it is reserved by the service that spends it. */
+  usageLimitPolicy: Pick<UsageLimitPolicy, "reserveAnswer">;
 }

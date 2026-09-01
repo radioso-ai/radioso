@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createNeedsAttentionCopilotTools } from "../../../src/modules/operatorCopilot/tools/triage.js";
-import type { NeedsAttentionCopilotToolDependencies } from "../../../src/modules/operatorCopilot/tools/triage.js";
+import { createNeedsAttentionCopilotTools } from "../../../src/modules/operatorCopilot/tools/needsAttention.js";
+import type { NeedsAttentionCopilotToolDependencies } from "../../../src/modules/operatorCopilot/tools/needsAttention.js";
 
 const ALL_PERMISSIONS = new Set([
   "workspace.history.read",
@@ -159,6 +159,65 @@ describe("needs_attention", () => {
       { source: "quality", status: "unauthorized", total: null, included: 0 },
       { source: "handoffs", status: "ok", total: 1, included: 1 },
     ]));
+  });
+
+  it("reports a source that threw as failed, so a broken read never reads as a clear queue", async () => {
+    const deps = populated({
+      pendingApprovals: { listPending: vi.fn(async () => { throw new Error("connection reset"); }) },
+    });
+
+    const result = await list(deps);
+
+    expect(result.items.map((item) => item.kind)).toEqual(["handoff", "negative_feedback"]);
+    expect(result.sources).toContainEqual({ source: "approvals", status: "failed", total: null, included: 0 });
+  });
+
+  it("drops a source whose permission is revoked between the read and the merge", async () => {
+    // Sources are read concurrently and take different amounts of time. Without the second check a
+    // revocation during the slowest read still emits its rows.
+    let approvalChecks = 0;
+    const invocation = {
+      ...context(),
+      currentAuthorization: {
+        hasAllPermissions: async ({ requiredPermissions }: { requiredPermissions: readonly string[] }) => {
+          if (!requiredPermissions.includes("workspace.conversation.takeover")) return true;
+          approvalChecks += 1;
+          return approvalChecks === 1;
+        },
+      },
+    };
+
+    const result = await list(populated(), {}, invocation);
+
+    expect(approvalChecks).toBe(2);
+    expect(result.items.map((item) => item.kind)).toEqual(["handoff", "negative_feedback"]);
+    expect(result.sources).toContainEqual({ source: "approvals", status: "unauthorized", total: null, included: 0 });
+  });
+
+  it("reports how long each row has been waiting, and who holds a claimed handoff", async () => {
+    const claimed = conversation({
+      ownership: {
+        state: "human_owned",
+        ownerDisplayName: "Ada",
+        reason: "escalation",
+        takenOverAt: "2026-08-26T07:30:00.000Z",
+        updatedAt: "2026-08-26T07:00:00.000Z",
+      },
+    });
+    const result = await list(populated({
+      chatHistoryService: {
+        getConversation: vi.fn(),
+        getConversationTurn: vi.fn(),
+        listConversations: vi.fn(async () => ({ conversations: [claimed], total: 1 })),
+      },
+    }), { kinds: ["handoff"] });
+
+    expect(result.items[0]).toMatchObject({
+      takenOverAt: "2026-08-26T07:30:00.000Z",
+      ownerDisplayName: "Ada",
+    });
+    expect(result.items[0]!.waitingMinutes).toEqual(expect.any(Number));
+    expect(result.items[0]!.waitingMinutes as number).toBeGreaterThanOrEqual(0);
   });
 
   it("keeps the matched count honest when the page bound drops rows", async () => {

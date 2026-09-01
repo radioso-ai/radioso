@@ -55,7 +55,7 @@ export interface InternalAgentExternalSkillsConfig {
 
 /** The stored rows this projection reads, named structurally so this module keeps its repository ignorance. */
 export interface InternalAgentExternalSkillSources {
-  readonly connections: ReadonlyArray<InternalMcpConnectionConfig extends never ? never : {
+  readonly connections: ReadonlyArray<{
     id: string;
     displayName: string;
     serverUrl: string;

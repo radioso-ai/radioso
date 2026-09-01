@@ -242,6 +242,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       agentConfigOverride: {
@@ -324,6 +325,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Kui kaua tagasimakse aega võtab?",
@@ -385,6 +387,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
@@ -429,6 +432,7 @@ describe("WorkbenchReplayRunner", () => {
     await runner.run({
       workspaceId: "ws-1",
       accountId: "acct-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long will it take?",
@@ -484,6 +488,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
@@ -568,6 +573,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
@@ -612,6 +618,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "¿Cuánto tardan los reembolsos?",
@@ -701,6 +708,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "what's your tone?",
@@ -780,6 +788,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "Where is order 123?",
@@ -879,6 +888,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "Where is order 123 now?",
@@ -939,6 +949,7 @@ describe("WorkbenchReplayRunner", () => {
 
     await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(boundAgent),
       query: "How long do refunds take?",
@@ -962,6 +973,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please contact me at alex@example.com",
@@ -1006,6 +1018,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How does yearly billing save?",
@@ -1067,6 +1080,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "I need help",
@@ -1117,6 +1131,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Please contact me",
@@ -1166,6 +1181,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "Here's my email",
@@ -1208,6 +1224,7 @@ describe("WorkbenchReplayRunner", () => {
 
     const result = await runner.run({
       workspaceId: "ws-1",
+      executionMode: "live" as const,
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "What is the refund policy?",

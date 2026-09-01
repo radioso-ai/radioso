@@ -1,4 +1,5 @@
-import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { ChatCitation } from "../contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { WorkbenchReplayInput, WorkbenchReplayResult } from "./workbenchReplayRunner.js";
@@ -9,6 +10,15 @@ import type { WorkbenchReplayInput, WorkbenchReplayResult } from "./workbenchRep
  */
 export interface ReplyDraftAgentConfigPort {
   resolveConfig(workspaceId: string, agentId: string): Promise<WorkbenchReplayInput["baselineAgentConfig"] | null>;
+}
+
+/**
+ * The rolling summary of everything before the loaded window. A live turn injects it, so a draft
+ * composed without it answers from a shorter memory than the agent has and can contradict a
+ * commitment the conversation already made.
+ */
+export interface ReplyDraftSummaryReadPort {
+  load(input: { sessionId: string }): Promise<{ summary: string } | null>;
 }
 
 /** Only the identity a draft needs: which workspace owns the conversation, and which agent speaks in it. */
@@ -24,6 +34,7 @@ export interface ReplyDraftRunnerOptions {
   readonly conversations: ReplyDraftConversationReadPort;
   readonly messages: Pick<MessageRepositoryPort, "listRecentByConversationId">;
   readonly agentConfig: ReplyDraftAgentConfigPort;
+  readonly summaries: ReplyDraftSummaryReadPort;
   readonly replay: { run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> };
 }
 
@@ -38,9 +49,11 @@ export interface ChatReplyDraftInput {
 export interface ChatReplyDraftResult {
   readonly agentId: string;
   readonly draft: string;
-  readonly citations: ReadonlyArray<unknown>;
+  readonly citations: ReadonlyArray<ChatCitation>;
   /** Messages the draft was composed over, so a thin transcript is visible as a thin transcript. */
   readonly groundedOnMessageCount: number;
+  /** Whether the rolling summary of the turns before that window was available to the draft. */
+  readonly groundedOnSummary: boolean;
 }
 
 /**
@@ -78,7 +91,11 @@ export class ReplyDraftRunner {
       throw badRequest("The conversation's last turn is not a waiting customer message");
     }
 
-    const baselineAgentConfig = await this.options.agentConfig.resolveConfig(input.workspaceId, agentId);
+    const [baselineAgentConfig, summary] = await Promise.all([
+      this.options.agentConfig.resolveConfig(input.workspaceId, agentId),
+      // Routine state is keyed by conversation id, and so is the summary.
+      this.options.summaries.load({ sessionId: input.conversationId }),
+    ]);
     if (!baselineAgentConfig) {
       throw notFound("Agent not found");
     }
@@ -88,8 +105,14 @@ export class ReplyDraftRunner {
       accountId: input.accountId ?? null,
       sourceAgentId: agentId,
       baselineAgentConfig,
+      // A draft is composed, read, and edited before anyone sends it, so the turn that composes it
+      // must not act. Safe test leaves the answering skill running and suppresses every skill that
+      // reaches outside — a notify, a webhook, a contact send, an external MCP tool — which would
+      // otherwise fire against a real customer's conversation on the operator's behalf.
+      executionMode: "safe_test",
       query: waiting.content,
-      history: transcript.slice(0, -1) as MessageRecord[],
+      history: transcript.slice(0, -1),
+      conversationSummary: summary?.summary ?? null,
       usageAttribution: input.usageAttribution,
     });
 
@@ -98,6 +121,7 @@ export class ReplyDraftRunner {
       draft: result.answer,
       citations: result.citations ?? [],
       groundedOnMessageCount: transcript.length,
+      groundedOnSummary: summary !== null,
     };
   }
 }

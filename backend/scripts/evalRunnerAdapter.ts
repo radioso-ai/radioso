@@ -58,6 +58,7 @@ export const buildReplayInput = (
   return {
     workspaceId: context.workspaceId,
     accountId: context.accountId ?? null,
+    executionMode: "live" as const,
     sourceAgentId: context.agentId,
     baselineAgentConfig: context.baselineAgentConfig,
     agentConfigOverride: evalCase.agentConfigOverride,

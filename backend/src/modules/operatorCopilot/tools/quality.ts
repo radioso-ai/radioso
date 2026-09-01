@@ -101,9 +101,11 @@ export type CopilotQualityTriageResult =
 
 export interface CopilotQualityTriagePort {
   /**
-   * The resolution vocabulary, owned by Quality and carried across the boundary so the catalog
-   * neither keeps its own copy of the reasons nor restates which of them a state accepts.
+   * The triage vocabulary, owned by Quality and carried across the boundary so the catalog keeps
+   * no copy of either list and never restates which reason a state accepts. A fifth state or an
+   * eighth reason reaches the tool by being added once, in the module that defines it.
    */
+  readonly triageStates: readonly [string, ...string[]];
   readonly resolutionReasons: readonly [string, ...string[]];
   setTriageState(workspaceId: string, input: {
     assistantMessageId: string;
@@ -117,8 +119,6 @@ export interface CopilotQualityTriagePort {
 export interface QualityTriageCopilotToolDependencies {
   readonly qualityTriageService: CopilotQualityTriagePort;
 }
-
-const TRIAGE_STATES = ["open", "acknowledged", "resolved", "dismissed"] as const;
 
 const setTriageStateDescription = "Record where an assistant turn stands in operator triage: open, acknowledged, resolved, or dismissed, with a resolution reason on a terminal state. Pass the triage version the turn was read at — needs_attention and quality_signals both report it — and a competing operator's change comes back as a conflict with the current record instead of overwriting them. This changes nothing a customer sees.";
 
@@ -135,7 +135,7 @@ export const createQualityTriageCopilotTools = (
 ): ReadonlyArray<CopilotToolDescriptor> => {
   const inputSchema = z.object({
     assistantMessageId: idSchema,
-    state: z.enum(TRIAGE_STATES),
+    state: z.enum(deps.qualityTriageService.triageStates),
     /** The fence: the version the row was read at, so a stale transition loses rather than wins. */
     expectedVersion: z.number().int().min(0),
     resolution: z.object({

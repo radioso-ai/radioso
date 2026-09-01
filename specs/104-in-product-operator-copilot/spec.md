@@ -549,10 +549,17 @@ Open clarifications (non-blocking; default answers stated):
   Resolution validity MUST be decided by the quality module's own rules rather
   than restated in the catalog.
 - **FR-025**: The catalog MUST expose `draft_reply` as a `probe` that composes a
-  suggested operator reply grounded in the live conversation's own transcript
-  and the agent's current configuration. It MUST persist nothing — no message,
-  no conversation, no proposal — and MUST return the draft together with a
-  dashboard link to the conversation. Sending a message to a customer, taking a
+  suggested operator reply grounded in the live conversation's own transcript,
+  the rolling summary of the turns before it, and the agent's current
+  configuration. It MUST persist nothing — no message, no conversation, no
+  proposal — and it MUST NOT act: the drafting turn runs with the execution mode
+  that suppresses every skill reaching outside the turn, so composing a draft
+  cannot send a notification, call a webhook, or invoke an external tool. A
+  replayed turn's execution mode MUST be stated by its caller rather than
+  defaulted, because a turn that leaves it unstated acts. The draft costs a real
+  generation, so it MUST reserve the workspace answer allowance it spends. The
+  result MUST return the draft together with a dashboard link to the
+  conversation and MUST report whether the summary was available. Sending a message to a customer, taking a
   conversation over, handing it back, transferring its ownership, forking it,
   and resolving a pending decision MUST be never-list entries that return the
   boundary reason and a deep link. A reply is not a proposal target: a

@@ -532,7 +532,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
           AND credential.account_id = workspace.account_id
           AND credential.expires_at IS NOT NULL
           AND credential.expires_at > ${now}
-          AND credential.expires_at <= ${now} + make_interval(days => threshold.threshold_days)
+          AND credential.expires_at <= (${now}::timestamptz + make_interval(days => threshold.threshold_days))
           AND (
             (
               credential.kind = 'personal'

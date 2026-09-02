@@ -90,7 +90,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
     inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
       name: "routine_definition",
-      description: "List an agent's routines or read one routine in portable Markdown form.",
+      description: "List an agent's routines, or read one routine: its wording as portable Markdown, plus the stable ids of every step, ending, and information field an edit can address.",
       inputSchema: routineDefinitionInputSchema,
       outputSchema: routineDefinitionOutputSchema,
       invoke: async ({ agentId, routineId }) => {
@@ -131,7 +131,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
     inputSchema: validateRoutineInputSchema, outputSchema: validateRoutineOutputSchema,
     createTool: (context) => ({
       name: "validate_routine",
-      description: "Check one routine for structural problems and report each diagnostic.",
+      description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic.",
       inputSchema: validateRoutineInputSchema,
       outputSchema: validateRoutineOutputSchema,
       invoke: async ({ agentId, routineId }) => {
@@ -351,7 +351,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine",
-        description: "Draft a new routine proposal for operator review. It does not change configuration.",
+      description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, intent, evidenceIds }) => {
@@ -395,7 +395,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       inputSchema: routineEditInputSchema, outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine_edit",
-        description: "Propose an edit to an existing routine's wording, name, or trigger for operator review. It does not change configuration.",
+      description: "Propose an edit to an existing routine's wording, name, or trigger. `changes` takes at least one of: `name` (string); `activation` ({triggerDescription?, priority?, reentryMode?}); `steps` ([{stableStepId, instruction}]); `terminals` ([{stableStepId, instruction}], an ending); `slots` ([{key, description?, required?}], an information field). Example: {\"steps\":[{\"stableStepId\":\"ask_order_number\",\"instruction\":\"Ask for the order number and say why we need it.\"}]}. Every id comes from the `editable` block `routine_definition` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. Applying an edit to a published routine revises it into a draft; it does not change what is serving until the draft is published.",
         inputSchema: routineEditInputSchema,
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, routineId, changes, rationale, evidenceIds }) => {
@@ -418,7 +418,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
       inputSchema: routineLifecycleInputSchema, outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine_lifecycle",
-        description: "Propose publishing, archiving, or restoring a routine for operator review. It does not change configuration.",
+      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. This is the only tool that changes what an agent is actually running, so it is proposed separately from editing a routine's content.",
         inputSchema: routineLifecycleInputSchema,
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, routineId, action, rationale, evidenceIds }) => {

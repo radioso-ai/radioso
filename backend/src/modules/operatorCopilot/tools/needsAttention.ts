@@ -311,12 +311,18 @@ const readFeedbackQueue = async (
     activeNegativeFeedbackOnly: true,
     sort: "negative_feedback_updated_at" as const,
   };
-  const newest = await deps.qualitySignalsService.listLowQualityTurns(workspaceId, { ...query, limit });
-  const feedback = newest.total > limit
-    ? await deps.qualitySignalsService.listLowQualityTurns(workspaceId, { ...query, limit, offset: newest.total - limit })
-    : newest;
+  // A one-row probe rather than a full page: the first call exists to learn `total`, and a page it
+  // may be about to discard still costs the comment and verification-source joins behind each row.
+  const probe = await deps.qualitySignalsService.listLowQualityTurns(workspaceId, { ...query, limit: 1 });
+  const feedback = probe.total <= 1
+    ? probe
+    : await deps.qualitySignalsService.listLowQualityTurns(workspaceId, {
+      ...query,
+      limit,
+      offset: Math.max(0, probe.total - limit),
+    });
   return {
-    total: newest.total,
+    total: probe.total,
     items: feedback.items
       .slice()
       .sort((left, right) => waitingSince(left).localeCompare(waitingSince(right)))

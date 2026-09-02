@@ -162,9 +162,10 @@ needs the conversation to have a customer message at all.
 
 If the conversation is part-way through a routine, the draft resumes from where
 it stands rather than starting over, and says whether it did. A conversation
-paused on a pending approval is the exception: there the agent is waiting on your
-decision rather than the customer waiting on a reply, so Ray asks you to decide
-it first.
+paused on a pending approval is the exception: the agent itself would not take a
+routine step while it waits on your decision, so neither does the draft. And a
+message you have already answered by hand has nothing outstanding to draft for,
+so Ray says so instead of handing you a duplicate.
 
 The drafting turn is held to the same rule as a test turn: it answers, and it
 does nothing else. Every skill that reaches outside the conversation — a

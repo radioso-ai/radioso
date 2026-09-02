@@ -242,7 +242,8 @@ describe("needs_attention", () => {
 
     const result = await list(deps, { kinds: ["negative_feedback"], limit: 25 });
 
-    expect(listLowQualityTurns).toHaveBeenNthCalledWith(1, "workspace-1", expect.objectContaining({ limit: 25 }));
+    // The first call is a one-row probe for `total`; a full page would pay for rows it discards.
+    expect(listLowQualityTurns).toHaveBeenNthCalledWith(1, "workspace-1", expect.objectContaining({ limit: 1 }));
     expect(listLowQualityTurns).toHaveBeenNthCalledWith(2, "workspace-1", expect.objectContaining({ limit: 25, offset: 275 }));
     // The matched count still describes the whole population, not the page that was read.
     expect(result.sources).toContainEqual({ source: "quality", status: "ok", total: 300, included: 1 });

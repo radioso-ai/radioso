@@ -240,11 +240,11 @@ export const copilotEvalCases: CopilotEvalCase[] = [
   {
     id: "member-role-triage",
     name: "A member gets the digest without the tools their role does not grant",
-    description: "Guards the per-source gating decision: the digest must survive a role that holds no quality permission.",
+    description: "Guards the per-source gating decision: the digest must survive a role that holds no quality permission. The message names the digest, because 'anything waiting on me?' is now a fair description of needs_attention too and the subject here is gating, not which reader wins a phrasing.",
     tags: ["permissions", "capability_limits"],
     permissions: MEMBER,
     pageContext: page("activity"),
-    message: "Anything waiting on me?",
+    message: "Give me the full workspace digest — everything across the workspace, failures and backlog included, not just my queue.",
     plan: [{ tool: "workspace_triage", input: {} }],
     finalMessage: "One handoff is waiting.",
     assertions: [

@@ -12,12 +12,18 @@ const getServerOrigin = () => ''
 export const useDashboardOrigin = (): string =>
   useSyncExternalStore(subscribeBrowserOrigin, getBrowserOrigin, getServerOrigin)
 
+export interface ResolvedRuntimeConfig extends RuntimeConfig {
+  /** True once the deployment has answered; its values are then authoritative even when empty. */
+  isResolved: boolean
+}
+
 /**
  * Deployment values the server resolves at request time. They are read once per mount;
- * a failed read leaves the empty config, which every consumer treats as "not configured".
+ * a failed read leaves the empty config unresolved, so consumers may fall back to
+ * build-time defaults only in that case.
  */
-export function useRuntimeConfig(): RuntimeConfig {
-  const [config, setConfig] = useState<RuntimeConfig>(EMPTY_RUNTIME_CONFIG)
+export function useRuntimeConfig(): ResolvedRuntimeConfig {
+  const [config, setConfig] = useState<ResolvedRuntimeConfig>({ ...EMPTY_RUNTIME_CONFIG, isResolved: false })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -25,7 +31,7 @@ export function useRuntimeConfig(): RuntimeConfig {
     void fetch('/runtime-config', { cache: 'no-store', signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((body: unknown) => {
-        if (body !== null) setConfig(parseRuntimeConfig(body))
+        if (body !== null) setConfig({ ...parseRuntimeConfig(body), isResolved: true })
       })
       .catch(() => {})
 

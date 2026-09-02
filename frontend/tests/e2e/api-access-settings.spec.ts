@@ -82,7 +82,7 @@ test('member creates and revokes a personal token without touching service accou
 
   await page.goto(`/w/${workspaceKey}/settings?tab=api-access`)
   await expect(page.getByRole('heading', { name: 'API access', level: 1 })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Personal tokens' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Personal tokens', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Service accounts' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Members’ personal tokens' })).toHaveCount(0)
 
@@ -136,7 +136,7 @@ test('the old service accounts deep link lands on the API access tab', async ({ 
   await page.goto(`/w/${workspaceKey}/settings?tab=service-accounts`)
 
   await expect(page.getByRole('heading', { name: 'API access', level: 1 })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Personal tokens' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Personal tokens', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Service accounts' })).toBeVisible()
 })
 

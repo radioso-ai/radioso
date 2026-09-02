@@ -61,10 +61,12 @@ export const resolveMcpChannelSetup = ({
 export const useMcpChannelSetup = (): McpChannelSetup => {
   const dashboardOrigin = useDashboardOrigin()
   const runtimeConfig = useRuntimeConfig()
-  // The deployment's request-time value wins; the build-time one carries the local default.
+  // Once the deployment answers, its value is authoritative — an empty answer means
+  // "not enabled here". The build-time default only covers the pre-resolve window
+  // and deployments without the runtime-config route.
   return resolveMcpChannelSetup({
     dashboardOrigin,
-    mcpUrl: runtimeConfig.mcpUrl || BUILD_TIME_MCP_URL,
+    mcpUrl: runtimeConfig.isResolved ? runtimeConfig.mcpUrl : (runtimeConfig.mcpUrl || BUILD_TIME_MCP_URL),
   })
 }
 

@@ -41,12 +41,14 @@ test("the MCP card offers only the deployment guide when no MCP server is config
 
   const card = page.locator("#mcp-channel");
   await expect(card.getByRole("heading", { name: "MCP", exact: true, level: 3 })).toBeVisible();
-  await expect(card.getByText("Not enabled")).toBeVisible();
+  await expect(card.getByText("Not enabled", { exact: true })).toBeVisible();
   await expect(card.getByText("Not enabled on this deployment.")).toBeVisible();
   await expect(card.getByRole("link", { name: /Deployment setup guide/ })).toBeVisible();
 
   await expect(card.getByRole("button", { name: "Connect a client" })).toHaveCount(0);
-  await expect(card.getByText("MCP server")).toHaveCount(0);
+  // The neighbouring skill-target Connections card legitimately says "MCP server",
+  // so assert on this card's own copy-field control instead of the text.
+  await expect(card.getByRole("button", { name: "Copy MCP server URL" })).toHaveCount(0);
   await expect(card.getByText("Connected clients")).toHaveCount(0);
 });
 

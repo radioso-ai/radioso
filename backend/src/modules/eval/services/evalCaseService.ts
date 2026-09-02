@@ -1,4 +1,5 @@
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type {
   EvalAssertion,
   EvalCase,
@@ -15,6 +16,8 @@ export interface CreateEvalCaseInput {
   // in the eval editor. Running a case with zero assertions produces a
   // `recorded` run (output captured, no verdict).
   assertions?: EvalAssertion[];
+  /** Safe by default: a case must explicitly opt into real external skill effects. */
+  executionMode?: TurnExecutionMode;
 }
 
 const validateAssertion = (assertion: EvalAssertion): void => {
@@ -91,6 +94,7 @@ export class EvalCaseService {
       snapshotId: input.snapshotId,
       name: input.name,
       assertions,
+      executionMode: input.executionMode ?? "safe_test",
     });
   }
 
@@ -116,6 +120,21 @@ export class EvalCaseService {
       throw notFound("Eval case not found");
     }
     return this.repository.updateCaseName(workspaceId, caseId, trimmed);
+  }
+
+  async setExecutionMode(
+    workspaceId: string,
+    caseId: string,
+    executionMode: TurnExecutionMode,
+  ): Promise<EvalCase> {
+    const existing = await this.repository.findCase(workspaceId, caseId);
+    if (!existing) {
+      throw notFound("Eval case not found");
+    }
+    if (existing.executionMode === executionMode) {
+      return existing;
+    }
+    return this.repository.updateCaseExecutionMode(workspaceId, caseId, executionMode);
   }
 
   async list(workspaceId: string): Promise<EvalCase[]> {

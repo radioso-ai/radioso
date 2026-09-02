@@ -40,6 +40,24 @@ describe("eval Workbench replay contract", () => {
       .send({ snapshotId: snapshot.body.id, name: "Delete from eval" })
       .expect(201);
 
+    expect(created.body.executionMode).toBe("safe_test");
+
+    const live = await request(app)
+      .put(`/api/v1/evals/cases/${created.body.id}/execution-mode`)
+      .set(headers)
+      .send({ executionMode: "live" })
+      .expect(200);
+
+    expect(live.body).toMatchObject({ executionMode: "live", status: "pending", lastRunId: null });
+    expect(repositories.auditEventRepository.items).toContainEqual(
+      expect.objectContaining({
+        workspaceId: session.workspaceId,
+        eventType: "eval.case.execution_mode.updated",
+        eventStatus: "success",
+        metadata: { caseId: created.body.id, executionMode: "live" },
+      }),
+    );
+
     await request(app)
       .delete(`/api/v1/evals/cases/${created.body.id}`)
       .set(headers)

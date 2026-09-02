@@ -119,6 +119,7 @@ export class InMemoryEvalRepository implements EvalRepositoryPort, EvalMessageCa
       snapshotId: snapshot.id,
       name: input.caseName,
       assertions: [],
+      executionMode: "safe_test",
       status: "pending",
       lastRunId: null,
       createdAt: now,
@@ -169,6 +170,7 @@ export class InMemoryEvalRepository implements EvalRepositoryPort, EvalMessageCa
       snapshotId: input.snapshotId,
       name: input.name,
       assertions: input.assertions,
+      executionMode: input.executionMode ?? "safe_test",
       status: "pending",
       lastRunId: null,
       createdAt: now,
@@ -257,6 +259,23 @@ export class InMemoryEvalRepository implements EvalRepositoryPort, EvalMessageCa
   async updateCaseName(workspaceId: string, caseId: string, name: string): Promise<EvalCase> {
     const existing = this.requireCase(workspaceId, caseId);
     const updated: EvalCase = { ...existing, name, updatedAt: new Date().toISOString() };
+    this.cases.set(caseId, updated);
+    return updated;
+  }
+
+  async updateCaseExecutionMode(
+    workspaceId: string,
+    caseId: string,
+    executionMode: EvalCase["executionMode"],
+  ): Promise<EvalCase> {
+    const existing = this.requireCase(workspaceId, caseId);
+    const updated: EvalCase = {
+      ...existing,
+      executionMode,
+      status: "pending",
+      lastRunId: null,
+      updatedAt: new Date().toISOString(),
+    };
     this.cases.set(caseId, updated);
     return updated;
   }

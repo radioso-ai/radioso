@@ -14,8 +14,22 @@ const createApp = () => {
   const getById = vi.fn();
   const rename = vi.fn();
   const replaceAssertions = vi.fn();
+  const setExecutionMode = vi.fn().mockResolvedValue({
+    id: "33333333-3333-4333-8333-333333333333",
+    workspaceId: WORKSPACE_ID,
+    snapshotId: "44444444-4444-4444-8444-444444444444",
+    name: "External effect check",
+    assertions: [],
+    executionMode: "live",
+    status: "pending",
+    lastRunId: null,
+    createdAt: "2026-09-02T10:00:00.000Z",
+    updatedAt: "2026-09-02T10:00:00.000Z",
+  });
   const deleteCase = vi.fn();
   const getWithRuns = vi.fn();
+  const auditRecord = vi.fn().mockResolvedValue(undefined);
+  const logger = { warn: vi.fn() };
   const dependencies = {
     env: {
       NODE_ENV: "test",
@@ -34,11 +48,12 @@ const createApp = () => {
     workspaceSessionService: {},
     snapshotService: { getById },
     messageCaseService: {},
-    caseService: { rename, replaceAssertions, delete: deleteCase, getWithRuns },
+    caseService: { rename, replaceAssertions, setExecutionMode, delete: deleteCase, getWithRuns },
     runService: {},
     suiteService: {},
     abuseControlService: {},
-    auditService: { record: vi.fn().mockResolvedValue(undefined) },
+    auditService: { record: auditRecord },
+    logger,
   } as unknown as EvalRouteDependencies;
   const app = express();
   app.use(express.json());
@@ -49,7 +64,7 @@ const createApp = () => {
       error: { code: payload.code ?? "internal_error", message: payload.message ?? "Internal error" },
     });
   });
-  return { app, getById, rename, replaceAssertions, deleteCase, getWithRuns };
+  return { app, getById, rename, replaceAssertions, setExecutionMode, deleteCase, getWithRuns, auditRecord, logger };
 };
 
 describe("Eval route UUID parameters", () => {
@@ -71,4 +86,36 @@ describe("Eval route UUID parameters", () => {
     await response.expect(400);
     expect(services[service as keyof typeof services]).not.toHaveBeenCalled();
   });
+});
+
+it("returns the saved execution mode when its audit event cannot be recorded", async () => {
+  const services = createApp();
+  services.auditRecord.mockRejectedValueOnce(new Error("audit unavailable"));
+
+  const response = await request(services.app)
+    .put("/api/v1/evals/cases/33333333-3333-4333-8333-333333333333/execution-mode")
+    .set("authorization", "Bearer valid-token")
+    .send({ executionMode: "live" })
+    .expect(200);
+
+  expect(response.body).toMatchObject({ executionMode: "live" });
+  expect(services.setExecutionMode).toHaveBeenCalledWith(
+    WORKSPACE_ID,
+    "33333333-3333-4333-8333-333333333333",
+    "live",
+  );
+  expect(services.logger.warn).toHaveBeenCalledWith(
+    expect.objectContaining({ workspaceId: WORKSPACE_ID, executionMode: "live" }),
+    "Failed to audit Eval case execution-mode update",
+  );
+});
+
+it("rejects a bearer credential that tries to confirm live Eval effects", async () => {
+  const services = createApp();
+
+  await request(services.app)
+    .post("/api/v1/evals/cases/33333333-3333-4333-8333-333333333333/runs")
+    .set("authorization", "Bearer valid-token")
+    .send({ allowLiveEffects: true })
+    .expect(403);
 });

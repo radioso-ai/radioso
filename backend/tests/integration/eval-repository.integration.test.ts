@@ -348,6 +348,41 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(renamed.status).toBe(created.status);
   });
 
+  it("defaults cases to safe replay and resets the verdict when live effects are enabled", async () => {
+    const snapshot = await createSnapshot();
+    const created = await repository.createCase({
+      workspaceId,
+      snapshotId: snapshot.id,
+      name: "External effect check",
+      assertions: [],
+    });
+    const recorded = await repository.createRun({
+      workspaceId,
+      snapshotId: snapshot.id,
+      caseId: created.id,
+      mode: "full_assistant",
+      overrides: {} as EvalRunOverrides,
+      resolvedConfig: {} as EvalRunResolvedConfig,
+      observedOutput: { retrievedChunks: [] } as EvalRunObservedOutput,
+      assertionVerdicts: [] as AssertionVerdict[],
+      status: "pass",
+      outcomeReason: null,
+      completedAt: new Date(),
+    });
+    await repository.updateCaseLastRun(workspaceId, created.id, recorded.id, "passing");
+
+    expect(created.executionMode).toBe("safe_test");
+
+    const updated = await repository.updateCaseExecutionMode(workspaceId, created.id, "live");
+
+    expect(updated).toMatchObject({
+      executionMode: "live",
+      status: "pending",
+      lastRunId: null,
+    });
+
+  });
+
   it("deletes a workspace-scoped case and detaches its historical runs", async () => {
     const snapshot = await createSnapshot();
     const created = await repository.createCase({

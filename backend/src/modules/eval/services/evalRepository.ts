@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import { normalizeNullableText } from "../../../shared/domain/nullableText.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import { currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
@@ -102,6 +103,11 @@ export interface EvalRepositoryPort {
     assertions: EvalAssertion[],
   ): Promise<EvalCase>;
   updateCaseName(workspaceId: string, caseId: string, name: string): Promise<EvalCase>;
+  updateCaseExecutionMode(
+    workspaceId: string,
+    caseId: string,
+    executionMode: TurnExecutionMode,
+  ): Promise<EvalCase>;
   createRun(input: CreateRunInput): Promise<EvalRun>;
   listRunsForCase(workspaceId: string, caseId: string): Promise<EvalRun[]>;
   updateCaseLastRun(
@@ -295,6 +301,26 @@ export class EvalRepository implements EvalRepositoryPort {
       .updateTable("eval_cases")
       .set({
         name,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", caseId)
+      .returning(caseColumns)
+      .executeTakeFirstOrThrow();
+    return mapCase(row as CaseRow);
+  }
+
+  async updateCaseExecutionMode(
+    workspaceId: string,
+    caseId: string,
+    executionMode: TurnExecutionMode,
+  ): Promise<EvalCase> {
+    const row = await this.db
+      .updateTable("eval_cases")
+      .set({
+        execution_mode: executionMode,
+        status: "pending",
+        last_run_id: null,
         updated_at: currentTimestamp(),
       })
       .where("workspace_id", "=", workspaceId)

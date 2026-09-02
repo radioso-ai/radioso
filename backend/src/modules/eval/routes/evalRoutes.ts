@@ -10,10 +10,11 @@ import type { EvalSuiteService } from "../services/evalSuiteService.js";
 import type { EvalSnapshotService } from "../services/evalSnapshotService.js";
 import type { EvalMessageCaseService } from "../services/evalMessageCaseService.js";
 import type { InternalAgentConfig } from "../../agents/public.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import { badRequest, forbidden } from "../../../shared/domain/errors.js";
 import { summarizeSuite } from "../domain/suite.js";
 import { evalAssertionSchema } from "../domain/assertionSchema.js";
 import { workbenchReplayRateLimiter, type WorkbenchReplayRateLimitDependencies } from "./workbenchReplayRateLimit.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 
 const captureSnapshotSchema = z.object({
   conversationId: z.string().uuid(),
@@ -108,16 +109,31 @@ const replaceAssertionsSchema = z.object({
   assertions: assertionsSchema,
 });
 
+const executionModeSchema = z.object({
+  executionMode: z.enum(["safe_test", "live"]),
+});
+
 const caseRunSchema = z.object({
   mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
   overrides: overridesSchema.optional(),
+  allowLiveEffects: z.boolean().optional().default(false),
 });
 
 const batchRunSchema = z.object({
   mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
   // Optional subset to run (cost control). Omit to run the whole workspace.
   caseIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+  allowLiveEffects: z.boolean().optional().default(false),
 });
+
+/** Only an interactive workspace session may authorize a real external effect for this run. */
+const confirmedLiveEffects = (res: { locals: { authMode?: string } }, requested: boolean): boolean => {
+  if (!requested) return false;
+  if (res.locals.authMode !== "session") {
+    throw forbidden("Live Eval effects require an authenticated interactive workspace session");
+  }
+  return true;
+};
 
 const evalCaseParamsSchema = z.object({ id: z.string().uuid() });
 const evalSnapshotParamsSchema = z.object({ id: z.string().uuid() });
@@ -173,6 +189,7 @@ export interface EvalRouteDependencies extends WorkspaceSessionDependencies {
   suiteService: EvalSuiteService;
   abuseControlService: WorkbenchReplayRateLimitDependencies["abuseControlService"];
   auditService: WorkbenchReplayRateLimitDependencies["auditService"];
+  logger: Pick<AppLogger, "warn">;
 }
 
 export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router => {
@@ -331,6 +348,41 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
     },
   );
 
+  router.put(
+    "/cases/:id/execution-mode",
+    workspaceSession,
+    requireQuery,
+    validateBody(executionModeSchema),
+    async (req, res, next) => {
+      try {
+        const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
+        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string | null };
+        const updated = await dependencies.caseService.setExecutionMode(
+          workspaceId,
+          caseId,
+          req.body.executionMode,
+        );
+        try {
+          await dependencies.auditService.record({
+            accountId: accountId ?? null,
+            workspaceId,
+            eventType: "eval.case.execution_mode.updated",
+            eventStatus: "success",
+            metadata: { caseId, executionMode: updated.executionMode },
+          });
+        } catch (error) {
+          dependencies.logger.warn(
+            { err: error, workspaceId, caseId, executionMode: updated.executionMode },
+            "Failed to audit Eval case execution-mode update",
+          );
+        }
+        res.status(200).json(updated);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   router.delete("/cases/:id", workspaceSession, requireQuery, async (req, res, next) => {
     try {
       const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
@@ -376,6 +428,7 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
           accountId: accountId ?? null,
           mode: req.body.mode,
           caseIds: req.body.caseIds,
+          allowLiveEffects: confirmedLiveEffects(res, req.body.allowLiveEffects),
         });
         res.status(200).json(result);
       } catch (error) {
@@ -406,6 +459,7 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
         const { id: caseId } = parseRouteParams(evalCaseParamsSchema, req.params, "Invalid case id");
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
         const evalCase = await dependencies.caseService.getWithRuns(workspaceId, caseId);
+        const allowLiveEffects = confirmedLiveEffects(res, req.body.allowLiveEffects);
         // A routine start state is a workbench-replay override too: it only takes effect
         // through the conversation-engine replay path, never the plain retrieval runner.
         const wantsWorkbenchReplay = Boolean(
@@ -419,6 +473,7 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
             caseId: evalCase.id,
             mode: req.body.mode,
             overrides: req.body.overrides,
+            allowLiveEffects,
           });
           res.status(201).json(result);
           return;
@@ -430,6 +485,7 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
           caseId: evalCase.id,
           mode: req.body.mode,
           overrides: req.body.overrides,
+          allowLiveEffects,
         });
         res.status(201).json(result);
       } catch (error) {

@@ -198,6 +198,7 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
       snapshotId: input.snapshotId,
       name: input.name,
       assertions: input.assertions,
+      executionMode: input.executionMode ?? "safe_test",
       status: "pending",
       lastRunId: null,
       createdAt: fixedDate,
@@ -269,6 +270,24 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
     const existing = this.cases.get(caseId);
     if (!existing || existing.workspaceId !== workspaceId) throw new Error("case not found");
     const updated: EvalCase = { ...existing, name, updatedAt: fixedDate };
+    this.cases.set(caseId, updated);
+    return updated;
+  }
+
+  async updateCaseExecutionMode(
+    workspaceId: string,
+    caseId: string,
+    executionMode: EvalCase["executionMode"],
+  ) {
+    const existing = this.cases.get(caseId);
+    if (!existing || existing.workspaceId !== workspaceId) throw new Error("case not found");
+    const updated: EvalCase = {
+      ...existing,
+      executionMode,
+      status: "pending",
+      lastRunId: null,
+      updatedAt: fixedDate,
+    };
     this.cases.set(caseId, updated);
     return updated;
   }
@@ -1071,6 +1090,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
         customInstruction: "Workbench override.",
       },
     });
+    expect(run.resolvedConfig.executionMode).toBe("safe_test");
     expect(run.observedOutput).toMatchObject({
       retrievedChunks: [{ chunkId: "chunk-1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }],
       answer: "Replay answer.",
@@ -1093,8 +1113,10 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     });
     expect(run.resolvedConfig).toEqual({
       composedInstructions: "Resolved replay instructions.",
+      executionMode: "safe_test",
       modelProvider: "openai",
       modelId: "gpt-5-mini",
+      retrievalSettings: undefined,
     });
     expect(run.status).toBe("pass");
   });
@@ -1125,6 +1147,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(workbench.calls[0]).toMatchObject({
       workspaceId: "ws-1",
       sourceAgentId: agent.id,
+      executionMode: "safe_test",
       query: "what is the refund policy?",
       usageAttribution: {
         surface: "eval",
@@ -1199,7 +1222,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     );
     const service = new EvalRunService(repo, legacyRunner, passJudge(), workbench);
 
-    await service.execute({
+    const { run } = await service.execute({
       workspaceId: "ws-1",
       snapshotId: snapshot.id,
       mode: "full_assistant",
@@ -1261,6 +1284,45 @@ describe("EvalRunService.execute (retrieval_only)", () => {
         status: "active",
       },
     });
+  });
+
+  it("requires both a live case and a per-run confirmation before allowing live skill effects", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const evalCase = await repo.createCase({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      name: "Live external-effect check",
+      assertions: [refundIncludes],
+      executionMode: "live",
+    });
+    const workbench = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
+
+    const safeReplay = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+    });
+
+    expect(workbench.calls[0]).toMatchObject({ executionMode: "safe_test" });
+    expect(safeReplay.run.resolvedConfig.executionMode).toBe("safe_test");
+
+    const confirmedReplay = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      caseId: evalCase.id,
+      mode: "full_assistant",
+      allowLiveEffects: true,
+    });
+
+    expect(workbench.calls[1]).toMatchObject({ executionMode: "live" });
+    expect(confirmedReplay.run.resolvedConfig.executionMode).toBe("live");
   });
 
   it("does NOT auto-seed the replay from the snapshot's captured routine state (it is post-turn)", async () => {

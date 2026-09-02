@@ -78,6 +78,7 @@ const linked = (input: {
     snapshotId,
     name: "2026-07-30 · What is the refund policy?",
     assertions: [],
+    executionMode: "safe_test",
     status: "pending",
     lastRunId: null,
     createdAt: capturedAt,

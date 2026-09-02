@@ -118,6 +118,7 @@ export class EvalMessageCaseRepository implements EvalMessageCaseRepositoryPort 
         snapshotId: snapshot.id,
         name: input.caseName,
         assertions: [],
+        executionMode: "safe_test",
       });
       const association = await trx
         .insertInto("eval_message_case_associations")

@@ -275,6 +275,7 @@ function PersonalTokensCard({
         <CredentialIssuedDialog
           secret={issued.secret}
           copyAriaLabel="Copy personal token secret"
+          error={error}
           onDiscard={async () => {
             const revoked = await revoke(issued.credential.id)
             if (revoked) setIssued(null)

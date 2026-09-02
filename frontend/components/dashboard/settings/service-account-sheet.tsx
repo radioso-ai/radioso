@@ -83,6 +83,7 @@ export function ServiceAccountSheet({
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
 
   const mutations = useScopedRowMutations(`${workspaceId}:${accountId}`)
+  const isRotatePending = Boolean(credentialAction?.type === 'rotate' && mutations.isPending(credentialAction.credential.id))
 
   const loadCredentials = useCallback(
     () => apiAccessApi.listServiceCredentials(workspaceId, accountId, { page }),
@@ -459,7 +460,7 @@ export function ServiceAccountSheet({
       <AlertDialog
         open={credentialAction?.type === 'rotate'}
         onOpenChange={(open) => {
-          if (!open) setCredentialAction(null)
+          if (!open && !isRotatePending) setCredentialAction(null)
         }}
       >
         <AlertDialogContent>
@@ -470,11 +471,12 @@ export function ServiceAccountSheet({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isRotatePending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              disabled={isRotatePending}
               onClick={(event) => {
                 event.preventDefault()
-                if (credentialAction) void rotateCredential(credentialAction.credential)
+                if (credentialAction && !isRotatePending) void rotateCredential(credentialAction.credential)
               }}
             >
               Rotate credential
@@ -503,6 +505,7 @@ export function ServiceAccountSheet({
         <CredentialIssuedDialog
           secret={issued.secret}
           copyAriaLabel="Copy service credential secret"
+          error={error}
           onDiscard={async () => {
             const revoked = await revokeCredential(issued.credential.id)
             if (revoked) setIssued(null)

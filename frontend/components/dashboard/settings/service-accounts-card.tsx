@@ -162,6 +162,7 @@ export function ServiceAccountsCard({
         <CredentialIssuedDialog
           secret={issued.secret}
           copyAriaLabel="Copy service credential secret"
+          error={error}
           onDiscard={discardIssued}
           onDone={() => setIssued(null)}
         />

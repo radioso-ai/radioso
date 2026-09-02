@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { ConversationRepository } from "../../src/db/repositories/conversationRepository.js";
@@ -36,6 +36,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
   let workspaces: WorkspaceRepository;
   let conversations: ConversationRepository;
   let messages: MessageRepository;
+  const accountIds: string[] = [];
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
@@ -46,8 +47,10 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     messages = new MessageRepository(database.kysely);
   });
 
-  beforeEach(async () => {
-    await database.execute("TRUNCATE accounts CASCADE");
+  afterEach(async () => {
+    while (accountIds.length > 0) {
+      await database.query("DELETE FROM accounts WHERE id = $1", [accountIds.pop()!]);
+    }
   });
 
   afterAll(async () => {
@@ -60,6 +63,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
       email: `tail-${randomUUID()}@example.com`,
       passwordHash: "hash",
     });
+    accountIds.push(account.id);
     const workspace = await workspaces.create(account.id, "Tail Test Workspace");
     const conversation = await conversations.create(workspace.id);
     return { workspace, conversation };

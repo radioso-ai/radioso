@@ -292,8 +292,3 @@ export type {
   CanonicalVectorRebuildSourcePort,
   VectorIndexRebuildScope,
 } from "./services/vectorIndexRebuildService.js";
-// The MCP converse HTTP surface holds this instance and renders its result; composition builds it.
-export type {
-  AgentConverseGroundedAnswerResult,
-  AgentConverseGroundedAnswerService,
-} from "./services/agentConverseGroundedAnswerService.js";

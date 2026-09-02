@@ -8,11 +8,8 @@ import {
   CodeSnippet,
   ExampleSelector,
   type ExampleLanguage,
-  useInlineWorkspaceToken,
 } from '@/components/shared/api-snippets'
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
-import { Spinner } from '@/components/ui/spinner'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useWorkspace } from '@/lib/workspace-context'
@@ -137,14 +134,14 @@ function ProgressHeader({
   )
 }
 
-const apiTokenLiteral = (apiToken: string | null) => (apiToken ? JSON.stringify(apiToken) : "'radioso_...'")
-const curlApiToken = (apiToken: string | null) => apiToken ?? '$RADIOSO_API_TOKEN'
+const apiTokenLiteral = () => "'YOUR_PERSONAL_OR_SERVICE_CREDENTIAL'"
+const curlApiToken = () => '$RADIOSO_API_CREDENTIAL'
 
-const buildCreateFromTextSnippet = (apiToken: string | null) => `import { createRadiosoClient } from '@radioso/typescript-sdk'
+const buildCreateFromTextSnippet = () => `import { createRadiosoClient } from '@radioso/typescript-sdk'
 
 const client = createRadiosoClient({
   baseUrl: 'http://localhost:8080',
-  apiToken: ${apiTokenLiteral(apiToken)},
+  apiToken: ${apiTokenLiteral()},
 })
 
 await client.documents.create({
@@ -152,8 +149,8 @@ await client.documents.create({
   content: 'Radioso can answer questions grounded in uploaded content.',
 })`
 
-const buildCreateFromTextCurlSnippet = (apiToken: string | null) => `curl -sS -X POST http://localhost:8080/api/v1/document/ \\
-  -H "Authorization: Bearer ${curlApiToken(apiToken)}" \\
+const buildCreateFromTextCurlSnippet = () => `curl -sS -X POST http://localhost:8080/api/v1/document/ \\
+  -H "Authorization: Bearer ${curlApiToken()}" \\
   -H "Content-Type: application/json" \\
   -d '{"title":"Support FAQ","content":"Radioso can answer questions grounded in uploaded content."}'`
 
@@ -164,31 +161,25 @@ const askQuestionSnippet = `const response = await client.chat.create({
 
 console.log(response.answer)`
 
-const buildAskQuestionCurlSnippet = (apiToken: string | null) => `curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \\
-  -H "Authorization: Bearer ${curlApiToken(apiToken)}" \\
+const buildAskQuestionCurlSnippet = () => `curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \\
+  -H "Authorization: Bearer ${curlApiToken()}" \\
   -H "Content-Type: application/json" \\
   -d '{"message":"What does the handbook say about refunds?","stream":false}'`
 
 function DeveloperUploadInstructions({
-  apiToken,
-  apiTokenError,
   exampleLanguage,
-  isApiTokenLoading,
   isOpen,
   onExampleLanguageChange,
   onToggle,
 }: {
-  apiToken: string | null
-  apiTokenError: string | null
   exampleLanguage: ExampleLanguage
-  isApiTokenLoading: boolean
   isOpen: boolean
   onExampleLanguageChange: (value: ExampleLanguage) => void
   onToggle: () => void
 }) {
   const code = exampleLanguage === 'curl'
-    ? buildCreateFromTextCurlSnippet(apiToken)
-    : buildCreateFromTextSnippet(apiToken)
+    ? buildCreateFromTextCurlSnippet()
+    : buildCreateFromTextSnippet()
   const label = exampleLanguage === 'curl' ? 'Create from text with curl' : 'Create from text with TypeScript'
 
   return (
@@ -205,19 +196,7 @@ function DeveloperUploadInstructions({
               Use this instruction from trusted server-side code, scripts, or local tools.
             </p>
           </div>
-          {isApiTokenLoading ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner />
-              Loading workspace API token...
-            </div>
-          ) : null}
-          {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
-          {apiToken ? (
-            <section className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">API token</p>
-              <CopyValueField value={apiToken} ariaLabel="Copy API token" className="w-full" />
-            </section>
-          ) : null}
+          <p className="text-xs text-muted-foreground">Create a credential in Workspace settings → API access. Secrets are shown once and never cached here.</p>
           <div className="space-y-2">
             <ExampleSelector value={exampleLanguage} onChange={onExampleLanguageChange} />
             <CodeSnippet label={label} code={code} />
@@ -229,23 +208,17 @@ function DeveloperUploadInstructions({
 }
 
 function DeveloperChatInstructions({
-  apiToken,
-  apiTokenError,
   exampleLanguage,
-  isApiTokenLoading,
   isOpen,
   onExampleLanguageChange,
   onToggle,
 }: {
-  apiToken: string | null
-  apiTokenError: string | null
   exampleLanguage: ExampleLanguage
-  isApiTokenLoading: boolean
   isOpen: boolean
   onExampleLanguageChange: (value: ExampleLanguage) => void
   onToggle: () => void
 }) {
-  const code = exampleLanguage === 'curl' ? buildAskQuestionCurlSnippet(apiToken) : askQuestionSnippet
+  const code = exampleLanguage === 'curl' ? buildAskQuestionCurlSnippet() : askQuestionSnippet
   const label = exampleLanguage === 'curl' ? 'Ask a question with curl' : 'Ask a question with TypeScript'
 
   return (
@@ -262,19 +235,7 @@ function DeveloperChatInstructions({
               Ask the assistant from trusted server-side code, scripts, or local tools.
             </p>
           </div>
-          {isApiTokenLoading ? (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner />
-              Loading workspace API token...
-            </div>
-          ) : null}
-          {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
-          {apiToken ? (
-            <section className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">API token</p>
-              <CopyValueField value={apiToken} ariaLabel="Copy chat API token" className="w-full" />
-            </section>
-          ) : null}
+          <p className="text-xs text-muted-foreground">Create a credential in Workspace settings → API access. Secrets are shown once and never cached here.</p>
           <div className="space-y-2">
             <ExampleSelector value={exampleLanguage} onChange={onExampleLanguageChange} />
             <CodeSnippet label={label} code={code} />
@@ -298,7 +259,6 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
     readDeveloperInstructionsOpen(activeWorkspaceId),
   )
   const [developerExampleLanguage, setDeveloperExampleLanguage] = useState<ExampleLanguage>('curl')
-  const { apiToken, apiTokenError, isApiTokenLoading } = useInlineWorkspaceToken(activeWorkspaceId)
   const isProcessing = onboarding.isImportingSampleDocs || onboarding.hasPendingDocuments
   const isReady = onboarding.hasReadyDocuments && !onboarding.hasPendingDocuments
   const hasDocuments = onboarding.hasDocuments
@@ -376,10 +336,7 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                     </Button>
                   ) : null}
                   <DeveloperUploadInstructions
-                    apiToken={apiToken}
-                    apiTokenError={apiTokenError}
                     exampleLanguage={developerExampleLanguage}
-                    isApiTokenLoading={isApiTokenLoading}
                     isOpen={areDeveloperInstructionsOpen}
                     onExampleLanguageChange={setDeveloperExampleLanguage}
                     onToggle={toggleDeveloperInstructions}
@@ -427,10 +384,7 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                     </Button>
                   ) : null}
                   <DeveloperChatInstructions
-                    apiToken={apiToken}
-                    apiTokenError={apiTokenError}
                     exampleLanguage={developerExampleLanguage}
-                    isApiTokenLoading={isApiTokenLoading}
                     isOpen={areDeveloperInstructionsOpen}
                     onExampleLanguageChange={setDeveloperExampleLanguage}
                     onToggle={toggleDeveloperInstructions}

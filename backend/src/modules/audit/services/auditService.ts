@@ -6,6 +6,7 @@ import {
   type AppLogger,
 } from "../../../shared/observability/logger.js";
 import type { AuditEventInput, ChatAnswerAuditMetadata } from "../contracts/index.js";
+import { requestAuditMetadata } from "../../../shared/observability/requestAuditContext.js";
 
 export class AuditService {
   constructor(
@@ -14,15 +15,19 @@ export class AuditService {
   ) {}
 
   async record(event: AuditEventInput): Promise<void> {
+    const contextualMetadata = requestAuditMetadata(event.eventType);
+    const attributedEvent: AuditEventInput = contextualMetadata
+      ? { ...event, metadata: { ...event.metadata, ...contextualMetadata } }
+      : event;
     await this.auditEventRepository.create({
-      accountId: event.accountId,
-      workspaceId: event.workspaceId,
-      eventType: event.eventType,
-      eventStatus: event.eventStatus,
-      metadata: event.metadata,
+      accountId: attributedEvent.accountId,
+      workspaceId: attributedEvent.workspaceId,
+      eventType: attributedEvent.eventType,
+      eventStatus: attributedEvent.eventStatus,
+      metadata: attributedEvent.metadata,
     });
 
-    this.logRecorded(event);
+    this.logRecorded(attributedEvent);
   }
 
   logRecorded(event: AuditEventInput): void {

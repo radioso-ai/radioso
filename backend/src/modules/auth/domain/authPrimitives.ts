@@ -66,4 +66,4 @@ export const serializeSessionCookie = (sessionToken: string, env: Env): string =
     maxAge: env.SESSION_TTL_HOURS * 60 * 60,
   });
 
-export const tokenPrefix = (): string => TOKEN_PREFIX;
+export const tokenPrefix = (token: string): string => token.slice(0, TOKEN_PREFIX.length + 8);

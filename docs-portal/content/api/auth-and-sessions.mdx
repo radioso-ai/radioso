@@ -23,10 +23,10 @@ When registration reports that verification is required, verify the email addres
 
 ### Use the session for account and workspace routes
 
-Once the cookie is stored, use it for workspace management and token reveal flows.
+Once the cookie is stored, use it for workspace management, API-access lifecycle, provider-secret, connector, public-launch rotation, and signing-key reveal flows.
 </Steps>
 
-Production registration does not establish browser or cookie-jar state. Development auto-verification establishes the session during registration; login, invitation acceptance, and password reset confirmation do the same in their respective flows. These session flows are separate from the workspace token flow used by the SDK.
+Production registration does not establish browser or cookie-jar state. Development auto-verification establishes the session during registration; login, invitation acceptance, and password reset confirmation do the same in their respective flows. These session flows are separate from the personal-token and service-credential flows used by eligible API and SDK calls.
 
 Examples below call `https://api.radioso.ai`, the hosted EU instance. Use `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — `http://localhost:8080` for a local deployment.
 
@@ -116,5 +116,5 @@ POST /api/v1/auth/invitations/{invitationToken}/accept
 ## Read next
 
 - [Accounts and users](/api/accounts-and-users)
-- [Workspaces and tokens](/api/workspaces-and-tokens)
+- [Personal tokens and service accounts](/api/workspaces-and-tokens)
 - [API Reference](/api-reference)

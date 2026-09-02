@@ -35,6 +35,7 @@ import { registerContextVariablePaths } from "./paths/contextVariablePaths.js";
 import { registerAudiencePulsePaths } from "./paths/audiencePulsePaths.js";
 import { registerCopilotPaths } from "./paths/copilotPaths.js";
 import { registerWorkspaceEventsPaths } from "./paths/workspaceEventsPaths.js";
+import { registerApiAccessPaths } from "./paths/apiAccessPaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -46,6 +47,7 @@ export const registerOpenApiPaths = (
   registerAuthPaths(registry, schemas, security);
   registerAccountManagementPaths(registry, schemas, security);
   registerAccountSessionPaths(registry, schemas, security);
+  registerApiAccessPaths(registry, schemas, security);
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);

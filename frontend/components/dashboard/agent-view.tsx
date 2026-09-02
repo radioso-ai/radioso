@@ -91,7 +91,7 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMe
     mode: 'channels',
     description: 'How the chat looks and reads, and where visitors can reach it.',
   },
-  'api-channel': { title: 'API', mode: 'channels' },
+  'api-channel': { title: 'Agent API', mode: 'channels' },
   'mcp-channel': { title: 'MCP', mode: 'channels' },
   'slack-channel': { title: 'Slack', mode: 'channels' },
   'whatsapp-channel': { title: 'WhatsApp', mode: 'channels' },

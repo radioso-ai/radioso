@@ -23,6 +23,11 @@ output "backend_service_name" {
   value       = try(google_cloud_run_v2_service.backend[0].name, null)
 }
 
+output "mcp_url" {
+  description = "Public standalone MCP endpoint. Null when MCP deployment is disabled."
+  value       = try("${google_cloud_run_v2_service.mcp[0].uri}/mcp", null)
+}
+
 output "cloud_sql_connection_name" {
   description = "Cloud SQL instance connection name (for Cloud SQL Auth Proxy if needed)"
   value       = google_sql_database_instance.postgres.connection_name

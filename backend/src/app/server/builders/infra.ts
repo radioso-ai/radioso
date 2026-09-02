@@ -2,6 +2,7 @@ import { AccountInvitationRepository } from "../../../db/repositories/accountInv
 import { AccountMembershipRepository } from "../../../db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../../db/repositories/accountRepository.js";
 import { AccessGrantRepository } from "../../../db/repositories/accessGrantRepository.js";
+import { AgentConverseSessionMappingRepository } from "../../../db/repositories/agentConverseSessionMappingRepository.js";
 import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { IdentityNonceRepository } from "../../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
@@ -31,7 +32,8 @@ import { UserRepository } from "../../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../../db/repositories/websiteCrawlJobRepository.js";
 import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
-import { WorkspaceTokenRepository } from "../../../db/repositories/workspaceTokenRepository.js";
+import { MachineAccessRepository } from "../../../db/repositories/machineAccessRepository.js";
+import { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { ChunkRepository } from "../../../modules/documents/composition.js";
@@ -156,6 +158,7 @@ export const buildRepositories = (
   accountMembershipRepository: new AccountMembershipRepository(database.kysely),
   accountRepository: new AccountRepository(database.kysely),
   accessGrantRepository: new AccessGrantRepository(database.kysely),
+  agentConverseSessionMappingRepository: new AgentConverseSessionMappingRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: new ChunkRepository(database),
@@ -183,7 +186,8 @@ export const buildRepositories = (
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database.kysely),
-  workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
+  machineAccessRepository: new MachineAccessRepository(database.kysely),
+  personalCredentialLifecycleRepository: new PersonalCredentialLifecycleRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database.kysely),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),

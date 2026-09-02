@@ -51,7 +51,20 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
           sessionId: "session-1",
         };
       },
-      async authenticateApiToken() {
+      async authenticateApiToken(token: string) {
+        if (token === "machine-api-token") {
+          return {
+            accountId: "account-1",
+            workspaceId: "workspace-token",
+            principal: {
+              type: "service_account_credential" as const,
+              serviceAccountId: "service-account-1",
+              credentialId: "credential-1",
+              role: "admin" as const,
+              workspaceId: "workspace-token",
+            },
+          };
+        }
         return {
           accountId: "account-1",
           workspaceId: "workspace-token",
@@ -273,6 +286,26 @@ describe("website crawler routes", () => {
       blockMs: 60000,
     });
     expect(provider.crawl).not.toHaveBeenCalled();
+  });
+
+  it("keys machine credential crawl limits by stable credential id", async () => {
+    const provider = createProvider();
+    const enforce = vi.fn().mockRejectedValue({
+      statusCode: 429,
+      code: "rate_limited",
+      message: "Too many requests",
+    });
+
+    await request(createApp({ websiteCrawlerProvider: provider, abuseControlService: { enforce } }))
+      .post("/api/v1/document/crawl")
+      .set("Authorization", "Bearer machine-api-token")
+      .send({ url: "https://example.com", limit: 1 })
+      .expect(429);
+
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "document.crawl",
+      subjectKey: "workspace-token:api-credential:credential-1",
+    }));
   });
 
   it("passes requested workspace selection into the workspace resolver", async () => {
@@ -503,6 +536,27 @@ describe("website crawler routes", () => {
       scope: "document.crawl.jobs.read",
     }));
     expect(listForWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("uses the machine credential bucket when rate-limiting crawl job reads", async () => {
+    const enforce = vi.fn().mockRejectedValue({
+      statusCode: 429,
+      code: "rate_limited",
+      message: "Too many requests",
+    });
+
+    await request(createApp({
+      abuseControlService: { enforce },
+      websiteCrawlJobService: { enqueue: vi.fn(), listForWorkspace: vi.fn(), deleteJob: vi.fn() },
+    }))
+      .get("/api/v1/document/crawl/jobs")
+      .set("Authorization", "Bearer machine-api-token")
+      .expect(429);
+
+    expect(enforce).toHaveBeenCalledWith(expect.objectContaining({
+      scope: "document.crawl.jobs.read",
+      subjectKey: "workspace-token:api-credential:credential-1",
+    }));
   });
 
   it("rate-limits the DELETE /jobs/:jobId endpoint via abuse control", async () => {

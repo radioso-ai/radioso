@@ -74,7 +74,7 @@ describe("HnswIterativeScanRunner", () => {
 
   it("falls back to a plain query when the server has no iterative scan", async () => {
     const { database, recorded } = databaseStub({
-      failSet: (sql) => sql.includes("hnsw.iterative_scan") ? unsupportedGuc() : undefined,
+      failSet: (sql: string) => sql.includes("hnsw.iterative_scan") ? unsupportedGuc() : undefined,
     });
 
     await new HnswIterativeScanRunner(database).run("SELECT 1", []);
@@ -91,7 +91,7 @@ describe("HnswIterativeScanRunner", () => {
   // search would make an older server pay that on every retrieval turn forever.
   it("probes support once and reuses the answer", async () => {
     const { database, recorded } = databaseStub({
-      failSet: (sql) => sql.includes("hnsw.iterative_scan") ? unsupportedGuc() : undefined,
+      failSet: (sql: string) => sql.includes("hnsw.iterative_scan") ? unsupportedGuc() : undefined,
     });
     const runner = new HnswIterativeScanRunner(database);
 
@@ -107,7 +107,7 @@ describe("HnswIterativeScanRunner", () => {
   // production server is obliged to produce. The SQLSTATE is.
   it("recognises the unsupported parameter from its SQLSTATE, not its message text", async () => {
     const { database, recorded } = databaseStub({
-      failSet: (sql) => sql.includes("hnsw.iterative_scan")
+      failSet: (sql: string) => sql.includes("hnsw.iterative_scan")
         ? undefinedObject("nicht erkannter Konfigurationsparameter »hnsw.iterative_scan«")
         : undefined,
     });

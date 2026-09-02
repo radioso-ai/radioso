@@ -1,4 +1,4 @@
-import { API_BASE, requireWorkspaceApiToken, request } from './api-client'
+import { API_BASE, getStoredActiveWorkspaceId, request } from './api-client'
 
 export type ConnectorConfigFieldType = 'text' | 'secret' | 'generated_secret' | 'toggle' | 'select'
 
@@ -99,7 +99,6 @@ const buildConnectorError = async (response: Response): Promise<Error> => {
 }
 
 const connectorMutation = async (path: string, init: RequestInit): Promise<ConnectorDetail> => {
-  const token = await requireWorkspaceApiToken()
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
@@ -107,13 +106,14 @@ const connectorMutation = async (path: string, init: RequestInit): Promise<Conne
   if (!headers.has('X-Forwarded-Prefix')) {
     headers.set('X-Forwarded-Prefix', '/backend')
   }
-  headers.set('Authorization', `Bearer ${token}`)
+  const workspaceId = getStoredActiveWorkspaceId()
+  if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     cache: 'no-store',
     headers,
-    credentials: 'omit',
+    credentials: 'include',
   })
 
   if (response.ok) {
@@ -127,13 +127,13 @@ export const connectorsApi = {
   async list(): Promise<{ connectors: ConnectorSummary[] }> {
     return request<{ connectors: ConnectorSummary[] }>('/connectors', {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async get(connectorId: string): Promise<ConnectorDetail> {
     return request<ConnectorDetail>(`/connectors/${encodeURIComponent(connectorId)}`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async save(connectorId: string, config: Record<string, string>): Promise<ConnectorDetail> {
@@ -156,13 +156,14 @@ export const connectorsApi = {
   },
 
   async sync(connectorId: string): Promise<{ accepted: boolean }> {
-    const token = await requireWorkspaceApiToken()
+    const workspaceId = getStoredActiveWorkspaceId()
     const response = await fetch(`${API_BASE}/connectors/${encodeURIComponent(connectorId)}/sync`, {
       method: 'POST',
       cache: 'no-store',
-      credentials: 'omit',
+      credentials: 'include',
       headers: {
-        Authorization: `Bearer ${token}`,
+        'X-Forwarded-Prefix': '/backend',
+        ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
       },
     })
     if (!response.ok) {

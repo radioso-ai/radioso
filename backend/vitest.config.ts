@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    globalSetup: ["./tests/support/integrationDatabaseGlobalSetup.ts"],
     setupFiles: ["./tests/support/loadEnv.ts"],
     testTimeout: 10_000,
     coverage: {

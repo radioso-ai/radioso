@@ -20,7 +20,6 @@ import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js"
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
 import { createSettingsWebhookDestinationRoutes } from "./settingsWebhookDestinationRoutes.js";
 import { createWorkspaceRoutes } from "./workspaceRoutes.js";
-import { createMcpContextRoutes } from "./mcpContextRoutes.js";
 import { createOauthConnectionRoutes } from "./oauthConnectionRoutes.js";
 import { createCustomerEmailConnectionRoutes } from "./customerEmailConnectionRoutes.js";
 import { createSlackConnectionRoutes } from "./slackConnectionRoutes.js";
@@ -34,17 +33,69 @@ import { createConnectorRoutes } from "../../../modules/connectors/http/connecto
 import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
-import { getMcpMountStatus } from "../../server/mcpMount.js";
 import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
+import { createApiAccessRoutes } from "./apiAccessRoutes.js";
+
+export type ApiRouteMount = {
+  path: string;
+  createRouter: (dependencies: AppDependencies) => Router;
+};
+
+/**
+ * The public API's mount table. The route-policy contract inspects every router here
+ * and every application contribution, then discovers authentication structurally.
+ */
+export const createApiRouteMounts = (dependencies: AppDependencies): readonly ApiRouteMount[] => [
+  { path: "/api/v1/auth", createRouter: createAuthRoutes },
+  { path: "/api/v1/account", createRouter: createAccountRoutes },
+  { path: "/api/v1/account", createRouter: createAccountUserRoutes },
+  { path: "/api/v1/account", createRouter: createApiAccessRoutes },
+  { path: "/api/v1/workspace", createRouter: createWorkspaceRoutes },
+  { path: "/api/v1", createRouter: createOauthConnectionRoutes },
+  { path: "/api/v1", createRouter: createCustomerEmailConnectionRoutes },
+  { path: "/api/v1", createRouter: createSlackConnectionRoutes },
+  { path: "/api/v1", createRouter: createEmailSkillActivityRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentRoutes },
+  { path: "/api/v1", createRouter: createContextVariableRoutes },
+  { path: "/api/v1/agents", createRouter: createDecisionRoutes },
+  { path: "/api/v1/decisions", createRouter: createDecisionsQueryRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentExternalSkillsRoutes },
+  { path: "/api/v1/agents", createRouter: createEmailSkillRoutes },
+  { path: "/api/v1/agents", createRouter: createWebhookSkillRoutes },
+  { path: "/api/v1/agents", createRouter: createSlackSkillRoutes },
+  { path: "/api/v1/agents", createRouter: createAgentSkillRoutes },
+  { path: "/api/v1/assistant", createRouter: createAssistantRoutes },
+  { path: "/api/v1/copilot", createRouter: createCopilotRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
+  { path: "/api/v1/history", createRouter: createHistoryRoutes },
+  { path: "/api/v1/observability", createRouter: createObservabilityRoutes },
+  { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes },
+  { path: "/api/v1/skills", createRouter: createSkillRoutes },
+  { path: "/api/v1/settings", createRouter: createSettingsRoutes },
+  { path: "/api/v1/settings/credentials", createRouter: createSettingsCredentialsRoutes },
+  { path: "/api/v1/settings/llm-models", createRouter: createSettingsLlmModelsRoutes },
+  { path: "/api/v1/settings/webhook-destinations", createRouter: createSettingsWebhookDestinationRoutes },
+  { path: "/api/v1/connectors", createRouter: createConnectorRoutes },
+  { path: "/api/v1/document", createRouter: createDocumentRoutes },
+  {
+    path: "/api/v1/evals",
+    createRouter: (appDependencies) => createEvalRoutes({
+      ...appDependencies,
+      snapshotService: appDependencies.evalSnapshotService,
+      messageCaseService: appDependencies.evalMessageCaseService,
+      caseService: appDependencies.evalCaseService,
+      runService: appDependencies.evalRunService,
+      suiteService: appDependencies.evalSuiteService,
+    }),
+  },
+  { path: "/api/v1/public/chat", createRouter: createPublicChatRoutes },
+];
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
-    res.status(200).json({
-      mcp: getMcpMountStatus(dependencies.env),
-      status: "ok",
-    });
+    res.status(200).json({ status: "ok" });
   });
   if (dependencies.env.METRICS_ENABLED) {
     if (!dependencies.metricsRegistry || !dependencies.env.METRICS_AUTH_TOKEN) {
@@ -56,46 +107,9 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
       createMetricsRoutes(dependencies.metricsRegistry, dependencies.env.METRICS_AUTH_TOKEN),
     );
   }
-  router.use("/api/v1/auth", createAuthRoutes(dependencies));
-  router.use("/api/v1/account", createAccountRoutes(dependencies));
-  router.use("/api/v1/account", createAccountUserRoutes(dependencies));
-  router.use("/api/v1/workspace", createWorkspaceRoutes(dependencies));
-  router.use("/api/v1/workspace/mcp", createMcpContextRoutes(dependencies));
-  router.use("/api/v1", createOauthConnectionRoutes(dependencies));
-  router.use("/api/v1", createCustomerEmailConnectionRoutes(dependencies));
-  router.use("/api/v1", createSlackConnectionRoutes(dependencies));
-  router.use("/api/v1", createEmailSkillActivityRoutes(dependencies));
-  router.use("/api/v1/agents", createAgentRoutes(dependencies));
-  router.use("/api/v1", createContextVariableRoutes(dependencies));
-  router.use("/api/v1/agents", createDecisionRoutes(dependencies));
-  router.use("/api/v1/decisions", createDecisionsQueryRoutes(dependencies));
-  router.use("/api/v1/agents", createAgentExternalSkillsRoutes(dependencies));
-  router.use("/api/v1/agents", createEmailSkillRoutes(dependencies));
-  router.use("/api/v1/agents", createWebhookSkillRoutes(dependencies));
-  router.use("/api/v1/agents", createSlackSkillRoutes(dependencies));
-  router.use("/api/v1/agents", createAgentSkillRoutes(dependencies));
-  router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
-  router.use("/api/v1/copilot", createCopilotRoutes(dependencies));
-  router.use("/api/v1/conversations", createConversationOwnershipRoutes(dependencies));
-  router.use("/api/v1/history", createHistoryRoutes(dependencies));
-  router.use("/api/v1/observability", createObservabilityRoutes(dependencies));
-  router.use("/api/v1/retrieval", createRetrievalRoutes(dependencies));
-  router.use("/api/v1/skills", createSkillRoutes(dependencies));
-  router.use("/api/v1/settings", createSettingsRoutes(dependencies));
-  router.use("/api/v1/settings/credentials", createSettingsCredentialsRoutes(dependencies));
-  router.use("/api/v1/settings/llm-models", createSettingsLlmModelsRoutes(dependencies));
-  router.use("/api/v1/settings/webhook-destinations", createSettingsWebhookDestinationRoutes(dependencies));
-  router.use("/api/v1/connectors", createConnectorRoutes(dependencies));
-  router.use("/api/v1/document", createDocumentRoutes(dependencies));
-  router.use("/api/v1/evals", createEvalRoutes({
-    ...dependencies,
-    snapshotService: dependencies.evalSnapshotService,
-    messageCaseService: dependencies.evalMessageCaseService,
-    caseService: dependencies.evalCaseService,
-    runService: dependencies.evalRunService,
-    suiteService: dependencies.evalSuiteService,
-  }));
-  router.use("/api/v1/public/chat", createPublicChatRoutes(dependencies));
+  for (const mount of createApiRouteMounts(dependencies)) {
+    router.use(mount.path, mount.createRouter(dependencies));
+  }
   for (const mount of dependencies.applicationRouteMounts) {
     router.use(mount.path, mount.createRouter(dependencies));
   }

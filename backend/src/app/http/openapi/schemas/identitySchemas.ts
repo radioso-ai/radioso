@@ -25,7 +25,6 @@ import {
   workspaceKeyParamsSchema,
   workspaceParamsSchema,
 } from "../../routes/workspaceRoutes.js";
-import { workspaceMcpContextSchema } from "../../mcpContextSupport.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
@@ -127,18 +126,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       sampleDocumentsImported: z.boolean(),
       websiteCrawlerEnabled: z.boolean(),
     }),
-  );
-
-  const WorkspaceTokenResponseSchema = registry.register(
-    "WorkspaceTokenResponse",
-    z.object({
-      token: z.string(),
-    }),
-  );
-
-  const WorkspaceMcpContextResponseSchema = registry.register(
-    "WorkspaceMcpContextResponse",
-    workspaceMcpContextSchema,
   );
 
   const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
@@ -253,8 +240,6 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     WorkspaceRouteResolutionResponseSchema,
     WorkspaceListResponseSchema,
     WorkspaceSummaryResponseSchema,
-    WorkspaceTokenResponseSchema,
-    WorkspaceMcpContextResponseSchema,
     RegisterRequestSchema,
     CreateAccountRequestSchema,
     LoginRequestSchema,

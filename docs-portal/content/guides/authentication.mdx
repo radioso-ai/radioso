@@ -1,7 +1,7 @@
 ---
-title: Authentication
-description: Session, API token, public-chat, and Enterprise embed access patterns in Radioso.
-last_updated: 2026-08-17
+title: "Authentication"
+description: "Session, workspace automation, agent chat, public-chat, and Enterprise embed access patterns in Radioso."
+last_updated: 2026-09-01
 ---
 
 import { Steps } from 'nextra/components'
@@ -13,7 +13,8 @@ Radioso has more than one authentication model because it serves more than one a
 ## Main access modes
 
 - Session-based access for the product UI
-- Workspace API tokens for backend-to-backend or developer automation
+- Personal tokens and service-account credentials for role-aware workspace automation
+- Role-free agent credentials for REST or MCP chat with one agent
 - Anonymous public chat and Enterprise embed flows for customer-facing agent experiences
 
 ## Session-based access
@@ -33,25 +34,35 @@ On an empty open-source server, the first registration creates the server's sole
 
 Production registration sends a verification email and does not set a session cookie. The documented development entrypoints enable automatic verification for newly registered password users and return the session cookie immediately. The backend also sets the cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address; development registration satisfies that requirement by persisting the verification state rather than bypassing login checks.
 
-## Workspace API tokens
+## Personal tokens and service accounts
 
-Use a workspace token when you want to call the workspace-scoped API without a browser session. The usual pattern is:
+Use a personal token for automation that should follow a person's live workspace membership. Use a service account for CI, scheduled jobs, and services that need a stable non-human identity. Both use the workspace role model and authenticate eligible role-aware API routes without a browser session.
 
 <Steps>
 ### Sign in with a normal user account
 
-Use session auth to reach the account and workspace APIs.
+Use session auth to reach the workspace's API access controls. Service accounts have their own **Settings → Service accounts** page. Credential lifecycle operations accept only the signed-in session.
 
-### Reveal the workspace token
+### Choose the principal and role
 
-Fetch the workspace token from the authenticated workspace route.
+Create a personal token with a ceiling no higher than your live role and an expiry no more than 90 days away. An administrator can create a service account with a `member` or `admin` role and credentials that expire within 365 days. The service-account form asks for one account name; its first credential is named `Primary`.
+
+### Store the one-time secret
+
+Copy the successful issue response into a secret manager. Inventory responses contain a safe prefix and lifecycle metadata, not a recoverable secret.
 
 ### Call workspace-scoped APIs
 
-Use the bearer token for document, chat, settings, and related automation flows.
+Use the bearer credential for explicitly eligible document, settings, and related workspace automation flows.
 </Steps>
 
-A workspace token is a high-value credential: anyone holding it can act on the whole workspace. If one leaks, rotate it from workspace settings rather than trying to work around the exposure.
+If a credential is exposed, revoke or immediately rotate it from its settings page. Service accounts can also hold overlapping credentials so you can deploy a replacement before revoking the old value.
+
+## Agent chat credentials
+
+Use a REST-audience agent credential for `POST /api/v1/agents/{agentId}/chat`, or an MCP-audience credential for the standalone MCP server's `ask_agent` tool. Both are bound to exactly one agent, require an expiry, and carry no `member` or `admin` role.
+
+A signed-in user with agent-manage permission issues, rotates, or revokes these credentials from the agent's **Channels** page. The plaintext secret is shown once and stored only as a hash. Personal tokens and service-account credentials are not accepted for agent chat, and agent credentials cannot call workspace-administration APIs. Operator-minted agent credentials are static bearers; Radioso does not require OAuth for them.
 
 ## Public chat and embed access
 
@@ -62,7 +73,8 @@ That's the right model for customer-facing agents, and the wrong one for operato
 ## Choose the right mode
 
 - Use sessions for humans in the app.
-- Use workspace bearer tokens for automation.
+- Use personal tokens or service-account credentials for eligible REST and SDK automation.
+- Use a REST or MCP agent credential when a client should only converse with one agent.
 - Use public chat or Enterprise embed flows for customer-facing agents.
 
 ## Start points

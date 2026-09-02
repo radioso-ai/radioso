@@ -46,22 +46,22 @@ export const mergeChannelsLifecycle = (
 })
 
 export const settingsApi = {
-  async getRetrievalDefaults(options: { auth?: 'apiToken' | 'session' } = {}): Promise<RetrievalDefaults> {
+  async getRetrievalDefaults(options: { auth?: 'session' } = { auth: 'session' }): Promise<RetrievalDefaults> {
     return request<RetrievalDefaults>("/settings/retrieval-defaults", {
       method: "GET",
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
   },
 
   async getIngestionSettings(): Promise<IngestionSettings> {
     return request<IngestionSettings>("/settings/ingestion", {
       method: "GET",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getEmbeddingCoverage(): Promise<EmbeddingCoverage> {
     return request<EmbeddingCoverage>("/settings/ingestion/embedding-coverage", {
       method: "GET",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateIngestionSettings(data: IngestionSettings): Promise<IngestionSettings> {
@@ -77,7 +77,7 @@ export const settingsApi = {
         documentEnrichmentEnabled: data.documentEnrichmentEnabled,
         manualDocumentEnrichmentOverride: data.manualDocumentEnrichmentOverride,
       }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async reprocessWorkspaceIngestion(input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<WorkspaceIngestionReprocessResponse> {
@@ -86,26 +86,26 @@ export const settingsApi = {
       ...(input?.documentEnrichmentOverride
         ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
         : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getDocumentTypeCatalog(): Promise<DocumentTypeCatalog> {
     return request<DocumentTypeCatalog>("/settings/document-types", {
       method: "GET",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateDocumentTypeCatalog(input: UpdateDocumentTypeCatalogRequest): Promise<DocumentTypeCatalog> {
     return request<DocumentTypeCatalog>("/settings/document-types", {
       method: "PUT",
       body: JSON.stringify(input),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async cancelPendingEmbeddingModel(): Promise<IngestionSettings> {
     return request<IngestionSettings>("/settings/ingestion/embedding-model/cancel", {
       method: "POST",
-    }, { withApiToken: true })
+    }, { withSession: true })
   }
 }
 
@@ -113,14 +113,14 @@ export const webhookDestinationsApi = {
   async listDestinations(): Promise<WebhookDestinationListResponse> {
     return request<WebhookDestinationListResponse>('/settings/webhook-destinations', {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createDestination(data: WebhookDestinationRequest): Promise<WebhookDestinationCreateResponse> {
     return request<WebhookDestinationCreateResponse>('/settings/webhook-destinations', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateDestination(
@@ -130,27 +130,27 @@ export const webhookDestinationsApi = {
     return request<WebhookDestinationResponse>(`/settings/webhook-destinations/${destinationId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async rotateSecret(destinationId: string): Promise<WebhookDestinationCreateResponse> {
     return request<WebhookDestinationCreateResponse>(`/settings/webhook-destinations/${destinationId}/rotate-secret`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteDestination(destinationId: string): Promise<void> {
     await request<void>(`/settings/webhook-destinations/${destinationId}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 }
 
 export const generalSettingsApi = {
-  async getGeneralSettings(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+  async getGeneralSettings(options: { auth?: 'session' } = { auth: 'session' }): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings', {
       method: 'GET',
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
     return toGeneralSettings(settings)
   },
 
@@ -173,7 +173,7 @@ export const generalSettingsApi = {
     websiteEmbedTheme?: Partial<WebsiteEmbedThemeSettings>
     websiteEmbedCopy?: WebsiteEmbedCopyPacks
     websiteEmbedExpertOverrides?: WebsiteEmbedExpertOverrides
-  }, options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+  }, options: { auth?: 'session' } = { auth: 'session' }): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings', {
       method: 'PUT',
       body: JSON.stringify({
@@ -194,38 +194,38 @@ export const generalSettingsApi = {
           websiteEmbedExpertOverrides: data.websiteEmbedExpertOverrides,
         },
       }),
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
     return toGeneralSettings(settings)
   },
 
-  async rotateAnonymousChatToken(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+  async rotateAnonymousChatToken(options: { auth?: 'session' } = { auth: 'session' }): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings/general/anonymous-chat-token/rotate', {
       method: 'POST',
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
     return toGeneralSettings(settings)
   },
 
-  async rotateWebsiteEmbedToken(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+  async rotateWebsiteEmbedToken(options: { auth?: 'session' } = { auth: 'session' }): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings/general/website-embed-token/rotate', {
       method: 'POST',
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
     return toGeneralSettings(settings)
   },
 
-  async uploadAssistantLogo(file: File, options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+  async uploadAssistantLogo(file: File, options: { auth?: 'session' } = { auth: 'session' }): Promise<GeneralSettings> {
     const formData = new FormData()
     formData.set('logo', file)
     const settings = await request<PlatformSettings>('/settings/general/assistant-logo', {
       method: 'POST',
       body: formData,
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
     return toGeneralSettings(settings)
   },
 
-  async deleteAssistantLogo(options: { auth?: 'apiToken' | 'session' } = {}): Promise<GeneralSettings> {
+  async deleteAssistantLogo(options: { auth?: 'session' } = { auth: 'session' }): Promise<GeneralSettings> {
     const settings = await request<PlatformSettings>('/settings/general/assistant-logo', {
       method: 'DELETE',
-    }, options.auth === 'session' ? { withSession: true } : { withApiToken: true })
+    }, { withSession: options.auth !== undefined ? options.auth === 'session' : true })
     return toGeneralSettings(settings)
   },
 }
@@ -234,7 +234,7 @@ export const agentsApi = {
   async listAgents(): Promise<AgentListResponse> {
     return request<AgentListResponse>('/agents', {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createAgent(data: {
@@ -245,32 +245,32 @@ export const agentsApi = {
     return request<AgentSettings>('/agents', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getAgent(agentId: string): Promise<AgentSettings> {
     return request<AgentSettings>(`/agents/${agentId}`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getChannelsLifecycle(agentId: string): Promise<ChannelsLifecycle> {
     return request<ChannelsLifecycle>(`/agents/${agentId}/channels/lifecycle`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateAgent(agentId: string, data: AgentSettingsUpdate): Promise<AgentSettings> {
     return request<AgentSettings>(`/agents/${agentId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async setDefaultAgent(agentId: string): Promise<AgentSettings> {
     return request<AgentSettings>(`/agents/${agentId}/default`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteAgent(agentId: string): Promise<void> {
@@ -315,14 +315,14 @@ export const agentsApi = {
   async rotateAnonymousChatToken(agentId: string): Promise<GeneralSettings> {
     const agent = await request<AgentSettings>(`/agents/${agentId}/anonymous-chat-token/rotate`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
     return mergeChannelsLifecycle(agentToGeneralSettings(agent), await this.getChannelsLifecycle(agentId))
   },
 
   async rotateWebsiteEmbedToken(agentId: string): Promise<GeneralSettings> {
     const agent = await request<AgentSettings>(`/agents/${agentId}/website-embed-token/rotate`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
     return mergeChannelsLifecycle(agentToGeneralSettings(agent), await this.getChannelsLifecycle(agentId))
   },
 
@@ -332,13 +332,13 @@ export const agentsApi = {
     return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/assistant-logo`, {
       method: 'POST',
       body: formData,
-    }, { withApiToken: true }))
+    }, { withSession: true }))
   },
 
   async deleteAssistantLogo(agentId: string): Promise<GeneralSettings> {
     return agentToGeneralSettings(await request<AgentSettings>(`/agents/${agentId}/assistant-logo`, {
       method: 'DELETE',
-    }, { withApiToken: true }))
+    }, { withSession: true }))
   },
 
   async getBehaviorSettings(agentId: string): Promise<AssistantBehaviorSettings> {

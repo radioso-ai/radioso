@@ -131,25 +131,33 @@ The long versions: [Conversational directives](./docs/architecture/conversationa
 
 ## Talking to your agent
 
-Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed. One naming note — the persona you configure is an **agent**; the HTTP surface you call to talk to it is named **assistant**, as in `/api/v1/assistant/chat`. Same thing, two names.
+Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed.
 
-**Get a token.** Sign in and reveal the workspace API token from settings, or with a session cookie call `GET /api/v1/account/workspaces/<workspace-id>/token`. Workspace payloads carry both `id` and `publicRouteKey`: use `id` in API calls, and `publicRouteKey` when building canonical dashboard URLs (`/w/<key>/...`). If a token is ever exposed, rotate it from the settings screen. Full account and session flows: [Authentication](https://docs.radioso.ai/guides/authentication) and [Workspaces and tokens](https://docs.radioso.ai/api/workspaces-and-tokens).
+**Choose the credential for the job.** Personal tokens carry the issuing user's live workspace membership and expire within 90 days. Service accounts are stable workspace identities for CI and unattended workloads; create them under **Settings → Service accounts**, and give each credential an expiry of at most 365 days. Their credentials authorize eligible role-aware workspace APIs.
 
-**Ask a question.** Chat calls use the workspace default agent unless `agentId` says otherwise. Each turn runs through the engine above: it selects `retrieval.answer` when evidence is needed, applies whatever directives match, and resumes an active routine if there is one.
+Agent chat uses a separate credential created on that agent's **Channels → API** or **Channels → MCP** card. It has no `member` or `admin` role: it is bound to one agent and one audience, expires at the time you choose, and is shown once. Workspace payloads carry both `id` and `publicRouteKey`: use `id` in API calls and `publicRouteKey` in dashboard URLs (`/w/<key>/...`). Full account and session flows: [Authentication](https://docs.radioso.ai/guides/authentication).
+
+**Ask a question.** Put the chosen agent's id in the path and use a REST-audience agent credential. Each turn runs through the engine above: it selects `retrieval.answer` when evidence is needed, applies whatever directives match, and resumes an active routine if there is one.
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <agent-rest-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"message":"What does the FAQ say about refunds?","stream":false}' \
-  http://localhost:8080/api/v1/assistant/chat
+  http://localhost:8080/api/v1/agents/<agent-id>/chat
 ```
 
 **Grounded retrieval without the persona.** When you want search or answer generation over workspace content with no assistant behavior, call retrieval directly:
 
 ```bash
 curl -sS \
-  -H "Authorization: Bearer <workspace-token>" \
+  -H "Authorization: Bearer <api-credential>" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"refund policy"}' \
+  http://localhost:8080/api/v1/retrieval/search
+
+curl -sS \
+  -H "Authorization: Bearer <api-credential>" \
   -H 'Content-Type: application/json' \
   -d '{"query":"What does the FAQ say about refunds?"}' \
   http://localhost:8080/api/v1/retrieval/answer
@@ -157,13 +165,19 @@ curl -sS \
 
 `/api/v1/retrieval/search` returns matches instead of an answer. Both accept per-call filters such as `metadataFilter`, and both accept `agentId` to run with one agent's retrieval settings and source scope — the response reports which agent it measured in `agentScope`. See [Documents and search](https://docs.radioso.ai/api/documents-and-search).
 
+```bash
+curl -sS \
+  -H "Authorization: Bearer <api-credential>" \
+  http://localhost:8080/api/v1/skills
+```
+
 **See why.** Responses are lean by default. Add `includeDebug: true` and diagnostics arrive under a `debug` field — routing, retrieval summaries, activity traces, and full evidence — instead of mixing into the user-facing payload.
 
 **Everything else.** Agents and their per-skill settings live under `/api/v1/agents`; routines are authored per agent under `/api/v1/agents/<agentId>/routines` (draft, validate, publish). `GET /api/v1/skills` lists the skills the engine can select. History, settings, the document-type catalog, answer feedback, quality triage, and usage subtotals each have their own routes — start at the [API index](https://docs.radioso.ai/api) or the [OpenAPI reference](https://docs.radioso.ai/api-reference).
 
 ### TypeScript SDK
 
-The SDK wraps agent-backed chat, streaming, and document management, and follows the same lean-response contract (`response.debug` when you asked for it):
+The SDK wraps role-aware workspace chat, streaming, and document management, and follows the same lean-response contract (`response.debug` when you asked for it):
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
@@ -184,15 +198,19 @@ for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) 
 }
 ```
 
+That client uses the personal or service-account credential supplied as `apiToken`. A client that should only converse with one agent uses a separate REST-audience agent credential with `POST /api/v1/agents/{agentId}/chat`.
+
 Start with [Getting started](https://docs.radioso.ai/sdk/typescript-getting-started) and [Basic usage](https://docs.radioso.ai/sdk/basic-usage).
 
 ### MCP
 
-Radioso exposes two MCP surfaces. The **agent converse surface** lets a client talk to one agent through its turn loop (`ask_agent`), get grounded answers with that agent's retrieval settings, and read its documents as resources; it uses a per-agent converse grant minted by a workspace admin. The **workspace document tools** (`search_documents`, `answer_grounded`, document read/write) span a whole workspace and use the workspace API token. The two surfaces do not share credentials. MCP runs either merged into the backend at `/mcp` or as the standalone [`packages/radioso-mcp-server/`](./packages/radioso-mcp-server) process — [MCP server](https://docs.radioso.ai/guides/mcp-server) covers both shapes and client setup for Cursor, Claude, and ChatGPT.
+Radioso's supported MCP surface is the standalone HTTP server. It exposes `ask_agent`, which talks to exactly one agent through its full turn loop. A signed-in user with permission to manage that agent creates an MCP-audience credential from **Channels → MCP**; the dashboard uses `POST /api/v1/agents/{agentId}/channel-credentials`. Send the one-time secret to standalone `/mcp`, where the server exchanges it for a short-lived session. Personal and service API credentials are workspace credentials and are not MCP credentials. Operator-minted MCP credentials use a static bearer, so Radioso does not require an OAuth flow.
+
+The package has no stdio MCP entrypoint. Run the standalone HTTP server and give it the original MCP-audience agent credential. Hosted clients such as Claude Desktop and ChatGPT require a public HTTPS deployment; local clients can use the standalone HTTP URL.
 
 ### Website embed
 
-One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work on the host site, and origin policy stays under your control. The widget, theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top. The **Web chat** page under an agent's Channels section holds both placements — public link and website widget — with each credential's status and last use, and rotating a credential stops new sessions on the old one immediately. See the [website embed quickstart](https://docs.radioso.ai/quickstarts/website-embed).
+One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work on the host site, and origin policy stays under your control. The widget, theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top. The **Web chat** page under an agent's Channels section holds both placements — public link and website widget — with each public-launch credential's status and last use; rotation stops new sessions on the old value immediately. Public-launch credentials are separate from personal and service API credentials. See the [website embed quickstart](https://docs.radioso.ai/quickstarts/website-embed).
 
 ## Configuration and operations
 
@@ -203,6 +221,7 @@ Short version here; every link goes to the full reference.
 - **Website crawler.** `POST /api/v1/document/crawl` crawls a site with the bundled provider and publishes pages through the normal ingestion pipeline. It identifies as `RadiosoCrawler/1.0` and records `401`/`403`/`429` responses as failed pages rather than ingesting them. [Website crawler →](./docs/website-crawler.md)
 - **Deployment.** Backend, frontend, and workers are separate services; the backend migrates the database on startup. Worker dispatch polls by default, with Cloud Tasks and AMQP drivers for push; rate limits and reverse-proxy hops are environment-tuned. [Deployment →](https://docs.radioso.ai/operators/deployment) · [Self-hosting operations →](https://docs.radioso.ai/operators/self-hosting-operations)
 - **Observability.** Runtime flags, `/metrics`, and optional PostHog or Sentry sinks. [Observability →](./docs/oss-saas-observability.md)
+- **Authenticated LLM request limits.** Assistant chat and retrieval answer/search share a durable operator-configured limit. Browser sessions are scoped by account and workspace; personal and service credentials receive separate credential-specific buckets. [Deployment →](https://docs.radioso.ai/operators/deployment)
 
 ## Docs
 

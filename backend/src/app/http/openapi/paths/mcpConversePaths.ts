@@ -4,11 +4,6 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 import {
   mcpConverseAskRequestSchema,
   mcpConverseAskResponseSchema,
-  mcpConverseGroundedAnswerRequestSchema,
-  mcpConverseGroundedAnswerResponseSchema,
-  mcpConverseResourceListResponseSchema,
-  mcpConverseResourceParamsSchema,
-  mcpConverseResourceResponseSchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionResponseSchema,
   mcpConverseSessionValidateRequestSchema,
@@ -49,6 +44,7 @@ export const registerMcpConversePaths = (
       },
       401: errorResponse("Invalid converse grant"),
       403: errorResponse("Grant channel or bound agent is not allowed"),
+      429: errorResponse("MCP converse session rate limit exceeded"),
     },
   });
 
@@ -71,6 +67,7 @@ export const registerMcpConversePaths = (
       },
       401: errorResponse("Invalid or expired converse session"),
       403: errorResponse("Underlying converse grant is no longer valid"),
+      429: errorResponse("MCP converse session rate limit exceeded"),
     },
   });
 
@@ -80,7 +77,7 @@ export const registerMcpConversePaths = (
     tags: ["MCP Converse"],
     summary: "Run one MCP ask_agent turn through the bound agent",
     operationId: "askMcpConverseAgent",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
+    security: [{ [security.mcpConverseSessionBearerAuthScheme.name]: [] }],
     request: {
       body: {
         required: true,
@@ -95,67 +92,8 @@ export const registerMcpConversePaths = (
       409: errorResponse("Turn superseded by a newer message in the same conversation"),
       401: errorResponse("Invalid converse session"),
       403: errorResponse("Converse session is no longer authorized"),
+      429: errorResponse("MCP converse ask rate limit exceeded"),
     },
   });
 
-  registry.registerPath({
-    method: "post",
-    path: "/api/v1/mcp/converse/grounded-answer",
-    tags: ["MCP Converse"],
-    summary: "Run an agent-aware grounded answer through the bound agent retrieval configuration",
-    operationId: "answerMcpConverseGrounded",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: {
-      body: {
-        required: true,
-        content: json(mcpConverseGroundedAnswerRequestSchema),
-      },
-    },
-    responses: {
-      200: {
-        description: "Agent-scoped grounded answer",
-        content: json(mcpConverseGroundedAnswerResponseSchema),
-      },
-      401: errorResponse("Invalid converse session"),
-      403: errorResponse("Converse session is not allowed to query retrieval"),
-    },
-  });
-
-  registry.registerPath({
-    method: "get",
-    path: "/api/v1/mcp/converse/resources",
-    tags: ["MCP Converse"],
-    summary: "List read-only resources visible to the bound agent",
-    operationId: "listMcpConverseResources",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    responses: {
-      200: {
-        description: "Agent-scoped resources",
-        content: json(mcpConverseResourceListResponseSchema),
-      },
-      401: errorResponse("Invalid converse session"),
-      403: errorResponse("Converse session is not allowed to read resources"),
-    },
-  });
-
-  registry.registerPath({
-    method: "get",
-    path: "/api/v1/mcp/converse/resources/{resourceId}",
-    tags: ["MCP Converse"],
-    summary: "Read one sanitized resource visible to the bound agent",
-    operationId: "readMcpConverseResource",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    request: {
-      params: mcpConverseResourceParamsSchema,
-    },
-    responses: {
-      200: {
-        description: "Sanitized agent-scoped resource",
-        content: json(mcpConverseResourceResponseSchema),
-      },
-      401: errorResponse("Invalid converse session"),
-      403: errorResponse("Converse session is not allowed to read resources"),
-      404: errorResponse("Resource not found"),
-    },
-  });
 };

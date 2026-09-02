@@ -9,41 +9,6 @@ export const registerWorkspacePaths = (
 ) => {
   registry.registerPath({
     method: "get",
-    path: "/api/v1/workspace/mcp/context",
-    tags: ["Workspace"],
-    summary: "Get workspace MCP context for a bearer-authenticated workspace token",
-    operationId: "getWorkspaceMcpContext",
-    security: [{ [security.bearerAuthScheme.name]: [] }],
-    responses: {
-      200: {
-        description: "Workspace MCP context returned",
-        content: {
-          "application/json": {
-            schema: schemas.WorkspaceMcpContextResponseSchema,
-          },
-        },
-      },
-      401: {
-        description: "Authentication required",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
-      },
-      403: {
-        description: "Workspace token no longer resolves to an active workspace",
-        content: {
-          "application/json": {
-            schema: schemas.ErrorResponseSchema,
-          },
-        },
-      },
-    },
-  });
-
-  registry.registerPath({
-    method: "get",
     path: "/api/v1/workspace",
     tags: ["Workspace"],
     summary: "List workspaces for the authenticated account",

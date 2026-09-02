@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 import type { RemoteHttpDependencies } from "./types.js";
-import { createAuthExchangeHandler } from "./authRoutes.js";
 import { createMcpRouteHandler } from "./mcpRoutes.js";
 import { createSessionMcpServerManager } from "./sessionServerManager.js";
 import { isRequestBodyTooLargeError, writeJson, writeJsonRpcError } from "./nodeHttp.js";
+import { createFixedWindowPreAuthSourceBudget, digestPeerSource } from "./preAuthSourceBudget.js";
 
 export interface RadiosoRemoteHttpServer {
   close(): Promise<void>;
@@ -12,16 +12,20 @@ export interface RadiosoRemoteHttpServer {
   server: Server;
 }
 
-export const createHttpServer = ({ authService, auditLogger, config }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+export const createHttpServer = ({ authService, auditLogger, config, readiness, preAuthSourceBudget }: RemoteHttpDependencies): RadiosoRemoteHttpServer => {
+  const sourceBudget = preAuthSourceBudget ?? createFixedWindowPreAuthSourceBudget({
+    maxAttempts: 60,
+    windowMs: 60_000,
+  });
   const sessionServerManager = createSessionMcpServerManager({
     auditLogger,
     config,
     entryPoint: "standalone",
   });
-  const handleExchange = createAuthExchangeHandler({ auditLogger, authService });
   const handleMcp = createMcpRouteHandler({
     authService,
     config,
+    readiness,
     serverManager: sessionServerManager,
   });
 
@@ -73,12 +77,11 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
         return;
       }
 
-      if (req.method === "POST" && url.pathname === "/v1/auth/exchange") {
-        await handleExchange(req, res);
-        return;
-      }
-
       if (url.pathname === "/mcp") {
+        if (!await sourceBudget.consume({ sourceDigest: digestPeerSource(req, config.trustedProxyHops) })) {
+          writeJsonRpcError(res, 429, -32003, "Too many requests.", { code: "rate_limit_exceeded" });
+          return;
+        }
         await handleMcp(req, res);
         return;
       }
@@ -96,6 +99,10 @@ export const createHttpServer = ({ authService, auditLogger, config }: RemoteHtt
 
   return {
     async close() {
+      if (!server.listening) {
+        return;
+      }
+
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error) {

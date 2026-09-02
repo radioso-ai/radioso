@@ -1,15 +1,12 @@
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import { consumeAbuseControlEntry, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
-
-export interface AbuseControlEntry {
-  scope: string;
-  subjectKey: string;
-  attemptCount: number;
-  windowStartedAt: Date;
-  blockedUntil: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import type {
+  AbuseControlBatchConsumption,
+  AbuseControlConsumption,
+  AbuseControlConsumptionInput,
+  AbuseControlEntry,
+  AbuseControlRepositoryPort,
+} from "../../modules/security/contracts/abuseControl.js";
 
 interface AbuseControlEntryRow {
   scope: string;
@@ -41,16 +38,10 @@ const mapEntry = (row: AbuseControlEntryRow): AbuseControlEntry => ({
   updatedAt: new Date(row.updated_at),
 });
 
-export interface AbuseControlRepositoryPort {
-  find(scope: string, subjectKey: string): Promise<AbuseControlEntry | null>;
-  save(input: {
-    scope: string;
-    subjectKey: string;
-    attemptCount: number;
-    windowStartedAt: Date;
-    blockedUntil: Date | null;
-  }): Promise<AbuseControlEntry>;
-  deleteExpired(now: Date): Promise<void>;
+class BatchRejectedError extends Error {
+  constructor(readonly consumption: AbuseControlConsumption) {
+    super("Abuse-control batch rejected");
+  }
 }
 
 export class AbuseControlRepository implements AbuseControlRepositoryPort {
@@ -95,6 +86,46 @@ export class AbuseControlRepository implements AbuseControlRepositoryPort {
       .executeTakeFirstOrThrow();
 
     return mapEntry(row);
+  }
+
+  async consume(input: AbuseControlConsumptionInput): Promise<AbuseControlConsumption> {
+    const result = await consumeAbuseControlEntry(input).execute(this.db);
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error("Atomic abuse-control consumption returned no entry");
+    }
+    const entry = mapEntry(row);
+    return {
+      entry,
+      blocked: Boolean(entry.blockedUntil && entry.blockedUntil.getTime() > input.now.getTime()),
+    };
+  }
+
+  async consumeBatch(inputs: readonly AbuseControlConsumptionInput[]): Promise<AbuseControlBatchConsumption> {
+    if (inputs.length === 0) {
+      return { entries: [], rejected: null };
+    }
+
+    try {
+      const entries = await this.db.transaction().execute(async (trx) => {
+        const repository = new AbuseControlRepository(trx);
+        const consumed: AbuseControlConsumption[] = [];
+        for (const input of inputs) {
+          const result = await repository.consume(input);
+          if (result.blocked) {
+            throw new BatchRejectedError(result);
+          }
+          consumed.push(result);
+        }
+        return consumed;
+      });
+      return { entries, rejected: null };
+    } catch (error) {
+      if (error instanceof BatchRejectedError) {
+        return { entries: [], rejected: error.consumption };
+      }
+      throw error;
+    }
   }
 
   async deleteExpired(now: Date): Promise<void> {

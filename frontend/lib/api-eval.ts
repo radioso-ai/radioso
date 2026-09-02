@@ -321,7 +321,7 @@ export const evalsApi = {
     return request<EvalMessageCaseLookup>(
       `/evals/cases/by-source-message/${encodeURIComponent(assistantMessageId)}`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -331,7 +331,7 @@ export const evalsApi = {
     return request<EvalMessageCaseResult>(
       `/evals/cases/by-source-message/${encodeURIComponent(assistantMessageId)}`,
       { method: 'PUT' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -339,13 +339,13 @@ export const evalsApi = {
     return request<EvalSnapshot>('/evals/snapshots', {
       method: 'POST',
       body: JSON.stringify(input),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getSnapshot(snapshotId: string): Promise<EvalSnapshot> {
     return request<EvalSnapshot>(`/evals/snapshots/${snapshotId}`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createCase(input: {
@@ -356,33 +356,33 @@ export const evalsApi = {
     return request<EvalCase>('/evals/cases', {
       method: 'POST',
       body: JSON.stringify({ ...input, assertions: input.assertions ?? [] }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async renameCase(caseId: string, name: string): Promise<EvalCase> {
     return request<EvalCase>(`/evals/cases/${caseId}`, {
       method: 'PATCH',
       body: JSON.stringify({ name }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteCase(caseId: string): Promise<void> {
     await request<void>(`/evals/cases/${caseId}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async replaceAssertions(caseId: string, assertions: EvalAssertion[]): Promise<EvalCase> {
     return request<EvalCase>(`/evals/cases/${caseId}/assertions`, {
       method: 'PUT',
       body: JSON.stringify({ assertions }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listCases(): Promise<{ cases: EvalCaseListItem[]; summary: EvalSuiteSummary }> {
     return request<{ cases: EvalCaseListItem[]; summary: EvalSuiteSummary }>('/evals/cases', {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   // Run a batch of cases — the whole workspace, or a selected subset via
@@ -394,13 +394,13 @@ export const evalsApi = {
         mode: input.mode ?? 'full_assistant',
         ...(input.caseIds && input.caseIds.length > 0 ? { caseIds: input.caseIds } : {}),
       }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getCase(caseId: string): Promise<EvalCaseWithRuns> {
     return request<EvalCaseWithRuns>(`/evals/cases/${caseId}`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async runCase(
@@ -410,7 +410,7 @@ export const evalsApi = {
     return request<{ run: EvalRun; case: EvalCase | null }>(`/evals/cases/${caseId}/runs`, {
       method: 'POST',
       body: JSON.stringify({ mode: input.mode ?? 'full_assistant', overrides: input.overrides }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async runOneOff(input: {
@@ -427,6 +427,6 @@ export const evalsApi = {
         ...rest,
         ...(agentConfigOverride ? { agentConfigOverride } : {}),
       }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 }

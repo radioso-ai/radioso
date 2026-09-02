@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, expect, it } from "vitest";
 
 import { AbuseControlRepository } from "../../src/db/repositories/abuseControlRepository.js";
+import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -14,7 +15,7 @@ describeIntegration("AbuseControlRepository (Postgres)", () => {
   const scope = `auth.login.${randomUUID()}`;
 
   afterAll(async () => {
-    await database.query(`DELETE FROM abuse_control_entries WHERE scope = $1`, [scope]).catch(() => undefined);
+    await database.query(`DELETE FROM abuse_control_entries WHERE scope LIKE $1`, [`${scope}%`]).catch(() => undefined);
     await database.close().catch(() => undefined);
   });
 
@@ -61,5 +62,42 @@ describeIntegration("AbuseControlRepository (Postgres)", () => {
     expect(await repository.find(scope, "stale")).toBeNull();
     expect(await repository.find(scope, "blocked-future")).not.toBeNull();
     expect(await repository.find(scope, "fresh")).not.toBeNull();
+  });
+
+  it("allows exactly one concurrent request when an atomic budget has a limit of one", async () => {
+    const concurrentScope = `${scope}.concurrent`;
+    const service = new AbuseControlService(repository);
+    const requests = await Promise.allSettled(Array.from({ length: 20 }, () => service.enforce({
+      scope: concurrentScope,
+      subjectKey: "same-subject",
+      limit: 1,
+      windowMs: 60_000,
+    })));
+
+    expect(requests.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(requests.filter((result) => result.status === "rejected")).toHaveLength(19);
+    expect((await repository.find(concurrentScope, "same-subject"))?.attemptCount).toBe(2);
+  });
+
+  it("rolls back the grant consumption when the workspace budget is unavailable", async () => {
+    const batchScope = `${scope}.batch`;
+    const service = new AbuseControlService(repository);
+    const now = new Date();
+
+    await service.enforce({
+      scope: batchScope,
+      subjectKey: "workspace:one:global",
+      limit: 1,
+      windowMs: 60_000,
+      now,
+    });
+
+    await expect(service.enforceBatch([
+      { scope: batchScope, subjectKey: "grant:one", limit: 4, windowMs: 60_000, now },
+      { scope: batchScope, subjectKey: "workspace:one:global", limit: 1, windowMs: 60_000, now },
+    ])).rejects.toMatchObject({ statusCode: 429, code: "rate_limit_exceeded" });
+
+    expect(await repository.find(batchScope, "grant:one")).toBeNull();
+    expect((await repository.find(batchScope, "workspace:one:global"))?.attemptCount).toBe(1);
   });
 });

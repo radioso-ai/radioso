@@ -1,6 +1,7 @@
 ---
-title: Basic usage
-description: Documents, chat, settings, and error handling with the TypeScript SDK.
+title: "Basic usage"
+description: "Documents, chat, settings, and error handling with the TypeScript SDK."
+last_updated: 2026-09-01
 ---
 
 # Basic usage
@@ -255,7 +256,7 @@ Agents use the retrieval pipeline through their default-answer `retrieve` skill.
 
 ## Agent authoring
 
-Authoring surfaces are available with a workspace API token. A script can build and configure an agent the same way the dashboard does, then chat with it, using one token. Authoring calls are namespaced under `client.agents.*` and take the agent id first.
+Authoring surfaces are available with a role-eligible personal token or service-account credential. A script can build and configure an agent the same way the dashboard does. Authoring calls are namespaced under `client.agents.*` and take the agent id first; a public-facing REST or MCP chat channel uses its own role-free agent credential.
 
 Define a routine as a graph of steps, transitions, and terminals, then publish it. Validation runs on save and again on publish, so a routine that references an unknown skill or leaves a step unreachable is rejected before it can run.
 
@@ -307,7 +308,7 @@ await client.contextVariables.upsertValue(contextVariable.id, { scope: { type: '
 await client.agents.contextVariables.upsert(agentId, contextVariable.id, { source: 'pushed', surfacing: 'always', enabled: true })
 ```
 
-Bind a skill so a routine can act. Capability-specific bindings have their own namespaces: `client.agents.emailSkills`, `client.agents.externalSkills`, `client.agents.webhookSkills`, `client.agents.slackSkills`, `client.agents.mcpConnections`, and `client.agents.mcpConverseGrants`.
+Bind a skill so a routine can act. Capability-specific bindings have their own namespaces: `client.agents.emailSkills`, `client.agents.externalSkills`, `client.agents.webhookSkills`, `client.agents.slackSkills`, and `client.agents.mcpConnections`. Create agent channel credentials from the signed-in dashboard's MCP or API card; their lifecycle requires an interactive session rather than a workspace bearer credential.
 
 ```ts
 const skill = await client.agents.skills.create(agentId, {
@@ -322,7 +323,7 @@ const skill = await client.agents.skills.create(agentId, {
 
 ## Non-streaming chat
 
-SDK chat methods target the assistant chat surface. Use them for human-facing agent conversations that should keep history and may answer directly or with retrieval-backed evidence.
+SDK chat methods target the role-aware assistant surface for operator automation. Use them for conversations that should keep workspace history and may answer directly or with retrieval-backed evidence. An external client confined to one agent should instead use a REST-audience agent credential with `POST /api/v1/agents/{agentId}/chat`.
 
 ```ts
 const response = await client.chat.create({
@@ -393,7 +394,7 @@ try {
 } catch (error) {
   if (error instanceof RadiosoError) {
     if (error.status === 401) {
-      // refresh or replace the API token
+      // rotate or replace the API credential
     }
   } else {
     throw error
@@ -403,8 +404,8 @@ try {
 
 ## Notes
 
-- `baseUrl` defaults to `https://api.radioso.ai`, exported as `DEFAULT_BASE_URL`. Set it to `https://api-us.radioso.ai` or your own origin for a self-hosted deployment — a workspace API token only works against the instance that issued it.
-- The SDK sends the API token as `Authorization: Bearer <token>`.
+- `baseUrl` defaults to `https://api.radioso.ai`, exported as `DEFAULT_BASE_URL`. Set it to `https://api-us.radioso.ai` or your own origin for a self-hosted deployment — an API credential only works against the instance that issued it.
+- The SDK sends the personal token or service-account credential as `Authorization: Bearer <token>`.
 - Streaming chat is layered on top of `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. These calls run on system defaults and support per-call `metadataFilter`. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.

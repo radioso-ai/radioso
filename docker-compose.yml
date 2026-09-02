@@ -34,6 +34,7 @@ services:
       PORT: 8080
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      INTEGRATION_DATABASE_URL: ""
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
@@ -70,6 +71,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      INTEGRATION_DATABASE_URL: ""
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
@@ -92,6 +94,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/radioso
+      INTEGRATION_DATABASE_URL: ""
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
       PUBLIC_CHAT_BASE_URL: ${PUBLIC_CHAT_BASE_URL:-http://localhost:3000/chat}
       SESSION_TTL_HOURS: 168
@@ -113,6 +116,7 @@ services:
         condition: service_healthy
     environment:
       BACKEND_INTERNAL_URL: http://backend:8080
+      INTEGRATION_DATABASE_URL: ""
     ports:
       - "${RADIOSO_FRONTEND_PORT:-3000}:3000"
 

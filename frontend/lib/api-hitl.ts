@@ -31,7 +31,7 @@ export const isHitlApiStatusError = (
 
 export const hitlApi = {
   async listPendingDecisions(signal?: AbortSignal): Promise<PendingApprovalDecisionListResponse> {
-    return request<PendingApprovalDecisionListResponse>('/decisions', { method: 'GET', ...(signal ? { signal } : {}) }, { withApiToken: true })
+    return request<PendingApprovalDecisionListResponse>('/decisions', { method: 'GET', ...(signal ? { signal } : {}) }, { withSession: true })
   },
 
   async resolveDecision(
@@ -42,7 +42,7 @@ export const hitlApi = {
     return request<ResolveDecisionResponse>(
       `/agents/${encodeURIComponent(agentId)}/decisions/${encodeURIComponent(handle)}/resolve`,
       { method: 'POST', body: JSON.stringify(body) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -53,7 +53,7 @@ export const hitlApi = {
     return request<ConversationOwnershipResponse>(
       `/conversations/${encodeURIComponent(conversationId)}/takeover`,
       { method: 'POST', body: JSON.stringify(body) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -61,7 +61,7 @@ export const hitlApi = {
     return request<HumanReplyMessageResponse>(
       `/conversations/${encodeURIComponent(conversationId)}/reply`,
       { method: 'POST', body: JSON.stringify(body) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -72,7 +72,7 @@ export const hitlApi = {
     return request<ConversationOwnershipResponse>(
       `/conversations/${encodeURIComponent(conversationId)}/transfer`,
       { method: 'POST', body: JSON.stringify(body) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -83,7 +83,7 @@ export const hitlApi = {
     return request<ConversationOwnershipResponse>(
       `/conversations/${encodeURIComponent(conversationId)}/handback`,
       { method: 'POST', body: JSON.stringify(body) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -95,7 +95,7 @@ export const hitlApi = {
     return request<ChatConversationTail>(
       withQuery(`/history/chat/${encodeURIComponent(conversationId)}/tail`, params),
       { method: 'GET', ...(signal ? { signal } : {}) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { getEnvContract, listRequiredKeys } from "./support/env-contract.mjs";
 
+const retiredEnvKeys = ["INTEGRATION_DATABASE_URL"];
+
 export const parseEnvFile = (source) => {
   const values = {};
   for (const rawLine of source.split(/\r?\n/)) {
@@ -22,16 +24,20 @@ export const parseEnvFile = (source) => {
   return values;
 };
 
-export const readEnvFile = async (filePath) => {
+export const readEnvFileSource = async (filePath) => {
   try {
-    const source = await fs.readFile(filePath, "utf8");
-    return parseEnvFile(source);
+    return await fs.readFile(filePath, "utf8");
   } catch (error) {
     if (error.code === "ENOENT") {
       return null;
     }
     throw error;
   }
+};
+
+export const readEnvFile = async (filePath) => {
+  const source = await readEnvFileSource(filePath);
+  return source === null ? null : parseEnvFile(source);
 };
 
 export const classifyEnvState = (values, contract = getEnvContract()) => {
@@ -55,11 +61,26 @@ export const classifyEnvState = (values, contract = getEnvContract()) => {
 export const buildEnvValues = (existingValues, updates, contract = getEnvContract()) => {
   const merged = { ...contract.defaults, ...(existingValues ?? {}), ...updates };
 
+  for (const key of retiredEnvKeys) {
+    delete merged[key];
+  }
+
   if (!merged.LLM_PROVIDER) {
     merged.LLM_PROVIDER = contract.defaults.LLM_PROVIDER || "openai";
   }
 
   return merged;
+};
+
+export const hasRetiredEnvKeys = (values) => retiredEnvKeys.some((key) => key in (values ?? {}));
+
+export const removeRetiredEnvAssignments = (source) => {
+  let cleaned = source;
+  for (const key of retiredEnvKeys) {
+    const assignment = new RegExp(`^[\\t ]*(?:export[\\t ]+)?${key}[\\t ]*=.*(?:\\r?\\n|$)`, "gm");
+    cleaned = cleaned.replace(assignment, "");
+  }
+  return cleaned;
 };
 
 export const renderEnvFile = (values, contract = getEnvContract()) => {

@@ -3,22 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import { createTestApp, issueTestSession } from "../support/testApp.js";
 import type { InMemoryAuditService } from "../support/fakes.js";
-import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
-import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
-import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import {
   createAuditService,
   InMemoryAccountRepository,
-  InMemoryAccountInvitationRepository,
-  InMemoryAccountMembershipRepository,
-  InMemoryUserRepository,
   InMemoryWorkspaceRepository,
-  InMemoryWorkspaceTokenRepository,
-  InMemorySessionRepository,
 } from "../support/fakes.js";
-import { createTestEnv } from "../support/testApp.js";
-import { InMemoryOrganizationProvisioner } from "../support/organizationProvisioner.js";
 import type {
   OrganizationCreationGuard,
   OrganizationCreationRequest,
@@ -128,7 +118,7 @@ describe("auth integration", () => {
     expect(response.headers["set-cookie"]).toBeUndefined();
   });
 
-  it("supports multi-workspace session flows and explicit token reveal", async () => {
+  it("supports multi-workspace session flows without exposing a shared workspace token", async () => {
     const { app } = createTestApp();
     const register = await issueTestSession(app, "repeat@example.com");
     const cookie = register.cookie;
@@ -163,8 +153,7 @@ describe("auth integration", () => {
     expect(login.body.token).toBeUndefined();
     expect(preferredSettings.status).toBe(200);
     expect(defaultSettings.status).toBe(200);
-    expect(tokenRoute.status).toBe(200);
-    expect(tokenRoute.body.token).toMatch(/^radioso_[a-f0-9]+$/);
+    expect(tokenRoute.status).toBe(404);
   });
 
   it("creates additional workspaces without consulting organization creation policy", async () => {
@@ -182,7 +171,7 @@ describe("auth integration", () => {
     expect(organizationCreationGuard.requests).toEqual([]);
   });
 
-  it("rotates the workspace token on demand", async () => {
+  it("does not expose removed shared workspace-token routes", async () => {
     const { app } = createTestApp();
     const registration = await issueTestSession(app, "rotate-token@example.com");
     const cookie = registration.cookie;
@@ -197,13 +186,11 @@ describe("auth integration", () => {
       .post(rotateRoute)
       .set("Cookie", cookie);
 
-    expect(revealed.status).toBe(200);
-    expect(rotated.status).toBe(200);
-    expect(rotated.body.token).toMatch(/^radioso_[a-f0-9]+$/);
-    expect(rotated.body.token).not.toBe(revealed.body.token);
+    expect(revealed.status).toBe(404);
+    expect(rotated.status).toBe(404);
   });
 
-  it("returns 400 for malformed workspace token route ids", async () => {
+  it("does not retain validation behavior for removed workspace-token routes", async () => {
     const { app } = createTestApp();
     const registration = await issueTestSession(app, "malformed-workspace-token-id@example.com");
 
@@ -214,13 +201,11 @@ describe("auth integration", () => {
       .post("/api/v1/account/workspaces/not-a-uuid/token/rotate")
       .set("Cookie", registration.cookie);
 
-    expect(reveal.status).toBe(400);
-    expect(reveal.body.error.message).toBe("Invalid workspace id");
-    expect(rotate.status).toBe(400);
-    expect(rotate.body.error.message).toBe("Invalid workspace id");
+    expect(reveal.status).toBe(404);
+    expect(rotate.status).toBe(404);
   });
 
-  it("returns 503 for workspace token operations when the token secret is unset", async () => {
+  it("keeps removed workspace-token routes absent regardless of legacy secret configuration", async () => {
     const { app } = createTestApp({
       envOverrides: {
         WORKSPACE_TOKEN_SECRET: undefined,
@@ -233,176 +218,7 @@ describe("auth integration", () => {
       .get(`/api/v1/account/workspaces/${register.workspaceId}/token`)
       .set("Cookie", register.cookie);
 
-    expect(response.status).toBe(503);
-    expect(response.body.error).toMatchObject({
-      code: "service_unavailable",
-      message: "Workspace token operations are not configured.",
-    });
-  });
-
-  it("rotates an unreadable stored token instead of failing", async () => {
-    const env = createTestEnv();
-    const auditService = createAuditService();
-    const accountRepository = new InMemoryAccountRepository();
-    const userRepository = new InMemoryUserRepository();
-    const accountMembershipRepository = new InMemoryAccountMembershipRepository();
-    accountMembershipRepository.setUserRepository(userRepository);
-    const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
-    const accountInvitationService = new AccountInvitationService(
-      new InMemoryAccountInvitationRepository(),
-      userRepository,
-      accountAccessService,
-      auditService,
-    );
-    const sessionRepository = new InMemorySessionRepository();
-    const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
-    const workspaceRepository = new InMemoryWorkspaceRepository();
-    const workspaceService = new WorkspaceService(workspaceRepository, auditService);
-    const authService = new AuthService({
-      env,
-      auditService,
-      accountRepository,
-      userRepository,
-      sessionRepository,
-      workspaceTokenRepository,
-      workspaceService,
-      accountAccessService,
-      accountInvitationService,
-      organizationProvisioner: new InMemoryOrganizationProvisioner(
-        accountRepository,
-        userRepository,
-        accountAccessService,
-        workspaceService,
-      ),
-    });
-
-    const account = await accountRepository.create({
-      name: "Rotate Organization",
-      email: "rotate@example.com",
-      passwordHash: "hash",
-    });
-    await userRepository.create({
-      id: account.id,
-      email: account.email,
-      passwordHash: account.passwordHash,
-    });
-    await accountAccessService.ensureMembership({
-      accountId: account.id,
-      userId: account.id,
-      role: "owner",
-    });
-    const workspace = await workspaceService.createDefault(account.id);
-
-    await workspaceTokenRepository.save({
-      workspaceId: workspace.id,
-      accountId: account.id,
-      tokenPrefix: "radioso_",
-      tokenHash: "stale-hash",
-      encryptedToken: "not:a:valid-token",
-    });
-
-    const result = await authService.getTokenForWorkspace(workspace.id, account.id);
-
-    expect(result.token).toMatch(/^radioso_[a-f0-9]+$/);
-    expect(auditService.events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventType: "auth.token.read",
-          eventStatus: "failure",
-        }),
-        expect.objectContaining({
-          eventType: "auth.token.create",
-          eventStatus: "success",
-        }),
-      ]),
-    );
-  });
-
-  it("keeps workspace tokens readable when the session cookie secret changes", async () => {
-    const auditService = createAuditService();
-    const accountRepository = new InMemoryAccountRepository();
-    const userRepository = new InMemoryUserRepository();
-    const accountMembershipRepository = new InMemoryAccountMembershipRepository();
-    accountMembershipRepository.setUserRepository(userRepository);
-    const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
-    const accountInvitationService = new AccountInvitationService(
-      new InMemoryAccountInvitationRepository(),
-      userRepository,
-      accountAccessService,
-      auditService,
-    );
-    const sessionRepository = new InMemorySessionRepository();
-    const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
-    const workspaceRepository = new InMemoryWorkspaceRepository();
-    const workspaceService = new WorkspaceService(workspaceRepository, auditService);
-    const baseEnv = createTestEnv();
-
-    const initialAuthService = new AuthService({
-      env: {
-        ...baseEnv,
-        SESSION_COOKIE_SECRET: "session-secret-before-rotation",
-        WORKSPACE_TOKEN_SECRET: "workspace-token-secret-stable",
-      },
-      auditService,
-      accountRepository,
-      userRepository,
-      sessionRepository,
-      workspaceTokenRepository,
-      workspaceService,
-      accountAccessService,
-      accountInvitationService,
-      organizationProvisioner: new InMemoryOrganizationProvisioner(
-        accountRepository,
-        userRepository,
-        accountAccessService,
-        workspaceService,
-      ),
-    });
-
-    const account = await accountRepository.create({
-      name: "Stable Token Organization",
-      email: "stable-token@example.com",
-      passwordHash: "hash",
-    });
-    await userRepository.create({
-      id: account.id,
-      email: account.email,
-      passwordHash: account.passwordHash,
-    });
-    await accountAccessService.ensureMembership({
-      accountId: account.id,
-      userId: account.id,
-      role: "owner",
-    });
-    const workspace = await workspaceService.createDefault(account.id);
-
-    const issued = await initialAuthService.getTokenForWorkspace(workspace.id, account.id);
-
-    const rotatedSessionSecretAuthService = new AuthService({
-      env: {
-        ...baseEnv,
-        SESSION_COOKIE_SECRET: "session-secret-after-rotation",
-        WORKSPACE_TOKEN_SECRET: "workspace-token-secret-stable",
-      },
-      auditService,
-      accountRepository,
-      userRepository,
-      sessionRepository,
-      workspaceTokenRepository,
-      workspaceService,
-      accountAccessService,
-      accountInvitationService,
-      organizationProvisioner: new InMemoryOrganizationProvisioner(
-        accountRepository,
-        userRepository,
-        accountAccessService,
-        workspaceService,
-      ),
-    });
-
-    const revealed = await rotatedSessionSecretAuthService.getTokenForWorkspace(workspace.id, account.id);
-
-    expect(revealed.token).toBe(issued.token);
+    expect(response.status).toBe(404);
   });
 
   it("does not create a second default workspace for the same account", async () => {

@@ -17,7 +17,7 @@ describe('hitlApi', () => {
     const { hitlApi } = await import('@/lib/api-hitl')
 
     await expect(hitlApi.listPendingDecisions()).resolves.toEqual({ decisions: [] })
-    expect(requestMock).toHaveBeenCalledWith('/decisions', { method: 'GET' }, { withApiToken: true })
+    expect(requestMock).toHaveBeenCalledWith('/decisions', { method: 'GET' }, { withSession: true })
   })
 
   it('resolves a decision with agent, handle, and body', async () => {
@@ -40,7 +40,7 @@ describe('hitlApi', () => {
     expect(requestMock).toHaveBeenCalledWith(
       '/agents/agent%2F1/decisions/handle%2F1/resolve',
       { method: 'POST', body: JSON.stringify(body) },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 
@@ -64,25 +64,25 @@ describe('hitlApi', () => {
       1,
       '/conversations/conversation%2F1/takeover',
       { method: 'POST', body: JSON.stringify({ reason: 'Needs review' }) },
-      { withApiToken: true },
+      { withSession: true },
     )
     expect(requestMock).toHaveBeenNthCalledWith(
       2,
       '/conversations/conversation%2F1/reply',
       { method: 'POST', body: JSON.stringify({ message: 'Human reply', expectedVersion: 2 }) },
-      { withApiToken: true },
+      { withSession: true },
     )
     expect(requestMock).toHaveBeenNthCalledWith(
       3,
       '/conversations/conversation%2F1/transfer',
       { method: 'POST', body: JSON.stringify({ toAccountId: 'account-2', expectedVersion: 3 }) },
-      { withApiToken: true },
+      { withSession: true },
     )
     expect(requestMock).toHaveBeenNthCalledWith(
       4,
       '/conversations/conversation%2F1/handback',
       { method: 'POST', body: JSON.stringify({ expectedVersion: 4 }) },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 
@@ -96,7 +96,7 @@ describe('hitlApi', () => {
     expect(requestMock).toHaveBeenCalledWith(
       '/history/chat/conversation%2F1/tail?cursor=cursor-1&limit=25',
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   })
 

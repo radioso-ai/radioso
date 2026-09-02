@@ -220,8 +220,8 @@ describe("copilot capability governance", () => {
     const composed = {
       ...descriptor("workspace.agents.read"),
       capabilityProvenance: {
-        backingOperationIds: ["validateAgentRoutine"],
-        applicationPrimitiveIds: ["routines.validation"],
+        backingOperationIds: ["validateAgentRoutine"] as const,
+        applicationPrimitiveIds: ["routines.validation"] as const,
         rayOnly: { reason: "Ray returns bounded diagnostics alongside validation." },
       },
     } satisfies CopilotToolDescriptor;

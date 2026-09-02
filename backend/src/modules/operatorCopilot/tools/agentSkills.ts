@@ -100,7 +100,6 @@ const declaredSettingsValues = (config: Record<string, unknown>, fields: Readonl
   }
   return settings;
 };
-
 export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "agent_skills", shape: "read", verificationCost: () => 0, uiLabel: "Reading agent skills", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
@@ -216,4 +215,3 @@ export const createAgentSkillConfigProposalCopilotTools = (
     },
   ];
 };
-

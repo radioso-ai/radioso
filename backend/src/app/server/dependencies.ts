@@ -1,4 +1,5 @@
 import { getEnv, type Env } from "../config/env.js";
+import { apiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import {
   createDefaultAgentSkillSettingsRegistry,
   createDefaultApplicationComposition,
@@ -49,6 +50,7 @@ import { buildAudiencePulseService } from "./builders/audiencePulse.js";
 import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
+import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
@@ -113,7 +115,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
     repositories,
+    lifecycleUnitOfWork: new AccessGrantLifecycleUnitOfWork(infrastructure.database.kysely),
   });
   const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
     auditService: infrastructure.auditService,
@@ -153,6 +158,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     infrastructure,
     logger,
     repositories,
+    personalCredentialTermination: access.personalCredentialTenureService,
+    personalCredentialLifecycle: access.personalCredentialLifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -744,6 +751,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     emailVerificationService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
+    apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
+    apiPrincipalRouteInventory,
+    machineAccessSecurityObserver: access.machineAccessSecurityObserver,
+    credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
+    personalCredentialService: access.personalCredentialService,
+    serviceAccountService: access.serviceAccountService,
     workspaceSessionService: workspace.workspaceSessionService,
     abuseControlService: chat.abuseControlService,
     workspaceProviderCredentialsService,
@@ -825,6 +838,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,
     agentRepository: repositories.agentRepository,
+    agentConverseSessionMappingRepository: repositories.agentConverseSessionMappingRepository,
     contextVariableService,
     contextVariableResolutionReader: chat.contextVariableResolutionReader,
     identityNonceRepository: repositories.identityNonceRepository,

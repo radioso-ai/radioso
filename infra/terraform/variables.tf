@@ -353,13 +353,6 @@ variable "public_chat_session_secret" {
   sensitive   = true
 }
 
-variable "radioso_mcp_signing_secret" {
-  description = "Signing secret used by the hosted MCP HTTP session layer."
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
 variable "connector_encryption_key" {
   description = "Connector secret encryption key (32 bytes, base64-encoded)"
   type        = string
@@ -518,15 +511,9 @@ variable "connector_public_base_url" {
 }
 
 variable "radioso_mcp_enabled" {
-  description = "Whether Terraform should expose the backend-hosted MCP route. When enabled, MCP is mounted in the backend rather than as a standalone service."
+  description = "Whether Terraform should deploy the standalone public MCP Cloud Run service."
   type        = bool
   default     = false
-}
-
-variable "radioso_mcp_base_url_override" {
-  description = "Optional public backend base URL used by the hosted MCP runtime when it calls Radioso APIs. Defaults to connector_public_base_url when set."
-  type        = string
-  default     = null
 }
 
 variable "frontend_backend_internal_url_override" {

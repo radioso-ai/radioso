@@ -22,7 +22,7 @@ import {
   createSlackSkillsResource,
   createWebhookSkillsResource,
 } from "./resources/skills.js";
-import { createMcpConnectionsResource, createMcpConverseGrantsResource } from "./resources/mcp.js";
+import { createMcpConnectionsResource } from "./resources/mcp.js";
 
 export { RadiosoError } from "./core/errors.js";
 export type {
@@ -146,10 +146,6 @@ export type {
   McpConnectionOauthStartResponse,
   McpConnectionOauthCompleteRequest,
   McpConnectionOauthCompleteResponse,
-  AgentMcpConverseGrantListResponse,
-  AgentMcpConverseGrantIssueRequest,
-  AgentMcpConverseGrantIssueResponse,
-  AgentMcpConverseGrantSecretResponse,
 } from "./resources/mcp.js";
 
 export interface DocumentImportFileRequest {
@@ -207,7 +203,6 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
   const webhookSkills = createWebhookSkillsResource(config);
   const slackSkills = createSlackSkillsResource(config);
   const mcpConnections = createMcpConnectionsResource(config);
-  const mcpConverseGrants = createMcpConverseGrantsResource(config);
 
   return {
     settings: {
@@ -248,7 +243,6 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       webhookSkills,
       slackSkills,
       mcpConnections,
-      mcpConverseGrants,
     },
     contextVariables,
     documents: {

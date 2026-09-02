@@ -150,7 +150,7 @@ Use **Allow all origins** only when the widget should launch from any site that 
 
 ### Install the launcher snippet
 
-Use the workspace embed snippet or script URL exposed by settings. The frontend serves the launcher script at `/radioso-embed.js`; it boots the widget with the workspace token and then loads server-side widget settings.
+Use the workspace embed snippet or script URL exposed by settings. The frontend serves the launcher script at `/radioso-embed.js`; it boots the widget with the public launch token and then loads server-side widget settings. Public launch-token rotation is managed from the signed-in dashboard and is separate from personal and service API credentials.
 
 ### Test bootstrap and session reuse
 
@@ -167,7 +167,7 @@ Open the blocked origin and confirm the launcher cannot establish a valid embedd
 
 ## One concrete test flow
 
-1. In the dashboard, open the agent's **Channels** section, enable the **Website widget**, and copy its embed token.
+1. In the signed-in dashboard, open the agent's **Channels** section, enable the **Website widget**, and copy its public embed token.
 2. Add `http://127.0.0.1:4321` to the allowed-origin list.
 3. Enable anonymous chat and website embed.
 4. Load `http://127.0.0.1:4321`, paste the copied token into the harness form's **Embed token** field, and click **Reload with widget**.

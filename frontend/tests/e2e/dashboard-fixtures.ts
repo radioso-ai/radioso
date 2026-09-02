@@ -63,12 +63,14 @@ export type DiscoveredMcpToolFixture = {
   description?: string;
   inputSchema?: unknown;
 };
-export type McpConverseGrantFixture = {
+export type AgentChannelCredentialFixture = {
   id: string;
-  label: string | null;
-  tokenPrefix: string;
-  enabled: boolean;
+  audience: "mcp" | "rest";
+  label: string;
+  prefix: string;
+  status: "active" | "expired" | "revoked" | "disabled";
   createdAt: string;
+  expiresAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
 };
@@ -495,7 +497,6 @@ export const seedDashboardStorage = async (page: Page) => {
     window.localStorage.setItem("radioso.lastAccountId", accountIdValue);
     window.localStorage.setItem("radioso.activeWorkspaceId", workspaceIdValue);
     window.localStorage.setItem("radioso.activeWorkspacePublicRouteKey", workspaceKeyValue);
-    window.localStorage.setItem("radioso.workspaceTokens", JSON.stringify({ [workspaceIdValue]: "workspace-token" }));
   }, {
     accountIdValue: accountId,
     workspaceIdValue: workspaceId,
@@ -897,8 +898,8 @@ export const installDashboardApiMocks = async (
     mcpConnections?: McpConnectionFixture[];
     mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
     mcpConnectionRequests?: string[];
-    mcpConverseGrants?: McpConverseGrantFixture[];
-    mcpConverseGrantRequests?: Array<{ method: "GET" | "POST" | "DELETE"; path: string; body?: unknown }>;
+    agentChannelCredentials?: AgentChannelCredentialFixture[];
+    agentChannelCredentialRequests?: Array<{ method: "GET" | "POST"; path: string; body?: unknown }>;
     mcpHealth?: { enabled: boolean; standalone: boolean; path: string };
     emailSkills?: CustomerEmailSkillFixture[];
     emailActivity?: CustomerEmailActivityFixture[];
@@ -1007,9 +1008,9 @@ export const installDashboardApiMocks = async (
   const mcpDiscoveredTools = options.mcpDiscoveredTools ?? [];
   const mcpConnectionRequests = options.mcpConnectionRequests;
   let nextMcpConnectionIndex = mcpConnections.length + 1;
-  let mcpConverseGrants = options.mcpConverseGrants ?? [];
-  const mcpConverseGrantRequests = options.mcpConverseGrantRequests;
-  let nextMcpConverseGrantIndex = mcpConverseGrants.length + 1;
+  let agentChannelCredentials = options.agentChannelCredentials ?? [];
+  const agentChannelCredentialRequests = options.agentChannelCredentialRequests;
+  let nextAgentChannelCredentialIndex = agentChannelCredentials.length + 1;
   const webhookDestinationUpdates = options.webhookDestinationUpdates;
   const coherenceFor = (directive: AuthoredDirectiveFixture): ApiSchemas["DirectiveCoherenceVerdict"] => {
     // Mirrors the backend: a disabled directive is not checked at all, so disabling one
@@ -1251,11 +1252,6 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/account/usage/internal-operations") {
       await json(route, internalUsage);
-      return;
-    }
-
-    if (request.method() === "GET" && path === `/account/workspaces/${workspaceId}/token`) {
-      await json(route, { token: "workspace-token" });
       return;
     }
 
@@ -2486,55 +2482,52 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/mcp-converse-grants`) {
-      mcpConverseGrantRequests?.push({ method: "GET", path });
-      await json(route, { grants: mcpConverseGrants });
+    if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channel-credentials`) {
+      const audience = new URL(request.url()).searchParams.get("audience");
+      agentChannelCredentialRequests?.push({ method: "GET", path });
+      await json(route, { credentials: agentChannelCredentials.filter((credential) => !audience || credential.audience === audience) });
       return;
     }
 
-    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/mcp-converse-grants`) {
-      const body = request.postDataJSON() as { label?: string };
-      mcpConverseGrantRequests?.push({ method: "POST", path, body });
-      const token = `radioso_mcp_converse_${nextMcpConverseGrantIndex}_plaintext`;
-      const grant: McpConverseGrantFixture = {
-        id: `mcp-converse-grant-${nextMcpConverseGrantIndex++}`,
-        label: body.label ?? null,
-        tokenPrefix: token.slice(0, 18),
-        enabled: true,
+    if (request.method() === "POST" && path === `/agents/${defaultAgentId}/channel-credentials`) {
+      const body = request.postDataJSON() as { audience: "mcp" | "rest"; label: string; expiresAt: string };
+      agentChannelCredentialRequests?.push({ method: "POST", path, body });
+      const token = `radioso_${body.audience}_${nextAgentChannelCredentialIndex}_plaintext`;
+      const credential: AgentChannelCredentialFixture = {
+        id: `agent-channel-credential-${nextAgentChannelCredentialIndex++}`,
+        audience: body.audience,
+        label: body.label,
+        prefix: token.slice(0, 18),
+        status: "active",
         createdAt: nowIso,
+        expiresAt: body.expiresAt,
         lastUsedAt: null,
         revokedAt: null,
       };
-      mcpConverseGrants = [grant, ...mcpConverseGrants];
-      await json(route, { grant: { id: grant.id, label: grant.label, tokenPrefix: grant.tokenPrefix, createdAt: grant.createdAt }, token }, 201);
+      agentChannelCredentials = [credential, ...agentChannelCredentials];
+      await json(route, { credential, secret: token }, 201);
       return;
     }
 
-    if (request.method() === "POST" && /\/agents\/[^/]+\/mcp-converse-grants\/[^/]+\/rotate$/.test(path)) {
-      const grantId = path.split("/")[4];
-      mcpConverseGrantRequests?.push({ method: "POST", path });
-      const grant = mcpConverseGrants.find((entry) => entry.id === grantId);
-      const token = `radioso_mcp_converse_rotated_${grantId}`;
-      if (grant) {
-        grant.tokenPrefix = token.slice(0, 18);
-        grant.createdAt = nowIso;
+    if (request.method() === "POST" && /\/agents\/[^/]+\/channel-credentials\/[^/]+\/rotate$/.test(path)) {
+      const credentialId = path.split("/")[4];
+      agentChannelCredentialRequests?.push({ method: "POST", path });
+      const credential = agentChannelCredentials.find((entry) => entry.id === credentialId);
+      const token = `radioso_agent_rotated_${credentialId}`;
+      if (credential) {
+        credential.prefix = token.slice(0, 18);
+        credential.createdAt = nowIso;
       }
-      await json(route, {
-        grant: grant ?? {
-          id: grantId,
-          label: null,
-          tokenPrefix: token.slice(0, 18),
-          createdAt: nowIso,
-        },
-        token,
-      });
+      await json(route, { credential, secret: token });
       return;
     }
 
-    if (request.method() === "DELETE" && /\/agents\/[^/]+\/mcp-converse-grants\/[^/]+$/.test(path)) {
-      const grantId = path.split("/")[4];
-      mcpConverseGrantRequests?.push({ method: "DELETE", path });
-      mcpConverseGrants = mcpConverseGrants.filter((entry) => entry.id !== grantId);
+    if (request.method() === "POST" && /\/agents\/[^/]+\/channel-credentials\/[^/]+\/revoke$/.test(path)) {
+      const credentialId = path.split("/")[4];
+      agentChannelCredentialRequests?.push({ method: "POST", path });
+      agentChannelCredentials = agentChannelCredentials.map((credential) => credential.id === credentialId
+        ? { ...credential, status: "revoked", revokedAt: nowIso }
+        : credential);
       await route.fulfill({ status: 204, contentType: "application/json", body: "" });
       return;
     }

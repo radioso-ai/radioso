@@ -1,7 +1,7 @@
-import { runSingleNodeSmoke } from "../testing/remoteSmokeHarness.js";
+import { runConverseGrantSmoke } from "../testing/remoteSmokeHarness.js";
 
 const main = async () => {
-  const summary = await runSingleNodeSmoke({
+  const summary = await runConverseGrantSmoke({
     step(message) {
       console.info(`[smoke:http] ${message}`);
     },
@@ -11,9 +11,8 @@ const main = async () => {
   console.info(
     JSON.stringify(
       {
-        answer: summary.answer,
-        documentId: summary.documentId,
-        workspaceId: summary.workspaceId,
+        agentId: summary.agentId,
+        answerLength: summary.answer.length,
       },
       null,
       2,

@@ -1,26 +1,56 @@
 import { randomUUID } from "node:crypto";
 
-import { afterEach, beforeEach, expect, it } from "vitest";
+import pg from "pg";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
 
 import { ActionRequestRepository } from "../../src/db/repositories/actionRequestRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("ActionRequestRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
-  const repository = new ActionRequestRepository(database.kysely);
+  const testDatabaseName = `action_request_${randomUUID().replaceAll("-", "")}_test`;
   const created: string[] = [];
+  const fixtureType = `test.action-request.${randomUUID()}`;
+  let database: Database;
+  let repository: ActionRequestRepository;
+
+  beforeAll(async () => {
+    const admin = new pg.Pool({ connectionString: integrationDatabaseUrl });
+    try {
+      await admin.query(`CREATE DATABASE "${testDatabaseName}" TEMPLATE template0`);
+    } finally {
+      await admin.end();
+    }
+
+    const testDatabaseUrl = new URL(integrationDatabaseUrl);
+    testDatabaseUrl.pathname = `/${testDatabaseName}`;
+    testDatabaseUrl.searchParams.delete("options");
+    database = new Database(testDatabaseUrl.toString());
+    await runAllTestMigrations(database);
+    repository = new ActionRequestRepository(database.kysely);
+  }, 30_000);
+
+  afterAll(async () => {
+    await database?.close().catch(() => undefined);
+    const admin = new pg.Pool({ connectionString: integrationDatabaseUrl });
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS "${testDatabaseName}" WITH (FORCE)`);
+    } finally {
+      await admin.end().catch(() => undefined);
+    }
+  }, 30_000);
 
   const enqueue = async (overrides: { idempotencyKey?: string } = {}) => {
-    const r = await repository.enqueue({ type: "contact.email", payload: { a: 1 }, idempotencyKey: overrides.idempotencyKey });
+    const r = await repository.enqueue({ type: fixtureType, payload: { a: 1 }, idempotencyKey: overrides.idempotencyKey });
     created.push(r.id);
     return r;
   };
 
   beforeEach(async () => {
-    await database.query(`DELETE FROM routine_action_requests`);
+    await database.query(`DELETE FROM routine_action_requests WHERE type = $1`, [fixtureType]);
     created.splice(0);
   });
 
@@ -41,7 +71,7 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
 
   it("round-trips skill_name through enqueue and claimPending, defaulting to null when omitted", async () => {
     const named = await repository.enqueue({
-      type: "contact.send",
+      type: fixtureType,
       payload: { message: "call me" },
       skillName: "contact_sales",
     });

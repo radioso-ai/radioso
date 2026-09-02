@@ -41,9 +41,10 @@ const issueConverseGrant = async (ctx: ReturnType<typeof createAppWithMcpConvers
   const { token } = await ctx.dependencies.accessGrantService.issueGrant({
     agentId: agent.id,
     workspaceId: session.workspaceId,
-    principalKind: "public-launch",
+    principalKind: "agent-api",
     channel: "mcp-converse",
     originConstraint: { mode: "allow-all", origins: [] },
+    expiresAt: new Date(Date.now() + 60_000),
   });
   return { agent, launchToken: token, workspaceId: session.workspaceId };
 };

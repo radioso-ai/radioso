@@ -21,8 +21,10 @@ Use these routes after a session has already been established.
 Organization roles are scoped to one account:
 
 - `owner` is the top authority for that organization.
-- `admin` can manage users, workspaces, settings, documents, ingestion, and tokens, but cannot remove or demote owners.
-- `member` can use workspaces broadly and reveal workspace tokens, but cannot manage users, rename the organization, create or delete workspaces, or rotate workspace tokens.
+- `admin` can manage users, workspaces, settings, documents, ingestion, and service accounts, but cannot remove or demote owners.
+- `member` can use workspaces broadly and manage personal API credentials for their own automation, but cannot manage users, rename the organization, create or delete workspaces, or manage service accounts.
+
+Account and API-access lifecycle routes use the signed-in dashboard session. Use [API access](/api/workspaces-and-tokens) to issue personal or service credentials for eligible automation routes; those credentials cannot manage accounts or mint other credentials.
 
 Open-source deployments have one self-created organization per server. The first signup creates it, later users join it by invitation, and signed-in users cannot create another organization. This restriction does not apply to workspaces: owners and admins can continue to create workspaces inside the organization with `POST /api/v1/workspace`.
 
@@ -150,5 +152,5 @@ DELETE /api/v1/account/users/{membershipId}
 ## Read next
 
 - [Auth and sessions](/api/auth-and-sessions)
-- [Workspaces and tokens](/api/workspaces-and-tokens)
+- [Personal tokens and service accounts](/api/workspaces-and-tokens)
 - [API Reference](/api-reference)

@@ -1,31 +1,30 @@
 import { z } from "zod";
 
+const controlCharacter = /[\u0000-\u001F\u007F-\u009F]/u;
+const boundedClientValue = (max: number) => z.string()
+  .min(1)
+  .max(max)
+  .refine((value) => !controlCharacter.test(value), "Client metadata must not contain control characters")
+  .refine((value) => value.trim().length > 0, "Client metadata must not be blank")
+  .transform((value) => value.trim());
+
 export const mcpConverseClientSchema = z.object({
-  name: z.string().trim().min(1).optional(),
-  version: z.string().trim().min(1).optional(),
+  name: boundedClientValue(128).optional(),
+  version: boundedClientValue(64).optional(),
 }).optional();
 
 export const mcpConverseSessionRequestSchema = z.object({
-  launchToken: z.string().min(1),
+  launchToken: z.string().min(1).max(2048).refine((value) => !controlCharacter.test(value)),
   client: mcpConverseClientSchema,
 });
 
 export const mcpConverseSessionValidateRequestSchema = z.object({
-  sessionToken: z.string().min(1),
+  sessionToken: z.string().min(1).max(2048).refine((value) => !controlCharacter.test(value)),
 });
 
 export const mcpConverseAskRequestSchema = z.object({
   message: z.string().trim().min(1),
   stream: z.literal(false).optional(),
-});
-
-export const mcpConverseGroundedAnswerRequestSchema = z.object({
-  query: z.string().trim().min(1),
-  maxResults: z.number().int().min(1).max(20).optional(),
-});
-
-export const mcpConverseResourceParamsSchema = z.object({
-  resourceId: z.string().trim().min(1),
 });
 
 export const mcpConverseSessionResponseSchema = z.object({
@@ -54,33 +53,4 @@ export const mcpConverseAskResponseSchema = z.object({
     citations: z.array(z.unknown()),
   }),
   traceId: z.string().optional(),
-});
-
-const mcpConverseCitationSchema = z.object({
-  documentId: z.literal(""),
-  chunkId: z.literal(""),
-  title: z.string(),
-  sourceUrl: z.string().url().optional(),
-});
-
-export const mcpConverseGroundedAnswerResponseSchema = z.object({
-  answer: z.string(),
-  citations: z.array(mcpConverseCitationSchema),
-  retrieval: z.object({
-    agentScoped: z.literal(true),
-  }),
-});
-
-export const mcpConverseResourceSummarySchema = z.object({
-  uri: z.string(),
-  name: z.string(),
-  mimeType: z.string(),
-});
-
-export const mcpConverseResourceListResponseSchema = z.object({
-  resources: z.array(mcpConverseResourceSummarySchema),
-});
-
-export const mcpConverseResourceResponseSchema = mcpConverseResourceSummarySchema.extend({
-  text: z.string(),
 });

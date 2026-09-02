@@ -65,6 +65,11 @@ const createEnv = (): Env => ({
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
+  AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,
+  MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: 60_000,
+  MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 60,
+  MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  RADIOSO_TRUSTED_PROXY_HOPS: 0,
   CONNECTOR_ENCRYPTION_KEY: "test",
   WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: false,
   DOCUMENT_STORAGE_DRIVER: "local",
@@ -91,25 +96,11 @@ const createEnv = (): Env => ({
   FACET_EXTRACTION_WORKER_BATCH_SIZE: 10,
   FACET_EXTRACTION_JOB_LEASE_MS: 300_000,
   WEBSITE_CRAWLER_ENABLED: true,
+  AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
+  AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: 30,
+  AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 300,
   APP_BASE_URL: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  RADIOSO_BASE_URL: undefined,
-  RADIOSO_MCP_ENABLED: false,
-  RADIOSO_MCP_STANDALONE: false,
-  RADIOSO_MCP_MOUNT_PATH: "/mcp",
-  RADIOSO_MCP_MERGED_CORS_ORIGINS: "*",
-  RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: 900,
-  RADIOSO_MCP_ALLOWED_READ_TOOLS: undefined,
-  RADIOSO_MCP_ALLOWED_WRITE_TOOLS: undefined,
-  RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: undefined,
-  RADIOSO_MCP_AUDIT_LOG_PATH: undefined,
-  RADIOSO_MCP_BIND_HOST: "127.0.0.1",
-  RADIOSO_MCP_BIND_PORT: 8787,
-  RADIOSO_MCP_REDIS_KEY_PREFIX: "radioso-mcp",
-  RADIOSO_MCP_REDIS_URL: undefined,
-  RADIOSO_MCP_REQUEST_TIMEOUT_MS: 30_000,
-  RADIOSO_MCP_SERVER_NAME: "radioso-context",
-  RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
@@ -149,6 +140,10 @@ const createDependencies = () =>
     metricsRegistry: null,
     workspaceInvalidationPublisher: { enqueue: vi.fn(() => ({ accepted: false, reason: "disabled" })) },
     realtimePublisherLifecycle: { shutdown: vi.fn().mockResolvedValue(undefined) },
+    credentialExpiryWarningLifecycle: {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
     logger: createLogger().logger,
     documentProcessingWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -215,10 +210,12 @@ describe("runtime startup", () => {
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
+    expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
+    expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();

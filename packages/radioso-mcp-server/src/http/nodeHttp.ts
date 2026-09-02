@@ -1,6 +1,5 @@
-import { once } from "node:events";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
 
 export const DEFAULT_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
@@ -111,19 +110,72 @@ export const writeJsonRpcError = (
   });
 };
 
-export const writeWebResponse = async (res: ServerResponse, response: Response): Promise<void> => {
+export const writeWebResponse = async (
+  res: ServerResponse,
+  response: Response,
+  options: { observeBodyChunk?: (chunk: Uint8Array) => void } = {},
+): Promise<boolean> => {
   res.statusCode = response.status;
 
   response.headers.forEach((value, key) => {
     res.setHeader(key, value);
   });
 
-  if (!response.body) {
-    res.end(await response.text());
-    return;
-  }
+  const bodyText = response.body ? null : await response.text();
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const streams: Readable[] = [];
+    const observe = (chunk: Uint8Array): void => {
+      try {
+        options.observeBodyChunk?.(chunk);
+      } catch {
+        // Response classification must not affect bytes delivered to the client.
+      }
+    };
+    const complete = (finished: boolean): void => {
+      if (settled) return;
+      settled = true;
+      res.off("finish", onFinish);
+      res.off("close", onClose);
+      res.off("error", onError);
+      resolve(finished);
+    };
+    const onFinish = (): void => complete(true);
+    const onClose = (): void => {
+      for (const stream of streams) stream.destroy();
+      complete(false);
+    };
+    const onError = (): void => complete(false);
+    res.once("finish", onFinish);
+    res.once("close", onClose);
+    res.once("error", onError);
 
-  const stream = Readable.fromWeb(response.body as never);
-  stream.pipe(res);
-  await once(res, "finish");
+    if (!response.body) {
+      try {
+        if (bodyText) observe(Buffer.from(bodyText));
+        res.end(bodyText);
+      } catch {
+        complete(false);
+      }
+      return;
+    }
+
+    const source = Readable.fromWeb(response.body as never);
+    streams.push(source);
+    const output = options.observeBodyChunk
+      ? source.pipe(new Transform({
+        transform(chunk: Buffer | Uint8Array | string, _encoding, callback) {
+          observe(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+          callback(null, chunk);
+        },
+      }))
+      : source;
+    if (output !== source) streams.push(output);
+    const onStreamError = (): void => {
+      complete(false);
+      if (!res.destroyed) res.destroy();
+    };
+    for (const stream of streams) stream.once("error", onStreamError);
+    output.pipe(res);
+  });
 };

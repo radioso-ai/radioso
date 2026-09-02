@@ -33,6 +33,8 @@ describeIfDatabase("retrieve skills spine migration", () => {
   let workspaceRepository: WorkspaceRepository;
   let agentRepository: AgentRepository;
   let migrationSql: string;
+  const createdAccountIds = new Set<string>();
+  const createdAgentIds = new Set<string>();
 
   beforeAll(async () => {
     database = new Database(integrationDatabaseUrl!);
@@ -47,10 +49,16 @@ describeIfDatabase("retrieve skills spine migration", () => {
   });
 
   afterAll(async () => {
-    // Remove rows of kinds added by 094 so a later test file's runAllTestMigrations re-run on the
-    // shared integration DB does not trip migration 108's pre-094 kind CHECK against leftover data.
     try {
-      await database.execute("DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify') OR skill_name = 'answer'");
+      const agentIds = [...createdAgentIds];
+      if (agentIds.length > 0) {
+        await database.query("DELETE FROM agent_skills WHERE agent_id = ANY($1::uuid[])", [agentIds]);
+      }
+
+      const accountIds = [...createdAccountIds];
+      if (accountIds.length > 0) {
+        await database.query("DELETE FROM accounts WHERE id = ANY($1::uuid[])", [accountIds]);
+      }
     } finally {
       await database.close();
     }
@@ -62,6 +70,7 @@ describeIfDatabase("retrieve skills spine migration", () => {
       email: `retrieve-skill-migration-${randomUUID()}@example.com`,
       passwordHash: "hash",
     });
+    createdAccountIds.add(account.id);
     return workspaceRepository.create(account.id, "Retrieve Skill Migration");
   };
 
@@ -86,6 +95,7 @@ describeIfDatabase("retrieve skills spine migration", () => {
         },
       },
     });
+    createdAgentIds.add(agent.id);
 
     await database.pool.query(migrationSql);
     await database.pool.query(migrationSql);
@@ -129,6 +139,7 @@ describeIfDatabase("retrieve skills spine migration", () => {
     const agent = await agentRepository.create(workspace.id, {
       name: "Conflicting Agent",
     });
+    createdAgentIds.add(agent.id);
     const destinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (

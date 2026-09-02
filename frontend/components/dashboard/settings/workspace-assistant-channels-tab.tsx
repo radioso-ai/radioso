@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, RefreshCw, ShieldAlert, Trash2, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, ShieldAlert, Trash2, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
+import { ApiAccessPanel } from '@/components/dashboard/settings/api-access-panel'
 import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantProfileSection } from '@/components/dashboard/settings/assistant-profile-section'
@@ -12,7 +13,6 @@ import { AssistantRoutinesSection } from '@/components/dashboard/settings/assist
 import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
-import { McpConverseChannelCard } from '@/components/dashboard/settings/mcp-converse-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
 import { McpConnectionsSection } from '@/components/dashboard/settings/skills/McpConnectionsSection'
 import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
@@ -32,7 +32,6 @@ import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-setti
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
 import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
 import {
   Dialog,
   DialogContent,
@@ -84,7 +83,7 @@ type ChannelId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 
 
 const CHANNEL_TITLES: Record<ChannelId, string> = {
   'web-chat': 'Web chat',
-  'api-channel': 'API channel',
+  'api-channel': 'Agent API',
   'mcp-channel': 'MCP channel',
   'slack-channel': 'Slack',
   'whatsapp-channel': 'WhatsApp',
@@ -156,9 +155,6 @@ export function WorkspaceAssistantChannelsTab({
   const [isDeletingAgent, setIsDeletingAgent] = useState(false)
   const [deleteAgentDialogOpen, setDeleteAgentDialogOpen] = useState(false)
   const [deleteAgentError, setDeleteAgentError] = useState<string | null>(null)
-  const [rotateApiTokenDialogOpen, setRotateApiTokenDialogOpen] = useState(false)
-  const [isRotatingApiToken, setIsRotatingApiToken] = useState(false)
-  const [rotateApiTokenError, setRotateApiTokenError] = useState<string | null>(null)
   const isLastWorkspace = workspaces.length <= 1
   const deleteConfirmValid = deleteConfirmName === activeWorkspace?.name
   const [anonSettings, setAnonSettings] = useState<GeneralSettings | null>(null)
@@ -173,9 +169,6 @@ export function WorkspaceAssistantChannelsTab({
   const { setSaveState, setSaveError, saveSequenceRef } = useSettingsSaveStatus(onSaveStateChange)
   const [assistantSettingsError, setAssistantSettingsError] = useState<string | null>(null)
   const [assistantLocaleInput, setAssistantLocaleInput] = useState(NO_GREETING_LOCALE_LABEL)
-  const [apiToken, setApiToken] = useState<string | null>(null)
-  const [apiTokenError, setApiTokenError] = useState<string | null>(null)
-  const [isApiTokenLoading, setIsApiTokenLoading] = useState(false)
   const [selectedChannel, setSelectedChannel] = useState<ChannelId | null>(null)
   const [whatsappSetupOpen, setWhatsappSetupOpen] = useState(false)
   // When the second column drives selection, render exactly one section and
@@ -191,8 +184,6 @@ export function WorkspaceAssistantChannelsTab({
   const assistantBehaviorDraftVersionRef = useRef(0)
   const canManageOrganization = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const canManageWorkspaceLifecycle = currentAccountRole === 'owner' || currentAccountRole === 'admin'
-  const canReadWorkspaceTokens = Boolean(currentAccountRole)
-  const canRotateWorkspaceTokens = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const loadGeneralSettings = useCallback(async () => {
     return agentId ? agentsApi.getGeneralSettings(agentId) : generalSettingsApi.getGeneralSettings({ auth: 'session' })
   }, [agentId])
@@ -269,16 +260,6 @@ export function WorkspaceAssistantChannelsTab({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Switching agent/workspace returns the channels list to its index.
     setSelectedChannel(null)
   }, [agentId, activeWorkspaceId])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Workspace switch invalidates token rotation UI state.
-    setApiToken(null)
-    setApiTokenError(null)
-    setIsApiTokenLoading(false)
-    setRotateApiTokenDialogOpen(false)
-    setRotateApiTokenError(null)
-    setIsRotatingApiToken(false)
-  }, [activeWorkspaceId])
 
   useEffect(() => {
     if (isWorkspaceLoading || !activeWorkspaceId) {
@@ -469,44 +450,6 @@ export function WorkspaceAssistantChannelsTab({
     }
   }, [agentId, mode, activeWorkspaceId])
 
-  const handleRevealApiToken = async () => {
-    if (!activeWorkspaceId || !canReadWorkspaceTokens) return
-    setIsApiTokenLoading(true)
-    setApiTokenError(null)
-    try {
-      const response = await accountApi.getWorkspaceToken(activeWorkspaceId)
-      setApiToken(response.token)
-    } catch (error) {
-      console.error('Failed to reveal workspace token:', error)
-      setApiTokenError('Failed to reveal the workspace token')
-    } finally {
-      setIsApiTokenLoading(false)
-    }
-  }
-
-  const handleRotateApiToken = async () => {
-    if (!activeWorkspaceId || !canRotateWorkspaceTokens) return
-
-    setIsRotatingApiToken(true)
-    setRotateApiTokenError(null)
-
-    try {
-      const response = await accountApi.rotateWorkspaceToken(activeWorkspaceId)
-      setApiToken(response.token)
-      setRotateApiTokenDialogOpen(false)
-    } catch (error) {
-      console.error('Failed to rotate workspace token:', error)
-      setRotateApiTokenError(getApiErrorMessage(error, 'Failed to rotate the workspace token.'))
-    } finally {
-      setIsRotatingApiToken(false)
-    }
-  }
-
-  const apiAccessExample = useMemo(() => {
-    const apiBasePath = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
-    const origin = typeof window === 'undefined' ? 'https://your-radioso-host' : window.location.origin
-    return `curl ${origin}${apiBasePath}/settings/retrieval-defaults \\\n  -H "Authorization: Bearer <token>"`
-  }, [])
   const effectiveRetrievalDefaults = retrievalDefaults ?? fallbackRetrievalDefaults
 
   const handleAssistantSettingChange = <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => {
@@ -829,50 +772,7 @@ export function WorkspaceAssistantChannelsTab({
               </div>
             </SettingsCard>
 
-            <SettingsCard
-              icon={<KeyRound className="h-5 w-5 text-primary" />}
-              title="API access"
-              description="Use this workspace token for API calls and SDK clients."
-            >
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  The dashboard uses your signed-in session. External clients should authenticate with the workspace
-                  token below.
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRevealApiToken}
-                    disabled={!activeWorkspaceId || isApiTokenLoading || !canReadWorkspaceTokens}
-                  >
-                    {isApiTokenLoading ? <Spinner className="mr-2" /> : null}
-                    Reveal API token
-                  </Button>
-                  {apiToken ? (
-                    <Button size="sm" variant="ghost" onClick={() => setApiToken(null)}>
-                      Hide token
-                    </Button>
-                  ) : null}
-                </div>
-                {apiToken ? (
-                  <CopyValueField value={apiToken} ariaLabel="Copy API token" className="w-full" />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {canReadWorkspaceTokens
-                      ? 'Reveal the token only when you need to copy it into another client.'
-                      : 'Sign in to reveal workspace API tokens.'}
-                  </p>
-                )}
-                {apiTokenError ? <p className="text-sm text-destructive">{apiTokenError}</p> : null}
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">Example</p>
-                  <code className="block overflow-x-auto whitespace-pre-wrap rounded border border-border bg-muted/40 p-3 text-sm font-mono text-foreground">
-                    {apiAccessExample}
-                  </code>
-                </div>
-              </div>
-            </SettingsCard>
+            <ApiAccessPanel key={`${activeWorkspaceId ?? 'none'}:personal`} workspaceId={activeWorkspaceId} />
 
             <WebhookDestinationsPanel onSaveStateChange={onSaveStateChange} />
 
@@ -1024,14 +924,13 @@ export function WorkspaceAssistantChannelsTab({
 
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (
           <section id="api-channel" className="space-y-6 scroll-mt-24">
-            <ApiChannelCard workspaceId={activeWorkspaceId} />
+            {agentId ? <ApiChannelCard agentId={agentId} /> : null}
           </section>
           ) : null}
 
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'mcp-channel' ? (
           <section id="mcp-channel" className="space-y-6 scroll-mt-24">
-            <McpChannelCard workspaceId={activeWorkspaceId} />
-            {agentId ? <McpConverseChannelCard agentId={agentId} /> : null}
+            {agentId ? <McpChannelCard agentId={agentId} /> : null}
             {agentId ? <McpConnectionsSection agentId={agentId} /> : null}
           </section>
           ) : null}
@@ -1086,64 +985,6 @@ export function WorkspaceAssistantChannelsTab({
               description="Permanent workspace actions that cannot be undone."
             >
             <div className="divide-y divide-border">
-            <div className="flex flex-col gap-4 py-4 first:pt-0 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">Rotate workspace API token</p>
-                <p className="text-sm text-muted-foreground">
-                  Immediately revoke the current token and issue a new one for this workspace. Any scripts, SDK
-                  clients, or automations using the current token will need to be updated.
-                </p>
-              </div>
-
-              <Dialog
-                open={rotateApiTokenDialogOpen}
-                onOpenChange={(open) => {
-                  setRotateApiTokenDialogOpen(open)
-                  if (!open) {
-                    setRotateApiTokenError(null)
-                    setIsRotatingApiToken(false)
-                  }
-                }}
-              >
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive sm:self-start"
-                    disabled={!canRotateWorkspaceTokens}
-                  >
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Rotate token
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Rotate workspace API token</DialogTitle>
-                    <DialogDescription>
-                      The current workspace token will stop working immediately. Any scripts, SDK clients, or
-                      automations using it must be updated to the new token.
-                    </DialogDescription>
-                  </DialogHeader>
-                  {rotateApiTokenError ? (
-                    <p className="text-sm text-destructive">{rotateApiTokenError}</p>
-                  ) : null}
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => setRotateApiTokenDialogOpen(false)}
-                      disabled={isRotatingApiToken || !canRotateWorkspaceTokens}
-                    >
-                      Cancel
-                    </Button>
-                    <Button variant="destructive" onClick={handleRotateApiToken} disabled={isRotatingApiToken}>
-                      {isRotatingApiToken ? <Spinner className="mr-2" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                      Rotate token
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
-
             <div className="flex flex-col gap-4 py-4 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground">Delete this workspace</p>

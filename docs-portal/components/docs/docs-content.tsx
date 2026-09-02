@@ -54,7 +54,7 @@ export function DocsContent() {
     {
       href: '/quickstarts/api-first-success',
       title: 'Use the API',
-      description: 'Register, reveal a workspace token, upload a document, and ask the first grounded question.',
+      description: 'Register, issue an API credential, upload a document, and ask the first grounded question.',
     },
   ]
 
@@ -135,7 +135,7 @@ export function DocsContent() {
       <section id="api-first-success" className="mb-14">
         <h2 className="mb-4 text-3xl font-semibold text-foreground">API first success</h2>
         <p className="mb-6 text-lg leading-relaxed text-muted-foreground">
-          Reach first success with plain HTTP or the TypeScript SDK: create a session, reveal the workspace token, upload content, and ask one grounded question.
+          Reach first success with plain HTTP or the TypeScript SDK: create a session, issue an API credential, upload content, and ask one grounded question.
         </p>
         <LanguageTabs examples={sdkExamples} />
         <div className="mt-4 flex flex-wrap gap-4 text-sm">

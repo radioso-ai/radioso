@@ -1,10 +1,8 @@
 import {
   STREAMING_API_PATH,
   buildError,
-  canRetryWithFreshWorkspaceToken,
-  refreshWorkspaceApiToken,
+  getStoredActiveWorkspaceId,
   request,
-  requireWorkspaceApiToken,
 } from './api-client'
 import { streamChatEvents } from './api-chat-stream'
 import { withQuery } from './api-query'
@@ -40,7 +38,7 @@ export const chatApi = {
     const payload = await request<ChatResponse>("/assistant/chat", {
       method: "POST",
       body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: data.includeDebug ?? true })),
-    }, { withApiToken: true })
+    }, { withSession: true })
     return normalizeChatResponse(payload)
   },
 
@@ -50,20 +48,18 @@ export const chatApi = {
   ): Promise<ChatResponse> {
     const headers = new Headers({
       "Content-Type": "application/json",
-      Authorization: `Bearer ${await requireWorkspaceApiToken()}`,
+      "X-Forwarded-Prefix": "/backend",
     })
+    const workspaceId = getStoredActiveWorkspaceId()
+    if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
     const executeFetch = () => fetch(STREAMING_API_PATH, {
       method: "POST",
       cache: "no-store",
-      credentials: "omit",
+      credentials: "include",
       headers,
       body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: data.includeDebug ?? true })),
     })
-    let response = await executeFetch()
-    if (canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
-      response = await executeFetch()
-    }
-
+    const response = await executeFetch()
     if (!response.ok) {
       throw await buildError(response)
     }
@@ -101,7 +97,7 @@ export const chatApi = {
     const payload = await request<ChatResponse>('/assistant/chat', {
       method: 'POST',
       body: JSON.stringify(toAssistantChatPayload({ ...data, includeDebug: true })),
-    }, { withApiToken: true })
+    }, { withSession: true })
     return payload ? normalizeChatResponse(payload) : payload
   },
 
@@ -127,7 +123,7 @@ export const chatApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
 
     return normalizeHistoryItemsResponse(response)
   },
@@ -150,7 +146,7 @@ export const chatApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   // Copies a real conversation's thread into a new test-session conversation
@@ -160,7 +156,7 @@ export const chatApi = {
     return request<{ conversationId: string }>(
       `/conversations/${encodeURIComponent(sourceConversationId)}/fork`,
       { method: 'POST' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -172,7 +168,7 @@ export const chatApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listContactHistory(input?: { limit?: number; offset?: number }, signal?: AbortSignal): Promise<ContactHistoryListResponse> {
@@ -182,7 +178,7 @@ export const chatApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getHistoryConversation(
@@ -197,14 +193,14 @@ export const chatApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getSearchHistory(searchId: string, signal?: AbortSignal): Promise<DocumentSearchResponse> {
     const payload = await request<DocumentSearchResponse>(`/history/search/${searchId}?includeDebug=true`, {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
     return normalizeDocumentSearchResponse(payload)
   },
 
@@ -220,6 +216,6 @@ export const chatApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 }

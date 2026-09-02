@@ -379,15 +379,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/account/workspaces/{workspaceId}/token": {
+    "/api/v1/account/workspaces/{workspaceId}/api-access": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Reveal the workspace API token for manual SDK or CLI use */
-        get: operations["getWorkspaceApiToken"];
+        /** Read API-access capabilities and limits */
+        get: operations["getApiAccessSummary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -396,7 +396,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/account/workspaces/{workspaceId}/token/rotate": {
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List personal-token metadata */
+        get: operations["listPersonalApiTokens"];
+        put?: never;
+        /** Issue a personal API token */
+        post: operations["issuePersonalApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -405,25 +423,198 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate the workspace API token */
-        post: operations["rotateWorkspaceApiToken"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Relabel an owned personal token */
+        patch: operations["relabelPersonalApiToken"];
         trace?: never;
     };
-    "/api/v1/workspace/mcp/context": {
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/rotate": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get workspace MCP context for a bearer-authenticated workspace token */
-        get: operations["getWorkspaceMcpContext"];
+        get?: never;
+        put?: never;
+        /** Immediately rotate an owned personal token */
+        post: operations["rotatePersonalApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a personal token */
+        post: operations["revokePersonalApiToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List workspace service accounts */
+        get: operations["listServiceAccounts"];
+        put?: never;
+        /** Create a service account and first credential */
+        post: operations["createServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a service account */
+        get: operations["getServiceAccount"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Rename or change a service-account role */
+        patch: operations["updateServiceAccount"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Disable a service account */
+        post: operations["disableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Enable a service account */
+        post: operations["enableServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive a service account */
+        post: operations["archiveServiceAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List service-account credentials */
+        get: operations["listServiceAccountCredentials"];
+        put?: never;
+        /** Issue another service-account credential */
+        post: operations["issueServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Relabel a service-account credential */
+        patch: operations["relabelServiceAccountCredential"];
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Immediately rotate a service-account credential */
+        post: operations["rotateServiceAccountCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a service-account credential */
+        post: operations["revokeServiceAccountCredential"];
         delete?: never;
         options?: never;
         head?: never;
@@ -820,6 +1011,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run chat through a REST credential bound to this agent */
+        post: operations["createAgentChannelChatResponse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}": {
         parameters: {
             query?: never;
@@ -855,25 +1063,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/mcp-converse-grants": {
+    "/api/v1/agents/{agentId}/channel-credentials": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List MCP converse grants for an agent */
-        get: operations["listAgentMcpConverseGrants"];
+        /** List MCP and REST chat credentials for an agent with cursor pagination */
+        get: operations["listAgentChannelCredentials"];
         put?: never;
-        /** Issue an MCP converse grant for an agent */
-        post: operations["issueAgentMcpConverseGrant"];
+        /** Issue an MCP or REST chat credential for an agent */
+        post: operations["issueAgentChannelCredential"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate": {
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate": {
         parameters: {
             query?: never;
             header?: never;
@@ -882,15 +1090,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate an MCP converse grant for an agent */
-        post: operations["rotateAgentMcpConverseGrant"];
+        /** Rotate an agent channel credential */
+        post: operations["rotateAgentChannelCredential"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}": {
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke": {
         parameters: {
             query?: never;
             header?: never;
@@ -899,9 +1107,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
-        /** Revoke an MCP converse grant for an agent */
-        delete: operations["revokeAgentMcpConverseGrant"];
+        /** Revoke an agent channel credential */
+        post: operations["revokeAgentChannelCredential"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3084,57 +3292,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/mcp/converse/grounded-answer": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Run an agent-aware grounded answer through the bound agent retrieval configuration */
-        post: operations["answerMcpConverseGrounded"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mcp/converse/resources": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List read-only resources visible to the bound agent */
-        get: operations["listMcpConverseResources"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/mcp/converse/resources/{resourceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read one sanitized resource visible to the bound agent */
-        get: operations["readMcpConverseResource"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/public/chat/{token}": {
         parameters: {
             query?: never;
@@ -3349,19 +3506,6 @@ export interface components {
             hasCompletedChat: boolean;
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
-        };
-        WorkspaceTokenResponse: {
-            token: string;
-        };
-        WorkspaceMcpContextResponse: {
-            /** @enum {string} */
-            apiVersion: "0.1.0";
-            /** @enum {string} */
-            mcpContextVersion: "2026-06-09";
-            supportedTools: ("answer_grounded" | "create_document" | "delete_document" | "describe_capabilities" | "get_document" | "list_documents" | "reprocess_document" | "search_documents" | "update_document")[];
-            /** Format: uuid */
-            workspaceId: string;
-            workspaceName: string;
         };
         RegisterRequest: {
             /** Format: email */
@@ -4187,40 +4331,48 @@ export interface components {
             anonymousChat: components["schemas"]["AgentChannelLifecycle"];
             websiteEmbed: components["schemas"]["AgentChannelLifecycle"];
         };
-        AgentMcpConverseGrantMetadata: {
+        AgentChannelCredentialMetadata: {
             /** Format: uuid */
             id: string;
-            label: string | null;
-            tokenPrefix: string;
-            enabled: boolean;
+            /** @enum {string} */
+            audience: "mcp" | "rest";
+            label: string;
+            prefix: string;
+            /** @enum {string} */
+            status: "active" | "expired" | "revoked" | "disabled";
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
             /** Format: date-time */
             lastUsedAt: string | null;
             /** Format: date-time */
             revokedAt: string | null;
         };
-        AgentMcpConverseGrantSecret: {
-            /** Format: uuid */
-            id: string;
-            label: string | null;
-            tokenPrefix: string;
+        AgentChannelCredentialIssueRequest: {
+            /** @enum {string} */
+            audience: "mcp" | "rest";
+            label: string;
             /** Format: date-time */
-            createdAt: string;
+            expiresAt: string;
         };
-        AgentMcpConverseGrantIssueRequest: {
-            label?: string;
+        AgentChannelCredentialIssueResponse: {
+            credential: components["schemas"]["AgentChannelCredentialMetadata"];
+            secret: string;
         };
-        AgentMcpConverseGrantIssueResponse: {
-            grant: components["schemas"]["AgentMcpConverseGrantSecret"];
-            token: string;
+        AgentChannelCredentialListResponse: {
+            credentials: components["schemas"]["AgentChannelCredentialMetadata"][];
+            nextCursor: string | null;
         };
-        AgentMcpConverseGrantSecretResponse: {
-            grant: components["schemas"]["AgentMcpConverseGrantSecret"];
-            token: string;
-        };
-        AgentMcpConverseGrantListResponse: {
-            grants: components["schemas"]["AgentMcpConverseGrantMetadata"][];
+        AgentChannelChatRequest: {
+            /** Format: uuid */
+            conversationId?: string;
+            message?: string;
+            /** @default false */
+            startConversation: boolean;
+            /** @default false */
+            stream: boolean;
+            userExpectedLocale?: string;
         };
         AuthoredDirectiveCondition: {
             /** @enum {string} */
@@ -8345,7 +8497,7 @@ export interface operations {
             };
         };
     };
-    getWorkspaceApiToken: {
+    getApiAccessSummary: {
         parameters: {
             query?: never;
             header?: never;
@@ -8356,16 +8508,46 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Workspace token returned */
+            /** @description API-access capabilities */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspaceTokenResponse"];
+                    "application/json": {
+                        /** @enum {string} */
+                        effectiveRole: "member" | "admin" | "owner";
+                        capabilities: {
+                            manageOwnPersonalTokens: boolean;
+                            auditWorkspacePersonalTokens: boolean;
+                            manageServiceAccounts: boolean;
+                        };
+                        defaults: {
+                            /** @enum {number} */
+                            personalTokenLifetimeDays: 90;
+                            /** @enum {number} */
+                            serviceCredentialLifetimeDays: 365;
+                        };
+                        limits: {
+                            /** @enum {number} */
+                            personalTokensPerUser: 10;
+                            /** @enum {number} */
+                            serviceAccountsPerWorkspace: 50;
+                            /** @enum {number} */
+                            credentialsPerServiceAccount: 5;
+                            /** @enum {number} */
+                            maximumPageSize: 100;
+                        };
+                        legacyCredentialMigration: {
+                            /** @enum {string} */
+                            status: "destroyed" | "not_applicable";
+                            /** Format: date-time */
+                            migratedAt: string | null;
+                        };
+                    };
                 };
             };
-            /** @description Invalid workspace id */
+            /** @description Invalid lifecycle request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -8374,7 +8556,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description Interactive session required */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -8383,7 +8565,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace token no longer resolves to an active workspace */
+            /** @description Workspace capability required */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8392,20 +8574,33 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Token reveal temporarily rate limited */
-            429: {
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
     };
-    rotateWorkspaceApiToken: {
+    listPersonalApiTokens: {
         parameters: {
-            query?: never;
+            query?: {
+                page?: number;
+                limit?: number;
+                view?: "mine" | "workspace";
+            };
             header?: never;
             path: {
                 workspaceId: string;
@@ -8414,16 +8609,53 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Workspace token rotated */
+            /** @description Safe personal-token metadata */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspaceTokenResponse"];
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        }[];
+                        page: number;
+                        limit: number;
+                        total: number;
+                    };
                 };
             };
-            /** @description Invalid workspace id */
+            /** @description Invalid lifecycle request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -8432,7 +8664,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Authentication required */
+            /** @description Interactive session required */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -8441,7 +8673,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace does not belong to the current account */
+            /** @description Workspace capability required */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -8450,8 +8682,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Too many rotate attempts */
-            429: {
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8459,8 +8691,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace token secret is not configured */
-            503: {
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8470,25 +8702,83 @@ export interface operations {
             };
         };
     };
-    getWorkspaceMcpContext: {
+    issuePersonalApiToken: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+            };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    /** @enum {string} */
+                    roleCeiling: "member" | "admin";
+                    /** Format: date-time */
+                    expiresAt: string;
+                };
+            };
+        };
         responses: {
-            /** @description Workspace MCP context returned */
-            200: {
+            /** @description One-time personal-token secret */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WorkspaceMcpContextResponse"];
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
                 };
             };
-            /** @description Authentication required */
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -8497,8 +8787,1613 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace token no longer resolves to an active workspace */
+            /** @description Workspace capability required */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    relabelPersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotatePersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time replacement secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokePersonalApiToken: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listServiceAccounts: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service-account inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            role: "member" | "admin";
+                            /** @enum {string} */
+                            status: "enabled" | "disabled" | "archived";
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** Format: date-time */
+                            disabledAt: string | null;
+                            /** Format: date-time */
+                            archivedAt: string | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            activeCredentialCount: number;
+                            revision: number;
+                        }[];
+                        page: number;
+                        limit: number;
+                        total: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName: string;
+                    /** @enum {string} */
+                    role: "member" | "admin";
+                    /** Format: date-time */
+                    credentialExpiresAt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Service account and one-time credential secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        serviceAccount: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** @enum {string} */
+                            role: "member" | "admin";
+                            /** @enum {string} */
+                            status: "enabled" | "disabled" | "archived";
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            updatedAt: string;
+                            /** Format: date-time */
+                            disabledAt: string | null;
+                            /** Format: date-time */
+                            archivedAt: string | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            activeCredentialCount: number;
+                            revision: number;
+                        };
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    displayName?: string;
+                    /** @enum {string} */
+                    role?: "member" | "admin";
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    disableServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    enableServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    archiveServiceAccount: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated service-account metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        displayName: string;
+                        /** @enum {string} */
+                        role: "member" | "admin";
+                        /** @enum {string} */
+                        status: "enabled" | "disabled" | "archived";
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        updatedAt: string;
+                        /** Format: date-time */
+                        disabledAt: string | null;
+                        /** Format: date-time */
+                        archivedAt: string | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        activeCredentialCount: number;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listServiceAccountCredentials: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Safe service-credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        }[];
+                        page: number;
+                        limit: number;
+                        total: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    issueServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    /** Format: date-time */
+                    expiresAt: string;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time service credential secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    relabelServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    label: string;
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Updated safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description One-time replacement secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        credential: {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            kind: "personal" | "service";
+                            label: string;
+                            prefix: string;
+                            /** @enum {string|null} */
+                            roleCeiling: "member" | "admin" | null;
+                            /** Format: uuid */
+                            ownerUserId: string | null;
+                            /** Format: uuid */
+                            serviceAccountId: string | null;
+                            /** Format: uuid */
+                            createdByUserId: string;
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            expiresAt: string;
+                            /** @enum {string} */
+                            status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                            expiryWarningDays: 30 | 7 | 1 | null;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            /** Format: uuid */
+                            revokedByUserId: string | null;
+                            revocationReason: string | null;
+                            /** Format: uuid */
+                            rotatedFromCredentialId: string | null;
+                            revision: number;
+                        };
+                        secret: string;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeServiceAccountCredential: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                serviceAccountId: string;
+                credentialId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked safe credential metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        kind: "personal" | "service";
+                        label: string;
+                        prefix: string;
+                        /** @enum {string|null} */
+                        roleCeiling: "member" | "admin" | null;
+                        /** Format: uuid */
+                        ownerUserId: string | null;
+                        /** Format: uuid */
+                        serviceAccountId: string | null;
+                        /** Format: uuid */
+                        createdByUserId: string;
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        expiresAt: string;
+                        /** @enum {string} */
+                        status: "active" | "expired" | "revoked" | "suspended" | "invalid";
+                        expiryWarningDays: 30 | 7 | 1 | null;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        /** Format: uuid */
+                        revokedByUserId: string | null;
+                        revocationReason: string | null;
+                        /** Format: uuid */
+                        rotatedFromCredentialId: string | null;
+                        revision: number;
+                    };
+                };
+            };
+            /** @description Invalid lifecycle request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace capability required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not available in this workspace or ownership boundary */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Stale revision, quota, or invalid lifecycle transition */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9855,6 +11750,67 @@ export interface operations {
             };
         };
     };
+    createAgentChannelChatResponse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentChannelChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Agent chat response returned as JSON or SSE */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantChatResponse"];
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Conversation start completed without a greeting */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Invalid, inactive, cross-audience, or cross-agent credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent channel rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAgent: {
         parameters: {
             query?: never;
@@ -9988,9 +11944,13 @@ export interface operations {
             };
         };
     };
-    listAgentMcpConverseGrants: {
+    listAgentChannelCredentials: {
         parameters: {
-            query?: never;
+            query?: {
+                audience?: "mcp" | "rest";
+                limit?: number;
+                cursor?: string;
+            };
             header?: never;
             path: {
                 agentId: string;
@@ -9999,13 +11959,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description MCP converse grant metadata returned without token material */
+            /** @description Role-free channel credential metadata returned without secret material */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentMcpConverseGrantListResponse"];
+                    "application/json": components["schemas"]["AgentChannelCredentialListResponse"];
                 };
             };
             /** @description Authentication required */
@@ -10037,10 +11997,12 @@ export interface operations {
             };
         };
     };
-    issueAgentMcpConverseGrant: {
+    issueAgentChannelCredential: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
             path: {
                 agentId: string;
             };
@@ -10048,17 +12010,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["AgentMcpConverseGrantIssueRequest"];
+                "application/json": components["schemas"]["AgentChannelCredentialIssueRequest"];
             };
         };
         responses: {
-            /** @description MCP converse grant issued. The token is returned only in this response. */
+            /** @description Agent channel credential issued. The secret is returned only in this response. */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentMcpConverseGrantIssueResponse"];
+                    "application/json": components["schemas"]["AgentChannelCredentialIssueResponse"];
                 };
             };
             /** @description Request validation failed */
@@ -10099,25 +12061,27 @@ export interface operations {
             };
         };
     };
-    rotateAgentMcpConverseGrant: {
+    rotateAgentChannelCredential: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
             path: {
                 agentId: string;
-                grantId: string;
+                credentialId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description MCP converse grant rotated. The new token is returned only in this response. */
+            /** @description Agent channel credential rotated. The new secret is returned only in this response. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AgentMcpConverseGrantSecretResponse"];
+                    "application/json": components["schemas"]["AgentChannelCredentialIssueResponse"];
                 };
             };
             /** @description Authentication required */
@@ -10138,7 +12102,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Agent or MCP converse grant not found */
+            /** @description Agent or channel credential not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -10149,19 +12113,21 @@ export interface operations {
             };
         };
     };
-    revokeAgentMcpConverseGrant: {
+    revokeAgentChannelCredential: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
             path: {
                 agentId: string;
-                grantId: string;
+                credentialId: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description MCP converse grant revoked */
+            /** @description Agent channel credential revoked */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -10186,7 +12152,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Agent or MCP converse grant not found */
+            /** @description Agent or channel credential not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -20396,6 +22362,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description MCP converse session rate limit exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     validateMcpConverseSession: {
@@ -20443,6 +22418,15 @@ export interface operations {
             };
             /** @description Underlying converse grant is no longer valid */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description MCP converse session rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -20513,157 +22497,8 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-        };
-    };
-    answerMcpConverseGrounded: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    query: string;
-                    maxResults?: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Agent-scoped grounded answer */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        answer: string;
-                        citations: {
-                            /** @enum {string} */
-                            documentId: "";
-                            /** @enum {string} */
-                            chunkId: "";
-                            title: string;
-                            /** Format: uri */
-                            sourceUrl?: string;
-                        }[];
-                        retrieval: {
-                            /** @enum {boolean} */
-                            agentScoped: true;
-                        };
-                    };
-                };
-            };
-            /** @description Invalid converse session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Converse session is not allowed to query retrieval */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    listMcpConverseResources: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Agent-scoped resources */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        resources: {
-                            uri: string;
-                            name: string;
-                            mimeType: string;
-                        }[];
-                    };
-                };
-            };
-            /** @description Invalid converse session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Converse session is not allowed to read resources */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    readMcpConverseResource: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                resourceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Sanitized agent-scoped resource */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        uri: string;
-                        name: string;
-                        mimeType: string;
-                        text: string;
-                    };
-                };
-            };
-            /** @description Invalid converse session */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Converse session is not allowed to read resources */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Resource not found */
-            404: {
+            /** @description MCP converse ask rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

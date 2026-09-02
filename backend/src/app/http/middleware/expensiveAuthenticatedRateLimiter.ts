@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
 import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
@@ -20,23 +19,11 @@ export interface ExpensiveAuthenticatedRateLimiterDependencies {
 
 const SCOPE = "api.expensive_authenticated";
 
-const hashRateLimitPart = (value: string): string =>
-  createHash("sha256").update(value).digest("hex").slice(0, 32);
-
 const resolvePrincipalPart = (locals: {
   authPrincipal?: AuthenticatedPrincipal;
-  bearerToken?: string;
 }): string => {
-  if (locals.authPrincipal?.type === "workspace_api_token") {
-    if (locals.authPrincipal.tokenId) {
-      return `api-token:${locals.authPrincipal.tokenId}`;
-    }
-
-    if (locals.bearerToken) {
-      return `api-token-hash:${hashRateLimitPart(locals.bearerToken)}`;
-    }
-
-    return "api-token:unknown";
+  if (locals.authPrincipal?.type === "personal_api_credential" || locals.authPrincipal?.type === "service_account_credential") {
+    return `api-credential:${locals.authPrincipal.credentialId}`;
   }
 
   return "account";
@@ -56,7 +43,6 @@ export const expensiveAuthenticatedRateLimiter = (
         accountId?: string;
         workspaceId?: string;
         authPrincipal?: AuthenticatedPrincipal;
-        bearerToken?: string;
       };
       if (!locals.accountId || !locals.workspaceId) {
         return null;

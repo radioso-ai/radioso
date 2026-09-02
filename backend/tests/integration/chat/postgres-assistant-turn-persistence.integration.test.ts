@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { AccountRepository } from "../../../src/db/repositories/accountRepository.js";
 import { ConversationRepository, type ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
@@ -36,6 +36,24 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
   let workspaces: WorkspaceRepository;
   let conversations: ConversationRepository;
   let persistence: PostgresAssistantTurnPersistence;
+  const createdAccountIds = new Set<string>();
+  const createdSessionIds = new Set<string>();
+
+  const clearFixtures = async (): Promise<void> => {
+    const sessionIds = [...createdSessionIds];
+    if (sessionIds.length > 0) {
+      await database.query("DELETE FROM clarification_states WHERE session_id = ANY($1::uuid[])", [sessionIds]);
+      await database.query("DELETE FROM routine_states WHERE session_id = ANY($1::uuid[])", [sessionIds]);
+    }
+
+    const accountIds = [...createdAccountIds];
+    if (accountIds.length > 0) {
+      await database.query("DELETE FROM accounts WHERE id = ANY($1::uuid[])", [accountIds]);
+    }
+
+    createdAccountIds.clear();
+    createdSessionIds.clear();
+  };
 
   const seedConversation = async (): Promise<{
     accountId: string;
@@ -49,6 +67,8 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     });
     const workspace = await workspaces.create(account.id, "Turn Persistence Workspace");
     const conversation = await conversations.create(workspace.id);
+    createdAccountIds.add(account.id);
+    createdSessionIds.add(conversation.id);
     return { accountId: account.id, workspace, conversation };
   };
 
@@ -62,11 +82,16 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
   });
 
   afterAll(async () => {
+    await clearFixtures();
     await database.close();
   });
 
   beforeEach(async () => {
-    await database.execute("TRUNCATE clarification_states, routine_states CASCADE");
+    await clearFixtures();
+  });
+
+  afterEach(async () => {
+    await clearFixtures();
   });
 
   it("persists routine attempts in the transactional routine state path", async () => {

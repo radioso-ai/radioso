@@ -55,13 +55,12 @@ describe("organization roles", () => {
     const token = await request(app)
       .get(`/api/v1/account/workspaces/${member.workspaceId}/token`)
       .set("Cookie", member.cookie);
-    expect(token.status).toBe(200);
-    expect(typeof token.body.token).toBe("string");
+    expect(token.status).toBe(404);
 
     await expect(request(app)
       .post(`/api/v1/account/workspaces/${member.workspaceId}/token/rotate`)
       .set("Cookie", member.cookie)
-    ).resolves.toMatchObject({ status: 403 });
+    ).resolves.toMatchObject({ status: 404 });
 
     await expect(request(app)
       .patch(`/api/v1/workspace/${member.workspaceId}`)
@@ -128,7 +127,7 @@ describe("organization roles", () => {
     expect(ownerModelWrite.status).toBe(200);
   }, 20_000);
 
-  it("allows admins to manage workspaces and tokens but not remove owners", async () => {
+  it("allows admins to manage workspaces but not remove owners or use removed token routes", async () => {
     const { app } = createTestApp();
     const owner = await issueTestSession(app, `owner-${Date.now()}@example.com`);
     const admin = await acceptInvite(app, owner.cookie, `admin-${Date.now()}@example.com`, "admin");
@@ -142,7 +141,7 @@ describe("organization roles", () => {
     const token = await request(app)
       .get(`/api/v1/account/workspaces/${admin.workspaceId}/token`)
       .set("Cookie", admin.cookie);
-    expect(token.status).toBe(200);
+    expect(token.status).toBe(404);
 
     const users = await request(app).get("/api/v1/account/users").set("Cookie", admin.cookie);
     const ownerMembership = users.body.users.find((user: { role: string }) => user.role === "owner");

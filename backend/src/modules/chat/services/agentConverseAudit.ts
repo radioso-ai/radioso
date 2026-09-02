@@ -55,16 +55,6 @@ export class AgentConverseAudit {
     });
   }
 
-  async recordWorkspaceTokenRejected() {
-    await this.auditService.record({
-      eventType: "mcp_converse.workspace_token",
-      eventStatus: "failure",
-      metadata: {
-        reason: "workspace_token_rejected",
-      },
-    });
-  }
-
   async recordAskOutcome(input: {
     workspaceId: string;
     agentId: string;
@@ -86,47 +76,4 @@ export class AgentConverseAudit {
     });
   }
 
-  async recordGroundedAnswerOutcome(input: {
-    workspaceId: string;
-    agentId: string;
-    grantId: string;
-    publicSessionId: string;
-    status: "success" | "failure";
-    citationCount?: number;
-    reason?: string | null;
-  }) {
-    await this.auditService.record({
-      workspaceId: input.workspaceId,
-      eventType: "mcp_converse.grounded_answer",
-      eventStatus: input.status,
-      metadata: {
-        agentId: input.agentId,
-        grantId: input.grantId,
-        publicSessionId: input.publicSessionId,
-        citationCount: input.citationCount ?? null,
-        reason: input.reason ?? null,
-      },
-    });
-  }
-
-  async recordResourceReadOutcome(input: {
-    workspaceId: string;
-    agentId: string;
-    grantId: string;
-    publicSessionId: string;
-    status: "success" | "failure";
-    reason?: string | null;
-  }) {
-    await this.auditService.record({
-      workspaceId: input.workspaceId,
-      eventType: "mcp_converse.resource_read",
-      eventStatus: input.status,
-      metadata: {
-        agentId: input.agentId,
-        grantId: input.grantId,
-        publicSessionId: input.publicSessionId,
-        reason: input.reason ?? null,
-      },
-    });
-  }
 }

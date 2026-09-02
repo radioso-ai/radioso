@@ -5,8 +5,8 @@
  * - `https://api-us.radioso.ai` — the US instance
  * - your own origin — a self-hosted deployment, e.g. `https://radioso.acme.com`
  *
- * A workspace API token is only valid against the instance that issued it, so
- * the base URL has to match where your data actually lives.
+ * A personal token or service-account credential is only valid against the
+ * instance that issued it, so the base URL has to match where your data lives.
  */
 export const DEFAULT_BASE_URL = "https://api.radioso.ai";
 

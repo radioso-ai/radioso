@@ -5,7 +5,6 @@ import { slackSkillsApi } from '@/lib/api-slack-skills'
 const createLocalStorage = () => {
   const store = new Map<string, string>([
     ['radioso.activeWorkspaceId', 'workspace-1'],
-    ['radioso.workspaceTokens', JSON.stringify({ 'workspace-1': 'workspace-token' })],
   ])
 
   return {
@@ -56,7 +55,7 @@ describe('slackSkillsApi', () => {
       exposedInputs: { text: { slotBinding: 'message', required: true } },
       enabled: true,
     }))
-    expect(new Headers(requestInit.headers).get('Authorization')).toBe('Bearer workspace-token')
+    expect(new Headers(requestInit.headers).get('Authorization')).toBeNull()
   })
 
   it('toggles Slack skills without sending credentials', async () => {

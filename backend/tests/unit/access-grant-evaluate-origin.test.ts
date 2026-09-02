@@ -25,6 +25,7 @@ const grantWith = (originConstraint: OriginConstraint): AccessGrant => ({
 
 const service = new AccessGrantService({
   repository: {} as never,
+  lifecycleUnitOfWork: {} as never,
   originMatcher: new DefaultOriginMatcher(),
   workspaceTokenSecret: "fedcba9876543210fedcba9876543210",
 });

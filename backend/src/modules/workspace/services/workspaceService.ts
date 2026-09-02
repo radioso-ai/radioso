@@ -3,12 +3,23 @@ import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repos
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
+import {
+  transactionalLifecycleAuditEvent,
+  type PersonalCredentialLifecyclePort,
+} from "../../machineAccess/public.js";
+
+/** A narrow outbound signal; workspace lifecycle does not know credential storage. */
+export interface WorkspacePersonalCredentialTerminationPort {
+  endWorkspace(input: { accountId: string; workspaceId: string; actorUserId?: string | null }): Promise<void>;
+}
 
 export class WorkspaceService {
   constructor(
     private readonly workspaceRepository: WorkspaceRepositoryPort,
     private readonly auditService: AuditService,
     private readonly accountMembershipRepository?: AccountMembershipRepositoryPort,
+    private readonly personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort,
+    private readonly personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteWorkspace">,
   ) {}
 
   private async createWorkspaceWithPublicRouteKey(accountId: string, name: string): Promise<WorkspaceRecord> {
@@ -113,7 +124,7 @@ export class WorkspaceService {
     return updated;
   }
 
-  async delete(workspaceId: string, accountId: string): Promise<void> {
+  async delete(workspaceId: string, accountId: string, actorUserId?: string): Promise<void> {
     const workspace = await this.validateOwnership(workspaceId, accountId);
 
     const count = await this.workspaceRepository.countByAccountId(accountId);
@@ -121,13 +132,28 @@ export class WorkspaceService {
       throw badRequest("Cannot delete the last workspace");
     }
 
-    await this.auditService.record({
+    const auditEvent = transactionalLifecycleAuditEvent({
       accountId,
       workspaceId: null,
       eventType: "workspace.deleted",
       eventStatus: "success",
       metadata: { deletedWorkspaceId: workspaceId, deletedWorkspaceName: workspace.name },
     });
+    if (this.personalCredentialLifecycle) {
+      const deleted = await this.personalCredentialLifecycle.deleteWorkspace({
+        accountId,
+        workspaceId,
+        actorUserId,
+        auditEvent,
+      });
+      if (!deleted) throw notFound("Workspace not found");
+      this.auditService.logRecorded?.(auditEvent);
+      return;
+    }
+
+    await this.personalCredentialTermination?.endWorkspace({ accountId, workspaceId, actorUserId });
+
+    await this.auditService.record(auditEvent);
 
     await this.workspaceRepository.deleteByIdAndAccountId(workspaceId, accountId);
   }

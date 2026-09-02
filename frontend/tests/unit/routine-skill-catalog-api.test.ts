@@ -29,7 +29,6 @@ describe('routineSkillCatalogApi', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'workspace-token' }),
       }),
     })
   })
@@ -119,8 +118,8 @@ describe('routineSkillCatalogApi', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/agents/agent-1/routine-skill-catalog',
-      expect.objectContaining({ method: 'GET', credentials: 'omit' }),
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
     )
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer workspace-token')
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull()
   })
 })

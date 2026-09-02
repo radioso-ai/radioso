@@ -39,12 +39,13 @@ export interface OpenApiSchemaCatalog {
   AgentLogoSchema: z.ZodTypeAny;
   AgentChannelLifecycleSchema: z.ZodTypeAny;
   AgentChannelsLifecycleResponseSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantIssueRequestSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantIssueResponseSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantListResponseSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantMetadataSchema: z.ZodTypeAny;
-  AgentMcpConverseGrantParamsSchema: RouteParameterSchema;
-  AgentMcpConverseGrantSecretResponseSchema: z.ZodTypeAny;
+  AgentChannelChatRequestSchema: z.ZodTypeAny;
+  AgentChannelCredentialIssueRequestSchema: z.ZodTypeAny;
+  AgentChannelCredentialIssueResponseSchema: z.ZodTypeAny;
+  AgentChannelCredentialListResponseSchema: z.ZodTypeAny;
+  AgentChannelCredentialListQuerySchema: RouteParameterSchema;
+  AgentChannelCredentialMetadataSchema: z.ZodTypeAny;
+  AgentChannelCredentialParamsSchema: RouteParameterSchema;
   AgentParamsSchema: RouteParameterSchema;
   AgentSchema: z.ZodTypeAny;
   AgentContextVariableEnablementListResponseSchema: z.ZodTypeAny;
@@ -294,7 +295,6 @@ export interface OpenApiSchemaCatalog {
   WorkspaceIngestionReprocessResponseSchema: z.ZodTypeAny;
   workspaceKeyParamsSchema: RouteParameterSchema;
   WorkspaceListResponseSchema: z.ZodTypeAny;
-  WorkspaceMcpContextResponseSchema: z.ZodTypeAny;
   WorkspaceProviderCredentialSummarySchema: z.ZodTypeAny;
   WorkspaceProviderCredentialsResponseSchema: z.ZodTypeAny;
   SetWorkspaceProviderCredentialRequestSchema: z.ZodTypeAny;
@@ -312,7 +312,6 @@ export interface OpenApiSchemaCatalog {
   WorkspaceRouteResolutionResponseSchema: z.ZodTypeAny;
   WorkspaceSchema: z.ZodTypeAny;
   WorkspaceSummaryResponseSchema: z.ZodTypeAny;
-  WorkspaceTokenResponseSchema: z.ZodTypeAny;
   WorkspaceEventInvalidateDataSchema: z.ZodTypeAny;
   WorkspaceEventReadyDataSchema: z.ZodTypeAny;
   WorkspaceEventResyncDataSchema: z.ZodTypeAny;
@@ -324,6 +323,7 @@ export const createOpenApiRegistry = () => {
   const registry = new OpenAPIRegistry();
 
   const sessionCookieScheme = registry.registerComponent("securitySchemes", "sessionCookie", {
+    description: "Interactive Radioso dashboard session. Session-only operations also require the selected workspace header when specified.",
     type: "apiKey",
     in: "cookie",
     name: "radioso_session",
@@ -336,9 +336,24 @@ export const createOpenApiRegistry = () => {
   });
 
   const bearerAuthScheme = registry.registerComponent("securitySchemes", "bearerAuth", {
+    description: "Personal API tokens and service-account credentials for eligible REST API operations. MCP, public launch, agent-converse, and session-only operations use separate credentials or a signed-in session.",
     type: "http",
     scheme: "bearer",
     bearerFormat: "APIKey",
+  });
+
+  const agentChannelBearerAuthScheme = registry.registerComponent("securitySchemes", "agentChannelBearerAuth", {
+    description: "Short-lived bearer credential issued for one agent channel. This credential authorizes only REST agent chat and carries no workspace role.",
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "AgentChannelCredential",
+  });
+
+  const mcpConverseSessionBearerAuthScheme = registry.registerComponent("securitySchemes", "mcpConverseSessionBearerAuth", {
+    description: "Short-lived bearer session issued by the MCP converse credential exchange. This credential authorizes only MCP ask_agent turns.",
+    type: "http",
+    scheme: "bearer",
+    bearerFormat: "McpConverseSession",
   });
 
   const anonymousSessionCookieScheme = registry.registerComponent("securitySchemes", "anonymousSessionCookie", {
@@ -371,6 +386,8 @@ export const createOpenApiRegistry = () => {
     security: {
       anonymousSessionCookieScheme,
       bearerAuthScheme,
+      agentChannelBearerAuthScheme,
+      mcpConverseSessionBearerAuthScheme,
       sessionCookieScheme,
       workspaceAdminSecurity,
       workspaceSelectionScheme,

@@ -138,8 +138,6 @@ describe("authoring resources", () => {
     cases.push([Promise.resolve(), "/api/v1/agents/a1/slack-skills"]);
     await client.agents.mcpConnections.list("a1");
     cases.push([Promise.resolve(), "/api/v1/agents/a1/mcp-connections"]);
-    await client.agents.mcpConverseGrants.list("a1");
-    cases.push([Promise.resolve(), "/api/v1/agents/a1/mcp-converse-grants"]);
 
     const urls = fetchMock.mock.calls.map((call) => call[0] as string);
     for (const [, expectedPath] of cases) {

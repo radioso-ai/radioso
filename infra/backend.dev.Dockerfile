@@ -27,6 +27,7 @@ COPY packages/document-parser/package.json ./packages/document-parser/package.js
 COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
+COPY packages/mcp-source-proof/package.json ./packages/mcp-source-proof/package.json
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
 COPY packages/skill-contract/package.json ./packages/skill-contract/package.json
 COPY packages/skill-contract/*.d.ts ./packages/skill-contract/
@@ -57,6 +58,7 @@ COPY packages/conversation-tools ./packages/conversation-tools
 COPY packages/connector-api ./packages/connector-api
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
+COPY packages/mcp-source-proof ./packages/mcp-source-proof
 COPY packages/radioso-mcp-server ./packages/radioso-mcp-server
 COPY packages/skill-contract ./packages/skill-contract
 COPY packages/usage-contract ./packages/usage-contract

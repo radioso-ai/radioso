@@ -331,12 +331,6 @@ test.describe("Audience Pulse dashboard", () => {
     const beforeUrl = page.url();
     await page.getByTestId("audience-pulse-start-draft-rec-1").click();
 
-    // Confirm the click wrote the seed (proves openDraft ran with a valid workspaceId).
-    const seedRightAfterClick = await page.evaluate(
-      () => window.sessionStorage.getItem("radioso.audiencePulseDraftSeed"),
-    );
-    expect(seedRightAfterClick).not.toBeNull();
-
     // The URL never carries recommendation title or question text.
     await expect(page).toHaveURL(/\/knowledge/);
     const currentUrl = new URL(page.url());

@@ -1,7 +1,7 @@
 ---
 title: "Use cases"
 description: "Jobs a Radioso agent completes end to end: customer support, product onboarding, lead qualification, and internal help — on one agent."
-last_updated: 2026-08-07
+last_updated: 2026-09-01
 ---
 
 # Use cases
@@ -40,7 +40,7 @@ You control the tone with directives rather than a wall of prompt text: what the
 
 The same agent answers your team, not only your customers. Engineers reach it from an MCP client in their editor; a support lead queries it from the API behind an internal dashboard; anyone can open the public chat link.
 
-Radioso's [MCP server](/guides/mcp-server) exposes two surfaces with different scopes. Workspace document tools (`search_documents`, `answer_grounded`, `create_document`, and the rest) authenticate with a workspace API token and work across the whole workspace, retrieval-only, with no agent persona attached. The agent converse surface binds a client to one agent — its persona, directives, and routines — through a per-agent grant, so a tool like Cursor can hold an actual conversation instead of just querying documents.
+Radioso's [MCP server](/guides/mcp-server) exposes `ask_agent`, bound to one agent through an MCP-audience credential created from the signed-in dashboard. A tool like Cursor can hold a conversation with that agent's persona, directives, routines, and retrieval behavior without receiving a workspace role.
 
 Internal help is where the "one agent" part pays off. The onboarding routine you wrote for customers is the one your solutions engineer walks a prospect through. The refund policy your support agent cites is the same document, with the same citation, in every one of those places.
 
@@ -54,6 +54,6 @@ Update a document, publish a new routine version, or add a directive, and every 
 
 - [Guided autonomy](/why-radioso/guided-autonomy) — how the rules bound what the agent may do
 - [What agents can do](/why-radioso/capabilities) — directives, routines, actions, and handoff in detail
-- [MCP server](/guides/mcp-server) — connect clients to workspace document tools or an agent conversation surface
+- [MCP server](/guides/mcp-server) — connect a client to one agent's conversation surface
 - [Authoring routines](/guides/authoring-routines) — write and publish your first flow
 - [Embed on your website](/quickstarts/website-embed) — put the agent in front of customers

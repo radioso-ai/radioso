@@ -50,3 +50,21 @@ test("staging deploy runs when routine workspace packages change", async () => {
   assert.match(deployStaging, /packages\/routine-definition\/\*\*/);
   assert.match(deployStaging, /packages\/routine-document\/\*\*/);
 });
+
+test("backend images and staging deploy include the MCP source-proof workspace", async () => {
+  const [backendDockerfile, backendDevDockerfile, deployStaging] = await Promise.all([
+    readRepoFile("infra/backend.Dockerfile"),
+    readRepoFile("infra/backend.dev.Dockerfile"),
+    readRepoFile(".github/workflows/deploy-staging.yml"),
+  ]);
+
+  for (const dockerfile of [backendDockerfile, backendDevDockerfile]) {
+    assert.match(dockerfile, /COPY packages\/mcp-source-proof\/package\.json \.\/packages\/mcp-source-proof\/package\.json/);
+    assert.match(dockerfile, /COPY packages\/mcp-source-proof \.\/packages\/mcp-source-proof/);
+  }
+  assert.match(
+    backendDockerfile,
+    /COPY --chown=node:node --from=build \/app\/packages\/mcp-source-proof\/dist \.\/packages\/mcp-source-proof\/dist/,
+  );
+  assert.match(deployStaging, /packages\/mcp-source-proof\/\*\*/);
+});

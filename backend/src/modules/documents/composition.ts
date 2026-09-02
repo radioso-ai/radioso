@@ -3,8 +3,6 @@ export {
   AmqpDocumentJobDispatcher,
 } from "./infra/amqpDocumentJobQueue.js";
 export { ChunkRepository } from "./infra/chunkRepository.js";
-// App-wiring entrypoint for the MCP converse surface (composed in app/composition).
-export { AgentConverseResourceService } from "./services/agentConverseResourceService.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
   type DocumentJobConsumerPort,

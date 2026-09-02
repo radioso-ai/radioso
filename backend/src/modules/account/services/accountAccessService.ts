@@ -12,6 +12,10 @@ import type {
 } from "../../../db/repositories/workspaceGrantRepository.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import {
+  transactionalLifecycleAuditEvent,
+  type PersonalCredentialLifecyclePort,
+} from "../../machineAccess/public.js";
 
 export type AccountPermission =
   | "account.users.manage"
@@ -34,17 +38,18 @@ export type AccountPermission =
   | "workspace.agents.manage"
   | "workspace.settings.manage"
   | "workspace.settings.read"
+  | "workspace.api_access.personal.manage"
+  | "workspace.api_access.personal.audit"
+  | "workspace.api_access.service.manage"
   | "workspace.credentials.manage"
   | "workspace.llm-models.manage"
   | "workspace.documents.manage"
   | "workspace.documents.read"
-  | "workspace.agents.delete"
-  | "workspace.token.read"
-  | "workspace.token.rotate";
+  | "workspace.agents.delete";
 
-export type WorkspaceApiTokenRole = "admin" | "member";
+export type WorkspaceMachineRole = "admin" | "member";
 export type PublicAccessRole = "public" | "agent";
-export type PrincipalAccessRole = WorkspaceApiTokenRole | PublicAccessRole;
+export type PrincipalAccessRole = WorkspaceMachineRole | PublicAccessRole;
 
 export type PublicChatPermission =
   | "public_chat.turn.create"
@@ -75,9 +80,17 @@ export type AuthenticatedPrincipal =
     userId: string;
   }
   | {
-    type: "workspace_api_token";
-    role: WorkspaceApiTokenRole;
-    tokenId?: string | null;
+    type: "personal_api_credential";
+    userId: string;
+    credentialId: string;
+    role: WorkspaceMachineRole;
+    workspaceId: string;
+  }
+  | {
+    type: "service_account_credential";
+    serviceAccountId: string;
+    credentialId: string;
+    role: WorkspaceMachineRole;
     workspaceId: string;
   }
   | {
@@ -94,6 +107,11 @@ export interface WorkspaceGrantSummary {
   role: WorkspaceGrantRole;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A narrow outbound signal; account access never learns credential persistence. */
+export interface PersonalCredentialTenureTerminationPort {
+  endMembership(input: { accountId: string; membershipId: string; actorUserId?: string | null }): Promise<void>;
 }
 
 const roleRank: Record<AccountMembershipRole, number> = {
@@ -113,6 +131,8 @@ export class AccountAccessService {
     private readonly auditService: AuditService,
     private readonly workspaceGrantRepository?: WorkspaceGrantRepositoryPort,
     private readonly workspaceRepository?: Pick<WorkspaceRepositoryPort, "findByIdAndAccountId">,
+    private readonly personalCredentialTenureTermination?: PersonalCredentialTenureTerminationPort,
+    private readonly personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "removeMembership">,
   ) {}
 
   async findActiveMembership(accountId: string, userId: string): Promise<AccountMembershipRecord | null> {
@@ -183,6 +203,15 @@ export class AccountAccessService {
   async removeMembershipIfExists(accountId: string, userId: string): Promise<void> {
     const membership = await this.membershipRepository.findActiveByAccountAndUser(accountId, userId);
     if (membership) {
+      if (this.personalCredentialLifecycle) {
+        await this.personalCredentialLifecycle.removeMembership({
+          accountId,
+          membershipId: membership.id,
+          userId: membership.userId,
+        });
+        return;
+      }
+      await this.personalCredentialTenureTermination?.endMembership({ accountId, membershipId: membership.id });
       await this.membershipRepository.deleteById(membership.id);
     }
   }
@@ -194,6 +223,12 @@ export class AccountAccessService {
     }
 
     return membership;
+  }
+
+  /** Named tenure lookup for credentials bound to one uninterrupted membership. */
+  async findActiveMembershipById(id: string): Promise<AccountMembershipRecord | null> {
+    const membership = await this.membershipRepository.findById(id);
+    return membership?.status === "active" ? membership : null;
   }
 
   async removeUserAccess(input: {
@@ -254,11 +289,7 @@ export class AccountAccessService {
       throw conflict("Owner access cannot be removed");
     }
 
-    if (this.workspaceGrantRepository) {
-      await this.workspaceGrantRepository.deleteByAccountAndUser(input.accountId, targetMembership.userId);
-    }
-    await this.membershipRepository.deleteById(targetMembership.id);
-    await this.auditService.record({
+    const auditEvent = transactionalLifecycleAuditEvent({
       accountId: input.accountId,
       eventType: "account.membership.remove",
       eventStatus: "success",
@@ -268,6 +299,28 @@ export class AccountAccessService {
         targetMembershipId: targetMembership.id,
       },
     });
+    if (this.personalCredentialLifecycle) {
+      const removed = await this.personalCredentialLifecycle.removeMembership({
+        accountId: input.accountId,
+        membershipId: targetMembership.id,
+        userId: targetMembership.userId,
+        actorUserId: input.actorUserId,
+        auditEvent,
+      });
+      if (!removed) throw notFound("Membership not found");
+      this.auditService.logRecorded?.(auditEvent);
+      return;
+    }
+    if (this.workspaceGrantRepository) {
+      await this.workspaceGrantRepository.deleteByAccountAndUser(input.accountId, targetMembership.userId);
+    }
+    await this.personalCredentialTenureTermination?.endMembership({
+      accountId: input.accountId,
+      membershipId: targetMembership.id,
+      actorUserId: input.actorUserId,
+    });
+    await this.membershipRepository.deleteById(targetMembership.id);
+    await this.auditService.record(auditEvent);
   }
 
   async updateMembershipRole(input: {
@@ -428,7 +481,7 @@ export class AccountAccessService {
       return this.principalRoleAllows(input.principal.role, input.permission);
     }
 
-    if (input.principal?.type === "workspace_api_token") {
+    if (this.isMachinePrincipal(input.principal)) {
       return input.workspaceId === input.principal.workspaceId
         && this.principalRoleAllows(input.principal.role, input.permission);
     }
@@ -464,7 +517,7 @@ export class AccountAccessService {
     if (input.permissions.length === 0) return true;
     if (input.principal?.type === "public_chat_session") return false;
     const principal = input.principal;
-    if (principal?.type === "workspace_api_token") {
+    if (this.isMachinePrincipal(principal)) {
       return input.permissions.every((permission) => this.tokenRoleAllows(principal.role, permission));
     }
     const userId = input.principal?.type === "session_user" ? input.principal.userId : input.userId;
@@ -490,13 +543,13 @@ export class AccountAccessService {
     userId?: string | null;
     principal?: {
       type: string;
-      role?: WorkspaceApiTokenRole | PublicAccessRole;
+      role?: WorkspaceMachineRole | PublicAccessRole;
       userId?: string;
       workspaceId?: string;
     } | null;
     workspaceId: string;
   }): Promise<AccountMembershipRole | null> {
-    if (input.principal?.type === "workspace_api_token") {
+    if (this.isMachinePrincipal(input.principal)) {
       if (input.principal.workspaceId !== input.workspaceId) {
         return null;
       }
@@ -583,9 +636,9 @@ export class AccountAccessService {
       "workspace.agents.manage",
       "workspace.settings.manage",
       "workspace.settings.read",
+      "workspace.api_access.personal.manage",
       "workspace.documents.manage",
       "workspace.documents.read",
-      "workspace.token.read",
     ].includes(permission);
   }
 
@@ -600,12 +653,17 @@ export class AccountAccessService {
     return this.tokenRoleAllows(role, permission);
   }
 
-  private tokenRoleAllows(role: WorkspaceApiTokenRole, permission: Permission): boolean {
-    if (!permission.startsWith("workspace.") || permission.startsWith("workspace.token.")) {
+  private tokenRoleAllows(role: WorkspaceMachineRole, permission: Permission): boolean {
+    if (!permission.startsWith("workspace.")) {
       return false;
     }
 
     return this.roleAllows(role, permission);
+  }
+
+  private isMachinePrincipal(principal: { type: string; role?: WorkspaceMachineRole | PublicAccessRole; workspaceId?: string } | null | undefined): principal is { type: string; role: WorkspaceMachineRole; workspaceId: string } {
+    return principal?.type === "personal_api_credential"
+      || principal?.type === "service_account_credential";
   }
 
 }

@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url';
 
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STANDALONE_MCP_URL = process.env.NODE_ENV === "production" ? "" : "http://localhost:8787/mcp";
-const backendProxyMcpUrl = (mountPath) => `/backend${mountPath.startsWith("/") ? mountPath : `/${mountPath}`}`;
 
 const buildCspDirectives = ({ frameAncestors }) => [
   "default-src 'self'",
@@ -53,16 +52,6 @@ const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {
     return process.env.NEXT_PUBLIC_MCP_URL;
   }
-  if (process.env.RADIOSO_MCP_URL) {
-    return process.env.RADIOSO_MCP_URL;
-  }
-  if (process.env.RADIOSO_MCP_ENABLED === "false") {
-    return "";
-  }
-  if (process.env.RADIOSO_MCP_ENABLED === "true" && process.env.RADIOSO_MCP_STANDALONE !== "true") {
-    return backendProxyMcpUrl(process.env.RADIOSO_MCP_MOUNT_PATH ?? "/mcp");
-  }
-
   return DEFAULT_STANDALONE_MCP_URL;
 };
 

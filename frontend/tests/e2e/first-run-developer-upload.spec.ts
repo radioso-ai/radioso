@@ -37,14 +37,12 @@ test("first-run developer paths expose separate upload and chat instructions", a
   await expect(page.getByText("curl -sS -X POST http://localhost:8080/api/v1/document/")).toBeVisible();
   await expect(page.getByText("curl -sS -X POST http://localhost:8080/api/v1/assistant/chat")).toBeVisible();
   await expect(page.getByText("client.documents.importFile")).toHaveCount(0);
-  await expect(page.getByLabel("Copy API token")).toContainText("workspace-token");
-  await expect(page.getByLabel("Copy chat API token")).toContainText("workspace-token");
-  await expect(page.getByText("Authorization: Bearer workspace-token").first()).toBeVisible();
+  await expect(page.getByText("Create a credential in Workspace settings → API access.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy create from text with curl instruction" })).toBeVisible();
   await page.getByRole("button", { name: /^TypeScript$/ }).first().click();
   await expect(page.getByText("client.documents.create")).toBeVisible();
   await expect(page.getByText("const response = await client.chat.create({")).toBeVisible();
-  await expect(page.getByText("apiToken: \"workspace-token\"").first()).toBeVisible();
+  await expect(page.getByText("apiToken: 'YOUR_PERSONAL_OR_SERVICE_CREDENTIAL'").first()).toBeVisible();
   await expect(page.getByText("client.chat.listHistory")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy ask a question with typescript instruction" })).toBeVisible();
 

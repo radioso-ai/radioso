@@ -1,231 +1,90 @@
 ---
-title: MCP server
-description: Connect Cursor, Claude Desktop, or any MCP client to Radioso — the two surfaces, how to enable them, the real tool list, and the auth model.
+title: "MCP server"
+description: "Connect an MCP client to one Radioso agent with an audience-bound credential."
+last_updated: 2026-09-01
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # MCP server
 
-Point an MCP client at a Radioso workspace and it can list and search documents, pull a grounded answer with citations, and create or update content — the same operations the dashboard and REST API expose, reached as MCP tools instead of HTTP calls. Point a converse-capable client at one agent instead, and it holds an actual conversation with that agent's persona, directives, and routines, the way a user would.
+Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`. The credential has no workspace role: it is bound to that agent and to the MCP audience.
 
-This page is about Radioso running an MCP server that a client connects into. If you're looking for the other direction — an agent [skill](/concepts) that calls out to *someone else's* MCP server as a tool — see [Agents and skills](/api/agents-and-skills#agent-skills). The two are unrelated: this page's server accepts MCP calls, that skill kind makes them.
+## Two surfaces, two boundaries
 
-## Two surfaces, two credentials
+- **Workspace document work** uses the REST API with a personal token or service-account credential.
+- **Agent chat over MCP** binds a client to one agent's persona, directives, routines, history, and retrieval settings. A signed-in user with permission to manage that agent creates an MCP-audience credential. The server exchanges it for a short-lived converse session.
 
-Radioso's MCP server exposes two surfaces, and they don't share credentials — a workspace API token is rejected by the converse endpoints, and a converse grant or converse session token is rejected by the workspace tools.
-
-- **Workspace document tools** are retrieval-first and scoped to a whole [workspace](/concepts). They authenticate with a workspace API token and don't carry any agent's persona or configuration. Use this surface when a client should search, read, or manage the workspace's documents.
-- **Agent converse surface** binds a client to one agent's turn loop. It authenticates with a per-agent converse grant, exchanged for a short-lived session token. Use this surface when the client should hold a conversation and behave like that agent.
-
-Both surfaces call the same underlying Radioso backend, but the workspace tools never apply an agent's persona, directives, or routines — they answer from retrieval alone.
+The dashboard session is the management boundary. It issues, rotates, and revokes agent credentials; agent credentials do not manage credentials or workspace settings.
 
 ## Enable it
 
 <Steps>
 ### Choose a deployment shape
 
-Run MCP merged into the backend, or run it as its own process (`packages/radioso-mcp-server`). Self-hosted operators can do either; if you're calling a Radioso-hosted instance, whoever operates it has already made this choice, and you only need the resulting host and token.
+Run `packages/radioso-mcp-server` as a standalone process.
 
-Merged mode is the simpler self-hosted default: set `RADIOSO_MCP_ENABLED=true` and leave `RADIOSO_MCP_STANDALONE=false` on the backend. MCP mounts at `RADIOSO_MCP_MOUNT_PATH` (default `/mcp`) on the backend's own origin, and clients send the workspace API token directly as the bearer token — no separate exchange step.
+Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and its bind settings. Hosted Terraform shares a generated `RADIOSO_MCP_SIGNING_SECRET` with the backend and sets `RADIOSO_TRUSTED_PROXY_HOPS=2` for Google's appended client/load-balancer suffix. In a manual deployment, use the same signing secret in both processes and leave the hop count at `0` unless you control the exact rightmost proxy chain. Each process can keep short-lived backend session tokens in memory. Set `RADIOSO_MCP_REDIS_URL` when you want that cache shared across MCP instances; the signing secret also encrypts those cached tokens.
 
-Standalone mode runs the package as a separate HTTP process, which is the better fit when MCP needs public HTTPS exposure but the main backend should stay internal. It requires `RADIOSO_BASE_URL` pointed at the backend and a `RADIOSO_MCP_SIGNING_SECRET` set to a non-default value on both the MCP process and the backend, so the backend can verify MCP-attributed traffic. Clients exchange a workspace API token for a short-lived access token first, then use that token as the bearer credential.
+### Confirm the backend connection
 
-You can run both at once — merged mode for same-host access and a standalone deployment for public connector traffic — sharing session state between them with `RADIOSO_MCP_REDIS_URL` set on both.
+Standalone mode needs a reachable backend for agent-converse requests.
 
-### Confirm the backend reaches the target Radioso instance
+### Create the agent credential
 
-Standalone mode calls `GET /api/v1/workspace/mcp/context` on `RADIOSO_BASE_URL` to negotiate workspace identity and supported tools before granting anything to a client. If that call fails, the standalone server has no route to the backend it's supposed to front.
-
-### Mint the credential you need
-
-For workspace document tools, use a workspace API token. For the converse surface, a workspace admin mints a per-agent converse grant (below).
+Sign in to the dashboard, open the agent's **Channels → MCP** card, and create a credential with a label and expiry. Copy the one-time secret into the secure configuration of the client or connector that will send it to standalone `/mcp`. Radioso stores only its hash, so the secret is not shown again.
 </Steps>
 
+The dashboard uses the shared agent-credential lifecycle endpoints:
+
+```text
+POST /api/v1/agents/{agentId}/channel-credentials
+GET  /api/v1/agents/{agentId}/channel-credentials?audience=mcp
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke
+```
+
+The create request sets `audience` to `mcp` and includes `label` and `expiresAt`. Lifecycle calls require a signed-in session with agent-manage permission. The operator-minted secret is a static bearer, so Radioso does not require OAuth for this connection.
+
 <Callout type="info" emoji="i">
-  A workspace API token only works against the instance that issued it. A token minted on `https://api.radioso.ai` will not authenticate against `https://api-us.radioso.ai`, a self-hosted deployment, or `http://localhost:8080` — match the token to the host in every example below.
+  Personal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat.
 </Callout>
+
+## Agent converse setup
+
+The dashboard credential is bound to one agent and the MCP audience. Send its original secret to standalone `/mcp`; the server exchanges it for a short-lived session token. If a process restarts or its cache expires, it exchanges the original credential again and the backend resumes the conversation mapped to that credential version in PostgreSQL. A session token returned by the internal converse endpoint is for direct calls to that endpoint, not for `/mcp`. Revoke the credential from the dashboard when the client should lose access; the server re-checks credential state for every request.
+
+The converse surface provides **`ask_agent`**, which sends a message through the agent's full turn loop and continues its conversation. Retrieval can participate in that turn when the agent's configuration calls for it. Direct document search and grounded-answer generation remain REST API workflows.
+
+The converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys.
 
 ## Workspace document tools
 
-### Client config: Cursor
+MCP credential setup exposes agent chat, not a document-management surface. Use the dashboard or the REST document routes with a personal or service-account credential for workspace document work.
 
-Same-host merged mode, using the workspace API token directly:
+## Deployment notes
 
-```json
-{
-  "mcpServers": {
-    "radioso": {
-      "url": "https://api.radioso.ai/mcp",
-      "headers": {
-        "Authorization": "Bearer radioso_your_workspace_token"
-      }
-    }
-  }
-}
-```
+Standalone mode is useful when the MCP process needs separate public HTTPS exposure. Hosted remote clients such as Claude or ChatGPT need a public HTTPS URL; a localhost URL is reachable only from a client running on the same machine.
 
-Local development against a backend you're running yourself:
+`RADIOSO_MCP_SIGNING_SECRET` authenticates the digested source identity that standalone forwards to the backend. When Redis backs the MCP session-token cache, the same domain-separated secret also encrypts that material. It is different from agent credentials, personal tokens, service-account credentials, public-chat launch values, provider keys, and connector secrets.
 
-```json
-{
-  "mcpServers": {
-    "radioso-local": {
-      "url": "http://localhost:8080/mcp",
-      "headers": {
-        "Authorization": "Bearer radioso_your_workspace_token"
-      }
-    }
-  }
-}
-```
+## Authentication boundaries
 
-Standalone mode needs a short-lived access token instead of the workspace token. Exchange one from the standalone server's origin:
-
-```bash
-source <(
-  RADIOSO_WORKSPACE_TOKEN=radioso_your_workspace_token \
-  pnpm --dir packages/radioso-mcp-server run -s token:exchange
-)
-```
-
-That sets `RADIOSO_MCP_ACCESS_TOKEN` in your shell. Point Cursor's config at the standalone server with that token:
-
-```json
-{
-  "mcpServers": {
-    "radioso": {
-      "url": "http://127.0.0.1:8787/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:RADIOSO_MCP_ACCESS_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-Rerun the exchange when the token expires (`RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS`, default 900 seconds).
-
-If you open Cursor from the Dock, Spotlight, or a launcher instead of a terminal, install the token into the GUI app's environment first, since a GUI-launched app doesn't inherit your shell's exported variables:
-
-```bash
-RADIOSO_WORKSPACE_TOKEN=radioso_your_workspace_token \
-pnpm --dir packages/radioso-mcp-server run -s cursor:prepare -- --open
-```
-
-Cursor can also spawn the MCP server itself over stdio instead of connecting to a running HTTP process — set `RADIOSO_BASE_URL` and `RADIOSO_API_TOKEN` and point Cursor's config at `dist/src/cli/stdio.js`.
-
-### Client config: Claude Desktop
-
-Claude Desktop's remote connector runs from Anthropic's infrastructure, not your laptop, so `http://127.0.0.1:8787/mcp` and `http://localhost:8080/mcp` are both unreachable from it. It needs a public HTTPS deployment:
-
-1. Deploy the MCP server (merged or standalone) behind a public HTTPS URL, for example `https://mcp.example.com/mcp`.
-2. In Claude, open **Customize → Connectors** and add a custom connector pointed at that URL.
-3. Authenticate the connector with a token minted through the exchange flow above; the package doesn't implement a native OAuth connector flow, so if your deployment fronts the exchange endpoint with its own OAuth layer, supply that client ID and secret in Claude's advanced settings instead.
-4. Enable the connector in a conversation.
-
-For localhost-only Claude Desktop access, use the stdio compatibility entrypoint described above rather than the remote connector flow.
-
-### The tools
-
-<Callout type="info" emoji="i">
-  All tool arguments are validated with Zod before Radioso executes them; a request with a missing or malformed field is rejected before it reaches the backend.
-</Callout>
-
-- **`describe_capabilities`** — no arguments. Returns the read and write tools this session was granted, any tools that require host-side approval, and basic workspace and upstream API metadata.
-- **`list_documents`** — optional `cursor` (string), `limit` (1–100), `offset` (integer ≥ 0). Lists workspace documents.
-- **`get_document`** — `documentId` (string, required). Fetches one document.
-- **`search_documents`** — `query` (string, required, up to 4000 characters), optional `metadataFilter`. Searches workspace documents.
-- **`answer_grounded`** — `query` (string, required), optional `metadataFilter`, optional `conversationContext` (`previousUserMessages`, `previousAssistantMessages`, `followUpToMessageId`) for rewrite continuity across a caller-managed thread. Returns a grounded answer with citations from workspace retrieval. It does not create an assistant conversation and does not carry any agent's persona.
-- **`create_document`** *(requires approval by default)* — `title` and `content` (strings, required), optional `metadata`, optional `externalDocumentId`.
-- **`update_document`** *(requires approval by default)* — same fields as `create_document` plus `documentId` (required).
-- **`delete_document`** *(requires approval by default)* — `documentId` (string, required).
-- **`reprocess_document`** *(requires approval by default)* — `documentId` (string, required), optional `documentEnrichmentOverride` (`"on"` or `"off"`). Requeues the document through the backend's document processing path; the override applies only to the job this call creates, not to workspace or source-level ingestion settings.
-
-`describe_capabilities`, `list_documents`, `get_document`, `search_documents`, and `answer_grounded` are read tools. The other four are write tools, and every write tool advertises `requiresApproval: true` in its MCP tool definition by default, so hosts that read that field — Cursor, Claude Desktop, the ChatGPT app — show their own confirmation prompt before calling it. The Radioso MCP server itself has no separate server-side approval gate beyond the workspace API token's own permissions; a headless client that ignores `requiresApproval` can still call a write tool if the token allows it.
-
-An operator can narrow which tools are granted per workspace with `RADIOSO_MCP_ALLOWED_READ_TOOLS`, `RADIOSO_MCP_ALLOWED_WRITE_TOOLS`, `RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS`, or a `RADIOSO_MCP_WORKSPACE_POLICIES_PATH` policy file keyed by workspace ID. Left unset, all nine tools above are granted and all four write tools require approval.
-
-## Agent converse surface
-
-The converse surface authorizes exactly one agent — the client never sees other agents, workspace settings, or document management outside that agent's own documents.
-
-### Mint a converse grant
-
-A workspace admin creates a grant with the workspace API token. The plaintext token is returned once, on creation:
-
-```http
-POST /api/v1/agents/{agentId}/mcp-converse-grants
-Authorization: Bearer <workspace API token>
-Content-Type: application/json
-
-{ "label": "Cursor on my laptop" }
-```
-
-```json
-{
-  "grant": { "id": "...", "label": "Cursor on my laptop", "tokenPrefix": "radioso_", "createdAt": "..." },
-  "token": "radioso_..."
-}
-```
-
-`GET`, rotate (`POST .../rotate`), and `DELETE` on the same path list, rotate, and revoke a grant. Revoking, disabling, or rotating a grant stops its existing sessions immediately, because every converse request re-checks the grant.
-
-### Exchange the grant for a session
-
-```http
-POST /api/v1/mcp/converse/session
-Content-Type: application/json
-
-{ "launchToken": "radioso_...", "client": { "name": "cursor" } }
-```
-
-```json
-{
-  "sessionToken": "<session token>",
-  "expiresAt": "...",
-  "agent": { "id": "...", "name": "Support" },
-  "conversationId": "..."
-}
-```
-
-Use the returned `sessionToken` as the bearer token for the tools below. There's no agent ID in those requests — the agent is fixed by the grant. Re-exchange the grant when the session expires.
-
-### The tools and resources
-
-- **`ask_agent`** — `message` (string, required). Runs the agent's full turn loop — persona, directives, routines, history — and continues the same conversation across calls. This is the stateful, interactive tool.
-- **`answer_grounded`** — `query` (string, required), optional `maxResults` (1–20). Returns one grounded answer with citations from the bound agent's own retrieval configuration: its query rewrite, rerank, source scope, and citation policy. Stateless and read-only, with no conversation, persona, or routines. This is a different tool from the workspace-scoped `answer_grounded` above — same name, agent-bound instead of workspace-bound, and a smaller argument set.
-- **Agent documents as MCP resources** — `GET /api/v1/mcp/converse/resources` lists resources scoped to what the agent can see; `GET /api/v1/mcp/converse/resources/{resourceId}` reads one. Content is sanitized for a public surface — no internal document or chunk IDs.
-
-### Authentication boundaries
-
-- The converse surface accepts only converse session tokens minted through the exchange above. A workspace API token is rejected.
-- A converse grant is bound to the `mcp-converse` channel; embed and public-chat launch tokens are rejected, so a public website token can't be reused to converse over MCP.
-- A converse grant is a secret credential — unlike an embed token, it's never exposed in client-side surfaces. Store it the way you'd store any workspace secret.
-- There's no standard MCP OAuth 2.1 front door for the converse surface. Public connectors such as Claude or ChatGPT authenticate with a session token minted through the grant exchange, held server-side by whatever fronts the connector.
-
-## Auth and token model, end to end
-
-| Surface | Credential | Scope | Where it's minted |
-|---|---|---|---|
-| Workspace document tools, merged mode | Workspace API token | Whole workspace | Workspace settings |
-| Workspace document tools, standalone mode | Short-lived MCP access token | Whole workspace, further narrowed by `requestedTools` at exchange | `POST {mcp-server}/v1/auth/exchange`, using a workspace API token |
-| Agent converse surface | Converse grant, exchanged for a session token | One agent | `POST /api/v1/agents/{agentId}/mcp-converse-grants`, using a workspace API token |
-
-Every path above still starts from a workspace API token — the standalone exchange and the converse grant both need one to mint their own shorter-lived credential. See [Authentication](/guides/authentication) for how to get one.
+- MCP accepts an MCP-audience credential or a valid converse session created from one.
+- Agent credentials are created, rotated, and revoked through a signed-in session with permission to manage the bound agent.
+- A REST-audience credential is rejected by MCP even when it belongs to the same agent.
+- Public-chat launch values and website-embed values cannot be reused for MCP converse.
+- MCP does not reveal agent, workspace, provider, connector, public-launch, or signing-key secrets.
 
 ## Common failure modes
 
-- **`401` from the MCP endpoint in merged mode** — usually a workspace API token that's missing, revoked, or issued by a different Radioso instance than the one you're calling.
-- **A tool call succeeds against the workspace tools but the converse tools reject the same token, or vice versa** — expected. The two surfaces don't share credentials by design; use a workspace API token for `/mcp` document tools and a converse session token for `/api/v1/mcp/converse/*`.
-- **Claude Desktop or a ChatGPT app can't reach a locally running MCP server** — these are hosted remote connectors that call from provider infrastructure, not from your machine. Deploy the server behind a public HTTPS URL, or use the stdio entrypoint for local-only access instead.
-- **A write tool call is silently skipped in a host UI** — the host is honoring `requiresApproval: true` and waiting for you to confirm. Check the host's own approval prompt rather than the Radioso server logs.
-- **Standalone mode refuses to start** — `RADIOSO_MCP_SIGNING_SECRET` must be an explicit, non-default value in remote HTTP mode; the built-in stdio compatibility secret is rejected outside stdio.
-- **`reprocess_document` didn't change how future uploads are enriched** — `documentEnrichmentOverride` only applies to the single reprocessing job that call created, not to the workspace ingestion setting or the source-level override.
+- **The MCP endpoint returns `401`.** Confirm that the bearer is an active, unexpired MCP-audience credential for this agent. A personal token, service-account credential, or REST-audience agent credential is rejected.
+- **The converse client cannot connect.** Confirm the MCP URL is reachable over HTTPS for hosted clients, and check `RADIOSO_BASE_URL` and the standalone bind settings. When Redis is configured, check `RADIOSO_MCP_SIGNING_SECRET` too.
+- **A converse session is rejected.** Its credential may be revoked, expired, or issued for a different agent. Create or revoke credentials from the agent's MCP card with a current dashboard session.
 
 ## Read next
 
-- [Authentication](/guides/authentication) — how workspace API tokens and sessions work across all of Radioso's surfaces.
-- [Agents and skills](/api/agents-and-skills) — the reverse direction: binding an agent skill to an external MCP server.
-- [Documents and search](/api/documents-and-search) — the REST endpoints the workspace document tools call.
-- [Chat and history](/api/chat-and-history) — the assistant chat API the converse surface's `ask_agent` runs underneath.
+- [Authentication](/guides/authentication) — sessions, personal tokens, service credentials, and public launch flows.
+- [Personal tokens and service accounts](/api/workspaces-and-tokens) — issue REST credentials and store their one-time secrets.
+- [Agents and skills](/api/agents-and-skills) — configure the agent and its external MCP skills.
+- [Documents and search](/api/documents-and-search) — use the REST document routes for workspace document work.

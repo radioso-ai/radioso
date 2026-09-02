@@ -1,21 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { runConverseGrantSmoke, runSingleNodeSmoke } from "../testing/remoteSmokeHarness.js";
+import { runConverseGrantSmoke } from "../testing/remoteSmokeHarness.js";
 
 describe("remote MCP backend integration", () => {
-  it(
-    "completes a real read/write flow against the in-memory backend app",
-    async () => {
-      const summary = await runSingleNodeSmoke({
-        step: () => {},
-      });
-
-      expect(summary.documentId).toMatch(/[0-9a-f-]{36}/i);
-      expect(summary.answer.toLowerCase()).toContain("remote context writes and reads work end to end");
-    },
-    30_000,
-  );
-
   it(
     "accepts an MCP converse grant bearer and exposes only the converse surface",
     async () => {

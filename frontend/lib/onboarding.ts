@@ -48,7 +48,7 @@ Local setup centers on a small set of environment values: \`DATABASE_URL\`, sess
 
 \`LLM_PROVIDER\` selects the default model provider. OpenAI is the default path, while OpenAI-compatible, Gemini, and Claude providers are also supported when the corresponding keys are configured.
 
-Workspace settings control retrieval behavior such as rewrite, rerank, chunking, citation display, and anonymous chat access. API tokens are workspace-scoped and intended for SDK or curl usage after the workspace is already working in the UI.`,
+Workspace settings control retrieval behavior such as rewrite, rerank, chunking, citation display, and anonymous chat access. Personal tokens and service-account credentials support SDK or curl usage after the workspace is already working in the UI.`,
   },
 ] as const
 

@@ -13,34 +13,34 @@ export const contextVariablesApi = {
   async listCatalog(): Promise<ContextVariableListResponse> {
     return request<ContextVariableListResponse>('/context-variables', {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createCatalogVariable(data: ContextVariableCreateRequest): Promise<ContextVariableResponse> {
     return request<ContextVariableResponse>('/context-variables', {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateCatalogVariable(variableId: string, data: ContextVariableUpdateRequest): Promise<ContextVariableResponse> {
     return request<ContextVariableResponse>(`/context-variables/${encodeURIComponent(variableId)}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteCatalogVariable(variableId: string): Promise<void> {
     await request<void>(`/context-variables/${encodeURIComponent(variableId)}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listAgentEnablements(agentId: string): Promise<AgentContextVariableEnablementListResponse> {
     return request<AgentContextVariableEnablementListResponse>(
       `/agents/${encodeURIComponent(agentId)}/context-variables`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -55,7 +55,7 @@ export const contextVariablesApi = {
         method: 'PUT',
         body: JSON.stringify(data),
       },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -63,7 +63,7 @@ export const contextVariablesApi = {
     await request<void>(
       `/agents/${encodeURIComponent(agentId)}/context-variables/${encodeURIComponent(variableId)}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

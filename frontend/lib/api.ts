@@ -1,7 +1,24 @@
 export type * from './api-types'
+export {
+  apiAccessApi,
+  type ApiAccessRole,
+  type ApiAccessSummary,
+  type ApiCredentialMetadata,
+  type ApiCredentialStatus,
+  type CredentialKind,
+  type CreateServiceAccountResponse,
+  type OneTimeCredentialResponse,
+  type PagedApiAccessItems,
+  type PersonalTokenInput,
+  type PersonalTokenView,
+  type ServiceAccountInput,
+  type ServiceAccountStatus,
+  type ServiceAccountSummary,
+  type ServiceCredentialInput,
+} from './api-api-access'
 
 export {
-  activateWorkspaceToken,
+  activateWorkspaceSession,
   clearStoredAnonymousSession,
   clearStoredEmbedBootstrapSession,
   clearWorkspaceStorage,
@@ -13,7 +30,7 @@ export {
   readStoredEffectivePublicChatToken,
   readStoredPublicSessionResumeToken,
   readStoredPublicSessionToken,
-  removeWorkspaceToken,
+  removeWorkspaceSession,
   seedWorkspaceSession,
   setPendingAccountSwitchId,
   storeAnonymousSessionId,

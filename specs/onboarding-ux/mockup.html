@@ -1,0 +1,967 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radioso — onboarding mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --background: #ffffff;
+    --foreground: #142317;
+    --primary: #5096e7;
+    --primary-foreground: #f9f9f7;
+    --secondary: #ffc720;
+    --muted: #e8eae8;
+    --muted-foreground: #5f6560;
+    --border: #d4d8d4;
+    --sidebar: #f9f9f7;
+    --destructive: #dc2626;
+    --ok: #1d7a3a;
+    --radius: 0.5rem;
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font-sans);
+    color: var(--foreground);
+    background: var(--background);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, .display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
+  button { font: inherit; cursor: pointer; }
+  input, textarea { font: inherit; color: inherit; }
+  .scene { display: none; height: 100vh; }
+  .scene.active { display: flex; }
+
+  /* ---------- review chrome (not product UI) ---------- */
+  .review-bar {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; align-items: center;
+    background: #142317; color: #f9f9f7; border-radius: 999px;
+    padding: 6px 10px; z-index: 90; box-shadow: 0 8px 24px rgba(20,35,23,.35);
+    font-size: 12px;
+  }
+  .review-bar button {
+    background: transparent; color: #cfd6cf; border: 0; border-radius: 999px; padding: 5px 11px;
+  }
+  .review-bar button.on { background: #f9f9f7; color: #142317; }
+  .review-bar .sep { width: 1px; height: 16px; background: rgba(249,249,247,.25); }
+  .note {
+    display: none; margin-top: 10px; padding: 8px 12px; border-left: 3px solid var(--secondary);
+    background: #fffaeb; color: #5c4a05; border-radius: 0 var(--radius) var(--radius) 0; font-size: 12.5px;
+  }
+  body.show-notes .note { display: block; }
+
+  /* ---------- shared primitives ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    border-radius: var(--radius); padding: 8px 16px; border: 1px solid transparent; font-weight: 500;
+  }
+  .btn-primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn-primary:hover { background: #3f86da; }
+  .btn-ghost { background: transparent; border-color: var(--border); color: var(--foreground); }
+  .btn-ghost:hover { background: var(--sidebar); }
+  .btn-link { background: none; border: 0; color: var(--muted-foreground); padding: 6px 8px; }
+  .btn-link:hover { color: var(--foreground); text-decoration: underline; }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600;
+    border-radius: 999px; padding: 2px 9px;
+  }
+  .badge-rec { background: var(--secondary); color: #142317; }
+  .badge-soft { background: var(--muted); color: var(--muted-foreground); }
+  .badge-ok { background: #e3f2e7; color: var(--ok); }
+  .card { border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); background: #fff; }
+  .field {
+    width: 100%; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 9px 12px; background: #fff; outline: none;
+  }
+  .field:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(80,150,231,.18); }
+  .muted { color: var(--muted-foreground); }
+  .small { font-size: 12.5px; }
+  .icon { width: 16px; height: 16px; flex: none; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .icon-lg { width: 20px; height: 20px; }
+  .snippet {
+    background: #142317; color: #d9e4da; border-radius: var(--radius);
+    padding: 12px 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+    overflow-x: auto; position: relative; white-space: pre;
+  }
+  .snippet .copy {
+    position: absolute; top: 8px; right: 8px; background: rgba(249,249,247,.12); color: #f9f9f7;
+    border: 0; border-radius: 6px; padding: 4px 10px; font-size: 11px;
+  }
+  .snippet .copy:hover { background: rgba(249,249,247,.22); }
+
+  /* =============================================================
+     SCENE 0 — radioso.ai → sign up → verified
+     ============================================================= */
+  #scene-signup { background: var(--sidebar); align-items: center; justify-content: center; }
+  .sstep { display: none; width: 100%; }
+  .sstep.active { display: flex; flex-direction: column; align-items: center; animation: rise .25s ease; }
+  .browser { width: 860px; max-width: calc(100% - 48px); border: 1px solid var(--border); border-radius: 12px; background: #fff; overflow: hidden; box-shadow: 0 18px 50px rgba(20,35,23,.12); }
+  .browser-bar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--sidebar); border-bottom: 1px solid var(--border); }
+  .browser-bar .dots { display: flex; gap: 5px; }
+  .browser-bar .dots i { width: 9px; height: 9px; border-radius: 999px; background: var(--border); }
+  .browser-bar .url { flex: 1; max-width: 340px; margin: 0 auto; background: #fff; border: 1px solid var(--border); border-radius: 999px; padding: 3px 14px; font-size: 12px; color: var(--muted-foreground); text-align: center; }
+  .mkt { padding: 54px 60px 60px; text-align: center; }
+  .mkt-nav { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--muted-foreground); }
+  .mkt-nav .flow-brand { margin: 0; }
+  .mkt-nav .links { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+  .mkt h1 { font-size: 34px; margin: 0 0 10px; line-height: 1.15; }
+  .mkt p.sub { color: var(--muted-foreground); font-size: 16px; margin: 0 auto 26px; max-width: 540px; }
+  .mkt-ctas { display: flex; gap: 10px; justify-content: center; }
+  .auth-card { width: 400px; max-width: calc(100% - 48px); background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 30px 28px; box-shadow: 0 18px 50px rgba(20,35,23,.10); }
+  .auth-card h1 { font-size: 22px; margin: 0 0 4px; text-align: center; }
+  .auth-card > p.sub { text-align: center; color: var(--muted-foreground); margin: 0 0 20px; font-size: 13px; }
+  .auth-card label { display: block; font-size: 12.5px; font-weight: 500; margin: 12px 0 5px; }
+  .btn-google { width: 100%; justify-content: center; background: #fff; border-color: var(--border); font-weight: 500; }
+  .btn-google:hover { background: var(--sidebar); }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--muted-foreground); font-size: 11.5px; margin: 16px 0 4px; }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .auth-foot { text-align: center; margin-top: 14px; font-size: 12.5px; color: var(--muted-foreground); }
+  .auth-foot a { color: #2b66b4; text-decoration: none; }
+  .mail-glyph { width: 56px; height: 56px; margin: 0 auto 16px; border-radius: 16px; background: var(--sidebar); border: 1px solid var(--border); display: grid; place-items: center; color: var(--primary); }
+  .verify-ok .mail-glyph { background: #e3f2e7; border-color: #bcdcc5; color: var(--ok); }
+  .stage-note { width: 400px; max-width: calc(100% - 48px); }
+  .browser + .stage-note, .auth-card + .stage-note { margin-top: 4px; }
+
+  /* =============================================================
+     SCENE 1 — first-launch AgentSetupFlow
+     ============================================================= */
+  #scene-flow { background: var(--sidebar); }
+  .flow-rail {
+    width: 300px; flex: none; padding: 28px 24px; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; background: var(--sidebar);
+  }
+  .flow-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 6px; }
+  .flow-brand .dot { width: 26px; height: 26px; border-radius: 8px; background: var(--primary); display: grid; place-items: center; color: #fff; }
+  .flow-brand span { font-family: var(--font-display); font-size: 17px; font-weight: 600; }
+  .flow-tagline { color: var(--muted-foreground); font-size: 12.5px; margin-bottom: 26px; }
+  .rail-steps { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+  .rail-step {
+    display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: var(--radius);
+    border: 0; background: transparent; text-align: left; color: var(--muted-foreground); width: 100%;
+  }
+  .rail-step .num {
+    width: 24px; height: 24px; flex: none; border-radius: 999px; border: 1.5px solid var(--border);
+    display: grid; place-items: center; font-size: 12px; font-weight: 600; background: #fff; color: var(--muted-foreground);
+  }
+  .rail-step.current { background: #fff; color: var(--foreground); box-shadow: 0 1px 2px rgba(20,35,23,.06); }
+  .rail-step.locked { opacity: .45; cursor: not-allowed; }
+  .rail-step.current .num { border-color: var(--primary); color: var(--primary); }
+  .rail-step.done { color: var(--foreground); }
+  .rail-step.done .num { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .rail-step .lbl b { display: block; font-weight: 500; font-size: 13.5px; }
+  .rail-step .lbl i { font-style: normal; font-size: 11.5px; color: var(--muted-foreground); }
+  .rail-foot { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+
+  .flow-main { flex: 1; overflow-y: auto; display: flex; justify-content: center; }
+  .flow-panel { width: 640px; max-width: calc(100% - 64px); padding: 56px 0 90px; }
+  .flow-panel h1 { font-size: 26px; margin: 0 0 6px; }
+  .flow-panel > p.lede { color: var(--muted-foreground); margin: 0 0 26px; font-size: 14.5px; }
+  .fstep { display: none; }
+  .fstep.active { display: block; animation: rise .25s ease; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip {
+    border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 13px;
+    font-size: 12.5px; color: var(--foreground);
+  }
+  .chip:hover { border-color: var(--primary); color: var(--primary); }
+  .flow-actions { display: flex; align-items: center; gap: 10px; margin-top: 28px; }
+  .flow-actions .spacer { flex: 1; }
+
+  .k-cards { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .k-card {
+    display: flex; gap: 14px; padding: 16px; align-items: flex-start; text-align: left; width: 100%; cursor: pointer;
+    background: #fff; border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px);
+  }
+  .k-card:hover { border-color: var(--primary); }
+  .k-card.selected { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(80,150,231,.15); }
+  .k-card .k-icon {
+    width: 36px; height: 36px; flex: none; border-radius: 9px; background: var(--sidebar);
+    display: grid; place-items: center; color: var(--primary);
+  }
+  .k-card b { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .k-card p { margin: 3px 0 0; color: var(--muted-foreground); font-size: 12.5px; }
+  .k-detail { margin-top: 14px; }
+  .crawl-log { margin-top: 12px; display: none; }
+  .crawl-log.on { display: block; }
+  .crawl-line { display: flex; gap: 8px; align-items: center; padding: 3px 0; color: var(--muted-foreground); font-size: 12.5px; }
+  .crawl-line .icon { color: var(--ok); }
+
+  .prop-card { padding: 14px 16px; margin-bottom: 10px; display: flex; gap: 12px; align-items: flex-start; }
+  .prop-card input[type=checkbox] { margin-top: 3px; accent-color: var(--primary); width: 15px; height: 15px; }
+  .prop-card .kind { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #2b66b4; }
+  .prop-card b { display: block; font-weight: 600; margin: 1px 0 2px; }
+  .prop-card p { margin: 0; color: var(--muted-foreground); font-size: 12.5px; }
+  .gen-wait { display: flex; align-items: center; gap: 10px; color: var(--muted-foreground); padding: 30px 0; }
+  .spinner { width: 18px; height: 18px; border: 2.5px solid var(--muted); border-top-color: var(--primary); border-radius: 999px; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ray-attrib { display: flex; align-items: center; gap: 7px; color: var(--muted-foreground); font-size: 12px; margin-bottom: 14px; }
+  .kind-def { display: block; font-size: 11.5px; color: var(--muted-foreground); font-weight: 400; margin-top: 6px; font-style: italic; }
+  .nokey { border: 1.5px dashed var(--border); border-radius: 10px; padding: 26px 22px; text-align: center; background: #fff; }
+  .nokey .glyph { width: 40px; height: 40px; margin: 0 auto 10px; border-radius: 11px; background: var(--sidebar); display: grid; place-items: center; color: var(--muted-foreground); }
+  .nokey b { display: block; font-size: 15px; margin-bottom: 3px; }
+  .nokey p { margin: 0 0 14px; color: var(--muted-foreground); font-size: 12.5px; }
+  .proc-strip { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; margin-bottom: 10px; font-size: 12.5px; color: var(--muted-foreground); }
+  .proc-strip .bar { flex: 1; height: 6px; background: var(--muted); border-radius: 999px; overflow: hidden; }
+  .proc-strip .bar i { display: block; height: 100%; background: var(--primary); width: 0; transition: width .4s; }
+  .proc-strip.ok { color: var(--ok); border-color: #bcdcc5; background: #f2f9f4; }
+  .mail-warn { border: 1px solid #f0c9c9; background: #fdf3f3; color: #8a2f2f; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; margin-top: 12px; }
+  .confirm-box { border: 1px solid var(--border); background: var(--sidebar); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; margin-top: 12px; display: flex; align-items: center; gap: 10px; }
+  .role-defs { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 11.5px; color: var(--muted-foreground); }
+  .role-defs li { margin-top: 3px; }
+  .ray-sun { width: 20px; height: 20px; border-radius: 999px; background: var(--secondary); display: grid; place-items: center; font-size: 11px; }
+
+  .chatbox { display: flex; flex-direction: column; height: 380px; }
+  .chat-msgs { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .msg { max-width: 82%; padding: 9px 13px; border-radius: 12px; font-size: 13.5px; }
+  .msg.user { align-self: flex-end; background: var(--primary); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--sidebar); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .cite {
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11.5px;
+    border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 2px 9px; color: var(--muted-foreground);
+  }
+  .handoff-card { border: 1px solid var(--secondary); background: #fffaeb; border-radius: 10px; padding: 10px 12px; margin-top: 8px; font-size: 12.5px; }
+  .handoff-card b { display: flex; gap: 6px; align-items: center; }
+  .chat-input { border-top: 1px solid var(--border); padding: 10px; display: flex; gap: 8px; }
+  .typing { display: inline-flex; gap: 3px; padding: 4px 2px; }
+  .typing i { width: 5px; height: 5px; border-radius: 999px; background: var(--muted-foreground); animation: tb 1s infinite; }
+  .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+  @keyframes tb { 0%,60%,100% { transform: translateY(0); opacity:.45 } 30% { transform: translateY(-3px); opacity:1 } }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; }
+  .switch { width: 36px; height: 20px; border-radius: 999px; background: var(--muted); border: 0; position: relative; flex: none; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 999px; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .switch.on { background: var(--primary); }
+  .switch.on::after { left: 18px; }
+
+  .deploy-grid { display: flex; flex-direction: column; gap: 12px; }
+  .deploy-card { padding: 16px; }
+  .deploy-card h3 { margin: 0 0 3px; font-size: 15px; }
+  .deploy-card > p { margin: 0 0 10px; color: var(--muted-foreground); font-size: 12.5px; }
+  .linkline { display: flex; gap: 8px; }
+  .linkline .field { flex: 1; background: var(--sidebar); }
+
+  /* =============================================================
+     SCENE 2 — dashboard with persistent checklist + Ray
+     ============================================================= */
+  #scene-dash { background: var(--background); }
+  .sidebar {
+    width: 232px; flex: none; background: var(--sidebar); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 14px 10px;
+  }
+  .ws-pill { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius); }
+  .ws-pill .dot { width: 24px; height: 24px; border-radius: 7px; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .ws-pill b { font-size: 13px; display: block; }
+  .ws-pill i { font-style: normal; font-size: 11px; color: var(--muted-foreground); }
+  .nav { display: flex; flex-direction: column; gap: 1px; margin-top: 14px; flex: 1; }
+  .nav a {
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--radius);
+    color: var(--foreground); text-decoration: none; font-size: 13.5px;
+  }
+  .nav a:hover { background: var(--muted); }
+  .nav a.active { background: var(--foreground); color: var(--sidebar); }
+  .nav a .cnt { margin-left: auto; font-size: 11px; color: var(--muted-foreground); }
+  .nav a.active .cnt { color: rgba(249,249,247,.7); }
+
+  .setup-widget { border: 1px solid var(--border); border-radius: calc(var(--radius) + 2px); background: #fff; overflow: hidden; }
+  .setup-head { display: flex; align-items: center; gap: 9px; width: 100%; background: none; border: 0; padding: 11px 12px; text-align: left; }
+  .setup-head b { font-size: 13px; font-weight: 600; display: block; }
+  .setup-head i { font-style: normal; font-size: 11px; color: var(--muted-foreground); }
+  .ring { width: 28px; height: 28px; flex: none; }
+  .ring circle.bg { fill: none; stroke: var(--muted); stroke-width: 3.5; }
+  .ring circle.fg { fill: none; stroke: var(--primary); stroke-width: 3.5; stroke-linecap: round; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset .3s; }
+  .setup-items { border-top: 1px solid var(--border); padding: 6px; display: none; }
+  .setup-widget.open .setup-items { display: block; }
+  .setup-item {
+    display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0;
+    padding: 6px 7px; border-radius: 6px; font-size: 12.5px; color: var(--foreground); text-align: left;
+  }
+  .setup-item:hover { background: var(--sidebar); }
+  .setup-item .tick { width: 16px; height: 16px; flex: none; border-radius: 999px; border: 1.5px solid var(--border); display: grid; place-items: center; }
+  .setup-item.done { color: var(--muted-foreground); text-decoration: line-through; }
+  .setup-item.done .tick { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .setup-dismiss { border-top: 1px solid var(--border); width: 100%; background: none; border-left: 0; border-right: 0; border-bottom: 0; padding: 7px; font-size: 11.5px; color: var(--muted-foreground); }
+  .setup-dismiss:hover { color: var(--foreground); }
+
+  .dash-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .dash-top { height: 52px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; padding: 0 20px; }
+  .dash-top h2 { font-size: 15px; margin: 0; }
+  .dash-body { flex: 1; display: grid; place-items: center; padding: 30px; }
+  .empty-hero { text-align: center; max-width: 460px; }
+  .empty-hero .glyph { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 14px; background: var(--sidebar); border: 1px solid var(--border); display: grid; place-items: center; color: var(--primary); }
+  .empty-hero h2 { font-size: 21px; margin: 0 0 6px; }
+  .empty-hero p { color: var(--muted-foreground); margin: 0 0 18px; }
+
+  .ray-tab {
+    position: fixed; right: 22px; bottom: 22px; z-index: 60;
+    display: flex; align-items: center; gap: 8px; border: 0; border-radius: 999px;
+    background: var(--foreground); color: var(--sidebar); padding: 10px 16px; font-weight: 500;
+    box-shadow: 0 10px 26px rgba(20,35,23,.3);
+  }
+  .ray-panel {
+    position: fixed; right: 22px; bottom: 22px; width: 360px; max-height: 540px; z-index: 70;
+    background: #fff; border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: 0 18px 50px rgba(20,35,23,.22); display: none; flex-direction: column; overflow: hidden;
+  }
+  .ray-panel.open { display: flex; }
+  .ray-head { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .ray-head b { font-size: 14px; }
+  .ray-head button { margin-left: auto; background: none; border: 0; color: var(--muted-foreground); }
+  .ray-body { padding: 18px 16px; overflow-y: auto; }
+  .ray-hello .ray-sun { width: 34px; height: 34px; font-size: 17px; margin-bottom: 10px; }
+  .ray-hello h3 { margin: 0 0 4px; font-size: 16px; }
+  .ray-hello p { margin: 0 0 14px; color: var(--muted-foreground); font-size: 13px; }
+  .ray-sugs { display: flex; flex-direction: column; gap: 7px; }
+  .ray-sug {
+    display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+    border: 1px solid var(--border); background: #fff; border-radius: 10px; padding: 10px 12px; font-size: 13px;
+  }
+  .ray-sug:hover { border-color: var(--primary); }
+  .ray-sug .icon { color: var(--primary); }
+  .ray-input { border-top: 1px solid var(--border); padding: 10px; display: flex; gap: 8px; }
+
+  .toast {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%) translateY(-8px);
+    background: var(--foreground); color: var(--sidebar); border-radius: 999px; padding: 8px 18px;
+    font-size: 13px; opacity: 0; pointer-events: none; transition: all .25s; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- =========================================================
+     SCENE 0 — radioso.ai → registration → verified
+     ========================================================= -->
+<section id="scene-signup" class="scene active">
+
+  <!-- 0a · marketing landing -->
+  <div class="sstep active" data-sstep="0">
+    <div class="browser">
+      <div class="browser-bar"><div class="dots"><i></i><i></i><i></i></div><div class="url">radioso.ai</div></div>
+      <div class="mkt-nav">
+        <div class="flow-brand"><div class="dot"><svg class="icon" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg></div><span>radioso</span></div>
+        <div class="links">Docs · Blog · GitHub <button class="btn btn-ghost" style="padding:5px 12px" onclick="goSign(1)">Log in</button></div>
+      </div>
+      <div class="mkt">
+        <h1>All your conversational agents.<br>One self-hosted platform.</h1>
+        <p class="sub">Steered by your rules, grounded in your knowledge, and reaching every surface — web, API, SDK, and MCP.</p>
+        <div class="mkt-ctas">
+          <button class="btn btn-primary" style="padding:11px 22px" onclick="goSign(1)">Start in the cloud <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          <button class="btn btn-ghost" style="padding:11px 22px" onclick="toast('→ docs quickstart: ./run-dev.sh — same product, your infrastructure.')">Self-host with Docker</button>
+        </div>
+      </div>
+    </div>
+    <div class="note stage-note">Today the hero “Get started” anchors to the self-host quickstart and the hosted app is a small nav pill. Both audiences deserve a first-class door: cloud for instant gratification, Docker for the self-hoster — same onboarding once inside.</div>
+  </div>
+
+  <!-- 0b · sign up -->
+  <div class="sstep" data-sstep="1">
+    <div class="auth-card">
+      <div class="flow-brand" style="justify-content:center; margin-bottom:14px"><div class="dot"><svg class="icon" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg></div><span>radioso</span></div>
+      <h1>Create your account</h1>
+      <p class="sub">app.radioso.ai/signup — a real, linkable URL</p>
+      <button class="btn btn-google" onclick="goSign(3, true)"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M21 12h-9m9 0a9 9 0 0 1-15.4 6.4M21 12a9 9 0 0 0-15.4-6.4"/></svg> Continue with Google</button>
+      <div class="divider">or with email</div>
+      <label>Work email</label><input class="field" value="dmitri@ausalt.com">
+      <label>Password</label><input class="field" type="password" value="••••••••••••">
+      <label>Organization <span class="muted" style="font-weight:400">(optional — defaults to your email domain)</span></label><input class="field" placeholder="Ausalt">
+      <button class="btn btn-primary" style="width:100%; justify-content:center; margin-top:18px" onclick="goSign(2)">Create account</button>
+      <div class="auth-foot">Already have an account? <a href="#" onclick="return false">Sign in</a></div>
+    </div>
+    <div class="note stage-note">Signup today is local state on “/” — un-linkable, and the availability probe can hide it entirely. The Google button is new UI only: the backend already supports federated sign-in and it skips email verification altogether — the shortest path to value.</div>
+  </div>
+
+  <!-- 0c · check inbox -->
+  <div class="sstep" data-sstep="2">
+    <div class="auth-card" style="text-align:center">
+      <div class="mail-glyph"><svg class="icon icon-lg" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg></div>
+      <h1>Check your inbox</h1>
+      <p class="sub" style="margin-bottom:16px">We sent a sign-in link to <b>dmitri@ausalt.com</b>.<br>It expires in 30 minutes.</p>
+      <div class="confirm-box" style="justify-content:center; margin-top:0"><div class="spinner" style="width:14px;height:14px;border-width:2px"></div> Waiting for you to click the link — this tab continues automatically.</div>
+      <div class="auth-foot" style="margin-top:14px">
+        <a href="#" onclick="toast('Verification email re-sent.'); return false">Resend email</a> ·
+        <a href="#" onclick="goSign(1); return false">Use a different address</a>
+      </div>
+    </div>
+    <div class="note stage-note">The emailed link opens in a different tab — often a different device — so this waiting tab must poll for verification and advance itself (simulated here after a few seconds). Today the state replaces the form in place and dead-ends. On self-hosted dev stacks, show the verification link right here instead of burying it in backend logs.</div>
+  </div>
+
+  <!-- 0d · verified, signed in -->
+  <div class="sstep" data-sstep="3">
+    <div class="auth-card verify-ok" style="text-align:center">
+      <div class="mail-glyph"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <h1 id="verifyTitle">You’re verified — and signed in</h1>
+      <p class="sub" style="margin-bottom:18px" id="verifySub">No retyping your password. Your workspace is ready; let’s stand up your first agent.</p>
+      <button class="btn btn-primary" style="width:100%; justify-content:center" onclick="showScene('flow')">Set up your first agent <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </div>
+    <div class="note stage-note">Today the verify link lands on a success screen that does NOT log you in — back to “/”, credentials again. Issuing the session on verification is the single highest-leverage fix in the whole funnel.</div>
+  </div>
+
+</section>
+
+<!-- =========================================================
+     SCENE 1 — First-launch guided setup (AgentSetupFlow)
+     ========================================================= -->
+<section id="scene-flow" class="scene">
+  <aside class="flow-rail">
+    <div class="flow-brand"><div class="dot"><svg class="icon" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/></svg></div><span>radioso</span></div>
+    <div class="flow-tagline">Let’s stand up your first agent.</div>
+    <nav class="rail-steps" id="railSteps"></nav>
+    <div class="rail-foot">
+      <button class="btn-link" onclick="finishLater()">Finish later — go to dashboard →</button>
+      <div class="note">Every step is skippable and resumable. Leaving never loses progress: state is saved server-side, and the dashboard checklist (scene 2) reopens any step. This replaces today’s one-shot takeover that can never be reopened.</div>
+    </div>
+  </aside>
+
+  <div class="flow-main"><div class="flow-panel">
+
+    <!-- STEP 1 · Purpose -->
+    <div class="fstep active" data-step="0">
+      <h1>What should your agent do?</h1>
+      <p class="lede">One or two sentences, in any language. This shapes its guidelines, its first routine, and its tone.</p>
+      <textarea id="purposeInput" class="field" rows="3" placeholder="e.g. Answer support questions for our roastery’s wholesale customers, and collect order details when someone reports a delivery problem."></textarea>
+      <div class="chips">
+        <button class="chip" onclick="fillPurpose(this)">Answer questions about our product docs and hand tricky ones to a person</button>
+        <button class="chip" onclick="fillPurpose(this)">Aiuta i clienti del nostro negozio a scegliere i corsi e raccogli le iscrizioni</button>
+        <button class="chip" onclick="fillPurpose(this)">Guide developers through our API and flag broken integrations to the team</button>
+      </div>
+      <div class="note">Purpose is the seed for the starter pack (step 3). Multilingual by design — the language is detected and passed explicitly to generation, never inferred from keywords. The Italian chip is here to make that visible.</div>
+      <div class="flow-actions">
+        <span class="spacer"></span>
+        <button class="btn btn-primary" onclick="submitPurpose()">Continue <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+
+    <!-- STEP 2 · Knowledge -->
+    <div class="fstep" data-step="1">
+      <h1>Give it something to know</h1>
+      <p class="lede">Ground the agent in your own content. You can add more anytime under Knowledge.</p>
+      <div class="k-cards">
+        <div class="k-card" role="button" tabindex="0" id="kWebsite" onclick="pickKnowledge('website', this)" onkeydown="kcardKey(event, this)">
+          <div class="k-icon"><svg class="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.7-3.8-9S9.5 5.6 12 3z"/></svg></div>
+          <div><b>Start from your website <span class="badge badge-rec">Recommended</span></b>
+          <p>We’ll analyze it, import the pages, and suggest a name, greeting, and language.</p>
+          <div class="k-detail" id="crawlDetail" style="display:none">
+            <div class="linkline"><input class="field" id="siteUrl" value="aurora-roasters.com" onclick="event.stopPropagation()"><button class="btn btn-primary" onclick="event.stopPropagation();runCrawl()">Analyze</button></div>
+            <div class="crawl-log" id="crawlLog"></div>
+          </div></div>
+        </div>
+        <div class="k-card" role="button" tabindex="0" onclick="pickKnowledge('upload', this)" onkeydown="kcardKey(event, this)">
+          <div class="k-icon"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M12 16V4m0 0 4 4m-4-4L8 8M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg></div>
+          <div><b>Upload documents</b><p>PDF, Word, Markdown, or plain text — drag files or browse.</p></div>
+        </div>
+        <div class="k-card" role="button" tabindex="0" onclick="pickKnowledge('sample', this)" onkeydown="kcardKey(event, this)">
+          <div class="k-icon"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM14 3v6h6M9 13h6M9 17h6"/></svg></div>
+          <div><b>Try sample docs</b><p>Three Radioso docs, so you can see grounded answers before adding your own.</p></div>
+        </div>
+      </div>
+      <div class="note">The existing website-analyzer wizard becomes this step instead of living behind the agent switcher where new users never find it. Sample docs stop being exclusive to a screen you can never revisit.</div>
+      <div class="flow-actions">
+        <button class="btn-link" onclick="skipStep()">Skip for now</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="kContinue" disabled onclick="nextStep()">Continue <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+
+    <!-- STEP 3 · Starter pack review -->
+    <div class="fstep" data-step="2">
+      <h1>Review its starting rules</h1>
+      <p class="lede">Drafted from your purpose. Keep what fits — everything stays editable under the agent’s Behavior tab.</p>
+      <div class="ray-attrib">Drafted from your purpose — nothing is applied until you approve it, and everything stays editable.</div>
+      <div id="genWait" class="gen-wait"><div class="spinner"></div> Drafting directives and a first routine…</div>
+      <div id="genNoKey" class="nokey" style="display:none">
+        <div class="glyph"><svg class="icon icon-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></svg></div>
+        <b>Connect an AI provider to draft starter rules</b>
+        <p>Radioso is running, but no model key is configured yet. Add one now and this step picks up where you left off — or add rules yourself later under Behavior.</p>
+        <button class="btn btn-primary" onclick="toast('→ Settings → AI providers. The flow resumes here afterwards.')">Connect a provider</button>
+        <button class="btn-link" onclick="skipStep()">Skip — add rules later</button>
+      </div>
+      <div id="genResults" style="display:none">
+        <label class="card prop-card"><input type="checkbox" checked onchange="updateApplyState()"><div><span class="kind">Directive</span><b>Answer only from workspace documents</b><p>When the documents don’t cover a question, say so and offer to connect a person — never guess.</p><span class="kind-def">A directive is a standing rule the agent follows in every conversation.</span></div></label>
+        <label class="card prop-card"><input type="checkbox" checked onchange="updateApplyState()"><div><span class="kind">Directive</span><b>Match the customer’s language</b><p>Reply in the language the visitor writes in, keeping product names untranslated.</p></div></label>
+        <label class="card prop-card"><input type="checkbox" checked onchange="updateApplyState()"><div><span class="kind">Directive</span><b>Warm, concise support tone</b><p>Short paragraphs, no jargon, one clarifying question at a time.</p></div></label>
+        <label class="card prop-card"><input type="checkbox" checked onchange="updateApplyState()"><div><span class="kind">Routine</span><b>Delivery problem intake</b><p>4 steps: confirm the order number → capture the issue → check policy docs → summarize and hand off to your team.</p><span class="kind-def">A routine is a step-by-step procedure the agent runs when a matching request comes in.</span></div></label>
+      </div>
+      <div class="note">Generation runs through the same proposal machinery Ray uses (fenced, metered, audited) but is attributed neutrally — the user hasn’t met Ray yet; Ray introduces itself on the dashboard. The no-provider state is a designed screen, not a footnote. Kind labels carry plain-language definitions at first contact.</div>
+      <div class="flow-actions">
+        <button class="btn-link" onclick="skipStep()">Skip — start blank</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="applyPack" disabled onclick="applyPack()">Apply starter pack <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></button>
+      </div>
+    </div>
+
+    <!-- STEP 4 · Test -->
+    <div class="fstep" data-step="3">
+      <h1>Ask it something</h1>
+      <p class="lede" id="testLede">Answers ground in your pages as they finish processing.</p>
+      <div class="proc-strip" id="procStrip"><span id="procLabel">Processing pages…</span><div class="bar"><i id="procBar"></i></div><span id="procCount">0 / 12</span></div>
+      <div id="testNoKey" class="nokey" style="display:none">
+        <div class="glyph"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.3 0-2.6-.3-3.7-.8L3 21l1.8-5.8A8.5 8.5 0 1 1 21 11.5z"/></svg></div>
+        <b>Connect an AI provider to test your agent</b>
+        <p>Your documents are imported and will be ready the moment a model key is added. Nothing here is lost.</p>
+        <button class="btn btn-primary" onclick="toast('→ Settings → AI providers. The flow resumes here afterwards.')">Connect a provider</button>
+        <button class="btn-link" onclick="skipStep()">Skip for now</button>
+      </div>
+      <div class="card chatbox" id="testChatbox">
+        <div class="chat-msgs" id="testMsgs">
+          <div class="msg bot">Hi! I’m the Aurora Roasters assistant. Ask me anything about our beans, wholesale terms, or deliveries.</div>
+        </div>
+        <div class="chips" id="testSugs" style="padding: 0 18px 12px">
+          <button class="chip" style="display:none" onclick="askTest(this)">What subscription plans do you offer?</button>
+          <button class="chip" style="display:none" onclick="askTest(this)">Do you ship wholesale orders abroad?</button>
+          <button class="chip" style="display:none" onclick="askTest(this)">Qual è la vostra politica di reso?</button>
+        </div>
+        <div class="chat-input"><input class="field" id="testInput" placeholder="Questions unlock as pages finish processing…" disabled><button class="btn btn-primary" id="testSend" disabled>Send</button></div>
+      </div>
+      <div class="note">Ingestion is asynchronous and the step says so: the strip shows real progress, and suggested questions appear only as the pages they’re drawn from finish processing — no pretending a 200-page crawl is instantly grounded. If Knowledge was skipped, this step says answers won’t be grounded and offers a way back.</div>
+      <div class="flow-actions">
+        <button class="btn-link" onclick="skipStep()">Skip</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="testContinue" disabled onclick="nextStep()">Looks good <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+
+    <!-- STEP 5 · Handoff -->
+    <div class="fstep" data-step="4">
+      <h1>Where should handoffs land?</h1>
+      <p class="lede">When a conversation needs a person, the agent captures the visitor’s details and the conversation lands in your Inbox. Add a notification so your team hears about it without watching the Inbox.</p>
+      <div class="ray-attrib" id="handoffContext">This is the last step of your “Delivery problem intake” routine — routines do the work; this is where they hand it to you.</div>
+      <div class="card">
+        <div class="toggle-row">
+          <div style="display:flex; gap:12px; align-items:flex-start">
+            <div class="k-icon" style="width:32px;height:32px"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6L18.5 5a2 2 0 0 0-1.8-1H7.3a2 2 0 0 0-1.8 1z"/></svg></div>
+            <div><b>Inbox</b><div class="muted small">Handed-off conversations wait in your Inbox with the full transcript and what the agent already found. Nothing to enable.</div></div>
+          </div>
+          <span class="badge badge-ok">Always on</span>
+        </div>
+        <div class="toggle-row" style="border-top:1px solid var(--border)">
+          <div style="flex:1"><b>Notify your team</b><div class="muted small" style="margin-bottom:6px">So handoffs reach you even when nobody’s watching the Inbox. Email now — Slack and webhooks later.</div>
+          <input class="field" id="notifyEmail" value="support@aurora-roasters.com" aria-label="Notification email">
+          <div id="handoffProve" style="margin-top:10px">
+            <button class="btn btn-ghost" id="sendTestBtn" onclick="sendTestNotification()">Send a test notification</button>
+            <div class="mail-warn" id="mailWarn" style="display:none"><b>Mail isn’t configured</b> — this instance uses the <code>log</code> driver, so the test went to server logs, not an inbox. Real handoffs would too. <a href="#" onclick="toast('→ SMTP setup guide'); return false">Configure SMTP</a>, then re-send the test.</div>
+            <div class="confirm-box" id="confirmBox" style="display:none">Test sent to <b>support@aurora-roasters.com</b> — did it arrive? <button class="btn btn-primary" style="padding:5px 12px" onclick="confirmHandoff()">It arrived</button></div>
+            <div class="confirm-box" id="confirmedBox" style="display:none; border-color:#bcdcc5; background:#f2f9f4; color:var(--ok)"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg> Delivery confirmed — handoffs will reach your team.</div>
+          </div></div>
+        </div>
+      </div>
+      <div style="margin-top:16px">
+        <div class="muted small" style="margin-bottom:8px">What a visitor sees — they leave their details and go; nobody waits in the widget:</div>
+        <div class="card" style="padding:14px">
+          <div class="msg user" style="display:inline-block">I need to talk to a real person about a damaged shipment</div>
+          <div class="msg bot" style="display:block; margin-top:10px">I’m sorry about the damaged shipment — I’ll get the team on it. What’s the best email to reach you?</div>
+          <div class="msg user" style="display:inline-block; margin-top:10px">anna@example.com</div>
+          <div class="msg bot" style="display:block; margin-top:10px">Done — the team has your conversation and the details I collected.
+            <div class="handoff-card"><b><svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg> Handed off to your team</b> They’ll reply to anna@example.com — you don’t need to stay in this chat.</div>
+          </div>
+        </div>
+      </div>
+      <div class="note">Remodeled after owner feedback: handoff is an <em>action a routine performs</em> (via the Notify Human skill), not a workspace toggle — so this step configures the destination and names the routine that ends in it, instead of inventing an on/off switch. The Inbox card is informational because handoffs always land there. The visitor demo is asynchronous: contact capture releases the visitor; nobody waits in the widget. If the starter pack was skipped, the context line degrades — configuration alone doesn’t make handoffs happen. Delivery is still proven by a test send, never assumed.</div>
+      <div class="flow-actions">
+        <button class="btn-link" onclick="skipStep()">Skip — Inbox only</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="handoffContinue" onclick="nextStep()">Continue <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
+    </div>
+
+    <!-- STEP 6 · Deploy -->
+    <div class="fstep" data-step="5">
+      <h1>Put it where your customers are</h1>
+      <p class="lede">It already works right here in the dashboard. Now give it a front door.</p>
+      <div class="deploy-grid">
+        <div class="card deploy-card">
+          <h3>Embed on your website <span class="badge badge-soft">~2 minutes</span></h3>
+          <p>Paste one script tag before <code>&lt;/body&gt;</code>. Origins are locked to the sites you approve.</p>
+          <div class="snippet">&lt;script src="https://your-radioso.example/radioso-embed.js"
+        data-agent="aurora-support" defer&gt;&lt;/script&gt;<button class="copy" onclick="copied(this); markDeployDone()">Copy</button></div>
+          <div class="small muted" style="margin-top:8px">Approved origins: <b>aurora-roasters.com</b> · <a href="#" onclick="toast('→ Channels → Web chat → allowed origins'); return false">manage</a></div>
+        </div>
+        <div class="card deploy-card">
+          <h3>Share a public link</h3>
+          <p>A hosted chat page — good for email signatures and QR codes.</p>
+          <div class="linkline"><input class="field" readonly value="https://your-radioso.example/chat/aurora-support"><button class="btn btn-ghost" onclick="copied(this)">Copy</button></div>
+        </div>
+        <div class="card deploy-card">
+          <h3>API &amp; SDK</h3>
+          <p>Issue a credential for the REST API, TypeScript SDK, or MCP. Personal tokens act as you; service accounts belong to the workspace.</p>
+          <div id="credForm">
+            <div class="linkline" style="align-items:stretch">
+              <input class="field" id="credLabel" value="First integration" style="flex:2" aria-label="Credential label">
+              <select class="field" id="credRole" style="flex:1.4" aria-label="Credential type">
+                <option>Read &amp; converse (recommended)</option>
+                <option>Manage workspace (admin)</option>
+              </select>
+              <button class="btn btn-primary" onclick="createCred()">Create credential</button>
+            </div>
+            <ul class="role-defs">
+              <li><b>Read &amp; converse</b> — a service account that can chat and search, but can’t change settings. Start here.</li>
+              <li><b>Manage workspace</b> — full admin. Only for tools that configure Radioso itself.</li>
+            </ul>
+            <div class="muted small" style="margin-top:6px">Expires in 90 days by default — rotate or revoke anytime under Settings → API access.</div>
+          </div>
+          <div id="credResult" style="display:none">
+            <div class="linkline"><input class="field" readonly id="credSecret" value="rad_sc_7k2m91xf04be88d15f20e3aa"><button class="btn btn-ghost" onclick="copied(this)">Copy</button></div>
+            <div class="small" style="margin-top:6px; color:var(--destructive)">Shown once — store it now. You can rotate it later, but not re-read it.</div>
+            <button class="btn btn-ghost" style="margin-top:10px" id="credAckBtn" onclick="ackCred()">I’ve stored it safely</button>
+          </div>
+        </div>
+      </div>
+      <div class="note">Credentials follow the role-bound model (PR #1142) with a least-privilege default and plain-language options — no newcomer should have to decode “role ceiling” to make a safe choice, and “admin to be safe” is exactly the wrong habit to teach. The shown-once secret blocks Finish until the user confirms they stored it, because the very next button would otherwise swallow it forever.</div>
+      <div class="flow-actions">
+        <button class="btn-link" onclick="skipStep()">Skip</button>
+        <span class="spacer"></span>
+        <button class="btn btn-primary" id="finishBtn" onclick="finishFlow()">Finish setup <svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></button>
+      </div>
+    </div>
+
+  </div></div>
+</section>
+
+<!-- =========================================================
+     SCENE 2 — Dashboard: persistent checklist + Ray
+     ========================================================= -->
+<section id="scene-dash" class="scene">
+  <aside class="sidebar">
+    <div class="ws-pill"><div class="dot">A</div><div><b>Aurora Roasters</b><i>Default workspace</i></div></div>
+    <nav class="nav">
+      <a href="#" onclick="return false"><svg class="icon" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6L18.5 5a2 2 0 0 0-1.8-1H7.3a2 2 0 0 0-1.8 1z"/></svg> Inbox <span class="cnt">0</span></a>
+      <a href="#" class="active" onclick="return false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg> Agents</a>
+      <a href="#" onclick="return false"><svg class="icon" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Knowledge Base</a>
+      <a href="#" onclick="return false"><svg class="icon" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 14 4-4 4 4 5-6"/></svg> Audience Pulse</a>
+      <a href="#" onclick="return false"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 8.4 8 10 4.6-1.6 8-5 8-10V6l-8-4z"/><path d="m9 12 2 2 4-4"/></svg> Quality</a>
+      <a href="#" onclick="return false"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1h.2a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1z"/></svg> Settings</a>
+    </nav>
+    <div class="setup-widget open" id="setupWidget">
+      <button class="setup-head" onclick="toggleWidget()">
+        <svg class="ring" viewBox="0 0 28 28"><circle class="bg" cx="14" cy="14" r="11"/><circle class="fg" id="ringFg" cx="14" cy="14" r="11" stroke-dasharray="69.1" stroke-dashoffset="69.1"/></svg>
+        <span style="flex:1"><b>Setup</b><i id="setupCount">0 of 6 done</i></span>
+        <svg class="icon" viewBox="0 0 24 24" style="color:var(--muted-foreground)"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="setup-items" id="setupItems"></div>
+      <button class="setup-dismiss" onclick="toast('Checklist dismissed — reopen anytime from Settings, or ask Ray.')">Dismiss checklist</button>
+    </div>
+    <div class="note">Server-persisted, per-workspace, survives devices, always reopenable — replacing today’s localStorage flag and full-screen takeover that vanish forever once skipped.</div>
+  </aside>
+
+  <div class="dash-main">
+    <div class="dash-top"><h2>Aurora Support</h2><span class="badge badge-ok">Live</span><span class="muted small" style="margin-left:auto">Chat · Behavior · Knowledge · Channels</span></div>
+    <div class="dash-body">
+      <div class="empty-hero">
+        <div class="glyph"><svg class="icon icon-lg" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.3 0-2.6-.3-3.7-.8L3 21l1.8-5.8A8.5 8.5 0 1 1 21 11.5z"/></svg></div>
+        <h2>Test your agent</h2>
+        <p>Ask a question to see grounded answers with citations — or pick up the remaining setup steps from the checklist.</p>
+        <button class="btn btn-primary">Start a test chat</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="ray-tab" id="rayTab" onclick="openRay()"><span class="ray-sun">☀</span> Ask Ray</button>
+  <div class="ray-panel" id="rayPanel">
+    <div class="ray-head"><span class="ray-sun">☀</span><b>Ray</b><button onclick="closeRay()"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+    <div class="ray-body">
+      <div class="ray-hello">
+        <div class="ray-sun">☀</div>
+        <h3 id="rayTitle">Hi, I’m Ray</h3>
+        <p id="rayLede">A few things I can set up with you — I’ll draft, you approve:</p>
+      </div>
+      <div class="ray-sugs" id="raySugs">
+        <button class="ray-sug" onclick="rayJump(4)"><svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/></svg> Finish setup: add a human handoff path</button>
+        <button class="ray-sug" onclick="toast('Ray would draft a crawl proposal for you to approve.')"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.7 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.7-3.8-9s1.3-6.4 3.8-9z"/></svg> Crawl your help center too</button>
+        <button class="ray-sug" onclick="toast('Ray would propose a directive edit for review.')"><svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> Tighten the agent’s tone for wholesale buyers</button>
+        <button class="ray-sug" onclick="toast('Ray would draft a returns routine as a proposal.')"><svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg> Draft a returns &amp; refunds routine</button>
+      </div>
+      <div class="note">Ray’s greeting and suggestions derive from the same server-side setup state as the checklist — it never claims “your agent is answering” before a first conversation exists, and never suggests a step the checklist shows as done. Each suggestion routes into the same reviewed-proposal loop.</div>
+    </div>
+    <div class="ray-input"><input class="field" placeholder="Ask Ray anything about your workspace…"><button class="btn btn-primary">Send</button></div>
+  </div>
+</section>
+
+<!-- review chrome -->
+<div class="review-bar">
+  <button id="tabSign" class="on" onclick="showScene('signup')">0 · radioso.ai → sign up</button>
+  <button id="tabFlow" onclick="showScene('flow')">1 · First-launch flow</button>
+  <button id="tabDash" onclick="showScene('dash')">2 · Dashboard + Ray</button>
+  <span class="sep"></span>
+  <button id="tabSim" onclick="toggleSim(this)">Simulate: fresh self-host</button>
+  <button id="tabNotes" onclick="toggleNotes(this)">Design notes</button>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  const STEPS = [
+    { key: 'purpose',  label: 'Purpose',   sub: 'What it’s for' },
+    { key: 'knowledge',label: 'Knowledge', sub: 'What it knows' },
+    { key: 'rules',    label: 'Behavior',  sub: 'Starter directives & routine' },
+    { key: 'test',     label: 'Test it',   sub: 'First grounded answer' },
+    { key: 'handoff',  label: 'Handoff',   sub: 'Where your team picks up' },
+    { key: 'deploy',   label: 'Deploy',    sub: 'Website, link, API' },
+  ];
+  // done[] is set by OUTCOME actions only (purpose submitted, source added, pack applied,
+  // answer received, delivery confirmed, credential stored / snippet copied) — never by navigation.
+  const state = { current: 0, maxReached: 0, sim: false, done: [false, false, false, false, false, false] };
+
+  function renderRail() {
+    document.getElementById('railSteps').innerHTML = STEPS.map((s, i) => `
+      <button class="rail-step ${i === state.current ? 'current' : ''} ${state.done[i] ? 'done' : ''} ${i > state.maxReached ? 'locked' : ''}" onclick="goStep(${i})">
+        <span class="num">${state.done[i] ? '✓' : i + 1}</span>
+        <span class="lbl"><b>${s.label}</b><i>${s.sub}</i></span>
+      </button>`).join('');
+    renderChecklist();
+  }
+  function goStep(i) {
+    if (i > state.maxReached) { toast('Later steps build on this one — continue or skip first.'); return; }
+    state.current = i;
+    document.querySelectorAll('.fstep').forEach(el => el.classList.toggle('active', +el.dataset.step === i));
+    document.querySelector('.flow-main').scrollTop = 0;
+    if (i === 2) startGeneration();
+    if (i === 3) startProcessing();
+    if (i === 4) renderHandoffContext();
+    renderRail();
+  }
+  function renderHandoffContext() {
+    document.getElementById('handoffContext').textContent = state.done[2]
+      ? 'This is the last step of your “Delivery problem intake” routine — routines do the work; this is where they hand it to you.'
+      : 'No routine calls for a person yet — when one does (or a directive asks), this destination is where it notifies. Handoffs always land in your Inbox.';
+  }
+  function advance() { if (state.current < 5) { state.maxReached = Math.max(state.maxReached, state.current + 1); goStep(state.current + 1); } renderRail(); }
+  function nextStep() { advance(); }
+  function skipStep() { if (state.current < 5) advance(); else finishFlow(); }
+
+  function fillPurpose(chip) { document.getElementById('purposeInput').value = chip.textContent; }
+  function submitPurpose() {
+    if (!document.getElementById('purposeInput').value.trim()) { toast('Tell it what it’s for — one sentence is enough. Try an example below.'); return; }
+    state.done[0] = true;
+    advance();
+  }
+  function kcardKey(e, el) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); } }
+
+  function pickKnowledge(kind, el) {
+    document.querySelectorAll('.k-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+    if (kind === 'website') {
+      document.getElementById('crawlDetail').style.display = 'block';
+    } else {
+      document.getElementById('crawlDetail').style.display = 'none';
+      document.getElementById('kContinue').disabled = false;
+      state.done[1] = true; renderRail();
+      toast(kind === 'sample' ? '3 sample documents queued for processing.' : 'Upload dialog would open here.');
+    }
+  }
+  function runCrawl() {
+    const log = document.getElementById('crawlLog');
+    log.classList.add('on'); log.innerHTML = '';
+    const lines = ['Fetched aurora-roasters.com — detected English', 'Found 12 pages worth importing',
+      state.sim ? 'Name & greeting suggestions need an AI provider — add one later' : 'Suggested name: “Aurora Support” · greeting drafted',
+      'Importing pages → processing has started'];
+    lines.forEach((t, i) => setTimeout(() => {
+      log.innerHTML += `<div class="crawl-line"><svg class="icon" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>${t}</div>`;
+      if (i === lines.length - 1) { document.getElementById('kContinue').disabled = false; state.done[1] = true; renderRail(); }
+    }, 450 * (i + 1)));
+  }
+
+  let packStarted = false;
+  function startGeneration() {
+    const wait = document.getElementById('genWait'), nokey = document.getElementById('genNoKey'), res = document.getElementById('genResults');
+    if (state.sim) { wait.style.display = 'none'; res.style.display = 'none'; nokey.style.display = 'block'; document.getElementById('applyPack').disabled = true; return; }
+    nokey.style.display = 'none';
+    if (packStarted) { res.style.display = 'block'; updateApplyState(); return; }
+    packStarted = true; wait.style.display = 'flex';
+    setTimeout(() => {
+      wait.style.display = 'none';
+      res.style.display = 'block';
+      updateApplyState();
+    }, 1600);
+  }
+  function updateApplyState() {
+    document.getElementById('applyPack').disabled = document.querySelectorAll('#genResults input:checked').length === 0;
+  }
+  function applyPack() {
+    state.done[2] = true;
+    toast('3 directives and 1 routine created — editable under Behavior.');
+    advance();
+  }
+
+  let procStarted = false;
+  function startProcessing() {
+    const nokey = document.getElementById('testNoKey'), box = document.getElementById('testChatbox'), strip = document.getElementById('procStrip');
+    if (state.sim) { nokey.style.display = 'block'; box.style.display = 'none'; strip.style.display = 'none'; return; }
+    nokey.style.display = 'none'; box.style.display = 'flex';
+    if (!state.done[1]) {
+      strip.style.display = 'flex';
+      document.getElementById('procLabel').innerHTML = 'No knowledge added yet — answers won’t be grounded. <a href="#" onclick="goStep(1); return false">Add knowledge</a>';
+      document.getElementById('procCount').textContent = '';
+      unlockTest();
+      return;
+    }
+    if (procStarted) return; procStarted = true;
+    let pages = 0;
+    const chips = document.querySelectorAll('#testSugs .chip');
+    const timer = setInterval(() => {
+      pages++;
+      document.getElementById('procBar').style.width = (pages / 12 * 100) + '%';
+      document.getElementById('procCount').textContent = `${pages} / 12`;
+      chips.forEach((c, k) => { if (pages >= (k + 1) * 4) c.style.display = ''; });
+      if (pages >= 12) {
+        clearInterval(timer);
+        strip.classList.add('ok');
+        document.getElementById('procLabel').textContent = 'All pages processed — every answer can cite them.';
+        document.getElementById('testLede').textContent = 'Grounded in the 12 pages imported from aurora-roasters.com.';
+        unlockTest();
+      }
+    }, 420);
+  }
+  function unlockTest() {
+    const input = document.getElementById('testInput');
+    input.disabled = false; input.placeholder = 'Or type your own question…';
+    document.getElementById('testSend').disabled = false;
+  }
+
+  function askTest(chip) {
+    const msgs = document.getElementById('testMsgs');
+    msgs.innerHTML += `<div class="msg user">${chip.textContent}</div>`;
+    chip.remove();
+    const t = document.createElement('div'); t.className = 'msg bot';
+    t.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+    msgs.appendChild(t); msgs.scrollTop = msgs.scrollHeight;
+    const italian = chip.textContent.startsWith('Qual');
+    setTimeout(() => {
+      t.innerHTML = italian
+        ? 'Accettiamo resi entro 30 giorni per i sacchi non aperti; per gli ordini all’ingrosso contattaci e organizziamo il ritiro.<span class="cite"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/></svg> Shipping &amp; returns — aurora-roasters.com</span>'
+        : 'We offer three subscriptions — Explorer (2 bags/month), Roaster’s Pick (4 bags), and Wholesale Standing Order with net-30 terms. All pause or cancel anytime.<span class="cite"><svg class="icon" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/></svg> Subscriptions — aurora-roasters.com</span>';
+      msgs.scrollTop = msgs.scrollHeight;
+      document.getElementById('testContinue').disabled = false;
+      state.done[3] = true; renderRail();
+    }, 1100);
+  }
+
+  function sendTestNotification() {
+    const btn = document.getElementById('sendTestBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    setTimeout(() => {
+      btn.disabled = false; btn.textContent = 'Send a test notification';
+      if (state.sim) { document.getElementById('mailWarn').style.display = 'block'; document.getElementById('confirmBox').style.display = 'none'; return; }
+      document.getElementById('mailWarn').style.display = 'none';
+      document.getElementById('confirmBox').style.display = 'flex';
+    }, 900);
+  }
+  function confirmHandoff() {
+    document.getElementById('confirmBox').style.display = 'none';
+    document.getElementById('confirmedBox').style.display = 'flex';
+    state.done[4] = true; renderRail();
+  }
+
+  function copied(btn) { toast('Copied to clipboard.'); }
+  function createCred() {
+    document.getElementById('credForm').style.display = 'none';
+    document.getElementById('credResult').style.display = 'block';
+    document.getElementById('finishBtn').disabled = true;
+    toast(`Credential “${document.getElementById('credLabel').value}” created — store the secret before finishing.`);
+  }
+  function ackCred() {
+    const btn = document.getElementById('credAckBtn');
+    btn.textContent = 'Stored ✓'; btn.disabled = true;
+    document.getElementById('finishBtn').disabled = false;
+    markDeployDone();
+  }
+  function markDeployDone() { state.done[5] = true; renderRail(); }
+  function toggleSim(btn) {
+    state.sim = !state.sim;
+    btn.classList.toggle('on', state.sim);
+    if (state.current === 2) startGeneration();
+    if (state.current === 3) startProcessing();
+    toast(state.sim ? 'Simulating a fresh self-host: no AI provider key, mail driver = log.' : 'Simulation off — provider and mail configured.');
+  }
+
+  /* ---------- scene 0 ---------- */
+  let inboxTimer;
+  function goSign(i, viaGoogle) {
+    clearTimeout(inboxTimer);
+    document.querySelectorAll('.sstep').forEach(el => el.classList.toggle('active', +el.dataset.sstep === i));
+    if (i === 2) inboxTimer = setTimeout(() => goSign(3), 5000);
+    if (i === 3 && viaGoogle) {
+      document.getElementById('verifyTitle').textContent = 'Signed in with Google';
+      document.getElementById('verifySub').innerHTML = 'No email verification needed — Google vouched for your address. Your workspace is ready; let’s stand up your first agent.';
+    }
+  }
+
+  function finishFlow() {
+    showScene('dash');
+    const remaining = state.done.filter(d => !d).length;
+    toast(remaining ? `Setup saved — ${remaining} step${remaining > 1 ? 's' : ''} left in the checklist.` : 'Setup complete — your agent has a front door.');
+  }
+  function finishLater() { showScene('dash'); toast('No problem — your progress is saved in the Setup checklist.'); }
+
+  /* ---------- scene 2 ---------- */
+  function renderChecklist() {
+    const doneCount = state.done.filter(Boolean).length;
+    document.getElementById('setupCount').textContent = `${doneCount} of 6 done`;
+    const c = 2 * Math.PI * 11;
+    document.getElementById('ringFg').style.strokeDashoffset = c * (1 - doneCount / 6);
+    document.getElementById('setupItems').innerHTML = STEPS.map((s, i) => `
+      <button class="setup-item ${state.done[i] ? 'done' : ''}" onclick="resumeStep(${i})">
+        <span class="tick">${state.done[i] ? '<svg class="icon" viewBox="0 0 24 24" style="width:10px;height:10px;stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg>' : ''}</span>
+        ${s.label}${state.done[i] ? '' : ' · <span class="muted">' + s.sub + '</span>'}
+      </button>`).join('');
+  }
+  function resumeStep(i) {
+    if (state.done[i]) { toast(`“${STEPS[i].label}” is done — this opens its home surface (Channels, Behavior, …), not the wizard.`); return; }
+    state.maxReached = Math.max(state.maxReached, i);
+    showScene('flow'); goStep(i);
+  }
+  function toggleWidget() { document.getElementById('setupWidget').classList.toggle('open'); }
+  function renderRay() {
+    const lede = document.getElementById('rayLede'), sugs = document.getElementById('raySugs');
+    if (state.sim) {
+      lede.textContent = 'Connect an LLM to use Ray — I need a model to read your workspace and draft proposals.';
+      sugs.innerHTML = `<button class="ray-sug" onclick="toast('→ Settings → AI providers')"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg> Connect a provider</button>`;
+      return;
+    }
+    const remaining = STEPS.map((s, i) => ({ s, i })).filter(x => !state.done[x.i]);
+    lede.textContent = remaining.length
+      ? (state.done[3] ? 'Your agent is answering. Want to finish the rest together? I’ll draft, you approve:' : 'Your setup isn’t finished yet — I can pick it up with you. I’ll draft, you approve:')
+      : 'Setup’s done and your agent is live. A few ways I can help next — I’ll draft, you approve:';
+    const extras = [
+      { t: 'Crawl your help center too', m: 'Ray would draft a crawl proposal for you to approve.' },
+      { t: 'Tighten the agent’s tone for wholesale buyers', m: 'Ray would propose a directive edit for review.' },
+      { t: 'Draft a returns and refunds routine', m: 'Ray would draft a routine as a proposal.' },
+    ];
+    sugs.innerHTML = [
+      ...remaining.slice(0, 2).map(x => `<button class="ray-sug" onclick="rayJump(${x.i})"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg> Finish setup: ${x.s.label.toLowerCase()} — ${x.s.sub.toLowerCase()}</button>`),
+      ...extras.slice(0, 4 - Math.min(remaining.length, 2)).map(e => `<button class="ray-sug" onclick="toast('${e.m}')"><svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> ${e.t}</button>`),
+    ].join('');
+  }
+  function openRay() { renderRay(); document.getElementById('rayPanel').classList.add('open'); document.getElementById('rayTab').style.display = 'none'; }
+  function closeRay() { document.getElementById('rayPanel').classList.remove('open'); document.getElementById('rayTab').style.display = 'flex'; }
+  function rayJump(i) { closeRay(); resumeStep(i); }
+
+  /* ---------- chrome ---------- */
+  function showScene(which) {
+    for (const [scene, tab] of [['signup', 'tabSign'], ['flow', 'tabFlow'], ['dash', 'tabDash']]) {
+      document.getElementById('scene-' + scene).classList.toggle('active', which === scene);
+      document.getElementById(tab).classList.toggle('on', which === scene);
+    }
+    if (which === 'dash') renderChecklist();
+  }
+  function toggleNotes(btn) { document.body.classList.toggle('show-notes'); btn.classList.toggle('on'); }
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  }
+
+  renderRail();
+</script>
+</body>
+</html>

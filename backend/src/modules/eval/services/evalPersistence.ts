@@ -4,6 +4,7 @@ import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js"
 import type { RetrievalSettingsSnapshot } from "../../settings/contracts/retrieval.js";
 import { toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type {
   EvalAssertion,
   EvalCase,
@@ -42,6 +43,7 @@ export type CaseRow = {
   snapshot_id: string;
   name: string;
   assertions: unknown;
+  execution_mode: TurnExecutionMode;
   status: EvalCaseStatus;
   last_run_id: string | null;
   created_at: Date | string;
@@ -73,6 +75,7 @@ export interface CreateCaseInput {
   snapshotId: string;
   name: string;
   assertions: EvalAssertion[];
+  executionMode?: TurnExecutionMode;
 }
 
 export const isoDate = (value: Date | string): string =>
@@ -112,6 +115,7 @@ export const caseColumns = [
   "snapshot_id",
   "name",
   "assertions",
+  "execution_mode",
   "status",
   "last_run_id",
   "created_at",
@@ -161,6 +165,7 @@ export const mapCase = (row: CaseRow): EvalCase => ({
   snapshotId: row.snapshot_id,
   name: row.name,
   assertions: Array.isArray(row.assertions) ? (row.assertions as EvalAssertion[]) : [],
+  executionMode: row.execution_mode,
   status: row.status,
   lastRunId: row.last_run_id,
   createdAt: isoDate(row.created_at),
@@ -215,6 +220,7 @@ export const insertCase = async (db: Db, input: CreateCaseInput): Promise<EvalCa
       snapshot_id: input.snapshotId,
       name: input.name,
       assertions: toJsonb(input.assertions),
+      execution_mode: input.executionMode ?? "safe_test",
       status: "pending",
     })
     .returning(caseColumns)

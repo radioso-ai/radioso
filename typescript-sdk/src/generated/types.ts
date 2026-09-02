@@ -3187,6 +3187,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/evals/cases/{id}/execution-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set an Eval case's replay execution mode
+         * @description Enabling live external effects requires an authenticated interactive workspace session; API credentials cannot make this change.
+         */
+        put: operations["setEvalCaseExecutionMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/{id}/runs": {
         parameters: {
             query?: never;
@@ -3196,7 +3216,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run an Eval case */
+        /**
+         * Run an Eval case
+         * @description Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
+         */
         post: operations["createEvalCaseRun"];
         delete?: never;
         options?: never;
@@ -3215,7 +3238,7 @@ export interface paths {
         put?: never;
         /**
          * Run a batch of eval cases
-         * @description Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished.
+         * @description Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished. Replays are safe by default; live-effect cases require a fresh allowLiveEffects confirmation from an interactive workspace session.
          */
         post: operations["runEvalCases"];
         delete?: never;
@@ -7338,6 +7361,8 @@ export interface components {
                     criteria?: string;
                 })[];
                 /** @enum {string} */
+                executionMode: "safe_test" | "live";
+                /** @enum {string} */
                 status: "pending" | "passing" | "failing" | "error";
                 /** Format: uuid */
                 lastRunId: string | null;
@@ -7416,6 +7441,8 @@ export interface components {
             snapshotId: string;
             name: string;
             assertions: components["schemas"]["EvalAssertion"][];
+            /** @enum {string} */
+            executionMode: "safe_test" | "live";
             /** @enum {string} */
             status: "pending" | "passing" | "failing" | "error";
             /** Format: uuid */
@@ -21894,6 +21921,74 @@ export interface operations {
             };
         };
     };
+    setEvalCaseExecutionMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * @description Live execution may invoke external skills. Changing the mode resets the case verdict.
+                     * @enum {string}
+                     */
+                    executionMode: "safe_test" | "live";
+                };
+            };
+        };
+        responses: {
+            /** @description Eval case with its replay execution mode updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalCase"];
+                };
+            };
+            /** @description Invalid case id or execution mode */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Eval case not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     createEvalCaseRun: {
         parameters: {
             query?: never;
@@ -21970,6 +22065,11 @@ export interface operations {
                             };
                         };
                     };
+                    /**
+                     * @description Per-run confirmation for external skill effects. Requires an interactive workspace session and only applies to cases configured for live execution.
+                     * @default false
+                     */
+                    allowLiveEffects?: boolean;
                 };
             };
         };
@@ -22050,6 +22150,11 @@ export interface operations {
                     mode?: "retrieval_only" | "full_assistant";
                     /** @description Subset of cases to run. Omit to run every case in the workspace. */
                     caseIds?: string[];
+                    /**
+                     * @description Per-run confirmation for external skill effects. Requires an interactive workspace session and only applies to cases configured for live execution.
+                     * @default false
+                     */
+                    allowLiveEffects?: boolean;
                 };
             };
         };
@@ -22105,7 +22210,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Caller lacks workspace retrieval-query permission */
+            /** @description Caller lacks workspace retrieval-query permission, or a non-session caller requested live effects */
             403: {
                 headers: {
                     [name: string]: unknown;

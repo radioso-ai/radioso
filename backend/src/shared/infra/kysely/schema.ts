@@ -639,6 +639,7 @@ export interface EmbeddingUsageItems {
 export interface EvalCases {
   assertions: Generated<Json>;
   created_at: Generated<Timestamp>;
+  execution_mode: Generated<string>;
   id: string;
   last_run_id: string | null;
   name: string;

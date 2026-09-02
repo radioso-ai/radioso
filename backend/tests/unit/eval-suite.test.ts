@@ -35,6 +35,7 @@ const makeCase = (overrides: Partial<EvalCase> = {}): EvalCase => ({
   snapshotId: "snap-1",
   name: "Refund policy",
   assertions: [answerAssertion],
+  executionMode: "safe_test",
   status: "pending",
   lastRunId: null,
   createdAt: fixedDate,
@@ -224,6 +225,17 @@ describe("EvalSuiteService.run", () => {
     expect(runner.calls.every((c) => c.mode === "full_assistant")).toBe(true);
     expect(result.results.map((r) => r.status)).toEqual(["pass", "fail"]);
     expect(result.summary).toMatchObject({ total: 2, scored: 2, passing: 1, failing: 1 });
+  });
+
+  it("forwards an explicit live-effects confirmation to each selected case run", async () => {
+    const cases = [makeCase({ id: "case-1", executionMode: "live" })];
+    const runner = new RecordingRunner((input) => outcomeWithStatus(input.caseId!, "pass", "passing"));
+    const service = new EvalSuiteService(new FakeCaseSource(cases), runner);
+
+    await service.run({ workspaceId: "ws-1", allowLiveEffects: true });
+
+    expect(runner.calls).toHaveLength(1);
+    expect(runner.calls[0]).toMatchObject({ allowLiveEffects: true });
   });
 
   it("skips cases with no expectations instead of running them", async () => {

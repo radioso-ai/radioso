@@ -3,6 +3,7 @@ import { z } from "zod";
 import { notFound } from "../../../shared/domain/errors.js";
 
 import { withCopilotActor, type CopilotAuditPort, type CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotTriageLogPort } from "./escalationSources.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { asRecord, describeNamedAgent, entity, type CopilotAgentLookupPort } from "./shared.js";
 
@@ -43,6 +44,7 @@ export interface CopilotQualityTurn {
 
 export interface CopilotQualityTurnsQuery {
   limit: number;
+  offset?: number;
   agentId?: string;
   feedbackValues?: Array<"up" | "down">;
   hasComment?: boolean;
@@ -127,9 +129,10 @@ export interface QualityTriageCopilotToolDependencies {
    * move many rows in one operator gesture.
    */
   readonly auditService: CopilotAuditPort;
+  readonly logger?: CopilotTriageLogPort;
 }
 
-const setTriageStateDescription = "Record where an assistant turn stands in operator triage: open, acknowledged, resolved, or dismissed, with a resolution reason on a terminal state. Pass the triage version the turn was read at — needs_attention and quality_signals both report it — and a competing operator's change comes back as a conflict with the current record instead of overwriting them. This changes nothing a customer sees.";
+const setTriageStateDescription = "Record where an assistant turn stands in operator triage: open, acknowledged, resolved, or dismissed, with a resolution reason on a terminal state. Pass the assistantMessageId and the triage version exactly as needs_attention or quality_signals reported them, never an id you composed yourself — and a competing operator's change comes back as a conflict with the current record instead of overwriting them. This changes nothing a customer sees.";
 
 const triageRecordFields = {
   state: z.string(),
@@ -187,6 +190,10 @@ export const createQualityTriageCopilotTools = (
           throw notFound("Assistant turn not found");
         }
         const record = result.kind === "updated" ? result.record : result.current;
+        // The transition has already committed and bumped the version, so a throw from here would
+        // be retried by the runtime against a version that no longer exists — reporting a conflict
+        // for a change the operator successfully made and nobody competed on. A lost audit row is
+        // worse than nothing, so it is logged rather than swallowed silently.
         await deps.auditService.record({
           accountId: context.accountId,
           workspaceId: context.workspaceId,
@@ -202,7 +209,21 @@ export const createQualityTriageCopilotTools = (
             currentState: record.state,
             currentVersion: record.version,
             resolutionReason: record.resolution?.reason ?? null,
+            // The Ray thread the transition came from: the transition history already records which
+            // operator moved the row, and this is what says which conversation asked them to.
+            copilotConversationId: context.copilotConversationId ?? null,
           }),
+        }).catch((error: unknown) => {
+          deps.logger?.warn(
+            {
+              event: "copilot_triage_audit_failed",
+              workspaceId: context.workspaceId,
+              assistantMessageId,
+              outcome: result.kind,
+              errorMessage: error instanceof Error ? error.message : "unknown",
+            },
+            "Recorded a triage transition but could not audit it",
+          );
         });
         return outputSchema.parse({
           outcome: result.kind,

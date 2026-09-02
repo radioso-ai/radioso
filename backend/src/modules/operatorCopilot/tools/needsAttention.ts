@@ -45,7 +45,7 @@ const needsAttentionSourceByKind: Record<CopilotNeedsAttentionKind, NeedsAttenti
   negative_feedback: "quality",
 };
 
-/** How many rows a recency-ordered source is ranked over per row this queue can list. */
+/** How many rows the handoff source is ranked over per row this queue can list. */
 const HANDOFF_RANKING_DEPTH = 10;
 
 const NEEDS_ATTENTION_DEFAULT_LIMIT = 25;
@@ -122,7 +122,7 @@ const needsAttentionOutputSchema = z.object({
 type NeedsAttentionInput = z.infer<typeof needsAttentionInputSchema>;
 type NeedsAttentionOutput = z.infer<typeof needsAttentionOutputSchema>;
 
-const needsAttentionDescription = "Read the operator's working queue: the pending approvals, waiting handoffs, and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. Use workspace_triage instead to rank every workspace signal, including failures and backlog.";
+const needsAttentionDescription = "Read the operator's working queue: the pending approvals, waiting handoffs, and written complaints where the next move is a person's, longest wait first. Each row carries the handle its follow-up needs — the decision handle to resolve, the assistant message id and triage version to transition, the owner of a claimed handoff. Sources report what they matched, so a bounded page is not an empty queue, and a source marked unauthorized or failed is unknown rather than zero. This is the queue to work through; workspace_triage is a one-shot digest that also covers failures and backlog, so do not call both for the same question. Act on a row with the identifiers it gives you — set_triage_state takes the assistantMessageId and triageVersion exactly as they appear here.";
 
 export const createNeedsAttentionCopilotTools = (
   deps: NeedsAttentionCopilotToolDependencies,
@@ -300,37 +300,39 @@ const readFeedbackQueue = async (
   agentId: string | null,
   limit: number,
 ): Promise<AuthorizedSourceRead<NeedsAttentionRow>> => {
-  // The quality read is ordered newest-complaint-first, so asking for exactly one page would return
-  // the newest `limit` and then present them oldest-first — the longest-waiting complaints would be
-  // unreachable at any page size while `total` reported them as merely paged away. Same window
-  // reasoning as the handoff read above; the two are the only sources whose own order is not the
-  // order this queue lists them in.
-  const feedback = await deps.qualitySignalsService.listLowQualityTurns(workspaceId, {
-    limit: Math.max(HANDOFF_RANKING_WINDOW, limit * HANDOFF_RANKING_DEPTH),
+  // The quality read is ordered newest-complaint-first and the owning module caps its page at 100,
+  // so widening the window cannot reach past that cap — the longest-waiting complaints would stay
+  // unreachable at any page size while `total` reported them as merely paged away. Reading the last
+  // page instead is exact at every page size: newest-first means the oldest are at the end.
+  const query = {
     ...(agentId === null ? {} : { agentId }),
-    feedbackValues: ["down"],
+    feedbackValues: ["down" as const],
     hasComment: true,
     activeNegativeFeedbackOnly: true,
-    sort: "negative_feedback_updated_at",
-  });
+    sort: "negative_feedback_updated_at" as const,
+  };
+  const newest = await deps.qualitySignalsService.listLowQualityTurns(workspaceId, { ...query, limit });
+  const feedback = newest.total > limit
+    ? await deps.qualitySignalsService.listLowQualityTurns(workspaceId, { ...query, limit, offset: newest.total - limit })
+    : newest;
   return {
-    total: feedback.total,
+    total: newest.total,
     items: feedback.items
       .slice()
       .sort((left, right) => waitingSince(left).localeCompare(waitingSince(right)))
       .slice(0, limit)
       .map((turn) => ({
-      ...emptyRowFields,
-      kind: "negative_feedback" as const,
-      title: turn.question,
-      detail: latestDownComment(turn.feedback.comments),
-      since: waitingSince(turn),
-      agentId: turn.agentId,
-      conversationId: turn.conversationId,
-      assistantMessageId: turn.assistantMessageId,
-      triageState: turn.triage.state,
-      triageVersion: turn.triage.version,
-      subject: { type: "conversation", id: turn.conversationId },
-    })),
+        ...emptyRowFields,
+        kind: "negative_feedback" as const,
+        title: turn.question,
+        detail: latestDownComment(turn.feedback.comments),
+        since: waitingSince(turn),
+        agentId: turn.agentId,
+        conversationId: turn.conversationId,
+        assistantMessageId: turn.assistantMessageId,
+        triageState: turn.triage.state,
+        triageVersion: turn.triage.version,
+        subject: { type: "conversation", id: turn.conversationId },
+      })),
   };
 };

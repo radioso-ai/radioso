@@ -231,6 +231,45 @@ describe("needs_attention", () => {
     ]));
   });
 
+  it("reads the last page of complaints, because the source is newest-first and caps its page", async () => {
+    // The owning module clamps a page at 100, so a wider window cannot reach past it. Asking for
+    // the last page is exact at every page size — otherwise the longest-waiting complaints are
+    // unreachable while `total` reports them as merely paged away.
+    const listLowQualityTurns = vi.fn(async () => ({ items: [qualityTurn()], total: 300 }));
+    const deps = populated({
+      qualitySignalsService: { getQualityStats: vi.fn(async () => ({ backlog: {} })), listLowQualityTurns },
+    });
+
+    const result = await list(deps, { kinds: ["negative_feedback"], limit: 25 });
+
+    expect(listLowQualityTurns).toHaveBeenNthCalledWith(1, "workspace-1", expect.objectContaining({ limit: 25 }));
+    expect(listLowQualityTurns).toHaveBeenNthCalledWith(2, "workspace-1", expect.objectContaining({ limit: 25, offset: 275 }));
+    // The matched count still describes the whole population, not the page that was read.
+    expect(result.sources).toContainEqual({ source: "quality", status: "ok", total: 300, included: 1 });
+  });
+
+  it("reads one page when the whole complaint queue fits in it", async () => {
+    const listLowQualityTurns = vi.fn(async () => ({ items: [qualityTurn()], total: 1 }));
+    const deps = populated({
+      qualitySignalsService: { getQualityStats: vi.fn(async () => ({ backlog: {} })), listLowQualityTurns },
+    });
+
+    await list(deps, { kinds: ["negative_feedback"] });
+
+    expect(listLowQualityTurns).toHaveBeenCalledTimes(1);
+  });
+
+  it("ranks handoffs over a window wider than the page it lists", async () => {
+    const listConversations = vi.fn(async () => ({ conversations: [conversation()], total: 1 }));
+    const deps = populated({
+      chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations },
+    });
+
+    await list(deps, { kinds: ["handoff"], limit: 50 });
+
+    expect(listConversations).toHaveBeenCalledWith("workspace-1", expect.objectContaining({ limit: 500 }));
+  });
+
   it("narrows to the requested kinds without reading the sources it excluded", async () => {
     const deps = populated();
 

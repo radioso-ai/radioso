@@ -36,7 +36,7 @@ export interface ReplyDraftCopilotToolDependencies {
   readonly replyDraft: CopilotReplyDraftPort;
 }
 
-const DESCRIPTION = "Compose a reply for this agent's live customer conversation, grounded in that conversation's own transcript, the rolling summary behind it, and the agent's current configuration. The run is ephemeral: no message is written and nothing reaches the customer. Give the operator the text to read, edit, and send themselves — you never send it, and you cannot. Requires the conversation's last turn to be a waiting customer message.";
+const DESCRIPTION = "Compose a reply for this agent's live customer conversation, grounded in that conversation's own transcript, the rolling summary behind it, the routine position it currently holds, and the agent's current configuration. It answers the customer's most recent message even when the agent replied after it, which is what a handoff and a complaint both look like. The run is ephemeral: no message is written and nothing reaches the customer. Give the operator the text to read, edit, and send themselves — you never send it, and you cannot. When asked to answer or reply to a customer directly, draft it, say plainly that sending stays with them, and give them the conversation link. Requires the conversation's last turn to be a waiting customer message.";
 
 export const createReplyDraftCopilotTools = (
   deps: ReplyDraftCopilotToolDependencies,

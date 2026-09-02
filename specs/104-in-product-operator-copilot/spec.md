@@ -549,9 +549,13 @@ Open clarifications (non-blocking; default answers stated):
   Resolution validity MUST be decided by the quality module's own rules rather
   than restated in the catalog.
 - **FR-025**: The catalog MUST expose `draft_reply` as a `probe` that composes a
-  suggested operator reply grounded in the live conversation's own transcript,
-  the rolling summary of the turns before it, the routine position the
-  conversation currently holds, and the agent's current configuration. It MUST persist nothing — no message, no conversation, no
+  suggested operator reply to the customer's most recent message — which need not
+  be the conversation's last turn, because a handoff and a complaint both leave
+  the agent speaking last — grounded in that conversation's own transcript, the
+  rolling summary of the turns before it, the routine position it currently
+  holds, and the agent's current configuration. A conversation suspended on a
+  pending approval MUST be refused rather than drafted for, because the live turn
+  skips its routine in that state while a replay would attempt one. It MUST persist nothing — no message, no conversation, no
   proposal — and it MUST NOT act: the drafting turn runs with the execution mode
   that suppresses every skill reaching outside the turn, so composing a draft
   cannot send a notification, call a webhook, or invoke an external tool. A

@@ -380,6 +380,25 @@ describe("model-facing descriptions", () => {
 
     expect(drifted).toEqual([]);
   });
+
+  it("keeps proposing distinguishable from applying, for the tools that say so", () => {
+    // Collapsing the two descriptions dropped "it does not change configuration" from four propose
+    // tools, and the live suite caught it immediately: `propose_routine_lifecycle` was left saying
+    // it is "the only tool that changes what an agent is actually running", so Ray validated a
+    // routine and then declined to propose publishing it. A propose tool that reads as
+    // live-affecting does not get called.
+    //
+    // Scoped to the tools that carry the assurance today rather than asserted over every propose
+    // tool: six others have never carried it and their behaviour is unmeasured, so requiring it
+    // would be a prompt change to tools nothing in this suite covers.
+    const carriesAssurance = ["propose_directive", "propose_directive_enablement", "propose_directive_removal", "propose_agent_setting", "propose_routine", "propose_routine_edit", "propose_routine_lifecycle"];
+    const silent = realCatalog()
+      .filter((descriptor) => carriesAssurance.includes(descriptor.name))
+      .filter((descriptor) => !/not change configuration|changes nothing until the operator applies it/.test(descriptor.description))
+      .map((descriptor) => descriptor.name);
+
+    expect(silent).toEqual([]);
+  });
 });
 
 describe("verification cost declarations", () => {

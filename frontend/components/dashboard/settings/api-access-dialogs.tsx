@@ -3,8 +3,8 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 
+import { CredentialIssuedDialog } from '@/components/dashboard/settings/credential-dialogs'
 import { Button } from '@/components/ui/button'
-import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,6 +19,12 @@ export const defaultExpiryDate = (days: number, now = new Date()) => {
   const expiry = new Date(now)
   expiry.setUTCDate(expiry.getUTCDate() + days)
   return expiry.toISOString().slice(0, 10)
+}
+
+/** Turns a date input's `YYYY-MM-DD` into the instant the API expects. */
+export const expiryInputToIso = (value: string): string | null => {
+  const expiry = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(expiry.getTime()) ? expiry.toISOString() : null
 }
 
 /** Matches the Input primitive so selects and text fields line up on the same baseline. */
@@ -211,44 +217,27 @@ export function CreateServiceAccountDialog({
   )
 }
 
-export function OneTimeSecretDialog({
-  response,
-  acknowledged,
-  onAcknowledged,
-  onClose,
-  additionalContent,
-  copyAriaLabel = 'Copy one-time credential secret',
-}: {
+/**
+ * Adapts the personal-token and service-account panel's call shape onto the shared
+ * issued-credential dialog so both families keep a single implementation.
+ */
+export function OneTimeSecretDialog(props: {
   response: { secret: string }
-  acknowledged: boolean
-  onAcknowledged: (value: boolean) => void
+  acknowledged?: boolean
+  onAcknowledged?: (value: boolean) => void
   onClose: () => void
   additionalContent?: ReactNode
   copyAriaLabel?: string
 }) {
   return (
-    <Dialog open onOpenChange={(open) => {
-      if (!open && acknowledged) onClose()
-    }}>
-      <DialogContent
-        showCloseButton={false}
-        onEscapeKeyDown={(event) => event.preventDefault()}
-        onPointerDownOutside={(event) => event.preventDefault()}
-      >
-        <DialogHeader>
-          <DialogTitle>Save this secret now</DialogTitle>
-          <DialogDescription>This credential secret cannot be recovered after you close this message. Store it in your server-side secret manager.</DialogDescription>
-        </DialogHeader>
-        <CopyValueField value={response.secret} ariaLabel={copyAriaLabel} className="w-full" />
-        {additionalContent}
-        <label className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm">
-          <input type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledged(event.target.checked)} className="mt-0.5" />
-          I have saved this secret securely and understand it cannot be recovered.
-        </label>
-        <DialogFooter>
-          <Button onClick={onClose} disabled={!acknowledged}>Done</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <CredentialIssuedDialog
+      secret={props.response.secret}
+      title="Save this secret now"
+      description="This credential secret cannot be recovered after you close this message. Store it in your server-side secret manager."
+      acknowledgeLabel="I have saved this secret securely and understand it cannot be recovered."
+      copyAriaLabel={props.copyAriaLabel ?? 'Copy one-time credential secret'}
+      additionalContent={props.additionalContent}
+      onDone={props.onClose}
+    />
   )
 }

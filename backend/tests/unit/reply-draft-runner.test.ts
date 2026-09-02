@@ -16,6 +16,12 @@ const message = (role: "user" | "assistant", content: string, minute: number) =>
   createdAt: new Date(`2026-08-26T09:${String(minute).padStart(2, "0")}:00.000Z`),
 });
 
+const summaryRecord = (summary: string) => ({
+  summary,
+  coveredMessageCount: 2,
+  coveredThrough: new Date("2026-08-26T09:01:00.000Z"),
+});
+
 const transcript = [
   message("user", "My order never arrived.", 0),
   message("assistant", "Let me check that for you.", 1),
@@ -32,7 +38,7 @@ const options = (overrides: Partial<ReplyDraftRunnerOptions> = {}): ReplyDraftRu
   },
   messages: { listRecentByConversationId: vi.fn(async () => transcript) },
   agentConfig: { resolveConfig: vi.fn(async () => ({ name: "Support" })) },
-  summaries: { load: vi.fn(async () => ({ summary: "The customer is chasing a parcel from three weeks ago." })) },
+  summaries: { load: vi.fn(async () => summaryRecord("The customer is chasing a parcel from three weeks ago.")) },
   replay: {
     run: vi.fn(async () => ({
       answer: "We reissued the parcel this morning.",
@@ -46,13 +52,16 @@ const options = (overrides: Partial<ReplyDraftRunnerOptions> = {}): ReplyDraftRu
 const draft = (overrides: Partial<ReplyDraftRunnerOptions> = {}) => {
   const opts = options(overrides);
   const runner = new ReplyDraftRunner(opts);
+  const reserve = vi.fn(async () => undefined);
   return {
     opts,
+    reserve,
     result: runner.draftReply({
       workspaceId: WORKSPACE_ID,
       conversationId: CONVERSATION_ID,
       historyLimit: 20,
       usageAttribution: { surface: "operator_copilot_reply_draft", requestId: "copilot-conversation-1" },
+      reserve,
     }),
   };
 };
@@ -105,12 +114,42 @@ describe("ReplyDraftRunner", () => {
   });
 
   it("refuses when the last turn is not a waiting customer message", async () => {
-    const { opts, result } = draft({
+    const { opts, reserve, result } = draft({
       messages: { listRecentByConversationId: vi.fn(async () => [transcript[0]!, transcript[1]!]) },
     } as Partial<ReplyDraftRunnerOptions>);
 
     await expect(result).rejects.toThrow(/customer message/i);
     expect(opts.replay.run).not.toHaveBeenCalled();
+    // A conversation that cannot be drafted for costs nothing: the allowance is claimed at
+    // dispatch, so a refusal never spends one and never comes back as a quota error.
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it("claims the allowance only once the turn is about to run", async () => {
+    const { reserve, result } = draft();
+
+    await result;
+
+    expect(reserve).toHaveBeenCalledTimes(1);
+  });
+
+  it("degrades to no summary when the summary store fails, rather than failing the draft", async () => {
+    // The live turn's policy: a broken summary read leaves the turn on its recent-message window.
+    const { result } = draft({
+      summaries: { load: vi.fn(async () => { throw new Error("summary store unavailable"); }) },
+      logger: { warn: vi.fn() },
+    } as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
+  });
+
+  it("treats a blank stored summary as no summary", async () => {
+    const { opts, result } = draft({
+      summaries: { load: vi.fn(async () => summaryRecord("   ")) },
+    } as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({ conversationSummary: null }));
   });
 
   it("refuses a conversation outside the workspace", async () => {

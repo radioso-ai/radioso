@@ -557,7 +557,10 @@ Open clarifications (non-blocking; default answers stated):
   cannot send a notification, call a webhook, or invoke an external tool. A
   replayed turn's execution mode MUST be stated by its caller rather than
   defaulted, because a turn that leaves it unstated acts. The draft costs a real
-  generation, so it MUST reserve the workspace answer allowance it spends. The
+  generation, so it MUST reserve the workspace answer allowance it spends, and it
+  MUST claim that allowance where the turn is dispatched rather than before its
+  own refusals, so a conversation it declines to draft for costs nothing and
+  reports the reason it declined rather than a quota. The
   result MUST return the draft together with a dashboard link to the
   conversation and MUST report whether the summary was available. Sending a message to a customer, taking a
   conversation over, handing it back, transferring its ownership, forking it,

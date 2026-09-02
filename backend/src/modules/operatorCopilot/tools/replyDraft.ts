@@ -22,6 +22,8 @@ const replyDraftOutputSchema = z.object({
     text: z.string().max(MAX_DRAFT_CHARS),
     citations: z.array(z.unknown()).max(MAX_CITATIONS),
     groundedOnMessageCount: z.number().int().nonnegative(),
+    /** False means the turns before that window were not available, so the draft has a shorter memory. */
+    groundedOnSummary: z.boolean(),
   }).strict(),
 }).strict();
 
@@ -32,7 +34,7 @@ export interface ReplyDraftCopilotToolDependencies {
   readonly replyDraft: CopilotReplyDraftPort;
 }
 
-const DESCRIPTION = "Compose what this agent would say next in a live customer conversation, grounded in that conversation's own transcript and the agent's current configuration. The run is ephemeral: no message is written and nothing reaches the customer. Give the operator the text to read, edit, and send themselves — you never send it, and you cannot. Requires the conversation's last turn to be a waiting customer message.";
+const DESCRIPTION = "Compose a reply for this agent's live customer conversation, grounded in that conversation's own transcript, the rolling summary behind it, and the agent's current configuration. The run is ephemeral: no message is written and nothing reaches the customer. Give the operator the text to read, edit, and send themselves — you never send it, and you cannot. Requires the conversation's last turn to be a waiting customer message.";
 
 export const createReplyDraftCopilotTools = (
   deps: ReplyDraftCopilotToolDependencies,
@@ -69,6 +71,7 @@ export const createReplyDraftCopilotTools = (
           text: result.draft.slice(0, MAX_DRAFT_CHARS),
           citations: result.citations.slice(0, MAX_CITATIONS),
           groundedOnMessageCount: result.groundedOnMessageCount,
+          groundedOnSummary: result.groundedOnSummary,
         },
       });
     },

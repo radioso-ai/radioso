@@ -14,6 +14,7 @@ import type {
   QualityStatsInput,
   QualityTriageRecord,
   SetTriageStateResult,
+  ApplyTriageUpdateInput,
   SetTriageStateInput,
 } from "../../src/modules/quality/contracts/index.js";
 
@@ -76,6 +77,11 @@ class CapturingService implements QualityServicePort {
   async setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<SetTriageStateResult> {
     this.triageCalls.push({ workspaceId, input });
     return this.triageResult;
+  }
+
+  /** The route reaches triage through the validated entry point; the wide one shares its record. */
+  async applyTriageUpdate(workspaceId: string, input: ApplyTriageUpdateInput): Promise<SetTriageStateResult> {
+    return this.setTriageState(workspaceId, input as SetTriageStateInput);
   }
 
   async getQualityStats(workspaceId: string, input: QualityStatsInput): Promise<QualityStats> {

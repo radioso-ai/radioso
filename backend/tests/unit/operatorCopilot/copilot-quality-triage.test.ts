@@ -133,12 +133,17 @@ describe("set_triage_state", () => {
   });
 
   it("takes the state vocabulary from the quality module rather than keeping its own copy", () => {
-    const [descriptor] = createQualityTriageCopilotTools(dependencies());
+    // A deliberately different vocabulary: a hardcoded copy of the real four states would accept
+    // "acknowledged" and reject "escalated", which is the inverse of what the port declares here.
+    const deps = dependencies();
+    (deps.qualityTriageService as { triageStates: readonly string[] }).triageStates = ["open", "escalated"];
+    const [descriptor] = createQualityTriageCopilotTools(deps);
 
     expect(descriptor!.inputSchema.safeParse({
-      assistantMessageId: MESSAGE_ID,
-      state: "escalated",
-      expectedVersion: 1,
+      assistantMessageId: MESSAGE_ID, state: "escalated", expectedVersion: 1,
+    }).success).toBe(true);
+    expect(descriptor!.inputSchema.safeParse({
+      assistantMessageId: MESSAGE_ID, state: "acknowledged", expectedVersion: 1,
     }).success).toBe(false);
   });
 

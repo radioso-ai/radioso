@@ -522,6 +522,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         },
       },
       summaries: new ConversationSummaryRepository(infrastructure.database.kysely),
+      logger,
       replay: chat.workbenchReplayRunner,
     }),
     usageLimitPolicy: infrastructure.usageLimitPolicy,

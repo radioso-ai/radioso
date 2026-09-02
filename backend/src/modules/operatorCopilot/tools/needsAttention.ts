@@ -176,7 +176,7 @@ const buildNeedsAttention = async (
   ]);
 
   // One queue, one clock: every kind here is somebody waiting, so the longest wait leads the list
-  // regardless of which source produced it. Rows with no clock sort last rather than first.
+  // regardless of which source produced it.
   const ordered = sources
     .flatMap((source) => source.items)
     .slice()

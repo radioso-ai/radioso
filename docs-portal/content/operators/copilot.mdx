@@ -158,6 +158,13 @@ else — so you read it, edit what you want, and send it yourself from the
 conversation. It needs the conversation's last turn to be a customer message; if
 the agent or an operator spoke last, there is no waiting question to answer.
 
+The drafting turn is held to the same rule as a test turn: it answers, and it
+does nothing else. Every skill that reaches outside the conversation — a
+notification, a webhook, a contact send, an external tool — stays suppressed, so
+composing a draft cannot act on the customer's behalf. Context variables resolve
+through the same outside path, so a draft for an agent whose instructions
+interpolate them renders without their values.
+
 **Where Ray stops.** Ray drafts; you send. Taking a conversation over, handing
 it back, transferring it to a colleague, forking it into a test session, and
 approving or refusing a pending decision are yours as well — ask for any of them
@@ -562,8 +569,7 @@ Testing a turn, replaying a case, drafting a reply, and running a suite each
 cost a real model call — that is what makes their evidence worth anything. Ray
 spends at most six replayed turns in one Ray turn, and a suite run counts once
 per case, so asking for five cases spends five. Past the budget it stops,
-answers with what it
-measured, and asks you to send another turn.
+answers with what it measured, and asks you to send another turn.
 
 In practice this shapes how to ask. "Replay the three refund cases and tell me
 which regressed" fits in one turn with room to spare. "Replay everything in the

@@ -414,11 +414,11 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
     },
     {
       name: "propose_routine_lifecycle", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a routine lifecycle change", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content.It drafts a proposal for operator review and changes nothing until the operator applies it.",
+      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content. It drafts a proposal for operator review and changes nothing until the operator applies it.",
       inputSchema: routineLifecycleInputSchema, outputSchema: routineProposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine_lifecycle",
-      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content.It drafts a proposal for operator review and changes nothing until the operator applies it.",
+      description: "Propose taking a routine live, out of service, or back into service: publish a draft, archive a published routine, or restore an archived one. Applying it is the only thing that changes what an agent is actually running, which is why it is proposed separately from editing a routine's content. It drafts a proposal for operator review and changes nothing until the operator applies it.",
         inputSchema: routineLifecycleInputSchema,
         outputSchema: routineProposalOutputSchema,
         invoke: async ({ agentId, routineId, action, rationale, evidenceIds }) => {

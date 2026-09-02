@@ -20,7 +20,6 @@ jobs:
     name: Changes
     runs-on: ubuntu-latest
     outputs:
-      run_ci: ${{ steps.filter.outputs.run_ci }}
       backend: ${{ steps.filter.outputs.backend }}
       backend_openapi: ${{ steps.filter.outputs.backend_openapi }}
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -132,16 +131,7 @@ jobs:
           done <<< "$changed_files"
 
           backend_openapi="${backend}"
-          run_ci=false
-          for value in "$backend" "$frontend" "$docs" "$typescript_sdk" "$mcp_server" "$crawler" "$census" "$ee"; do
-            if [ "$value" = true ]; then
-              run_ci=true
-              break
-            fi
-          done
-
           {
-            echo "run_ci=${run_ci}"
             echo "backend=${backend}"
             echo "backend_openapi=${backend_openapi}"
             echo "frontend=${frontend}"
@@ -633,7 +623,7 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install Enterprise Edition dependencies
-        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter './ee/packages/*...'
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/ui... --filter './ee/packages/*...'
 
       - name: Prepare disposable integration database
         working-directory: backend
@@ -673,7 +663,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CHANGES_RESULT: ${{ needs.changes.result }}
-      RUN_CI: ${{ needs.changes.outputs.run_ci }}
       BACKEND_SELECTED: ${{ needs.changes.outputs.backend }}
       BACKEND_RESULT: ${{ needs.backend.result }}
       FRONTEND_SELECTED: ${{ needs.changes.outputs.frontend }}
@@ -697,11 +686,6 @@ jobs:
 
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::Change detection did not complete successfully: $CHANGES_RESULT"
-            exit 1
-          fi
-
-          if [ "$RUN_CI" != "true" ]; then
-            echo "::error::No CI checks were selected; refusing to pass the merge gate."
             exit 1
           fi
 

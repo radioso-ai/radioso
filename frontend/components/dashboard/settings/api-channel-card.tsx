@@ -10,7 +10,7 @@ import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
 
 const API_BASE_PATH = process.env.NEXT_PUBLIC_API_BASE_PATH ?? '/backend/api/v1'
-const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.radioso.ai'
 const PLACEHOLDER_ORIGIN = 'https://your-radioso-host'
 
 const buildAgentChatCurl = (origin: string, agentId: string) => `curl ${origin}${API_BASE_PATH}/agents/${agentId}/chat \\

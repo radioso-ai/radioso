@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { buildConverseClientConfig } from '@/lib/mcp-converse-client-config'
 
 export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? ''
-const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.radioso.ai'
 
 const subscribeBrowserOrigin = () => () => {}
 const getBrowserOrigin = () => (typeof window === 'undefined' ? '' : window.location.origin)

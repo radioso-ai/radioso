@@ -67,7 +67,7 @@ const nextConfig = {
     NEXT_PUBLIC_DOCS_URL:
       process.env.NEXT_PUBLIC_DOCS_URL ??
       process.env.DOCS_SITE_URL ??
-      "http://localhost:3001",
+      "https://docs.radioso.ai",
     NEXT_PUBLIC_MCP_URL: resolvePublicMcpUrl(),
   },
   experimental: {

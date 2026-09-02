@@ -2083,7 +2083,9 @@ CREATE TABLE public.eval_cases (
     last_run_id uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    execution_mode text DEFAULT 'safe_test'::text NOT NULL,
     CONSTRAINT eval_cases_assertions_is_array CHECK ((jsonb_typeof(assertions) = 'array'::text)),
+    CONSTRAINT eval_cases_execution_mode_check CHECK ((execution_mode = ANY (ARRAY['live'::text, 'safe_test'::text]))),
     CONSTRAINT eval_cases_name_length_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 200))),
     CONSTRAINT eval_cases_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'passing'::text, 'failing'::text, 'error'::text])))
 );

@@ -31,6 +31,7 @@ const evalCase = (overrides: Record<string, unknown> = {}) => ({
   snapshotId: ids.snapshot,
   name: "2026-08-24 · \"Where is my order?\"",
   assertions: [],
+  executionMode: "safe_test" as const,
   status: "pending" as const,
   lastRunId: null,
   createdAt: "2026-08-24T10:00:00.000Z",

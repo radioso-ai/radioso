@@ -172,6 +172,8 @@ const declarations: readonly PolicyDeclaration[] = [
     .map((path) => allow("GET", `/api/v1/evals${path}`, "workspace.retrieval.query")),
   allow("PUT", "/api/v1/evals/cases/by-source-message/:assistantMessageId", "workspace.retrieval.query"),
   allow("PUT", "/api/v1/evals/cases/:id/assertions", "workspace.retrieval.query"),
+  // Enabling real external skill effects is an interactive, deliberately confirmed operator decision.
+  sessionOnly("PUT", "/api/v1/evals/cases/:id/execution-mode", "workspace.retrieval.query"),
   allow("PATCH", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
   allow("DELETE", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
 

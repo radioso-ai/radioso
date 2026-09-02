@@ -65,6 +65,7 @@ import type {
   AgentConfigOverrideInput,
   EvalAssertion,
   EvalCase,
+  EvalCaseExecutionMode,
   EvalCaseListItem,
   EvalCaseStatus,
   EvalCaseWithRuns,
@@ -474,6 +475,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [liveSuiteRunCandidate, setLiveSuiteRunCandidate] = useState<{ caseIds?: string[] } | null>(null)
   // View-only filter by responsible agent. The pass-rate summary and "Run all"
   // stay workspace-wide (the regression gate); this only narrows what's shown.
   const [agentFilter, setAgentFilter] = useState<string>(ALL_AGENTS_FILTER)
@@ -503,12 +505,13 @@ function EvalList({ accountId, routeState }: EvalListProps) {
     }
   }, [loadCases])
 
-  // Run the whole suite (caseIds omitted) or a selected subset.
-  const runSuite = useCallback(async (caseIds?: string[]) => {
+  // Run the whole suite (caseIds omitted) or a selected subset. A live-effect case needs a
+  // fresh confirmation on this invocation; its persisted mode is never enough on its own.
+  const runSuite = useCallback(async (caseIds?: string[], allowLiveEffects = false) => {
     setRunning(true)
     setRunError(null)
     try {
-      const result = await evalsApi.runSuite(caseIds ? { caseIds } : {})
+      const result = await evalsApi.runSuite(caseIds ? { caseIds, allowLiveEffects } : { allowLiveEffects })
       // Refresh the rows (last-run column) from persisted state, then keep the
       // run's summary as the headline. The GET summary is derived from persisted
       // case status, which does not capture a case that errored before a run was
@@ -523,6 +526,17 @@ function EvalList({ accountId, routeState }: EvalListProps) {
       setRunning(false)
     }
   }, [loadCases])
+
+  const requestSuiteRun = useCallback((caseIds?: string[]) => {
+    const selectedCases = caseIds
+      ? (cases ?? []).filter((evalCase) => caseIds.includes(evalCase.id))
+      : (cases ?? [])
+    if (selectedCases.some((evalCase) => evalCase.executionMode === 'live')) {
+      setLiveSuiteRunCandidate(caseIds ? { caseIds } : {})
+      return
+    }
+    void runSuite(caseIds)
+  }, [cases, runSuite])
 
   const toggleSelected = useCallback((caseId: string) => {
     setSelected((prev) => {
@@ -656,14 +670,14 @@ function EvalList({ accountId, routeState }: EvalListProps) {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => runSuite(visibleSelectedIds)}
+                onClick={() => requestSuiteRun(visibleSelectedIds)}
                 disabled={running}
               >
                 <Play className="mr-2 h-4 w-4" />
                 Run selected ({visibleSelectedIds.length})
               </Button>
             ) : null}
-            <Button type="button" onClick={() => runSuite()} disabled={running || !canRunAll}>
+            <Button type="button" onClick={() => requestSuiteRun()} disabled={running || !canRunAll}>
               {running ? (
                 <>
                   <Spinner className="mr-2 h-4 w-4" />
@@ -691,6 +705,35 @@ function EvalList({ accountId, routeState }: EvalListProps) {
         }}
         onConfirm={deleteCase}
       />
+      <AlertDialog
+        open={liveSuiteRunCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open && !running) setLiveSuiteRunCandidate(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run cases with live skill effects?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This run may invoke real external skills, including customer-facing actions. Only this confirmed run can perform those effects.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={running}>Keep safe replay</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={running}
+              onClick={() => {
+                if (liveSuiteRunCandidate) {
+                  void runSuite(liveSuiteRunCandidate.caseIds, true)
+                }
+                setLiveSuiteRunCandidate(null)
+              }}
+            >
+              Run with live effects
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {cases === null ? (
         <div className="flex justify-center py-12">
           <LogoSpinner imageClassName="h-6 w-6" />
@@ -751,7 +794,14 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                   />
                 </DashboardTableCell>
                 <DashboardTableCell>
-                  <span className="block truncate font-medium text-foreground">{c.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="block truncate font-medium text-foreground">{c.name}</span>
+                    {c.executionMode === 'live' ? (
+                      <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                        Live effects
+                      </Badge>
+                    ) : null}
+                  </div>
                 </DashboardTableCell>
                 <DashboardTableCell className="w-44">
                   {c.agent.name || c.agent.internalName ? (
@@ -906,6 +956,9 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [executionModeSaving, setExecutionModeSaving] = useState(false)
+  const [executionModeCandidate, setExecutionModeCandidate] = useState<EvalCaseExecutionMode | null>(null)
+  const [liveRunConfirmation, setLiveRunConfirmation] = useState(false)
   const [replayOverrideState, dispatchReplayOverride] = useReducer(
     workbenchOverrideReducer,
     emptyReplayBaseline,
@@ -1061,8 +1114,12 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     [currentAgent, snapshot],
   )
 
-  const runAgain = useCallback(async () => {
+  const runAgain = useCallback(async (allowLiveEffects = false) => {
     if (!caseWithRuns) return
+    if (caseWithRuns.executionMode === 'live' && !allowLiveEffects) {
+      setLiveRunConfirmation(true)
+      return
+    }
     setRunning(true)
     setError(null)
     try {
@@ -1077,6 +1134,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
       await evalsApi.runCase(caseId, {
         mode: 'full_assistant',
         overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        allowLiveEffects,
       })
       const { c, snap } = await loadCase()
       setCaseWithRuns(c)
@@ -1094,12 +1152,27 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
     setSnapshot(snap)
   }, [loadCase])
 
+  const setExecutionMode = useCallback(async (executionMode: EvalCaseExecutionMode) => {
+    if (!caseWithRuns || executionMode === caseWithRuns.executionMode) return
+    setExecutionModeSaving(true)
+    setError(null)
+    try {
+      const updated = await evalsApi.setCaseExecutionMode(caseWithRuns.id, executionMode)
+      setCaseWithRuns((previous) => previous ? { ...previous, ...updated, runs: previous.runs } : previous)
+    } catch (err) {
+      setError(getApiErrorMessage(err, 'Failed to update replay safety'))
+    } finally {
+      setExecutionModeSaving(false)
+    }
+  }, [caseWithRuns])
+
   const evalCoachDeps = useMemo(
     () => ({
       replay: async (input: { snapshotId: string; agentConfigOverride: AgentConfigOverrideInput }): Promise<WorkbenchReplayRunResponse> => {
         const result = await evalsApi.runCase(caseId, {
           mode: 'full_assistant',
           overrides: { agentConfigOverride: input.agentConfigOverride },
+          allowLiveEffects: false,
         })
         return {
           ...result,
@@ -1222,7 +1295,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
               <ChevronRight className="mr-2 h-4 w-4" />
               Advanced
             </Button>
-            <Button type="button" onClick={runAgain} disabled={running}>
+            <Button type="button" onClick={() => void runAgain()} disabled={running}>
               {running ? 'Running…' : 'Run case'}
             </Button>
             <Button
@@ -1249,6 +1322,11 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
               <Badge variant="outline" className={statusBadgeClass(caseWithRuns.status)}>
                 {caseWithRuns.status}
               </Badge>
+              {caseWithRuns.executionMode === 'live' ? (
+                <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                  Live effects enabled
+                </Badge>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
               <span>Captured {formatRelative(snapshot.capturedAt)}</span>
@@ -1282,6 +1360,34 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
               </div>
             </DrawerHeader>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="mb-5 rounded-md border border-border bg-muted/20 p-3">
+                <label htmlFor="eval-execution-mode" className="text-sm font-medium text-foreground">
+                  Skill effects
+                </label>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Safe replay suppresses external skills. Live replay may perform their real effects.
+                </p>
+                <Select
+                  value={caseWithRuns.executionMode}
+                  onValueChange={(value) => {
+                    const nextMode = value as EvalCaseExecutionMode
+                    if (nextMode === 'live') {
+                      setExecutionModeCandidate(nextMode)
+                    } else {
+                      void setExecutionMode(nextMode)
+                    }
+                  }}
+                  disabled={executionModeSaving}
+                >
+                  <SelectTrigger id="eval-execution-mode" className="mt-3 w-full" aria-label="Skill effects">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="safe_test">Safe replay (recommended)</SelectItem>
+                    <SelectItem value="live">Live external effects</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <WorkbenchOverridePanel
                 baseline={replayBaseline}
                 state={replayOverrideState}
@@ -1309,6 +1415,61 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
           }}
           onConfirm={deleteCase}
         />
+        <AlertDialog
+          open={executionModeCandidate !== null}
+          onOpenChange={(open) => {
+            if (!open && !executionModeSaving) setExecutionModeCandidate(null)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Allow live skill effects?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Replaying this case may invoke external skills, including customer-facing actions.
+                The case result will reset and the previous run remains only as history.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={executionModeSaving}>Keep safe replay</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={executionModeSaving}
+                onClick={() => {
+                  if (executionModeCandidate) void setExecutionMode(executionModeCandidate)
+                  setExecutionModeCandidate(null)
+                }}
+              >
+                {executionModeSaving ? 'Saving…' : 'Allow live effects'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog
+          open={liveRunConfirmation}
+          onOpenChange={(open) => {
+            if (!open && !running) setLiveRunConfirmation(false)
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Run with live skill effects?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This replay may invoke real external skills, including customer-facing actions. Only this confirmed run can perform those effects.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={running}>Keep safe replay</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={running}
+                onClick={() => {
+                  setLiveRunConfirmation(false)
+                  void runAgain(true)
+                }}
+              >
+                Run with live effects
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <EvalResultBanner caseStatus={caseWithRuns.status} latestRun={latestRun} />
 

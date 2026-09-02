@@ -340,6 +340,10 @@ class CapturingEvalRepository implements EvalRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async updateCaseExecutionMode(): Promise<EvalCase> {
+    throw new Error("not implemented");
+  }
+
   async createRun(_input: CreateRunInput): Promise<EvalRun> {
     throw new Error("not implemented");
   }

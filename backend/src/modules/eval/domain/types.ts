@@ -8,6 +8,7 @@ import type {
   TurnTraceEnvelope,
 } from "../../chat/contracts/index.js";
 import type { ActivityTrace } from "../../retrieval/public.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
   RetrievalSettingsRecord,
@@ -132,6 +133,8 @@ export interface EvalCase {
   snapshotId: string;
   name: string;
   assertions: EvalAssertion[];
+  /** Whether this case may invoke external skills while replaying. */
+  executionMode: TurnExecutionMode;
   status: EvalCaseStatus;
   lastRunId: string | null;
   createdAt: string;
@@ -205,6 +208,8 @@ export interface AssertionVerdict {
 
 export interface EvalRunResolvedConfig {
   retrievalSettings?: RetrievalSettingsSnapshot | Partial<RetrievalSettingsRecord>;
+  /** Effective external-effect policy used by a full-assistant workbench replay. */
+  executionMode?: TurnExecutionMode;
   /** Provider/model the chat call actually resolved to. Populated only for
    * full_assistant runs where the assistant actually answered. */
   modelProvider?: string;

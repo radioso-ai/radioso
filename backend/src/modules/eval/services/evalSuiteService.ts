@@ -36,6 +36,8 @@ export interface EvalSuiteRunInput {
   /** When set, only these cases are run (cost control). Unknown/foreign ids are
    * ignored. When omitted, the whole workspace runs. */
   caseIds?: string[];
+  /** Per-run confirmation for the selected live-effect cases. Omitted by non-interactive callers. */
+  allowLiveEffects?: boolean;
 }
 
 export interface EvalSuiteRunResult {
@@ -91,6 +93,7 @@ export class EvalSuiteService {
           snapshotId: evalCase.snapshotId,
           caseId: evalCase.id,
           mode,
+          allowLiveEffects: input.allowLiveEffects,
         });
         results.push({
           caseId: evalCase.id,

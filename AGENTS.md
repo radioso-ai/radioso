@@ -147,14 +147,6 @@ pnpm run build
 pnpm test
 ```
 
-Before creating or updating a pull request, run local CI because GitHub CI is manual:
-
-```bash
-pnpm run ci:local -- origin/main
-```
-
-Use `pnpm run ci:local -- --all` for broad changes, and include the result in the PR body.
-
 Use Conventional Commits for commit messages, such as `feat: add retrieval setting` or `fix: handle empty uploads`.
 
 ## Design Discipline

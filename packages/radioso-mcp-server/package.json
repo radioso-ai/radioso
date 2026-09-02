@@ -23,7 +23,7 @@
     "smoke:all": "pnpm run smoke:http && pnpm run smoke:redis",
     "smoke:http": "node --import tsx ./scripts/smokeHttp.ts",
     "smoke:redis": "node --import tsx ./scripts/smokeRedis.ts",
-    "test": "pnpm --dir ../mcp-source-proof test && pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm run build && vitest run"
+    "test": "pnpm --dir ../mcp-source-proof test && pnpm --dir ../../backend run build:workspace-deps && vitest run"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

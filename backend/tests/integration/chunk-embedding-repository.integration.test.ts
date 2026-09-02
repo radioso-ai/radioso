@@ -45,6 +45,7 @@ describeIntegration("chunk embedding repository (Postgres)", () => {
 
   const clearOwnedEmbeddingSpaces = async () => {
     if (ownedEmbeddingSpaceIds.size === 0) return;
+    await database.query("DELETE FROM chunk_embeddings WHERE workspace_id = $1", [workspaceId]);
     await database.query("DELETE FROM embedding_spaces WHERE id = ANY($1::uuid[])", [
       [...ownedEmbeddingSpaceIds],
     ]);

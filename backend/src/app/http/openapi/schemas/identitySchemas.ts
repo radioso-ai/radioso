@@ -213,6 +213,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     "CreateAccountInvitationResponse",
     AccountInvitationSchema.extend({
       acceptanceUrl: z.string(),
+      emailDelivered: z.boolean(),
     }),
   );
 

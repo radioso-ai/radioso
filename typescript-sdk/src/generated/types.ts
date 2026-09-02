@@ -3641,6 +3641,7 @@ export interface components {
         };
         CreateAccountInvitationResponse: components["schemas"]["AccountInvitation"] & {
             acceptanceUrl: string;
+            emailDelivered: boolean;
         };
         InvitationDetailsResponse: {
             /** Format: uuid */

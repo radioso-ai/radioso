@@ -4,7 +4,12 @@ import { AccountAccessService } from "../../src/modules/account/services/account
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { sha256, verifyPassword } from "../../src/modules/auth/domain/authPrimitives.js";
-import { EmailService, type EmailDriver, type EmailMessage } from "../../src/modules/mail/public.js";
+import {
+  EmailService,
+  type EmailDriver,
+  type EmailMessage,
+  type EmailSendResult,
+} from "../../src/modules/mail/public.js";
 import { CustomerEmailConnectionService } from "../../src/modules/customerEmail/services/customerEmailConnectionService.js";
 import { WorkspaceService } from "../../src/modules/workspace/public.js";
 import { createTestEnv } from "../support/testApp.js";
@@ -22,13 +27,14 @@ import {
 class RecordingEmailDriver implements EmailDriver {
   readonly messages: EmailMessage[] = [];
 
-  async send(message: EmailMessage): Promise<void> {
+  async send(message: EmailMessage): Promise<EmailSendResult> {
     this.messages.push(message);
+    return { dispatched: true };
   }
 }
 
 class FailingEmailDriver implements EmailDriver {
-  async send(): Promise<void> {
+  async send(): Promise<EmailSendResult> {
     throw new Error("delivery failed");
   }
 }

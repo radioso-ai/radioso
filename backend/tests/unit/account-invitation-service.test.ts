@@ -11,6 +11,7 @@ import {
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
+  RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
 
 class AcceptBeforeRevokeInvitationRepository extends InMemoryAccountInvitationRepository {
@@ -96,6 +97,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       createAuditService(),
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
@@ -110,6 +112,88 @@ describe("AccountInvitationService", () => {
     expect(invitation.acceptanceUrl).toMatch(/^\/invite\/[a-f0-9]+$/);
   });
 
+  it("notifies the invitee with the acceptance path and reports delivery", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const accessService = new AccountAccessService(membershipRepository, createAuditService());
+    const auditService = createAuditService();
+    const notifier = new RecordingAccountInvitationNotifier();
+    const service = new AccountInvitationService(
+      new InMemoryAccountInvitationRepository(),
+      userRepository,
+      accessService,
+      auditService,
+      notifier,
+    );
+    const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
+
+    const invitation = await service.createInvitation({
+      accountId: "account-1",
+      invitedByUserId: inviter.id,
+      email: "Teammate@Example.com",
+    });
+
+    expect(invitation.emailDelivered).toBe(true);
+    expect(notifier.notifications).toEqual([
+      {
+        email: "teammate@example.com",
+        acceptancePath: invitation.acceptanceUrl,
+        invitedByEmail: "owner@example.com",
+        expiresAt: new Date(invitation.expiresAt),
+      },
+    ]);
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        accountId: "account-1",
+        eventType: "account.invitation.create",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ email: "teammate@example.com", emailDelivered: true }),
+      }),
+    );
+  });
+
+  it("keeps the invitation usable and reports it undelivered when notification fails", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const accessService = new AccountAccessService(membershipRepository, createAuditService());
+    const auditService = createAuditService();
+    const invitationRepository = new InMemoryAccountInvitationRepository();
+    const service = new AccountInvitationService(
+      invitationRepository,
+      userRepository,
+      accessService,
+      auditService,
+      new RecordingAccountInvitationNotifier({ delivered: false }),
+    );
+    const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
+    const invitee = await userRepository.create({ email: "teammate@example.com", passwordHash: "hash" });
+
+    const invitation = await service.createInvitation({
+      accountId: "account-1",
+      invitedByUserId: inviter.id,
+      email: "teammate@example.com",
+    });
+
+    expect(invitation.emailDelivered).toBe(false);
+    expect(invitation.status).toBe("pending");
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "account.invitation.create",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ email: "teammate@example.com", emailDelivered: false }),
+      }),
+    );
+
+    // The shared link is the operator's fallback, so a failed email must not void the invitation.
+    const invitationToken = invitation.acceptanceUrl.split("/").at(-1)!;
+    await service.acceptInvitation(invitationToken, invitee.id);
+    expect(await invitationRepository.findById(invitation.id)).toMatchObject({ status: "accepted" });
+  });
+
   it("rejects duplicate pending invitations", async () => {
     const userRepository = new InMemoryUserRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();
@@ -121,6 +205,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       auditService,
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
@@ -167,6 +252,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       auditService,
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
@@ -206,6 +292,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       createAuditService(),
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
@@ -241,6 +328,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       auditService,
+      new RecordingAccountInvitationNotifier(),
     );
     await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
 
@@ -284,6 +372,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       auditService,
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     const invitee = await userRepository.create({ email: "teammate@example.com", passwordHash: "hash" });
@@ -322,6 +411,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       createAuditService(),
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     await membershipRepository.create({ accountId: "account-1", userId: inviter.id, role: "owner" });
@@ -354,6 +444,7 @@ describe("AccountInvitationService", () => {
       userRepository,
       accessService,
       auditService,
+      new RecordingAccountInvitationNotifier(),
     );
     const inviter = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
     const teammate = await userRepository.create({ email: "teammate@example.com", passwordHash: "hash" });

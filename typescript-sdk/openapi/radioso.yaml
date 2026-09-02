@@ -618,8 +618,11 @@ components:
           properties:
             acceptanceUrl:
               type: string
+            emailDelivered:
+              type: boolean
           required:
             - acceptanceUrl
+            - emailDelivered
     InvitationDetailsResponse:
       type: object
       properties:

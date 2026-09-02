@@ -15,6 +15,7 @@ import {
   createAuditService,
   InMemoryAccountInvitationRepository,
   InMemorySessionRepository,
+  RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
 import { createTestEnv } from "../support/testApp.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -166,6 +167,7 @@ describeIntegration("PostgresOrganizationProvisioner", () => {
         userRepository,
         accountAccessService,
         auditService,
+        new RecordingAccountInvitationNotifier(),
       ),
       organizationProvisioner: provisioner,
       onAccountCreated: async ({ accountId }) => {

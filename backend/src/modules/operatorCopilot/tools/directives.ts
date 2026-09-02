@@ -45,7 +45,7 @@ export const createDirectiveProposalCopilotTools = (
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive",
-        description: "Draft a directive proposal for operator review. It does not change configuration.",
+      description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, intent, evidenceIds }) => {
@@ -80,7 +80,7 @@ export const createDirectiveProposalCopilotTools = (
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive_removal",
-        description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Applying removal deletes the directive and this cannot be undone.",
+      description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Drafts nothing; applying removal deletes the directive and this cannot be undone.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, evidenceIds }) => {

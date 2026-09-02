@@ -30,9 +30,9 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
 
     // A draft is a full agent turn against the workspace's provider, so it draws on the same
     // allowance a customer answer does. The reservation is handed to the runner rather than taken
-    // here, because the runner refuses several conversations before it dispatches anything — a
-    // conversation whose last turn is the agent's costs nothing, and says so instead of reporting
-    // a quota that was never the reason.
+    // here, because the runner refuses several conversations before it dispatches anything — one
+    // with no customer message, or one an operator has already answered, costs nothing and says so
+    // instead of reporting a quota that was never the reason.
     let reservation: UsageLimitReservation | null = null;
     return withCopilotSpendRefusals(async () => {
       try {

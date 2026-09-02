@@ -553,9 +553,11 @@ Open clarifications (non-blocking; default answers stated):
   be the conversation's last turn, because a handoff and a complaint both leave
   the agent speaking last — grounded in that conversation's own transcript, the
   rolling summary of the turns before it, the routine position it currently
-  holds, and the agent's current configuration. A conversation suspended on a
-  pending approval MUST be refused rather than drafted for, because the live turn
-  skips its routine in that state while a replay would attempt one. It MUST persist nothing — no message, no conversation, no
+  holds, and the agent's current configuration. A conversation whose routine is
+  suspended on a pending approval MUST be drafted for without seeding that
+  routine, matching the live turn, which skips its routine in that state. A
+  customer message an operator has already answered MUST be refused rather than
+  drafted for a second time. It MUST persist nothing — no message, no conversation, no
   proposal — and it MUST NOT act: the drafting turn runs with the execution mode
   that suppresses every skill reaching outside the turn, so composing a draft
   cannot send a notification, call a webhook, or invoke an external tool. A

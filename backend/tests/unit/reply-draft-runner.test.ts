@@ -142,20 +142,47 @@ describe("ReplyDraftRunner", () => {
     expect(reserve).not.toHaveBeenCalled();
   });
 
-  it("refuses a conversation paused on a pending approval", async () => {
+  it("seeds no routine for a conversation waiting on an approval, the way a live turn does not", async () => {
     // A suspended routine is the shape of every approval row in the operator queue. The live turn
-    // skips the routine in that state while a replay would attempt one, so drafting would hand
-    // over the opening step of a routine that never restarted.
-    const { opts, reserve, result } = draft({
+    // skips the routine entirely in that state, so seeding one would make the draft attempt a turn
+    // the agent itself would not take — and refusing outright would be worse, because a suspended
+    // row never expires and the whole approval section would lose drafting for good.
+    const { opts, result } = draft({
       routineStates: {
         loadActive: vi.fn(async () => null),
         loadSuspended: vi.fn(async () => ({ sessionId: CONVERSATION_ID, routineId: "routine-1", status: "suspended" })),
       },
     } as unknown as Partial<ReplyDraftRunnerOptions>);
 
-    await expect(result).rejects.toThrow(/pending approval/i);
+    await expect(result).resolves.toMatchObject({ groundedOnRoutine: false });
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({ routineStartState: null }));
+  });
+
+  it("refuses when an operator has already replied to the customer's last message", async () => {
+    // Everything after the customer's message is dropped from history, which is right for an agent
+    // answer they complained about and wrong for a human reply that already handled it.
+    const { opts, reserve, result } = draft({
+      messages: {
+        listRecentByConversationId: vi.fn(async () => [
+          transcript[2]!,
+          { ...message("assistant", "Sorted — refund is on its way.", 3), source: "human_agent" },
+        ]),
+      },
+    } as unknown as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).rejects.toThrow(/already replied/i);
     expect(opts.replay.run).not.toHaveBeenCalled();
     expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it("reports only the messages the draft was actually composed over", async () => {
+    // The agent's later turns are dropped from history, so counting the whole transcript would
+    // claim a depth the replay never saw.
+    const { result } = draft({
+      messages: { listRecentByConversationId: vi.fn(async () => [transcript[0]!, transcript[1]!]) },
+    } as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).resolves.toMatchObject({ groundedOnMessageCount: 1 });
   });
 
   it("claims the allowance only once the turn is about to run", async () => {

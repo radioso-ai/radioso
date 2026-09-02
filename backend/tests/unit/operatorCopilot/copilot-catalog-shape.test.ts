@@ -359,6 +359,29 @@ describe("copilot catalog shape", () => {
   });
 });
 
+describe("model-facing descriptions", () => {
+  it("gives the model the description the catalog was reviewed on", () => {
+    // A descriptor carries two: the catalog's, which governance and this suite read, and the one
+    // `createTool` hands the runtime, which is the only one the model ever sees. They drifted on
+    // eight tools — `propose_routine_edit` explained the shape of its `changes` argument in 867
+    // characters of which the model received 121, and `propose_routine_lifecycle` never named the
+    // required `action` it kept omitting. A paraphrase is not a description; keep them identical.
+    const drifted = realCatalog()
+      .map((descriptor) => ({ name: descriptor.name, model: descriptor.createTool({
+        workspaceId: "workspace-1",
+        accountId: "account-1",
+        operatorUserId: "operator-1",
+        surface: "dashboard" as const,
+        currentAuthorization: { hasAllPermissions: async () => true },
+        pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
+      } as never).description, catalog: descriptor.description }))
+      .filter((entry) => entry.model !== entry.catalog)
+      .map((entry) => entry.name);
+
+    expect(drifted).toEqual([]);
+  });
+});
+
 describe("verification cost declarations", () => {
   // Cost is declared per descriptor rather than inferred from shape, because the two answer
   // different questions and inferring one from the other already shipped a hole: `run_eval_suite`

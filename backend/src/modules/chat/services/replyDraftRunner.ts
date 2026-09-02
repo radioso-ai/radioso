@@ -43,8 +43,9 @@ export interface ReplyDraftRunnerOptions {
   /**
    * Where the conversation currently stands in a routine. A draft is the *next* turn, so unlike an
    * eval replay — which must not seed a captured turn with post-turn state — the live position is
-   * exactly the right seed. Without it, drafting for a conversation paused mid-routine (every
-   * approval row in the operator queue is one) answers as if the routine had never started.
+   * exactly the right seed. Both statuses matter and they are separate reads: an active routine is
+   * seeded so the draft continues it, and a suspended one (a conversation waiting on an approval)
+   * is deliberately not, because that is what the live turn does with it.
    */
   readonly routineStates: ReplyDraftRoutineStateReadPort;
   readonly logger?: { warn: (fields: object, message?: string) => void };
@@ -116,6 +117,13 @@ export class ReplyDraftRunner {
       throw badRequest("The conversation has no customer message to reply to");
     }
     const waiting = transcript[waitingIndex]!;
+    // Everything after that message is dropped from history, which is right for an agent answer the
+    // customer complained about — the point is to answer it again, better. It is wrong for an
+    // operator's own reply: that message *did* answer the customer, so drafting another would hand
+    // over a duplicate with no sign the question was already handled.
+    if (transcript.slice(waitingIndex + 1).some((message) => message.source === "human_agent")) {
+      throw badRequest("An operator has already replied to the customer's last message");
+    }
 
     const [baselineAgentConfig, summary, routineState, suspendedRoutine] = await Promise.all([
       this.options.agentConfig.resolveConfig(input.workspaceId, agentId),
@@ -124,12 +132,6 @@ export class ReplyDraftRunner {
       this.options.routineStates.loadActive({ sessionId: input.conversationId }),
       this.options.routineStates.loadSuspended({ sessionId: input.conversationId }),
     ]);
-    // A suspended routine is a conversation waiting on an approval decision, not on a reply. The
-    // live turn skips the routine entirely in that state while a replay would attempt one, so
-    // drafting here would hand the operator the opening step of a routine that never restarted.
-    if (suspendedRoutine) {
-      throw badRequest("The conversation is paused on a pending approval; decide that before drafting a reply");
-    }
     if (!baselineAgentConfig) {
       throw notFound("Agent not found");
     }
@@ -149,8 +151,11 @@ export class ReplyDraftRunner {
       history: transcript.slice(0, waitingIndex),
       conversationSummary: summary ?? null,
       // The runner keys routine state by the ephemeral conversation it creates, so the seed is the
-      // position without its session id.
-      routineStartState: routineState ? stripSessionId(routineState) : null,
+      // position without its session id. A suspended routine seeds nothing: the live turn skips the
+      // routine entirely while it waits on an approval, so seeding one would make the draft attempt
+      // a turn the agent itself would not take. Refusing instead would be worse — a suspended row
+      // never expires, so the whole approval section of the queue would lose drafting for good.
+      routineStartState: suspendedRoutine ? null : (routineState ? stripSessionId(routineState) : null),
       usageAttribution: input.usageAttribution,
     });
 
@@ -158,7 +163,7 @@ export class ReplyDraftRunner {
       agentId,
       draft: result.answer,
       citations: result.citations ?? [],
-      groundedOnMessageCount: transcript.length,
+      groundedOnMessageCount: waitingIndex + 1,
       groundedOnSummary: summary !== undefined,
       groundedOnRoutine: routineState !== null,
     };

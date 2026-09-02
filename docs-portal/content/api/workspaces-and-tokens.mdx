@@ -1,86 +1,99 @@
 ---
-title: Workspaces and tokens
-description: Create and manage workspaces, then reveal the workspace token used by the SDK and server-side API calls.
+title: "Personal tokens and service accounts"
+description: "Create role-bounded credentials for people and durable service identities for unattended API clients."
+last_updated: 2026-09-01
 ---
 
-# Workspaces and tokens
+# Personal tokens and service accounts
 
-Workspaces are the unit that holds documents, settings, chat history, and connector state. The workspace token is what server-side API clients use after setup.
+Use a personal token for workspace automation you run as yourself. Use a service account for CI, production services, and jobs that need a stable non-human identity. Both authenticate role-aware REST API calls with `Authorization: Bearer <token>`.
 
-## How it works
+Credential management itself is available only through a signed-in browser session. Mutation requests must also send `X-Radioso-CSRF: 1`; a bearer token cannot mint, reveal, rotate, or manage another credential.
 
-1. Use a session-authenticated route to list or create a workspace.
-2. Choose the workspace you want the SDK or backend job to use.
-3. Reveal that workspace's API token.
-4. Send that token as `Authorization: Bearer <token>` on token-authenticated routes.
+## Choose an identity
 
-Workspace management is session-based; most developer automation after that point is token-based.
+A personal token remains attached to your current workspace membership. Its role ceiling can be `member` or `admin`, but never exceeds your live role. Demotion takes effect on the next request; leaving and later rejoining the workspace does not revive an older token.
 
-## Which host to call
+A service account is a workspace-owned identity with its own live `member` or `admin` role. It can have several credentials, so you can deploy a replacement before revoking the old credential. Disabling the account suspends every credential. Archiving it permanently invalidates them while preserving the audit identity.
 
-Radioso runs as a hosted service and as something you deploy yourself. Examples in this API section call `https://api.radioso.ai`, the EU-hosted instance and the TypeScript SDK's `DEFAULT_BASE_URL`. Use `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — `http://localhost:8080` for a local deployment. **A workspace API token only works against the instance that issued it**, so match the host to wherever you revealed the token, not just to the token value itself.
+Credentials created under an agent's **Channels** settings are a different kind. They have no workspace role, are bound to exactly one agent and one audience (`mcp` or `rest`), and can only talk to that agent. A personal or service credential cannot be substituted for one of these agent credentials, and an agent credential cannot administer the workspace.
 
-## Create a workspace
+## Open API access settings
 
-```bash
-curl -sS -b cookies.txt \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Support knowledge base"}' \
-  https://api.radioso.ai/api/v1/workspace
-```
-
-## Reveal the workspace token
+List the capabilities and limits for the signed-in user:
 
 ```bash
 curl -sS -b cookies.txt \
-  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/token
+  -H 'X-Workspace-Id: <workspace-id>' \
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access
 ```
 
-The response is `{ "token": "radioso_..." }`. Use that token from trusted server environments. Do not expose it in browser code.
+Every credential needs an expiry. A personal token can last up to 90 days; a service-account credential can last up to 365 days. The other default limits are 10 active personal tokens per user, 50 service accounts per workspace, and 5 active credentials per service account.
 
-The same token is available from the dashboard under **Settings → API access**, which also shows a ready-made `curl` example against your own host.
-
-## Rotate the workspace token
+## Create a personal token
 
 ```bash
+personal_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
 curl -sS -b cookies.txt -X POST \
-  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/token/rotate
+  -H 'Content-Type: application/json' \
+  -H 'X-Radioso-CSRF: 1' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -d "{\"label\":\"CLI on laptop\",\"roleCeiling\":\"member\",\"expiresAt\":\"${personal_expiry}\"}" \
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 
-Rotation issues a new token and invalidates the old one immediately — there is no overlap window, so every client using the old token needs the new one before you rotate. Owners and admins can rotate; a `member` can reveal a workspace's token but not rotate it. Rotate on suspected exposure rather than relying on any disable/re-enable toggle to revoke access.
+The successful response contains `secret` once. Store it in a secret manager or protected environment variable before closing the response. List and detail responses contain only a safe prefix and lifecycle metadata; Radioso cannot recover the original secret.
 
-## Rename or delete a workspace
+Use the token from a server-side API client:
 
-Use `PATCH /api/v1/workspace/{workspaceId}` to rename a workspace.
-
-Use `DELETE /api/v1/workspace/{workspaceId}` to remove it.
-
-In practice, deletion is a high-impact operation. Make sure the workspace is not the one you still need for documents, settings, or public chat.
-
-## Endpoint reference
-
-Full payloads are in the [API Reference](/api-reference).
-
-```text
-GET    /api/v1/workspace
-POST   /api/v1/workspace
-PATCH  /api/v1/workspace/{workspaceId}
-DELETE /api/v1/workspace/{workspaceId}
-GET    /api/v1/account/workspaces/{workspaceId}/token
-POST   /api/v1/account/workspaces/{workspaceId}/token/rotate
+```bash
+curl -sS \
+  -H 'Authorization: Bearer <personal-token>' \
+  https://api.radioso.ai/api/v1/document
 ```
+
+## Create a service account
+
+Open **Settings → Service accounts**. An administrator or owner creates the stable identity and its first credential together. The form asks for the account name, role, and credential expiry; the server names the first credential `Primary`, so there is no second name to invent during setup.
+
+```bash
+service_expiry="$(node -p 'new Date(Date.now() + 180 * 86400000).toISOString()')"
+curl -sS -b cookies.txt -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-Radioso-CSRF: 1' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -d "{\"displayName\":\"Nightly ingestion\",\"role\":\"member\",\"credentialExpiresAt\":\"${service_expiry}\"}" \
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/api-access/service-accounts
+```
+
+This response also contains the credential secret once. Later credentials under the same service account authenticate as the same service identity while retaining their own IDs, safe prefixes, expiry settings, and last-use records.
+
+For a deployment with no interruption:
+
+1. Issue an additional credential under the service account.
+2. Store and deploy the new value.
+3. Verify the workload with the new credential.
+4. Revoke the previous credential.
+
+Immediate rotation is intended for a credential you must invalidate at once. It revokes the predecessor and returns one replacement with the same expiry setting.
+
+## Agent chat credentials are separate
+
+Personal tokens and service-account credentials authenticate eligible workspace REST routes. They do not authenticate the MCP server or `POST /api/v1/agents/{agentId}/chat`.
+
+Create a separate agent credential from the agent's **Channels → MCP** or **Channels → API** card. Each credential has one audience, an expiry, and one agent. Its secret is returned once and stored as a hash. A signed-in user with permission to manage that agent can issue, rotate, or revoke it; the agent credential itself cannot manage credentials.
 
 ## Common failure modes
 
-- `400` usually means the request is missing a required field, or the workspace cannot be deleted in its current state.
-- `401` means the session is missing or invalid.
-- `403` on rotate means the caller is a `member` without rotate permission, or the workspace does not belong to the current account.
-- `404` means the workspace is not visible from the active account context.
-- `429` on reveal or rotate means that action is being rate limited.
-- `503` on rotate means the backend has no workspace token secret configured; that is an operator-side deployment gap, not something a client retry fixes.
+- `401` on a lifecycle endpoint means the interactive session is missing or invalid. Supplying another bearer token does not grant lifecycle access.
+- `403` means the signed-in user lacks the requested workspace capability or the requested role exceeds their live role.
+- `404` hides records outside the current account, workspace, or personal ownership boundary.
+- `409` means a quota was reached, the supplied revision is stale, or the requested service-account transition is invalid.
+- If an issue or rotation response is lost, find the inaccessible credential by its safe metadata and rotate or revoke it. The original secret remains unrecoverable.
 
 ## Read next
 
-- [Documents and search](/api/documents-and-search)
-- [Chat and history](/api/chat-and-history)
+- [Authentication](/guides/authentication)
+- [TypeScript SDK](/sdk/typescript-getting-started)
+- [MCP server](/guides/mcp-server)
 - [API Reference](/api-reference)

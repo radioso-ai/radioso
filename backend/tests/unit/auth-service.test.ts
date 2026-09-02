@@ -7,7 +7,6 @@ import {
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceRepository,
-  InMemoryWorkspaceTokenRepository,
 } from "../support/fakes.js";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
@@ -178,6 +177,8 @@ const createAuthService = (options: {
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner?: OrganizationCoreProvisioner;
+  personalCredentialTermination?: { endAccount(input: { accountId: string; actorUserId?: string | null }): Promise<void> };
+  personalCredentialLifecycle?: { deleteAccount(input: { accountId: string; actorUserId?: string | null; auditEvent?: unknown }): Promise<boolean> };
   envOverrides?: Partial<ReturnType<typeof createTestEnv>>;
 }) => {
   const env = { ...createTestEnv(), ...options.envOverrides };
@@ -203,7 +204,6 @@ const createAuthService = (options: {
       accountRepository,
       userRepository,
       sessionRepository: options.sessionRepository ?? new FailingSessionRepository(),
-      workspaceTokenRepository: new InMemoryWorkspaceTokenRepository(),
       workspaceService,
       accountAccessService,
       accountInvitationService,
@@ -215,6 +215,8 @@ const createAuthService = (options: {
         accountAccessService,
         workspaceService,
       ),
+      personalCredentialTermination: options.personalCredentialTermination,
+      personalCredentialLifecycle: options.personalCredentialLifecycle,
     }),
     accountRepository,
     userRepository,
@@ -575,6 +577,43 @@ describe("AuthService rollback", () => {
       committed: true,
       released: false,
     });
+  });
+
+  it("ends personal credential access before deleting an organization", async () => {
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({ id: "user-1", email: "delete-org@example.com", passwordHash: "hash" });
+    const ended: string[] = [];
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      personalCredentialTermination: { endAccount: async ({ accountId }) => { ended.push(accountId); } },
+    });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(ended).toEqual([accountId]);
+  });
+
+  it("delegates organization deletion to the transactional personal credential lifecycle", async () => {
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({ id: "user-1", email: "transactional-delete-org@example.com", passwordHash: "hash" });
+    const deleted: Array<Record<string, unknown>> = [];
+    const { authService: orgAuthService, accountRepository } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      personalCredentialLifecycle: { deleteAccount: async (input) => { deleted.push(input); return true; } },
+    });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(deleted).toEqual([expect.objectContaining({
+      accountId,
+      actorUserId: "user-1",
+      auditEvent: expect.objectContaining({ eventType: "account.delete" }),
+    })]);
+    await expect(accountRepository.findById(accountId)).resolves.toMatchObject({ id: accountId });
   });
 
   it("calls the account-created hook when registering a new account", async () => {

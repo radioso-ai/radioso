@@ -17,10 +17,14 @@ describe('settings tab metadata', () => {
       'provider-credentials',
       'provider-models',
     ])
+    expect(settingsTabMetadata['service-accounts'].sections.map((section) => section.id)).toEqual([
+      'service-accounts',
+    ])
   })
 
   it('returns tab descriptors and resolves only known sections', () => {
     expect(getSettingsTabDescriptor('providers').id).toBe('providers')
+    expect(getSettingsTabDescriptor('service-accounts').id).toBe('service-accounts')
     expect(getSettingsSectionDescriptor('workspace', 'workspace-access')?.id).toBe('workspace-access')
     expect(getSettingsSectionDescriptor('workspace', 'webhook-destinations')?.id).toBe('webhook-destinations')
     expect(getSettingsSectionDescriptor('workspace', 'missing-section')).toBeNull()

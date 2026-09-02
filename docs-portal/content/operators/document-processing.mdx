@@ -1,6 +1,7 @@
 ---
-title: Document processing
-description: Operating the document worker and understanding the implications for user-visible behavior.
+title: "Document processing"
+description: "Operating the document worker and understanding the implications for user-visible behavior."
+last_updated: 2026-09-01
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -76,7 +77,7 @@ Turning a document back on also clears an auto-exclude date that has already pas
 
 Both controls apply to every document type, including imported files and crawled pages, and take effect without re-processing. The API is `PATCH /api/v1/document/{documentId}` with `retrievalEnabled` and/or `retrievalExpiresAt`.
 
-In practice, an excluded or expired document is filtered out at candidate selection, so it will not appear in assistant answers, direct retrieval search, or the MCP grounded tools.
+In practice, an excluded or expired document is filtered out at candidate selection, so it will not appear in agent answers or direct retrieval search.
 
 ## Embedding coverage
 

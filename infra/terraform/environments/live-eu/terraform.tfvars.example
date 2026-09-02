@@ -6,7 +6,6 @@ frontend_image = "europe-west1-docker.pkg.dev/radioso-494120/radioso-live-eu/fro
 # session_cookie_secret          = ""
 # workspace_token_secret        = ""
 # public_chat_session_secret     = ""
-# radioso_mcp_signing_secret     = ""
 # connector_encryption_key       = ""
 # resend_mail_api_key            = ""
 # posthog_api_key                = ""
@@ -18,7 +17,6 @@ frontend_image = "europe-west1-docker.pkg.dev/radioso-494120/radioso-live-eu/fro
 # public_chat_base_url_override     = "https://app.radioso.ai/chat"
 # connector_public_base_url         = "https://api.radioso.ai"
 # radioso_mcp_enabled               = true
-# radioso_mcp_base_url_override     = "https://api.radioso.ai"
 # worker_tasks_service_url_override = "https://your-eu-worker-url.a.run.app"
 
 # Ray operator copilot

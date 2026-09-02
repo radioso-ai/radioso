@@ -107,9 +107,9 @@ export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies):
 
   router.delete("/:workspaceId", requireSession(dependencies), requireWorkspacePermission(dependencies, "workspace.delete", (req) => String(req.params.workspaceId)), workspaceMutationRateLimit, async (req, res, next) => {
     try {
-      const { accountId } = res.locals as { accountId: string };
+      const { accountId, userId } = res.locals as { accountId: string; userId: string };
       const { workspaceId } = workspaceParamsSchema.parse(req.params);
-      await dependencies.workspaceService.delete(workspaceId, accountId);
+      await dependencies.workspaceService.delete(workspaceId, accountId, userId);
       res.status(204).end();
     } catch (error) {
       next(error);

@@ -206,7 +206,6 @@ module "radioso" {
   session_cookie_secret                 = var.session_cookie_secret
   workspace_token_secret                = var.workspace_token_secret
   public_chat_session_secret            = var.public_chat_session_secret
-  radioso_mcp_signing_secret            = var.radioso_mcp_signing_secret
   connector_encryption_key              = var.connector_encryption_key
   ee_usage_admin_token                  = var.ee_usage_admin_token
   slack_oauth_client_id                 = var.slack_oauth_client_id
@@ -229,7 +228,6 @@ module "radioso" {
   metrics_enabled                       = var.metrics_enabled
   connector_public_base_url             = var.connector_public_base_url
   radioso_mcp_enabled                   = var.radioso_mcp_enabled
-  radioso_mcp_base_url_override         = var.radioso_mcp_base_url_override
   app_base_url_override                 = var.app_base_url_override
   public_chat_base_url_override         = var.public_chat_base_url_override
   worker_tasks_service_url_override     = var.worker_tasks_service_url_override
@@ -249,6 +247,10 @@ output "backend_url" {
 
 output "backend_service_name" {
   value = module.radioso.backend_service_name
+}
+
+output "mcp_url" {
+  value = module.radioso.mcp_url
 }
 
 output "worker_service_url" {

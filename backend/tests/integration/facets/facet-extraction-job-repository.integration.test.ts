@@ -17,6 +17,18 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
   const workspaceId = randomUUID();
   const conversationId = randomUUID();
 
+  const resetWorkspace = async (): Promise<void> => {
+    await database.query("DELETE FROM workspaces WHERE account_id = $1", [accountId]);
+    await database.query(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)",
+      [workspaceId, accountId, "Facet Job Repository Workspace", `facet-job-repo-${workspaceId}`],
+    );
+    await database.query(
+      "INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)",
+      [conversationId, workspaceId],
+    );
+  };
+
   const createMessage = async (createdAt: Date = new Date()): Promise<string> => {
     const messageId = randomUUID();
     await database.query(
@@ -56,24 +68,14 @@ describeIntegration("FacetExtractionJobRepository (Postgres)", () => {
       "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)",
       [accountId, "Facet Job Repository Test", `facet-job-repo-${accountId}@example.com`, "hash"],
     );
-    await database.query(
-      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)",
-      [workspaceId, accountId, "Facet Job Repository Workspace", `facet-job-repo-${workspaceId}`],
-    );
-    await database.query(
-      "INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)",
-      [conversationId, workspaceId],
-    );
+    await resetWorkspace();
   });
 
   beforeEach(async () => {
-    await database.query(`DELETE FROM facet_extraction_jobs`);
-    await database.query(`DELETE FROM messages WHERE workspace_id = $1`, [workspaceId]);
+    await resetWorkspace();
   });
 
   afterAll(async () => {
-    await database.query(`DELETE FROM facet_extraction_jobs`).catch(() => undefined);
-    await database.query(`DELETE FROM messages WHERE workspace_id = $1`, [workspaceId]).catch(() => undefined);
     await database.query(`DELETE FROM accounts WHERE id = $1`, [accountId]).catch(() => undefined);
     await database.close().catch(() => undefined);
   });

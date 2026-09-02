@@ -42,7 +42,7 @@ export const slackSkillsApi = {
     return request<{ skills: SlackSkillDefinition[] }>(
       `/agents/${agentId}/slack-skills`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -50,7 +50,7 @@ export const slackSkillsApi = {
     return request<{ skill: SlackSkillDefinition }>(
       `/agents/${agentId}/slack-skills`,
       { method: 'POST', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -58,7 +58,7 @@ export const slackSkillsApi = {
     return request<{ skill: SlackSkillDefinition }>(
       `/agents/${agentId}/slack-skills/${skillId}`,
       { method: 'PATCH', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -66,7 +66,7 @@ export const slackSkillsApi = {
     await request<void>(
       `/agents/${agentId}/slack-skills/${skillId}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

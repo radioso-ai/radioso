@@ -9,6 +9,7 @@ import type {
 } from "../../../modules/chat/contracts/index.js";
 import type { ActivitySummary, ActivityTrace } from "../../../modules/retrieval/public.js";
 import type { TurnTraceEnvelope } from "../../../modules/chat/contracts/index.js";
+import { markHttpResponseFailed } from "../middleware/httpResponseCompletion.js";
 
 interface ChatDiagnosticPayload {
   route: ChatRoute;
@@ -173,6 +174,9 @@ export const sendChatSse = (
         writeEvent(next.value);
         next = await iterator.next();
       }
+    } catch (error) {
+      markHttpResponseFailed(res);
+      throw error;
     } finally {
       if (closed && typeof iterator.return === "function") {
         await iterator.return();

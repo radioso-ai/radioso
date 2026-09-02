@@ -1,10 +1,8 @@
 import {
   API_BASE,
   buildError,
-  canRetryWithFreshWorkspaceToken,
-  refreshWorkspaceApiToken,
+  getStoredActiveWorkspaceId,
   request,
-  requireWorkspaceApiToken,
 } from './api-client'
 import type {
   RoutineDefinitionDraft,
@@ -28,19 +26,17 @@ const requestRoutinePublish = async (agentId: string, routineId: string): Promis
   const headers = new Headers()
   headers.set('Content-Type', 'application/json')
   headers.set('X-Forwarded-Prefix', '/backend')
-  headers.set('Authorization', `Bearer ${await requireWorkspaceApiToken()}`)
+  const workspaceId = getStoredActiveWorkspaceId()
+  if (workspaceId) headers.set('X-Workspace-Id', workspaceId)
 
   const executeFetch = () => fetch(`${API_BASE}/agents/${agentId}/routines/${routineId}/publish`, {
     method: 'POST',
     cache: 'no-store',
     headers,
-    credentials: 'omit',
+    credentials: 'include',
   })
 
-  let response = await executeFetch()
-  if (canRetryWithFreshWorkspaceToken(response) && await refreshWorkspaceApiToken(headers)) {
-    response = await executeFetch()
-  }
+  const response = await executeFetch()
 
   if (response.status === 422) {
     throw new RoutinePublishRejectedError(await response.json() as RoutineDefinitionPublishRejectedResponse)
@@ -55,20 +51,20 @@ export const routinesApi = {
   async listRoutines(agentId: string): Promise<RoutineDefinitionListResponse> {
     return request<RoutineDefinitionListResponse>(`/agents/${agentId}/routines`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
     return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}`, {
       method: 'GET',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async createRoutine(agentId: string, data: RoutineDefinitionDraft): Promise<RoutineDefinitionSaveResponse> {
     return request<RoutineDefinitionSaveResponse>(`/agents/${agentId}/routines`, {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async draftRoutineFromProcedure(
@@ -78,7 +74,7 @@ export const routinesApi = {
     return request<RoutineDraftAssistResponse>(`/agents/${agentId}/routines/draft-assist`, {
       method: 'POST',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateRoutine(
@@ -89,13 +85,13 @@ export const routinesApi = {
     return request<RoutineDefinitionSaveResponse>(`/agents/${agentId}/routines/${routineId}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async validateRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionValidateResponse> {
     return request<RoutineDefinitionValidateResponse>(`/agents/${agentId}/routines/${routineId}/validate`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async publishRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionSaveResponse> {
@@ -105,24 +101,24 @@ export const routinesApi = {
   async reviseRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
     return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}/revise`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async archiveRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
     return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}/archive`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async restoreRoutine(agentId: string, routineId: string): Promise<RoutineDefinitionGetResponse> {
     return request<RoutineDefinitionGetResponse>(`/agents/${agentId}/routines/${routineId}/restore`, {
       method: 'POST',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteRoutine(agentId: string, routineId: string): Promise<void> {
     await request<void>(`/agents/${agentId}/routines/${routineId}`, {
       method: 'DELETE',
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 }

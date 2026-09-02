@@ -55,7 +55,7 @@ describe("AccountAccessService", () => {
       "workspace.chat.use",
       "workspace.settings.read",
       "workspace.documents.read",
-      "workspace.token.read",
+      "workspace.credentials.manage",
       "account.users.manage",
     ] as AccountPermission[]) {
       await expect(service.hasPermission({
@@ -87,7 +87,7 @@ describe("AccountAccessService", () => {
       "workspace.settings.read",
       "workspace.documents.read",
       "workspace.documents.manage",
-      "workspace.token.read",
+      "workspace.credentials.manage",
       "account.users.manage",
     ] as AccountPermission[]) {
       await expect(service.hasPermission({
@@ -100,7 +100,9 @@ describe("AccountAccessService", () => {
   it("evaluates an all-of workspace permission vector from one effective principal", async () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
     const principal = {
-      type: "workspace_api_token" as const,
+      type: "personal_api_credential" as const,
+      userId: "user-1",
+      credentialId: "credential-1",
       role: "member" as const,
       workspaceId: "workspace-1",
     };
@@ -123,6 +125,21 @@ describe("AccountAccessService", () => {
     );
   });
 
+  it("maps API-access capabilities through the central workspace permission authority", () => {
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const apiAccessPermissions: AccountPermission[] = [
+      "workspace.api_access.personal.manage",
+      "workspace.api_access.personal.audit",
+      "workspace.api_access.service.manage",
+    ];
+
+    expect(service.permissionsForWorkspaceRole("member", apiAccessPermissions)).toEqual(
+      new Set(["workspace.api_access.personal.manage"]),
+    );
+    expect(service.permissionsForWorkspaceRole("admin", apiAccessPermissions)).toEqual(new Set(apiAccessPermissions));
+    expect(service.permissionsForWorkspaceRole("owner", apiAccessPermissions)).toEqual(new Set(apiAccessPermissions));
+  });
+
   it("never grants public chat permissions to session users or workspace API tokens", async () => {
     const userRepository = new InMemoryUserRepository();
     const membershipRepository = new InMemoryAccountMembershipRepository();
@@ -140,19 +157,20 @@ describe("AccountAccessService", () => {
 
       await expect(service.hasPermission({
         accountId: "account-1",
-        principal: { type: "workspace_api_token", role: "admin", workspaceId: "workspace-1" },
+        principal: { type: "service_account_credential", serviceAccountId: "service-1", credentialId: "credential-1", role: "admin", workspaceId: "workspace-1" },
         permission,
       })).resolves.toBe(false);
     }
   });
 
-  it("binds workspace API tokens to their authenticated workspace", async () => {
+  it("binds service credentials to their authenticated workspace", async () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
     const principal = {
-      type: "workspace_api_token" as const,
+      type: "service_account_credential" as const,
       role: "admin" as const,
       workspaceId: "workspace-a",
-      tokenId: "token-a",
+      serviceAccountId: "service-a",
+      credentialId: "credential-a",
     };
 
     await expect(service.requirePermission({
@@ -245,6 +263,59 @@ describe("AccountAccessService", () => {
     })).resolves.toBeUndefined();
 
     await expect(membershipRepository.findActiveByAccountAndUser("account-1", member.id)).resolves.toBeNull();
+  });
+
+  it("ends the removed membership tenure before deleting it", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const owner = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    const member = await userRepository.create({ email: "member@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: owner.id, role: "owner" });
+    const targetMembership = await membershipRepository.create({ accountId: "account-1", userId: member.id, role: "member" });
+    const ended: Array<{ accountId: string; membershipId: string; actorUserId?: string | null }> = [];
+    const service = new AccountAccessService(
+      membershipRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      { endMembership: async (input) => { ended.push(input); } },
+    );
+
+    await service.removeUserAccess({ accountId: "account-1", actorUserId: owner.id, membershipId: targetMembership.id });
+
+    expect(ended).toEqual([{ accountId: "account-1", membershipId: targetMembership.id, actorUserId: owner.id }]);
+    await expect(membershipRepository.findById(targetMembership.id)).resolves.toBeNull();
+  });
+
+  it("delegates membership removal to the transactional personal credential lifecycle", async () => {
+    const userRepository = new InMemoryUserRepository();
+    const membershipRepository = new InMemoryAccountMembershipRepository();
+    membershipRepository.setUserRepository(userRepository);
+    const owner = await userRepository.create({ email: "owner@example.com", passwordHash: "hash" });
+    const member = await userRepository.create({ email: "member@example.com", passwordHash: "hash" });
+    await membershipRepository.create({ accountId: "account-1", userId: owner.id, role: "owner" });
+    const targetMembership = await membershipRepository.create({ accountId: "account-1", userId: member.id, role: "member" });
+    const removed: Array<Record<string, unknown>> = [];
+    const service = new AccountAccessService(
+      membershipRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      { removeMembership: async (input) => { removed.push(input); return true; } },
+    );
+
+    await service.removeUserAccess({ accountId: "account-1", actorUserId: owner.id, membershipId: targetMembership.id });
+
+    expect(removed).toEqual([expect.objectContaining({
+      accountId: "account-1",
+      membershipId: targetMembership.id,
+      userId: member.id,
+      actorUserId: owner.id,
+      auditEvent: expect.objectContaining({ eventType: "account.membership.remove" }),
+    })]);
+    await expect(membershipRepository.findById(targetMembership.id)).resolves.toEqual(targetMembership);
   });
 
   it("rejects member-initiated removals", async () => {

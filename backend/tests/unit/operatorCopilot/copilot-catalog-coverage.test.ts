@@ -11,10 +11,8 @@ describe("operator copilot catalog coverage", () => {
   // Ratchet: this may only ever decrease as tools land. Every increase so far has been a correction
   // of a wrong *permanent* exclusion, not deferred scope creep:
   //   131 -> 133  ingestion settings, which Wave 3 will make proposable
-  //   128 -> 129  listAgentMcpConverseGrants, documented as carrying no token material, whose
-  //               siblings listMcpConnections/getMcpConnection are already agent_skills reads
-  // (133 fell to 128 in between, when workspace_settings covered six settings reads; 129 fell to
-  // 126 when the routine portable-document routes were removed upstream.)
+  // (133 fell to 128 when workspace_settings covered six settings reads; 128 fell to 126 when
+  // the routine portable-document routes were removed upstream.)
   //   126 -> 128  getDocumentTypeCatalog/updateDocumentTypeCatalog, the workspace document type
   //               catalog behind metadata extraction. It lands in the same Wave 3 knowledge-base
   //               bucket as the document and source surfaces it configures, so it becomes
@@ -55,10 +53,9 @@ describe("operator copilot catalog coverage", () => {
       return typeof entry === "string" ? "" : entry.reason;
     };
 
-    expect(reasonFor("getWorkspaceApiToken")).toContain("carries secret material");
+    expect(reasonFor("getApiAccessSummary")).toContain("identity and authorization administration");
     expect(reasonFor("switchAccount")).toContain("does not administer identity");
     expect(reasonFor("listAccountUsers")).toContain("account-scoped");
-    expect(reasonFor("getWorkspaceMcpContext")).toContain("workspace-token integration clients");
     // The signing key derives the secret an embed uses to sign visitor identity; it must never
     // become readable, and the context_variables reader and propose_context_variable must never
     // grow a path to it.
@@ -67,10 +64,11 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("carries secret material"),
     });
 
-    // Grant metadata carries no token material and its siblings are already readable, so it is
-    // planned work rather than a boundary. Issuing and revoking grants stay never-list.
-    expect(catalogCoverage.listAgentMcpConverseGrants).toMatchObject({ disposition: "deferred" });
-    expect(catalogCoverage.issueAgentMcpConverseGrant).toMatchObject({
+    expect(catalogCoverage.listAgentChannelCredentials).toMatchObject({
+      disposition: "permanent",
+      neverListEntry: "access_grants",
+    });
+    expect(catalogCoverage.issueAgentChannelCredential).toMatchObject({
       disposition: "permanent",
       neverListEntry: "access_grants",
     });
@@ -206,7 +204,8 @@ describe("operator copilot catalog coverage", () => {
       deleteWorkspace: { disposition: "permanent", neverListEntry: "workspace_delete" },
       createAccountInvitation: { disposition: "permanent", neverListEntry: "member_management" },
       setWorkspaceGrant: { disposition: "permanent", neverListEntry: "access_grants" },
-      rotateWorkspaceApiToken: { disposition: "permanent", neverListEntry: "secret_rotation" },
+      rotatePersonalApiToken: { disposition: "permanent", neverListEntry: "machine_access" },
+      rotateServiceAccountCredential: { disposition: "permanent", neverListEntry: "machine_access" },
       setWorkspaceProviderCredential: { disposition: "permanent", neverListEntry: "provider_credential_writes" },
       replyToConversation: { disposition: "permanent", neverListEntry: "unattended_live_customer_reply" },
     });

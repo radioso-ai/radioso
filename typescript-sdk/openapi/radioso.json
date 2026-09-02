@@ -3,7 +3,7 @@
   "info": {
     "title": "Radioso API",
     "version": "0.1.0",
-    "description": "Grounded retrieval and assistant chat over your documents. Get a workspace API token from your Radioso dashboard, then send it as a Bearer token."
+    "description": "Grounded retrieval and assistant chat over your documents. Create a personal token or service-account credential in API access settings, then send it as a Bearer token."
   },
   "servers": [
     {
@@ -39,6 +39,9 @@
       "name": "Assistant"
     },
     {
+      "name": "Agent Channels"
+    },
+    {
       "name": "History"
     },
     {
@@ -61,11 +64,15 @@
     },
     {
       "name": "Copilot"
+    },
+    {
+      "name": "MCP Converse"
     }
   ],
   "components": {
     "securitySchemes": {
       "sessionCookie": {
+        "description": "Interactive Radioso dashboard session. Session-only operations also require the selected workspace header when specified.",
         "type": "apiKey",
         "in": "cookie",
         "name": "radioso_session"
@@ -76,9 +83,22 @@
         "name": "X-Workspace-Id"
       },
       "bearerAuth": {
+        "description": "Personal API tokens and service-account credentials for eligible REST API operations. MCP, public launch, agent-converse, and session-only operations use separate credentials or a signed-in session.",
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "APIKey"
+      },
+      "agentChannelBearerAuth": {
+        "description": "Short-lived bearer credential issued for one agent channel. This credential authorizes only REST agent chat and carries no workspace role.",
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "AgentChannelCredential"
+      },
+      "mcpConverseSessionBearerAuth": {
+        "description": "Short-lived bearer session issued by the MCP converse credential exchange. This credential authorizes only MCP ask_agent turns.",
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "McpConverseSession"
       }
     },
     "schemas": {
@@ -427,66 +447,6 @@
           "hasCompletedChat",
           "sampleDocumentsImported",
           "websiteCrawlerEnabled"
-        ]
-      },
-      "WorkspaceTokenResponse": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ]
-      },
-      "WorkspaceMcpContextResponse": {
-        "type": "object",
-        "properties": {
-          "apiVersion": {
-            "type": "string",
-            "enum": [
-              "0.1.0"
-            ]
-          },
-          "mcpContextVersion": {
-            "type": "string",
-            "enum": [
-              "2026-06-09"
-            ]
-          },
-          "supportedTools": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "answer_grounded",
-                "create_document",
-                "delete_document",
-                "describe_capabilities",
-                "get_document",
-                "list_documents",
-                "reprocess_document",
-                "search_documents",
-                "update_document"
-              ]
-            }
-          },
-          "workspaceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "workspaceName": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "apiVersion",
-          "mcpContextVersion",
-          "supportedTools",
-          "workspaceId",
-          "workspaceName"
         ]
       },
       "RegisterRequest": {
@@ -3671,26 +3631,42 @@
           "websiteEmbed"
         ]
       },
-      "AgentMcpConverseGrantMetadata": {
+      "AgentChannelCredentialMetadata": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string",
             "format": "uuid"
           },
-          "label": {
-            "type": [
-              "string",
-              "null"
+          "audience": {
+            "type": "string",
+            "enum": [
+              "mcp",
+              "rest"
             ]
           },
-          "tokenPrefix": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "prefix": {
             "type": "string"
           },
-          "enabled": {
-            "type": "boolean"
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "expired",
+              "revoked",
+              "disabled"
+            ]
           },
           "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
             "type": "string",
             "format": "date-time"
           },
@@ -3711,95 +3687,105 @@
         },
         "required": [
           "id",
+          "audience",
           "label",
-          "tokenPrefix",
-          "enabled",
+          "prefix",
+          "status",
           "createdAt",
+          "expiresAt",
           "lastUsedAt",
           "revokedAt"
         ]
       },
-      "AgentMcpConverseGrantSecret": {
+      "AgentChannelCredentialIssueRequest": {
         "type": "object",
         "properties": {
-          "id": {
+          "audience": {
             "type": "string",
-            "format": "uuid"
-          },
-          "label": {
-            "type": [
-              "string",
-              "null"
+            "enum": [
+              "mcp",
+              "rest"
             ]
           },
-          "tokenPrefix": {
-            "type": "string"
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
           },
-          "createdAt": {
+          "expiresAt": {
             "type": "string",
             "format": "date-time"
           }
         },
         "required": [
-          "id",
+          "audience",
           "label",
-          "tokenPrefix",
-          "createdAt"
-        ]
+          "expiresAt"
+        ],
+        "additionalProperties": false
       },
-      "AgentMcpConverseGrantIssueRequest": {
+      "AgentChannelCredentialIssueResponse": {
         "type": "object",
         "properties": {
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          }
-        }
-      },
-      "AgentMcpConverseGrantIssueResponse": {
-        "type": "object",
-        "properties": {
-          "grant": {
-            "$ref": "#/components/schemas/AgentMcpConverseGrantSecret"
+          "credential": {
+            "$ref": "#/components/schemas/AgentChannelCredentialMetadata"
           },
-          "token": {
+          "secret": {
             "type": "string"
           }
         },
         "required": [
-          "grant",
-          "token"
+          "credential",
+          "secret"
         ]
       },
-      "AgentMcpConverseGrantSecretResponse": {
+      "AgentChannelCredentialListResponse": {
         "type": "object",
         "properties": {
-          "grant": {
-            "$ref": "#/components/schemas/AgentMcpConverseGrantSecret"
-          },
-          "token": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "grant",
-          "token"
-        ]
-      },
-      "AgentMcpConverseGrantListResponse": {
-        "type": "object",
-        "properties": {
-          "grants": {
+          "credentials": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AgentMcpConverseGrantMetadata"
+              "$ref": "#/components/schemas/AgentChannelCredentialMetadata"
             }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "grants"
+          "credentials",
+          "nextCursor"
         ]
+      },
+      "AgentChannelChatRequest": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "startConversation": {
+            "type": "boolean",
+            "default": false
+          },
+          "stream": {
+            "type": "boolean",
+            "default": false
+          },
+          "userExpectedLocale": {
+            "type": "string",
+            "maxLength": 35
+          }
+        },
+        "additionalProperties": false
       },
       "AuthoredDirectiveCondition": {
         "oneOf": [
@@ -18212,13 +18198,13 @@
         }
       }
     },
-    "/api/v1/account/workspaces/{workspaceId}/token": {
+    "/api/v1/account/workspaces/{workspaceId}/api-access": {
       "get": {
         "tags": [
-          "Account"
+          "API Access"
         ],
-        "summary": "Reveal the workspace API token for manual SDK or CLI use",
-        "operationId": "getWorkspaceApiToken",
+        "summary": "Read API-access capabilities and limits",
+        "operationId": "getApiAccessSummary",
         "security": [
           {
             "sessionCookie": []
@@ -18237,17 +18223,132 @@
         ],
         "responses": {
           "200": {
-            "description": "Workspace token returned",
+            "description": "API-access capabilities",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkspaceTokenResponse"
+                  "type": "object",
+                  "properties": {
+                    "effectiveRole": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "admin",
+                        "owner"
+                      ]
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "properties": {
+                        "manageOwnPersonalTokens": {
+                          "type": "boolean"
+                        },
+                        "auditWorkspacePersonalTokens": {
+                          "type": "boolean"
+                        },
+                        "manageServiceAccounts": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "manageOwnPersonalTokens",
+                        "auditWorkspacePersonalTokens",
+                        "manageServiceAccounts"
+                      ]
+                    },
+                    "defaults": {
+                      "type": "object",
+                      "properties": {
+                        "personalTokenLifetimeDays": {
+                          "type": "number",
+                          "enum": [
+                            90
+                          ]
+                        },
+                        "serviceCredentialLifetimeDays": {
+                          "type": "number",
+                          "enum": [
+                            365
+                          ]
+                        }
+                      },
+                      "required": [
+                        "personalTokenLifetimeDays",
+                        "serviceCredentialLifetimeDays"
+                      ]
+                    },
+                    "limits": {
+                      "type": "object",
+                      "properties": {
+                        "personalTokensPerUser": {
+                          "type": "number",
+                          "enum": [
+                            10
+                          ]
+                        },
+                        "serviceAccountsPerWorkspace": {
+                          "type": "number",
+                          "enum": [
+                            50
+                          ]
+                        },
+                        "credentialsPerServiceAccount": {
+                          "type": "number",
+                          "enum": [
+                            5
+                          ]
+                        },
+                        "maximumPageSize": {
+                          "type": "number",
+                          "enum": [
+                            100
+                          ]
+                        }
+                      },
+                      "required": [
+                        "personalTokensPerUser",
+                        "serviceAccountsPerWorkspace",
+                        "credentialsPerServiceAccount",
+                        "maximumPageSize"
+                      ]
+                    },
+                    "legacyCredentialMigration": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "destroyed",
+                            "not_applicable"
+                          ]
+                        },
+                        "migratedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "migratedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "effectiveRole",
+                    "capabilities",
+                    "defaults",
+                    "limits",
+                    "legacyCredentialMigration"
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid workspace id",
+            "description": "Invalid lifecycle request",
             "content": {
               "application/json": {
                 "schema": {
@@ -18257,7 +18358,7 @@
             }
           },
           "401": {
-            "description": "Authentication required",
+            "description": "Interactive session required",
             "content": {
               "application/json": {
                 "schema": {
@@ -18267,7 +18368,7 @@
             }
           },
           "403": {
-            "description": "Workspace token no longer resolves to an active workspace",
+            "description": "Workspace capability required",
             "content": {
               "application/json": {
                 "schema": {
@@ -18276,12 +18377,22 @@
               }
             }
           },
-          "429": {
-            "description": "Token reveal temporarily rate limited",
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -18289,13 +18400,306 @@
         }
       }
     },
-    "/api/v1/account/workspaces/{workspaceId}/token/rotate": {
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens": {
+      "get": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "List personal-token metadata",
+        "operationId": "listPersonalApiTokens",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "mine",
+                "workspace"
+              ]
+            },
+            "required": false,
+            "name": "view",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Safe personal-token metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "personal",
+                              "service"
+                            ]
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "roleCeiling": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "member",
+                              "admin"
+                            ]
+                          },
+                          "ownerUserId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "serviceAccountId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "createdByUserId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "suspended",
+                              "invalid"
+                            ]
+                          },
+                          "expiryWarningDays": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "enum": [
+                                  30
+                                ]
+                              },
+                              {
+                                "type": "number",
+                                "enum": [
+                                  7
+                                ]
+                              },
+                              {
+                                "type": "number",
+                                "enum": [
+                                  1
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastUsedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "revokedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "revokedByUserId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "revocationReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "rotatedFromCredentialId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "label",
+                          "prefix",
+                          "roleCeiling",
+                          "ownerUserId",
+                          "serviceAccountId",
+                          "createdByUserId",
+                          "createdAt",
+                          "expiresAt",
+                          "status",
+                          "expiryWarningDays",
+                          "lastUsedAt",
+                          "revokedAt",
+                          "revokedByUserId",
+                          "revocationReason",
+                          "rotatedFromCredentialId",
+                          "revision"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "limit",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
-          "Account"
+          "API Access"
         ],
-        "summary": "Rotate the workspace API token",
-        "operationId": "rotateWorkspaceApiToken",
+        "summary": "Issue a personal API token",
+        "operationId": "issuePersonalApiToken",
         "security": [
           {
             "sessionCookie": []
@@ -18310,21 +18714,228 @@
             "required": true,
             "name": "workspaceId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "roleCeiling": {
+                    "type": "string",
+                    "enum": [
+                      "member",
+                      "admin"
+                    ]
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "label",
+                  "roleCeiling",
+                  "expiresAt"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
-            "description": "Workspace token rotated",
+          "201": {
+            "description": "One-time personal-token secret",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkspaceTokenResponse"
+                  "type": "object",
+                  "properties": {
+                    "credential": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "personal",
+                            "service"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "roleCeiling": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "member",
+                            "admin"
+                          ]
+                        },
+                        "ownerUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "serviceAccountId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "createdByUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
+                        },
+                        "expiryWarningDays": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                30
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                7
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedByUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revocationReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rotatedFromCredentialId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "prefix",
+                        "roleCeiling",
+                        "ownerUserId",
+                        "serviceAccountId",
+                        "createdByUserId",
+                        "createdAt",
+                        "expiresAt",
+                        "status",
+                        "expiryWarningDays",
+                        "lastUsedAt",
+                        "revokedAt",
+                        "revokedByUserId",
+                        "revocationReason",
+                        "rotatedFromCredentialId",
+                        "revision"
+                      ]
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "credential",
+                    "secret"
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid workspace id",
+            "description": "Invalid lifecycle request",
             "content": {
               "application/json": {
                 "schema": {
@@ -18334,7 +18945,7 @@
             }
           },
           "401": {
-            "description": "Authentication required",
+            "description": "Interactive session required",
             "content": {
               "application/json": {
                 "schema": {
@@ -18344,7 +18955,7 @@
             }
           },
           "403": {
-            "description": "Workspace does not belong to the current account",
+            "description": "Workspace capability required",
             "content": {
               "application/json": {
                 "schema": {
@@ -18353,8 +18964,8 @@
               }
             }
           },
-          "429": {
-            "description": "Too many rotate attempts",
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
             "content": {
               "application/json": {
                 "schema": {
@@ -18363,8 +18974,8 @@
               }
             }
           },
-          "503": {
-            "description": "Workspace token secret is not configured",
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
             "content": {
               "application/json": {
                 "schema": {
@@ -18376,31 +18987,248 @@
         }
       }
     },
-    "/api/v1/workspace/mcp/context": {
-      "get": {
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}": {
+      "patch": {
         "tags": [
-          "Workspace"
+          "API Access"
         ],
-        "summary": "Get workspace MCP context for a bearer-authenticated workspace token",
-        "operationId": "getWorkspaceMcpContext",
+        "summary": "Relabel an owned personal token",
+        "operationId": "relabelPersonalApiToken",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": []
           }
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "credentialId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "label",
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
-            "description": "Workspace MCP context returned",
+            "description": "Updated safe credential metadata",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WorkspaceMcpContextResponse"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "personal",
+                        "service"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "roleCeiling": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "ownerUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "serviceAccountId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
+                    },
+                    "expiryWarningDays": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            30
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            7
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedByUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revocationReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rotatedFromCredentialId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "label",
+                    "prefix",
+                    "roleCeiling",
+                    "ownerUserId",
+                    "serviceAccountId",
+                    "createdByUserId",
+                    "createdAt",
+                    "expiresAt",
+                    "status",
+                    "expiryWarningDays",
+                    "lastUsedAt",
+                    "revokedAt",
+                    "revokedByUserId",
+                    "revocationReason",
+                    "rotatedFromCredentialId",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
           },
           "401": {
-            "description": "Authentication required",
+            "description": "Interactive session required",
             "content": {
               "application/json": {
                 "schema": {
@@ -18410,7 +19238,3626 @@
             }
           },
           "403": {
-            "description": "Workspace token no longer resolves to an active workspace",
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/rotate": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Immediately rotate an owned personal token",
+        "operationId": "rotatePersonalApiToken",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "credentialId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "One-time replacement secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "credential": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "personal",
+                            "service"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "roleCeiling": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "member",
+                            "admin"
+                          ]
+                        },
+                        "ownerUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "serviceAccountId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "createdByUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
+                        },
+                        "expiryWarningDays": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                30
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                7
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedByUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revocationReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rotatedFromCredentialId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "prefix",
+                        "roleCeiling",
+                        "ownerUserId",
+                        "serviceAccountId",
+                        "createdByUserId",
+                        "createdAt",
+                        "expiresAt",
+                        "status",
+                        "expiryWarningDays",
+                        "lastUsedAt",
+                        "revokedAt",
+                        "revokedByUserId",
+                        "revocationReason",
+                        "rotatedFromCredentialId",
+                        "revision"
+                      ]
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "credential",
+                    "secret"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/personal-tokens/{credentialId}/revoke": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Revoke a personal token",
+        "operationId": "revokePersonalApiToken",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "credentialId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked safe credential metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "personal",
+                        "service"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "roleCeiling": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "ownerUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "serviceAccountId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
+                    },
+                    "expiryWarningDays": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            30
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            7
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedByUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revocationReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rotatedFromCredentialId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "label",
+                    "prefix",
+                    "roleCeiling",
+                    "ownerUserId",
+                    "serviceAccountId",
+                    "createdByUserId",
+                    "createdAt",
+                    "expiresAt",
+                    "status",
+                    "expiryWarningDays",
+                    "lastUsedAt",
+                    "revokedAt",
+                    "revokedByUserId",
+                    "revocationReason",
+                    "rotatedFromCredentialId",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts": {
+      "get": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "List workspace service accounts",
+        "operationId": "listServiceAccounts",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service-account inventory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "member",
+                              "admin"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "enabled",
+                              "disabled",
+                              "archived"
+                            ]
+                          },
+                          "createdByUserId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "disabledAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "archivedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "lastUsedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "activeCredentialCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "displayName",
+                          "role",
+                          "status",
+                          "createdByUserId",
+                          "createdAt",
+                          "updatedAt",
+                          "disabledAt",
+                          "archivedAt",
+                          "lastUsedAt",
+                          "activeCredentialCount",
+                          "revision"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "limit",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Create a service account and first credential",
+        "operationId": "createServiceAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "member",
+                      "admin"
+                    ]
+                  },
+                  "credentialExpiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "displayName",
+                  "role",
+                  "credentialExpiresAt"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Service account and one-time credential secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "serviceAccount": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "displayName": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "member",
+                            "admin"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "enabled",
+                            "disabled",
+                            "archived"
+                          ]
+                        },
+                        "createdByUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "updatedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "disabledAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "archivedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "activeCredentialCount": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "displayName",
+                        "role",
+                        "status",
+                        "createdByUserId",
+                        "createdAt",
+                        "updatedAt",
+                        "disabledAt",
+                        "archivedAt",
+                        "lastUsedAt",
+                        "activeCredentialCount",
+                        "revision"
+                      ]
+                    },
+                    "credential": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "personal",
+                            "service"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "roleCeiling": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "member",
+                            "admin"
+                          ]
+                        },
+                        "ownerUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "serviceAccountId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "createdByUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
+                        },
+                        "expiryWarningDays": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                30
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                7
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedByUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revocationReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rotatedFromCredentialId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "prefix",
+                        "roleCeiling",
+                        "ownerUserId",
+                        "serviceAccountId",
+                        "createdByUserId",
+                        "createdAt",
+                        "expiresAt",
+                        "status",
+                        "expiryWarningDays",
+                        "lastUsedAt",
+                        "revokedAt",
+                        "revokedByUserId",
+                        "revocationReason",
+                        "rotatedFromCredentialId",
+                        "revision"
+                      ]
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "serviceAccount",
+                    "credential",
+                    "secret"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}": {
+      "get": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Read a service account",
+        "operationId": "getServiceAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Service-account metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "enabled",
+                        "disabled",
+                        "archived"
+                      ]
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "disabledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "activeCredentialCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "role",
+                    "status",
+                    "createdByUserId",
+                    "createdAt",
+                    "updatedAt",
+                    "disabledAt",
+                    "archivedAt",
+                    "lastUsedAt",
+                    "activeCredentialCount",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Rename or change a service-account role",
+        "operationId": "updateServiceAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "displayName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "member",
+                      "admin"
+                    ]
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service-account metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "enabled",
+                        "disabled",
+                        "archived"
+                      ]
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "disabledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "activeCredentialCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "role",
+                    "status",
+                    "createdByUserId",
+                    "createdAt",
+                    "updatedAt",
+                    "disabledAt",
+                    "archivedAt",
+                    "lastUsedAt",
+                    "activeCredentialCount",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/disable": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Disable a service account",
+        "operationId": "disableServiceAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service-account metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "enabled",
+                        "disabled",
+                        "archived"
+                      ]
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "disabledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "activeCredentialCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "role",
+                    "status",
+                    "createdByUserId",
+                    "createdAt",
+                    "updatedAt",
+                    "disabledAt",
+                    "archivedAt",
+                    "lastUsedAt",
+                    "activeCredentialCount",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/enable": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Enable a service account",
+        "operationId": "enableServiceAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service-account metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "enabled",
+                        "disabled",
+                        "archived"
+                      ]
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "disabledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "activeCredentialCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "role",
+                    "status",
+                    "createdByUserId",
+                    "createdAt",
+                    "updatedAt",
+                    "disabledAt",
+                    "archivedAt",
+                    "lastUsedAt",
+                    "activeCredentialCount",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/archive": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Archive a service account",
+        "operationId": "archiveServiceAccount",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated service-account metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "enabled",
+                        "disabled",
+                        "archived"
+                      ]
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "disabledAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "archivedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "activeCredentialCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName",
+                    "role",
+                    "status",
+                    "createdByUserId",
+                    "createdAt",
+                    "updatedAt",
+                    "disabledAt",
+                    "archivedAt",
+                    "lastUsedAt",
+                    "activeCredentialCount",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials": {
+      "get": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "List service-account credentials",
+        "operationId": "listServiceAccountCredentials",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Safe service-credential metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "personal",
+                              "service"
+                            ]
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "prefix": {
+                            "type": "string"
+                          },
+                          "roleCeiling": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "member",
+                              "admin"
+                            ]
+                          },
+                          "ownerUserId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "serviceAccountId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "createdByUserId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "expired",
+                              "revoked",
+                              "suspended",
+                              "invalid"
+                            ]
+                          },
+                          "expiryWarningDays": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "enum": [
+                                  30
+                                ]
+                              },
+                              {
+                                "type": "number",
+                                "enum": [
+                                  7
+                                ]
+                              },
+                              {
+                                "type": "number",
+                                "enum": [
+                                  1
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastUsedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "revokedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "revokedByUserId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "revocationReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "rotatedFromCredentialId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uuid"
+                          },
+                          "revision": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "label",
+                          "prefix",
+                          "roleCeiling",
+                          "ownerUserId",
+                          "serviceAccountId",
+                          "createdByUserId",
+                          "createdAt",
+                          "expiresAt",
+                          "status",
+                          "expiryWarningDays",
+                          "lastUsedAt",
+                          "revokedAt",
+                          "revokedByUserId",
+                          "revocationReason",
+                          "rotatedFromCredentialId",
+                          "revision"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 100
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "limit",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Issue another service-account credential",
+        "operationId": "issueServiceAccountCredential",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "label",
+                  "expiresAt"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "One-time service credential secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "credential": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "personal",
+                            "service"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "roleCeiling": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "member",
+                            "admin"
+                          ]
+                        },
+                        "ownerUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "serviceAccountId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "createdByUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
+                        },
+                        "expiryWarningDays": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                30
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                7
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedByUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revocationReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rotatedFromCredentialId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "prefix",
+                        "roleCeiling",
+                        "ownerUserId",
+                        "serviceAccountId",
+                        "createdByUserId",
+                        "createdAt",
+                        "expiresAt",
+                        "status",
+                        "expiryWarningDays",
+                        "lastUsedAt",
+                        "revokedAt",
+                        "revokedByUserId",
+                        "revocationReason",
+                        "rotatedFromCredentialId",
+                        "revision"
+                      ]
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "credential",
+                    "secret"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}": {
+      "patch": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Relabel a service-account credential",
+        "operationId": "relabelServiceAccountCredential",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "credentialId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "label",
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated safe credential metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "personal",
+                        "service"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "roleCeiling": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "ownerUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "serviceAccountId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
+                    },
+                    "expiryWarningDays": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            30
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            7
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedByUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revocationReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rotatedFromCredentialId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "label",
+                    "prefix",
+                    "roleCeiling",
+                    "ownerUserId",
+                    "serviceAccountId",
+                    "createdByUserId",
+                    "createdAt",
+                    "expiresAt",
+                    "status",
+                    "expiryWarningDays",
+                    "lastUsedAt",
+                    "revokedAt",
+                    "revokedByUserId",
+                    "revocationReason",
+                    "rotatedFromCredentialId",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/rotate": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Immediately rotate a service-account credential",
+        "operationId": "rotateServiceAccountCredential",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "credentialId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "revision"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "One-time replacement secret",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "credential": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "personal",
+                            "service"
+                          ]
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "prefix": {
+                          "type": "string"
+                        },
+                        "roleCeiling": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "member",
+                            "admin"
+                          ]
+                        },
+                        "ownerUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "serviceAccountId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "createdByUserId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "createdAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "active",
+                            "expired",
+                            "revoked",
+                            "suspended",
+                            "invalid"
+                          ]
+                        },
+                        "expiryWarningDays": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                30
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                7
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "lastUsedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedAt": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "date-time"
+                        },
+                        "revokedByUserId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revocationReason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "rotatedFromCredentialId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uuid"
+                        },
+                        "revision": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "label",
+                        "prefix",
+                        "roleCeiling",
+                        "ownerUserId",
+                        "serviceAccountId",
+                        "createdByUserId",
+                        "createdAt",
+                        "expiresAt",
+                        "status",
+                        "expiryWarningDays",
+                        "lastUsedAt",
+                        "revokedAt",
+                        "revokedByUserId",
+                        "revocationReason",
+                        "rotatedFromCredentialId",
+                        "revision"
+                      ]
+                    },
+                    "secret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "credential",
+                    "secret"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/workspaces/{workspaceId}/api-access/service-accounts/{serviceAccountId}/credentials/{credentialId}/revoke": {
+      "post": {
+        "tags": [
+          "API Access"
+        ],
+        "summary": "Revoke a service-account credential",
+        "operationId": "revokeServiceAccountCredential",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "serviceAccountId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "credentialId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated API-access mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked safe credential metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "personal",
+                        "service"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "prefix": {
+                      "type": "string"
+                    },
+                    "roleCeiling": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "member",
+                        "admin"
+                      ]
+                    },
+                    "ownerUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "serviceAccountId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "createdByUserId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "expired",
+                        "revoked",
+                        "suspended",
+                        "invalid"
+                      ]
+                    },
+                    "expiryWarningDays": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            30
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            7
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedByUserId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revocationReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "rotatedFromCredentialId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uuid"
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "label",
+                    "prefix",
+                    "roleCeiling",
+                    "ownerUserId",
+                    "serviceAccountId",
+                    "createdByUserId",
+                    "createdAt",
+                    "expiresAt",
+                    "status",
+                    "expiryWarningDays",
+                    "lastUsedAt",
+                    "revokedAt",
+                    "revokedByUserId",
+                    "revocationReason",
+                    "rotatedFromCredentialId",
+                    "revision"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid lifecycle request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace capability required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not available in this workspace or ownership boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Stale revision, quota, or invalid lifecycle transition",
             "content": {
               "application/json": {
                 "schema": {
@@ -20176,6 +24623,91 @@
         }
       }
     },
+    "/api/v1/agents/{agentId}/chat": {
+      "post": {
+        "tags": [
+          "Agent Channels"
+        ],
+        "summary": "Run chat through a REST credential bound to this agent",
+        "operationId": "createAgentChannelChatResponse",
+        "security": [
+          {
+            "agentChannelBearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentChannelChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Agent chat response returned as JSON or SSE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantChatResponse"
+                }
+              },
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Conversation start completed without a greeting"
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, inactive, cross-audience, or cross-agent credential",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Agent channel rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/agents/{agentId}": {
       "get": {
         "tags": [
@@ -20365,16 +24897,17 @@
         }
       }
     },
-    "/api/v1/agents/{agentId}/mcp-converse-grants": {
+    "/api/v1/agents/{agentId}/channel-credentials": {
       "post": {
         "tags": [
-          "Agents"
+          "Agent Channels"
         ],
-        "summary": "Issue an MCP converse grant for an agent",
-        "operationId": "issueAgentMcpConverseGrant",
+        "summary": "Issue an MCP or REST chat credential for an agent",
+        "operationId": "issueAgentChannelCredential",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -20386,6 +24919,18 @@
             "required": true,
             "name": "agentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
         "requestBody": {
@@ -20393,18 +24938,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentMcpConverseGrantIssueRequest"
+                "$ref": "#/components/schemas/AgentChannelCredentialIssueRequest"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "MCP converse grant issued. The token is returned only in this response.",
+            "description": "Agent channel credential issued. The secret is returned only in this response.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentMcpConverseGrantIssueResponse"
+                  "$ref": "#/components/schemas/AgentChannelCredentialIssueResponse"
                 }
               }
             }
@@ -20453,13 +24998,14 @@
       },
       "get": {
         "tags": [
-          "Agents"
+          "Agent Channels"
         ],
-        "summary": "List MCP converse grants for an agent",
-        "operationId": "listAgentMcpConverseGrants",
+        "summary": "List MCP and REST chat credentials for an agent with cursor pagination",
+        "operationId": "listAgentChannelCredentials",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -20471,15 +25017,48 @@
             "required": true,
             "name": "agentId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "mcp",
+                "rest"
+              ]
+            },
+            "required": false,
+            "name": "audience",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
           }
         ],
         "responses": {
           "200": {
-            "description": "MCP converse grant metadata returned without token material",
+            "description": "Role-free channel credential metadata returned without secret material",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentMcpConverseGrantListResponse"
+                  "$ref": "#/components/schemas/AgentChannelCredentialListResponse"
                 }
               }
             }
@@ -20517,16 +25096,17 @@
         }
       }
     },
-    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}/rotate": {
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate": {
       "post": {
         "tags": [
-          "Agents"
+          "Agent Channels"
         ],
-        "summary": "Rotate an MCP converse grant for an agent",
-        "operationId": "rotateAgentMcpConverseGrant",
+        "summary": "Rotate an agent channel credential",
+        "operationId": "rotateAgentChannelCredential",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -20545,17 +25125,29 @@
               "format": "uuid"
             },
             "required": true,
-            "name": "grantId",
+            "name": "credentialId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
         "responses": {
           "200": {
-            "description": "MCP converse grant rotated. The new token is returned only in this response.",
+            "description": "Agent channel credential rotated. The new secret is returned only in this response.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentMcpConverseGrantSecretResponse"
+                  "$ref": "#/components/schemas/AgentChannelCredentialIssueResponse"
                 }
               }
             }
@@ -20581,7 +25173,7 @@
             }
           },
           "404": {
-            "description": "Agent or MCP converse grant not found",
+            "description": "Agent or channel credential not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -20593,16 +25185,17 @@
         }
       }
     },
-    "/api/v1/agents/{agentId}/mcp-converse-grants/{grantId}": {
-      "delete": {
+    "/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke": {
+      "post": {
         "tags": [
-          "Agents"
+          "Agent Channels"
         ],
-        "summary": "Revoke an MCP converse grant for an agent",
-        "operationId": "revokeAgentMcpConverseGrant",
+        "summary": "Revoke an agent channel credential",
+        "operationId": "revokeAgentChannelCredential",
         "security": [
           {
-            "bearerAuth": []
+            "sessionCookie": [],
+            "workspaceSelection": []
           }
         ],
         "parameters": [
@@ -20621,13 +25214,25 @@
               "format": "uuid"
             },
             "required": true,
-            "name": "grantId",
+            "name": "credentialId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
           }
         ],
         "responses": {
           "204": {
-            "description": "MCP converse grant revoked"
+            "description": "Agent channel credential revoked"
           },
           "401": {
             "description": "Authentication required",
@@ -20650,7 +25255,7 @@
             }
           },
           "404": {
-            "description": "Agent or MCP converse grant not found",
+            "description": "Agent or channel credential not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -38952,18 +43557,21 @@
                 "properties": {
                   "launchToken": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 2048
                   },
                   "client": {
                     "type": "object",
                     "properties": {
                       "name": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 128
                       },
                       "version": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "maxLength": 64
                       }
                     }
                   }
@@ -39043,6 +43651,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "MCP converse session rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -39063,7 +43681,8 @@
                 "properties": {
                   "sessionToken": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 2048
                   }
                 },
                 "required": [
@@ -39136,6 +43755,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "MCP converse session rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -39149,7 +43778,7 @@
         "operationId": "askMcpConverseAgent",
         "security": [
           {
-            "bearerAuth": []
+            "mcpConverseSessionBearerAuth": []
           }
         ],
         "requestBody": {
@@ -39246,285 +43875,9 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/v1/mcp/converse/grounded-answer": {
-      "post": {
-        "tags": [
-          "MCP Converse"
-        ],
-        "summary": "Run an agent-aware grounded answer through the bound agent retrieval configuration",
-        "operationId": "answerMcpConverseGrounded",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "maxResults": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 20
-                  }
-                },
-                "required": [
-                  "query"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Agent-scoped grounded answer",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "answer": {
-                      "type": "string"
-                    },
-                    "citations": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "documentId": {
-                            "type": "string",
-                            "enum": [
-                              ""
-                            ]
-                          },
-                          "chunkId": {
-                            "type": "string",
-                            "enum": [
-                              ""
-                            ]
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "sourceUrl": {
-                            "type": "string",
-                            "format": "uri"
-                          }
-                        },
-                        "required": [
-                          "documentId",
-                          "chunkId",
-                          "title"
-                        ]
-                      }
-                    },
-                    "retrieval": {
-                      "type": "object",
-                      "properties": {
-                        "agentScoped": {
-                          "type": "boolean",
-                          "enum": [
-                            true
-                          ]
-                        }
-                      },
-                      "required": [
-                        "agentScoped"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "answer",
-                    "citations",
-                    "retrieval"
-                  ]
-                }
-              }
-            }
           },
-          "401": {
-            "description": "Invalid converse session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Converse session is not allowed to query retrieval",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/mcp/converse/resources": {
-      "get": {
-        "tags": [
-          "MCP Converse"
-        ],
-        "summary": "List read-only resources visible to the bound agent",
-        "operationId": "listMcpConverseResources",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Agent-scoped resources",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "resources": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "uri": {
-                            "type": "string"
-                          },
-                          "name": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          }
-                        },
-                        "required": [
-                          "uri",
-                          "name",
-                          "mimeType"
-                        ]
-                      }
-                    }
-                  },
-                  "required": [
-                    "resources"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid converse session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Converse session is not allowed to read resources",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/mcp/converse/resources/{resourceId}": {
-      "get": {
-        "tags": [
-          "MCP Converse"
-        ],
-        "summary": "Read one sanitized resource visible to the bound agent",
-        "operationId": "readMcpConverseResource",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            },
-            "required": true,
-            "name": "resourceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Sanitized agent-scoped resource",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "uri": {
-                      "type": "string"
-                    },
-                    "name": {
-                      "type": "string"
-                    },
-                    "mimeType": {
-                      "type": "string"
-                    },
-                    "text": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "uri",
-                    "name",
-                    "mimeType",
-                    "text"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Invalid converse session",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Converse session is not allowed to read resources",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Resource not found",
+          "429": {
+            "description": "MCP converse ask rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {

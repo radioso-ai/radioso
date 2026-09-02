@@ -1201,7 +1201,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat&page=3`);
   await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
 
-  expect(requestLog).toContain("GET /history/chat?limit=50&offset=100");
+  await expect.poll(() => requestLog).toContain("GET /history/chat?limit=50&offset=100");
   expect(requestLog).not.toContain("GET /history/chat?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history?limit=50&offset=100");
 
@@ -1209,7 +1209,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=search&page=2`);
   await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
 
-  expect(requestLog).toContain("GET /history/search?limit=50&offset=50");
+  await expect.poll(() => requestLog).toContain("GET /history/search?limit=50&offset=50");
   expect(requestLog).not.toContain("GET /history/search?limit=50&offset=0");
   expect(requestLog).not.toContain("GET /history?limit=50&offset=50");
 
@@ -1221,7 +1221,7 @@ test("activity filtered pages request one offset-backed page", async ({ page }) 
   await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=all&page=3`);
   await expect(page.getByRole("heading", { name: "Inbox", level: 1 })).toBeVisible();
 
-  expect(requestLog).toContain("GET /history?limit=50&offset=100");
+  await expect.poll(() => requestLog).toContain("GET /history?limit=50&offset=100");
   expect(requestLog).not.toContain("GET /history?limit=50&offset=0");
   await expect(page).toHaveURL(/page=3/);
 });

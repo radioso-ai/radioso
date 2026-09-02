@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 
+import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const extractToken = (anonymousChatUrl: string): string => {
@@ -12,9 +13,45 @@ const extractToken = (anonymousChatUrl: string): string => {
 };
 
 describe("access grants contract", () => {
-  it("manages per-agent MCP converse credentials without exposing token material in lists", async () => {
+  it("documents agent-bound chat credentials without workspace authorization fields", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+    const lifecyclePath = paths["/api/v1/agents/{agentId}/channel-credentials"];
+    const rotatePath = paths["/api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate"];
+    const revokePath = paths["/api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke"];
+    const listParameters = lifecyclePath?.get?.parameters ?? [];
+    const metadata = document.components?.schemas?.AgentChannelCredentialMetadata as {
+      properties?: Record<string, unknown>;
+    } | undefined;
+
+    expect(paths["/api/v1/agents/{agentId}/chat"]?.post).toMatchObject({
+      operationId: "createAgentChannelChatResponse",
+      security: [{ agentChannelBearerAuth: [] }],
+    });
+    expect(lifecyclePath?.post?.operationId).toBe("issueAgentChannelCredential");
+    for (const operation of [lifecyclePath?.post, rotatePath?.post, revokePath?.post]) {
+      expect(operation?.parameters).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          in: "header",
+          name: "X-Radioso-CSRF",
+          required: true,
+          schema: expect.objectContaining({ type: "string", enum: ["1"] }),
+        }),
+      ]));
+    }
+    expect(lifecyclePath?.get?.operationId).toBe("listAgentChannelCredentials");
+    expect(listParameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ in: "query", name: "audience", required: false }),
+    ]));
+    expect(revokePath?.post?.operationId).toBe("revokeAgentChannelCredential");
+    expect(revokePath?.delete).toBeUndefined();
+    expect(metadata?.properties).not.toHaveProperty("role");
+    expect(metadata?.properties).not.toHaveProperty("workspaceRole");
+  });
+
+  it("manages role-free per-agent channel credentials without exposing token material in lists", async () => {
     const { app, dependencies } = createTestApp();
-    const session = await issueTestSession(app, "mcp-converse-grants@example.com");
+    const session = await issueTestSession(app, "channel-credentials@example.com");
     const defaultAgent = await dependencies.agentService.resolve(session.workspaceId);
 
     await dependencies.accessGrantService.issueGrant({
@@ -26,58 +63,69 @@ describe("access grants contract", () => {
     });
 
     const issued = await request(app)
-      .post(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants`)
+      .post(`/api/v1/agents/${defaultAgent.id}/channel-credentials`)
       .set(adminSessionHeaders(session))
-      .send({ label: "Desktop client" });
+      .set("X-Radioso-CSRF", "1")
+      .send({ audience: "mcp", label: "Desktop client", expiresAt: "2027-06-28T10:00:00.000Z" });
 
     expect(issued.status).toBe(201);
-    expect(issued.body.token).toEqual(expect.any(String));
-    expect(issued.body.grant).toEqual({
+    expect(issued.body.secret).toEqual(expect.any(String));
+    expect(issued.body.credential).toEqual({
       id: expect.any(String),
+      audience: "mcp",
       label: "Desktop client",
-      tokenPrefix: expect.any(String),
+      prefix: expect.any(String),
+      status: "active",
       createdAt: expect.any(String),
+      expiresAt: "2027-06-28T10:00:00.000Z",
+      lastUsedAt: null,
+      revokedAt: null,
     });
 
-    const grantId = issued.body.grant.id as string;
+    const grantId = issued.body.credential.id as string;
     const listed = await request(app)
-      .get(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants`)
+      .get(`/api/v1/agents/${defaultAgent.id}/channel-credentials?audience=mcp`)
       .set(adminSessionHeaders(session));
 
     expect(listed.status).toBe(200);
-    expect(listed.body.grants).toEqual([
+    expect(listed.body.credentials).toEqual([
       {
         id: grantId,
+        audience: "mcp",
         label: "Desktop client",
-        tokenPrefix: issued.body.grant.tokenPrefix,
-        enabled: true,
-        createdAt: issued.body.grant.createdAt,
+        prefix: issued.body.credential.prefix,
+        status: "active",
+        createdAt: issued.body.credential.createdAt,
+        expiresAt: "2027-06-28T10:00:00.000Z",
         lastUsedAt: null,
         revokedAt: null,
       },
     ]);
-    expect(JSON.stringify(listed.body)).not.toContain(issued.body.token);
+    expect(listed.body.nextCursor).toBeNull();
+    expect(JSON.stringify(listed.body)).not.toContain(issued.body.secret);
 
     const rotated = await request(app)
-      .post(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants/${grantId}/rotate`)
+      .post(`/api/v1/agents/${defaultAgent.id}/channel-credentials/${grantId}/rotate`)
       .set(adminSessionHeaders(session))
+      .set("X-Radioso-CSRF", "1")
       .send();
 
     expect(rotated.status).toBe(200);
-    expect(rotated.body.token).toEqual(expect.any(String));
-    expect(rotated.body.token).not.toBe(issued.body.token);
+    expect(rotated.body.secret).toEqual(expect.any(String));
+    expect(rotated.body.secret).not.toBe(issued.body.secret);
 
     const revoked = await request(app)
-      .delete(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants/${grantId}`)
-      .set(adminSessionHeaders(session));
+      .post(`/api/v1/agents/${defaultAgent.id}/channel-credentials/${grantId}/revoke`)
+      .set(adminSessionHeaders(session))
+      .set("X-Radioso-CSRF", "1");
 
     expect(revoked.status).toBe(204);
 
     const afterRevoke = await request(app)
-      .get(`/api/v1/agents/${defaultAgent.id}/mcp-converse-grants`)
+      .get(`/api/v1/agents/${defaultAgent.id}/channel-credentials?audience=mcp`)
       .set(adminSessionHeaders(session));
     expect(afterRevoke.status).toBe(200);
-    expect(afterRevoke.body.grants).toEqual([
+    expect(afterRevoke.body.credentials).toEqual([
       expect.objectContaining({
         id: grantId,
         revokedAt: expect.any(String),

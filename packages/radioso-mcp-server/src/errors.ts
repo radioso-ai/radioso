@@ -1,8 +1,7 @@
 import { ZodError } from "zod";
 
 import { AuthServiceError } from "./auth/authService.js";
-import { CapabilityPolicyError } from "./policy/capabilityPolicy.js";
-import { RadiosoApiError } from "./radiosoApiAdapter.js";
+import { RadiosoApiError } from "./converseApiAdapter.js";
 
 export interface StructuredToolError {
   code: string;
@@ -44,14 +43,6 @@ export const toStructuredToolError = (error: unknown): StructuredToolError => {
   }
 
   if (error instanceof AuthServiceError) {
-    return {
-      code: error.code,
-      details: error.details,
-      message: error.message,
-    };
-  }
-
-  if (error instanceof CapabilityPolicyError) {
     return {
       code: error.code,
       details: error.details,

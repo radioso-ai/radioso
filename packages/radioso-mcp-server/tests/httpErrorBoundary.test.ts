@@ -1,18 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createAuditLogger } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
-import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
-
-const workspaceValidation = {
-  apiVersion: "0.1.0",
-  mcpContextVersion: "2026-04-22",
-  supportedTools: ["describe_capabilities", "create_document"],
-  workspaceHint: "Default",
-  workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
-  workspaceName: "Default",
-};
 
 describe("remote MCP HTTP error boundary", () => {
   const servers: Array<{ close(): Promise<void> }> = [];
@@ -36,29 +25,23 @@ describe("remote MCP HTTP error boundary", () => {
 
     const { createHttpServer } = await import("../src/http/createHttpServer.js");
     const authService = createAuthService({
-      auditLogger: createAuditLogger([]),
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: ["create_document"],
-        approvalRequiredWriteTools: ["create_document"],
-      }),
+      converseApi: {
+        ask: vi.fn(),
+        exchange: vi.fn(),
+        validate: vi.fn(),
+        recordUse: vi.fn(),
+      },
       sessionStore: createInMemorySessionStore(),
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: async () => workspaceValidation,
     });
     const server = createHttpServer({
       authService,
       config: {
-        accessTokenTtlSeconds: 900,
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: ["create_document"],
-        approvalRequiredWriteTools: ["create_document"],
         baseUrl: "http://radioso.test",
         bindHost: "127.0.0.1",
         bindPort: 0,
         requestTimeoutMs: 30_000,
         serverName: "radioso-test",
-        signingSecret: "dev-signing-secret",
+        trustedProxyHops: 0,
       },
     });
     servers.push(server);

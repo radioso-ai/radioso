@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-08-05
+last_updated: 2026-09-01
 ---
 
 # Assistant Turn Spine
@@ -299,8 +299,8 @@ an offer instead of a blocking question — except when the top two senses are
 within the `0.01` tie band, where they are statistically indistinguishable and a
 blocking ask is still used. Routine activation keeps `askMargin = clearMargin`,
 preserving the blocking ask behavior for routine ambiguity.
-Standalone retrieval answer, document search, SDK retrieval, and MCP retrieval
-surfaces do not ask clarifying questions.
+Standalone retrieval answer, document search, and SDK retrieval surfaces do not
+ask clarifying questions.
 
 ## Adding a skill
 

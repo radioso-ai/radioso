@@ -21,6 +21,19 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("publishes the bounded agent channel credential label contract", () => {
+    const schemas = createOpenApiDocument().components?.schemas ?? {};
+    const issueRequest = schemas.AgentChannelCredentialIssueRequest as {
+      properties?: Record<string, unknown>;
+    } | undefined;
+    const metadata = schemas.AgentChannelCredentialMetadata as {
+      properties?: Record<string, unknown>;
+    } | undefined;
+
+    expect(issueRequest?.properties?.label).toEqual({ type: "string", minLength: 1, maxLength: 80 });
+    expect(metadata?.properties?.label).toEqual({ type: "string", minLength: 1, maxLength: 80 });
+  });
+
   it("advertises the browser-safe realtime enablement flag on workspace route resolution", () => {
     const document = createOpenApiDocument();
     const schema = document.components?.schemas?.WorkspaceRouteResolutionResponse as {
@@ -256,6 +269,8 @@ describe("openapi contract", () => {
       type: "http",
       scheme: "bearer",
       bearerFormat: "APIKey",
+      description:
+        "Personal API tokens and service-account credentials for eligible REST API operations. MCP, public launch, agent-converse, and session-only operations use separate credentials or a signed-in session.",
     });
     expect(sessionCookie).toBeDefined();
     expect(bearerAuth).not.toEqual(sessionCookie);

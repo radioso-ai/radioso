@@ -1,10 +1,9 @@
 locals {
-  radioso_mcp_signing_secret_configured = try(length(trimspace(nonsensitive(var.radioso_mcp_signing_secret))) > 0, false)
-  posthog_api_key_configured            = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
-  slack_oauth_client_id_configured      = nonsensitive(try(length(trimspace(var.slack_oauth_client_id)) > 0, false))
-  slack_oauth_client_secret_configured  = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
-  slack_signing_secret_configured       = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
-  ee_usage_admin_token_configured       = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
+  posthog_api_key_configured           = nonsensitive(try(length(trimspace(var.posthog_api_key)) > 0, false))
+  slack_oauth_client_id_configured     = nonsensitive(try(length(trimspace(var.slack_oauth_client_id)) > 0, false))
+  slack_oauth_client_secret_configured = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
+  slack_signing_secret_configured      = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
+  ee_usage_admin_token_configured      = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
 
   secret_values = merge(
     {
@@ -16,10 +15,8 @@ locals {
       "workspace-token-secret"     = var.workspace_token_secret
       "public-chat-session-secret" = var.public_chat_session_secret
       "connector-encryption-key"   = var.connector_encryption_key
+      "radioso-mcp-signing-secret" = random_password.radioso_mcp_signing_secret.result
     },
-    var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? {
-      "radioso-mcp-signing-secret" = var.radioso_mcp_signing_secret
-    } : {},
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = var.resend_mail_api_key
     } : {},
@@ -53,10 +50,8 @@ locals {
       "workspace-token-secret"     = true
       "public-chat-session-secret" = true
       "connector-encryption-key"   = true
-    },
-    var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? {
       "radioso-mcp-signing-secret" = true
-    } : {},
+    },
     var.resend_mail_api_key != null ? {
       "resend-mail-api-key" = true
     } : {},

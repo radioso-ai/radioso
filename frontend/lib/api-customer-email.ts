@@ -158,7 +158,7 @@ export const customerEmailApi = {
     return request<WorkspaceOauthAuthorization>(
       `/workspaces/${workspaceId}/oauth-connections`,
       { method: 'POST', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -169,7 +169,7 @@ export const customerEmailApi = {
     return request<{ connection: WorkspaceOauthConnection }>(
       `/workspaces/${workspaceId}/oauth-connections/${connectionId}`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -179,7 +179,7 @@ export const customerEmailApi = {
     return request<{ connections: WorkspaceOauthConnection[] }>(
       `/workspaces/${workspaceId}/email-oauth-connections`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -190,7 +190,7 @@ export const customerEmailApi = {
     return request<WorkspaceOauthAuthorization>(
       `/workspaces/${workspaceId}/oauth-connections/${connectionId}/reauthorize`,
       { method: 'POST' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -198,7 +198,7 @@ export const customerEmailApi = {
     return request<{ connections: CustomerEmailConnection[] }>(
       `/workspaces/${workspaceId}/email-connections`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -209,7 +209,7 @@ export const customerEmailApi = {
     return request<{ connection: CustomerEmailConnection }>(
       `/workspaces/${workspaceId}/email-connections`,
       { method: 'POST', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -221,7 +221,7 @@ export const customerEmailApi = {
     return request<{ connection: CustomerEmailConnection }>(
       `/workspaces/${workspaceId}/email-connections/${connectionId}`,
       { method: 'PATCH', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -232,7 +232,7 @@ export const customerEmailApi = {
     return request<{ connection: CustomerEmailConnection }>(
       `/workspaces/${workspaceId}/email-connections/${connectionId}/health-check`,
       { method: 'POST' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -240,7 +240,7 @@ export const customerEmailApi = {
     await request<void>(
       `/workspaces/${workspaceId}/email-connections/${connectionId}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -248,7 +248,7 @@ export const customerEmailApi = {
     return request<{ skills: CustomerEmailSkillDefinition[] }>(
       `/agents/${agentId}/email-skills`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -259,7 +259,7 @@ export const customerEmailApi = {
     return request<{ skill: CustomerEmailSkillDefinition }>(
       `/agents/${agentId}/email-skills`,
       { method: 'POST', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -271,7 +271,7 @@ export const customerEmailApi = {
     return request<{ skill: CustomerEmailSkillDefinition }>(
       `/agents/${agentId}/email-skills/${skillId}`,
       { method: 'PATCH', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -279,7 +279,7 @@ export const customerEmailApi = {
     await request<void>(
       `/agents/${agentId}/email-skills/${skillId}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -297,7 +297,7 @@ export const customerEmailApi = {
     return request<{ activities: CustomerEmailActivity[] }>(
       `/workspaces/${workspaceId}/email-skill-activity${suffix}`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

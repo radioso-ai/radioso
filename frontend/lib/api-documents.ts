@@ -30,28 +30,28 @@ export const documentsApi = {
     return request<DocumentCreateResponse>("/document/", {
       method: "POST",
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getDocument(documentId: string, signal?: AbortSignal): Promise<DocumentDetails> {
     return request<DocumentDetails>(`/document/${documentId}`, {
       method: "GET",
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listDocumentChunks(documentId: string, signal?: AbortSignal): Promise<DocumentChunkListResponse> {
     return request<DocumentChunkListResponse>(`/document/${documentId}/chunks`, {
       method: "GET",
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getDocumentChunk(documentId: string, chunkId: string, signal?: AbortSignal): Promise<DocumentChunkDetail> {
     return request<DocumentChunkDetail>(`/document/${documentId}/chunks/${chunkId}`, {
       method: "GET",
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listDocuments(input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentListResponse> {
@@ -62,21 +62,21 @@ export const documentsApi = {
     }), {
       method: "GET",
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listSources(signal?: AbortSignal): Promise<DocumentSourceListResponse> {
     return request<DocumentSourceListResponse>('/document/sources', {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateDocument(documentId: string, data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
     return request<DocumentCreateResponse>(`/document/${documentId}`, {
       method: "PUT",
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateDocumentRetrieval(
@@ -86,7 +86,7 @@ export const documentsApi = {
     return request<DocumentDetails>(`/document/${documentId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   /**
@@ -101,7 +101,7 @@ export const documentsApi = {
     return request<DocumentDetails>(`/document/${documentId}`, {
       method: "PATCH",
       body: JSON.stringify({ metadata }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async reprocessDocument(documentId: string, input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<DocumentCreateResponse> {
@@ -110,13 +110,13 @@ export const documentsApi = {
       ...(input?.documentEnrichmentOverride
         ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
         : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteDocument(documentId: string): Promise<void> {
     await request<void>(`/document/${documentId}`, {
       method: "DELETE",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async importDocument(
@@ -141,7 +141,7 @@ export const documentsApi = {
     return request<DocumentCreateResponse>("/document/import", {
       method: "POST",
       body: formData,
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async crawlWebsite(input: {
@@ -160,7 +160,7 @@ export const documentsApi = {
         ...(input.excludeUrlPatterns !== undefined ? { excludeUrlPatterns: input.excludeUrlPatterns } : {}),
         ...(input.preserveContentLinks !== undefined ? { preserveContentLinks: input.preserveContentLinks } : {}),
       }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listCrawlJobs(input?: { status?: WebsiteCrawlJobStatus; sinceMinutes?: number; limit?: number; sourceId?: string }, signal?: AbortSignal): Promise<WebsiteCrawlJobListResponse> {
@@ -172,13 +172,13 @@ export const documentsApi = {
     }), {
       method: "GET",
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteCrawlJob(jobId: string): Promise<void> {
     await request<void>(`/document/crawl/jobs/${encodeURIComponent(jobId)}`, {
       method: "DELETE",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async listSourceDocuments(sourceId: string, input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentListResponse> {
@@ -189,13 +189,13 @@ export const documentsApi = {
     }), {
       method: "GET",
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async recrawlSource(sourceId: string): Promise<WebsiteCrawlEnqueueResponse> {
     return request<WebsiteCrawlEnqueueResponse>(`/document/sources/${encodeURIComponent(sourceId)}/recrawl`, {
       method: "POST",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async reprocessSource(sourceId: string, input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<SourceReprocessResponse> {
@@ -204,25 +204,25 @@ export const documentsApi = {
       ...(input?.documentEnrichmentOverride
         ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
         : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async pauseSourceCrawl(sourceId: string): Promise<{ pausedJobCount: number }> {
     return request<{ pausedJobCount: number }>(`/document/sources/${encodeURIComponent(sourceId)}/pause-crawl`, {
       method: "POST",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async resumeSourceCrawl(sourceId: string): Promise<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }> {
     return request<{ resumedJobCount: number; pendingResumeJobCount?: number; resumeDispatchFailureCount?: number }>(`/document/sources/${encodeURIComponent(sourceId)}/resume-crawl`, {
       method: "POST",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async deleteSource(sourceId: string): Promise<void> {
     await request<void>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateSourceCrawlSettings(
@@ -232,7 +232,7 @@ export const documentsApi = {
     return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ crawlSettings }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async updateSourceEnrichmentOverride(
@@ -242,7 +242,7 @@ export const documentsApi = {
     return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ documentEnrichmentOverride }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   /**
@@ -257,7 +257,7 @@ export const documentsApi = {
     return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ documentMetadata }),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async searchDocuments(data: {
@@ -267,7 +267,7 @@ export const documentsApi = {
     const payload = await requestLongRunning<DocumentSearchResponse>('/api/document/search', {
       method: 'POST',
       body: JSON.stringify({ ...data, includeDebug: true }),
-    }, { withApiToken: true })
+    }, { withSession: true })
     return normalizeDocumentSearchResponse(payload)
   },
 
@@ -279,14 +279,14 @@ export const documentsApi = {
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
   },
 
   async getSearchHistory(searchId: string, signal?: AbortSignal): Promise<DocumentSearchResponse> {
     const payload = await request<DocumentSearchResponse>(`/document/search/history/${searchId}?includeDebug=true`, {
       method: 'GET',
       ...(signal ? { signal } : {}),
-    }, { withApiToken: true })
+    }, { withSession: true })
     return normalizeDocumentSearchResponse(payload)
   }
 }

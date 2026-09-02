@@ -65,7 +65,6 @@ describe('routinesApi', () => {
     vi.stubGlobal('window', {
       localStorage: createLocalStorage({
         'radioso.activeWorkspaceId': 'workspace-1',
-        'radioso.workspaceTokens': JSON.stringify({ 'workspace-1': 'radioso_cached_token' }),
       }),
     })
   })
@@ -83,9 +82,9 @@ describe('routinesApi', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/agents/agent-1/routines',
-      expect.objectContaining({ method: 'GET', credentials: 'omit' }),
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
     )
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull()
   })
 
   it('creates and updates routine drafts with request bodies', async () => {
@@ -134,10 +133,10 @@ describe('routinesApi', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ prose: 'Collect the visitor email and confirm.' }),
-        credentials: 'omit',
+        credentials: 'include',
       }),
     )
-    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBe('Bearer radioso_cached_token')
+    expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get('Authorization')).toBeNull()
   })
 
   it('validates, publishes, and preserves publish rejection diagnostics', async () => {
@@ -181,17 +180,17 @@ describe('routinesApi', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       '/backend/api/v1/agents/agent-1/routines/routine-1/revise',
-      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/backend/api/v1/agents/agent-1/routines/routine-1/archive',
-      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
       '/backend/api/v1/agents/agent-1/routines/routine-1/restore',
-      expect.objectContaining({ method: 'POST', credentials: 'omit' }),
+      expect.objectContaining({ method: 'POST', credentials: 'include' }),
     )
   })
 
@@ -207,7 +206,7 @@ describe('routinesApi', () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       '/backend/api/v1/agents/agent-1/routines/routine-1',
-      expect.objectContaining({ method: 'DELETE', credentials: 'omit' }),
+      expect.objectContaining({ method: 'DELETE', credentials: 'include' }),
     )
   })
 })

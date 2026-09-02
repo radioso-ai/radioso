@@ -15,7 +15,6 @@ import {
   createAuditService,
   InMemoryAccountInvitationRepository,
   InMemorySessionRepository,
-  InMemoryWorkspaceTokenRepository,
 } from "../support/fakes.js";
 import { createTestEnv } from "../support/testApp.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -160,7 +159,6 @@ describeIntegration("PostgresOrganizationProvisioner", () => {
       accountRepository,
       userRepository,
       sessionRepository: new InMemorySessionRepository(),
-      workspaceTokenRepository: new InMemoryWorkspaceTokenRepository(),
       workspaceService,
       accountAccessService,
       accountInvitationService: new AccountInvitationService(

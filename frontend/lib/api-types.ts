@@ -658,8 +658,6 @@ export type AgentListResponse = ApiSchemas['AgentListResponse']
 export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest'] & {
   assistantLinkUtmEnabled?: boolean
 }
-export type WorkspaceTokenResponse = ApiSchemas['WorkspaceTokenResponse']
-
 const hashLogoCacheKeyPart = (value: string): string => {
   let hash = 5381
   for (let index = 0; index < value.length; index += 1) {

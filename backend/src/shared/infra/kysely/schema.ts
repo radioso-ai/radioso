@@ -74,7 +74,7 @@ export interface AgentAccessGrants {
   channel: Generated<string>;
   created_at: Generated<Timestamp>;
   enabled: Generated<boolean>;
-  encrypted_token: string;
+  encrypted_token: string | null;
   expires_at: Timestamp | null;
   id: Generated<string>;
   label: string | null;
@@ -101,6 +101,13 @@ export interface AgentContextVariables {
   surfacing: string;
   updated_at: Generated<Timestamp>;
   variable_id: string;
+}
+
+export interface AgentConverseSessionMappings {
+  created_at: Generated<Timestamp>;
+  grant_id: string;
+  grant_version: string;
+  public_session_id: string;
 }
 
 export interface AgentDirectives {
@@ -160,6 +167,36 @@ export interface AgentSkills {
   skill_name: string;
   target_id: string | null;
   target_type: string | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ApiCredentialExpiryWarnings {
+  claimed_at: Generated<Timestamp>;
+  credential_id: string;
+  threshold_days: number;
+}
+
+export interface ApiCredentials {
+  access_tenure_membership_id: string | null;
+  account_id: string;
+  created_at: Generated<Timestamp>;
+  created_by_user_id: string;
+  expires_at: Timestamp;
+  id: string;
+  kind: string;
+  label: string;
+  last_used_at: Timestamp | null;
+  owner_user_id: string | null;
+  revision: Generated<number>;
+  revocation_reason: string | null;
+  revoked_at: Timestamp | null;
+  revoked_by_user_id: string | null;
+  role_ceiling: string | null;
+  rotated_from_credential_id: string | null;
+  service_account_id: string | null;
+  token_hash: string;
+  token_prefix: string;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -719,6 +756,16 @@ export interface IntegrationOauthConnections {
   workspace_id: string;
 }
 
+export interface LegacyWorkspaceCredentialTombstones {
+  account_id: string;
+  final_status: Generated<string>;
+  legacy_token_id: string;
+  migrated_at: Generated<Timestamp>;
+  system_reason: Generated<string>;
+  token_prefix: string;
+  workspace_id: string;
+}
+
 export interface McpConnections {
   agent_id: string;
   auth_method: string;
@@ -1199,15 +1246,19 @@ export interface Workspaces {
   website_embed_token: string | null;
 }
 
-export interface WorkspaceTokens {
+export interface WorkspaceServiceAccounts {
   account_id: string;
+  archived_at: Timestamp | null;
   created_at: Generated<Timestamp>;
-  encrypted_token: string;
-  id: Generated<string>;
+  created_by_user_id: string;
+  disabled_at: Timestamp | null;
+  display_name: string;
+  id: string;
   last_used_at: Timestamp | null;
-  revoked_at: Timestamp | null;
-  token_hash: string;
-  token_prefix: string;
+  revision: Generated<number>;
+  role: string;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
 
@@ -1231,10 +1282,13 @@ export interface DB {
   accounts: Accounts;
   agent_access_grants: AgentAccessGrants;
   agent_context_variables: AgentContextVariables;
+  agent_converse_session_mappings: AgentConverseSessionMappings;
   agent_directives: AgentDirectives;
   agent_document_sources: AgentDocumentSources;
   agent_skills: AgentSkills;
   agents: Agents;
+  api_credential_expiry_warnings: ApiCredentialExpiryWarnings;
+  api_credentials: ApiCredentials;
   assistant_answer_feedback: AssistantAnswerFeedback;
   assistant_answer_triage: AssistantAnswerTriage;
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
@@ -1276,6 +1330,7 @@ export interface DB {
   ingestion_settings: IngestionSettings;
   integration_connections: IntegrationConnections;
   integration_oauth_connections: IntegrationOauthConnections;
+  legacy_workspace_credential_tombstones: LegacyWorkspaceCredentialTombstones;
   mcp_connections: McpConnections;
   message_facets: MessageFacets;
   messages: Messages;
@@ -1310,7 +1365,7 @@ export interface DB {
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;
   workspace_grants: WorkspaceGrants;
   workspace_provider_credentials: WorkspaceProviderCredentials;
-  workspace_tokens: WorkspaceTokens;
+  workspace_service_accounts: WorkspaceServiceAccounts;
   workspace_webhook_destinations: WorkspaceWebhookDestinations;
   workspaces: Workspaces;
 }

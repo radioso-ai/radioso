@@ -13,7 +13,7 @@ export type SkillOutcomeTone = NonNullable<SkillOutcomeDefinition['tone']>
 
 export const skillsApi = {
   async list(): Promise<SkillCatalogResponse> {
-    return request<SkillCatalogResponse>('/skills', { method: 'GET' }, { withApiToken: true })
+    return request<SkillCatalogResponse>('/skills', { method: 'GET' }, { withSession: true })
   },
 }
 
@@ -108,7 +108,7 @@ export const agentSkillsApi = {
     return request<{ capabilities: SkillCapabilityDescriptor[] }>(
       `/agents/${agentId}/skill-capabilities`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -116,7 +116,7 @@ export const agentSkillsApi = {
     return request<{ skills: AgentSkill[] }>(
       `/agents/${agentId}/skills`,
       { method: 'GET' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -124,7 +124,7 @@ export const agentSkillsApi = {
     return request<{ skill: AgentSkill }>(
       `/agents/${agentId}/skills`,
       { method: 'POST', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -132,7 +132,7 @@ export const agentSkillsApi = {
     return request<{ skill: AgentSkill }>(
       `/agents/${agentId}/skills/${skillId}`,
       { method: 'PATCH', body: JSON.stringify(input) },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 
@@ -140,7 +140,7 @@ export const agentSkillsApi = {
     await request<void>(
       `/agents/${agentId}/skills/${skillId}`,
       { method: 'DELETE' },
-      { withApiToken: true },
+      { withSession: true },
     )
   },
 }

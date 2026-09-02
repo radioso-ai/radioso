@@ -4,6 +4,7 @@ import { unauthorized } from "../../../shared/domain/errors.js";
 import type { Env } from "../../config/env.js";
 import type { AccountAccessService } from "../../../modules/account/services/accountAccessService.js";
 import type { AuthService } from "../../../modules/auth/services/authService.js";
+import { markApiPrincipalAuthenticator } from "../apiPrincipalRoutePolicy.js";
 
 export interface SessionDependencies {
   env: Env;
@@ -17,7 +18,7 @@ export const requireSession = (
 ): RequestHandler => {
   const requireActiveMembership = options.requireActiveMembership ?? true;
 
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return markApiPrincipalAuthenticator(async (req: Request, res: Response, next: NextFunction) => {
     try {
       const sessionToken = req.cookies?.[dependencies.env.SESSION_COOKIE_NAME];
 
@@ -37,5 +38,5 @@ export const requireSession = (
     } catch (error) {
       next(error);
     }
-  };
+  }, "session_only");
 };

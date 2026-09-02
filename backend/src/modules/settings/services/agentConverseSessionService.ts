@@ -4,13 +4,17 @@ import { AppError, serviceUnavailable } from "../../../shared/domain/errors.js";
 import type { AccessGrant, AccessGrantEvaluation } from "../../accessGrants/public.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
 import { AGENT_CONVERSE_PERMISSIONS } from "../../account/public.js";
-import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import {
   issueConverseChatSession,
   verifyConverseChatSession,
   type ConverseChatSessionPayload,
 } from "../contracts/publicChatSession.js";
-import type { AgentConversePrincipal, AgentConverseSessionExchangeResult } from "../contracts/agentConverseSession.js";
+import type {
+  AgentConverseAgentLookupPort,
+  AgentConversePrincipal,
+  AgentConverseSessionExchangeResult,
+  AgentConverseSessionMappingPort,
+} from "../contracts/agentConverseSession.js";
 
 interface AgentConverseAuditPort {
   recordExchangeDenied(input: { grant?: AccessGrant | null; reason: string; clientName?: string | null }): Promise<void>;
@@ -41,7 +45,8 @@ export class AgentConverseSessionService {
         AccessGrantService,
         "resolveConverseGrant" | "resolvePublicLaunchGrant" | "findGrantById" | "evaluate" | "touchGrant" | "recordAuthFailure"
       >;
-      agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
+      agentLookup: AgentConverseAgentLookupPort;
+      sessionMapping: AgentConverseSessionMappingPort;
       publicChatSessionSecret?: string;
       audit?: AgentConverseAuditPort;
     },
@@ -88,7 +93,7 @@ export class AgentConverseSessionService {
       throw converseError(403, denialCode(evaluation), "MCP converse grant is not active.");
     }
 
-    const agent = await this.dependencies.agentRepository.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId);
+    const agent = await this.dependencies.agentLookup.findByIdAndWorkspaceId(grant.agentId, grant.workspaceId);
     if (!agent) {
       await this.dependencies.audit?.recordExchangeDenied({
         grant,
@@ -98,14 +103,19 @@ export class AgentConverseSessionService {
       throw converseError(403, "agent_unavailable", "The bound agent is unavailable.");
     }
 
+    const version = grantVersion(grant);
+    const publicSessionId = await this.dependencies.sessionMapping.resolvePublicSessionId({
+      grantId: grant.id,
+      grantVersion: version,
+      proposedPublicSessionId: randomUUID(),
+    });
     const session = issueConverseChatSession(this.dependencies.publicChatSessionSecret, {
       workspaceId: grant.workspaceId,
       agentId: grant.agentId,
-      publicSessionId: randomUUID(),
+      publicSessionId,
       grantId: grant.id,
-      grantVersion: grantVersion(grant),
+      grantVersion: version,
     });
-    await this.dependencies.accessGrantService.touchGrant(grant.id);
     await this.dependencies.audit?.recordExchangeSucceeded({
       grant,
       publicSessionId: session.publicSessionId,
@@ -135,7 +145,7 @@ export class AgentConverseSessionService {
       await this.dependencies.audit?.recordValidationDenied({ payload, reason: "grant_revoked" });
       throw converseError(403, "grant_revoked", "MCP converse grant is no longer active.");
     }
-    if (grant.principalKind !== "public-launch" || grant.channel !== "mcp-converse") {
+    if (grant.principalKind !== "agent-api" || grant.channel !== "mcp-converse") {
       await this.dependencies.audit?.recordValidationDenied({ grant, payload, reason: "grant_channel_not_allowed" });
       throw converseError(403, "grant_channel_not_allowed", "MCP converse grant channel is not allowed.");
     }
@@ -161,6 +171,14 @@ export class AgentConverseSessionService {
     }
 
     return this.toPrincipal(payload);
+  }
+
+  recordSuccessfulUse(principal: Pick<AgentConversePrincipal, "grantId">): void {
+    try {
+      void Promise.resolve(this.dependencies.accessGrantService.touchGrant(principal.grantId)).catch(() => undefined);
+    } catch {
+      // Last-use metadata must never change the completed request outcome.
+    }
   }
 
   permissions(): string[] {

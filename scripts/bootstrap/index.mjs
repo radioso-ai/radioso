@@ -6,7 +6,15 @@ import {
   attachComposeStack,
   startComposeStack,
 } from "./compose-runner.mjs";
-import { buildEnvValues, enforceEnvFilePermissions, renderEnvFile, writeEnvFileAtomic } from "./env-file.mjs";
+import {
+  buildEnvValues,
+  enforceEnvFilePermissions,
+  hasRetiredEnvKeys,
+  readEnvFileSource,
+  removeRetiredEnvAssignments,
+  renderEnvFile,
+  writeEnvFileAtomic,
+} from "./env-file.mjs";
 import { collectAnswers, planQuestions } from "./prompt-flow.mjs";
 import { detectEnvState, runPreflightChecks } from "./preflight.mjs";
 import { getEnvContract, getProviderCredentialKeys, getProviderRequiredKeys } from "./support/env-contract.mjs";
@@ -147,6 +155,7 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
   const detectEnv = dependencies.detectEnvState ?? detectEnvState;
   const preflight = dependencies.runPreflightChecks ?? runPreflightChecks;
   const enforceEnvPermissions = dependencies.enforceEnvFilePermissions ?? enforceEnvFilePermissions;
+  const readEnvSource = dependencies.readEnvFileSource ?? readEnvFileSource;
   const writeEnv = dependencies.writeEnvFileAtomic ?? writeEnvFileAtomic;
   const startCompose = dependencies.startComposeStack ?? startComposeStack;
   const attachCompose = dependencies.attachComposeStack ?? attachComposeStack;
@@ -188,6 +197,15 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
       wroteEnvFile = true;
       out.write(`${formatMessage("success", "Updated .env\n", ansi)}`);
     }
+  } else if (hasRetiredEnvKeys(values)) {
+    const source = await readEnvSource(targetEnvPath);
+    if (source === null) {
+      throw new Error("Unable to safely remove retired configuration because .env is missing");
+    }
+    values = buildEnvValues(values, {}, contract);
+    await writeEnv(targetEnvPath, removeRetiredEnvAssignments(source));
+    wroteEnvFile = true;
+    out.write(`${formatMessage("helper", "Removed retired configuration from .env\n", ansi)}`);
   } else {
     out.write(`${formatMessage("helper", "Using existing .env\n", ansi)}`);
   }

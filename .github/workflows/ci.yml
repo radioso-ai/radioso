@@ -240,7 +240,7 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      INTEGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/radioso_test
+      INTEGRATION_DATABASE_URL: postgres://radioso_test_runner:radioso_test_runner@127.0.0.1:5432/radioso_test
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
@@ -266,6 +266,20 @@ jobs:
       - name: Verify Kysely schema types match migrations
         working-directory: backend
         run: pnpm run db:types:check
+
+      - name: Prepare disposable integration database
+        working-directory: backend
+        env:
+          INTEGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/radioso_test
+          RADIOSO_INTEGRATION_DATABASE_NAME: radioso_test
+        run: |
+          psql "$INTEGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector" \
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto" \
+            -c "CREATE ROLE radioso_test_runner LOGIN PASSWORD 'radioso_test_runner' SUPERUSER CREATEDB" \
+            -c "GRANT ALL PRIVILEGES ON DATABASE radioso_test TO radioso_test_runner" \
+            -c "GRANT ALL ON SCHEMA public TO radioso_test_runner"
+          pnpm run test:integration:prepare
 
       - name: Test backend integration suite
         working-directory: backend
@@ -587,6 +601,22 @@ jobs:
     needs: changes
     if: needs.changes.outputs.ee == 'true'
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.5-pg16
+        env:
+          POSTGRES_DB: radioso_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d radioso_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      INTEGRATION_DATABASE_URL: postgres://radioso_test_runner:radioso_test_runner@127.0.0.1:5432/radioso_test
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
@@ -603,7 +633,21 @@ jobs:
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
 
       - name: Install Enterprise Edition dependencies
-        run: pnpm install --frozen-lockfile --filter './ee/packages/*...'
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter './ee/packages/*...'
+
+      - name: Prepare disposable integration database
+        working-directory: backend
+        env:
+          INTEGRATION_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/radioso_test
+          RADIOSO_INTEGRATION_DATABASE_NAME: radioso_test
+        run: |
+          psql "$INTEGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS vector" \
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto" \
+            -c "CREATE ROLE radioso_test_runner LOGIN PASSWORD 'radioso_test_runner' SUPERUSER CREATEDB" \
+            -c "GRANT ALL PRIVILEGES ON DATABASE radioso_test TO radioso_test_runner" \
+            -c "GRANT ALL ON SCHEMA public TO radioso_test_runner"
+          pnpm run test:integration:prepare
 
       - name: Build Enterprise Edition packages
         working-directory: ee

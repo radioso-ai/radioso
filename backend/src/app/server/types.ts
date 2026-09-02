@@ -121,6 +121,15 @@ import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { RealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
+import type {
+  ApiPrincipalAuthenticator,
+  CredentialExpiryWarningService,
+  PersonalCredentialService,
+  ServiceAccountService,
+} from "../../modules/machineAccess/public.js";
+import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
+import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
+import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
 
 export interface AppDependencies {
   env: Env;
@@ -148,6 +157,12 @@ export interface AppDependencies {
   emailVerificationService: EmailVerificationService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
+  apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
+  apiPrincipalRouteInventory: ApiPrincipalRouteInventory;
+  machineAccessSecurityObserver?: MachineAccessSecurityObserver;
+  credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
+  personalCredentialService: PersonalCredentialService;
+  serviceAccountService: ServiceAccountService;
   workspaceSessionService: WorkspaceSessionService;
   abuseControlService: AbuseControlService;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
@@ -232,6 +247,7 @@ export interface AppDependencies {
   agentSurfaceExtensions: AgentSurfaceExtensionRegistry;
   workspaceRepository: WorkspaceRepositoryPort;
   agentRepository: AgentRepositoryPort;
+  agentConverseSessionMappingRepository: AgentConverseSessionMappingPort;
   contextVariableService: ContextVariableService;
   contextVariableResolutionReader: ContextVariableResolutionReaderPort;
   identityNonceRepository: IdentityNonceRepositoryPort;

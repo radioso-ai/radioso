@@ -7,7 +7,7 @@
 //      published routine, one passing eval case, and one cited conversation.
 //      Seed it through the normal REST API (document, agents, directives,
 //      routines/portable, evals, and assistant/chat endpoints) with a
-//      workspace token.
+//      personal token or service-account credential.
 //   2. Playwright installed (the frontend workspace already depends on it):
 //      pnpm --dir frontend exec playwright install chromium
 //

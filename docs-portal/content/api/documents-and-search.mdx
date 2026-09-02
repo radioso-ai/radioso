@@ -31,7 +31,7 @@ Use search history when you need to compare current behavior with a previous sea
 
 Document create and update are asynchronous. The API accepts the request first and processes the content in the background.
 
-Examples below call the hosted EU API (`https://api.radioso.ai`); swap in `https://api-us.radioso.ai`, or your own origin such as `http://localhost:8080`, to match wherever your workspace token was issued — see [Workspaces and tokens](/api/workspaces-and-tokens).
+Examples below call the hosted EU API (`https://api.radioso.ai`); swap in `https://api-us.radioso.ai`, or your own origin such as `http://localhost:8080`, to match the host where your personal or service credential was issued — see [Personal tokens and service accounts](/api/workspaces-and-tokens).
 
 ## Create a document from inline text
 
@@ -175,7 +175,7 @@ GET    /api/v1/document/search/history/{searchId}
 ## Common failure modes
 
 - `400` usually means a required field is missing or the search body is invalid.
-- `401` means the workspace token is missing or invalid.
+- `401` means the personal or service credential is missing, invalid, expired, or outside the route's accepted credential scope.
 - `404` means the document or search id does not exist in the current workspace context.
 
 ## Read next

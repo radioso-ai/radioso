@@ -1,7 +1,7 @@
 ---
-title: Run locally in 5 minutes
-description: Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question.
-last_updated: 2026-08-17
+title: "Run locally in 5 minutes"
+description: "Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question."
+last_updated: 2026-09-01
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -53,7 +53,7 @@ Open the app, register the first user on a new server or sign in, upload a docum
 
 ### Goal 2: test the API contract
 
-Use the local backend to check registration availability, register the first user if needed, log in, reveal a workspace token, and call document or chat routes directly.
+Use the local backend to check registration availability, register the first user if needed, and log in. Issue a personal token for workspace document calls and a REST-audience agent credential for chat.
 
 ### Goal 3: test the Enterprise website widget
 
@@ -84,7 +84,7 @@ Success looks like this:
 
 ## Verify first success through the API
 
-You don't need to open the web app at all. The assistant chat API is how you talk to an agent from your own scripts, and the same routes back the dashboard.
+You don't need to open the web app at all. Use role-aware credentials for workspace operations and a role-free credential bound to one agent for chat.
 
 Check whether this deployment allows open registration:
 
@@ -114,14 +114,19 @@ curl -sS -c cookies.txt \
   http://localhost:8080/api/v1/auth/login
 ```
 
-Reveal the workspace API token with the session cookie:
+Issue a personal token with the session cookie. An expiry is required and can be no more than 90 days away:
 
 ```bash
-curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+personal_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
+curl -sS -b cookies.txt -X POST \
+  -H 'Content-Type: application/json' \
+  -H 'X-Radioso-CSRF: 1' \
+  -H 'X-Workspace-Id: <workspace-id>' \
+  -d "{\"label\":\"Local development\",\"roleCeiling\":\"member\",\"expiresAt\":\"${personal_expiry}\"}" \
+  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
 ```
 
-That token is what your scripts and SDK clients authenticate with once you leave the browser behind.
+Store the response's `secret` value outside the browser. That personal token authorizes eligible workspace APIs. For chat, create a separate REST credential from the agent's **Channels → API** card and call `POST /api/v1/agents/{agentId}/chat`; [API first success](/quickstarts/api-first-success) shows the complete sequence.
 
 ## What local development changes
 

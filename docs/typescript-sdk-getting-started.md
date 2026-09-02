@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
-description: "Installation and client setup guide for the Radioso TypeScript SDK with workspace API token authentication and a first request example."
-last_updated: 2026-08-04
+description: "Installation and client setup guide for role-aware workspace automation with the Radioso TypeScript SDK."
+last_updated: 2026-09-01
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -12,9 +12,13 @@ This guide shows how to install the SDK, configure a client, and make your first
 
 - Node.js 24+
 - A Radioso base URL
-- An API token
+- A personal token or service-account credential
 
-The SDK uses workspace API tokens. These are secret bearer credentials bound to one workspace. Public chat URLs and website embed launch values are not API tokens and cannot be used with the SDK.
+Use a personal token when the client should act as your current workspace membership; it must expire within 90 days. Use a service-account credential for a stable CI or server identity; each credential must expire within 365 days. Both are secret bearer credentials bound to one workspace and a live role. Public chat, website embed, and role-free agent channel credentials are separate credential classes and cannot be used with this SDK client.
+
+Create a personal token from the workspace API access controls, or create the non-human identity under **Settings → Service accounts**, in a signed-in browser. Radioso returns the secret once, so store it in a secret manager rather than browser storage or source code.
+
+To expose one agent as a chat channel, create a separate credential from **Channels → API** or **Channels → MCP**. A REST-audience credential calls `POST /api/v1/agents/{agentId}/chat`; an MCP-audience credential reaches `ask_agent`. These credentials have no workspace role.
 
 ## Install
 
@@ -46,7 +50,7 @@ const client = createRadiosoClient({
 - `https://api-us.radioso.ai` — the US-hosted instance
 - your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`)
 
-A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
+An API credential only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
 
 ## First Request
 

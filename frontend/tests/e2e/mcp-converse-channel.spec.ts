@@ -5,32 +5,36 @@ import {
   installDashboardApiMocks,
   seedDashboardStorage,
   workspaceKey,
-  type McpConverseGrantFixture,
+  type AgentChannelCredentialFixture,
 } from "./dashboard-fixtures";
 
 test("operator creates, copies, and revokes an MCP converse credential", async ({ context, page }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
-  const existingGrant: McpConverseGrantFixture = {
+  const existingGrant: AgentChannelCredentialFixture = {
     id: "existing-grant",
+    audience: "mcp",
     label: "Acme pilot",
-    tokenPrefix: "radioso_mcp_conv",
-    enabled: true,
+    prefix: "radioso_mcp_conv",
+    status: "active",
     createdAt: "2026-04-26T12:00:00.000Z",
+    expiresAt: "2026-11-29T23:59:59.000Z",
     lastUsedAt: null,
     revokedAt: null,
   };
-  const grantRequests: Array<{ method: "GET" | "POST" | "DELETE"; path: string; body?: unknown }> = [];
+  const grantRequests: Array<{ method: "GET" | "POST"; path: string; body?: unknown }> = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
-    mcpConverseGrants: [existingGrant],
-    mcpConverseGrantRequests: grantRequests,
+    agentChannelCredentials: [existingGrant],
+    agentChannelCredentialRequests: grantRequests,
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=mcp-channel`);
 
-  await expect(page.getByRole("heading", { name: "MCP converse credential" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "MCP", exact: true, level: 3 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "MCP converse credential" })).toHaveCount(0);
+  await expect(page.getByText("Connect your client")).toHaveCount(0);
   await expect(page.getByText("Acme pilot")).toBeVisible();
 
   await page.getByLabel("Credential label").fill("Customer handoff");
@@ -38,31 +42,28 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
 
   // The mock issues tokens at index grants.length + 1; one grant is seeded above, so the
   // first created token is index 2.
-  const issuedToken = "radioso_mcp_converse_2_plaintext";
-  // The token legitimately appears twice (the standalone token field and embedded in the
-  // JSON config), so scope to the first match.
-  await expect(page.getByText(issuedToken).first()).toBeVisible();
-  await expect(page.getByText("Shown once")).toBeVisible();
-  await expect(page.getByText(`Bearer ${issuedToken}`)).toBeVisible();
+  const issuedToken = "radioso_mcp_2_plaintext";
+  await expect(page.getByText(issuedToken)).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Save this secret now" })).toBeVisible();
+  // Same-host merged MCP is intentionally unavailable. The grant lifecycle remains usable,
+  // but no client config should be generated for the unsupported same-host transport.
+  await expect(page.getByText(`Bearer ${issuedToken}`)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy mcp converse client config instruction" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Copy MCP converse grant token" }).click();
+  await page.getByRole("button", { name: "Copy MCP credential secret" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(issuedToken);
-
-  await page.getByRole("button", { name: "Copy mcp converse client config instruction" }).click();
-  const copiedConfig = await page.evaluate(() => navigator.clipboard.readText());
-  // The MCP endpoint URL is resolved from the deployment (shared with the workspace MCP
-  // card), so assert the contract — the bearer is the converse grant and the URL points at
-  // an /mcp endpoint — rather than hardcoding a deployment-specific host.
-  const parsedConfig = JSON.parse(copiedConfig);
-  expect(parsedConfig.mcpServers.radioso.headers.Authorization).toBe(`Bearer ${issuedToken}`);
-  expect(typeof parsedConfig.mcpServers.radioso.url).toBe("string");
-  expect(parsedConfig.mcpServers.radioso.url).toContain("/mcp");
+  const issuedSecretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await issuedSecretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await issuedSecretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText(issuedToken)).toHaveCount(0);
 
   await expect.poll(() =>
     grantRequests.some((request) =>
       request.method === "POST" &&
-      request.path === `/agents/${defaultAgentId}/mcp-converse-grants` &&
-      JSON.stringify(request.body) === JSON.stringify({ label: "Customer handoff" }),
+      request.path === `/agents/${defaultAgentId}/channel-credentials` &&
+      (request.body as { audience?: string; label?: string; expiresAt?: string }).audience === "mcp" &&
+      (request.body as { audience?: string; label?: string; expiresAt?: string }).label === "Customer handoff" &&
+      Boolean((request.body as { expiresAt?: string }).expiresAt),
     ),
   ).toBe(true);
 
@@ -74,12 +75,95 @@ test("operator creates, copies, and revokes an MCP converse credential", async (
     })
     .filter({ has: page.getByRole("button", { name: "Revoke" }) })
     .last();
+
+  await existingGrantRow.getByRole("button", { name: "Rotate" }).click();
+  const rotateDialog = page.getByRole("alertdialog", { name: "Rotate Acme pilot?" });
+  await expect(rotateDialog.getByText(/current secret will stop working immediately/i)).toBeVisible();
+  await rotateDialog.getByRole("button", { name: "Cancel" }).click();
+  expect(grantRequests.some((request) => request.path.endsWith("/existing-grant/rotate"))).toBe(false);
+
+  await existingGrantRow.getByRole("button", { name: "Rotate" }).click();
+  await page.getByRole("alertdialog", { name: "Rotate Acme pilot?" }).getByRole("button", { name: "Rotate credential" }).click();
+  await expect.poll(() => grantRequests.some((request) =>
+    request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-grant/rotate`,
+  )).toBe(true);
+  const rotatedSecretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await expect(rotatedSecretDialog.getByText("radioso_agent_rotated_existing-grant")).toBeVisible();
+  await rotatedSecretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await rotatedSecretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("radioso_agent_rotated_existing-grant")).toHaveCount(0);
+
   await existingGrantRow.getByRole("button", { name: "Revoke" }).click();
+  const revokeDialog = page.getByRole("alertdialog", { name: "Revoke Acme pilot?" });
+  await expect(revokeDialog.getByText(/cannot be restored/i)).toBeVisible();
+  await revokeDialog.getByRole("button", { name: "Revoke credential" }).click();
 
   await expect.poll(() =>
     grantRequests.some((request) =>
-      request.method === "DELETE" &&
-      request.path === `/agents/${defaultAgentId}/mcp-converse-grants/existing-grant`,
+      request.method === "POST" &&
+      request.path === `/agents/${defaultAgentId}/channel-credentials/existing-grant/revoke`,
     ),
   ).toBe(true);
+});
+
+test("operator creates a separate role-free REST credential for the explicit agent chat endpoint", async ({ page }) => {
+  const credentialRequests: Array<{ method: "GET" | "POST"; path: string; body?: unknown }> = [];
+  const existingRest: AgentChannelCredentialFixture = {
+    id: "existing-rest-grant",
+    audience: "rest",
+    label: "Existing REST client",
+    prefix: "radioso_rest_old",
+    status: "active",
+    createdAt: "2026-04-26T12:00:00.000Z",
+    expiresAt: "2026-11-29T23:59:59.000Z",
+    lastUsedAt: null,
+    revokedAt: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    agentChannelCredentials: [existingRest],
+    agentChannelCredentialRequests: credentialRequests,
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=api-channel`);
+
+  await expect(page.getByRole("link", { name: "Agent API" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent API", exact: true, level: 1 })).toBeVisible();
+  await expect(page.getByText(`/api/v1/agents/${defaultAgentId}/chat`, { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent API credentials" })).toBeVisible();
+  await expect(page.getByLabel("Role")).toHaveCount(0);
+  await page.getByLabel("Credential label").fill("Production chat client");
+  await expect(page.getByLabel("Expires")).not.toHaveValue("");
+  await page.getByRole("button", { name: "Create credential" }).click();
+
+  await expect(page.getByText("radioso_rest_2_plaintext")).toBeVisible();
+  const secretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await secretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await secretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("radioso_rest_2_plaintext")).toHaveCount(0);
+  await expect.poll(() => credentialRequests.some((request) => {
+    const body = request.body as { audience?: string; label?: string; expiresAt?: string } | undefined;
+    return request.method === "POST"
+      && request.path === `/agents/${defaultAgentId}/channel-credentials`
+      && body?.audience === "rest"
+      && body.label === "Production chat client"
+      && Boolean(body.expiresAt);
+  })).toBe(true);
+
+  const existingRestRow = page
+    .locator("div")
+    .filter({ has: page.getByText("Existing REST client", { exact: true }) })
+    .filter({ has: page.getByRole("button", { name: "Rotate" }) })
+    .last();
+  await existingRestRow.getByRole("button", { name: "Rotate" }).click();
+  await page.getByRole("alertdialog", { name: "Rotate Existing REST client?" }).getByRole("button", { name: "Rotate credential" }).click();
+  const rotatedSecretDialog = page.getByRole("dialog", { name: "Save this secret now" });
+  await expect(rotatedSecretDialog.getByText("radioso_agent_rotated_existing-rest-grant")).toBeVisible();
+  await rotatedSecretDialog.getByRole("checkbox", { name: /cannot be recovered/i }).check();
+  await rotatedSecretDialog.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByText("radioso_agent_rotated_existing-rest-grant")).toHaveCount(0);
+  await expect.poll(() => credentialRequests.some((request) =>
+    request.method === "POST" && request.path === `/agents/${defaultAgentId}/channel-credentials/existing-rest-grant/rotate`,
+  )).toBe(true);
 });

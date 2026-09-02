@@ -16,6 +16,7 @@ vi.mock('@/lib/api-client', () => ({
   storePublicSessionResumeToken: vi.fn(),
   storePublicSessionToken: vi.fn(),
   storeWorkspaceToken: vi.fn(),
+  getStoredActiveWorkspaceId: () => 'workspace-1',
 }))
 
 const bootstrapPayload = {

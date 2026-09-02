@@ -19,6 +19,11 @@ on:
         description: Cloud Run frontend service name.
         required: true
         type: string
+      mcp_service:
+        description: Optional Cloud Run standalone MCP service name.
+        required: false
+        default: ""
+        type: string
       github_environment:
         description: GitHub environment that holds the deploy variables.
         required: true
@@ -55,6 +60,7 @@ jobs:
       BACKEND_SERVICE: ${{ inputs.backend_service }}
       CRAWLER_WORKER_SERVICE: ${{ inputs.crawler_worker_service }}
       FRONTEND_SERVICE: ${{ inputs.frontend_service }}
+      MCP_SERVICE: ${{ inputs.mcp_service }}
       GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
@@ -148,6 +154,16 @@ jobs:
       - name: Deploy backend service
         run: gcloud run services update "${BACKEND_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
+      - name: Deploy MCP service if configured
+        if: ${{ inputs.mcp_service != '' }}
+        run: |
+          if ! gcloud run services describe "${MCP_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            echo "Standalone MCP service ${MCP_SERVICE} is not provisioned; skipping its image update."
+            exit 0
+          fi
+
+          gcloud run services update "${MCP_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
+
       - name: Deploy worker service
         run: gcloud run services update "${WORKER_SERVICE}" --image "${BACKEND_IMAGE}" --update-env-vars "RADIOSO_EDITION=${RADIOSO_EDITION}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --quiet
 
@@ -163,3 +179,8 @@ jobs:
           echo "worker_url=$(gcloud run services describe "${WORKER_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           echo "crawler_worker_url=$(gcloud run services describe "${CRAWLER_WORKER_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
           echo "frontend_url=$(gcloud run services describe "${FRONTEND_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
+          if [ -n "${MCP_SERVICE}" ] && gcloud run services describe "${MCP_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" >/dev/null 2>&1; then
+            echo "mcp_url=$(gcloud run services describe "${MCP_SERVICE}" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')/mcp"
+          else
+            echo "mcp_url=disabled"
+          fi

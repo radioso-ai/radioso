@@ -125,7 +125,6 @@ const describeContextVariableAgent = (
     ? describeNamedAgent(input, context, agentLookup)
     : entity("agent", input.agentId ?? context?.pageContext.agentId);
 };
-
 export const createContextVariablesCopilotTools = (
   deps: ContextVariablesCopilotToolDependencies,
 ): ReadonlyArray<CopilotToolDescriptor> => {
@@ -211,4 +210,3 @@ export const createContextVariableProposalCopilotTools = (
     },
   ];
 };
-

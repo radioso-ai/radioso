@@ -98,6 +98,12 @@ import type { ChunkCandidateHydratorPort } from "../../src/modules/retrieval/inf
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
+import {
+  ApiPrincipalAuthenticator,
+  CredentialExpiryWarningService,
+  PersonalCredentialService,
+  ServiceAccountService,
+} from "../../src/modules/machineAccess/public.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
 import { ConnectorManagementService } from "../../src/modules/connectors/services/connectorManagementService.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
@@ -189,6 +195,7 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import { badRequest, conflict } from "../../src/shared/domain/errors.js";
+import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import type {
   AgentContextVariableEnablement,
   ContextVariable,
@@ -242,7 +249,7 @@ import {
 import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
 import { RepositoryAgentSkillTurnSkillProvider } from "../../src/app/composition/builtIn/agentSkillTurnSkillProvider.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
-import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
+import type { AbuseControlRepositoryPort } from "../../src/modules/security/contracts/abuseControl.js";
 import {
   createAuditService,
   InMemoryAuditEventRepository,
@@ -253,7 +260,6 @@ import {
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceGrantRepository,
-  InMemoryWorkspaceTokenRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
   InMemoryDocumentRepository,
@@ -273,11 +279,14 @@ import {
   InMemoryConnectorDatabase,
   InMemoryAbuseControlRepository,
   InMemoryAccessGrantRepository,
+  InMemoryAgentConverseSessionMappingRepository,
+  InMemoryAccessGrantLifecycleUnitOfWork,
   InMemoryWorkspaceProviderCredentialsRepository,
   InMemoryWebhookDestinationRepository,
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
 import { InMemoryCopilotRepository } from "./inMemoryCopilotRepository.js";
+import { InMemoryMachineAccessRepository } from "./inMemoryMachineAccess.js";
 import { InMemoryOrganizationProvisioner } from "./organizationProvisioner.js";
 import {
   bindClusteringEmbeddingPort,
@@ -320,7 +329,6 @@ export const createTestEnv = (): Env => ({
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
   WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
-  RADIOSO_MCP_SIGNING_SECRET: "smoke-signing-secret",
   SESSION_TTL_HOURS: 168,
   AUTH_AUTO_VERIFY_EMAIL: false,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
@@ -336,6 +344,14 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
+  AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
+  AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,
+  AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: 30,
+  AGENT_CHANNEL_CHAT_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 300,
+  MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: 60_000,
+  MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 60,
+  MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  RADIOSO_TRUSTED_PROXY_HOPS: 0,
   CONNECTOR_ENCRYPTION_KEY: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"),
   WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: false,
   DOCUMENT_STORAGE_DRIVER: "local",
@@ -367,23 +383,6 @@ export const createTestEnv = (): Env => ({
   SLACK_OAUTH_CLIENT_SECRET: undefined,
   SLACK_SIGNING_SECRET: undefined,
   PUBLIC_CHAT_BASE_URL: "http://localhost:3000/chat",
-  RADIOSO_BASE_URL: undefined,
-  RADIOSO_MCP_ENABLED: false,
-  RADIOSO_MCP_STANDALONE: false,
-  RADIOSO_MCP_MOUNT_PATH: "/mcp",
-  RADIOSO_MCP_MERGED_CORS_ORIGINS: "*",
-  RADIOSO_MCP_ACCESS_TOKEN_TTL_SECONDS: 900,
-  RADIOSO_MCP_ALLOWED_READ_TOOLS: undefined,
-  RADIOSO_MCP_ALLOWED_WRITE_TOOLS: undefined,
-  RADIOSO_MCP_APPROVAL_REQUIRED_WRITE_TOOLS: undefined,
-  RADIOSO_MCP_AUDIT_LOG_PATH: undefined,
-  RADIOSO_MCP_BIND_HOST: "127.0.0.1",
-  RADIOSO_MCP_BIND_PORT: 8787,
-  RADIOSO_MCP_REDIS_KEY_PREFIX: "radioso-mcp",
-  RADIOSO_MCP_REDIS_URL: undefined,
-  RADIOSO_MCP_REQUEST_TIMEOUT_MS: 30_000,
-  RADIOSO_MCP_SERVER_NAME: "radioso-context",
-  RADIOSO_MCP_WORKSPACE_POLICIES_PATH: undefined,
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
 });
@@ -404,6 +403,7 @@ interface TestRepositories {
   agentRepository: InMemoryAgentRepository;
   agentSkillRepository: InMemoryAgentSkillRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
+  machineAccessRepository: InMemoryMachineAccessRepository;
 }
 
 const appDependencyMap = new WeakMap<object, AppDependencies>();
@@ -708,6 +708,7 @@ export const createTestDependencies = (overrides: {
   });
   const auditEventRepository = new InMemoryAuditEventRepository();
   const accessGrantRepository = new InMemoryAccessGrantRepository();
+  const agentConverseSessionMappingRepository = new InMemoryAgentConverseSessionMappingRepository();
   const auditService = createAuditService(auditEventRepository);
   const productAnalyticsService = new ProductAnalyticsService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -752,7 +753,7 @@ export const createTestDependencies = (overrides: {
     auditService,
   );
   const sessionRepository = new InMemorySessionRepository();
-  const workspaceTokenRepository = new InMemoryWorkspaceTokenRepository();
+  const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
   const documentRepository = new InMemoryDocumentRepository();
@@ -1473,6 +1474,7 @@ export const createTestDependencies = (overrides: {
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
+    lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(accessGrantRepository),
     originMatcher: new DefaultOriginMatcher(),
     workspaceTokenSecret: env.WORKSPACE_TOKEN_SECRET,
     auditService,
@@ -2056,10 +2058,48 @@ export const createTestDependencies = (overrides: {
         }),
     },
   });
+  const apiPrincipalAuthenticator = new ApiPrincipalAuthenticator({
+    repository: machineAccessRepository,
+    accountAccess: accountAccessService,
+  });
+  const personalCredentialService = new PersonalCredentialService({
+    repository: machineAccessRepository,
+    accountAccess: accountAccessService,
+    audit: auditService,
+  });
+  const serviceAccountService = new ServiceAccountService({
+    repository: machineAccessRepository,
+    accountAccess: accountAccessService,
+    audit: auditService,
+  });
+  const credentialExpiryWarningLifecycle = new CredentialExpiryWarningService({
+    repository: machineAccessRepository,
+    audit: auditService,
+    logger,
+  });
+  const authService = new AuthService({
+    env,
+    auditService,
+    accountRepository,
+    userRepository,
+    sessionRepository,
+    workspaceService,
+    accountAccessService,
+    accountInvitationService,
+    apiPrincipalAuthenticator,
+    organizationCreationGuard,
+    organizationProvisioner: new InMemoryOrganizationProvisioner(
+      accountRepository,
+      userRepository,
+      accountAccessService,
+      workspaceService,
+    ),
+  });
   const dependencies: AppDependencies = {
     env,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
+    credentialExpiryWarningLifecycle,
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,
@@ -2112,24 +2152,11 @@ export const createTestDependencies = (overrides: {
         throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
       },
     },
-    authService: new AuthService({
-      env,
-      auditService,
-      accountRepository,
-      userRepository,
-      sessionRepository,
-      workspaceTokenRepository,
-      workspaceService,
-      accountAccessService,
-      accountInvitationService,
-      organizationCreationGuard,
-      organizationProvisioner: new InMemoryOrganizationProvisioner(
-        accountRepository,
-        userRepository,
-        accountAccessService,
-        workspaceService,
-      ),
-    }),
+    authService,
+    apiPrincipalAuthenticator,
+    apiPrincipalRouteInventory,
+    personalCredentialService,
+    serviceAccountService,
     accessGrantService,
     passwordResetService: new PasswordResetService({
       env,
@@ -2224,6 +2251,7 @@ export const createTestDependencies = (overrides: {
     userRepository,
     workspaceRepository,
     agentRepository,
+    agentConverseSessionMappingRepository,
     contextVariableService,
     contextVariableResolutionReader: contextVariableRepository,
     identityNonceRepository,
@@ -2276,6 +2304,7 @@ export const createTestDependencies = (overrides: {
       agentRepository,
       agentSkillRepository,
       routineDefinitionRepository,
+      machineAccessRepository,
     },
   };
 };
@@ -2317,14 +2346,14 @@ export const createTestApp = (overrides: {
 };
 
 /**
- * Registers, verifies, and signs in a test user before issuing a workspace token.
+ * Registers, verifies, and signs in a test user before issuing a personal API token.
  * Returns both the bearer token and the session cookie.
  */
 export const issueTestToken = async (
   app: ReturnType<typeof createTestApp>["app"],
   email = `test-${randomUUID()}@example.com`,
 ): Promise<{ token: string; cookie: string; workspaceId: string; accountId: string }> => {
-  const { cookie, workspaceId, accountId } = await issueTestSession(app, email);
+  const { cookie, workspaceId, userId, accountId } = await issueTestSession(app, email);
 
   const workspaces = await request(app)
     .get("/api/v1/workspace")
@@ -2335,9 +2364,16 @@ export const issueTestToken = async (
     throw new Error("Test app dependencies were not registered for token issuance");
   }
 
-  const tokenResponse = await dependencies.authService.getTokenForWorkspace(resolvedWorkspaceId, accountId);
+  const issued = await dependencies.personalCredentialService.issue({
+    accountId,
+    workspaceId: resolvedWorkspaceId,
+    userId,
+    label: "Test API token",
+    roleCeiling: "admin",
+    expiresAt: new Date(Date.now() + 89 * 24 * 60 * 60 * 1_000),
+  });
 
-  return { token: tokenResponse.token, cookie, workspaceId: resolvedWorkspaceId, accountId };
+  return { token: issued.secret, cookie, workspaceId: resolvedWorkspaceId, accountId };
 };
 
 export const issueTestSession = async (

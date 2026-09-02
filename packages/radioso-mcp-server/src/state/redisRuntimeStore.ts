@@ -12,6 +12,12 @@ interface RuntimeRedisStoreOptions {
   signingSecret: string;
 }
 
+interface RedisSessionPurgeClient {
+  scanIterator(options: { COUNT?: number; MATCH: string }): AsyncIterable<string>;
+  get(key: string): Promise<string | null>;
+  del(keys: string[]): Promise<number>;
+}
+
 const ttlSecondsFromDate = (expiresAt: Date, now = new Date()): number =>
   Math.max(1, Math.ceil((expiresAt.getTime() - now.getTime()) / 1000));
 
@@ -20,13 +26,9 @@ const sessionTokenKey = (prefix: string, tokenHash: string) => `${prefix}:sessio
 
 const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   ...session,
-  approvalRequiredTools: session.approvalRequiredTools ? [...session.approvalRequiredTools] : undefined,
   expiresAt: new Date(session.expiresAt),
-  grantedProfiles: session.grantedProfiles ? [...session.grantedProfiles] : undefined,
-  grantedTools: [...session.grantedTools],
   issuedAt: new Date(session.issuedAt),
   converseSessionToken: session.converseSessionToken,
-  upstreamSupportedTools: session.upstreamSupportedTools ? [...session.upstreamSupportedTools] : undefined,
 });
 
 const deriveSessionEncryptionKey = (signingSecret: string): Buffer =>
@@ -70,12 +72,7 @@ export const serializeSession = (session: AccessSessionRecord, signingSecret: st
     ...session,
     expiresAt: session.expiresAt.toISOString(),
     issuedAt: session.issuedAt.toISOString(),
-    upstreamApiToken: undefined,
-    upstreamApiTokenEncrypted: session.upstreamApiToken
-      ? encryptSessionSecret(session.upstreamApiToken, signingSecret)
-      : undefined,
-    // converseSessionToken is a bearer for /api/v1/mcp/converse/* — treat it as secret
-    // material like the upstream API token, never store it plaintext in Redis.
+    // The backend session bearer is secret material; never store it plaintext in Redis.
     converseSessionToken: undefined,
     converseSessionTokenEncrypted: session.converseSessionToken
       ? encryptSessionSecret(session.converseSessionToken, signingSecret)
@@ -86,12 +83,6 @@ export const deserializeSession = (value: string, signingSecret: string): Access
   const parsed = JSON.parse(value) as Omit<AccessSessionRecord, "expiresAt" | "issuedAt"> & {
     expiresAt: string;
     issuedAt: string;
-    upstreamApiToken?: string;
-    upstreamApiTokenEncrypted?: {
-      authTag: string;
-      ciphertext: string;
-      iv: string;
-    };
     converseSessionToken?: string;
     converseSessionTokenEncrypted?: {
       authTag: string;
@@ -99,9 +90,6 @@ export const deserializeSession = (value: string, signingSecret: string): Access
       iv: string;
     };
   };
-  const upstreamApiToken = parsed.upstreamApiTokenEncrypted
-    ? decryptSessionSecret(parsed.upstreamApiTokenEncrypted, signingSecret)
-    : parsed.upstreamApiToken;
   const converseSessionToken = parsed.converseSessionTokenEncrypted
     ? decryptSessionSecret(parsed.converseSessionTokenEncrypted, signingSecret)
     : parsed.converseSessionToken;
@@ -110,7 +98,6 @@ export const deserializeSession = (value: string, signingSecret: string): Access
     ...parsed,
     expiresAt: new Date(parsed.expiresAt),
     issuedAt: new Date(parsed.issuedAt),
-    upstreamApiToken,
     converseSessionToken,
   };
 };
@@ -121,19 +108,98 @@ const ensureConnected = async (client: { connect(): Promise<unknown>; isOpen: bo
   }
 };
 
+/**
+ * Remove persisted sessions that contain an upstream API credential. Converse
+ * sessions do not contain `upstreamApiToken` and remain usable. The scan is
+ * namespace-bound and also removes orphaned token indexes left by interrupted
+ * writes or an earlier purge.
+ */
+export const purgeLegacyApiTokenSessions = async (
+  client: RedisSessionPurgeClient,
+  keyPrefix: string,
+  _signingSecret: string,
+): Promise<{ purgedSessionCount: number }> => {
+  const deletedSessionIds = new Set<string>();
+  let purgedSessionCount = 0;
+
+  for await (const key of client.scanIterator({
+    COUNT: 100,
+    MATCH: `${keyPrefix}:session:id:*`,
+  })) {
+    const stored = await client.get(key);
+    if (!stored) {
+      continue;
+    }
+
+    let parsed: { accessTokenHash?: unknown; sessionId?: unknown; upstreamApiToken?: unknown; upstreamApiTokenEncrypted?: unknown };
+    try {
+      parsed = JSON.parse(stored) as typeof parsed;
+    } catch {
+      // An unreadable record cannot be proven free of a legacy secret. Delete
+      // it as part of the destructive purge rather than retain it indefinitely.
+      await client.del([key]);
+      continue;
+    }
+
+    if (!("upstreamApiToken" in parsed || "upstreamApiTokenEncrypted" in parsed)) {
+      continue;
+    }
+
+    const sessionId = typeof parsed.sessionId === "string"
+      ? parsed.sessionId
+      : key.slice(`${keyPrefix}:session:id:`.length);
+    const accessTokenHash = typeof parsed.accessTokenHash === "string" ? parsed.accessTokenHash : null;
+    const keys = [key];
+    if (accessTokenHash) {
+      keys.push(sessionTokenKey(keyPrefix, accessTokenHash));
+    }
+    await client.del(keys);
+    deletedSessionIds.add(sessionId);
+    purgedSessionCount += 1;
+  }
+
+  for await (const key of client.scanIterator({
+    COUNT: 100,
+    MATCH: `${keyPrefix}:session:token:*`,
+  })) {
+    const sessionId = await client.get(key);
+    if (!sessionId || deletedSessionIds.has(sessionId)) {
+      await client.del([key]);
+      continue;
+    }
+
+    const sessionKey = sessionIdKey(keyPrefix, sessionId);
+    if (!(await client.get(sessionKey))) {
+      await client.del([key]);
+    }
+  }
+
+  return { purgedSessionCount };
+};
+
 export const createRedisClientHandle = async ({
   keyPrefix,
   redisUrl,
   signingSecret,
 }: RuntimeRedisStoreOptions): Promise<{
   close(): Promise<void>;
+  purgeLegacyApiTokenSessions(): Promise<{ purgedSessionCount: number }>;
   sessionStore: SessionStore;
 }> => {
-  const client = createClient({ url: redisUrl });
-  await ensureConnected(client);
+  const client = createClient({
+    socket: {
+      reconnectStrategy: false,
+    },
+    url: redisUrl,
+  });
+  // Redis connection failures are surfaced by the readiness retry loop. The
+  // listener prevents node-redis from treating a transient failure as an
+  // unhandled EventEmitter error.
+  client.on("error", () => undefined);
 
   const sessionStore: SessionStore = {
     async delete(sessionId) {
+      await ensureConnected(client);
       const stored = await client.get(sessionIdKey(keyPrefix, sessionId));
       if (!stored) {
         return false;
@@ -147,6 +213,7 @@ export const createRedisClientHandle = async ({
       return true;
     },
     async getByAccessToken(accessToken, now = new Date()) {
+      await ensureConnected(client);
       const accessTokenHash = hashToken(accessToken);
       const sessionId = await client.get(sessionTokenKey(keyPrefix, accessTokenHash));
       if (!sessionId) {
@@ -170,6 +237,7 @@ export const createRedisClientHandle = async ({
       return cloneSession(session);
     },
     async getById(sessionId) {
+      await ensureConnected(client);
       const stored = await client.get(sessionIdKey(keyPrefix, sessionId));
       if (!stored) {
         return null;
@@ -178,23 +246,15 @@ export const createRedisClientHandle = async ({
       return cloneSession(deserializeSession(stored, signingSecret));
     },
     async save(input) {
+      await ensureConnected(client);
       const session: AccessSessionRecord = {
         accessTokenHash: hashToken(input.accessToken),
-        approvalRequiredTools: input.approvalRequiredTools ? [...input.approvalRequiredTools] : undefined,
         clientName: input.clientName,
         expiresAt: new Date(input.expiresAt),
-        grantedProfiles: input.grantedProfiles ? [...input.grantedProfiles] : undefined,
-        grantedTools: [...input.grantedTools],
         issuedAt: new Date(input.issuedAt),
+        conversationId: input.conversationId,
         converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
-        upstreamApiVersion: input.upstreamApiVersion,
-        upstreamMcpContextVersion: input.upstreamMcpContextVersion,
-        upstreamSupportedTools: input.upstreamSupportedTools ? [...input.upstreamSupportedTools] : undefined,
-        upstreamApiToken: input.upstreamApiToken,
-        workspaceHint: input.workspaceHint,
-        workspaceId: input.workspaceId,
-        workspaceName: input.workspaceName,
       };
 
       const ttlSeconds = ttlSecondsFromDate(session.expiresAt);
@@ -220,6 +280,10 @@ export const createRedisClientHandle = async ({
       if (client.isOpen) {
         await client.quit();
       }
+    },
+    async purgeLegacyApiTokenSessions() {
+      await ensureConnected(client);
+      return purgeLegacyApiTokenSessions(client, keyPrefix, signingSecret);
     },
     sessionStore,
   };

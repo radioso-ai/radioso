@@ -24,7 +24,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
     scaling {
       min_instance_count = var.backend_min_instances
-      max_instance_count = var.radioso_mcp_enabled ? 1 : var.backend_max_instances
+      max_instance_count = var.backend_max_instances
     }
 
     vpc_access {
@@ -249,25 +249,6 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
-      env {
-        name  = "RADIOSO_MCP_ENABLED"
-        value = tostring(var.radioso_mcp_enabled)
-      }
-      env {
-        name  = "RADIOSO_MCP_STANDALONE"
-        value = "false"
-      }
-      env {
-        name  = "RADIOSO_MCP_MOUNT_PATH"
-        value = "/mcp"
-      }
-      dynamic "env" {
-        for_each = local.radioso_mcp_base_url == null ? [] : [local.radioso_mcp_base_url]
-        content {
-          name  = "RADIOSO_BASE_URL"
-          value = trimsuffix(env.value, "/")
-        }
-      }
       dynamic "env" {
         for_each = local.public_chat_base_url == null ? [] : [local.public_chat_base_url]
         content {
@@ -411,18 +392,6 @@ resource "google_cloud_run_v2_service" "backend" {
           }
         }
       }
-      dynamic "env" {
-        for_each = var.radioso_mcp_enabled && local.radioso_mcp_signing_secret_configured ? [google_secret_manager_secret.secrets["radioso-mcp-signing-secret"].secret_id] : []
-        content {
-          name = "RADIOSO_MCP_SIGNING_SECRET"
-          value_source {
-            secret_key_ref {
-              secret  = env.value
-              version = "latest"
-            }
-          }
-        }
-      }
       env {
         name = "CONNECTOR_ENCRYPTION_KEY"
         value_source {
@@ -431,6 +400,19 @@ resource "google_cloud_run_v2_service" "backend" {
             version = "latest"
           }
         }
+      }
+      env {
+        name = "RADIOSO_MCP_SIGNING_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["radioso-mcp-signing-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "RADIOSO_TRUSTED_PROXY_HOPS"
+        value = "2"
       }
     }
   }
@@ -442,16 +424,6 @@ resource "google_cloud_run_v2_service" "backend" {
   ]
 
   lifecycle {
-    precondition {
-      condition     = !var.radioso_mcp_enabled || local.radioso_mcp_base_url != null && can(regex("^https?://", local.radioso_mcp_base_url))
-      error_message = "radioso_mcp_base_url_override, connector_public_base_url, or app_base_url_override must be set when radioso_mcp_enabled is true."
-    }
-
-    precondition {
-      condition     = !var.radioso_mcp_enabled || local.radioso_mcp_signing_secret_configured
-      error_message = "radioso_mcp_signing_secret must be set when radioso_mcp_enabled is true."
-    }
-
     precondition {
       condition     = !var.otel_logs_enabled || local.otel_logs_endpoint != null
       error_message = "otel_logs_endpoint or posthog_host must be set when otel_logs_enabled is true."
@@ -474,6 +446,96 @@ resource "google_cloud_run_v2_service" "backend" {
 resource "google_cloud_run_v2_service_iam_member" "backend_public" {
   count    = var.deploy_services && var.backend_public_invocation_enabled ? 1 : 0
   name     = google_cloud_run_v2_service.backend[0].name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+# --- Standalone MCP Cloud Run service ---
+
+# The production backend image already contains the compiled MCP package. The
+# standalone runtime caches only short-lived session tokens; the backend maps a
+# grant version to its conversation atomically in PostgreSQL, so instances may
+# scale independently without splitting a conversation.
+resource "google_cloud_run_v2_service" "mcp" {
+  count    = var.deploy_services && var.radioso_mcp_enabled ? 1 : 0
+  name     = "${local.resource_name_prefix}-mcp"
+  location = var.region
+
+  template {
+    service_account = data.google_service_account.backend.email
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = var.backend_max_instances
+    }
+
+    containers {
+      image   = var.backend_image
+      command = ["node"]
+      args    = ["../packages/radioso-mcp-server/dist/src/cli/http.js"]
+
+      ports {
+        container_port = 8080
+      }
+
+      env {
+        name  = "NODE_ENV"
+        value = "production"
+      }
+      env {
+        name  = "OBSERVABILITY_ENVIRONMENT"
+        value = var.environment
+      }
+      env {
+        name  = "OBSERVABILITY_SERVICE_NAME"
+        value = "radioso-mcp"
+      }
+      env {
+        name  = "RADIOSO_BASE_URL"
+        value = google_cloud_run_v2_service.backend[0].uri
+      }
+      env {
+        name  = "RADIOSO_MCP_BIND_HOST"
+        value = "0.0.0.0"
+      }
+      env {
+        name  = "RADIOSO_MCP_BIND_PORT"
+        value = "8080"
+      }
+      env {
+        name = "RADIOSO_MCP_SIGNING_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["radioso-mcp-signing-secret"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "RADIOSO_TRUSTED_PROXY_HOPS"
+        value = "2"
+      }
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.backend_public_invocation_enabled
+      error_message = "backend_public_invocation_enabled must be true when radioso_mcp_enabled is true so the standalone MCP service can call the backend converse API."
+    }
+
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
+  }
+}
+
+resource "google_cloud_run_v2_service_iam_member" "mcp_public" {
+  count    = var.deploy_services && var.radioso_mcp_enabled ? 1 : 0
+  name     = google_cloud_run_v2_service.mcp[0].name
   location = var.region
   role     = "roles/run.invoker"
   member   = "allUsers"
@@ -512,6 +574,13 @@ resource "google_cloud_run_v2_service" "frontend" {
       env {
         name  = "NEXT_PUBLIC_RADIOSO_EDITION"
         value = var.radioso_edition
+      }
+      dynamic "env" {
+        for_each = var.deploy_services && var.radioso_mcp_enabled ? ["${google_cloud_run_v2_service.mcp[0].uri}/mcp"] : []
+        content {
+          name  = "RADIOSO_MCP_PUBLIC_URL"
+          value = env.value
+        }
       }
     }
   }

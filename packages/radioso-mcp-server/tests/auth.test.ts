@@ -1,330 +1,154 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuditLogger, createInMemoryAuditSink } from "../src/audit/auditLogger.js";
 import { createAuthService } from "../src/auth/authService.js";
 import { createInMemorySessionStore } from "../src/auth/sessionStore.js";
-import { createCapabilityPolicyRegistry } from "../src/policy/capabilityPolicy.js";
-import { RadiosoApiError } from "../src/radiosoApiAdapter.js";
+import { RadiosoApiError, type ConverseApiAdapter } from "../src/converseApiAdapter.js";
 
-const defaultWorkspaceValidation = {
-  apiVersion: "0.1.0",
-  mcpContextVersion: "2026-04-22",
-  supportedTools: [
-    "describe_capabilities",
-    "search_documents",
-    "list_documents",
-    "create_document",
-    "update_document",
-  ],
-  workspaceHint: "Default",
-  workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
-  workspaceName: "Default",
-};
+const createConverseApi = (): ConverseApiAdapter => ({
+  ask: vi.fn(),
+  exchange: vi.fn().mockResolvedValue({
+    agent: { id: "agent-1", name: "Agent" },
+    conversationId: "conversation-1",
+    expiresAt: "2026-04-21T12:10:00.000Z",
+    sessionToken: "converse-session-token",
+  }),
+  validate: vi.fn().mockResolvedValue({
+    agentId: "agent-1",
+    conversationId: "conversation-1",
+    permissions: ["public_chat.turn.create"],
+    valid: true,
+    workspaceId: "workspace-1",
+  }),
+  recordUse: vi.fn().mockResolvedValue(undefined),
+});
 
-describe("auth foundations", () => {
-  it("stores and resolves access sessions by opaque token without exposing the raw token", async () => {
-    const store = createInMemorySessionStore();
-    const now = new Date("2026-04-21T12:00:00.000Z");
-
-    await store.save({
-      accessToken: "mcp_sess_test",
-      expiresAt: new Date("2026-04-21T12:10:00.000Z"),
-      grantedTools: ["search_documents"],
-      issuedAt: new Date("2026-04-21T12:00:00.000Z"),
-      sessionId: "sess_01",
-      upstreamApiToken: "radioso_test",
-    });
-
-    await expect(store.getByAccessToken("mcp_sess_test", now)).resolves.toMatchObject({
-      grantedTools: ["search_documents"],
-      sessionId: "sess_01",
-      upstreamApiToken: "radioso_test",
-    });
-    await expect(store.getByAccessToken("wrong-token", now)).resolves.toBeNull();
-  });
-
-  it("exchanges a workspace token for a session and rejects disallowed requested tools", async () => {
-    const policy = createCapabilityPolicyRegistry({
-      allowedReadTools: ["describe_capabilities", "search_documents"],
-      allowedWriteTools: ["create_document"],
-      approvalRequiredWriteTools: ["create_document"],
-    });
-    const sessionStore = createInMemorySessionStore();
-    const validateWorkspaceToken = vi.fn().mockResolvedValue({
-      ...defaultWorkspaceValidation,
-      workspaceHint: "workspace-123",
-    });
-
-    const auth = createAuthService({
-      policy,
-      sessionStore,
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken,
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    const exchange = await auth.exchangeWorkspaceToken({
-      clientName: "cursor-local",
-      radiosoApiToken: "radioso_test",
-      requestedTools: ["search_documents", "create_document"],
-    });
-
-    expect(exchange).toMatchObject({
-      approvalRequiredTools: ["create_document"],
-      grantedTools: ["search_documents", "create_document"],
-      tokenType: "Bearer",
-    });
-    expect(validateWorkspaceToken).toHaveBeenCalledWith("radioso_test");
-    await expect(
-      sessionStore.getByAccessToken(exchange.accessToken, new Date("2026-04-21T12:05:00.000Z")),
-    ).resolves.toMatchObject({
-      grantedTools: ["search_documents", "create_document"],
-      workspaceHint: "workspace-123",
-    });
-
-    await expect(
-      auth.exchangeWorkspaceToken({
-        radiosoApiToken: "radioso_test",
-        requestedTools: ["delete_document"],
-      }),
-    ).rejects.toMatchObject({
-      code: "capability_forbidden",
-    });
-  });
-
-  it("keeps repeated exchanges isolated", async () => {
-    const sessionStore = createInMemorySessionStore();
-    const auth = createAuthService({
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["search_documents"],
-        allowedWriteTools: ["create_document"],
-        approvalRequiredWriteTools: ["create_document"],
-      }),
-      sessionStore,
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    const first = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_test",
-      requestedTools: ["search_documents", "create_document"],
-    });
-    const second = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_test",
-      requestedTools: ["search_documents", "create_document"],
-    });
-
-    expect(first.accessToken).not.toBe(second.accessToken);
-
-    await expect(
-      sessionStore.getByAccessToken(first.accessToken, new Date("2026-04-21T12:05:00.000Z")),
-    ).resolves.toMatchObject({
-      grantedTools: ["search_documents", "create_document"],
-    });
-    await expect(
-      sessionStore.getByAccessToken(second.accessToken, new Date("2026-04-21T12:05:00.000Z")),
-    ).resolves.toMatchObject({
-      grantedTools: ["search_documents", "create_document"],
-    });
-  });
-
-  it("emits audit events for denied exchange requests", async () => {
-    const { events, sink } = createInMemoryAuditSink();
-    const auth = createAuthService({
-      auditLogger: createAuditLogger([sink]),
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: ["create_document"],
-        approvalRequiredWriteTools: ["create_document"],
-      }),
-      sessionStore: createInMemorySessionStore(),
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    await expect(
-      auth.exchangeWorkspaceToken({
-        radiosoApiToken: "radioso_test",
-        requestedTools: ["delete_document"],
-      }),
-    ).rejects.toMatchObject({
-      code: "capability_forbidden",
-    });
-
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          eventType: "auth.exchange_failed",
-          metadata: expect.objectContaining({
-            code: "capability_forbidden",
-            requestedTools: ["delete_document"],
-          }),
-          outcome: "denied",
-        }),
-      ]),
-    );
-  });
-
-  it("intersects workspace policy and upstream capability support before granting tools", async () => {
-    const auth = createAuthService({
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities", "search_documents", "list_documents"],
-        allowedWriteTools: ["create_document", "update_document"],
-        approvalRequiredWriteTools: ["create_document", "update_document"],
-      }),
-      resolvePolicy: (workspaceId) => ({
-        policy: createCapabilityPolicyRegistry({
-          allowedReadTools: workspaceId
-            ? ["describe_capabilities", "search_documents"]
-            : ["describe_capabilities", "search_documents", "list_documents"],
-          allowedWriteTools: ["create_document"],
-          approvalRequiredWriteTools: ["create_document"],
-        }),
-        source: workspaceId ? "workspace" : "global",
-        workspaceId,
-      }),
-      sessionStore: createInMemorySessionStore(),
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue({
-        ...defaultWorkspaceValidation,
-        supportedTools: ["describe_capabilities", "create_document"],
-      }),
-      now: () => new Date("2026-04-21T12:00:00.000Z"),
-    });
-
-    const exchange = await auth.exchangeWorkspaceToken({
-      radiosoApiToken: "radioso_test",
-      requestedTools: ["describe_capabilities", "search_documents", "create_document"],
-    });
-
-    expect(exchange).toMatchObject({
-      approvalRequiredTools: ["create_document"],
-      grantedTools: ["describe_capabilities", "create_document"],
-      policySource: "workspace",
-      unsupportedTools: ["search_documents"],
-      workspaceId: "3f3caef3-050c-46a7-8fd7-2fa48f17fe98",
-      workspaceName: "Default",
-    });
-  });
-
-  it("resolves an unknown bearer as a cached converse session after backend exchange", async () => {
-    const sessionStore = createInMemorySessionStore();
-    const converseApi = {
-      exchange: vi.fn().mockResolvedValue({
-        sessionToken: "converse-session-token",
-        expiresAt: "2026-04-21T12:10:00.000Z",
-        agent: { id: "agent-1", name: "Agent" },
-        conversationId: "conversation-1",
-      }),
-      validate: vi.fn().mockResolvedValue({
-        valid: true,
-        workspaceId: "workspace-1",
-        agentId: "agent-1",
-        conversationId: "conversation-1",
-        permissions: ["public_chat.turn.create"],
-      }),
-      ask: vi.fn(),
-      answerGrounded: vi.fn(),
-      listResources: vi.fn(),
-      readResource: vi.fn(),
-    };
+describe("agent-channel MCP authentication", () => {
+  it("exchanges an agent credential into a cached ask_agent session", async () => {
+    const converseApi = createConverseApi();
     const auth = createAuthService({
       converseApi,
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: [],
-        approvalRequiredWriteTools: [],
-      }),
-      sessionStore,
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: createInMemorySessionStore(),
     });
 
-    await expect(auth.resolveBearerSession("mcp-converse-grant")).resolves.toMatchObject({
+    await expect(auth.resolveBearerSession("agent-channel-credential")).resolves.toMatchObject({
+      clientName: "radioso-mcp-converse",
+      conversationId: "conversation-1",
       converseSessionToken: "converse-session-token",
-      grantedTools: ["ask_agent", "answer_grounded", "agent_resources"],
-      upstreamApiToken: undefined,
-      workspaceId: "workspace-1",
     });
-    expect(converseApi.exchange).toHaveBeenCalledTimes(1);
     expect(converseApi.exchange).toHaveBeenCalledWith({
-      launchToken: "mcp-converse-grant",
       client: { name: "radioso-mcp-server" },
-    });
+      launchToken: "agent-channel-credential",
+    }, { sourceDigest: undefined });
 
-    await expect(auth.resolveBearerSession("mcp-converse-grant")).resolves.toMatchObject({
-      converseSessionToken: "converse-session-token",
-      grantedTools: ["ask_agent", "answer_grounded", "agent_resources"],
-    });
+    await auth.resolveBearerSession("agent-channel-credential");
     expect(converseApi.exchange).toHaveBeenCalledTimes(1);
     expect(converseApi.validate).toHaveBeenCalledTimes(2);
   });
 
-  it("does not try converse exchange for an existing workspace access session", async () => {
-    const sessionStore = createInMemorySessionStore();
-    await sessionStore.save({
-      accessToken: "mcp_sess_workspace",
-      expiresAt: new Date("2026-04-21T12:10:00.000Z"),
-      grantedTools: ["describe_capabilities"],
-      issuedAt: new Date("2026-04-21T12:00:00.000Z"),
-      sessionId: "sess_workspace",
-      upstreamApiToken: "radioso_workspace",
+  it("coalesces concurrent cache misses for one agent credential into one backend exchange", async () => {
+    const converseApi = createConverseApi();
+    let releaseExchange!: () => void;
+    vi.mocked(converseApi.exchange).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => {
+        releaseExchange = resolve;
+      });
+      return {
+        agent: { id: "agent-1", name: "Agent" },
+        conversationId: "conversation-1",
+        expiresAt: "2026-04-21T12:10:00.000Z",
+        sessionToken: "converse-session-token",
+      };
     });
-    const converseApi = {
-      exchange: vi.fn(),
-      validate: vi.fn(),
-      ask: vi.fn(),
-      answerGrounded: vi.fn(),
-      listResources: vi.fn(),
-      readResource: vi.fn(),
-    };
     const auth = createAuthService({
       converseApi,
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: [],
-        approvalRequiredWriteTools: [],
-      }),
-      sessionStore,
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: createInMemorySessionStore(),
     });
 
-    await expect(auth.resolveBearerSession("mcp_sess_workspace")).resolves.toMatchObject({
-      grantedTools: ["describe_capabilities"],
-      upstreamApiToken: "radioso_workspace",
-    });
-    expect(converseApi.exchange).not.toHaveBeenCalled();
-    expect(converseApi.validate).not.toHaveBeenCalled();
+    const first = auth.resolveBearerSession("agent-channel-credential");
+    const second = auth.resolveBearerSession("agent-channel-credential");
+    await vi.waitFor(() => expect(converseApi.exchange).toHaveBeenCalledTimes(1));
+
+    releaseExchange();
+    const [firstSession, secondSession] = await Promise.all([first, second]);
+
+    expect(firstSession).not.toBeNull();
+    expect(secondSession).toEqual(firstSession);
+    expect(converseApi.exchange).toHaveBeenCalledTimes(1);
   });
 
-  it("returns null when converse grant exchange rejects an unknown bearer", async () => {
-    const converseApi = {
-      exchange: vi.fn().mockRejectedValue(new RadiosoApiError("Forbidden", 403, "forbidden")),
-      validate: vi.fn(),
-      ask: vi.fn(),
-      answerGrounded: vi.fn(),
-      listResources: vi.fn(),
-      readResource: vi.fn(),
-    };
+  it("removes a cached session when backend validation rejects it", async () => {
+    const converseApi = createConverseApi();
+    const store = createInMemorySessionStore();
     const auth = createAuthService({
       converseApi,
-      policy: createCapabilityPolicyRegistry({
-        allowedReadTools: ["describe_capabilities"],
-        allowedWriteTools: [],
-        approvalRequiredWriteTools: [],
-      }),
-      sessionStore: createInMemorySessionStore(),
-      signingSecret: "dev-signing-secret",
-      validateWorkspaceToken: vi.fn().mockResolvedValue(defaultWorkspaceValidation),
       now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: store,
     });
 
-    await expect(auth.resolveBearerSession("not-a-converse-grant")).resolves.toBeNull();
-    expect(converseApi.validate).not.toHaveBeenCalled();
+    await auth.resolveBearerSession("agent-channel-credential");
+    vi.mocked(converseApi.validate).mockRejectedValueOnce(new RadiosoApiError("Forbidden", 403, "forbidden"));
+
+    await expect(auth.getSession("agent-channel-credential")).resolves.toBeNull();
+    await expect(store.getByAccessToken("agent-channel-credential")).resolves.toBeNull();
+  });
+
+  it("rejects an unknown credential without creating a local session", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.exchange).mockRejectedValueOnce(new RadiosoApiError("Forbidden", 403, "forbidden"));
+    const auth = createAuthService({
+      converseApi,
+      sessionStore: createInMemorySessionStore(),
+    });
+
+    await expect(auth.resolveBearerSession("invalid-credential")).resolves.toBeNull();
+  });
+
+  it("refreshes successful cached use within five minutes without notifying on every response", async () => {
+    const converseApi = createConverseApi();
+    let now = new Date("2026-04-21T12:00:00.000Z");
+    const auth = createAuthService({
+      converseApi,
+      now: () => now,
+      sessionStore: createInMemorySessionStore(),
+    });
+    const session = await auth.resolveBearerSession("agent-channel-credential");
+    if (!session) throw new Error("Expected a session");
+
+    auth.recordSuccessfulUse(session, "source-digest");
+    await vi.waitFor(() => expect(converseApi.recordUse).toHaveBeenCalledTimes(1));
+    now = new Date("2026-04-21T12:04:59.999Z");
+    auth.recordSuccessfulUse(session, "source-digest");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(converseApi.recordUse).toHaveBeenCalledTimes(1);
+
+    now = new Date("2026-04-21T12:05:00.000Z");
+    auth.recordSuccessfulUse(session, "source-digest");
+    await vi.waitFor(() => expect(converseApi.recordUse).toHaveBeenCalledTimes(2));
+    expect(converseApi.recordUse).toHaveBeenLastCalledWith("converse-session-token", { sourceDigest: "source-digest" });
+  });
+
+  it("keeps sync and async successful-use notification failures nonblocking and retryable", async () => {
+    const converseApi = createConverseApi();
+    vi.mocked(converseApi.recordUse)
+      .mockRejectedValueOnce(new Error("async notification failure"))
+      .mockImplementationOnce(() => {
+        throw new Error("sync notification failure");
+      })
+      .mockResolvedValueOnce(undefined);
+    const auth = createAuthService({
+      converseApi,
+      now: () => new Date("2026-04-21T12:00:00.000Z"),
+      sessionStore: createInMemorySessionStore(),
+    });
+    const session = await auth.resolveBearerSession("agent-channel-credential");
+    if (!session) throw new Error("Expected a session");
+
+    expect(() => auth.recordSuccessfulUse(session)).not.toThrow();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(() => auth.recordSuccessfulUse(session)).not.toThrow();
+    expect(() => auth.recordSuccessfulUse(session)).not.toThrow();
+    await vi.waitFor(() => expect(converseApi.recordUse).toHaveBeenCalledTimes(3));
   });
 });

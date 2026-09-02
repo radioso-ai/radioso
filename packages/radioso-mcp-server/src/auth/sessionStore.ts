@@ -2,21 +2,13 @@ import { hashToken, isExpired } from "./token.js";
 
 export interface AccessSessionRecord {
   accessTokenHash: string;
-  approvalRequiredTools?: string[];
   clientName?: string;
   expiresAt: Date;
-  grantedProfiles?: string[];
-  grantedTools: string[];
   issuedAt: Date;
+  /** Backend conversation/public-session identifier for audit correlation. */
+  conversationId?: string;
   converseSessionToken?: string;
   sessionId: string;
-  upstreamApiVersion?: string;
-  upstreamMcpContextVersion?: string;
-  upstreamSupportedTools?: string[];
-  upstreamApiToken?: string;
-  workspaceId?: string;
-  workspaceHint?: string;
-  workspaceName?: string;
 }
 
 export interface SessionStore {
@@ -25,33 +17,21 @@ export interface SessionStore {
   getById(sessionId: string): Promise<AccessSessionRecord | null>;
   save(input: {
     accessToken: string;
-    approvalRequiredTools?: string[];
     clientName?: string;
     expiresAt: Date;
-    grantedProfiles?: string[];
-    grantedTools: string[];
     issuedAt: Date;
+    conversationId?: string;
     converseSessionToken?: string;
     sessionId: string;
-    upstreamApiVersion?: string;
-    upstreamMcpContextVersion?: string;
-    upstreamSupportedTools?: string[];
-    upstreamApiToken?: string;
-    workspaceId?: string;
-    workspaceHint?: string;
-    workspaceName?: string;
   }): Promise<AccessSessionRecord>;
 }
 
 const cloneSession = (session: AccessSessionRecord): AccessSessionRecord => ({
   ...session,
-  approvalRequiredTools: session.approvalRequiredTools ? [...session.approvalRequiredTools] : undefined,
   expiresAt: new Date(session.expiresAt),
-  grantedProfiles: session.grantedProfiles ? [...session.grantedProfiles] : undefined,
-  grantedTools: [...session.grantedTools],
   issuedAt: new Date(session.issuedAt),
+  conversationId: session.conversationId,
   converseSessionToken: session.converseSessionToken,
-  upstreamSupportedTools: session.upstreamSupportedTools ? [...session.upstreamSupportedTools] : undefined,
 });
 
 export const createInMemorySessionStore = (): SessionStore => {
@@ -95,21 +75,12 @@ export const createInMemorySessionStore = (): SessionStore => {
     async save(input) {
       const session: AccessSessionRecord = {
         accessTokenHash: hashToken(input.accessToken),
-        approvalRequiredTools: input.approvalRequiredTools ? [...input.approvalRequiredTools] : undefined,
         clientName: input.clientName,
         expiresAt: new Date(input.expiresAt),
-        grantedProfiles: input.grantedProfiles ? [...input.grantedProfiles] : undefined,
-        grantedTools: [...input.grantedTools],
         issuedAt: new Date(input.issuedAt),
+        conversationId: input.conversationId,
         converseSessionToken: input.converseSessionToken,
         sessionId: input.sessionId,
-        upstreamApiVersion: input.upstreamApiVersion,
-        upstreamMcpContextVersion: input.upstreamMcpContextVersion,
-        upstreamSupportedTools: input.upstreamSupportedTools ? [...input.upstreamSupportedTools] : undefined,
-        upstreamApiToken: input.upstreamApiToken,
-        workspaceId: input.workspaceId,
-        workspaceHint: input.workspaceHint,
-        workspaceName: input.workspaceName,
       };
 
       const previousSession = sessionsById.get(session.sessionId);

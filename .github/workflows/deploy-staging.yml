@@ -24,8 +24,10 @@ on:
       - packages/conversation-engine/**
       - packages/conversation-tools/**
       - packages/document-parser/**
+      - packages/mcp-source-proof/**
       - packages/routine-definition/**
       - packages/routine-document/**
+      - packages/radioso-mcp-server/**
       - packages/workspace-invalidation-contract/**
       - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:
@@ -42,5 +44,6 @@ jobs:
       backend_service: radioso-staging-backend
       crawler_worker_service: radioso-staging-crawler-worker
       frontend_service: radioso-staging-frontend
+      mcp_service: radioso-staging-mcp
       worker_service: radioso-staging-worker
       radioso_edition: enterprise

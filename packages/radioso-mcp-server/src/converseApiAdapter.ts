@@ -1,4 +1,16 @@
-import { RadiosoApiError } from "./radiosoApiAdapter.js";
+import { createMcpSourceProof, MCP_SOURCE_PROOF_HEADERS } from "@radioso/mcp-source-proof";
+
+export class RadiosoApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "RadiosoApiError";
+  }
+}
 
 export interface ConverseSessionExchangeRequest {
   launchToken: string;
@@ -36,35 +48,15 @@ export interface ConverseAskResponse {
   traceId?: string;
 }
 
-export interface ConverseGroundedAnswerResponse {
-  answer: string;
-  citations: unknown[];
-  retrieval: {
-    agentScoped: true;
-  };
-}
-
-export interface ConverseResourceSummary {
-  uri: string;
-  name: string;
-  mimeType: string;
-}
-
-export interface ConverseResourceListResponse {
-  resources: ConverseResourceSummary[];
-}
-
-export interface ConverseResourceReadResponse extends ConverseResourceSummary {
-  text: string;
-}
-
 export interface ConverseApiAdapter {
-  exchange(body: ConverseSessionExchangeRequest): Promise<ConverseSessionExchangeResponse>;
-  validate(sessionToken: string): Promise<ConverseSessionValidateResponse>;
-  ask(sessionToken: string, body: { message: string }): Promise<ConverseAskResponse>;
-  answerGrounded(sessionToken: string, body: { query: string; maxResults?: number }): Promise<ConverseGroundedAnswerResponse>;
-  listResources(sessionToken: string): Promise<ConverseResourceListResponse>;
-  readResource(sessionToken: string, resourceId: string): Promise<ConverseResourceReadResponse>;
+  exchange(body: ConverseSessionExchangeRequest, context?: ConverseSourceContext): Promise<ConverseSessionExchangeResponse>;
+  validate(sessionToken: string, context?: ConverseSourceContext): Promise<ConverseSessionValidateResponse>;
+  ask(sessionToken: string, body: { message: string }, context?: ConverseSourceContext): Promise<ConverseAskResponse>;
+  recordUse(sessionToken: string, context?: ConverseSourceContext): Promise<void>;
+}
+
+export interface ConverseSourceContext {
+  sourceDigest?: string;
 }
 
 type FetchLike = typeof fetch;
@@ -82,9 +74,28 @@ const readBody = async (response: Response): Promise<unknown> => {
 };
 
 export const createConverseApiAdapter = (
-  config: { baseUrl: string; requestTimeoutMs: number },
+  config: { baseUrl: string; requestTimeoutMs: number; signingSecret?: string },
   fetchImpl: FetchLike = fetch,
 ): ConverseApiAdapter => {
+  const sourceProofHeaders = (
+    path: string,
+    method: string,
+    context?: ConverseSourceContext,
+  ): Record<string, string> => {
+    if (!config.signingSecret || !context?.sourceDigest) return {};
+    const proof = createMcpSourceProof({
+      method,
+      path,
+      secret: config.signingSecret,
+      sourceDigest: context.sourceDigest,
+    });
+    return {
+      [MCP_SOURCE_PROOF_HEADERS.digest]: proof.sourceDigest,
+      [MCP_SOURCE_PROOF_HEADERS.signature]: proof.signature,
+      [MCP_SOURCE_PROOF_HEADERS.timestamp]: proof.timestamp,
+    };
+  };
+
   const request = async <TResult>(path: string, init: RequestInit): Promise<TResult> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
@@ -122,45 +133,42 @@ export const createConverseApiAdapter = (
   };
 
   return {
-    exchange: (body) =>
-      request("/api/v1/mcp/converse/session", {
+    exchange: (body, context) => {
+      const path = "/api/v1/mcp/converse/session";
+      return request(path, {
         method: "POST",
+        headers: sourceProofHeaders(path, "POST", context),
         body: JSON.stringify(body),
-      }),
-    validate: (sessionToken) =>
-      request("/api/v1/mcp/converse/session/validate", {
+      });
+    },
+    validate: (sessionToken, context) => {
+      const path = "/api/v1/mcp/converse/session/validate";
+      return request(path, {
         method: "POST",
+        headers: sourceProofHeaders(path, "POST", context),
         body: JSON.stringify({ sessionToken }),
-      }),
-    ask: (sessionToken, body) =>
-      request("/api/v1/mcp/converse/ask", {
+      });
+    },
+    ask: (sessionToken, body, context) => {
+      const path = "/api/v1/mcp/converse/ask";
+      return request(path, {
         method: "POST",
         headers: {
           authorization: `Bearer ${sessionToken}`,
+          ...sourceProofHeaders(path, "POST", context),
         },
         body: JSON.stringify(body),
-      }),
-    answerGrounded: (sessionToken, body) =>
-      request("/api/v1/mcp/converse/grounded-answer", {
+      });
+    },
+    recordUse: (sessionToken, context) => {
+      const path = "/api/v1/mcp/converse/session/use";
+      return request(path, {
         method: "POST",
         headers: {
           authorization: `Bearer ${sessionToken}`,
+          ...sourceProofHeaders(path, "POST", context),
         },
-        body: JSON.stringify(body),
-      }),
-    listResources: (sessionToken) =>
-      request("/api/v1/mcp/converse/resources", {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${sessionToken}`,
-        },
-      }),
-    readResource: (sessionToken, resourceId) =>
-      request(`/api/v1/mcp/converse/resources/${encodeURIComponent(resourceId)}`, {
-        method: "GET",
-        headers: {
-          authorization: `Bearer ${sessionToken}`,
-        },
-      }),
+      });
+    },
   };
 };

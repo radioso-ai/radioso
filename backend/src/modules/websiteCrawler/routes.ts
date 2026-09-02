@@ -15,6 +15,7 @@ import {
 } from "./errors.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
 import type { WebsiteCrawlJobService } from "./jobService.js";
+import type { AuthenticatedPrincipal } from "../account/public.js";
 
 type RouteDependencies = WorkspaceSessionDependencies & {
   abuseControlService: RateLimitAbuseControlPort;
@@ -83,10 +84,15 @@ export const createWebsiteCrawlerRoutes = (
   const workspaceSession = requireWorkspaceSession(dependencies);
   const documentsRead = requireWorkspacePermission(dependencies, "workspace.documents.read");
   const documentsManage = requireWorkspacePermission(dependencies, "workspace.documents.manage");
-  const resolveCrawlSubjectKey = (_req: unknown, res: { locals: Record<string, unknown> }) =>
-    res.locals.authMode === "bearer"
+  const resolveCrawlSubjectKey = (_req: unknown, res: { locals: Record<string, unknown> }) => {
+    const principal = res.locals.authPrincipal as AuthenticatedPrincipal | undefined;
+    if (principal?.type === "personal_api_credential" || principal?.type === "service_account_credential") {
+      return `${res.locals.workspaceId as string}:api-credential:${principal.credentialId}`;
+    }
+    return res.locals.authMode === "bearer"
       ? `${res.locals.workspaceId as string}:bearer`
       : `${res.locals.workspaceId as string}:user:${res.locals.userId as string}`;
+  };
   const resolveCrawlAuditContext = (_req: unknown, res: { locals: Record<string, unknown> }) => ({
     accountId: res.locals.accountId as string | undefined,
     workspaceId: res.locals.workspaceId as string | undefined,

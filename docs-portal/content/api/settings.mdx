@@ -5,7 +5,7 @@ description: Read and update ingestion, public-surface, credentials, and model s
 
 # Settings
 
-Settings are workspace-scoped. They control how Radioso processes documents, presents public surfaces, stores provider credentials, and selects models. Authenticate with the workspace token, and send the request to the host that issued it ([Workspaces and tokens](/api/workspaces-and-tokens)).
+Settings are workspace-scoped. They control how Radioso processes documents, presents public surfaces, stores provider credentials, and selects models. Use the signed-in dashboard session for settings that change workspace state, including provider and connector secrets. Personal and service API credentials can call only the eligible read or automation routes documented for them.
 
 Retrieval configuration is not a workspace setting. It lives on each agent's `retrieval.answer` skill settings. The settings API exposes read-only retrieval defaults so the agent Skills tab can show inherited values for unset fields.
 
@@ -205,13 +205,13 @@ POST /api/v1/settings/general/anonymous-chat-token/rotate
 POST /api/v1/settings/general/website-embed-token/rotate
 ```
 
-Rotation is also the revocation lever: the old link or install code stops launching new sessions the moment the token changes.
+These rotation endpoints accept the signed-in dashboard session. Personal and service API credentials cannot rotate public-launch secrets. Rotation is also the revocation lever: the old link or install code stops launching new sessions the moment the token changes.
 
 ## Provider credentials
 
 Workspaces can supply their own provider API keys instead of relying on the deployment's environment variables. Stored keys are encrypted at rest using `CONNECTOR_ENCRYPTION_KEY` (the same key that protects connector secrets) and are never returned to clients.
 
-`GET /api/v1/settings/credentials` returns the list of configured providers, whether encryption is configured on the backend, and which providers have a deployment-level environment key available:
+`GET /api/v1/settings/credentials` returns the list of configured providers, whether encryption is configured on the backend, and which providers have a deployment-level environment key available. This provider-secret inventory is available through the signed-in dashboard session; API credentials cannot read, write, or delete provider secrets:
 
 ```json
 {
@@ -230,7 +230,7 @@ Workspaces can supply their own provider API keys instead of relying on the depl
 
 `envProviderAvailability` reports whether each provider has a deployment-level API key (`OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) set. A provider is usable for model selection when it has either a workspace credential or a deployment-level key; the dashboard hides unavailable providers in model pickers.
 
-`PUT /api/v1/settings/credentials/:provider` stores or replaces a key. The body is `{ "apiKey": "..." }`. Valid `provider` values are `openai`, `openai-compatible`, `gemini`, and `claude`. The response is `204 No Content`.
+`PUT /api/v1/settings/credentials/:provider` stores or replaces a key from the signed-in dashboard session. The body is `{ "apiKey": "..." }`. Valid `provider` values are `openai`, `openai-compatible`, `gemini`, and `claude`. The response is `204 No Content`.
 
 `DELETE /api/v1/settings/credentials/:provider` removes a stored key. The response is `204 No Content`, or `404` if no credential was stored for that provider.
 
@@ -361,7 +361,7 @@ PUT /api/v1/settings/llm-models
 ## Common failure modes
 
 - `400` usually means the payload is invalid for that settings group.
-- `401` means the workspace token is missing or invalid.
+- `401` means the dashboard session is missing or invalid, or an API credential was supplied to a session-only settings route.
 - `404` on general settings usually means the workspace context is not available.
 - `409` on the document type catalog means someone saved while you were editing. The error names the current revision; re-read the catalog, reapply your change on top of it, and send it again.
 

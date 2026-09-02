@@ -10,9 +10,7 @@ describe("converse MCP tools", () => {
     expect(createConverseToolDefinitions().map((tool) => tool.name)).toEqual(["ask_agent"]);
 
     const server = createRadiosoMcpServer({
-      allowedTools: ["ask_agent"],
       resolveExecutionContext: async () => ({
-        adapter: {} as ToolExecutionContext["adapter"],
         authInfo: null,
         converseAdapter: {} as ConverseApiAdapter,
         converseSessionToken: "session-token",
@@ -27,9 +25,6 @@ describe("converse MCP tools", () => {
       "get_document",
       "search_documents",
       "create_document",
-      "update_document",
-      "delete_document",
-      "reprocess_document",
     ]));
   });
 
@@ -39,18 +34,15 @@ describe("converse MCP tools", () => {
         conversationId: "conversation-1",
         answer: { text: "Hello", citations: [] },
       }),
-      answerGrounded: vi.fn(),
       exchange: vi.fn(),
-      listResources: vi.fn(),
-      readResource: vi.fn(),
       validate: vi.fn(),
+      recordUse: vi.fn(),
     };
     const [askAgent] = createConverseToolDefinitions();
 
     const result = await askAgent.execute(
       { message: "Hello" },
       {
-        adapter: {} as ToolExecutionContext["adapter"],
         authInfo: null,
         converseAdapter,
         converseSessionToken: "session-token",
@@ -58,7 +50,7 @@ describe("converse MCP tools", () => {
       },
     );
 
-    expect(converseAdapter.ask).toHaveBeenCalledWith("session-token", { message: "Hello" });
+    expect(converseAdapter.ask).toHaveBeenCalledWith("session-token", { message: "Hello" }, { sourceDigest: undefined });
     expect(result).toMatchObject({
       data: { conversationId: "conversation-1" },
       summary: "Hello",

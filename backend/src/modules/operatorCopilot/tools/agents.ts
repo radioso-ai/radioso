@@ -182,7 +182,6 @@ const projectAgentConfiguration = (
       : null,
   };
 };
-
 const projectBuiltInDirectives = (
   directives: ReadonlyArray<BuiltInDirectiveView>,
 ): ReadonlyArray<Record<string, unknown>> => {
@@ -328,4 +327,3 @@ export const createAgentSettingProposalCopilotTools = (
     },
   ];
 };
-

@@ -646,12 +646,13 @@ describe("public chat contract", () => {
       .expect(201);
     await request(app)
       .put(`/api/v1/agents/${agent.body.id}`)
-      .set("Authorization", authorization)
+      .set(adminSessionHeaders(session))
       .send({ surfaceSettings: { anonymousChat: { enabled: true } } })
       .expect(200);
     const tokenResponse = await request(app)
       .post(`/api/v1/agents/${agent.body.id}/anonymous-chat-token/rotate`)
-      .set("Authorization", authorization)
+      .set("Cookie", session.cookie)
+      .set("X-Workspace-Id", session.workspaceId)
       .expect(200);
     const chatToken = tokenResponse.body.surfaceSettings.anonymousChat.token as string;
     const publicSession = await createPublicSession(app, chatToken);

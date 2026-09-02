@@ -19,7 +19,7 @@ export const authApi = {
   async getRegistrationAvailability(): Promise<RegistrationAvailabilityResponse> {
     return request<RegistrationAvailabilityResponse>('/auth/registration', {
       method: 'GET',
-    })
+    }, { withSession: false })
   },
 
   async register(data: RegisterRequest): Promise<RegisterResponse> {
@@ -43,7 +43,7 @@ export const authApi = {
     try {
       return await request<{ enabled: boolean }>("/ee/auth/google/status", {
         method: "GET",
-      })
+      }, { withSession: false })
     } catch {
       return { enabled: false }
     }
@@ -59,7 +59,7 @@ export const authApi = {
     return request<AcceptedResponse>("/auth/password-reset/request", {
       method: "POST",
       body: JSON.stringify(data),
-    })
+    }, { withSession: false })
   },
 
   async confirmPasswordReset(data: PasswordResetConfirmRequest): Promise<PasswordResetConfirmResponse> {
@@ -73,20 +73,20 @@ export const authApi = {
     return request<EmailVerificationVerifyResponse>("/auth/email-verification/verify", {
       method: "POST",
       body: JSON.stringify(data),
-    })
+    }, { withSession: false })
   },
 
   async resendEmailVerification(data: EmailVerificationResendRequest): Promise<AcceptedResponse> {
     return request<AcceptedResponse>("/auth/email-verification/resend", {
       method: "POST",
       body: JSON.stringify(data),
-    })
+    }, { withSession: false })
   },
 
   async getInvitation(invitationToken: string): Promise<InvitationDetailsResponse> {
     return request<InvitationDetailsResponse>(`/auth/invitations/${invitationToken}`, {
       method: 'GET',
-    }, { withSession: true })
+    }, { withSession: false })
   },
 
   async acceptInvitation(invitationToken: string, data: RegisterRequest): Promise<LoginResponse> {

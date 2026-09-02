@@ -1,25 +1,19 @@
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-import { badRequest } from "../../../shared/domain/errors.js";
 // Type-only imports keep these module-owned services out of the route's runtime dependency graph;
 // the instances are built in app composition (mcpConverseModule) and injected.
 import type { AgentConverseAudit, AgentConverseService } from "../../../modules/chat/contracts/index.js";
-import type { AgentConverseResourceService } from "../../../modules/documents/contracts/index.js";
-import type { AgentConverseGroundedAnswerService } from "../../../modules/retrieval/public.js";
 import type { AgentConverseSessionPort } from "../../../modules/settings/contracts/agentConverseSession.js";
-import {
-  presentMcpConverseGroundedAnswer,
-  presentMcpConverseResource,
-  presentMcpConverseResourceList,
-} from "../presenters/mcpConverseResourcePresenter.js";
 import { requirePublicChatPermission } from "../middleware/requirePermission.js";
-import { rejectWorkspaceBearerToken, requireMcpConverseSession, type McpConverseLocals } from "../middleware/requireMcpConverseSession.js";
+import { requireMcpConverseSession, type McpConverseLocals } from "../middleware/requireMcpConverseSession.js";
+import { agentChannelChatRateLimiters } from "../middleware/agentChannelRateLimiter.js";
+import { createMcpConverseSourceRateLimiter, createMcpConverseTokenRateLimiter } from "../middleware/mcpConverseSessionRateLimiter.js";
 import { validateBody } from "../middleware/validate.js";
+import { onSuccessfulHttpResponse } from "../middleware/httpResponseCompletion.js";
+import { requireValidMcpSourceProof } from "../middleware/preAuthSourceRateLimiter.js";
 import {
   mcpConverseAskRequestSchema,
-  mcpConverseGroundedAnswerRequestSchema,
-  mcpConverseResourceParamsSchema,
   mcpConverseSessionRequestSchema,
   mcpConverseSessionValidateRequestSchema,
 } from "../schemas/mcpConverseSchemas.js";
@@ -29,22 +23,20 @@ export type McpConverseRouteDependencies = Pick<
   | "accessGrantService"
   | "accountAccessService"
   | "agentRepository"
+  | "agentConverseSessionMappingRepository"
   | "assistantChatService"
   | "auditService"
   | "conversationRepository"
-  | "documentRepository"
-  | "documentStorage"
   | "env"
-  | "retrievalAnswerService"
+  | "metricsRegistry"
   | "workspaceInvalidationPublisher"
+  | "abuseControlService"
 >;
 
 export interface McpConverseRouteServices {
   audit: AgentConverseAudit;
   sessionService: AgentConverseSessionPort;
   converseService: AgentConverseService;
-  groundedAnswerService: AgentConverseGroundedAnswerService;
-  resourceService: AgentConverseResourceService;
 }
 
 export const createMcpConverseRoutes = (
@@ -52,12 +44,16 @@ export const createMcpConverseRoutes = (
   services: McpConverseRouteServices,
 ): Router => {
   const router = Router();
-  const { audit, sessionService, converseService, groundedAnswerService, resourceService } = services;
+  const { audit, sessionService, converseService } = services;
+  const rateLimitMcpAsk = agentChannelChatRateLimiters(dependencies, "mcp");
+  const rateLimitMcpSource = createMcpConverseSourceRateLimiter(dependencies);
+  const rateLimitMcpToken = createMcpConverseTokenRateLimiter(dependencies);
 
   router.post(
     "/session",
-    rejectWorkspaceBearerToken(audit),
+    rateLimitMcpSource,
     validateBody(mcpConverseSessionRequestSchema),
+    rateLimitMcpToken,
     async (req, res, next) => {
       try {
         const session = await sessionService.exchange(req.body);
@@ -75,7 +71,7 @@ export const createMcpConverseRoutes = (
 
   router.post(
     "/session/validate",
-    rejectWorkspaceBearerToken(audit),
+    rateLimitMcpSource,
     validateBody(mcpConverseSessionValidateRequestSchema),
     async (req, res, next) => {
       try {
@@ -94,15 +90,15 @@ export const createMcpConverseRoutes = (
   );
 
   router.post(
-    "/ask",
-    requireMcpConverseSession(sessionService, audit),
-    requirePublicChatPermission(dependencies, "public_chat.turn.create"),
-    validateBody(mcpConverseAskRequestSchema),
-    async (req, res, next) => {
+    "/session/use",
+    rateLimitMcpSource,
+    requireValidMcpSourceProof(dependencies.env.RADIOSO_MCP_SIGNING_SECRET),
+    requireMcpConverseSession(sessionService),
+    async (_req, res, next) => {
       try {
         const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
-        const result = await converseService.askAgent(mcpConversePrincipal, req.body);
-        res.status(200).json(result);
+        onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
+        res.status(204).end();
       } catch (error) {
         next(error);
       }
@@ -110,50 +106,18 @@ export const createMcpConverseRoutes = (
   );
 
   router.post(
-    "/grounded-answer",
-    requireMcpConverseSession(sessionService, audit),
-    requirePublicChatPermission(dependencies, "public_chat.retrieval.query"),
-    validateBody(mcpConverseGroundedAnswerRequestSchema),
+    "/ask",
+    rateLimitMcpSource,
+    validateBody(mcpConverseAskRequestSchema),
+    requireMcpConverseSession(sessionService),
+    ...rateLimitMcpAsk,
+    requirePublicChatPermission(dependencies, "public_chat.turn.create"),
     async (req, res, next) => {
       try {
         const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
-        const result = await groundedAnswerService.answer(mcpConversePrincipal, req.body);
-        res.status(200).json(presentMcpConverseGroundedAnswer(result));
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
-
-  router.get(
-    "/resources",
-    requireMcpConverseSession(sessionService, audit),
-    requirePublicChatPermission(dependencies, "public_chat.documents.read.scoped"),
-    async (_req, res, next) => {
-      try {
-        const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
-        const resources = await resourceService.list(mcpConversePrincipal);
-        res.status(200).json(presentMcpConverseResourceList(resources));
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
-
-  router.get(
-    "/resources/:resourceId",
-    requireMcpConverseSession(sessionService, audit),
-    requirePublicChatPermission(dependencies, "public_chat.documents.read.scoped"),
-    async (req, res, next) => {
-      const params = mcpConverseResourceParamsSchema.safeParse(req.params);
-      if (!params.success) {
-        next(badRequest("Invalid request parameters", params.error.flatten()));
-        return;
-      }
-      try {
-        const { mcpConversePrincipal } = res.locals as typeof res.locals & McpConverseLocals;
-        const resource = await resourceService.read(mcpConversePrincipal, params.data.resourceId);
-        res.status(200).json(presentMcpConverseResource(resource));
+        const result = await converseService.askAgent(mcpConversePrincipal, req.body);
+        onSuccessfulHttpResponse(res, () => sessionService.recordSuccessfulUse(mcpConversePrincipal));
+        res.status(200).json(result);
       } catch (error) {
         next(error);
       }

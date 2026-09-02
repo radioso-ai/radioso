@@ -1,29 +1,30 @@
 ---
-title: Chat and history
-description: Ask agent questions, continue conversations, and inspect saved conversation history.
+title: "Chat and history"
+description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
+last_updated: 2026-09-01
 ---
 
 # Chat and history
 
-This is the main agent chat workflow for authenticated API clients.
+Use the agent chat endpoint when an API client needs to converse with one configured agent. Its credential carries no workspace role and cannot switch agents.
 
 ## How it works
 
-1. Send a chat request with a workspace token.
-2. Optionally set `agentId`. When omitted, Radioso uses the workspace default agent.
-3. Choose whether the response should stream.
+1. Open the agent's **Channels → API** card and create a REST credential with a label and expiry.
+2. Copy the one-time secret before closing the result. Radioso stores only its hash.
+3. Send the secret to `POST /api/v1/agents/{agentId}/chat` and choose whether the response should stream.
 4. Reuse `conversationId` when you want continuity across turns.
-5. Inspect saved conversations later through the history routes.
+5. Use a personal token or service-account credential when an operator integration needs to inspect workspace history later.
 
 Agents own assistant identity, instructions, greeting settings, retrieval participation, per-skill settings, and surface settings for authenticated chat, anonymous chat, and website embed. Retrieval answer configuration lives on the agent through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. If an agent has retrieval enabled, assistant chat may use retrieval and return citations. Direct-only agents use the direct assistant path and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Ask a grounded question
 
-This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching wherever `$RADIOSO_API_TOKEN` was issued — see [Workspaces and tokens](/api/workspaces-and-tokens).
+This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching the host where the agent credential was issued.
 
 ```bash
-curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
-  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+curl -sS -X POST https://api.radioso.ai/api/v1/agents/<agent-id>/chat \
+  -H "Authorization: Bearer $RADIOSO_AGENT_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"What does the FAQ say about uploaded content?","stream":false}'
 ```
@@ -31,14 +32,25 @@ curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
 The chat request schema also supports:
 
 - `conversationId` for follow-up turns
-- `agentId` for selecting a non-default workspace agent
 - `startConversation: true` for bootstrap flows
 - `userExpectedLocale` when the caller knows the user's locale
-- `inputMetadata` and `metadataFilter` for richer routing and filtering
+
+The agent id in the path must match the one stored on the credential. A REST credential for another agent, an MCP-audience credential, a personal token, or a service-account credential receives `401`.
+
+## Manage REST agent credentials
+
+The API card uses the same lifecycle endpoints as the MCP card, with `audience=rest`:
+
+```text
+POST /api/v1/agents/{agentId}/channel-credentials
+GET  /api/v1/agents/{agentId}/channel-credentials?audience=rest
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke
+```
+
+Issuance, rotation, and revocation require a signed-in session with permission to manage that agent. An agent credential cannot call these lifecycle routes itself.
 
 Bootstrap responses are ephemeral. When `startConversation: true` returns a greeting, the response can omit `conversationId`. Save and reuse a `conversationId` only after the first normal user message returns one.
-
-If the bootstrap response includes `bootstrapGreetingId`, send it with the first normal user message and no `conversationId`. Radioso saves the displayed greeting only when that first user message creates the conversation.
 
 ## Streaming and non-streaming modes
 
@@ -63,6 +75,8 @@ events remain compatible.
 Use the [API Reference](/api-reference) for the exact streaming and non-streaming response contracts.
 
 ## Conversation history
+
+History is an operator-facing workspace surface. Use a signed-in session or an eligible personal or service-account credential for these calls, not the role-free agent chat credential.
 
 Use `GET /api/v1/history` to list merged chat and document-search history.
 
@@ -102,7 +116,11 @@ POST /api/v1/agents
 GET  /api/v1/agents/{agentId}
 PUT  /api/v1/agents/{agentId}
 POST /api/v1/agents/{agentId}/default
-POST /api/v1/assistant/chat
+POST /api/v1/agents/{agentId}/chat
+GET  /api/v1/agents/{agentId}/channel-credentials
+POST /api/v1/agents/{agentId}/channel-credentials
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate
+POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke
 PUT  /api/v1/answer-feedback/messages/{assistantMessageId}
 DELETE /api/v1/answer-feedback/messages/{assistantMessageId}
 GET  /api/v1/history
@@ -116,7 +134,7 @@ GET  /api/v1/history/search/{searchId}
 ## Common failure modes
 
 - `400` usually means the request body is invalid.
-- `401` means the workspace token is missing or invalid.
+- `401` from agent chat means its REST-audience credential is missing, invalid, expired, or bound to a different agent.
 - `404` can mean the conversation id is not available in the current workspace context.
 - `204` is part of the route contract. Use the reference page for the exact no-body case.
 

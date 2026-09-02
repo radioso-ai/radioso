@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  activateWorkspaceToken,
+  activateWorkspaceSession,
   clearWorkspaceStorage,
   getStoredActiveWorkspaceId,
-  removeWorkspaceToken,
+  removeWorkspaceSession,
   seedWorkspaceSession,
 } from '@/lib/api'
 
@@ -34,30 +34,25 @@ describe('workspace session bootstrap', () => {
     seedWorkspaceSession('workspace-a')
     expect(getStoredActiveWorkspaceId()).toBe('workspace-a')
     expect(localStorage.getItem('radioso.apiToken')).toBeNull()
-    expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
 
-    activateWorkspaceToken('workspace-b')
+    activateWorkspaceSession('workspace-b')
     expect(getStoredActiveWorkspaceId()).toBe('workspace-b')
     expect(localStorage.getItem('radioso.apiToken')).toBeNull()
-    expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
   })
 
   it('removes the active workspace id and clears cached workspace tokens', () => {
     const localStorage = createLocalStorage({
       'radioso.apiToken': 'radioso_legacy',
-      'radioso.workspaceTokens': JSON.stringify({ 'workspace-a': 'radioso_workspace' }),
       'radioso.activeWorkspaceId': 'workspace-a',
     })
     vi.stubGlobal('window', { localStorage })
 
-    removeWorkspaceToken('workspace-a')
+    removeWorkspaceSession('workspace-a')
     expect(getStoredActiveWorkspaceId()).toBeNull()
     expect(localStorage.getItem('radioso.apiToken')).toBeNull()
-    expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
 
     clearWorkspaceStorage()
     expect(localStorage.getItem('radioso.apiToken')).toBeNull()
-    expect(localStorage.getItem('radioso.workspaceTokens')).toBeNull()
     expect(localStorage.getItem('radioso.activeWorkspaceId')).toBeNull()
   })
 })

@@ -416,6 +416,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
 - `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
 - `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
+- `backend/src/modules/operatorCopilot/neverList.ts` (the boundaries Ray refuses, with the reason and deep link each refusal carries)
+- `backend/tests/unit/operatorCopilot/catalogCoverage.ts` (every OpenAPI operation mapped to the tool that covers it, a deferred ground naming the tool shape it waits on, or a permanent exclusion stating why it is never built; `copilot-catalog-coverage.test.ts` ratchets the deferred count)
 - `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
 - `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)
 - `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)

@@ -196,7 +196,7 @@ function DeveloperUploadInstructions({
               Use this instruction from trusted server-side code, scripts, or local tools.
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">Create a credential in Workspace settings → API access. Secrets are shown once and never cached here.</p>
+          <p className="text-xs text-muted-foreground">Create a credential in Settings → API access. Secrets are shown once and never cached here.</p>
           <div className="space-y-2">
             <ExampleSelector value={exampleLanguage} onChange={onExampleLanguageChange} />
             <CodeSnippet label={label} code={code} />
@@ -235,7 +235,7 @@ function DeveloperChatInstructions({
               Ask the assistant from trusted server-side code, scripts, or local tools.
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">Create a credential in Workspace settings → API access. Secrets are shown once and never cached here.</p>
+          <p className="text-xs text-muted-foreground">Create a credential in Settings → API access. Secrets are shown once and never cached here.</p>
           <div className="space-y-2">
             <ExampleSelector value={exampleLanguage} onChange={onExampleLanguageChange} />
             <CodeSnippet label={label} code={code} />

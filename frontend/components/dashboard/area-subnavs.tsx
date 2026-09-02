@@ -8,7 +8,7 @@ import {
   FileText,
   FlaskConical,
   FolderOpen,
-  Server,
+  KeyRound,
 } from 'lucide-react'
 
 import { SectionNavBody, type SubNavGroup } from '@/components/dashboard/subnav-column'
@@ -81,7 +81,7 @@ export function SettingsSubNav({ accountId, routeState }: { accountId: string; r
     {
       items: [
         { id: 'workspace', label: 'Workspace', icon: Building2, href: href('workspace'), active: active === 'workspace' },
-        { id: 'service-accounts', label: 'Service accounts', icon: Server, href: href('service-accounts'), active: active === 'service-accounts' },
+        { id: 'api-access', label: 'API access', icon: KeyRound, href: href('api-access'), active: active === 'api-access' },
         { id: 'providers', label: 'Providers', icon: Boxes, href: href('providers'), active: active === 'providers' },
       ],
     },

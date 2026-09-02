@@ -1,7 +1,7 @@
 ---
 title: "API Access Credential Upgrade"
 description: "How to prepare API clients for the destructive replacement of shared workspace tokens with personal tokens and service-account credentials."
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 ---
 
 # API Access Credential Upgrade
@@ -25,7 +25,7 @@ Choose a personal token for automation that should stop when its user loses work
 
 For each client:
 
-1. Sign in to the dashboard. Open the workspace API access controls for a personal token or **Settings → Service accounts** for a non-human identity.
+1. Sign in to the dashboard. Open **Settings → API access**, which holds personal tokens and service accounts.
 2. Create the personal token or service account with the narrowest suitable role. Personal credentials expire within 90 days; service credentials expire within 365 days. The first service-account credential is named `Primary`.
 3. Copy the secret from the one-time response into the client's secret manager.
 4. Verify the client against an eligible REST API route.

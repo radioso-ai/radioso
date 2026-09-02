@@ -3,7 +3,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 
-import { CredentialIssuedDialog } from '@/components/dashboard/settings/credential-dialogs'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -38,6 +37,7 @@ export function RoleSelect({
   adminSelectable = true,
   disabled = false,
   className,
+  ariaLabel,
 }: {
   id: string
   value: CredentialRole
@@ -45,10 +45,13 @@ export function RoleSelect({
   adminSelectable?: boolean
   disabled?: boolean
   className?: string
+  /** Names the control where the section heading, not a form label, introduces it. */
+  ariaLabel?: string
 }) {
   return (
     <select
       id={id}
+      aria-label={ariaLabel}
       className={cn(nativeSelectClassName, className)}
       value={value}
       disabled={disabled}
@@ -60,7 +63,8 @@ export function RoleSelect({
   )
 }
 
-export const expiryHint = 'Required. Rotate or replace the credential before this date.'
+/** One expiry instruction for every credential family. */
+export const CREDENTIAL_EXPIRY_HINT = 'Rotate before this date.'
 
 function Field({ htmlFor, label, hint, children }: { htmlFor: string; label: string; hint?: string; children: ReactNode }) {
   return (
@@ -152,23 +156,23 @@ export function CreatePersonalTokenDialog({
 
   return (
     <CreateDialogShell
-      title="Create personal token"
-      description="A personal token acts as you, for your own scripts and local development. The secret is shown once."
+      title="Create token"
+      description="Acts as you."
       error={error}
-      submitLabel="Issue personal token"
+      submitLabel="Create token"
       submitDisabled={!label.trim() || !expiry}
       isSubmitting={isSubmitting}
       onSubmit={() => onSubmit({ label, role, expiry })}
       onOpenChange={onOpenChange}
     >
-      <Field htmlFor="personal-token-label" label="Token label">
+      <Field htmlFor="personal-token-label" label="Label">
         <Input id="personal-token-label" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Local development" autoFocus />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field htmlFor="personal-token-role" label="Role" hint={adminSelectable ? 'Caps what the token may do.' : 'Matches your workspace role.'}>
           <RoleSelect id="personal-token-role" value={role} onChange={setRole} adminSelectable={adminSelectable} />
         </Field>
-        <Field htmlFor="personal-token-expiry" label="Expires" hint={expiryHint}>
+        <Field htmlFor="personal-token-expiry" label="Expires" hint={CREDENTIAL_EXPIRY_HINT}>
           <Input id="personal-token-expiry" type="date" value={expiry} onChange={(event) => setExpiry(event.target.value)} />
         </Field>
       </div>
@@ -196,7 +200,7 @@ export function CreateServiceAccountDialog({
   return (
     <CreateDialogShell
       title="New service account"
-      description="A standalone identity for one integration, with its own credentials you can rotate or revoke on their own."
+      description="One identity per integration, revocable on its own."
       error={error}
       submitLabel="Create service account"
       submitDisabled={!displayName.trim() || !expiry}
@@ -204,40 +208,15 @@ export function CreateServiceAccountDialog({
       onSubmit={() => onSubmit({ displayName, role, expiry })}
       onOpenChange={onOpenChange}
     >
-      <Field htmlFor="service-account-name" label="Service account name">
+      <Field htmlFor="service-account-name" label="Name">
         <Input id="service-account-name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Nightly ingestion" autoFocus />
       </Field>
       <Field htmlFor="service-account-role" label="Role" hint="Caps what every credential on this account may do.">
         <RoleSelect id="service-account-role" value={role} onChange={setRole} adminSelectable={adminSelectable} />
       </Field>
-      <Field htmlFor="service-credential-expiry" label="Primary credential expires" hint={expiryHint}>
-        <Input id="service-credential-expiry" type="date" value={expiry} onChange={(event) => setExpiry(event.target.value)} />
+      <Field htmlFor="new-service-credential-expiry" label="Primary credential expires" hint={CREDENTIAL_EXPIRY_HINT}>
+        <Input id="new-service-credential-expiry" type="date" value={expiry} onChange={(event) => setExpiry(event.target.value)} />
       </Field>
     </CreateDialogShell>
-  )
-}
-
-/**
- * Adapts the personal-token and service-account panel's call shape onto the shared
- * issued-credential dialog so both families keep a single implementation.
- */
-export function OneTimeSecretDialog(props: {
-  response: { secret: string }
-  acknowledged?: boolean
-  onAcknowledged?: (value: boolean) => void
-  onClose: () => void
-  additionalContent?: ReactNode
-  copyAriaLabel?: string
-}) {
-  return (
-    <CredentialIssuedDialog
-      secret={props.response.secret}
-      title="Save this secret now"
-      description="This credential secret cannot be recovered after you close this message. Store it in your server-side secret manager."
-      acknowledgeLabel="I have saved this secret securely and understand it cannot be recovered."
-      copyAriaLabel={props.copyAriaLabel ?? 'Copy one-time credential secret'}
-      additionalContent={props.additionalContent}
-      onDone={props.onClose}
-    />
   )
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Info, KeyRound, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 
-import { defaultExpiryDate, expiryInputToIso } from '@/components/dashboard/settings/api-access-dialogs'
+import { CREDENTIAL_EXPIRY_HINT, defaultExpiryDate, expiryInputToIso } from '@/components/dashboard/settings/api-access-dialogs'
 import {
   CredentialDetailsDialog,
   CredentialIssuedDialog,
@@ -36,8 +36,6 @@ import {
   useAgentChannelCredentials,
 } from '@/hooks/use-agent-channel-credentials'
 import type { AgentChannelCredential, AgentChannelCredentialAudience } from '@/lib/api-agent-channel-credentials'
-
-export const CREDENTIAL_EXPIRY_HINT = 'Rotate before this date.'
 
 const statusBadgeLabel = (status: AgentChannelCredential['status']) =>
   `${status.charAt(0).toUpperCase()}${status.slice(1)}`

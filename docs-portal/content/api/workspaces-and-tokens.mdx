@@ -1,7 +1,7 @@
 ---
 title: "Personal tokens and service accounts"
 description: "Create role-bounded credentials for people and durable service identities for unattended API clients."
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 ---
 
 # Personal tokens and service accounts
@@ -54,7 +54,7 @@ curl -sS \
 
 ## Create a service account
 
-Open **Settings → Service accounts**. An administrator or owner creates the stable identity and its first credential together. The form asks for the account name, role, and credential expiry; the server names the first credential `Primary`, so there is no second name to invent during setup.
+Open **Settings → API access**. An administrator or owner creates the stable identity and its first credential together. The form asks for the account name, role, and credential expiry; the server names the first credential `Primary`, so there is no second name to invent during setup.
 
 ```bash
 service_expiry="$(node -p 'new Date(Date.now() + 180 * 86400000).toISOString()')"

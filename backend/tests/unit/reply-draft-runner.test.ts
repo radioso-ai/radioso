@@ -39,7 +39,7 @@ const options = (overrides: Partial<ReplyDraftRunnerOptions> = {}): ReplyDraftRu
   messages: { listRecentByConversationId: vi.fn(async () => transcript) },
   agentConfig: { resolveConfig: vi.fn(async () => ({ name: "Support" })) },
   summaries: { load: vi.fn(async () => summaryRecord("The customer is chasing a parcel from three weeks ago.")) },
-  routineStates: { loadActive: vi.fn(async () => null) },
+  routineStates: { loadActive: vi.fn(async () => null), loadSuspended: vi.fn(async () => null) },
   replay: {
     run: vi.fn(async () => ({
       answer: "We reissued the parcel this morning.",
@@ -114,15 +114,47 @@ describe("ReplyDraftRunner", () => {
     await expect(result).resolves.toMatchObject({ groundedOnSummary: false });
   });
 
-  it("refuses when the last turn is not a waiting customer message", async () => {
-    const { opts, reserve, result } = draft({
+  it("answers the customer's outstanding message even when the agent replied after it", async () => {
+    // What a handoff and a complaint both look like: the agent spoke last, and the customer's
+    // question is still open — which is exactly why a person is being asked to step in. Requiring
+    // the customer to have spoken last refused the queue's two commonest rows.
+    const { opts, result } = draft({
       messages: { listRecentByConversationId: vi.fn(async () => [transcript[0]!, transcript[1]!]) },
+    } as Partial<ReplyDraftRunnerOptions>);
+
+    await result;
+
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({
+      query: "My order never arrived.",
+      history: [],
+    }));
+  });
+
+  it("refuses a conversation with no customer message at all", async () => {
+    const { opts, reserve, result } = draft({
+      messages: { listRecentByConversationId: vi.fn(async () => [transcript[1]!]) },
     } as Partial<ReplyDraftRunnerOptions>);
 
     await expect(result).rejects.toThrow(/customer message/i);
     expect(opts.replay.run).not.toHaveBeenCalled();
     // A conversation that cannot be drafted for costs nothing: the allowance is claimed at
     // dispatch, so a refusal never spends one and never comes back as a quota error.
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
+  it("refuses a conversation paused on a pending approval", async () => {
+    // A suspended routine is the shape of every approval row in the operator queue. The live turn
+    // skips the routine in that state while a replay would attempt one, so drafting would hand
+    // over the opening step of a routine that never restarted.
+    const { opts, reserve, result } = draft({
+      routineStates: {
+        loadActive: vi.fn(async () => null),
+        loadSuspended: vi.fn(async () => ({ sessionId: CONVERSATION_ID, routineId: "routine-1", status: "suspended" })),
+      },
+    } as unknown as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).rejects.toThrow(/pending approval/i);
+    expect(opts.replay.run).not.toHaveBeenCalled();
     expect(reserve).not.toHaveBeenCalled();
   });
 
@@ -139,7 +171,10 @@ describe("ReplyDraftRunner", () => {
     // one without its position answers as if the routine had never started.
     const position = { routineId: "routine-1", stepId: "collect_address", slots: {}, status: "active" };
     const { opts, result } = draft({
-      routineStates: { loadActive: vi.fn(async () => ({ sessionId: CONVERSATION_ID, ...position })) },
+      routineStates: {
+        loadActive: vi.fn(async () => ({ sessionId: CONVERSATION_ID, ...position })),
+        loadSuspended: vi.fn(async () => null),
+      },
     } as unknown as Partial<ReplyDraftRunnerOptions>);
 
     await expect(result).resolves.toMatchObject({ groundedOnRoutine: true });

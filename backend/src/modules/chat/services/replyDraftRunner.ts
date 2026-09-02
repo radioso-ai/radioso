@@ -25,6 +25,8 @@ export interface ReplyDraftConversationReadPort {
 
 export interface ReplyDraftRoutineStateReadPort {
   loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+  /** A routine paused on an approval persists as `suspended`, which `loadActive` cannot see. */
+  loadSuspended(input: { sessionId: string }): Promise<RoutineState | null>;
 }
 
 export interface ReplyDraftRunnerOptions {
@@ -75,6 +77,8 @@ export interface ChatReplyDraftResult {
   readonly groundedOnRoutine: boolean;
 }
 
+const stripSessionId = ({ sessionId: _sessionId, ...position }: RoutineState) => position;
+
 /**
  * Composes what the agent would say next in a live conversation, without becoming a turn in it.
  *
@@ -82,8 +86,6 @@ export interface ChatReplyDraftResult {
  * conversation, routine state, or summary is written and nothing reaches the customer. That is the
  * whole point — the operator reads the draft, edits it, and sends it themselves.
  */
-const stripSessionId = ({ sessionId: _sessionId, ...position }: RoutineState) => position;
-
 export class ReplyDraftRunner {
   constructor(private readonly options: ReplyDraftRunnerOptions) {}
 
@@ -105,19 +107,29 @@ export class ReplyDraftRunner {
       input.conversationId,
       input.historyLimit,
     );
-    const waiting = transcript.at(-1);
-    // A draft answers somebody. When the agent or an operator spoke last there is no waiting
-    // question, and composing one anyway would invent a customer turn that never happened.
-    if (!waiting || waiting.role !== "user") {
-      throw badRequest("The conversation's last turn is not a waiting customer message");
+    // The customer's most recent message, wherever it sits. Requiring it to be the *last* turn
+    // refuses the two shapes this queue is made of: a handoff, where the agent spoke and then
+    // escalated, and a complaint, where the agent answered and the customer said it was wrong. In
+    // both the question is still outstanding — that is why a person is being asked to step in.
+    const waitingIndex = transcript.map((message) => message.role).lastIndexOf("user");
+    if (waitingIndex < 0) {
+      throw badRequest("The conversation has no customer message to reply to");
     }
+    const waiting = transcript[waitingIndex]!;
 
-    const [baselineAgentConfig, summary, routineState] = await Promise.all([
+    const [baselineAgentConfig, summary, routineState, suspendedRoutine] = await Promise.all([
       this.options.agentConfig.resolveConfig(input.workspaceId, agentId),
       // Routine state is keyed by conversation id, and so is the summary.
       loadConversationSummaryText(this.options.summaries, input.conversationId, this.options.logger),
       this.options.routineStates.loadActive({ sessionId: input.conversationId }),
+      this.options.routineStates.loadSuspended({ sessionId: input.conversationId }),
     ]);
+    // A suspended routine is a conversation waiting on an approval decision, not on a reply. The
+    // live turn skips the routine entirely in that state while a replay would attempt one, so
+    // drafting here would hand the operator the opening step of a routine that never restarted.
+    if (suspendedRoutine) {
+      throw badRequest("The conversation is paused on a pending approval; decide that before drafting a reply");
+    }
     if (!baselineAgentConfig) {
       throw notFound("Agent not found");
     }
@@ -134,7 +146,7 @@ export class ReplyDraftRunner {
       // otherwise fire against a real customer's conversation on the operator's behalf.
       executionMode: "safe_test",
       query: waiting.content,
-      history: transcript.slice(0, -1),
+      history: transcript.slice(0, waitingIndex),
       conversationSummary: summary ?? null,
       // The runner keys routine state by the ephemeral conversation it creates, so the seed is the
       // position without its session id.

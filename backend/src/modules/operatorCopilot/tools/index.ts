@@ -11,6 +11,8 @@ import { createContextVariableProposalCopilotTools, createContextVariablesCopilo
 import type { ContextVariableProposalCopilotToolDependencies, ContextVariablesCopilotToolDependencies, CopilotContextVariablesAgentPort } from "./contextVariables.js";
 import type { AudiencePulseCopilotToolDependencies, CopilotAudiencePulsePort } from "./audiencePulse.js";
 import { createChatCopilotTools } from "./chat.js";
+import { createReplyDraftCopilotTools } from "./replyDraft.js";
+import type { CopilotReplyDraftPort, ReplyDraftCopilotToolDependencies } from "./replyDraft.js";
 import type { ChatCopilotToolDependencies, CopilotConversationHistoryPort } from "./chat.js";
 import { createAgentTurnProbeCopilotTools } from "./agentTurnProbe.js";
 import type { AgentTurnProbeCopilotToolDependencies, CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
@@ -28,12 +30,14 @@ import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./ev
 import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
 import { createRetrievalProbeCopilotTools } from "./retrievalProbe.js";
 import type { CopilotRetrievalProbePort, RetrievalProbeCopilotToolDependencies } from "./retrievalProbe.js";
-import { createQualityCopilotTools } from "./quality.js";
-import type { CopilotQualitySignalsPort, QualityCopilotToolDependencies } from "./quality.js";
+import { createQualityCopilotTools, createQualityTriageCopilotTools } from "./quality.js";
+import type { CopilotQualitySignalsPort, CopilotQualityTriagePort, QualityCopilotToolDependencies, QualityTriageCopilotToolDependencies } from "./quality.js";
 import { createRoutineDefinitionCopilotTools, createRoutineProposalCopilotTools } from "./routines.js";
 import type { CopilotRoutineDefinitionPort, RoutineDefinitionCopilotToolDependencies, RoutineProposalCopilotToolDependencies } from "./routines.js";
 import { createWorkspaceTriageCopilotTools } from "./triage.js";
-import type { CopilotPendingApprovalsPort, CopilotTriageLogPort, WorkspaceTriageCopilotToolDependencies } from "./triage.js";
+import { createNeedsAttentionCopilotTools } from "./needsAttention.js";
+import type { WorkspaceTriageCopilotToolDependencies } from "./triage.js";
+import type { CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";
 import { createWorkspaceSettingsCopilotTools } from "./settings.js";
 import type { CopilotWorkspaceSettingsPort } from "./settings.js";
 
@@ -41,6 +45,7 @@ export type CopilotAgentPort = CopilotAgentConfigurationPort & CopilotAgentSkill
 
 export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDependencies
   & ChatCopilotToolDependencies
+  & ReplyDraftCopilotToolDependencies
   & Omit<AgentTurnProbeCopilotToolDependencies, "agentLookup">
   & DocumentSearchCopilotToolDependencies
   & DocumentStatusCopilotToolDependencies
@@ -49,6 +54,7 @@ export type CopilotToolCatalogDependencies = AgentConfigurationCopilotToolDepend
   & EvalVerificationCopilotToolDependencies
   & Omit<RetrievalProbeCopilotToolDependencies, "agentLookup">
   & QualityCopilotToolDependencies
+  & QualityTriageCopilotToolDependencies
   & AudiencePulseCopilotToolDependencies
   & AgentSkillsCopilotToolDependencies
   & ContextVariablesCopilotToolDependencies
@@ -73,12 +79,14 @@ export const createCopilotToolDescriptors = (
   ...createAgentConfigurationCopilotTools(deps),
   ...createRoutineDefinitionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createChatCopilotTools(deps),
+  ...createReplyDraftCopilotTools(deps),
   ...createAgentTurnProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDocumentSearchCopilotTools(deps),
   ...createEvalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createEvalVerificationCopilotTools(deps),
   ...createRetrievalProbeCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createQualityCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createQualityTriageCopilotTools(deps),
   ...createAudiencePulseCopilotTools(deps),
   ...createDocumentStatusCopilotTools(deps),
   ...createDocumentKnowledgeCopilotTools(deps),
@@ -86,6 +94,7 @@ export const createCopilotToolDescriptors = (
   ...createContextVariablesCopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
   ...createWorkspaceTriageCopilotTools({ ...deps, agentLookup: deps.agentService }),
+  ...createNeedsAttentionCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createDirectiveProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createRoutineProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
   ...createAgentSettingProposalCopilotTools({ ...deps, agentLookup: deps.agentService }),
@@ -102,11 +111,12 @@ export type { CopilotAgentSkillsPort, CopilotSkillCapabilityTargetsPort } from "
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotContextVariablesPort } from "./contextVariables.js";
 export type { CopilotConversationHistoryPort } from "./chat.js";
+export type { CopilotReplyDraftPort } from "./replyDraft.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 export type { CopilotEvalResultsPort } from "./eval.js";
-export type { CopilotQualitySignalsPort } from "./quality.js";
+export type { CopilotQualitySignalsPort, CopilotQualityTriagePort } from "./quality.js";
 export type { CopilotRetrievalProbePort } from "./retrievalProbe.js";
 export type { CopilotRoutineDefinitionPort } from "./routines.js";
 export type { CopilotWorkspaceSettingsPort } from "./settings.js";
-export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./triage.js";
+export type { CopilotPendingApproval, CopilotPendingApprovalsPort, CopilotTriageLogPort } from "./escalationSources.js";

@@ -36,6 +36,7 @@ export { summarizeProposalEvidence } from "./proposalEvidence.js";
 export { resolveProposalEvidence } from "./services/proposalEvidenceService.js";
 export type { ProposalEvidenceDependencies } from "./services/proposalEvidenceService.js";
 export { EvalSuiteProbeService } from "./services/evalSuiteProbeService.js";
+export { ReplyDraftProbeService } from "./services/replyDraftProbeService.js";
 export { RetrievalProbeService } from "./services/retrievalProbeService.js";
 export type {
   CopilotRetrievalProbeInput,

@@ -1,9 +1,21 @@
 import { z } from "zod";
 
-import type { AccountPermission } from "../../account/public.js";
 import type { CopilotToolDescriptor, CopilotToolInvocationContext, CopilotWorkspaceRouteKeyResolver } from "../contracts.js";
 import type { CopilotEvalResultsPort } from "../contracts/evalCases.js";
 import { buildCopilotDashboardLink } from "../dashboardLinks.js";
+import {
+  clip,
+  copilotTriageSourcePermissions,
+  escalatedAt,
+  latestDownComment,
+  readAuthorizedSource,
+  HANDOFF_RANKING_WINDOW,
+  MAX_DETAIL_CHARS,
+  MAX_TITLE_CHARS,
+  type AuthorizedSourceRead,
+  type CopilotPendingApprovalsPort,
+  type CopilotTriageLogPort,
+} from "./escalationSources.js";
 import {
   buildCopilotTriageDigest,
   copilotTriageSourceForKind,
@@ -11,9 +23,8 @@ import {
   isCopilotTriageAggregate,
   type CopilotTriageItem,
   type CopilotTriageSourceId,
-  type CopilotTriageSourceReport,
 } from "../triageDigest.js";
-import type { CopilotConversationHistoryPort, CopilotConversationSummary } from "./chat.js";
+import type { CopilotConversationHistoryPort } from "./chat.js";
 import type { CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 import type { CopilotQualitySignalsPort } from "./quality.js";
 import { describeNamedAgent, entity, type CopilotAgentLookupPort } from "./shared.js";
@@ -27,36 +38,11 @@ const entityNameSchema = z.string().trim().min(1).max(160);
  */
 const MAX_ITEMS_PER_SOURCE = 10;
 /**
- * How many waiting handoffs are ranked before the cap applies. The underlying list is ordered by
- * recent activity, so ranking over one page of ten would return the ten most recently active
- * handoffs and call the oldest of those the longest wait. Ranking over a wide window and listing
- * a narrow one keeps the top of the digest correct.
- */
-const HANDOFF_RANKING_WINDOW = 100;
-const MAX_TITLE_CHARS = 160;
-const MAX_DETAIL_CHARS = 240;
-/**
  * The one status the ingestion writer records for a healthy sync. Anything else — including a
  * status a connector added later — surfaces as a failing source, because an unrecognized status
  * that reads as healthy is the failure this section exists to catch.
  */
 const SUCCESSFUL_SYNC_STATUS = "success";
-
-export interface CopilotPendingApproval {
-  readonly conversationId: string;
-  readonly agentId: string;
-  readonly reason: string | null;
-  readonly createdAt: Date;
-}
-
-export interface CopilotPendingApprovalsPort {
-  listPending(workspaceId: string): Promise<ReadonlyArray<CopilotPendingApproval>>;
-}
-
-/** Records a source Ray could not read, so a swallowed failure is still traceable in support. */
-export interface CopilotTriageLogPort {
-  warn(fields: Record<string, unknown>, message: string): void;
-}
 
 export interface WorkspaceTriageCopilotToolDependencies {
   readonly agentLookup?: CopilotAgentLookupPort;
@@ -109,7 +95,7 @@ const triageOutputSchema = z.object({
 type WorkspaceTriageInput = z.infer<typeof triageInputSchema>;
 type WorkspaceTriageOutput = z.infer<typeof triageOutputSchema>;
 
-const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs and approvals first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent.";
+const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs and approvals first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. This is the answer to a broad opening question about the workspace; needs_attention lists the same escalations as a working queue when the operator is about to act on one.";
 
 export const createWorkspaceTriageCopilotTools = (
   deps: WorkspaceTriageCopilotToolDependencies,
@@ -140,70 +126,7 @@ export const createWorkspaceTriageCopilotTools = (
     : entity("agent", input.agentId),
 }];
 
-/**
- * Each source reads under its own permission rather than the tool requiring the union. A member
- * role holds no quality permission, so an all-of gate would take the whole digest away from the
- * operators it exists to orient. Exported so the turn route can be checked for resolving every
- * one of these: a permission the route never resolves makes its section permanently unauthorized.
- */
-export const copilotTriageSourcePermissions: Record<CopilotTriageSourceId, AccountPermission> = {
-  approvals: "workspace.conversation.takeover",
-  handoffs: "workspace.history.read",
-  quality: "workspace.quality.read",
-  documents: "workspace.documents.read",
-  document_sources: "workspace.documents.read",
-  evals: "workspace.retrieval.query",
-};
-
-interface SourceResult {
-  readonly items: ReadonlyArray<CopilotTriageItem>;
-  /** Rows matched of the kinds this source lists individually, before the cap. */
-  readonly total: number;
-}
-
-/**
- * Reads one source under its own permission, and turns a failure into a stated gap rather than an
- * absent section. #942's lesson: a digest that renders "could not read" as zero tells the operator
- * their workspace is clear.
- */
-const readSource = async (
-  deps: WorkspaceTriageCopilotToolDependencies,
-  context: CopilotToolInvocationContext,
-  source: CopilotTriageSourceId,
-  read: () => Promise<SourceResult>,
-): Promise<{ report: Omit<CopilotTriageSourceReport, "included">; items: ReadonlyArray<CopilotTriageItem> }> => {
-  const permission = copilotTriageSourcePermissions[source];
-  const authorized = await context.currentAuthorization.hasAllPermissions({
-    workspaceId: context.workspaceId,
-    accountId: context.accountId,
-    operatorUserId: context.operatorUserId,
-    requiredPermissions: [permission],
-  });
-  if (!authorized) {
-    return { report: { source, status: "unauthorized", total: null }, items: [] };
-  }
-  try {
-    const result = await read();
-    // Each source may take a different amount of time. Recheck its own permission before the
-    // rows become part of the aggregate, so a revocation during this read cannot leak a line.
-    const stillAuthorized = await context.currentAuthorization.hasAllPermissions({
-      workspaceId: context.workspaceId,
-      accountId: context.accountId,
-      operatorUserId: context.operatorUserId,
-      requiredPermissions: [permission],
-    });
-    if (!stillAuthorized) {
-      return { report: { source, status: "unauthorized", total: null }, items: [] };
-    }
-    return { report: { source, status: "ok", total: result.total }, items: result.items };
-  } catch (error) {
-    deps.logger?.warn(
-      { workspaceId: context.workspaceId, source, error: error instanceof Error ? error.message : "unknown" },
-      "Workspace triage source could not be read",
-    );
-    return { report: { source, status: "failed", total: null }, items: [] };
-  }
-};
+type SourceResult = AuthorizedSourceRead<CopilotTriageItem>;
 
 const buildDigest = async (
   deps: WorkspaceTriageCopilotToolDependencies,
@@ -215,12 +138,12 @@ const buildDigest = async (
   // Resolving the key here is what lets every line carry its own handoff.
   const [workspaceKey, ...sources] = await Promise.all([
     deps.workspaceRouteKeyResolver.resolveWorkspaceKey(context.workspaceId),
-    readSource(deps, context, "approvals", () => readApprovals(deps, context.workspaceId, agentId)),
-    readSource(deps, context, "handoffs", () => readHandoffs(deps, context.workspaceId, agentId)),
-    readSource(deps, context, "quality", () => readQuality(deps, context.workspaceId, agentId)),
-    readSource(deps, context, "documents", () => readDocuments(deps, context.workspaceId)),
-    readSource(deps, context, "document_sources", () => readDocumentSources(deps, context.workspaceId)),
-    readSource(deps, context, "evals", () => readEvalCases(deps, context.workspaceId, agentId)),
+    readAuthorizedSource(deps, context, "approvals", () => readApprovals(deps, context.workspaceId, agentId)),
+    readAuthorizedSource(deps, context, "handoffs", () => readHandoffs(deps, context.workspaceId, agentId)),
+    readAuthorizedSource(deps, context, "quality", () => readQuality(deps, context.workspaceId, agentId)),
+    readAuthorizedSource(deps, context, "documents", () => readDocuments(deps, context.workspaceId)),
+    readAuthorizedSource(deps, context, "document_sources", () => readDocumentSources(deps, context.workspaceId)),
+    readAuthorizedSource(deps, context, "evals", () => readEvalCases(deps, context.workspaceId, agentId)),
   ]);
 
   const ranked = buildCopilotTriageDigest(sources.flatMap((source) => source.items));
@@ -311,9 +234,6 @@ const readHandoffs = async (
   };
 };
 
-const escalatedAt = (conversation: CopilotConversationSummary): string =>
-  conversation.ownership?.updatedAt ?? conversation.updatedAt;
-
 const readQuality = async (
   deps: WorkspaceTriageCopilotToolDependencies,
   workspaceId: string,
@@ -364,12 +284,6 @@ const readQuality = async (
     ],
   };
 };
-
-const latestDownComment = (
-  comments: ReadonlyArray<{ value: string; comment: string; updatedAt: string }>,
-): string | null => comments
-  .filter((entry) => entry.value === "down")
-  .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0]?.comment ?? null;
 
 const readDocuments = async (
   deps: WorkspaceTriageCopilotToolDependencies,
@@ -462,6 +376,3 @@ const readEvalCases = async (
 
 const lastRunAt = (evalCase: { readonly latestRun: { readonly startedAt: string; readonly completedAt: string | null } | null; readonly updatedAt: string }): string =>
   evalCase.latestRun?.completedAt ?? evalCase.latestRun?.startedAt ?? evalCase.updatedAt;
-
-const clip = (value: string | null, max: number): string | null =>
-  value === null ? null : (value.length <= max ? value : value.slice(0, max));

@@ -25,6 +25,8 @@ describe("operator copilot write shapes", () => {
       "provider_credential_writes",
       "embedding_model_switch_without_typed_confirmation",
       "unattended_live_customer_reply",
+      "live_conversation_ownership",
+      "pending_decision_resolution",
     ]);
     expect(neverListExclusion("workspace_delete")).toMatchObject({
       disposition: "permanent",
@@ -48,6 +50,8 @@ describe("operator copilot write shapes", () => {
       expect.objectContaining({ boundary: "provider_credential_writes", dashboardUrl: "/w/acme/settings" }),
       expect.objectContaining({ boundary: "embedding_model_switch_without_typed_confirmation", dashboardUrl: "/w/acme/settings" }),
       expect.objectContaining({ boundary: "unattended_live_customer_reply", dashboardUrl: "/w/acme/activity" }),
+      expect.objectContaining({ boundary: "live_conversation_ownership", dashboardUrl: "/w/acme/activity" }),
+      expect.objectContaining({ boundary: "pending_decision_resolution", dashboardUrl: "/w/acme/activity" }),
     ]);
   });
 });

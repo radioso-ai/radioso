@@ -53,6 +53,45 @@ export interface InternalAgentExternalSkillsConfig {
   skills: InternalExternalSkillConfig[];
 }
 
+/** The stored rows this projection reads, named structurally so this module keeps its repository ignorance. */
+export interface InternalAgentExternalSkillSources {
+  readonly connections: ReadonlyArray<{
+    id: string;
+    displayName: string;
+    serverUrl: string;
+    authMethod: McpAuthMethod;
+    credentialCiphertext?: string | null;
+  }>;
+  readonly skills: ReadonlyArray<InternalExternalSkillConfig>;
+}
+
+/**
+ * Renders the agent-scoped external-skill rows into the internal config an agent is materialized
+ * from. Every caller that reconstitutes a runnable agent — a captured eval snapshot, a live reply
+ * draft — needs the same projection, and an agent rebuilt without it silently loses its MCP tools.
+ */
+export const projectInternalAgentExternalSkills = (
+  sources: InternalAgentExternalSkillSources,
+): InternalAgentExternalSkillsConfig => ({
+  connections: sources.connections.map((connection) => ({
+    id: connection.id,
+    displayName: connection.displayName,
+    serverUrl: connection.serverUrl,
+    authMethod: connection.authMethod,
+    hasCredential: Boolean(connection.credentialCiphertext),
+  })),
+  skills: sources.skills.map((skill) => ({
+    skillName: skill.skillName,
+    connectionId: skill.connectionId,
+    toolName: skill.toolName,
+    boundParams: skill.boundParams,
+    exposedParams: skill.exposedParams,
+    declaredOutcomes: skill.declaredOutcomes,
+    outcomeMap: skill.outcomeMap,
+    enabled: skill.enabled,
+  })),
+});
+
 export interface McpOauthClientConfig {
   authorizationEndpoint: string;
   tokenEndpoint: string;

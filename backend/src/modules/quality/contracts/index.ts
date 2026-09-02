@@ -23,12 +23,12 @@ export type QualityFeedbackValue = "up" | "down";
  */
 export type QualityTriageState = "open" | "acknowledged" | "resolved" | "dismissed";
 
-export const QUALITY_TRIAGE_STATES: readonly QualityTriageState[] = [
+export const QUALITY_TRIAGE_STATES = [
   "open",
   "acknowledged",
   "resolved",
   "dismissed",
-];
+] as const satisfies readonly QualityTriageState[];
 
 export type QualityResolvedReason =
   | "knowledge_gap"
@@ -189,6 +189,20 @@ export interface SetTriageStateInput {
   updatedBy?: string | null;
 }
 
+/**
+ * A triage transition as a caller outside this module can express it: the state and reason arrive
+ * as plain strings, because the vocabulary they must belong to is this module's to police. Narrower
+ * callers pass {@link SetTriageStateInput}, which is assignable to this.
+ */
+export interface ApplyTriageUpdateInput {
+  assistantMessageId: string;
+  state: string;
+  expectedVersion: number;
+  resolution?: { reason: string; note?: string | null } | null;
+  legacyReason?: string | null;
+  updatedBy?: string | null;
+}
+
 export interface ValidatedQualityTriageUpdate {
   state: QualityTriageState;
   expectedVersion: number;
@@ -275,4 +289,6 @@ export interface QualityTurnsServicePort {
   listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage>;
   /** Conditionally transitions triage using the caller's observed version. */
   setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<SetTriageStateResult>;
+  /** The same transition for callers holding the state and reason as plain strings. */
+  applyTriageUpdate(workspaceId: string, input: ApplyTriageUpdateInput): Promise<SetTriageStateResult>;
 }

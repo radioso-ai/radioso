@@ -11,7 +11,7 @@ import { parseRealtimeConfig } from "../../modules/realtime/infrastructure/confi
 import { createRealtimeRolloutPolicy } from "../../modules/realtime/domain/realtimeRolloutPolicy.js";
 import { resolveGcpRedisCredentialsProvider } from "../../runtime/gcpMetadataRedisCredentials.js";
 import type { RealtimePublisherComposition } from "../composition/realtimePublisherComposition.js";
-import { AgentService, AgentSurfaceExtensionRegistry, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry, projectInternalAgentConfig, projectInternalAgentExternalSkills, serializeAuthoredDirectivesWithIds } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
 import {
   createFacetExtractionWorker,
@@ -65,12 +65,13 @@ import {
   EvalSuiteProbeService,
   CopilotRetentionWorker,
   OperatorCopilotService,
+  ReplyDraftProbeService,
   RetrievalProbeService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver } from "../composition/copilotToolCatalog.js";
-import { ProbeConversationReader } from "../../modules/chat/composition.js";
+import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
 import { ProbeRoutineReader } from "../../modules/routines/public.js";
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
@@ -82,6 +83,10 @@ import { AgentWizardService } from "../../modules/agentWizard/service.js";
 import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/public.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
+import { QUALITY_TRIAGE_STATES } from "../../modules/quality/contracts/index.js";
+import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
+import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -505,6 +510,38 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
     },
   });
+  const replyDraftProbeService = new ReplyDraftProbeService({
+    chatReplyDraft: new ReplyDraftRunner({
+      conversations: repositories.conversationRepository,
+      messages: repositories.messageRepository,
+      agentConfig: {
+        resolveConfig: async (workspaceId, agentId) => {
+          const agent = await repositories.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          if (!agent) return null;
+          const [connections, skills] = await Promise.all([
+            mcpConnectionRepository.listByAgent(agentId),
+            externalSkillDefinitionRepository.listByAgent(agentId),
+          ]);
+          // An agent rebuilt without its external skills would draft as a different agent, which is
+          // the misattribution a grounded draft exists to avoid.
+          return projectInternalAgentConfig(agent, {
+            externalSkills: projectInternalAgentExternalSkills({ connections, skills }),
+          });
+        },
+      },
+      summaries: new ConversationSummaryRepository(infrastructure.database.kysely),
+      routineStates: new RoutineStateRepository(infrastructure.database.kysely),
+      logger,
+      replay: chat.workbenchReplayRunner,
+    }),
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+  });
   const agentTurnProbeService = new AgentTurnProbeService({
     conversationReader: new ProbeConversationReader(repositories.conversationRepository),
     agentReader: {
@@ -654,7 +691,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       agentSkillConfig: copilotAgentSkillConfig,
       cases: copilotEvalCaseReader,
     },
+    replyDraft: replyDraftProbeService,
     qualitySignalsService,
+    qualityTriageService: {
+      triageStates: QUALITY_TRIAGE_STATES,
+      resolutionReasons: QUALITY_RESOLUTION_REASONS,
+      setTriageState: (workspaceId, input) => qualitySignalsService.applyTriageUpdate(workspaceId, input),
+    },
     audiencePulseService,
     documentStatusService: documents.documentIngestionService,
     documentSourceStatusService: documents.documentIngestionService,

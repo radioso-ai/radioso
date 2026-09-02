@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import type { CopilotToolDescriptor } from "../contracts.js";
+import { notFound } from "../../../shared/domain/errors.js";
+
+import { withCopilotActor, type CopilotAuditPort, type CopilotToolDescriptor } from "../contracts.js";
+import type { CopilotTriageLogPort } from "./escalationSources.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { asRecord, describeNamedAgent, entity, type CopilotAgentLookupPort } from "./shared.js";
 
@@ -32,10 +35,16 @@ export interface CopilotQualityTurn {
     readonly latestDownUpdatedAt: string | null;
     readonly comments: ReadonlyArray<{ value: string; comment: string; updatedAt: string }>;
   };
+  /**
+   * The turn's current triage position and the version it was read at. The version is the fence
+   * `set_triage_state` echoes back, so a reader that omits it hands out rows nothing can act on.
+   */
+  readonly triage: { readonly state: string; readonly version: number };
 }
 
 export interface CopilotQualityTurnsQuery {
   limit: number;
+  offset?: number;
   agentId?: string;
   feedbackValues?: Array<"up" | "down">;
   hasComment?: boolean;
@@ -75,3 +84,157 @@ export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies):
     },
   },
 ];
+
+/**
+ * One turn's triage position, as the quality module reports it after a transition attempt.
+ * `conflict` carries the row that won, because a competing operator's write is an answer Ray
+ * has to see rather than an error to retry blindly.
+ */
+export interface CopilotQualityTriageRecord {
+  readonly state: string;
+  readonly version: number;
+  readonly resolution: { readonly reason: string; readonly note: string | null } | null;
+  readonly closedAt: string | null;
+  readonly updatedAt: string | null;
+}
+
+export type CopilotQualityTriageResult =
+  | { readonly kind: "updated"; readonly record: CopilotQualityTriageRecord }
+  | { readonly kind: "conflict"; readonly current: CopilotQualityTriageRecord }
+  | { readonly kind: "not_found" };
+
+export interface CopilotQualityTriagePort {
+  /**
+   * The triage vocabulary, owned by Quality and carried across the boundary so the catalog keeps
+   * no copy of either list and never restates which reason a state accepts. A fifth state or an
+   * eighth reason reaches the tool by being added once, in the module that defines it.
+   */
+  readonly triageStates: readonly [string, ...string[]];
+  readonly resolutionReasons: readonly [string, ...string[]];
+  setTriageState(workspaceId: string, input: {
+    assistantMessageId: string;
+    state: string;
+    expectedVersion: number;
+    resolution?: { reason: string; note?: string | null } | null;
+    updatedBy?: string | null;
+  }): Promise<CopilotQualityTriageResult>;
+}
+
+export interface QualityTriageCopilotToolDependencies {
+  readonly qualityTriageService: CopilotQualityTriagePort;
+  /**
+   * The transition history records which operator moved a row; this records which Ray turn did,
+   * and through which surface. Without it a triage state that surprises somebody is traceable to a
+   * person but not to the conversation that produced it — and Ray is the only actor here that can
+   * move many rows in one operator gesture.
+   */
+  readonly auditService: CopilotAuditPort;
+  readonly logger?: CopilotTriageLogPort;
+}
+
+const setTriageStateDescription = "Record where an assistant turn stands in operator triage: open, acknowledged, resolved, or dismissed, with a resolution reason on a terminal state. Pass the assistantMessageId and the triage version exactly as needs_attention or quality_signals reported them, never an id you composed yourself — and a competing operator's change comes back as a conflict with the current record instead of overwriting them. This changes nothing a customer sees.";
+
+const triageRecordFields = {
+  state: z.string(),
+  version: z.number().int().nonnegative(),
+  resolution: z.object({ reason: z.string(), note: z.string().nullable() }).nullable(),
+  closedAt: z.string().nullable(),
+  updatedAt: z.string().nullable(),
+};
+
+export const createQualityTriageCopilotTools = (
+  deps: QualityTriageCopilotToolDependencies,
+): ReadonlyArray<CopilotToolDescriptor> => {
+  const inputSchema = z.object({
+    assistantMessageId: idSchema,
+    state: z.enum(deps.qualityTriageService.triageStates),
+    /** The fence: the version the row was read at, so a stale transition loses rather than wins. */
+    expectedVersion: z.number().int().min(0),
+    resolution: z.object({
+      reason: z.enum(deps.qualityTriageService.resolutionReasons),
+      note: z.string().max(500).nullish(),
+    }).nullish(),
+  }).strict();
+
+  const outputSchema = z.object({
+    outcome: z.enum(["updated", "conflict"]),
+    ...triageRecordFields,
+  }).strict();
+
+  return [{
+    name: "set_triage_state",
+    shape: "act",
+    verificationCost: () => 0,
+    uiLabel: "Recording a triage decision",
+    contributingModule: "quality",
+    dashboardSubject: { type: "quality_turn" },
+    requiredPermissions: ["workspace.quality.manage"],
+    description: setTriageStateDescription,
+    inputSchema,
+    outputSchema,
+    createTool: (context) => ({
+      name: "set_triage_state",
+      description: setTriageStateDescription,
+      inputSchema,
+      outputSchema,
+      invoke: async (input) => {
+        const { assistantMessageId, state, expectedVersion, resolution } = input as z.infer<typeof inputSchema>;
+        const result = await deps.qualityTriageService.setTriageState(context.workspaceId, {
+          assistantMessageId,
+          state,
+          expectedVersion,
+          ...(resolution === undefined ? {} : { resolution }),
+          updatedBy: context.operatorUserId,
+        });
+        if (result.kind === "not_found") {
+          throw notFound("Assistant turn not found");
+        }
+        const record = result.kind === "updated" ? result.record : result.current;
+        // The transition has already committed and bumped the version, so a throw from here would
+        // be retried by the runtime against a version that no longer exists — reporting a conflict
+        // for a change the operator successfully made and nobody competed on. A lost audit row is
+        // worse than nothing, so it is logged rather than swallowed silently.
+        await deps.auditService.record({
+          accountId: context.accountId,
+          workspaceId: context.workspaceId,
+          eventType: "copilot.triage.transitioned",
+          // A conflict changed nothing, so it is not a successful transition — and a burst of them
+          // is what a Ray turn working a stale queue looks like from the outside.
+          eventStatus: result.kind === "updated" ? "success" : "failure",
+          metadata: withCopilotActor(context, {
+            assistantMessageId,
+            outcome: result.kind,
+            requestedState: state,
+            expectedVersion,
+            currentState: record.state,
+            currentVersion: record.version,
+            resolutionReason: record.resolution?.reason ?? null,
+            // The Ray thread the transition came from: the transition history already records which
+            // operator moved the row, and this is what says which conversation asked them to.
+            copilotConversationId: context.copilotConversationId ?? null,
+          }),
+        }).catch((error: unknown) => {
+          deps.logger?.warn(
+            {
+              event: "copilot_triage_audit_failed",
+              workspaceId: context.workspaceId,
+              assistantMessageId,
+              outcome: result.kind,
+              errorMessage: error instanceof Error ? error.message : "unknown",
+            },
+            "Recorded a triage transition but could not audit it",
+          );
+        });
+        return outputSchema.parse({
+          outcome: result.kind,
+          state: record.state,
+          version: record.version,
+          resolution: record.resolution,
+          closedAt: record.closedAt,
+          updatedAt: record.updatedAt,
+        });
+      },
+    }),
+    describeEntity: () => ({ type: "quality_turn" }),
+  }];
+};

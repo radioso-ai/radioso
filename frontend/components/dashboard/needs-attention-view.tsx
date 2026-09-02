@@ -48,7 +48,7 @@ import {
   updateQualityInboxTurn,
   type QualityInboxSnapshot,
 } from '@/lib/needs-attention-quality'
-import { qualitySnapshotFromQueries, useNeedsAttentionQueries } from '@/lib/needs-attention-query-state'
+import { qualityLoadStateFromQueries, qualitySnapshotFromQueries, useNeedsAttentionQueries } from '@/lib/needs-attention-query-state'
 import { patchQualityTriage } from '@/lib/quality-query-state'
 import { useDashboardQueryInvalidation } from '@/components/providers/dashboard-query-provider'
 import { isTerminalQualityTriageState } from '@/lib/quality-signals'
@@ -119,6 +119,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     [attentionQueries.humanOwned.data],
   )
   const qualityPresentation = useMemo(() => qualityInboxPresentation(qualitySnapshot), [qualitySnapshot])
+  const qualityLoadState = qualityLoadStateFromQueries(
+    attentionQueries.commentedFeedback,
+    attentionQueries.reviewSummary,
+  )
   const qualityTurns = useMemo(
     () => qualityPresentation.turns.filter((turn) => !terminalQualityMessageIds.has(turn.assistantMessageId)),
     [qualityPresentation.turns, terminalQualityMessageIds],
@@ -371,6 +375,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // cancelled and rescheduled by the dependency array below whenever any
   // input changes — only lets the decision run once the inputs have gone a
   // full tick without changing, i.e. once they've actually settled.
+  //
+  // The blocking-error inputs come from `qualityLoadState`, read off the
+  // queries rather than the snapshot: a promotion that lands after this
+  // timeout would let an empty reading redirect past the very permission or
+  // failure message the operator needs to see.
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       const decision = decideDefaultInboxLens({
@@ -380,8 +389,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         hasError: hasBlockingInboxLoadError({
           approvalError: Boolean(approvalError),
           conversationError: Boolean(conversationError),
-          qualityLoadFailed: qualityPresentation.hasLoadFailure,
-          qualityPermissionDenied: qualityPresentation.permissionDenied,
+          qualityLoadFailed: qualityLoadState.hasLoadFailure,
+          qualityPermissionDenied: qualityLoadState.permissionDenied,
         }),
         isQueueEmpty,
       })
@@ -403,8 +412,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     conversationError,
     isLoading,
     isQueueEmpty,
-    qualityPresentation.hasLoadFailure,
-    qualityPresentation.permissionDenied,
+    qualityLoadState.hasLoadFailure,
+    qualityLoadState.permissionDenied,
     routeState,
     router,
   ])

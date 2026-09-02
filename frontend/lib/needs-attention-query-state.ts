@@ -92,6 +92,23 @@ const qualityAttempt = (query: QualityQueryResult): QualityInboxSourceAttempts['
   return { status: 'skipped' }
 }
 
+/**
+ * The quality sources' load state read straight off the queries. The snapshot
+ * promotes on a microtask, so anything that must not act on a stale reading -
+ * the smart default lens, which decides once and never reconsiders - has to
+ * read the queries rather than the snapshot derived from them.
+ */
+export const qualityLoadStateFromQueries = (
+  commentedFeedback: QualityQueryResult,
+  reviewSummary: QualityQueryResult,
+): { permissionDenied: boolean, hasLoadFailure: boolean } => {
+  const attempts = [qualityAttempt(commentedFeedback), qualityAttempt(reviewSummary)]
+  return {
+    permissionDenied: attempts.some((attempt) => attempt.status === 'forbidden'),
+    hasLoadFailure: attempts.some((attempt) => attempt.status === 'failed'),
+  }
+}
+
 export const qualitySnapshotFromQueries = (
   previous: QualityInboxSnapshot,
   commentedFeedback: QualityQueryResult,

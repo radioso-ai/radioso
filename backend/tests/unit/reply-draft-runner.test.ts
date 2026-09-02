@@ -39,6 +39,7 @@ const options = (overrides: Partial<ReplyDraftRunnerOptions> = {}): ReplyDraftRu
   messages: { listRecentByConversationId: vi.fn(async () => transcript) },
   agentConfig: { resolveConfig: vi.fn(async () => ({ name: "Support" })) },
   summaries: { load: vi.fn(async () => summaryRecord("The customer is chasing a parcel from three weeks ago.")) },
+  routineStates: { loadActive: vi.fn(async () => null) },
   replay: {
     run: vi.fn(async () => ({
       answer: "We reissued the parcel this morning.",
@@ -131,6 +132,25 @@ describe("ReplyDraftRunner", () => {
     await result;
 
     expect(reserve).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes the routine the conversation is part-way through", async () => {
+    // Every approval row in the operator queue is a conversation paused mid-routine. Drafting for
+    // one without its position answers as if the routine had never started.
+    const position = { routineId: "routine-1", stepId: "collect_address", slots: {}, status: "active" };
+    const { opts, result } = draft({
+      routineStates: { loadActive: vi.fn(async () => ({ sessionId: CONVERSATION_ID, ...position })) },
+    } as unknown as Partial<ReplyDraftRunnerOptions>);
+
+    await expect(result).resolves.toMatchObject({ groundedOnRoutine: true });
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({ routineStartState: position }));
+  });
+
+  it("says so when the conversation is in no routine", async () => {
+    const { opts, result } = draft();
+
+    await expect(result).resolves.toMatchObject({ groundedOnRoutine: false });
+    expect(opts.replay.run).toHaveBeenCalledWith(expect.objectContaining({ routineStartState: null }));
   });
 
   it("degrades to no summary when the summary store fails, rather than failing the draft", async () => {

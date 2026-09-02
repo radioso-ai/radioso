@@ -441,6 +441,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
         citations: [],
         groundedOnMessageCount: 4,
         groundedOnSummary: true,
+        groundedOnRoutine: false,
       }),
     },
     qualityTriageService: {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { CopilotEntityReference, CopilotToolDescriptor, CopilotToolInvocationContext, CopilotWorkspaceRouteKeyResolver } from "../contracts.js";
+import type { CopilotToolDescriptor, CopilotToolInvocationContext, CopilotWorkspaceRouteKeyResolver } from "../contracts.js";
 import type { CopilotEvalResultsPort } from "../contracts/evalCases.js";
 import { buildCopilotDashboardLink } from "../dashboardLinks.js";
 import {
@@ -9,11 +9,13 @@ import {
   escalatedAt,
   latestDownComment,
   readAuthorizedSource,
+  HANDOFF_RANKING_WINDOW,
+  MAX_DETAIL_CHARS,
+  MAX_TITLE_CHARS,
   type AuthorizedSourceRead,
   type CopilotPendingApprovalsPort,
   type CopilotTriageLogPort,
 } from "./escalationSources.js";
-import { HANDOFF_RANKING_WINDOW, MAX_DETAIL_CHARS, MAX_TITLE_CHARS } from "./escalationSources.js";
 import {
   buildCopilotTriageDigest,
   copilotTriageSourceForKind,
@@ -21,9 +23,8 @@ import {
   isCopilotTriageAggregate,
   type CopilotTriageItem,
   type CopilotTriageSourceId,
-  type CopilotTriageSourceReport,
 } from "../triageDigest.js";
-import type { CopilotConversationHistoryPort, CopilotConversationSummary } from "./chat.js";
+import type { CopilotConversationHistoryPort } from "./chat.js";
 import type { CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";
 import type { CopilotQualitySignalsPort } from "./quality.js";
 import { describeNamedAgent, entity, type CopilotAgentLookupPort } from "./shared.js";

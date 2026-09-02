@@ -133,10 +133,11 @@ move is yours — approval requests a routine paused on, conversations handed to
 a person, and turns a customer left a written complaint on — longest wait first
 across all three, and no source is capped in favour of another. Narrow it with
 "just the handoffs" or "only the Support agent", and raise the page with "show
-me fifty". Handoffs are ranked over a window of the most recently active
-conversations a person owns — ten times the page you asked for — so a handoff
-nobody has touched in months can sit outside it. Each source also reports how
-many rows it matched, so a short page reads differently from an empty queue.
+me fifty". Handoffs and complaints both arrive newest-first underneath, so each
+is ranked over a window ten times the page you asked for before the oldest are
+listed — a handoff or complaint nobody has touched in months can still sit
+outside that window. Each source reports how many rows it matched, so a short
+page reads differently from an empty queue.
 
 Each row carries what its follow-up needs: the decision behind an approval, the
 turn behind a complaint and the version that turn was read at, and who holds a
@@ -157,6 +158,10 @@ send. The run is ephemeral — the draft exists in your Ray thread and nowhere
 else — so you read it, edit what you want, and send it yourself from the
 conversation. It needs the conversation's last turn to be a customer message; if
 the agent or an operator spoke last, there is no waiting question to answer.
+
+If the conversation is part-way through a routine — every approval waiting in
+the queue is — the draft resumes from where it stands rather than starting over,
+and says whether it did.
 
 The drafting turn is held to the same rule as a test turn: it answers, and it
 does nothing else. Every skill that reaches outside the conversation — a

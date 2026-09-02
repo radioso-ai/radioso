@@ -25,6 +25,7 @@ const port = (overrides: Record<string, unknown> = {}) => ({
     citations: [{ documentId: "document-1" }],
     groundedOnMessageCount: 6,
     groundedOnSummary: true,
+    groundedOnRoutine: false,
     ...overrides,
   })),
 });
@@ -64,6 +65,7 @@ describe("draft_reply", () => {
         groundedOnMessageCount: 6,
         // The spec requires the draft to say whether it saw the turns before its window.
         groundedOnSummary: true,
+        groundedOnRoutine: false,
       },
     });
   });
@@ -85,6 +87,7 @@ describe("ReplyDraftProbeService", () => {
       citations: [],
       groundedOnMessageCount: 4,
       groundedOnSummary: false,
+      groundedOnRoutine: false,
     })),
   }) => ({
     chatReplyDraft,

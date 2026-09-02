@@ -550,8 +550,8 @@ Open clarifications (non-blocking; default answers stated):
   than restated in the catalog.
 - **FR-025**: The catalog MUST expose `draft_reply` as a `probe` that composes a
   suggested operator reply grounded in the live conversation's own transcript,
-  the rolling summary of the turns before it, and the agent's current
-  configuration. It MUST persist nothing — no message, no conversation, no
+  the rolling summary of the turns before it, the routine position the
+  conversation currently holds, and the agent's current configuration. It MUST persist nothing — no message, no conversation, no
   proposal — and it MUST NOT act: the drafting turn runs with the execution mode
   that suppresses every skill reaching outside the turn, so composing a draft
   cannot send a notification, call a webhook, or invoke an external tool. A
@@ -562,7 +562,8 @@ Open clarifications (non-blocking; default answers stated):
   own refusals, so a conversation it declines to draft for costs nothing and
   reports the reason it declined rather than a quota. The
   result MUST return the draft together with a dashboard link to the
-  conversation and MUST report whether the summary was available. Sending a message to a customer, taking a
+  conversation and MUST report whether the summary and the routine position were
+  available, so a draft composed from less than the agent has says so. Sending a message to a customer, taking a
   conversation over, handing it back, transferring its ownership, forking it,
   and resolving a pending decision MUST be never-list entries that return the
   boundary reason and a deep link. A reply is not a proposal target: a

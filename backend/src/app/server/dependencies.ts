@@ -83,6 +83,7 @@ import type { EmbeddingCoverageReadPort } from "../../modules/embeddingProfiles/
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 import { QUALITY_TRIAGE_STATES } from "../../modules/quality/contracts/index.js";
 import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
+import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 
 export interface BuildDependenciesOptions {
@@ -522,6 +523,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         },
       },
       summaries: new ConversationSummaryRepository(infrastructure.database.kysely),
+      routineStates: new RoutineStateRepository(infrastructure.database.kysely),
       logger,
       replay: chat.workbenchReplayRunner,
     }),

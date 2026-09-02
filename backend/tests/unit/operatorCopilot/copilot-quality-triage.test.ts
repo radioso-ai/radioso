@@ -26,6 +26,7 @@ const record = (overrides: Record<string, unknown> = {}) => ({
 const dependencies = (
   setTriageState: CopilotQualityTriagePort["setTriageState"] = vi.fn(async () => ({ kind: "updated" as const, record: record() })),
 ): QualityTriageCopilotToolDependencies => ({
+  auditService: { record: vi.fn(async () => undefined) },
   qualityTriageService: {
     triageStates: ["open", "acknowledged", "resolved", "dismissed"] as const,
     resolutionReasons: ["knowledge_gap", "retrieval_issue", "expected_behavior"] as const,
@@ -74,6 +75,27 @@ describe("set_triage_state", () => {
       version: 4,
       resolution: { reason: "knowledge_gap", note: "Added the shipping page." },
     });
+  });
+
+  it("records which Ray turn moved the row, and does not call a conflict a transition", async () => {
+    const deps = dependencies(vi.fn(async () => ({
+      kind: "conflict" as const,
+      current: record({ state: "dismissed", version: 9 }),
+    })));
+
+    await invoke(deps, { assistantMessageId: MESSAGE_ID, state: "resolved", expectedVersion: 3 });
+
+    expect(deps.auditService.record).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-1",
+      eventType: "copilot.triage.transitioned",
+      eventStatus: "failure",
+      metadata: expect.objectContaining({
+        assistantMessageId: MESSAGE_ID,
+        outcome: "conflict",
+        operatorUserId: "operator-1",
+        surface: "dashboard",
+      }),
+    }));
   });
 
   it("reports a competing operator's write as a conflict carrying the current record", async () => {

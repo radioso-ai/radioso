@@ -103,8 +103,11 @@
 - [X] T037 Add the `needs_attention` descriptor over the escalation source reads,
   widening the approvals port with the decision handle and the quality-turn port
   with the triage state and version those rows are acted on by
-- [X] T038 Add the `set_triage_state` act, carrying the resolution vocabulary on
-  the port so the state/reason pairing stays in the quality domain
+- [X] T038 Add the `set_triage_state` act, carrying the triage vocabulary on the
+  port so the state/reason pairing stays in the quality domain, and audit each
+  transition as `copilot.triage.transitioned` — the transition history records
+  which operator moved a row, and this records which Ray turn and surface did,
+  because Ray is the only actor that moves many rows in one operator gesture
 - [X] T039 Add `services/replyDraftRunner.ts` in chat, the `draft_reply` probe and
   its copilot service, and the shared external-skill projection both the eval
   snapshot and the draft resolve an agent config through

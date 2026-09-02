@@ -54,7 +54,6 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
           },
         });
 
-        await (reservation as UsageLimitReservation | null)?.commit();
         return {
           agentId: result.agentId,
           conversationId: input.conversationId,
@@ -62,13 +61,13 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
           citations: result.citations,
           groundedOnMessageCount: result.groundedOnMessageCount,
           groundedOnSummary: result.groundedOnSummary,
+          groundedOnRoutine: result.groundedOnRoutine,
         };
-      } catch (error) {
+      } finally {
         // Past the reservation the turn has been dispatched, so a later failure asks "did the
         // provider already run", not "did the call succeed". Releasing here would hand back budget
-        // a real generation consumed.
+        // a real generation consumed; a refusal before the reservation has nothing to commit.
         await (reservation as UsageLimitReservation | null)?.commit();
-        throw error;
       }
     });
   }

@@ -15,6 +15,7 @@ import {
   allAttentionSourcesTerminal,
   buildLatestAttentionSnapshot,
   needsAttentionQualityInputs,
+  qualityLoadStateFromQueries,
   qualitySnapshotFromQueries,
   reconcileAttentionOperatorResult,
   refetchAttentionInboxSnapshot,
@@ -116,6 +117,18 @@ describe('Needs Attention query state', () => {
     )
     expect(snapshot.commentedFeedback.status).toBe('forbidden')
     expect(snapshot.reviewQueue.total).toBe(4)
+  })
+
+  it('reads the quality load state off the queries themselves, not the promoted snapshot', () => {
+    // The snapshot promotes on a microtask, so a consumer that must not act on a
+    // stale reading has to read the queries directly.
+    const forbidden = Object.assign(new Error('forbidden'), { status: 403 })
+    expect(qualityLoadStateFromQueries({ status: 'error', error: forbidden }, { status: 'pending', error: null }))
+      .toEqual({ permissionDenied: true, hasLoadFailure: false })
+    expect(qualityLoadStateFromQueries({ status: 'error', error: new Error('boom') }, { status: 'success', error: null, data: page }))
+      .toEqual({ permissionDenied: false, hasLoadFailure: true })
+    expect(qualityLoadStateFromQueries({ status: 'success', error: null, data: page }, { status: 'pending', error: null }))
+      .toEqual({ permissionDenied: false, hasLoadFailure: false })
   })
 
   it('does not bootstrap while hidden/not-ready and waits for all four terminal outcomes', () => {

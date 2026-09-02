@@ -42,7 +42,9 @@ describe("operator copilot catalog coverage", () => {
   //               deferred scope, since they carry visitor runtime data rather than configuration.
   //   121 -> 118  recrawlDocumentSource, reprocessDocumentSource, and reprocessDocument moved to
   //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
-  const maxDeferredCatalogExclusions = 106;
+  //   106 -> 93   when the forty-five workspace, channel, and connector operations were reasoned
+  //               one ground at a time; twelve of them were permanent, not deferred.
+  const maxDeferredCatalogExclusions = 93;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -193,6 +195,118 @@ describe("operator copilot catalog coverage", () => {
     for (const entry of Object.values(catalogCoverage)) {
       expect(typeof entry === "string" || ("reason" in entry && entry.reason.trim().length > 0)).toBe(true);
     }
+  });
+
+  it("reasons the workspace, channel, and connector surface one ground at a time", () => {
+    const wave5OperationIds = [
+      "getAccountUsageTrends", "getAccountUsageMessages", "getAccountInternalUsage",
+      "listWorkspaces", "createWorkspace", "getWorkspaceSummary", "resolveWorkspaceRouteKey",
+      "renameWorkspace", "listWebhookDestinations", "createWebhookDestination",
+      "getWebhookDestination", "updateWebhookDestination", "deleteWebhookDestination",
+      "updatePlatformSettings", "reprocessWorkspaceIngestion", "updateGeneralSettings",
+      "uploadAssistantLogo", "deleteAssistantLogo", "updateWorkspaceLlmModels",
+      "startMcpConnectionOauth", "createWorkspaceOauthConnection", "listWorkspaceOauthConnections",
+      "getWorkspaceOauthConnection", "reauthorizeWorkspaceOauthConnection",
+      "listWorkspaceEmailSkillActivity", "listWorkspaceEmailConnections",
+      "createWorkspaceEmailConnection", "listWorkspaceEmailOauthConnections",
+      "updateWorkspaceEmailConnection", "deleteWorkspaceEmailConnection",
+      "checkWorkspaceEmailConnectionHealth", "startWorkspaceSlackInstall",
+      "getWorkspaceSlackInstallStatus", "getWorkspaceSlackManifest", "getWorkspaceSlackBinding",
+      "setWorkspaceSlackBinding", "deleteWorkspaceSlackChannelBinding", "listWorkspaceSlackBindings",
+      "disconnectWorkspaceSlackInstallation", "listConnectors", "getConnectorDetail",
+      "updateConnectorConfig", "enableConnector", "disableConnector", "syncConnector",
+    ] as const;
+
+    const entries = wave5OperationIds.map((operationId) => catalogCoverage[operationId]);
+    expect(entries.every((entry) => typeof entry !== "string")).toBe(true);
+    const reasons = entries.flatMap((entry) => typeof entry === "string" ? [] : [entry.reason]);
+    expect(reasons.some((reason) => reason.includes("Deferred to Wave 5 workspace configuration"))).toBe(false);
+    expect(new Set(reasons).size).toBeGreaterThanOrEqual(12);
+  });
+
+  it("keeps the secret-minting webhook create beside the rotation it shares a response with", () => {
+    expect(catalogCoverage.createWebhookDestination).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("carries secret material"),
+    });
+    expect(catalogCoverage.rotateWebhookDestinationSecret).toMatchObject({
+      disposition: "permanent",
+      neverListEntry: "secret_rotation",
+    });
+    expect(catalogCoverage.updateWebhookDestination).toMatchObject({ disposition: "deferred" });
+  });
+
+  it("excludes the interactive authorization starts rather than deferring them", () => {
+    for (const operationId of [
+      "startMcpConnectionOauth",
+      "createWorkspaceOauthConnection",
+      "reauthorizeWorkspaceOauthConnection",
+      "startWorkspaceSlackInstall",
+    ]) {
+      expect(catalogCoverage[operationId]).toMatchObject({
+        disposition: "permanent",
+        reason: expect.stringContaining("interactive OAuth consent flow"),
+      });
+    }
+    expect(catalogCoverage.disconnectWorkspaceSlackInstallation).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("stored installation credential"),
+    });
+    // The non-secret status reads on the same connections stay deferred.
+    expect(catalogCoverage.listWorkspaceOauthConnections).toMatchObject({ disposition: "deferred" });
+    expect(catalogCoverage.getWorkspaceSlackInstallStatus).toMatchObject({ disposition: "deferred" });
+  });
+
+  it("keeps the workspace container and its brand asset out of Ray's reach", () => {
+    expect(catalogCoverage.createWorkspace).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("container Ray operates inside"),
+    });
+    expect(catalogCoverage.renameWorkspace).toMatchObject({ disposition: "permanent" });
+    expect(catalogCoverage.listWorkspaces).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("account-scoped"),
+    });
+    expect(catalogCoverage.resolveWorkspaceRouteKey).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("already resolved"),
+    });
+    for (const operationId of ["uploadAssistantLogo", "deleteAssistantLogo"]) {
+      expect(catalogCoverage[operationId]).toMatchObject({
+        disposition: "permanent",
+        reason: expect.stringContaining("binary brand asset"),
+      });
+    }
+  });
+
+  it("names the tool shape each remaining Wave 5 deferral waits on", () => {
+    // Both endpoints write the same assistant and embed fields, and anonymousChatEnabled /
+    // websiteEmbedAllowedOrigins among them change who can reach the agent rather than what it says.
+    for (const operationId of ["updatePlatformSettings", "updateGeneralSettings"]) {
+      expect(catalogCoverage[operationId]).toMatchObject({
+        disposition: "deferred",
+        reason: expect.stringContaining("propose_workspace_setting"),
+      });
+      expect(catalogCoverage[operationId]).toMatchObject({
+        reason: expect.stringContaining("who can reach the agent"),
+      });
+    }
+    expect(catalogCoverage.syncConnector).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("act"),
+    });
+    expect(catalogCoverage.checkWorkspaceEmailConnectionHealth).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("probe"),
+    });
+    expect(catalogCoverage.reprocessWorkspaceIngestion).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("cost guard"),
+    });
+    expect(catalogCoverage.getWorkspaceSummary).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("setup"),
+    });
   });
 
   it("does not expand the deferred catalog backlog", () => {

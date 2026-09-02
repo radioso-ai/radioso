@@ -98,7 +98,71 @@ const audiencePulseMaintenance = deferred(
 const snapshotOnlyReplay = deferred(
   "Deferred: replay_eval_case covers the case-derived, detached replay only. A snapshot-scoped replay tool would cover the rest.",
 );
-const wave5WorkspaceConfig = deferred("Deferred to Wave 5 workspace configuration: these settings need bounded, operator-confirmed configuration flows.");
+const workspaceLifecycle = permanent(
+  "Permanent exclusion: creating or renaming a workspace changes the container Ray operates inside, not the behaviour it tunes within one.",
+);
+const dashboardWorkspaceResolution = permanent(
+  "Permanent exclusion: this is the dashboard resolving which workspace a URL points at, which Ray is handed already resolved.",
+);
+const brandAssetIsOperatorSupplied = permanent(
+  "Permanent exclusion: the assistant logo is a binary brand asset the operator supplies and approves by looking at it, so Ray can neither produce the bytes nor judge the result.",
+);
+const interactiveOauthAuthorization = permanent(
+  "Permanent exclusion: this starts an interactive OAuth consent flow a person completes elsewhere, so Ray can only ever leave a half-authorized connection behind.",
+);
+const installationCredentialTeardown = permanent(
+  "Permanent exclusion: this deletes the stored installation credential, and only the interactive install Ray may not start can replace it.",
+);
+const accountWideUsageAnalytics = deferred(
+  "Deferred: these report usage for the whole account, and Ray answers for one workspace. The endpoints take a workspaceId filter, so a workspace-scoped usage reader is the shape that would cover them.",
+);
+const workspaceSetupStateRead = deferred(
+  "Deferred: the workspace summary is a setup-state read — document, conversation, and sample-import counts — so it lands with the setup-state reader rather than with configuration writes.",
+);
+// PUT /settings takes these fields grouped under `assistant`/`channels`; PUT /settings/general
+// takes the same fields flat.
+const workspaceAssistantAndChannelSettings = deferred(
+  "Deferred to propose_workspace_setting: two endpoints write these same assistant and embed settings, so a proposal picks one apply path; and the anonymous-chat and allowed-origin fields change who can reach the agent, so the card has to separate reach from wording.",
+);
+const workspaceModelSelection = deferred(
+  "Deferred to propose_workspace_setting: chat, rewrite, and rerank model preferences change every answer the workspace produces; the embedding-model switch stays behind its own never-list entry.",
+);
+const workspaceWideReprocess = deferred(
+  "Deferred: reprocessing every eligible document is the unbounded sibling of reprocess_document, so it needs a cost guard before Ray can spend it.",
+);
+const webhookDestinationConfiguration = deferred(
+  "Deferred to Wave 5 channel configuration: a webhook destination is where the workspace's events leave it, so its name and URL need a proposal card; the reads land with the tool that proposes them.",
+);
+const webhookDestinationRemoval = deferred(
+  "Deferred: deleting a destination silently stops delivery and recreating one mints a new secret the receiver must be reconfigured with, so removal needs its own proposal shape.",
+);
+const channelConnectionStatusRead = deferred(
+  "Deferred to Wave 5 channel configuration: non-secret connection, installation, and binding status that no family reader covers; these land with the channel tools that act on them.",
+);
+const slackSelfHostManifest = deferred(
+  "Deferred: the manifest is a setup artifact an operator pastes into Slack's own console, so its value is a copyable payload rather than something Ray reasons over.",
+);
+const emailSkillActivityRead = deferred(
+  "Deferred: sanitized email skill activity is delivery evidence for the notify path, so it belongs with a delivery-diagnosis reader rather than with the connection writes.",
+);
+const emailConnectionConfiguration = deferred(
+  "Deferred to Wave 5 channel configuration: a customer email connection is a customer-visible channel, so creating or changing one needs a proposal card.",
+);
+const emailConnectionRemoval = deferred(
+  "Deferred: updateWorkspaceEmailConnection disables a connection, which is the reversible equivalent; deleting one drops the mailbox binding outright and needs its own removal shape.",
+);
+const emailConnectionHealthProbe = deferred(
+  "Deferred: the health check is a probe — no persisted change, real work against the mail server — and it lands with the channel tools rather than ahead of them.",
+);
+const slackAnsweringBinding = deferred(
+  "Deferred to Wave 5 channel configuration: a binding decides which agent answers in which Slack channel, which is customer-visible routing and needs a proposal card.",
+);
+const connectorConfiguration = deferred(
+  "Deferred to Wave 5 connector configuration: enabling, disabling, or reconfiguring a connector changes what the agent can reach, so each needs a proposal card.",
+);
+const connectorManualSync = deferred(
+  "Deferred: a manual sync is an act — idempotent, re-derived from the connector's own source of truth — and needs the same cost guard the document maintenance acts carry.",
+);
 // A permanent exclusion is the strongest claim this map makes — it is what a future implementer
 // reads to decide whether something may be built at all. These were previously one bucket reasoned
 // as "identity, authorization, and secret-bearing administration", which conflated four unrelated
@@ -197,53 +261,50 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["cancelPendingEmbeddingModel"], pendingEmbeddingSwitchCancel),
   ...coverage(["replyToConversation"], neverListExclusion("unattended_live_customer_reply")),
 
+  ...coverage(["getAccountUsageTrends", "getAccountUsageMessages", "getAccountInternalUsage"], accountWideUsageAnalytics),
+  ...coverage(["listWorkspaces"], accountScope),
+  ...coverage(["createWorkspace", "renameWorkspace"], workspaceLifecycle),
+  ...coverage(["resolveWorkspaceRouteKey"], dashboardWorkspaceResolution),
+  ...coverage(["getWorkspaceSummary"], workspaceSetupStateRead),
+  // Answers with WebhookDestinationCreateResponse, the same one-time plaintext secret the
+  // never-listed rotateWebhookDestinationSecret returns. The name-and-URL edit beside it carries none.
+  ...coverage(["createWebhookDestination"], secretBearingRead),
   ...coverage([
-    "getAccountUsageTrends",
-    "getAccountUsageMessages",
-    "getAccountInternalUsage",
-    "listWorkspaces",
-    "createWorkspace",
-    "getWorkspaceSummary",
-    "resolveWorkspaceRouteKey",
-    "renameWorkspace",
     "listWebhookDestinations",
-    "createWebhookDestination",
     "getWebhookDestination",
     "updateWebhookDestination",
-    "deleteWebhookDestination",
-    "updatePlatformSettings",
-    "reprocessWorkspaceIngestion",
-    "updateGeneralSettings",
-    "uploadAssistantLogo",
-    "deleteAssistantLogo",
-    "updateWorkspaceLlmModels",
+  ], webhookDestinationConfiguration),
+  ...coverage(["deleteWebhookDestination"], webhookDestinationRemoval),
+  ...coverage(["updatePlatformSettings", "updateGeneralSettings"], workspaceAssistantAndChannelSettings),
+  ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
+  ...coverage(["reprocessWorkspaceIngestion"], workspaceWideReprocess),
+  ...coverage(["uploadAssistantLogo", "deleteAssistantLogo"], brandAssetIsOperatorSupplied),
+  ...coverage([
     "startMcpConnectionOauth",
     "createWorkspaceOauthConnection",
+    "reauthorizeWorkspaceOauthConnection",
+    "startWorkspaceSlackInstall",
+  ], interactiveOauthAuthorization),
+  ...coverage(["disconnectWorkspaceSlackInstallation"], installationCredentialTeardown),
+  ...coverage([
     "listWorkspaceOauthConnections",
     "getWorkspaceOauthConnection",
-    "reauthorizeWorkspaceOauthConnection",
-    "listWorkspaceEmailSkillActivity",
     "listWorkspaceEmailConnections",
-    "createWorkspaceEmailConnection",
     "listWorkspaceEmailOauthConnections",
-    "updateWorkspaceEmailConnection",
-    "deleteWorkspaceEmailConnection",
-    "checkWorkspaceEmailConnectionHealth",
-    "startWorkspaceSlackInstall",
     "getWorkspaceSlackInstallStatus",
-    "getWorkspaceSlackManifest",
     "getWorkspaceSlackBinding",
-    "setWorkspaceSlackBinding",
-    "deleteWorkspaceSlackChannelBinding",
     "listWorkspaceSlackBindings",
-    "disconnectWorkspaceSlackInstallation",
     "listConnectors",
     "getConnectorDetail",
-    "updateConnectorConfig",
-    "enableConnector",
-    "disableConnector",
-    "syncConnector",
-  ], wave5WorkspaceConfig),
+  ], channelConnectionStatusRead),
+  ...coverage(["getWorkspaceSlackManifest"], slackSelfHostManifest),
+  ...coverage(["listWorkspaceEmailSkillActivity"], emailSkillActivityRead),
+  ...coverage(["createWorkspaceEmailConnection", "updateWorkspaceEmailConnection"], emailConnectionConfiguration),
+  ...coverage(["deleteWorkspaceEmailConnection"], emailConnectionRemoval),
+  ...coverage(["checkWorkspaceEmailConnectionHealth"], emailConnectionHealthProbe),
+  ...coverage(["setWorkspaceSlackBinding", "deleteWorkspaceSlackChannelBinding"], slackAnsweringBinding),
+  ...coverage(["updateConnectorConfig", "enableConnector", "disableConnector"], connectorConfiguration),
+  ...coverage(["syncConnector"], connectorManualSync),
   ...coverage(["deleteAgentRoutine"], routineStructuralEditing),
   ...coverage([
     "createEvalSnapshot",

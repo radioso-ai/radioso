@@ -21,9 +21,10 @@ import type {
   QualityTurnsServicePort,
   QualityVerificationSourcePort,
   SetTriageStateResult,
+  ApplyTriageUpdateInput,
   SetTriageStateInput,
 } from "./contracts/index.js";
-import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
+import { QUALITY_SIGNAL_IDS, QUALITY_TRIAGE_STATES } from "./contracts/index.js";
 import {
   resolveGroundedOutcomeTuples,
   resolveQualitySignalPredicate,
@@ -61,7 +62,7 @@ import {
   mapGroundingDiagnostic,
   type GroundingDiagnosticRow,
 } from "./groundingDiagnostic.js";
-import { validateQualityTriageUpdate } from "./domain/resolution.js";
+import { QualityResolutionValidationError, validateQualityTriageUpdate } from "./domain/resolution.js";
 import { QualityTriageStore } from "./triageStore.js";
 
 type TurnRow = GroundingDiagnosticRow & {
@@ -514,8 +515,24 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     workspaceId: string,
     input: SetTriageStateInput,
   ): Promise<SetTriageStateResult> {
+    return this.applyTriageUpdate(workspaceId, input);
+  }
+
+  /**
+   * The transition entry point for callers that hold the state and reason as plain strings — the
+   * operator copilot reaches triage this way. Membership in the triage vocabulary is checked here
+   * rather than at the boundary, so no caller narrows into this module with a cast.
+   */
+  async applyTriageUpdate(
+    workspaceId: string,
+    input: ApplyTriageUpdateInput,
+  ): Promise<SetTriageStateResult> {
+    const state = QUALITY_TRIAGE_STATES.find((candidate) => candidate === input.state);
+    if (!state) {
+      throw new QualityResolutionValidationError(`Unknown triage state: ${input.state}`);
+    }
     const update = validateQualityTriageUpdate({
-      state: input.state,
+      state,
       expectedVersion: input.expectedVersion,
       resolution: input.resolution,
       legacyReason: input.legacyReason,

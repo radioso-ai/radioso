@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import {
   materializeAgentFromConfig,
   type InternalAgentConfig,
@@ -30,6 +31,8 @@ export interface EvalWorkbenchReplayRunnerPort {
     workspaceId: string;
     accountId?: string | null;
     sourceAgentId: string;
+    /** Whether the replayed turn's skills act for real. Stated by the caller; never defaulted. */
+    executionMode: TurnExecutionMode;
     baselineAgentConfig: NonNullable<EvalSnapshot["originalAgentConfig"]>;
     agentConfigOverride?: NonNullable<EvalRunOverrides["agentConfigOverride"]>;
     query: string;
@@ -449,6 +452,10 @@ export class EvalRunService {
         accountId: input.accountId,
         sourceAgentId: snapshot.sourceAgentId,
         baselineAgentConfig: snapshot.originalAgentConfig,
+        // Stated rather than defaulted: a replayed case runs the agent's skills for real, which is
+        // how a case that measures a skill's outcome measures anything. Issue #1147 weighs whether
+        // a case should be able to send a customer email a second time.
+        executionMode: "live",
         agentConfigOverride,
         query: replay.query,
         history: replay.history,

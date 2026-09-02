@@ -125,6 +125,61 @@ run of failed documents cannot push the broken sync that caused them out of the
 digest. The backlog counts stand for whole groups rather than for individual
 rows, so they are always complete.
 
+## Work the queue
+
+The digest orients a session; the queue is what you work through. Ask "show me
+everything waiting on a person" and Ray lists the three kinds where the next
+move is yours — approval requests a routine paused on, conversations handed to
+a person, and turns a customer left a written complaint on — longest wait first
+across all three, and no source is capped in favour of another. Narrow it with
+"just the handoffs" or "only the Support agent", and raise the page with "show
+me fifty". Complaints are read from the end of their own queue, so the oldest
+are exact at any page size; handoffs are ranked over a window ten times the page
+you asked for, so one nobody has touched in months can sit outside it. Each
+source reports how many rows it matched, so a short page reads differently from
+an empty queue.
+
+Each row carries what its follow-up needs: the decision behind an approval, the
+turn behind a complaint and the version that turn was read at, and who holds a
+handoff (or nobody, for one still waiting). That is what lets the next sentence
+be an instruction rather than a second search.
+
+Once you have decided what a turn was, tell Ray to record it: "mark that one
+resolved — it was a knowledge gap, I added the shipping page." Ray writes the
+triage state and the resolution reason against the version it read. If another
+operator moved the same row while you were talking, Ray tells you what they set
+and leaves their decision alone, so two people working the queue at once never
+overwrite each other. Nothing a customer sees changes either way.
+
+For the reply itself, ask "draft a reply for that conversation." Ray replays the
+agent over that conversation's own transcript, with the agent's current
+instructions, directives, skills, and knowledge, and hands you the text it would
+send. The run is ephemeral — the draft exists in your Ray thread and nowhere
+else — so you read it, edit what you want, and send it yourself from the
+conversation. It answers the customer's most recent message even when the agent
+replied after it — which is what a handoff and a complaint both look like — and
+needs the conversation to have a customer message at all.
+
+If the conversation is part-way through a routine, the draft resumes from where
+it stands rather than starting over, and says whether it did. A conversation
+paused on a pending approval is the exception: the agent itself would not take a
+routine step while it waits on your decision, so neither does the draft. And a
+message you have already answered by hand has nothing outstanding to draft for,
+so Ray says so instead of handing you a duplicate.
+
+The drafting turn is held to the same rule as a test turn: it answers, and it
+does nothing else. Every skill that reaches outside the conversation — a
+notification, a webhook, a contact send, an external tool — stays suppressed, so
+composing a draft cannot act on the customer's behalf. Context variables resolve
+through the same outside path, so a draft for an agent whose instructions
+interpolate them renders without their values.
+
+**Where Ray stops.** Ray drafts; you send. Taking a conversation over, handing
+it back, transferring it to a colleague, forking it into a test session, and
+approving or refusing a pending decision are yours as well — ask for any of them
+and Ray says so and gives you the link. Deciding who is answerable to a waiting
+customer is a person's call, and that is the point of the line.
+
 ## Ask about what you see
 
 The panel captures the dashboard context that is already on screen. A selected
@@ -519,11 +574,11 @@ can be traced back to the person and the session that made it.
 
 ## Budget for verification
 
-Testing a turn, replaying a case, and running a suite each cost a real model
-call — that is what makes their evidence worth anything. Ray spends at most six
-replayed turns in one Ray turn, and a suite run counts once per case, so asking
-for five cases spends five. Past the budget it stops, answers with what it
-measured, and asks you to send another turn.
+Testing a turn, replaying a case, drafting a reply, and running a suite each
+cost a real model call — that is what makes their evidence worth anything. Ray
+spends at most six replayed turns in one Ray turn, and a suite run counts once
+per case, so asking for five cases spends five. Past the budget it stops,
+answers with what it measured, and asks you to send another turn.
 
 In practice this shapes how to ask. "Replay the three refund cases and tell me
 which regressed" fits in one turn with room to spare. "Replay everything in the

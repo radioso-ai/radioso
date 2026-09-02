@@ -1851,6 +1851,11 @@ export const createTestDependencies = (overrides: {
     getQualityStats: async () => ({ backlog: {} }),
     listLowQualityTurns: async () => ({ items: [], total: 0 }),
   };
+  const qualityTriageService = {
+    triageStates: ["open", "acknowledged", "resolved", "dismissed"] as [string, ...string[]],
+    resolutionReasons: ["knowledge_gap", "retrieval_issue", "agent_behavior", "platform_bug", "expected_behavior", "out_of_scope", "invalid_feedback", "other"] as [string, ...string[]],
+    setTriageState: async () => ({ kind: "not_found" as const }),
+  };
   const audiencePulseService = {
     read: async () => ({ kind: "not_generated" }),
     refresh: async () => ({ kind: "not_generated" }),
@@ -1996,7 +2001,9 @@ export const createTestDependencies = (overrides: {
       cases: copilotEvalCaseReader,
     },
     pendingApprovals: approvalDecisionService,
+    replyDraft: { draft: async () => { throw new Error("reply draft is not wired in the test app"); } },
     qualitySignalsService,
+    qualityTriageService,
     audiencePulseService,
     documentStatusService: documentIngestionService,
     documentSourceStatusService: documentIngestionService,

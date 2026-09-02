@@ -287,7 +287,7 @@ export const createAgentSettingProposalCopilotTools = (
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_agent_setting",
-        description: "Draft an agent setting change for operator review. It does not change configuration.",
+      description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, settingKey, value, rationale, evidenceIds }) => {

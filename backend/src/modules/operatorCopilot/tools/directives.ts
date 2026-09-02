@@ -45,7 +45,7 @@ export const createDirectiveProposalCopilotTools = (
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive",
-        description: "Draft a directive proposal for operator review. It does not change configuration.",
+      description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, intent, evidenceIds }) => {
@@ -75,12 +75,12 @@ export const createDirectiveProposalCopilotTools = (
     },
     {
       name: "propose_directive_removal", shape: "propose", verificationCost: () => 0, uiLabel: "Proposing directive removal", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Drafts nothing; applying removal deletes the directive and this cannot be undone.",
+      description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Drafts nothing; applying removal deletes the directive and this cannot be undone. It drafts a proposal for operator review and changes nothing until the operator applies it.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive_removal",
-        description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Applying removal deletes the directive and this cannot be undone.",
+      description: "Propose permanently removing a directive that should not exist at all. If the goal is to stop a directive from firing, use propose_directive_enablement with enabled: false instead: disabling is reversible and preserves the authored text. Drafts nothing; applying removal deletes the directive and this cannot be undone. It drafts a proposal for operator review and changes nothing until the operator applies it.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, evidenceIds }) => {
@@ -113,12 +113,12 @@ export const createDirectiveProposalCopilotTools = (
     },
     {
       name: "propose_directive_enablement", shape: "propose", verificationCost: () => 0, uiLabel: "Proposing directive enablement", contributingModule: "directives", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: "Propose enabling or disabling an existing directive for operator review. Disabling is reversible and keeps the directive configured; re-enabling validates its binding again before it can fire.",
+      description: "Propose enabling or disabling an existing directive for operator review. Disabling is reversible and keeps the directive configured; re-enabling validates its binding again before it can fire. It drafts a proposal for operator review and changes nothing until the operator applies it.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, enabled: z.boolean(), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive_enablement",
-        description: "Propose enabling or disabling an existing directive for operator review. Disabling is reversible and keeps the directive configured; re-enabling validates its binding again before it can fire.",
+      description: "Propose enabling or disabling an existing directive for operator review. Disabling is reversible and keeps the directive configured; re-enabling validates its binding again before it can fire. It drafts a proposal for operator review and changes nothing until the operator applies it.",
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema, enabled: z.boolean(), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, enabled, evidenceIds }) => {

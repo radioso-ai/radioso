@@ -23,6 +23,12 @@ readable but are never classified into the structured reporting vocabulary.
 `triageStore.ts` owns the atomic current-row and append-only history write;
 resolution notes never enter transition history.
 
+The resolution vocabulary crosses the module boundary as data: the operator
+copilot's `set_triage_state` receives the reason list on its port and builds its
+input schema from it, while which reasons a state accepts stays here. Any caller
+transitions a turn through `setTriageState` with the version it read, so a
+competing write returns the current record rather than losing one.
+
 Eval evidence used by Quality's read surfaces crosses the module boundary
 through `QualityVerificationSourcePort`. Quality knows only the linked case id,
 case status, and latest run status/time; it does not import Eval repositories,

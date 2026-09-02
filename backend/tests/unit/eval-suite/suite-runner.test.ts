@@ -174,6 +174,7 @@ describe("conversation-quality suite over the real engine", () => {
 
     await runner.run({
       workspaceId: CQ_WORKSPACE_ID,
+      executionMode: "live" as const,
       sourceAgentId: CQ_AGENT_ID,
       baselineAgentConfig: conversationQualityAgentConfig,
       query: "Summarize this page.",

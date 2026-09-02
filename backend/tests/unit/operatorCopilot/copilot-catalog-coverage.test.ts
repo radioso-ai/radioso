@@ -42,7 +42,7 @@ describe("operator copilot catalog coverage", () => {
   //               deferred scope, since they carry visitor runtime data rather than configuration.
   //   121 -> 118  recrawlDocumentSource, reprocessDocumentSource, and reprocessDocument moved to
   //               the bounded document maintenance acts in the Wave 2 knowledge-base tools.
-  const maxDeferredCatalogExclusions = 111;
+  const maxDeferredCatalogExclusions = 106;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
@@ -134,20 +134,25 @@ describe("operator copilot catalog coverage", () => {
     expect(catalogCoverage.listPendingDecisions).toBe("workspace_triage");
   });
 
-  it("defers the operator serving controls rather than excluding them as an end-user surface", () => {
-    // Every one of these is gated on workspace.conversation.takeover and driven from the operator's
-    // own Needs Attention queue. Filed as permanent, they claimed a boundary Ray does not have.
+  it("keeps the operator serving controls on the never-list, each citing its own boundary", () => {
+    // These were once filed as an end-user surface, which made an operator control look like
+    // somebody else's endpoint. They are permanent, but for a stated reason with a handoff behind
+    // it: deciding who answers a waiting customer stays with the person who will answer them.
     for (const operationId of [
       "takeOverConversation",
       "transferConversationOwnership",
       "handBackConversation",
-      "resolveDecision",
+      "forkConversation",
     ]) {
       expect(catalogCoverage[operationId]).toMatchObject({
-        disposition: "deferred",
-        reason: expect.stringContaining("Wave 4 serving work"),
+        disposition: "permanent",
+        neverListEntry: "live_conversation_ownership",
       });
     }
+    expect(catalogCoverage.resolveDecision).toMatchObject({
+      disposition: "permanent",
+      neverListEntry: "pending_decision_resolution",
+    });
   });
 
   it("maps the authenticated assistant pipeline to the bounded test-turn probe", () => {

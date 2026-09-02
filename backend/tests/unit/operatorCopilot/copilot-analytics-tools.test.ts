@@ -15,6 +15,7 @@ const qualityTurn: CopilotQualityTurn = {
   answerPreview: "I could not find it.",
   createdAt: "2026-08-20T09:00:00.000Z",
   feedback: { downCount: 1, latestDownUpdatedAt: "2026-08-20T09:05:00.000Z", comments: [] },
+  triage: { state: "open", version: 0 },
 };
 
 const context = {

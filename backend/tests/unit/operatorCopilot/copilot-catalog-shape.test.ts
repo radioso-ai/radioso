@@ -31,7 +31,7 @@ import { websiteCrawlerCopilotPrimitives } from "../../../src/modules/websiteCra
 import { copilotResolvableToolPermissions, copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
 import { filterCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { AccountAccessService } from "../../../src/modules/account/services/accountAccessService.js";
-import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/triage.js";
+import { copilotTriageSourcePermissions } from "../../../src/modules/operatorCopilot/tools/escalationSources.js";
 import { buildDescriptors, dependencies } from "./copilot-tools-test-helpers.js";
 import { createAuditService, InMemoryAccountMembershipRepository } from "../../support/fakes.js";
 
@@ -79,7 +79,9 @@ const realCatalogDependencies = () => {
     documentMaintenance: { reprocessDocument: stub(), reprocessSource: stub(), recrawlSource: stub() },
     documentStatusService: { summarize: stub() },
     evalResultsService: { listWithLatestRun: stub() },
+    replyDraft: { draft: stub() },
     qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
+    qualityTriageService: { triageStates: ["open"] as [string, ...string[]], resolutionReasons: ["knowledge_gap"] as [string, ...string[]], setTriageState: stub() },
     retrievalProbe: { probe: stub() },
     audiencePulseService: { read: stub() },
     agentSkillsService: { list: stub() },
@@ -357,6 +359,48 @@ describe("copilot catalog shape", () => {
   });
 });
 
+describe("model-facing descriptions", () => {
+  it("gives the model the description the catalog was reviewed on", () => {
+    // A descriptor carries two: the catalog's, which governance and this suite read, and the one
+    // `createTool` hands the runtime, which is the only one the model ever sees. They drifted on
+    // eight tools — `propose_routine_edit` explained the shape of its `changes` argument in 867
+    // characters of which the model received 121, and `propose_routine_lifecycle` never named the
+    // required `action` it kept omitting. A paraphrase is not a description; keep them identical.
+    const drifted = realCatalog()
+      .map((descriptor) => ({ name: descriptor.name, model: descriptor.createTool({
+        workspaceId: "workspace-1",
+        accountId: "account-1",
+        operatorUserId: "operator-1",
+        surface: "dashboard" as const,
+        currentAuthorization: { hasAllPermissions: async () => true },
+        pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] },
+      } as never).description, catalog: descriptor.description }))
+      .filter((entry) => entry.model !== entry.catalog)
+      .map((entry) => entry.name);
+
+    expect(drifted).toEqual([]);
+  });
+
+  it("keeps proposing distinguishable from applying, for the tools that say so", () => {
+    // Collapsing the two descriptions dropped "it does not change configuration" from four propose
+    // tools, and the live suite caught it immediately: `propose_routine_lifecycle` was left saying
+    // it is "the only tool that changes what an agent is actually running", so Ray validated a
+    // routine and then declined to propose publishing it. A propose tool that reads as
+    // live-affecting does not get called.
+    //
+    // Scoped to the tools that carry the assurance today rather than asserted over every propose
+    // tool: six others have never carried it and their behaviour is unmeasured, so requiring it
+    // would be a prompt change to tools nothing in this suite covers.
+    const carriesAssurance = ["propose_directive", "propose_directive_enablement", "propose_directive_removal", "propose_agent_setting", "propose_routine", "propose_routine_edit", "propose_routine_lifecycle"];
+    const silent = realCatalog()
+      .filter((descriptor) => carriesAssurance.includes(descriptor.name))
+      .filter((descriptor) => !/not change configuration|changes nothing until the operator applies it/.test(descriptor.description))
+      .map((descriptor) => descriptor.name);
+
+    expect(silent).toEqual([]);
+  });
+});
+
 describe("verification cost declarations", () => {
   // Cost is declared per descriptor rather than inferred from shape, because the two answer
   // different questions and inferring one from the other already shipped a hole: `run_eval_suite`
@@ -366,6 +410,8 @@ describe("verification cost declarations", () => {
     test_agent_turn: { input: {}, expected: 1 },
     replay_eval_case: { input: {}, expected: 1 },
     retrieval_probe: { input: {}, expected: 1 },
+    // One ephemeral turn over the live conversation, whatever its length.
+    draft_reply: { input: {}, expected: 1 },
     // One completion over the crawled pages, whatever the site's size.
     analyze_website: { input: {}, expected: 1 },
     run_eval_suite: { input: { caseIds: ["a", "b", "a"] }, expected: 2 },

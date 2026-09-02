@@ -7,6 +7,7 @@ export const copilotRayOwnedPrimitiveIds = [
   "operatorCopilot.proposal.create",
   "operatorCopilot.safe-test.orchestration",
   "operatorCopilot.workspace-triage",
+  "operatorCopilot.needs-attention",
 ] as const;
 
 export const copilotApplicationPrimitiveRegistry = {
@@ -18,6 +19,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "agents.setting.propose": { owningModule: "agents", exportedPort: "AgentService" },
   "chat.conversation.trace.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
   "chat.conversation.identity.read": { owningModule: "chat", exportedPort: "ChatHistoryService" },
+  "chat.reply-draft.probe": { owningModule: "chat", exportedPort: "ReplyDraftRunner" },
   "documents.authoring.propose": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
   "documents.deletion.propose": { owningModule: "documents", exportedPort: "DocumentDeletionService" },
   "documents.status.read": { owningModule: "documents", exportedPort: "DocumentIngestionService" },
@@ -36,6 +38,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "operatorCopilot.proposal.create": { owningModule: "operatorCopilot", exportedPort: "CopilotRepositoryPort" },
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },
+  "operatorCopilot.needs-attention": { owningModule: "operatorCopilot", exportedPort: "NeedsAttentionCopilotToolDependencies" },
   "retrieval.evidence.probe": { owningModule: "retrieval", exportedPort: "RetrievalSearchService" },
   "routines.definition.read": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },
   "routines.proposal.prepare": { owningModule: "routines", exportedPort: "RoutineDraftAssistService" },

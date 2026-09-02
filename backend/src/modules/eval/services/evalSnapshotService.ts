@@ -5,7 +5,7 @@ import type { ExternalSkillDefinitionRepositoryPort } from "../../../db/reposito
 import type { McpConnectionRepositoryPort } from "../../../db/repositories/mcpConnectionRepository.js";
 import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import { projectInternalAgentConfig, type InternalAgentExternalSkillsConfig } from "../../agents/public.js";
+import { projectInternalAgentConfig, projectInternalAgentExternalSkills, type InternalAgentExternalSkillsConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
 import {
   loadConversationSummaryText,
@@ -471,24 +471,6 @@ export class EvalSnapshotService {
       this.externalSkills.connections.listByAgent(agentId),
       this.externalSkills.skillDefinitions.listByAgent(agentId),
     ]);
-    return {
-      connections: connections.map((connection) => ({
-        id: connection.id,
-        displayName: connection.displayName,
-        serverUrl: connection.serverUrl,
-        authMethod: connection.authMethod,
-        hasCredential: Boolean(connection.credentialCiphertext),
-      })),
-      skills: skills.map((skill) => ({
-        skillName: skill.skillName,
-        connectionId: skill.connectionId,
-        toolName: skill.toolName,
-        boundParams: skill.boundParams,
-        exposedParams: skill.exposedParams,
-        declaredOutcomes: skill.declaredOutcomes,
-        outcomeMap: skill.outcomeMap,
-        enabled: skill.enabled,
-      })),
-    };
+    return projectInternalAgentExternalSkills({ connections, skills });
   }
 }

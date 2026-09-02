@@ -106,6 +106,8 @@ const EvalSuiteRunRequestSchema = z
     mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
     caseIds: z.array(z.string().uuid()).min(1).max(500).optional()
       .describe("Subset of cases to run. Omit to run every case in the workspace."),
+    allowLiveEffects: z.boolean().optional().default(false)
+      .describe("Per-run confirmation for external skill effects. Requires an interactive workspace session and only applies to cases configured for live execution."),
   });
 
 const EvalSuiteSummarySchema = z.object({
@@ -160,9 +162,16 @@ const ReplaceEvalCaseAssertionsRequestSchema = z.object({
   assertions: z.array(evalAssertionSchema).max(20),
 });
 
+const EvalCaseExecutionModeRequestSchema = z.object({
+  executionMode: z.enum(["safe_test", "live"])
+    .describe("Live execution may invoke external skills. Changing the mode resets the case verdict."),
+});
+
 const EvalCaseRunRequestSchema = z.object({
   mode: z.enum(["retrieval_only", "full_assistant"]).default("full_assistant"),
   overrides: EvalRunOverridesSchema.optional(),
+  allowLiveEffects: z.boolean().optional().default(false)
+    .describe("Per-run confirmation for external skill effects. Requires an interactive workspace session and only applies to cases configured for live execution."),
 });
 
 const EvalSourceMessageParamsSchema = z.object({
@@ -175,6 +184,7 @@ const EvalCaseSchema = z.object({
   snapshotId: z.string().uuid(),
   name: z.string(),
   assertions: z.array(evalAssertionSchema).max(20),
+  executionMode: z.enum(["safe_test", "live"]),
   status: z.enum(["pending", "passing", "failing", "error"]),
   lastRunId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
@@ -266,6 +276,9 @@ export const registerEvalPaths = (
   const workspaceEvalSecurity = [
     { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
     { [security.bearerAuthScheme.name]: [] },
+  ];
+  const sessionEvalSecurity = [
+    { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
   ];
 
   const workspaceEvalErrorResponses = {
@@ -565,10 +578,31 @@ export const registerEvalPaths = (
   });
 
   registry.registerPath({
+    method: "put",
+    path: "/api/v1/evals/cases/{id}/execution-mode",
+    tags: ["Evals"],
+    summary: "Set an Eval case's replay execution mode",
+    description: "Enabling live external effects requires an authenticated interactive workspace session; API credentials cannot make this change.",
+    operationId: "setEvalCaseExecutionMode",
+    security: sessionEvalSecurity,
+    request: {
+      params: EvalCaseParamsSchema,
+      body: { required: true, content: { "application/json": { schema: EvalCaseExecutionModeRequestSchema } } },
+    },
+    responses: {
+      200: { description: "Eval case with its replay execution mode updated", content: { "application/json": { schema: RegisteredEvalCaseSchema } } },
+      400: { description: "Invalid case id or execution mode", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Eval case not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      ...workspaceEvalErrorResponses,
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/evals/cases/{id}/runs",
     tags: ["Evals"],
     summary: "Run an Eval case",
+    description: "Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.",
     operationId: "createEvalCaseRun",
     security: workspaceEvalSecurity,
     request: {
@@ -589,7 +623,7 @@ export const registerEvalPaths = (
     path: "/api/v1/evals/cases/run",
     tags: ["Evals"],
     summary: "Run a batch of eval cases",
-    description: "Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished.",
+    description: "Runs the workspace's eval cases, or the selected subset, and returns per-case outcomes plus the suite's aggregate pass rate. Cases run sequentially server-side, so the response arrives once every selected case has finished. Replays are safe by default; live-effect cases require a fresh allowLiveEffects confirmation from an interactive workspace session.",
     operationId: "runEvalCases",
     security: [
       { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
@@ -638,7 +672,7 @@ export const registerEvalPaths = (
         },
       },
       403: {
-        description: "Caller lacks workspace retrieval-query permission",
+        description: "Caller lacks workspace retrieval-query permission, or a non-session caller requested live effects",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

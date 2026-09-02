@@ -60,6 +60,12 @@ export interface EvalRunInput {
    * library's pass rate. Defaults to attaching.
    */
   attachToCase?: boolean;
+  /**
+   * A one-run authorization issued only after an interactive operator confirms a live case.
+   * Persisted live mode alone is deliberately insufficient: API clients and Ray replays omit
+   * this flag, so they remain safe even when they target a case configured to measure effects.
+   */
+  allowLiveEffects?: boolean;
 }
 
 export interface EvalRunOutcome {
@@ -437,12 +443,17 @@ export class EvalRunService {
 
     const runId = randomUUID();
     const overrides = input.overrides ?? {};
+    // Live effects require two independent, intentional choices: the case has been configured
+    // to measure them and this particular interactive replay was confirmed. One-off snapshots,
+    // API-triggered runs, and Ray replays do not carry the per-run confirmation and stay safe.
+    const executionMode: TurnExecutionMode =
+      evalCase?.executionMode === "live" && input.allowLiveEffects === true ? "live" : "safe_test";
     const agentConfigOverride = workbenchAgentConfigOverride(overrides);
     const retrievalSettingsOverride = resolveReplayRetrievalSettingsOverride(
       snapshot.originalRetrievalSettings,
       overrides.retrievalSettingsOverride,
     );
-    const resolvedConfig: EvalRunResolvedConfig = {};
+    const resolvedConfig: EvalRunResolvedConfig = { executionMode };
     let observed: EvalRunObservedOutput;
 
     await reserve();
@@ -452,10 +463,7 @@ export class EvalRunService {
         accountId: input.accountId,
         sourceAgentId: snapshot.sourceAgentId,
         baselineAgentConfig: snapshot.originalAgentConfig,
-        // Stated rather than defaulted: a replayed case runs the agent's skills for real, which is
-        // how a case that measures a skill's outcome measures anything. Issue #1147 weighs whether
-        // a case should be able to send a customer email a second time.
-        executionMode: "live",
+        executionMode,
         agentConfigOverride,
         query: replay.query,
         history: replay.history,
@@ -554,6 +562,7 @@ export class EvalRunService {
         runId: run.id,
         status: run.status,
         outcome: aggregate.status,
+        executionMode,
         latencyMs: Date.now() - startedAtMs,
         overrideKeys: overrideKeyNames(agentConfigOverride),
       },

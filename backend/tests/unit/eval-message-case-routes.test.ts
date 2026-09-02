@@ -23,6 +23,7 @@ const lookup = (): EvalMessageCaseLookup => ({
     snapshotId: "55555555-5555-4555-8555-555555555555",
     name: "Refund policy",
     assertions: [],
+    executionMode: "safe_test",
     status: "pending",
     lastRunId: null,
     createdAt: "2026-07-30T10:00:00.000Z",

@@ -117,6 +117,7 @@ const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient o
 // variable's definition and an agent's enablement of it; the values themselves stay off Ray's
 // catalog on the same ground conversation content does.
 const visitorScopedRuntimeData = permanent("Permanent exclusion: this reads or writes a context variable's per-scope runtime value, not agent configuration Ray authors.");
+const liveEvalEffects = permanent("Permanent exclusion: Ray may replay and evaluate a case, but never enables the live external effects that a replay can invoke.");
 
 /** Every OpenAPI operation is deliberately reachable through a family reader or explicitly planned/excluded. */
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
@@ -352,6 +353,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   // Disabling a skill is the reversible equivalent already reachable through propose_skill_config
   // (enabled: false); removal is destructive and stays out of Ray's reach for now.
   deleteAgentSkill: deferred("Deferred to Wave 2 behavior authoring: disabling a skill through propose_skill_config is the reversible equivalent; removal is destructive."),
+  setEvalCaseExecutionMode: liveEvalEffects,
   listContextVariables: "context_variables",
   getContextVariable: "context_variables",
   listAgentContextVariables: "context_variables",

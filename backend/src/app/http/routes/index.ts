@@ -86,6 +86,7 @@ export const createApiRouteMounts = (dependencies: AppDependencies): readonly Ap
       caseService: appDependencies.evalCaseService,
       runService: appDependencies.evalRunService,
       suiteService: appDependencies.evalSuiteService,
+      logger: appDependencies.logger,
     }),
   },
   { path: "/api/v1/public/chat", createRouter: createPublicChatRoutes },

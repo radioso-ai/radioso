@@ -94,6 +94,7 @@ export interface AssertionVerdict {
 }
 
 export type EvalCaseStatus = 'pending' | 'passing' | 'failing' | 'error'
+export type EvalCaseExecutionMode = 'safe_test' | 'live'
 export type EvalRunMode = 'retrieval_only' | 'full_assistant'
 export type EvalRunStatus = 'pass' | 'fail' | 'error' | 'recorded'
 export type GroundingVerdict = 'grounded' | 'degraded' | 'no_support'
@@ -118,6 +119,7 @@ export interface EvalCase {
   snapshotId: string
   name: string
   assertions: EvalAssertion[]
+  executionMode: EvalCaseExecutionMode
   status: EvalCaseStatus
   lastRunId: string | null
   createdAt: string
@@ -379,6 +381,16 @@ export const evalsApi = {
     }, { withSession: true })
   },
 
+  async setCaseExecutionMode(
+    caseId: string,
+    executionMode: EvalCaseExecutionMode,
+  ): Promise<EvalCase> {
+    return request<EvalCase>(`/evals/cases/${caseId}/execution-mode`, {
+      method: 'PUT',
+      body: JSON.stringify({ executionMode }),
+    }, { withSession: true })
+  },
+
   async listCases(): Promise<{ cases: EvalCaseListItem[]; summary: EvalSuiteSummary }> {
     return request<{ cases: EvalCaseListItem[]; summary: EvalSuiteSummary }>('/evals/cases', {
       method: 'GET',
@@ -387,12 +399,13 @@ export const evalsApi = {
 
   // Run a batch of cases — the whole workspace, or a selected subset via
   // caseIds (cost control). Either way the summary covers the whole workspace.
-  async runSuite(input: { caseIds?: string[]; mode?: EvalRunMode } = {}): Promise<EvalSuiteRunResult> {
+  async runSuite(input: { caseIds?: string[]; mode?: EvalRunMode; allowLiveEffects?: boolean } = {}): Promise<EvalSuiteRunResult> {
     return request<EvalSuiteRunResult>('/evals/cases/run', {
       method: 'POST',
       body: JSON.stringify({
         mode: input.mode ?? 'full_assistant',
         ...(input.caseIds && input.caseIds.length > 0 ? { caseIds: input.caseIds } : {}),
+        ...(input.allowLiveEffects ? { allowLiveEffects: true } : {}),
       }),
     }, { withSession: true })
   },
@@ -405,11 +418,15 @@ export const evalsApi = {
 
   async runCase(
     caseId: string,
-    input: { mode?: EvalRunMode; overrides?: EvalRunOverridesInput } = {},
+    input: { mode?: EvalRunMode; overrides?: EvalRunOverridesInput; allowLiveEffects?: boolean } = {},
   ): Promise<{ run: EvalRun; case: EvalCase | null }> {
     return request<{ run: EvalRun; case: EvalCase | null }>(`/evals/cases/${caseId}/runs`, {
       method: 'POST',
-      body: JSON.stringify({ mode: input.mode ?? 'full_assistant', overrides: input.overrides }),
+      body: JSON.stringify({
+        mode: input.mode ?? 'full_assistant',
+        overrides: input.overrides,
+        ...(input.allowLiveEffects ? { allowLiveEffects: true } : {}),
+      }),
     }, { withSession: true })
   },
 

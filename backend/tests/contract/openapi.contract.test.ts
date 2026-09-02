@@ -99,6 +99,7 @@ describe("openapi contract", () => {
         delete: "deleteEvalCase",
       },
       "/api/v1/evals/cases/{id}/assertions": { put: "replaceEvalCaseAssertions" },
+      "/api/v1/evals/cases/{id}/execution-mode": { put: "setEvalCaseExecutionMode" },
       "/api/v1/evals/cases/{id}/runs": { post: "createEvalCaseRun" },
       "/api/v1/evals/cases/run": { post: "runEvalCases" },
       "/api/v1/evals/runs": { post: "createEvalRun" },
@@ -107,10 +108,12 @@ describe("openapi contract", () => {
     for (const [path, methods] of Object.entries(expectedOperations)) {
       for (const [method, operationId] of Object.entries(methods)) {
         const operation = paths[path]?.[method as keyof typeof paths[string]];
-        expect(operation).toMatchObject({
-          operationId,
-          security: expect.arrayContaining([{ bearerAuth: [] }]),
-        });
+        expect(operation).toMatchObject({ operationId });
+        if (operationId === "setEvalCaseExecutionMode") {
+          expect(operation?.security).toEqual([{ sessionCookie: [], workspaceSelection: [] }]);
+        } else {
+          expect(operation?.security).toEqual(expect.arrayContaining([{ bearerAuth: [] }]));
+        }
         expect(operation?.responses).toHaveProperty("401");
         expect(operation?.responses).toHaveProperty("403");
       }

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { EvalCase, EvalSnapshot } from "../../src/modules/eval/domain/types.js";
 import { EvalCaseService } from "../../src/modules/eval/services/evalCaseService.js";
@@ -34,6 +34,7 @@ const evalCase = (workspaceId: string, snapshotId: string, id = randomUUID()): E
   snapshotId,
   name: "Delete me",
   assertions: [],
+  executionMode: "safe_test",
   status: "pending",
   lastRunId: null,
   createdAt: now,
@@ -72,5 +73,23 @@ describe("EvalCaseService.delete", () => {
     await expect(service.getWithRuns(workspaceId, existing.id)).resolves.toMatchObject({
       id: existing.id,
     });
+  });
+});
+
+describe("EvalCaseService.setExecutionMode", () => {
+  it("preserves the verdict when a retry submits the already-selected mode", async () => {
+    const workspaceId = randomUUID();
+    const snap = snapshot(workspaceId);
+    const existing = evalCase(workspaceId, snap.id);
+    const passing = { ...existing, executionMode: "live" as const, status: "passing" as const, lastRunId: randomUUID() };
+    const repository = createInMemoryEvalRepository({ snapshots: [snap], cases: [passing] });
+    const update = vi.spyOn(repository, "updateCaseExecutionMode");
+    const service = new EvalCaseService(repository);
+
+    await expect(service.setExecutionMode(workspaceId, passing.id, "live")).resolves.toMatchObject({
+      status: "passing",
+      lastRunId: passing.lastRunId,
+    });
+    expect(update).not.toHaveBeenCalled();
   });
 });

@@ -95,7 +95,7 @@ const triageOutputSchema = z.object({
 type WorkspaceTriageInput = z.infer<typeof triageInputSchema>;
 type WorkspaceTriageOutput = z.infer<typeof triageOutputSchema>;
 
-const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs and approvals first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. Use needs_attention instead to work through the approvals, handoffs, and complaints waiting on a person, which is the only list whose rows carry the handles to act on them; do not call both for the same question.";
+const description = "Read one ranked digest of what needs the operator's attention: waiting handoffs and approvals first, then failures and written complaints, then untriaged backlog counts. Every line carries a dashboard link. Sources report whether they were read: a source marked unauthorized or failed is unknown, never zero. The knowledge base is workspace-wide, so its lines stay in the digest even when the request names one agent. This is the answer to a broad opening question about the workspace; needs_attention lists the same escalations as a working queue when the operator is about to act on one.";
 
 export const createWorkspaceTriageCopilotTools = (
   deps: WorkspaceTriageCopilotToolDependencies,

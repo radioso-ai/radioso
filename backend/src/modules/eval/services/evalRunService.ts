@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import {
   materializeAgentFromConfig,
   type InternalAgentConfig,
@@ -31,7 +32,7 @@ export interface EvalWorkbenchReplayRunnerPort {
     accountId?: string | null;
     sourceAgentId: string;
     /** Whether the replayed turn's skills act for real. Stated by the caller; never defaulted. */
-    executionMode: "live" | "safe_test";
+    executionMode: TurnExecutionMode;
     baselineAgentConfig: NonNullable<EvalSnapshot["originalAgentConfig"]>;
     agentConfigOverride?: NonNullable<EvalRunOverrides["agentConfigOverride"]>;
     query: string;

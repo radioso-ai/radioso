@@ -1,5 +1,6 @@
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { ChatCitation } from "../contracts/index.js";
+import { loadConversationSummaryText, type ConversationSummaryStore } from "../contracts/conversationSummary.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { WorkbenchReplayInput, WorkbenchReplayResult } from "./workbenchReplayRunner.js";
@@ -10,15 +11,6 @@ import type { WorkbenchReplayInput, WorkbenchReplayResult } from "./workbenchRep
  */
 export interface ReplyDraftAgentConfigPort {
   resolveConfig(workspaceId: string, agentId: string): Promise<WorkbenchReplayInput["baselineAgentConfig"] | null>;
-}
-
-/**
- * The rolling summary of everything before the loaded window. A live turn injects it, so a draft
- * composed without it answers from a shorter memory than the agent has and can contradict a
- * commitment the conversation already made.
- */
-export interface ReplyDraftSummaryReadPort {
-  load(input: { sessionId: string }): Promise<{ summary: string } | null>;
 }
 
 /** Only the identity a draft needs: which workspace owns the conversation, and which agent speaks in it. */
@@ -34,7 +26,14 @@ export interface ReplyDraftRunnerOptions {
   readonly conversations: ReplyDraftConversationReadPort;
   readonly messages: Pick<MessageRepositoryPort, "listRecentByConversationId">;
   readonly agentConfig: ReplyDraftAgentConfigPort;
-  readonly summaries: ReplyDraftSummaryReadPort;
+  /**
+   * The rolling summary of everything before the loaded window. A live turn injects it, so a draft
+   * composed without it answers from a shorter memory than the agent has and can contradict a
+   * commitment the conversation already made. Read through the shared helper, so the "blank means
+   * absent, a failed read means absent" policy cannot drift from the live turn's.
+   */
+  readonly summaries: Pick<ConversationSummaryStore, "load">;
+  readonly logger?: { warn: (fields: object, message?: string) => void };
   readonly replay: { run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> };
 }
 
@@ -44,6 +43,12 @@ export interface ChatReplyDraftInput {
   readonly accountId?: string | null;
   readonly historyLimit: number;
   readonly usageAttribution: ModelCallUsageAttribution;
+  /**
+   * Claims the workspace allowance this draft spends. Invoked immediately before the turn is
+   * dispatched, never before the checks above it — a conversation that cannot be drafted for at
+   * all must not cost an answer, and its refusal must not arrive as a quota error.
+   */
+  readonly reserve: () => Promise<void>;
 }
 
 export interface ChatReplyDraftResult {
@@ -94,12 +99,13 @@ export class ReplyDraftRunner {
     const [baselineAgentConfig, summary] = await Promise.all([
       this.options.agentConfig.resolveConfig(input.workspaceId, agentId),
       // Routine state is keyed by conversation id, and so is the summary.
-      this.options.summaries.load({ sessionId: input.conversationId }),
+      loadConversationSummaryText(this.options.summaries, input.conversationId, this.options.logger),
     ]);
     if (!baselineAgentConfig) {
       throw notFound("Agent not found");
     }
 
+    await input.reserve();
     const result = await this.options.replay.run({
       workspaceId: input.workspaceId,
       accountId: input.accountId ?? null,
@@ -112,7 +118,7 @@ export class ReplyDraftRunner {
       executionMode: "safe_test",
       query: waiting.content,
       history: transcript.slice(0, -1),
-      conversationSummary: summary?.summary ?? null,
+      conversationSummary: summary ?? null,
       usageAttribution: input.usageAttribution,
     });
 
@@ -121,7 +127,7 @@ export class ReplyDraftRunner {
       draft: result.answer,
       citations: result.citations ?? [],
       groundedOnMessageCount: transcript.length,
-      groundedOnSummary: summary !== null,
+      groundedOnSummary: summary !== undefined,
     };
   }
 }

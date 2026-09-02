@@ -289,4 +289,6 @@ export interface QualityTurnsServicePort {
   listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage>;
   /** Conditionally transitions triage using the caller's observed version. */
   setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<SetTriageStateResult>;
+  /** The same transition for callers holding the state and reason as plain strings. */
+  applyTriageUpdate(workspaceId: string, input: ApplyTriageUpdateInput): Promise<SetTriageStateResult>;
 }

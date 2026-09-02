@@ -35,6 +35,8 @@ export interface CopilotChatReplyDraftPort {
     accountId?: string | null;
     historyLimit: number;
     usageAttribution: { surface: string; requestId?: string };
+    /** Claims the workspace allowance, immediately before the turn is dispatched and never before. */
+    reserve: () => Promise<void>;
   }): Promise<{
     agentId: string;
     draft: string;

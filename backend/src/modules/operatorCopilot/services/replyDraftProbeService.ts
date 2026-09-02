@@ -5,6 +5,7 @@ import type {
   CopilotReplyDraftResult,
   ReplyDraftProbeServiceDependencies,
 } from "../contracts/replyDraft.js";
+import type { UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
 import { enforceCopilotExpensiveOperation, withCopilotSpendRefusals } from "./expensiveOperationGuard.js";
 
 /**
@@ -28,14 +29,12 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
     await enforceCopilotExpensiveOperation(this.dependencies, input, "draft_reply");
 
     // A draft is a full agent turn against the workspace's provider, so it draws on the same
-    // allowance a customer answer does. Reserved before the run and committed after it either way:
-    // once the provider has run, the budget is spent whether or not the projection succeeded.
+    // allowance a customer answer does. The reservation is handed to the runner rather than taken
+    // here, because the runner refuses several conversations before it dispatches anything — a
+    // conversation whose last turn is the agent's costs nothing, and says so instead of reporting
+    // a quota that was never the reason.
+    let reservation: UsageLimitReservation | null = null;
     return withCopilotSpendRefusals(async () => {
-      const reservation = await this.dependencies.usageLimitPolicy.reserveAnswer({
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
-      });
       try {
         const result = await this.dependencies.chatReplyDraft.draftReply({
           workspaceId: input.workspaceId,
@@ -46,8 +45,16 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
             surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
             requestId: input.copilotConversationId,
           },
+          reserve: async () => {
+            reservation = await this.dependencies.usageLimitPolicy.reserveAnswer({
+              accountId: input.accountId,
+              workspaceId: input.workspaceId,
+              surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
+            });
+          },
         });
 
+        await (reservation as UsageLimitReservation | null)?.commit();
         return {
           agentId: result.agentId,
           conversationId: input.conversationId,
@@ -56,10 +63,12 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
           groundedOnMessageCount: result.groundedOnMessageCount,
           groundedOnSummary: result.groundedOnSummary,
         };
-      } finally {
-        // Once the provider has run the allowance is spent, so a failure in the projection above
-        // must not hand budget back that a real generation consumed.
-        await reservation.commit();
+      } catch (error) {
+        // Past the reservation the turn has been dispatched, so a later failure asks "did the
+        // provider already run", not "did the call succeed". Releasing here would hand back budget
+        // a real generation consumed.
+        await (reservation as UsageLimitReservation | null)?.commit();
+        throw error;
       }
     });
   }

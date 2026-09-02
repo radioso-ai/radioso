@@ -45,7 +45,7 @@ const needsAttentionSourceByKind: Record<CopilotNeedsAttentionKind, NeedsAttenti
   negative_feedback: "quality",
 };
 
-/** How many rows the handoff window ranks per row it can list. */
+/** How many rows a recency-ordered source is ranked over per row this queue can list. */
 const HANDOFF_RANKING_DEPTH = 10;
 
 const NEEDS_ATTENTION_DEFAULT_LIMIT = 25;
@@ -213,6 +213,10 @@ const buildNeedsAttention = async (
   };
 };
 
+/** When the complaint started waiting: its latest thumbs-down, or the turn itself if it has none. */
+const waitingSince = (turn: { feedback: { latestDownUpdatedAt: string | null }; createdAt: string }): string =>
+  turn.feedback.latestDownUpdatedAt ?? turn.createdAt;
+
 const emptyRowFields = {
   approvalHandle: null,
   assistantMessageId: null,
@@ -296,8 +300,13 @@ const readFeedbackQueue = async (
   agentId: string | null,
   limit: number,
 ): Promise<AuthorizedSourceRead<NeedsAttentionRow>> => {
+  // The quality read is ordered newest-complaint-first, so asking for exactly one page would return
+  // the newest `limit` and then present them oldest-first — the longest-waiting complaints would be
+  // unreachable at any page size while `total` reported them as merely paged away. Same window
+  // reasoning as the handoff read above; the two are the only sources whose own order is not the
+  // order this queue lists them in.
   const feedback = await deps.qualitySignalsService.listLowQualityTurns(workspaceId, {
-    limit,
+    limit: Math.max(HANDOFF_RANKING_WINDOW, limit * HANDOFF_RANKING_DEPTH),
     ...(agentId === null ? {} : { agentId }),
     feedbackValues: ["down"],
     hasComment: true,
@@ -306,12 +315,16 @@ const readFeedbackQueue = async (
   });
   return {
     total: feedback.total,
-    items: feedback.items.map((turn) => ({
+    items: feedback.items
+      .slice()
+      .sort((left, right) => waitingSince(left).localeCompare(waitingSince(right)))
+      .slice(0, limit)
+      .map((turn) => ({
       ...emptyRowFields,
       kind: "negative_feedback" as const,
       title: turn.question,
       detail: latestDownComment(turn.feedback.comments),
-      since: turn.feedback.latestDownUpdatedAt ?? turn.createdAt,
+      since: waitingSince(turn),
       agentId: turn.agentId,
       conversationId: turn.conversationId,
       assistantMessageId: turn.assistantMessageId,

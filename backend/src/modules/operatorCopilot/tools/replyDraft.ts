@@ -24,6 +24,8 @@ const replyDraftOutputSchema = z.object({
     groundedOnMessageCount: z.number().int().nonnegative(),
     /** False means the turns before that window were not available, so the draft has a shorter memory. */
     groundedOnSummary: z.boolean(),
+    /** True means the draft resumed a routine the conversation is part-way through. */
+    groundedOnRoutine: z.boolean(),
   }).strict(),
 }).strict();
 
@@ -72,6 +74,7 @@ export const createReplyDraftCopilotTools = (
           citations: result.citations.slice(0, MAX_CITATIONS),
           groundedOnMessageCount: result.groundedOnMessageCount,
           groundedOnSummary: result.groundedOnSummary,
+          groundedOnRoutine: result.groundedOnRoutine,
         },
       });
     },

@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-import type { CopilotToolDescriptor } from "../contracts.js";
+import { notFound } from "../../../shared/domain/errors.js";
+
+import { withCopilotActor, type CopilotAuditPort, type CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { asRecord, describeNamedAgent, entity, type CopilotAgentLookupPort } from "./shared.js";
 
@@ -118,6 +120,13 @@ export interface CopilotQualityTriagePort {
 
 export interface QualityTriageCopilotToolDependencies {
   readonly qualityTriageService: CopilotQualityTriagePort;
+  /**
+   * The transition history records which operator moved a row; this records which Ray turn did,
+   * and through which surface. Without it a triage state that surprises somebody is traceable to a
+   * person but not to the conversation that produced it — and Ray is the only actor here that can
+   * move many rows in one operator gesture.
+   */
+  readonly auditService: CopilotAuditPort;
 }
 
 const setTriageStateDescription = "Record where an assistant turn stands in operator triage: open, acknowledged, resolved, or dismissed, with a resolution reason on a terminal state. Pass the triage version the turn was read at — needs_attention and quality_signals both report it — and a competing operator's change comes back as a conflict with the current record instead of overwriting them. This changes nothing a customer sees.";
@@ -175,9 +184,26 @@ export const createQualityTriageCopilotTools = (
           updatedBy: context.operatorUserId,
         });
         if (result.kind === "not_found") {
-          throw new Error("Assistant turn not found");
+          throw notFound("Assistant turn not found");
         }
         const record = result.kind === "updated" ? result.record : result.current;
+        await deps.auditService.record({
+          accountId: context.accountId,
+          workspaceId: context.workspaceId,
+          eventType: "copilot.triage.transitioned",
+          // A conflict changed nothing, so it is not a successful transition — and a burst of them
+          // is what a Ray turn working a stale queue looks like from the outside.
+          eventStatus: result.kind === "updated" ? "success" : "failure",
+          metadata: withCopilotActor(context, {
+            assistantMessageId,
+            outcome: result.kind,
+            requestedState: state,
+            expectedVersion,
+            currentState: record.state,
+            currentVersion: record.version,
+            resolutionReason: record.resolution?.reason ?? null,
+          }),
+        });
         return outputSchema.parse({
           outcome: result.kind,
           state: record.state,

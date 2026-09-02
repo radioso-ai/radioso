@@ -17,6 +17,7 @@ export interface CopilotReplyDraftResult {
   citations: ReadonlyArray<unknown>;
   groundedOnMessageCount: number;
   groundedOnSummary: boolean;
+  groundedOnRoutine: boolean;
 }
 
 export interface CopilotReplyDraftPort {
@@ -43,6 +44,7 @@ export interface CopilotChatReplyDraftPort {
     citations: ReadonlyArray<unknown>;
     groundedOnMessageCount: number;
     groundedOnSummary: boolean;
+    groundedOnRoutine: boolean;
   }>;
 }
 

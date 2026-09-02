@@ -1,6 +1,7 @@
 import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { ChatCitation } from "../contracts/index.js";
 import { loadConversationSummaryText, type ConversationSummaryStore } from "../contracts/conversationSummary.js";
+import type { RoutineState } from "@radioso/conversation-contract";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { WorkbenchReplayInput, WorkbenchReplayResult } from "./workbenchReplayRunner.js";
@@ -22,6 +23,10 @@ export interface ReplyDraftConversationReadPort {
   } | null>;
 }
 
+export interface ReplyDraftRoutineStateReadPort {
+  loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
+}
+
 export interface ReplyDraftRunnerOptions {
   readonly conversations: ReplyDraftConversationReadPort;
   readonly messages: Pick<MessageRepositoryPort, "listRecentByConversationId">;
@@ -33,6 +38,13 @@ export interface ReplyDraftRunnerOptions {
    * absent, a failed read means absent" policy cannot drift from the live turn's.
    */
   readonly summaries: Pick<ConversationSummaryStore, "load">;
+  /**
+   * Where the conversation currently stands in a routine. A draft is the *next* turn, so unlike an
+   * eval replay — which must not seed a captured turn with post-turn state — the live position is
+   * exactly the right seed. Without it, drafting for a conversation paused mid-routine (every
+   * approval row in the operator queue is one) answers as if the routine had never started.
+   */
+  readonly routineStates: ReplyDraftRoutineStateReadPort;
   readonly logger?: { warn: (fields: object, message?: string) => void };
   readonly replay: { run(input: WorkbenchReplayInput): Promise<WorkbenchReplayResult> };
 }
@@ -59,6 +71,8 @@ export interface ChatReplyDraftResult {
   readonly groundedOnMessageCount: number;
   /** Whether the rolling summary of the turns before that window was available to the draft. */
   readonly groundedOnSummary: boolean;
+  /** Whether the draft resumed a routine the conversation is part-way through. */
+  readonly groundedOnRoutine: boolean;
 }
 
 /**
@@ -68,6 +82,8 @@ export interface ChatReplyDraftResult {
  * conversation, routine state, or summary is written and nothing reaches the customer. That is the
  * whole point — the operator reads the draft, edits it, and sends it themselves.
  */
+const stripSessionId = ({ sessionId: _sessionId, ...position }: RoutineState) => position;
+
 export class ReplyDraftRunner {
   constructor(private readonly options: ReplyDraftRunnerOptions) {}
 
@@ -96,10 +112,11 @@ export class ReplyDraftRunner {
       throw badRequest("The conversation's last turn is not a waiting customer message");
     }
 
-    const [baselineAgentConfig, summary] = await Promise.all([
+    const [baselineAgentConfig, summary, routineState] = await Promise.all([
       this.options.agentConfig.resolveConfig(input.workspaceId, agentId),
       // Routine state is keyed by conversation id, and so is the summary.
       loadConversationSummaryText(this.options.summaries, input.conversationId, this.options.logger),
+      this.options.routineStates.loadActive({ sessionId: input.conversationId }),
     ]);
     if (!baselineAgentConfig) {
       throw notFound("Agent not found");
@@ -119,6 +136,9 @@ export class ReplyDraftRunner {
       query: waiting.content,
       history: transcript.slice(0, -1),
       conversationSummary: summary ?? null,
+      // The runner keys routine state by the ephemeral conversation it creates, so the seed is the
+      // position without its session id.
+      routineStartState: routineState ? stripSessionId(routineState) : null,
       usageAttribution: input.usageAttribution,
     });
 
@@ -128,6 +148,7 @@ export class ReplyDraftRunner {
       citations: result.citations ?? [],
       groundedOnMessageCount: transcript.length,
       groundedOnSummary: summary !== undefined,
+      groundedOnRoutine: routineState !== null,
     };
   }
 }

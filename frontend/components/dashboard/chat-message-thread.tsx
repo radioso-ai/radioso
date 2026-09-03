@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 
+import { AssistantIdentityLine, type AssistantIdentity } from '@/components/chat/assistant-identity'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
@@ -37,6 +38,10 @@ import type {
 } from '@/lib/api'
 
 type MessageSource = 'customer' | 'ai_agent' | 'human_agent' | 'human_agent_on_behalf_of_ai_agent' | 'system'
+
+// An absent source predates message-source tracking and is an AI turn.
+const isAiAuthored = (message: { source?: MessageSource }) =>
+  message.source === undefined || message.source === 'ai_agent'
 
 const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
@@ -356,6 +361,7 @@ export function ChatMessageThread({
   onMessageSelect,
   selectedMessageId,
   assistantAvatarLabel,
+  assistantIdentity,
   assistantLinkUtmEnabled = true,
   theme,
   themedSuggestionButtons = false,
@@ -382,6 +388,9 @@ export function ChatMessageThread({
   selectedMessageId?: string
   assistantAvatarUrl?: string | null
   assistantAvatarLabel?: string
+  // Visitor-facing surfaces name the assistant and mark it as software above its
+  // first message. Operator surfaces omit it: the reader already knows.
+  assistantIdentity?: AssistantIdentity | null
   assistantLinkUtmEnabled?: boolean
   hideAssistantAvatar?: boolean
   theme?: WebsiteEmbedTheme | null
@@ -404,6 +413,13 @@ export function ChatMessageThread({
   routineMarkers?: readonly RoutineThreadMarker[]
 }) {
   const skillGroupInfo = useMemo(() => computeSkillGroupInfo(messages), [messages])
+  // The identity line sits on the earliest AI-authored turn currently rendered, so it
+  // stays at the top of the assistant's presence after older messages load in. Turns a
+  // person wrote or a takeover produced are skipped: they are not what the chip claims.
+  const firstAiAuthoredIndex = useMemo(
+    () => messages.findIndex((message) => message.role === 'assistant' && isAiAuthored(message)),
+    [messages],
+  )
   const skillCatalogByName = useMemo(
     () => new Map(skillCatalog.map((skill) => [skill.name, skill])),
     [skillCatalog],
@@ -680,6 +696,9 @@ export function ChatMessageThread({
                 ) : (
                   <div className="flex w-full items-start">
                     <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+                      {assistantIdentity && index === firstAiAuthoredIndex ? (
+                        <AssistantIdentityLine identity={assistantIdentity} theme={theme} />
+                      ) : null}
                       {groupInfo?.isGroupStart && groupInfo.skill ? (
                         <SkillChip
                           skill={groupInfo.skill}

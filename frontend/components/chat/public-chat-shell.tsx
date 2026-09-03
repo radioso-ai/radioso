@@ -28,6 +28,7 @@ import {
   type ChatThreadMessage,
 } from '@/components/dashboard/chat-message-thread'
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
+import { AssistantAiChip, buildAssistantIdentity } from '@/components/chat/assistant-identity'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
@@ -44,6 +45,7 @@ import {
 import { editionController } from '@/lib/edition-controller'
 import {
   buildWebsiteEmbedSurfaceCssVars,
+  formatWebsiteEmbedDisclaimer,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
@@ -396,6 +398,7 @@ export function PublicChatThreadLoadingView({
             onOpenDocument={async () => 'unavailable'}
             assistantAvatarUrl={avatarUrl}
             assistantAvatarLabel={workspaceName}
+            assistantIdentity={buildAssistantIdentity(copy, workspaceName)}
             hideFeedbackEntries
             theme={theme}
             themedSuggestionButtons
@@ -467,9 +470,16 @@ function PublicChatCenteredIntro({
             themeOverrides={themeOverrides}
             className="size-20"
           />
-          <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
-            {workspaceName}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+              {workspaceName}
+            </h2>
+            <AssistantAiChip
+              label={copy.publicChatAiLabel}
+              theme={theme}
+              title={formatWebsiteEmbedDisclaimer(copy, workspaceName).trim() || undefined}
+            />
+          </div>
         </div>
         {hasGreetingContent ? (
           <div className="max-w-xl text-center text-base leading-relaxed" style={{ color: theme.panelForeground }}>
@@ -590,6 +600,10 @@ function PublicChatContent({
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
   const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
+  const assistantIdentity = useMemo(
+    () => buildAssistantIdentity(copy, resolvedWorkspaceName),
+    [copy, resolvedWorkspaceName],
+  )
   // The contact button follows the backend-advertised intake action, which the host
   // surfaces only when the agent enabled contact requests. No edition gate here: the
   // advertisement is the gate.
@@ -1020,6 +1034,7 @@ function PublicChatContent({
                   onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
                   assistantAvatarUrl={resolvedAvatarUrl}
                   assistantAvatarLabel={resolvedWorkspaceName}
+                  assistantIdentity={assistantIdentity}
                   assistantLinkUtmEnabled={assistantLinkUtmEnabled}
                   hideAssistantAvatar={surface === 'embed' && isNarrowLayout}
                   hideFeedbackEntries

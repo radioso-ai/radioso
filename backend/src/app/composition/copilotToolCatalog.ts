@@ -104,7 +104,7 @@ export const createCopilotDocumentAuthoringPort = (
  * It names no rotation flag, which is why applying a proposal can never rotate a token.
  */
 export const createCopilotWorkspaceSettingPort = (
-  platformSettingsService: Pick<PlatformSettingsService, "getVersionedForWorkspace" | "updateForWorkspace">,
+  platformSettingsService: Pick<PlatformSettingsService, "getVersionedForWorkspace" | "applyForWorkspace">,
   workspaceAccount: CopilotWorkspaceAccountResolver,
 ): CopilotWorkspaceSettingPort => ({
   getForWorkspace: async (workspaceId) => {
@@ -124,7 +124,7 @@ export const createCopilotWorkspaceSettingPort = (
       updatedAt,
     };
   },
-  updateForWorkspace: async (workspaceId, input, options) => platformSettingsService.updateForWorkspace(
+  updateForWorkspace: async (workspaceId, input, options) => platformSettingsService.applyForWorkspace(
     workspaceId,
     {
       assistant: {

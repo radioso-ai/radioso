@@ -4,6 +4,7 @@ import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
 import { buildAssistantLogoCacheKey, buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
 import {
@@ -22,6 +23,7 @@ export interface PlatformSettingsServiceDependencies {
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
   accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
   auditService?: Pick<AuditService, "record">;
+  logger?: Pick<AppLogger, "warn">;
   publicChatBaseUrl?: string;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
@@ -91,6 +93,35 @@ export class PlatformSettingsService {
     patch: PlatformSettingsPatch,
     context: PlatformSettingsUpdateContext = {},
   ): Promise<PlatformSettingsResource> {
+    const { agent, workspace } = await this.writeForWorkspace(workspaceId, patch, context);
+
+    return {
+      assistant: this.buildAssistantSection(agent),
+      channels: await this.buildChannelsSection(agent, workspace),
+    };
+  }
+
+  /**
+   * The write on its own, for a caller that records an outcome rather than rendering one.
+   *
+   * Presenting the result reads the public launch grants — a second round trip, after the agent
+   * write has committed. A caller rendering a page can fail there and be reloaded; a caller
+   * recording whether the change happened would store "failed" for a channel that is already open,
+   * and invite the operator to make the change twice.
+   */
+  async applyForWorkspace(
+    workspaceId: string,
+    patch: PlatformSettingsPatch,
+    context: PlatformSettingsUpdateContext = {},
+  ): Promise<void> {
+    await this.writeForWorkspace(workspaceId, patch, context);
+  }
+
+  private async writeForWorkspace(
+    workspaceId: string,
+    patch: PlatformSettingsPatch,
+    context: PlatformSettingsUpdateContext,
+  ): Promise<{ agent: AgentRecord; workspace: WorkspaceRecord }> {
     const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
 
     if (!workspace) {
@@ -103,10 +134,7 @@ export class PlatformSettingsService {
       currentAgent = await this.updateAgentSections(workspaceId, currentAgent, workspace, patch, context);
     }
 
-    return {
-      assistant: this.buildAssistantSection(currentAgent),
-      channels: await this.buildChannelsSection(currentAgent, workspace),
-    };
+    return { agent: currentAgent, workspace };
   }
 
   private async updateAgentSections(
@@ -208,8 +236,14 @@ export class PlatformSettingsService {
     const record = async (event: Parameters<typeof auditService.record>[0]): Promise<void> => {
       try {
         await auditService.record(event);
-      } catch {
-        // The change is already written; losing its audit line must not undo or misreport it.
+      } catch (error) {
+        // The change is already written; losing its audit line must not undo or misreport it. It
+        // must not vanish either — this is the record of a public channel opening or closing, so
+        // the loss is itself worth an operator's attention.
+        this.dependencies.logger?.warn(
+          { err: error, workspaceId: input.workspaceId, eventType: event.eventType },
+          "Channel settings audit event was not recorded",
+        );
       }
     };
 

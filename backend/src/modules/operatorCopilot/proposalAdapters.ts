@@ -44,6 +44,24 @@ import { badRequest, conflict, notFound, AppError } from "../../shared/domain/er
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
+/**
+ * An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object holding
+ * the anonymous-chat and embed surfaces - their enablement, their allowed origins, and their
+ * tokens. Reading it back would put a channel token in a card preview that only needs
+ * `workspace.agents.read`; applying it would change who can reach the agent, under agent
+ * management, with no reach signal on the card and none of the channel audit events the settings
+ * service records. Those fields are proposed by name through propose_workspace_setting.
+ *
+ * Refused on every entry point rather than on the draft alone: a row drafted before this boundary
+ * existed, or by an older process mid-deploy, reaches preview and apply without passing validate.
+ */
+const settingTargetRef = (rawTargetRef: unknown) => {
+  const targetRef = settingTargetRefSchema.parse(rawTargetRef);
+  if (targetRef.settingKey === "surfaceSettings") {
+    throw badRequest("Public channel and embed settings are proposed with propose_workspace_setting, which names each field and states on the card when a change alters who can reach the agent");
+  }
+  return targetRef;
+};
 const routineTargetRefSchema = z.object({ agentId: z.string().uuid(), routineId: z.string().uuid().nullable() }).strict();
 const routineLifecycleActions = ["publish", "archive", "restore"] as const;
 // The card summary is rebuilt from `payload.rationale` after a reload, which is why every routine
@@ -271,17 +289,17 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
 }): CopilotAgentSettingProposalAdapter => ({
   targetType: "agent_setting",
   async readVersionToken(workspaceId, rawTargetRef) {
-    const targetRef = settingTargetRefSchema.parse(rawTargetRef);
+    const targetRef = settingTargetRef(rawTargetRef);
     return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
   },
   async preview(workspaceId, rawTargetRef, rawPayload) {
-    const targetRef = settingTargetRefSchema.parse(rawTargetRef);
+    const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
     const current = await deps.agentService.get(workspaceId, targetRef.agentId).catch(() => null);
     return { targetLabel: targetRef.settingKey, current: current ? settingValue(current, targetRef.settingKey) : null, proposed: payload.value };
   },
   async applyIfVersionMatches(workspaceId, rawTargetRef, rawPayload, token) {
-    const targetRef = settingTargetRefSchema.parse(rawTargetRef);
+    const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
     try {
       await deps.agentService.update(workspaceId, targetRef.agentId, settingPatch(targetRef.settingKey, payload.value), { expectedUpdatedAt: versionDate(token) });
@@ -292,17 +310,8 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
     }
   },
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
-    const targetRef = settingTargetRefSchema.parse(rawTargetRef);
+    const targetRef = settingTargetRef(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
-    // An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object
-    // holding the anonymous-chat and embed surfaces - their enablement, their allowed origins, and
-    // their tokens. Proposing it as one value would put a card labelled "surfaceSettings" in front
-    // of an operator while carrying a change to who can reach the agent, and a token, inside it.
-    // Those fields are proposed by name through propose_workspace_setting, which states reach on
-    // the card and cannot carry a token at all.
-    if (targetRef.settingKey === "surfaceSettings") {
-      throw badRequest("Public channel and embed settings are proposed with propose_workspace_setting, which names each field and states on the card when a change alters who can reach the agent");
-    }
     // The version token is derived from this same read, not a follow-up readVersionToken call: a
     // concurrent edit landing between two separate reads could pair a merge built from the first
     // (now stale) read with the second read's fresher token, letting a lost update pass its

@@ -24,6 +24,8 @@ const readOrMissing = async <T>(read: Promise<T>): Promise<T | null> => {
 };
 
 const WORKSPACE_SETTINGS_LABEL = "Workspace settings" as const;
+/** The fields whose combination the embed domain judges, so a refusal can say whose fault it is. */
+const embedFieldNames = ["websiteEmbedEnabled", "websiteEmbedAllowedOrigins", "websiteEmbedLauncherLabel", "websiteEmbedLauncherPosition"] as const;
 const TARGET_LABEL = WORKSPACE_SETTINGS_LABEL;
 
 /** The card's own presentation fields are not settings, so a diff must not list them as changes. */
@@ -98,8 +100,14 @@ const merged = (
     });
   } catch (error) {
     // Refused at draft time rather than at Apply, so a combination that could only ever fail never
-    // reaches an operator's card.
-    throw badRequest(error instanceof Error ? error.message : "The proposed embed settings are not valid");
+    // reaches an operator's card. The stored surface can already hold one the domain refuses — an
+    // enabled embed with no origin, which the read path tolerates and the write path does not — and
+    // then every settings write is blocked, not just this one. Saying so is the difference between
+    // a card the operator can act on and an allowed-origin error attached to a greeting change.
+    const reason = error instanceof Error ? error.message : "The proposed embed settings are not valid";
+    throw badRequest(embedFieldNames.some((field) => field in named)
+      ? reason
+      : `The workspace's stored website embed settings block any settings change until they are fixed: ${reason}`);
   }
   return copilotWorkspaceSettingPayloadSchema.omit({ changesReach: true }).parse({
     ...requested,

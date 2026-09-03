@@ -156,6 +156,21 @@ describe("propose_workspace_setting", () => {
     }, {} as never)).rejects.toThrow(/allowed origin/i);
   });
 
+  it("names the stored embed settings when they are what blocks a wording change", async () => {
+    // An enabled embed with no origin is a state the read path tolerates and every settings write
+    // refuses. A greeting proposal fails on it either way; an allowed-origin error with no
+    // explanation is the version the operator cannot act on.
+    const { adapter } = adapterFor(settingsPorts(storedSettings({
+      websiteEmbedEnabled: true,
+      websiteEmbedAllowedOrigins: [],
+    })));
+    const { descriptor } = toolFor(adapter);
+
+    await expect(descriptor.createTool(context).invoke({
+      greetingInstruction: "Open with the shipping cut-off.",
+    }, {} as never)).rejects.toThrow(/stored website embed settings block any settings change/i);
+  });
+
   it("refuses a change that restates what is already stored", async () => {
     const { adapter } = adapterFor();
     const { descriptor } = toolFor(adapter);

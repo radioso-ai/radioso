@@ -757,4 +757,21 @@ describe("the agent setting adapter's channel boundary", () => {
     expect(get).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
+
+  it("holds the refusal on preview and apply, which a row drafted before the boundary reaches directly", async () => {
+    // A pending proposal written by an older process never passes validatePayload again. Preview
+    // would hand its channel tokens to a caller holding only agents.read; apply would open the
+    // channel. Both are the reason the guard cannot live on the draft alone.
+    const get = vi.fn();
+    const update = vi.fn();
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+    const targetRef = { agentId, settingKey: "surfaceSettings" };
+
+    await expect(adapter.preview("workspace-1", targetRef, { value: {} })).rejects.toThrow(/propose_workspace_setting/);
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { value: {} }, "2026-09-01T10:00:00.000Z"))
+      .rejects.toThrow(/propose_workspace_setting/);
+    await expect(adapter.readVersionToken("workspace-1", targetRef)).rejects.toThrow(/propose_workspace_setting/);
+    expect(get).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
 });

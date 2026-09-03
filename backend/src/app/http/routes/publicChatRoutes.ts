@@ -12,7 +12,7 @@ import { ASSISTANT_LOGO_MIME_TYPES } from "../shared/assistantIdentity.js";
 import { validateBody } from "../middleware/validate.js";
 import { collectionPageQuerySchema, conversationTailQuerySchema, conversationWindowQuerySchema } from "./conversationRouteSchemas.js";
 import { isAllowedWebsiteEmbedOrigin } from "../../../shared/domain/websiteEmbed.js";
-import { getWebsiteEmbedSurfaceSettings } from "../../../modules/agents/public.js";
+import { getWebsiteEmbedSurfaceSettings, resolveAgentDisplayName } from "../../../modules/agents/public.js";
 import { verifySignedIdentity } from "../../../modules/context-variables/public.js";
 import {
   issuePublicChatResumeToken,
@@ -244,6 +244,10 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,
         launcherPosition: websiteEmbed.launcherPosition,
+        // The teaser bubble renders outside the iframe, so the launcher needs the
+        // display name to say who is greeting the visitor. Same resolution as the
+        // in-frame header, so both surfaces name the assistant identically.
+        assistantName: resolveAgentDisplayName({ agentName: agent.name }),
         theme: agent.theme,
         branding: agent.branding,
         copy: websiteEmbed.copy,

@@ -1648,6 +1648,10 @@ describe("agents contract", () => {
 
     expect(config.body.launcherLabel).toBe("");
     expect(config.body.launcherLabel).not.toBe("Claudio");
+    // The launcher renders the teaser bubble outside the iframe, so it needs the
+    // assistant's display name from config; the launcher label is operator
+    // branding and is not a substitute for it.
+    expect(config.body.assistantName).toBe("Claudio");
   });
 
   it("serves a cacheable, per-origin website embed config and rejects strangers", async () => {

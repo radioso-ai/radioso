@@ -37,6 +37,8 @@ export interface WebsiteEmbedCopy {
   publicChatOpenFullScreenLabel: string
   publicChatOpenNewTabLabel: string
   publicChatDisclaimerTemplate: string
+  /** Chip shown beside the assistant's name so a visitor can tell it is not a person. */
+  publicChatAiLabel: string
   publicChatRateLimitRetryTemplate: string
   publicChatMessageFailedMessage: string
   skillReceiptSubmittedLabel: string
@@ -103,6 +105,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatOpenFullScreenLabel: 'Open full screen',
   publicChatOpenNewTabLabel: 'Open in new tab',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
+  publicChatAiLabel: 'AI',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
   publicChatMessageFailedMessage: 'Sorry, something went wrong. Please try again.',
   skillReceiptSubmittedLabel: 'Submitted',
@@ -153,6 +156,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatOpenFullScreenLabel',
   'publicChatOpenNewTabLabel',
   'publicChatDisclaimerTemplate',
+  'publicChatAiLabel',
   'publicChatRateLimitRetryTemplate',
   'publicChatMessageFailedMessage',
   'skillReceiptSubmittedLabel',

@@ -18,6 +18,7 @@ import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/s
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { buildAssistantIdentity } from '@/components/chat/assistant-identity'
 import { type CitationOpenResult } from '@/components/dashboard/chat-citations'
 import {
   answerFeedbackApi,
@@ -31,6 +32,7 @@ import {
 import { type ChatMessage, useChatSession } from '@/lib/chat-context'
 import { buildDashboardHref } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
+import { DEFAULT_WEBSITE_EMBED_COPY } from '@/lib/embed-widget'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { useRoutineCatalog } from '@/lib/routine-catalog'
@@ -416,6 +418,13 @@ export function ChatWorkbench({
 
   const title = previewRoutineKey ? 'Test draft' : 'Chat'
   const description = `Test ${assistantName?.trim() || 'your agent'}`
+  // The workbench is a rehearsal of the visitor's chat, so it carries the same
+  // identity line. Operator wording is English, so it uses the default copy pack
+  // rather than the agent's per-locale packs.
+  const workbenchIdentity = useMemo(
+    () => buildAssistantIdentity(DEFAULT_WEBSITE_EMBED_COPY, assistantName?.trim() || 'Your agent'),
+    [assistantName],
+  )
   const headerActions = (
     <div className="flex items-center gap-2">
       {mode === 'chat' && conversationId ? (
@@ -531,6 +540,7 @@ export function ChatWorkbench({
             conversationId={conversationId}
             evalCaptureEnabled
             assistantAvatarLabel={assistantName ?? undefined}
+            assistantIdentity={workbenchIdentity}
             assistantLinkUtmEnabled={assistantLinkUtmEnabled}
             skillCatalog={skillCatalog}
           />

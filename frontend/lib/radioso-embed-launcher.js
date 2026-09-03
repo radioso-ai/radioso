@@ -39,6 +39,7 @@
     launcherDefaultLabel: 'Chat with us',
     iframeTitle: 'Radioso embedded chat',
     proactiveGreetingTeaser: 'Hi! How can I help?',
+    publicChatAiLabel: 'AI',
   }
 
   // Built-in visitor-facing translations. They live in this static, edge-cached
@@ -71,6 +72,7 @@
       publicChatOpenFullScreenLabel: 'Abrir en pantalla completa',
       publicChatOpenNewTabLabel: 'Abrir en una pestaña nueva',
       publicChatDisclaimerTemplate: '{name} usa IA y puede cometer errores.',
+      publicChatAiLabel: 'IA',
       publicChatRateLimitRetryTemplate: 'Inténtalo de nuevo en {seconds}s.',
       publicChatMessageFailedMessage: 'Lo sentimos, algo ha salido mal. Inténtalo de nuevo.',
       skillReceiptSubmittedLabel: 'Enviado',
@@ -99,6 +101,7 @@
       publicChatOpenFullScreenLabel: 'Ouvrir en plein écran',
       publicChatOpenNewTabLabel: 'Ouvrir dans un nouvel onglet',
       publicChatDisclaimerTemplate: "{name} utilise l'IA et peut faire des erreurs.",
+      publicChatAiLabel: 'IA',
       publicChatRateLimitRetryTemplate: 'Réessayez dans {seconds} s.',
       publicChatMessageFailedMessage: 'Désolé, une erreur est survenue. Veuillez réessayer.',
       skillReceiptSubmittedLabel: 'Envoyé',
@@ -127,6 +130,7 @@
       publicChatOpenFullScreenLabel: 'Im Vollbild öffnen',
       publicChatOpenNewTabLabel: 'In neuem Tab öffnen',
       publicChatDisclaimerTemplate: '{name} verwendet KI und kann Fehler machen.',
+      publicChatAiLabel: 'KI',
       publicChatRateLimitRetryTemplate: 'Erneut versuchen in {seconds} s.',
       publicChatMessageFailedMessage: 'Entschuldigung, etwas ist schiefgelaufen. Bitte versuchen Sie es erneut.',
       skillReceiptSubmittedLabel: 'Gesendet',
@@ -155,6 +159,7 @@
       publicChatOpenFullScreenLabel: 'Apri a schermo intero',
       publicChatOpenNewTabLabel: 'Apri in una nuova scheda',
       publicChatDisclaimerTemplate: "{name} utilizza l'IA e può commettere errori.",
+      publicChatAiLabel: 'IA',
       publicChatRateLimitRetryTemplate: 'Riprova tra {seconds} s.',
       publicChatMessageFailedMessage: 'Spiacenti, qualcosa è andato storto. Riprova.',
       skillReceiptSubmittedLabel: 'Inviato',
@@ -183,6 +188,7 @@
       publicChatOpenFullScreenLabel: 'Abrir em tela cheia',
       publicChatOpenNewTabLabel: 'Abrir em nova aba',
       publicChatDisclaimerTemplate: '{name} usa IA e pode cometer erros.',
+      publicChatAiLabel: 'IA',
       publicChatRateLimitRetryTemplate: 'Tente novamente em {seconds}s.',
       publicChatMessageFailedMessage: 'Desculpe, algo correu mal. Tente novamente.',
       skillReceiptSubmittedLabel: 'Enviado',
@@ -211,6 +217,7 @@
       publicChatOpenFullScreenLabel: 'Volledig scherm openen',
       publicChatOpenNewTabLabel: 'Openen in nieuw tabblad',
       publicChatDisclaimerTemplate: '{name} gebruikt AI en kan fouten maken.',
+      publicChatAiLabel: 'AI',
       publicChatRateLimitRetryTemplate: 'Probeer het opnieuw over {seconds}s.',
       publicChatMessageFailedMessage: 'Sorry, er is iets misgegaan. Probeer het opnieuw.',
       skillReceiptSubmittedLabel: 'Verzonden',
@@ -239,6 +246,7 @@
       publicChatOpenFullScreenLabel: 'Otwórz na pełnym ekranie',
       publicChatOpenNewTabLabel: 'Otwórz w nowej karcie',
       publicChatDisclaimerTemplate: '{name} korzysta z AI i może popełniać błędy.',
+      publicChatAiLabel: 'AI',
       publicChatRateLimitRetryTemplate: 'Spróbuj ponownie za {seconds}s.',
       publicChatMessageFailedMessage: 'Przepraszamy, coś poszło nie tak. Spróbuj ponownie.',
       skillReceiptSubmittedLabel: 'Wysłano',
@@ -266,6 +274,7 @@
       publicChatOpenFullScreenLabel: '全屏打开',
       publicChatOpenNewTabLabel: '在新标签页中打开',
       publicChatDisclaimerTemplate: '{name} 使用 AI，可能会出错。',
+      publicChatAiLabel: 'AI',
       publicChatRateLimitRetryTemplate: '请在 {seconds} 秒后重试。',
       publicChatMessageFailedMessage: '抱歉，出了点问题。请重试。',
       skillReceiptSubmittedLabel: '已提交',
@@ -294,6 +303,7 @@
       publicChatOpenFullScreenLabel: '全画面で開く',
       publicChatOpenNewTabLabel: '新しいタブで開く',
       publicChatDisclaimerTemplate: '{name} は AI を使用しており、間違える可能性があります。',
+      publicChatAiLabel: 'AI',
       publicChatRateLimitRetryTemplate: '{seconds} 秒後に再試行してください。',
       publicChatMessageFailedMessage: '申し訳ありません。問題が発生しました。もう一度お試しください。',
       skillReceiptSubmittedLabel: '送信しました',
@@ -322,6 +332,7 @@
       publicChatOpenFullScreenLabel: 'Открыть во весь экран',
       publicChatOpenNewTabLabel: 'Открыть в новой вкладке',
       publicChatDisclaimerTemplate: '{name} использует ИИ и может ошибаться.',
+      publicChatAiLabel: 'ИИ',
       publicChatRateLimitRetryTemplate: 'Повторите через {seconds} с.',
       publicChatMessageFailedMessage: 'Извините, что-то пошло не так. Попробуйте ещё раз.',
       skillReceiptSubmittedLabel: 'Отправлено',
@@ -409,6 +420,7 @@
     'publicChatOpenFullScreenLabel',
     'publicChatOpenNewTabLabel',
     'publicChatDisclaimerTemplate',
+    'publicChatAiLabel',
     'publicChatRateLimitRetryTemplate',
     'publicChatMessageFailedMessage',
     'skillReceiptSubmittedLabel',
@@ -528,6 +540,9 @@
       '.radioso-launcher-dot[data-visible="true"] { opacity: 1; transform: scale(1); }',
       '.radioso-teaser { position: relative; max-width: 280px; padding: 12px 14px; border-radius: 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; cursor: pointer; pointer-events: auto; opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; animation: radioso-teaser-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }',
       '.radioso-teaser[data-position="bottom-left"] { transform-origin: bottom left; }',
+      '.radioso-teaser-identity { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; padding-right: 14px; font-size: 11px; line-height: 1; opacity: 0.7; }',
+      '.radioso-teaser-name { font-weight: 500; }',
+      '.radioso-teaser-ai { display: inline-flex; align-items: center; border: 1px solid currentColor; border-radius: 9999px; padding: 1px 6px; font-size: 10px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.75; }',
       '.radioso-teaser-close { position: absolute; top: 4px; right: 6px; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9999px; background: transparent; color: inherit; opacity: 0.55; cursor: pointer; font: inherit; font-size: 14px; line-height: 1; padding: 0; }',
       '.radioso-teaser-close:hover { opacity: 1; }',
       '.radioso-comet-square { position: fixed; left: 0; top: 0; width: var(--radioso-tail-size, 8px); height: var(--radioso-tail-size, 8px); border-radius: 2px; background: #FFC720; box-shadow: 0 4px 12px rgba(255, 199, 32, 0.32); pointer-events: none; z-index: 2147483646; animation: radioso-comet-square 720ms ease-out forwards; will-change: transform, opacity; }',
@@ -1144,7 +1159,7 @@
     return button
   }
 
-  const createTeaser = (text, theme, position) => {
+  const createTeaser = (text, theme, position, identity) => {
     const teaser = document.createElement('div')
     teaser.className = 'radioso-teaser'
     teaser.setAttribute('role', 'button')
@@ -1154,6 +1169,26 @@
     teaser.style.color = theme.assistantBubbleForeground
     teaser.style.border = `1px solid ${theme.panelBorder}`
     teaser.style.boxShadow = theme.panelShadow
+
+    const name = identity && identity.name ? identity.name : ''
+    const aiLabel = identity && identity.aiLabel ? identity.aiLabel : ''
+    if (name || aiLabel) {
+      const identityRow = document.createElement('span')
+      identityRow.className = 'radioso-teaser-identity'
+      if (name) {
+        const nameEl = document.createElement('span')
+        nameEl.className = 'radioso-teaser-name'
+        nameEl.textContent = name
+        identityRow.appendChild(nameEl)
+      }
+      if (aiLabel) {
+        const chip = document.createElement('span')
+        chip.className = 'radioso-teaser-ai'
+        chip.textContent = aiLabel
+        identityRow.appendChild(chip)
+      }
+      teaser.appendChild(identityRow)
+    }
 
     const body = document.createElement('span')
     body.textContent = text
@@ -1347,6 +1382,11 @@
     const attentionPreset = normalizeAttention(expertOverrides.launcherAttention)
     const teaserDelayMs = parsePositiveInt(expertOverrides.launcherTeaserDelayMs, DEFAULT_TEASER_DELAY_MS)
     const teaserText = (copyOverrides.proactiveGreetingTeaser || defaultCopy.proactiveGreetingTeaser).trim()
+    // The teaser is the first thing a visitor hears from the agent and it renders
+    // outside the iframe, so it names the assistant and marks it as software here
+    // rather than relying on the in-frame identity line.
+    const teaserAssistantName = (typeof config.assistantName === 'string' ? config.assistantName : '').trim()
+    const teaserAiLabel = (copyOverrides.publicChatAiLabel || defaultCopy.publicChatAiLabel).trim()
     const reducedMotion = prefersReducedMotion()
     const openedStorageKey = `radioso:embed:opened:${token}`
     const teaserStorageKey = `radioso:embed:teaserDismissed:${token}`
@@ -2070,7 +2110,10 @@
       if (teaser || isOpen || isFullscreenOpen || !teaserText) {
         return
       }
-      const created = createTeaser(teaserText, theme, position)
+      const created = createTeaser(teaserText, theme, position, {
+        name: teaserAssistantName,
+        aiLabel: teaserAiLabel,
+      })
       teaser = created.teaser
       teaserCloseBtn = created.close
       teaser.addEventListener('click', (event) => {

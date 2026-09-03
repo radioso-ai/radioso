@@ -415,8 +415,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/probeBudget.ts` (per-turn verification budget, charged from each descriptor's declared cost)
 - `backend/src/modules/operatorCopilot/services/copilotRetentionWorker.ts` (conversation retention sweep, started by `startWorkerRuntime`)
 - `backend/src/modules/eval/services/evalRunService.ts` (one eval run reserves one answer, in either run mode and through either entry point)
-- `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, never-list gate, turn observer)
-- `backend/src/modules/operatorCopilot/neverList.ts` (the boundaries Ray refuses, with the reason and deep link each refusal carries)
+- `backend/tests/support/copilotEvalSuite.ts` and `copilotEvalRunner.ts` (Ray behaviour suite: assertions, sampling and reduction, the never-list adherence gate, the handoff-link report, turn observer)
+- `backend/src/modules/operatorCopilot/neverList.ts` (the boundaries Ray refuses, with the reason and deep link each refusal carries; a conversation-scoped boundary binds its link to the conversation the turn is on)
 - `backend/tests/unit/operatorCopilot/catalogCoverage.ts` (every OpenAPI operation mapped to the tool that covers it, a deferred ground naming the tool shape it waits on, or a permanent exclusion stating why it is never built; `copilot-catalog-coverage.test.ts` ratchets the deferred count)
 - `backend/tests/fixtures/copilot-evals/` (the dataset, `baseline.json`, and its `README.md`)
 - `backend/scripts/runCopilotEvals.ts` and `.github/workflows/copilot-evals.yml` (live on-demand run)
@@ -432,7 +432,7 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/operatorCopilot`
-- `cd backend && pnpm run evals:copilot` — live Ray behaviour run (needs Postgres and
+- `cd backend && pnpm run evals:copilot:ci` — live Ray behaviour run, sampled (needs Postgres and
   `OPENAI_API_KEY`); on demand, not per-PR
 - `cd backend && pnpm run lint:boundaries`
 - `cd frontend && pnpm exec vitest run tests/unit/api-copilot.test.ts tests/unit/copilot-context.test.ts tests/unit/copilot-proposal-card.test.ts tests/unit/copilot-proposal-card-render.test.tsx`

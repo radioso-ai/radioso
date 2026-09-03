@@ -22,31 +22,38 @@ export interface RunSampledOptions {
   runIdPrefix?: string;
 }
 
-interface SampleScore {
+/**
+ * One scored run of one case. Generic in its verdict type so both committed suites reduce with the
+ * same rule: the reduction is arithmetic over statuses and never inspects a verdict.
+ */
+export interface SampleScore<TVerdict = SuiteAssertionVerdict> {
   status: EvalRunStatus;
   reason: string | null;
-  verdicts: SuiteAssertionVerdict[];
+  verdicts: TVerdict[];
 }
 
-export interface SampleReduction {
+export interface SampleReduction<TVerdict = SuiteAssertionVerdict> {
   status: EvalRunStatus;
   passCount: number;
   /** Fraction of *scored* (non-`recorded`) samples that passed, in [0, 1]. */
   passRate: number;
   flaky: boolean;
   reason: string | null;
-  verdicts: SuiteAssertionVerdict[];
+  verdicts: TVerdict[];
   statusCounts: Record<EvalRunStatus, number>;
 }
 
 /**
  * Collapses K per-sample scores into one stable verdict. A case with no assertions is
- * `recorded`. Otherwise it is `pass` when its pass rate clears the threshold; below
- * threshold it is `fail`, unless every non-pass sample errored (no real failures), which
- * surfaces as `error`. `flaky` means the samples disagreed — the signal that tells you a
- * `pass`/`fail` was not unanimous.
+ * `recorded`. A case where every scored sample errored is `error` — decided first, so no
+ * threshold can turn an outage into a pass. Otherwise it is `pass` when its pass rate
+ * clears the threshold and `fail` below it. `flaky` means the samples disagreed — the
+ * signal that tells you a `pass`/`fail` was not unanimous.
  */
-export const reduceSamples = (samples: SampleScore[], passThreshold: number): SampleReduction => {
+export const reduceSamples = <TVerdict>(
+  samples: ReadonlyArray<SampleScore<TVerdict>>,
+  passThreshold: number,
+): SampleReduction<TVerdict> => {
   const statusCounts: Record<EvalRunStatus, number> = { pass: 0, fail: 0, error: 0, recorded: 0 };
   for (const sample of samples) {
     statusCounts[sample.status] += 1;
@@ -61,11 +68,14 @@ export const reduceSamples = (samples: SampleScore[], passThreshold: number): Sa
   const passCount = statusCounts.pass;
   const passRate = passCount / scored;
 
+  // An outage is classified before the threshold is applied, never by it. The threshold says how
+  // often a case has to pass; it is not a licence to call "every sample errored" a pass, which is
+  // exactly what `0 >= 0` did at `--pass-threshold 0`.
   let status: EvalRunStatus;
-  if (passRate >= passThreshold) {
-    status = "pass";
-  } else if (statusCounts.fail === 0 && statusCounts.pass === 0) {
+  if (statusCounts.fail === 0 && statusCounts.pass === 0) {
     status = "error";
+  } else if (passRate >= passThreshold) {
+    status = "pass";
   } else {
     status = "fail";
   }

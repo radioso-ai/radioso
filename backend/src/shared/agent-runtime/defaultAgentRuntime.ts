@@ -323,6 +323,86 @@ const invokeTool = async (
   state.transcript.push(toolSuccessTranscriptEntry(call, output));
 };
 
+/**
+ * Terminations that must not spend another model call.
+ *
+ * Out of wall time or cancelled: another call is the opposite of what was asked for. Out of
+ * tool-result tokens: the transcript is over the hard context ceiling by definition, and the
+ * closing call would resubmit exactly that transcript — the one case where the recovery request is
+ * guaranteed to be the wrong shape, so a blank turn is the lesser outcome.
+ */
+const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set([
+  "wall_time_exhausted",
+  "cancelled",
+  "token_budget_exhausted",
+]);
+
+/**
+ * Steps the tool loop may take. FR-003 makes `maxSteps` a hard ceiling on model calls, so a caller
+ * that requires an answer buys it out of that budget rather than on top of it: the loop stops one
+ * step early and the closing call spends what it left. Without the flag the ceiling is the budget,
+ * unchanged.
+ */
+const toolLoopMaxSteps = (ctx: RunContext): number =>
+  ctx.options.requireFinalMessage === true ? Math.max(0, ctx.budgets.maxSteps - 1) : ctx.budgets.maxSteps;
+
+/**
+ * True when there is nothing to show the caller.
+ *
+ * The production gateway's protocol requires `text` to be empty whenever `tool_calls` is non-empty,
+ * and it coerces a missing `text` to `""`, so a blank answer arrives as an empty string far more
+ * often than as null. Checking only for null would leave the fallback dead against a real provider.
+ */
+const isBlank = (message: string | null): boolean => message === null || message.trim() === "";
+
+/**
+ * Asks the model to answer from the transcript it already has, with no tools offered. The wording
+ * is the model's: the transcript carries the question and every tool error, which is what an
+ * explanation has to be built from.
+ */
+const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<string | null> => {
+  // A step of its own, counted. `TextRoutedToolCallingGateway` derives the usage idempotency key
+  // from `agent_step:${stepIndex}` and the recorder drops a duplicate, so reusing the failed step's
+  // index would bill this call as that one and lose its tokens. `toolLoopMaxSteps` reserved room
+  // for it, so counting it keeps `stepsTaken` equal to the model calls actually made.
+  state.stepIndex += 1;
+  state.stepsTaken += 1;
+  try {
+    const response = await ctx.gatewayRequest({
+      stepIndex: state.stepIndex,
+      systemPrompt: ctx.input.systemPrompt,
+      transcript: state.transcript,
+      toolSchemas: [],
+      signal: ctx.signal,
+      usageContext: ctx.options.usageContext,
+    });
+    ctx.sink.emit({
+      kind: "model_message",
+      stepIndex: state.stepIndex,
+      content: response.assistantMessage,
+      at: ctx.now(),
+    });
+    return isBlank(response.assistantMessage) ? null : response.assistantMessage;
+  } catch (err) {
+    // An abort is the exception: the caller cancelled, or the deadline fired, and that is the
+    // outcome of record. Swallowing it here would report the earlier reason for a turn that was
+    // actually cancelled, and put the wrong outcome in the audit trail.
+    if (ctx.signal.aborted) throw new TerminationSignal(abortTerminationReason(ctx));
+    // Any other failed closing attempt must never replace the run's own outcome with a throw: the
+    // caller asked why the run ended, and "the recovery call also failed" is not a better answer.
+    // It is still said out loud, because the operator gets a blank turn either way and support
+    // cannot otherwise tell a failed recovery from a model that simply said nothing.
+    ctx.sink.emit({
+      kind: "model_call_failed",
+      stepIndex: state.stepIndex,
+      phase: "closing_message",
+      error: err instanceof Error ? err.message : "Closing model call threw a non-Error value.",
+      at: ctx.now(),
+    });
+    return null;
+  }
+};
+
 const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
   const startedAt = ctx.now();
   const state: RunState = {
@@ -335,7 +415,32 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
     finalMessage: null,
   };
 
-  const finalize = (reason: TerminatedReason): AgentRunResult => {
+  /**
+   * Ends the run, and refuses to end it blank.
+   *
+   * `finalMessage` only ever holds the last assistant message, so any termination reached while the
+   * model was calling tools rather than talking returns null — the caller renders nothing at all.
+   * Measured live, that is what a Ray turn looked like after it reached for two tools that do not
+   * exist and then one literally named "none": the operator got a blank answer to a question that
+   * deserved "I could not do that". One more call, with no tools offered so it cannot start another
+   * loop, is the difference between a dead turn and a plain one.
+   */
+  const finalize = async (initialReason: TerminatedReason): Promise<AgentRunResult> => {
+    let reason = initialReason;
+    if (
+      ctx.options.requireFinalMessage === true &&
+      isBlank(state.finalMessage) &&
+      !NO_CLOSING_CALL.has(reason) &&
+      !ctx.signal.aborted
+    ) {
+      try {
+        state.finalMessage = await requestClosingMessage(ctx, state);
+      } catch (err) {
+        if (!(err instanceof TerminationSignal)) throw err;
+        // The closing call was cancelled or ran out of time. That is what happened to this turn.
+        reason = err.reason;
+      }
+    }
     emitTerminated(ctx.sink, reason, ctx.now);
     return {
       terminatedReason: reason,
@@ -368,7 +473,7 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
       throw err;
     }
 
-    if (state.stepIndex >= ctx.budgets.maxSteps) {
+    if (state.stepIndex >= toolLoopMaxSteps(ctx)) {
       return finalize("step_budget_exhausted");
     }
 

@@ -90,6 +90,32 @@ const runTurn = async (service: OperatorCopilotService, surface: CopilotSurface 
   return events;
 };
 
+describe("copilot recovery failure", () => {
+  it("audits a failed closing call so a blank turn is distinguishable from a silent model", async () => {
+    // The runtime suppresses the failure so the run ends on its own terms, and the trace dies with
+    // the request. Without a durable record, support sees an operator complaining about a blank
+    // answer and nothing at all on the server.
+    const { service, auditRecord } = buildService({
+      runStreaming: () => ({
+        events: (async function* () {
+          yield { kind: "model_call_failed", stepIndex: 3, phase: "closing_message", error: "provider exploded", at: 1 };
+        })(),
+        result: Promise.resolve({ terminatedReason: "tool_validation_failed" as const, finalMessage: null, stepsTaken: 3, toolResultTokensUsed: 0, wallTimeMs: 1 }),
+      }),
+    });
+
+    await runTurn(service);
+
+    expect(auditRecord.mock.calls.map(([event]) => event)).toContainEqual(
+      expect.objectContaining({
+        eventType: "copilot.turn.recovery_failed",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({ phase: "closing_message", error: "provider exploded" }),
+      }),
+    );
+  });
+});
+
 describe("copilot audit attribution", () => {
   it("stamps the operator principal and the calling surface on every copilot.* turn event", async () => {
     const { service, auditRecord } = buildService();

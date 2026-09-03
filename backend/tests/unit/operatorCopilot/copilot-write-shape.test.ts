@@ -54,4 +54,5 @@ describe("operator copilot write shapes", () => {
       expect.objectContaining({ boundary: "pending_decision_resolution", dashboardUrl: "/w/acme/activity" }),
     ]);
   });
+
 });

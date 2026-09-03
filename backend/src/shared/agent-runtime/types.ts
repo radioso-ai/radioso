@@ -123,6 +123,13 @@ export type AgentTraceEvent =
       resolvedBudgets?: AgentBudgets;
       at: number;
     }
+  /**
+   * A model call the runtime made outside the tool loop failed and was suppressed, so the run still
+   * ends on its own terms. Emitted rather than swallowed because the caller is left with a blank
+   * answer either way, and support cannot otherwise tell a failed recovery from a silent model.
+   * Carries the error message only — never a prompt, a completion, or a credential.
+   */
+  | { kind: "model_call_failed"; stepIndex: number; phase: "closing_message"; error: string; at: number }
   | { kind: "terminated"; reason: TerminatedReason; at: number };
 
 export interface TraceSink {
@@ -166,6 +173,17 @@ export interface ModelToolCallingGateway {
 
 export interface AgentRunOptions {
   readonly signal?: AbortSignal;
+  /**
+   * Set by a caller that shows `finalMessage` to a person, so a run must never hand back an empty
+   * one. When the loop ends without an answer the runtime spends one more model call, with no tools
+   * offered, to get the wording from the model.
+   *
+   * Off by default because the caller is the only one who knows: agentic retrieval builds its
+   * result from a finalization tool payload and never reads `finalMessage`, so a closing call there
+   * would be a provider request nobody consumes. The call is reserved from `maxSteps` rather than
+   * spent past it, so FR-003's ceiling still holds and the last tool step pays for the answer.
+   */
+  readonly requireFinalMessage?: boolean;
   readonly traceSink?: TraceSink;
   readonly now?: () => number;
   readonly clampBudgets?: boolean;

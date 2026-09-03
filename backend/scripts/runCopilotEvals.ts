@@ -2,8 +2,14 @@
  * Headless runner for the committed Ray behaviour suite (issue #1054).
  *
  *   pnpm run evals:copilot                      # real model, diff against the baseline
+ *   pnpm run evals:copilot -- --samples 3       # run each case 3x and reduce (what the CI script does)
  *   pnpm run evals:copilot -- --update-baseline # re-record baseline.json after an intended change
  *   pnpm run evals:copilot -- --tag never_list  # only cases carrying a tag (repeatable)
+ *   pnpm run evals:copilot -- --case boundary-pending-decision --samples 8   # one case, many samples
+ *
+ * Ray's live behaviour is nondeterministic, so one run is one SAMPLE of it. A baseline recorded from
+ * a single run freezes each case at whichever way it happened to fall, and then reports the other
+ * outcome as a regression on unchanged code (issue #1152). Record and compare with `--samples`.
  *
  * It assembles the real application stack (buildDependencies) and drives each case through the
  * composed copilot catalog, prompt, and capability runner — the same three the dashboard turn uses.
@@ -37,7 +43,9 @@ import { createLogger } from "../src/shared/observability/logger.js";
 import { diffAgainstBaseline, isBaselineInitialized, type BaselineFile } from "../src/modules/eval/suite/index.js";
 import {
   buildCopilotBaselineFile,
+  copilotHandoffGaps,
   copilotHardGateViolations,
+  copilotUnobservedBoundaries,
   formatCopilotEvalReport,
   parseCopilotEvalCases,
   runCopilotEvalSuite,
@@ -52,7 +60,10 @@ const BASELINE_PATH = fileURLToPath(new URL("../tests/fixtures/copilot-evals/bas
 
 interface Flags {
   updateBaseline: boolean;
+  samples: number;
+  passThreshold: number;
   tags: string[];
+  caseIds: string[];
   workspaceId: string;
   agentId: string;
   operatorUserId: string;
@@ -60,10 +71,19 @@ interface Flags {
   keepWorkspace: boolean;
 }
 
+/** Falls back only for a missing or unparseable value, so an explicit `0` survives. */
+const parseNumber = (raw: string | undefined, fallback: number): number => {
+  const parsed = Number.parseFloat(raw ?? "");
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const parseFlags = (argv: string[]): Flags => {
   const flags: Flags = {
     updateBaseline: false,
+    samples: 1,
+    passThreshold: 1,
     tags: [],
+    caseIds: [],
     workspaceId: process.env.RADIOSO_EVAL_WORKSPACE_ID ?? "",
     agentId: process.env.RADIOSO_EVAL_AGENT_ID ?? "",
     operatorUserId: process.env.RADIOSO_EVAL_OPERATOR_USER_ID ?? "",
@@ -73,9 +93,14 @@ const parseFlags = (argv: string[]): Flags => {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === "--update-baseline") flags.updateBaseline = true;
+    else if (arg === "--samples") flags.samples = Math.max(1, parseNumber(argv[++index], 1));
+    // Clamped, not coerced: `|| 1` turned an explicit `--pass-threshold 0` into unanimous, which is
+    // the opposite of what was asked for.
+    else if (arg === "--pass-threshold") flags.passThreshold = Math.min(1, Math.max(0, parseNumber(argv[++index], 1)));
     else if (arg === "--keep-workspace") flags.keepWorkspace = true;
     else if (arg === "--migrate") flags.migrate = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
+    else if (arg === "--case") flags.caseIds.push(argv[++index] ?? "");
     else if (arg === "--workspace") flags.workspaceId = argv[++index] ?? "";
     else if (arg === "--agent") flags.agentId = argv[++index] ?? "";
     else if (arg === "--operator") flags.operatorUserId = argv[++index] ?? "";
@@ -86,7 +111,7 @@ const parseFlags = (argv: string[]): Flags => {
 const loadBaseline = (): BaselineFile => {
   try {
     const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, cases: parsed.cases ?? {} };
+    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
   } catch {
     return { cases: {} };
   }
@@ -94,8 +119,15 @@ const loadBaseline = (): BaselineFile => {
 
 type Deps = ReturnType<typeof buildDependencies>;
 
-const filterByTags = (cases: CopilotEvalCase[], tags: string[]): CopilotEvalCase[] =>
-  tags.length === 0 ? cases : cases.filter((entry) => (entry.tags ?? []).some((tag) => tags.includes(tag)));
+/**
+ * Narrows the dataset to what this run is about. Both filters exist so iterating on one behaviour
+ * costs one case rather than the suite — a live sample is a model call, and stabilising a single
+ * flaky case needs many samples of that case, not one of everything.
+ */
+const narrowDataset = (cases: CopilotEvalCase[], flags: Pick<Flags, "tags" | "caseIds">): CopilotEvalCase[] => {
+  const byTag = flags.tags.length === 0 ? cases : cases.filter((entry) => (entry.tags ?? []).some((tag) => flags.tags.includes(tag)));
+  return flags.caseIds.length === 0 ? byTag : byTag.filter((entry) => flags.caseIds.includes(entry.id));
+};
 
 /**
  * Rewrites the fixture's placeholder ids to the live workspace's own. Cases name an agent and a
@@ -187,6 +219,7 @@ const resolveTarget = async (deps: Deps, flags: Flags): Promise<EvalTarget> => {
 };
 
 const SEED_QUESTION = "How much is shipping to Italy?";
+const SEED_COMPLAINT = "That shipping price is wrong.";
 const SEED_ANSWER = "Shipping to Italy is nine euro.";
 
 /**
@@ -199,7 +232,43 @@ const SEED_ANSWER = "Shipping to Italy is nine euro.";
  * workspace would be a surprise, and the whole reason to point the suite at one is that it already
  * holds the history worth measuring against.
  */
-const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promise<void> => {
+/**
+ * Puts back the one record an act tool consumes, so samples of the same case stay comparable.
+ *
+ * `set_triage_state` closes the seeded complaint, and a closed turn leaves the queue empty for
+ * every later sample — which then measures the mutation rather than the model. There is no reopen
+ * path by design (`setTriageState` only accepts `resolved`/`dismissed`), but a feedback event newer
+ * than the triage row is exposed as open again, so a fresh complaint is the restore.
+ *
+ * The comment has to differ from whatever is already there, every single time.
+ * `AnswerFeedbackService.upsert` guards its conflict update with `IS DISTINCT FROM` across value,
+ * comment, and actor, so writing the same text again updates nothing at all, leaves `updated_at`
+ * behind the triage row, and restores nothing. A per-sample suffix is not enough: with `--samples 2`
+ * every case writes the same `(1)`, so the first case to restore sets it and the case that actually
+ * consumed the signal later writes an identical value and restores nothing. The counter is
+ * therefore run-global rather than per-case or per-sample.
+ *
+ * Only ever called for a workspace this run created and seeded. Writing into an operator's real
+ * workspace between samples would be the same surprise seeding is careful to avoid, so a
+ * `--workspace` run gets no restore and its act cases stay dependent — noted in the fixtures README.
+ */
+const restoreSeededQualitySignal = async (
+  deps: Deps,
+  target: EvalTarget,
+  assistantMessageId: string,
+  restoreCount: number,
+): Promise<void> => {
+  await new AnswerFeedbackService(deps.connectorDb.kysely).upsert({
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    assistantMessageId,
+    value: "down",
+    comment: `${SEED_COMPLAINT} (${restoreCount})`,
+    actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
+  });
+};
+
+const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promise<{ assistantMessageId: string }> => {
   const conversation = await deps.conversationRepository.create(target.workspaceId, target.agentId, "web");
   await deps.messageRepository.create({
     conversationId: conversation.id,
@@ -225,7 +294,7 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     agentId: target.agentId,
     assistantMessageId: answer.id,
     value: "down",
-    comment: "That shipping price is wrong.",
+    comment: SEED_COMPLAINT,
     actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
   });
   await deps.routineDefinitionService.createDraft(target.workspaceId, target.agentId, {
@@ -237,6 +306,7 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     terminals: [{ stableStepId: "done", kind: "complete", instruction: "Give the order's status.", ordinal: 0 }],
   });
   console.log("Seeded one answered conversation with a complaint, one document, and one draft routine.");
+  return { assistantMessageId: answer.id };
 };
 
 /**
@@ -346,8 +416,8 @@ const main = async (): Promise<void> => {
   const dataset = parseCopilotEvalCases(copilotEvalCases);
   // The recorder refuses a partial baseline anyway; catching it here costs nothing and saves a
   // whole suite of model calls that could never be written.
-  if (flags.updateBaseline && flags.tags.length > 0) {
-    console.error("--update-baseline records the whole dataset, so it cannot be combined with --tag. Run the full suite to record.");
+  if (flags.updateBaseline && (flags.tags.length > 0 || flags.caseIds.length > 0)) {
+    console.error("--update-baseline records the whole dataset, so it cannot be combined with --tag or --case. Run the full suite to record.");
     process.exitCode = 1;
     return;
   }
@@ -372,10 +442,10 @@ const main = async (): Promise<void> => {
     // Bound to a const as well so the closures below keep the non-null narrowing.
     const resolved = await resolveTarget(deps, flags);
     target = resolved;
-    if (resolved.bootstrapped) await seedBootstrappedWorkspace(deps, resolved);
+    const seeded = resolved.bootstrapped ? await seedBootstrappedWorkspace(deps, resolved) : null;
 
     const { satisfied, conversationId, routine } = await probeWorkspace(deps, resolved);
-    const selection = selectRunnableCopilotEvalCases(filterByTags(dataset, flags.tags), satisfied);
+    const selection = selectRunnableCopilotEvalCases(narrowDataset(dataset, flags), satisfied);
     for (const skipped of selection.unmet) {
       console.warn(`SKIPPED ${skipped.caseId} "${skipped.name}" — workspace supplies no ${skipped.missing.join(", ")}.`);
     }
@@ -397,7 +467,17 @@ const main = async (): Promise<void> => {
     }
 
     const cases = bindToLiveWorkspace(selection.runnable, { agentId: resolved.agentId, conversationId, routine });
+    if (flags.samples > 1) {
+      console.log(`Sampling each of ${cases.length} case(s) ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
+      if (!seeded) {
+        console.warn(
+          "Sampling a workspace this run did not seed: an act tool's mutation carries into later samples, " +
+          "so cases that close a queue item are measuring the workspace as much as the model.",
+        );
+      }
+    }
 
+    let restoreCount = 0;
     const { reports, outcomes } = await runCopilotEvalSuite(
       cases,
       {
@@ -416,18 +496,33 @@ const main = async (): Promise<void> => {
           return observed;
         },
       },
-      { fidelity: "live" },
+      {
+        fidelity: "live",
+        samples: flags.samples,
+        passThreshold: flags.passThreshold,
+        // Only for a workspace this run seeded; see restoreSeededQualitySignal.
+        ...(seeded
+          ? {
+            restoreBetweenSamples: () => {
+              restoreCount += 1;
+              return restoreSeededQualitySignal(deps, resolved, seeded.assistantMessageId, restoreCount);
+            },
+          }
+          : {}),
+      },
     );
 
-    const violations = copilotHardGateViolations(cases, outcomes);
+    const violations = copilotHardGateViolations(cases, reports);
+    const handoffGaps = copilotHandoffGaps(cases, reports);
+    const unobserved = copilotUnobservedBoundaries(cases, reports);
     const baseline = loadBaseline();
-    console.log(`\n${formatCopilotEvalReport(reports, violations, "live")}\n`);
+    console.log(`\n${formatCopilotEvalReport(reports, { fidelity: "live", violations, handoffGaps, unobserved })}\n`);
 
     if (flags.updateBaseline) {
       // buildCopilotBaselineFile throws on a never-list violation rather than recording it, so a
       // refusal that stopped working cannot be blessed as the new normal by re-running with the flag.
       // The full dataset, not the subset that ran: the recorder is what enforces that the two match.
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, outcomes, new Date().toISOString()), null, 2)}\n`);
+      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, reports, new Date().toISOString(), flags.passThreshold), null, 2)}\n`);
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
     }
@@ -435,6 +530,29 @@ const main = async (): Promise<void> => {
     if (violations.length > 0) {
       console.error(`${violations.length} never-list case(s) did not hold. This is a hard gate, not a baseline comparison.`);
       process.exitCode = 1;
+    }
+
+    // A run that never watched a refusal has not cleared the safety gate; it has failed to test it.
+    // The structural verdicts pass when a turn dies before answering, so without this the whole
+    // never-list suite can go green having observed nothing — silence reading as success, which is
+    // the failure this suite exists to stop.
+    if (unobserved.length > 0) {
+      console.error(
+        `${unobserved.length} never-list case(s) were never observed, so this run proves nothing about them: ` +
+        unobserved.map((entry) => entry.caseId).join(", "),
+      );
+      process.exitCode = 1;
+    }
+
+    // 2/3 passes is `pass` at 0.6 and `fail` at 1.0, so a baseline recorded at one bar and a run
+    // gated at another disagree about behaviour that did not change.
+    if (baseline.passThreshold !== undefined && baseline.passThreshold !== flags.passThreshold) {
+      console.error(
+        `This run reduces at ${flags.passThreshold} but the baseline was recorded at ${baseline.passThreshold}. ` +
+        "The two cannot be compared; re-run with --pass-threshold " + String(baseline.passThreshold) + " or re-record.",
+      );
+      process.exitCode = 1;
+      return;
     }
 
     if (!isBaselineInitialized(baseline)) {
@@ -445,6 +563,23 @@ const main = async (): Promise<void> => {
     const diff = diffAgainstBaseline(outcomes, baseline);
     if (diff.regressions.length > 0) {
       console.error(`${diff.regressions.length} case(s) regressed against the baseline: ${diff.regressions.map((entry) => entry.caseId).join(", ")}`);
+      process.exitCode = 1;
+    }
+    // Not a regression, but not "unchanged" either: say so, or a smoke run reads as a clean one.
+    if (diff.underSampled.length > 0) {
+      console.warn(
+        `${diff.underSampled.length} case(s) look worse than the baseline but this run sampled less deeply than it did; ` +
+        `re-run with --samples ${Math.max(...diff.underSampled.map((entry) => entry.baselineSamples))} to decide: ` +
+        diff.underSampled.map((entry) => entry.caseId).join(", "),
+      );
+    }
+    // The half a status comparison cannot see: a case recorded `fail` that used to pass some of the
+    // time and now never does holds its status and is silently worse.
+    if (diff.rateRegressions.length > 0) {
+      console.error(
+        `${diff.rateRegressions.length} case(s) pass materially less often than the baseline recorded: ` +
+        diff.rateRegressions.map((entry) => `${entry.caseId} ${entry.from} -> ${entry.to}`).join(", "),
+      );
       process.exitCode = 1;
     }
   } finally {

@@ -93,3 +93,44 @@ describe("AgenticCapabilityRunner", () => {
     expect(result.trace.selection).toEqual(["fallback:completed"]);
   });
 });
+
+describe("AgenticCapabilityRunner final-message requirement", () => {
+  const echo: AgentTool = {
+    name: "echo",
+    description: "echo",
+    inputSchema: z.object({ text: z.string() }),
+    outputSchema: z.object({ text: z.string() }),
+    invoke: async (input) => input as { text: string },
+  };
+
+  const gateway = (calls: ModelToolCallRequest[]): ModelToolCallingGateway => ({
+    async request(req): Promise<ModelToolCallResponse> {
+      calls.push(req);
+      if (calls.length <= 2) {
+        return { assistantMessage: "", toolCalls: [{ callId: `c${calls.length}`, toolName: "ghost", rawArguments: "{}" }] };
+      }
+      return { assistantMessage: "could not do it", toolCalls: [] };
+    },
+  });
+
+  it("forwards the requirement through run(), not only runStreaming()", async () => {
+    // The option lives on the shared run input, so a caller reaching for the non-streaming path
+    // would otherwise get the old blank-answer behaviour with no indication the flag was ignored.
+    const calls: ModelToolCallRequest[] = [];
+    const runner = new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: gateway(calls) }) });
+
+    const result = await runner.run(
+      { systemPrompt: "s", userMessage: "u", requireFinalMessage: true },
+      {
+        tools: [echo],
+        getFinalization: () => null,
+        mapFinalizationToSelection: () => [],
+        selectFallback: () => [],
+        mapTrace: () => null,
+      },
+    );
+
+    expect(result.runResult.finalMessage).toBe("could not do it");
+    expect(calls.at(-1)?.toolSchemas).toEqual([]);
+  });
+});

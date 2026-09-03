@@ -184,6 +184,101 @@ describe("baseline diff", () => {
     expect(isBaselineInitialized({ cases: { a: "pass" } })).toBe(true);
   });
 
+  it("reads a status from either the bare or the sampled baseline entry", () => {
+    // A sampled recorder writes what it measured — status plus the rate it was reduced from — while
+    // the conversation-quality baseline is still a bare status. One file format has to carry both,
+    // or the two suites cannot share the regression bookkeeping.
+    const current = [
+      { caseId: "a", name: "A", status: "fail" as const },
+      { caseId: "b", name: "B", status: "pass" as const },
+    ];
+    const diff = diffAgainstBaseline(current, {
+      cases: { a: { status: "pass", passRate: 1, samples: 3 }, b: "fail" },
+    });
+    expect(diff.regressions.map((entry) => entry.caseId)).toEqual(["a"]);
+    expect(diff.fixes.map((entry) => entry.caseId)).toEqual(["b"]);
+  });
+
+  it("reports a pass rate that fell far below the recorded one, even though the status did not move", () => {
+    // The silent half of a single-sample baseline: a case recorded `fail` that used to pass two runs
+    // in three, and now never passes, reads as "unchanged" forever. Only the rate shows the drop.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 3 }],
+      { cases: { a: { status: "fail", passRate: 0.67, samples: 3 } } },
+      { rateDropTolerance: 0.5 },
+    );
+    expect(diff.regressions).toEqual([]);
+    expect(diff.rateRegressions).toEqual([
+      { caseId: "a", name: "A", from: 0.67, to: 0 },
+    ]);
+  });
+
+  it("does not report a rate drop inside the tolerance, or one against a baseline that recorded no rate", () => {
+    // Small K makes the rate coarse — one sample of three moves it by a third — so the tolerance has
+    // to be wider than the sampling noise it is reading through.
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail", passRate: 0.34, samples: 3 }],
+        { cases: { a: { status: "fail", passRate: 0.67, samples: 3 } } },
+        { rateDropTolerance: 0.5 },
+      ).rateRegressions,
+    ).toEqual([]);
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail", passRate: 0 }],
+        { cases: { a: "fail" } },
+        { rateDropTolerance: 0.5 },
+      ).rateRegressions,
+    ).toEqual([]);
+  });
+
+  it("does not call it a regression when this run sampled less than the baseline did", () => {
+    // The bare smoke run is one sample. Against a baseline recorded from three, a case that passes
+    // seven times in eight fails that single sample often enough to report a regression on
+    // unchanged code — the exact defect sampling exists to remove, wearing a different hat. A run
+    // that sampled less deeply than the baseline cannot support the claim, so it does not make it.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 1 }],
+      { cases: { a: { status: "pass", passRate: 1, samples: 3 } } },
+    );
+
+    expect(diff.regressions).toEqual([]);
+    expect(diff.underSampled).toEqual([
+      { caseId: "a", name: "A", from: "pass", to: "fail", samples: 1, baselineSamples: 3 },
+    ]);
+  });
+
+  it("does not report a rate drop from a run that sampled less deeply either", () => {
+    // The status holds at `fail`, so this misses the pass -> not-pass guard entirely and lands in
+    // the rate branch: a one-sample run of a case the baseline recorded failing two times in three
+    // reports 0.67 -> 0 and exits nonzero. A shallower run cannot claim ANY regression.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 1 }],
+      { cases: { a: { status: "fail", passRate: 0.67, samples: 3 } } },
+    );
+
+    expect(diff.rateRegressions).toEqual([]);
+    expect(diff.underSampled).toEqual([
+      { caseId: "a", name: "A", from: "fail", to: "fail", samples: 1, baselineSamples: 3 },
+    ]);
+  });
+
+  it("still reports a regression when the run sampled at least as deeply", () => {
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 3 }],
+        { cases: { a: { status: "pass", passRate: 1, samples: 3 } } },
+      ).regressions.map((entry) => entry.caseId),
+    ).toEqual(["a"]);
+    // A baseline that recorded no sample count is the older single-sample form; nothing to compare.
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail" }],
+        { cases: { a: "pass" } },
+      ).regressions.map((entry) => entry.caseId),
+    ).toEqual(["a"]);
+  });
+
   it("builds a sorted baseline file", () => {
     const file = buildBaselineFile(
       [
@@ -247,6 +342,29 @@ describe("reduceSamples", () => {
     expect(reduceSamples([score("recorded"), score("recorded")], 1).status).toBe("recorded");
     // a real failure alongside an error is a fail, not an error
     expect(reduceSamples([score("fail"), score("error")], 1).status).toBe("fail");
+  });
+
+  it("never calls an all-errored case a pass, whatever the threshold", () => {
+    // The threshold is a bar for how often a case passes, not a licence to call an outage a pass.
+    // At `--pass-threshold 0` the rate check fired first and 0 >= 0 reduced every-sample-errored to
+    // `pass`, which would record `status: "pass"` at `passRate: 0`.
+    const errored = [
+      { status: "error" as const, reason: "provider down", verdicts: [] },
+      { status: "error" as const, reason: "provider down", verdicts: [] },
+    ];
+
+    expect(reduceSamples(errored, 0).status).toBe("error");
+    expect(reduceSamples(errored, 1).status).toBe("error");
+  });
+
+  it("still passes a genuinely failing case once the threshold allows it", () => {
+    const mixed = [
+      { status: "pass" as const, reason: null, verdicts: [] },
+      { status: "fail" as const, reason: "nope", verdicts: [] },
+    ];
+
+    expect(reduceSamples(mixed, 0.5).status).toBe("pass");
+    expect(reduceSamples(mixed, 1).status).toBe("fail");
   });
 
   it("excludes recorded samples from the pass rate", () => {

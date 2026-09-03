@@ -39,6 +39,12 @@ composition calls them and assembles the result.
   descriptor takes a workspace-scoped invocation context and every permission
   resolves through workspace membership, so a staff principal that holds no
   membership needs its own catalog rather than a filter over this one.
+- Handing a service to another module's port: adapt the service into an object
+  of closures, as `websiteCrawlerIngestionPort.ts` does. Ports are structural
+  interfaces, so a service instance satisfies one directly, and its methods then
+  carry a `this` the consumer knows nothing about; a consumer that holds such a
+  method as a value loses the receiver at runtime. Closures make the port's
+  surface explicit and keep it callable however a consumer holds it.
 - Capability checks: define stable capability names and keep checks close to
   the mutation or privileged workflow.
 - Storage, queue, telemetry, and provider changes: keep provider-specific code

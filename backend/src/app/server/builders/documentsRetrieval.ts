@@ -69,6 +69,7 @@ import { WebsiteCrawlJobService } from "../../../modules/websiteCrawler/jobServi
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 import { RadiosoCrawlerProvider } from "../../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../../modules/websiteCrawler/worker.js";
+import { createWebsiteCrawlerIngestionPort } from "../../composition/websiteCrawlerIngestionPort.js";
 import type { AgentRetrievalScopePort, RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
@@ -219,10 +220,11 @@ export const buildDocumentServices = (input: {
     input.embeddingCoverage,
     input.workspaceInvalidationPublisher,
   );
+  const websiteCrawlerIngestionPort = createWebsiteCrawlerIngestionPort(documentIngestionService);
   const websiteCrawlJobService = new WebsiteCrawlJobService({
     repository: repositories.websiteCrawlJobRepository,
     dispatcher: websiteCrawlJobDispatcher,
-    documentIngestionService,
+    documentIngestionService: websiteCrawlerIngestionPort,
     logger,
     publisher: input.workspaceInvalidationPublisher,
   });
@@ -268,7 +270,7 @@ export const buildDocumentServices = (input: {
     repository: repositories.websiteCrawlJobRepository,
     provider: websiteCrawlerProvider,
     dispatcher: websiteCrawlJobDispatcher,
-    documentIngestionService,
+    documentIngestionService: websiteCrawlerIngestionPort,
     auditService,
     logger,
     pollIntervalMs: env.WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS,

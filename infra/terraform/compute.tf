@@ -120,6 +120,13 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_queue_limit]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_QUEUE_LIMIT"
+          value = tostring(env.value)
+        }
+      }
+      dynamic "env" {
         for_each = local.ops_event_webhook_secret_configured ? [true] : []
         content {
           name = "OPS_EVENT_WEBHOOK_SECRET"
@@ -789,6 +796,13 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_queue_limit]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_QUEUE_LIMIT"
+          value = tostring(env.value)
+        }
+      }
+      dynamic "env" {
         for_each = local.ops_event_webhook_secret_configured ? [true] : []
         content {
           name = "OPS_EVENT_WEBHOOK_SECRET"
@@ -1165,6 +1179,13 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         content {
           name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
           value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_queue_limit]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_QUEUE_LIMIT"
+          value = tostring(env.value)
         }
       }
       dynamic "env" {

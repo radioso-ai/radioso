@@ -39,3 +39,4 @@ frontend_image = "europe-west1-docker.pkg.dev/radioso-494120/radioso-live-eu/fro
 # ops_event_webhook_url    = "https://hooks.example.com/radioso"
 # ops_event_webhook_secret = ""   # prefer TF_VAR_ops_event_webhook_secret in CI
 # ops_event_webhook_events = "account.registered,chat.failed"
+# ops_event_webhook_queue_limit = 500

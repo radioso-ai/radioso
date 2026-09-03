@@ -685,3 +685,14 @@ variable "ops_event_webhook_min_error_severity" {
     error_message = "ops_event_webhook_min_error_severity must be info, warn, or error."
   }
 }
+
+variable "ops_event_webhook_queue_limit" {
+  description = "Bounded in-memory ops event queue depth before the oldest events are dropped."
+  type        = number
+  default     = 500
+
+  validation {
+    condition     = var.ops_event_webhook_queue_limit > 0 && floor(var.ops_event_webhook_queue_limit) == var.ops_event_webhook_queue_limit
+    error_message = "ops_event_webhook_queue_limit must be a positive integer."
+  }
+}

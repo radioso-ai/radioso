@@ -48,4 +48,12 @@ describe("ops event webhook env validation", () => {
       OPS_EVENT_WEBHOOK_EVENTS: "account.registered,chat.exploded",
     }))).toThrow(/chat\.exploded/);
   });
+
+  it("rejects a non-HTTP ops webhook URL", () => {
+    expect(() => getEnv(baseEnv({
+      PRODUCT_ANALYTICS_SINKS: "audit,ops_webhook",
+      OPS_EVENT_WEBHOOK_URL: "mailto:ops@example.com",
+      OPS_EVENT_WEBHOOK_SECRET: "ops-webhook-secret-long-enough",
+    }))).toThrow(/HTTP\(S\) URL/);
+  });
 });

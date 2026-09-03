@@ -428,3 +428,9 @@ variable "ops_event_webhook_min_error_severity" {
   type        = string
   default     = "error"
 }
+
+variable "ops_event_webhook_queue_limit" {
+  description = "Bounded in-memory ops event queue depth before the oldest events are dropped."
+  type        = number
+  default     = 500
+}

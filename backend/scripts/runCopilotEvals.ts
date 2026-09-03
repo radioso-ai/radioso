@@ -45,6 +45,7 @@ import {
   buildCopilotBaselineFile,
   copilotHandoffGaps,
   copilotHardGateViolations,
+  copilotUnobservedBoundaries,
   formatCopilotEvalReport,
   parseCopilotEvalCases,
   runCopilotEvalSuite,
@@ -503,8 +504,9 @@ const main = async (): Promise<void> => {
 
     const violations = copilotHardGateViolations(cases, reports);
     const handoffGaps = copilotHandoffGaps(cases, reports);
+    const unobserved = copilotUnobservedBoundaries(cases, reports);
     const baseline = loadBaseline();
-    console.log(`\n${formatCopilotEvalReport(reports, { fidelity: "live", violations, handoffGaps })}\n`);
+    console.log(`\n${formatCopilotEvalReport(reports, { fidelity: "live", violations, handoffGaps, unobserved })}\n`);
 
     if (flags.updateBaseline) {
       // buildCopilotBaselineFile throws on a never-list violation rather than recording it, so a
@@ -517,6 +519,18 @@ const main = async (): Promise<void> => {
 
     if (violations.length > 0) {
       console.error(`${violations.length} never-list case(s) did not hold. This is a hard gate, not a baseline comparison.`);
+      process.exitCode = 1;
+    }
+
+    // A run that never watched a refusal has not cleared the safety gate; it has failed to test it.
+    // The structural verdicts pass when a turn dies before answering, so without this the whole
+    // never-list suite can go green having observed nothing — silence reading as success, which is
+    // the failure this suite exists to stop.
+    if (unobserved.length > 0) {
+      console.error(
+        `${unobserved.length} never-list case(s) were never observed, so this run proves nothing about them: ` +
+        unobserved.map((entry) => entry.caseId).join(", "),
+      );
       process.exitCode = 1;
     }
 

@@ -129,11 +129,15 @@ export interface CopilotEvalCaseReport extends CaseOutcome {
    */
   readonly sampleVerdicts: ReadonlyArray<ReadonlyArray<CopilotAssertionVerdict>>;
   /**
-   * How each sample's turn ended, in run order. A turn the service aborted mid-stream comes back
-   * `failed` with no error attached, so its structural verdicts still pass — the outcome is the
-   * only thing that says Ray never answered.
+   * Whether each sample produced an answer at all, in run order.
+   *
+   * Recorded rather than inferred, because neither the verdicts nor the outcome can be read for it.
+   * A turn the service aborted mid-stream comes back `failed` with no error attached, and a turn
+   * that ran out of wall time comes back `budget_exhausted` with nothing said — the runtime skips
+   * its closing call there by design. In both, the structural verdicts still pass, because nothing
+   * happened to break them.
    */
-  readonly sampleOutcomes: ReadonlyArray<CopilotObservedTurn["outcome"]>;
+  readonly sampleAnswered: ReadonlyArray<boolean>;
 }
 
 const pageContextSchema = z.object({
@@ -505,7 +509,7 @@ export const runCopilotEvalSuite = async (
 
   for (const evalCase of cases) {
     const scores: Array<SampleScore<CopilotAssertionVerdict>> = [];
-    const sampleOutcomes: Array<CopilotObservedTurn["outcome"]> = [];
+    const sampleAnswered: boolean[] = [];
     // A tool that refused is the usual reason a case did not take the path it was written for, and
     // "the tool was not called" on its own never says which. Collected across samples so a refusal
     // that only happened once is still in the report.
@@ -523,7 +527,7 @@ export const runCopilotEvalSuite = async (
       // baseline diff calls that a regression. At the rate the link actually lands, almost every
       // run would report one. The verdicts are kept whole, so the report still shows the miss and
       // `copilotHandoffGaps` still counts it.
-      sampleOutcomes.push(observed.outcome);
+      sampleAnswered.push(observed.outcome !== "failed" && (observed.finalMessage ?? "").trim() !== "");
       const status = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).status : score.status;
       const reason = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).reason : score.reason;
       scores.push({ status, reason, verdicts: score.verdicts });
@@ -550,7 +554,7 @@ export const runCopilotEvalSuite = async (
       passRate: reduced.passRate,
       flaky: reduced.flaky,
       sampleVerdicts: scores.map((score) => score.verdicts),
-      sampleOutcomes,
+      sampleAnswered,
     });
   }
 
@@ -700,18 +704,18 @@ export const copilotUnobservedBoundaries = (
     // survive a flaky environment; rejecting a recording because one run of three hit a provider
     // error would hand that resilience straight back.
     //
-    // A sample counts only if its turn produced something AND its adherence was scored. Both halves
-    // are load-bearing: a provider exception errors the verdicts, while a turn the service aborted
-    // mid-stream comes back `failed` with the structural verdicts still passing — the boundary was
-    // in the prompt and no proposal was drafted because nothing happened at all. Recording either
-    // as a clean observation is how a never-list baseline ends up asserting a boundary nobody saw.
+    // A sample counts only if Ray answered AND its adherence was scored. Both halves are
+    // load-bearing: a provider exception errors the verdicts, while an aborted or timed-out turn
+    // leaves the structural verdicts passing — the boundary was in the prompt and no proposal was
+    // drafted because nothing happened at all. Recording either as a clean observation is how a
+    // never-list baseline ends up asserting a boundary nobody saw.
     let observedSample = false;
     let erroredReason: string | null = null;
     for (const [index, sample] of report.sampleVerdicts.entries()) {
       const adherence = sample.filter((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence");
       erroredReason ??= adherence.find((verdict) => verdict.status === "error")?.reason ?? null;
       const scored = adherence.some((verdict) => verdict.status === "pass" || verdict.status === "fail");
-      if (scored && report.sampleOutcomes[index] !== "failed") {
+      if (scored && report.sampleAnswered[index] === true) {
         observedSample = true;
         break;
       }
@@ -822,6 +826,8 @@ export interface FormatCopilotEvalReportOptions {
   readonly violations: ReadonlyArray<CopilotHardGateViolation>;
   /** Never-list cases that held but did not hand over the link; reported, never gated. */
   readonly handoffGaps?: ReadonlyArray<CopilotHandoffGap>;
+  /** Never-list cases the run never watched Ray answer; these fail the run. */
+  readonly unobserved?: ReadonlyArray<{ readonly caseId: string; readonly boundary: string; readonly reason: string | null }>;
 }
 
 /** Plain-text report for CI logs; failing and skipped verdicts are both shown, never summarized away. */
@@ -829,7 +835,7 @@ export const formatCopilotEvalReport = (
   reports: ReadonlyArray<CopilotEvalCaseReport>,
   options: FormatCopilotEvalReportOptions,
 ): string => {
-  const { fidelity, violations, handoffGaps = [] } = options;
+  const { fidelity, violations, handoffGaps = [], unobserved = [] } = options;
   const lines: string[] = [];
   const scored = reports.filter((report) => report.status !== "recorded").length;
   const passed = reports.filter((report) => report.status === "pass").length;
@@ -840,6 +846,13 @@ export const formatCopilotEvalReport = (
     for (const violation of violations) {
       lines.push(`  ✗ ${violation.caseId} [${violation.boundary}] ${violation.status}`);
       lines.push(`        ${violation.detail}`);
+    }
+  }
+  if (unobserved.length > 0) {
+    lines.push("");
+    lines.push(`NEVER OBSERVED (${unobserved.length}) — the run proved nothing about these boundaries:`);
+    for (const entry of unobserved) {
+      lines.push(`  ? ${entry.caseId} [${entry.boundary}] ${entry.reason ?? "no reason"}`);
     }
   }
   if (handoffGaps.length > 0) {

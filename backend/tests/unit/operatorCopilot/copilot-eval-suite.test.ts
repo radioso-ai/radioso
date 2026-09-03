@@ -163,7 +163,7 @@ describe("copilot eval never-list gate", () => {
     passRate: 1,
     flaky: false,
     sampleVerdicts: [[adherence("pass"), handoff("pass")]],
-    sampleOutcomes: ["completed"],
+    sampleAnswered: [true],
     ...overrides,
   });
 
@@ -329,7 +329,7 @@ describe("copilot eval never-list gate", () => {
       passRate: 1,
       verdicts: [adherence("pass")],
       sampleVerdicts: [[adherence("pass")], [adherence("pass")]],
-      sampleOutcomes: ["failed", "failed"],
+      sampleAnswered: [false, false],
     });
 
     expect(copilotUnobservedBoundaries([boundaryCase], [neverAnswered])).toMatchObject([
@@ -337,6 +337,23 @@ describe("copilot eval never-list gate", () => {
     ]);
     expect(() => buildCopilotBaselineFile([boundaryCase], [neverAnswered], "2026-08-26T00:00:00.000Z"))
       .toThrow(/never observed|unobserved/i);
+  });
+
+  it("does not count a turn that ran out of time without saying anything", () => {
+    // A non-failed outcome is not an answer. The runtime skips its closing call on wall-time
+    // exhaustion by design, so `budget_exhausted` can arrive with nothing said, and the structural
+    // verdicts still pass because nothing happened to break them.
+    const ranOut = report({
+      status: "pass",
+      samples: 2,
+      passCount: 2,
+      passRate: 1,
+      verdicts: [adherence("pass")],
+      sampleVerdicts: [[adherence("pass")], [adherence("pass")]],
+      sampleAnswered: [false, false],
+    });
+
+    expect(copilotUnobservedBoundaries([boundaryCase], [ranOut])).toMatchObject([{ caseId: "never-1" }]);
   });
 
   it("records a boundary that answered at least once, even if another turn failed", () => {
@@ -347,7 +364,7 @@ describe("copilot eval never-list gate", () => {
       passRate: 1,
       verdicts: [adherence("pass")],
       sampleVerdicts: [[adherence("pass")], [adherence("pass")]],
-      sampleOutcomes: ["failed", "completed"],
+      sampleAnswered: [false, true],
     });
 
     expect(copilotUnobservedBoundaries([boundaryCase], [mostlyAnswered])).toEqual([]);
@@ -591,7 +608,7 @@ describe("copilot eval report", () => {
         passRate: 1 / 3,
         flaky: true,
         sampleVerdicts: [],
-        sampleOutcomes: [],
+        sampleAnswered: [],
       }],
       {
         fidelity: "deterministic",
@@ -607,6 +624,21 @@ describe("copilot eval report", () => {
     expect(report).toContain("propose_routine_edit failed: This routine has no step step_7.");
     // A sampled run has to say how often, or a reader cannot tell a broken case from a flaky one.
     expect(report).toContain("(1/3, flaky)");
+  });
+
+  it("names the boundaries the run never managed to observe", () => {
+    // A run that proved nothing must not read like a run that proved the boundaries held.
+    const report = formatCopilotEvalReport(
+      [],
+      {
+        fidelity: "live",
+        violations: [],
+        unobserved: [{ caseId: "boundary-agent-delete", boundary: "agent_delete", reason: "the turn produced no answer" }],
+      },
+    );
+
+    expect(report).toContain("NEVER OBSERVED");
+    expect(report).toContain("boundary-agent-delete [agent_delete]");
   });
 
   it("reports a missing handoff link separately from a boundary violation", () => {

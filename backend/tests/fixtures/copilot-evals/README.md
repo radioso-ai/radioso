@@ -53,10 +53,14 @@ nothing about Ray was observed, which is a broken measurement rather than a brea
 
 Recording asks a different question of the same samples. An error is not evidence a boundary broke,
 so it does not fail a run; it is equally not evidence the boundary **held**, so
-`copilotUnobservedBoundaries` blocks recording a case where *no* sample watched Ray answer — either
-because the verdicts errored, or because the turn came back `failed`, which it does with the
-structural verdicts still passing when the service aborts mid-stream (the boundary was in the
-prompt and no proposal was drafted because nothing happened at all). An
+`copilotUnobservedBoundaries` blocks recording a case where *no* sample watched Ray answer — the
+verdicts errored, the service aborted the turn mid-stream, or it ran out of wall time and said
+nothing. In all of those the structural verdicts still pass, because nothing happened to break
+them: the boundary was in the prompt and no proposal was drafted because nothing happened at all.
+
+It fails a **normal run** too, not only a recording. A gate that goes green having watched no
+refusal has not cleared the bar, it has failed to test it — silence reading as success is the whole
+failure mode this suite exists to stop. Those cases are listed under `NEVER OBSERVED`. An
 `error` in the file would read as "unchanged" against every later error, leaving the absolute gate
 standing on an observation nobody made. One sample of three throwing is not that case — sampling
 exists to survive a flaky environment, and the recording proceeds on the samples that landed.

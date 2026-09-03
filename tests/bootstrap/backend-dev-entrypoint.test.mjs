@@ -55,6 +55,22 @@ test("backend dev image stamps the install state it seeds into the Compose volum
   assert.match(dockerfile, /pnpm install --frozen-lockfile[^\n]*\\\n\s*&& backend-dev-install-state\.sh write/);
 });
 
+test("development Compose installs the complete workspace before runtime services start", async () => {
+  const compose = await readFile(path.join(repoRoot, "docker-compose.dev.yml"), "utf8");
+  const dependencyService = compose.match(/  workspace-deps:\n[\s\S]*?(?=\n  backend:)/)?.[0] ?? "";
+  const backendService = compose.match(/  backend:\n[\s\S]*?(?=\n  backend-worker:)/)?.[0] ?? "";
+
+  assert.match(dependencyService, /pnpm install --force --frozen-lockfile/);
+  assert.match(dependencyService, /backend-dev-install-state\.sh write/);
+  assert.match(dependencyService, /\.\/backend:\/app\/backend/);
+  assert.match(dependencyService, /\.\/frontend:\/app\/frontend/);
+  assert.match(dependencyService, /\.\/packages:\/app\/packages/);
+  assert.match(dependencyService, /radioso_workspace_node_modules:\/app\/node_modules/);
+  assert.match(dependencyService, /radioso_backend_node_modules:\/app\/backend\/node_modules/);
+  assert.match(dependencyService, /radioso_frontend_node_modules:\/app\/frontend\/node_modules/);
+  assert.match(backendService, /workspace-deps:\n\s+condition: service_completed_successfully/);
+});
+
 test("install state check fails until every node_modules tree is stamped", async (t) => {
   const appDir = await createAppDir();
   t.after(() => rm(appDir, { recursive: true, force: true }));

@@ -953,4 +953,35 @@ describe("registration product analytics", () => {
       organizationName: "Example Co",
     })).resolves.toMatchObject({ organizationName: "Example Co" });
   });
+
+  it("tracks account.registered for first-time federated signups", async () => {
+    const tracked: ProductAnalyticsEventInput[] = [];
+    const productAnalytics: ProductAnalyticsPort = {
+      async track(input) {
+        tracked.push(input);
+        return null;
+      },
+    };
+    const { authService } = createAuthService({
+      productAnalytics,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-signup-analytics",
+      email: "federated-founder@example.com",
+      emailVerified: true,
+    });
+
+    expect(tracked).toHaveLength(1);
+    expect(tracked[0]).toMatchObject({
+      eventName: "account.registered",
+      accountId: result.accountId,
+      workspaceId: result.workspaceId,
+      actorType: "authenticated_user",
+      subjectType: "workspace",
+      properties: { requiresEmailVerification: false },
+    });
+  });
 });

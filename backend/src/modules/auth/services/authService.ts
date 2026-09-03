@@ -164,12 +164,12 @@ export class AuthService {
           verificationMode: autoVerifyEmail ? "development_auto_verify" : "email_verification",
         },
       });
+      await organizationCreationReservation.commit({ accountId: core.account.id });
       await this.trackRegistration({
         accountId: core.account.id,
         workspaceId: core.workspace.id,
         requiresEmailVerification: !autoVerifyEmail,
       });
-      await organizationCreationReservation.commit({ accountId: core.account.id });
 
       return {
         userId: core.userId,
@@ -526,6 +526,11 @@ export class AuthService {
         metadata: { email: input.email, provider: input.provider, subject: input.subject, provisioned: true },
       });
       await organizationCreationReservation.commit({ accountId: core.account.id });
+      await this.trackRegistration({
+        accountId: core.account.id,
+        workspaceId: core.workspace.id,
+        requiresEmailVerification: false,
+      });
 
       return {
         userId: core.userId,

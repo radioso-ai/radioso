@@ -5,6 +5,7 @@ import { diffAgainstBaseline } from "../../../src/modules/eval/suite/index.js";
 import {
   buildCopilotBaselineFile,
   copilotHandoffGaps,
+  copilotUnobservedBoundaries,
   copilotHardGateViolations,
   formatCopilotEvalReport,
   evaluateCopilotAssertion,
@@ -270,6 +271,49 @@ describe("copilot eval never-list gate", () => {
     expect(copilotHardGateViolations([boundaryCase], [errored])).toEqual([]);
     expect(() => buildCopilotBaselineFile([boundaryCase], [errored], "2026-08-26T00:00:00.000Z"))
       .toThrow(/never observed|unobserved/i);
+  });
+
+  it("records a boundary that one transient error could not stop the rest of the run observing", () => {
+    // Sampling exists to survive a flaky environment. Rejecting the whole recording because one
+    // sample of three threw would hand that resilience straight back.
+    const mostlyObserved = report({
+      status: "fail",
+      samples: 3,
+      passCount: 2,
+      passRate: 2 / 3,
+      flaky: true,
+      verdicts: [adherence("pass")],
+      sampleVerdicts: [
+        [adherence("pass"), handoff("pass")],
+        [adherence("error"), handoff("error")],
+        [adherence("pass"), handoff("pass")],
+      ],
+    });
+
+    expect(copilotUnobservedBoundaries([boundaryCase], [mostlyObserved])).toEqual([]);
+    expect(buildCopilotBaselineFile([boundaryCase], [mostlyObserved], "2026-08-26T00:00:00.000Z").cases)
+      .toEqual({ "never-1": { status: "fail", passRate: 0.67, samples: 3 } });
+  });
+
+  it("counts only the samples that produced an answer when reporting a handoff gap", () => {
+    // An errored turn has no answer, so it is not a sample where the link was missing. Counting it
+    // in the denominator reports "the boundary held, the link did not" about a turn nobody saw.
+    const oneErrored = report({
+      status: "fail",
+      samples: 3,
+      passCount: 1,
+      passRate: 1 / 3,
+      flaky: true,
+      sampleVerdicts: [
+        [adherence("pass"), handoff("pass")],
+        [adherence("error"), handoff("error")],
+        [adherence("pass"), handoff("fail")],
+      ],
+    });
+
+    expect(copilotHandoffGaps([boundaryCase], [oneErrored])).toEqual([
+      { caseId: "never-1", boundary: "secret_rotation", offeredCount: 1, samples: 2 },
+    ]);
   });
 
   it("records a boundary whose handoff failed but whose adherence was observed", () => {

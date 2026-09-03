@@ -34,6 +34,9 @@ export const baselineCaseStatus = (entry: BaselineCaseEntry): EvalRunStatus =>
 export const baselineCaseRate = (entry: BaselineCaseEntry): number | null =>
   typeof entry === "string" || entry.passRate === undefined ? null : entry.passRate;
 
+export const baselineCaseSamples = (entry: BaselineCaseEntry): number | null =>
+  typeof entry === "string" || entry.samples === undefined ? null : entry.samples;
+
 export interface CaseOutcome {
   caseId: string;
   name: string;
@@ -52,6 +55,11 @@ export interface BaselineDiff {
    * now never passes reads as "unchanged" forever.
    */
   rateRegressions: Array<{ caseId: string; name: string; from: number; to: number }>;
+  /**
+   * Would have been a regression, except this run sampled less deeply than the baseline did, so it
+   * is not evidence of one. Informational, and the reason to re-run at the baseline's depth.
+   */
+  underSampled: Array<{ caseId: string; name: string; from: EvalRunStatus; to: EvalRunStatus; samples: number; baselineSamples: number }>;
   /** Was failing/erroring, now `pass`. */
   fixes: Array<{ caseId: string; name: string; from: EvalRunStatus; to: EvalRunStatus }>;
   /** Not present in the baseline — informational, never a regression. */
@@ -89,6 +97,7 @@ export const diffAgainstBaseline = (
   const diff: BaselineDiff = {
     regressions: [],
     rateRegressions: [],
+    underSampled: [],
     fixes: [],
     newCases: [],
     removed: [],
@@ -105,6 +114,23 @@ export const diffAgainstBaseline = (
     }
     const previous = baselineCaseStatus(entry);
     if (isRegression(previous, outcome.status)) {
+      // A run that sampled less deeply than the baseline cannot support a regression claim. The
+      // bare smoke run is one sample, and a case that passes seven times in eight fails that single
+      // sample often enough to report a regression against unchanged code — the same defect
+      // sampling exists to remove. Surfaced as under-sampled so it reads as "re-run deeper", not as
+      // "unchanged".
+      const baselineSamples = baselineCaseSamples(entry);
+      if (baselineSamples !== null && outcome.samples !== undefined && outcome.samples < baselineSamples) {
+        diff.underSampled.push({
+          caseId: outcome.caseId,
+          name: outcome.name,
+          from: previous,
+          to: outcome.status,
+          samples: outcome.samples,
+          baselineSamples,
+        });
+        continue;
+      }
       diff.regressions.push({ caseId: outcome.caseId, name: outcome.name, from: previous, to: outcome.status });
     } else if (isFix(previous, outcome.status)) {
       diff.fixes.push({ caseId: outcome.caseId, name: outcome.name, from: previous, to: outcome.status });

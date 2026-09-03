@@ -4,13 +4,16 @@ import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export function CodeSnippet({
   label,
   code,
+  wrap = false,
 }: {
   label: string
   code: string
+  wrap?: boolean
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -34,7 +37,12 @@ export function CodeSnippet({
           {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
           <span className="sr-only">Copy {label.toLowerCase()} instruction</span>
         </Button>
-        <code className="block max-h-[420px] overflow-auto whitespace-pre rounded-md border border-border bg-muted/40 p-4 pr-12 font-mono text-sm leading-6 text-foreground">
+        <code
+          className={cn(
+            'block max-h-[420px] overflow-auto rounded-md border border-border bg-muted/40 p-4 pr-12 font-mono text-sm leading-6 text-foreground',
+            wrap ? 'break-words whitespace-pre-wrap' : 'whitespace-pre',
+          )}
+        >
           {code}
         </code>
       </div>

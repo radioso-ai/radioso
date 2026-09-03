@@ -1,32 +1,41 @@
 'use client'
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
-import { ExternalLink, Plug } from 'lucide-react'
+import { useState } from 'react'
+import { ExternalLink, Plug, Plus } from 'lucide-react'
 
+import { AgentChannelCredentialList } from '@/components/dashboard/settings/agent-channel-credential-manager'
+import { CredentialIssuedDialog } from '@/components/dashboard/settings/credential-dialogs'
+import { McpConnectClientDialog } from '@/components/dashboard/settings/mcp-connect-client-dialog'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
-import { AgentChannelCredentialManager } from '@/components/dashboard/settings/agent-channel-credential-manager'
+import { CodeSnippet } from '@/components/shared/api-snippets'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Label } from '@/components/ui/label'
-import { buildConverseClientConfig } from '@/lib/mcp-converse-client-config'
+import { useAgentChannelCredentials } from '@/hooks/use-agent-channel-credentials'
+import { useDashboardOrigin, useRuntimeConfig } from '@/hooks/use-runtime-config'
+import { GENERIC_MCP_CLIENT_ID, getMcpClientSetup, type McpClientSetup } from '@/lib/mcp-client-setups'
 
-export const MCP_URL = process.env.NEXT_PUBLIC_MCP_URL ?? ''
-const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3001'
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? 'https://docs.radioso.ai'
+const MCP_GUIDE_URL = `${DOCS_URL}/guides/mcp-server`
 
-const subscribeBrowserOrigin = () => () => {}
-const getBrowserOrigin = () => (typeof window === 'undefined' ? '' : window.location.origin)
-const getServerOrigin = () => ''
+const CARD_DESCRIPTION = 'This agent as a chat tool for MCP clients.'
 
-export type McpChannelSetupMode = 'same-host' | 'remote' | 'disabled'
+export type McpChannelSetupMode = 'disabled' | 'enabled' | 'failed' | 'resolving'
 
 export interface McpChannelSetup {
-  error?: string
-  label: string
   mcpUrl: string
   mode: McpChannelSetupMode
-  remediation?: string
+  retry?: () => void
 }
 
+const DISABLED_SETUP: McpChannelSetup = { mcpUrl: '', mode: 'disabled' }
+const RESOLVING_SETUP: McpChannelSetup = { mcpUrl: '', mode: 'resolving' }
+
+/**
+ * MCP is reachable only as a standalone origin. A missing, unparseable, or dashboard-origin
+ * URL all mean the same thing to an operator standing in front of this card: not enabled here.
+ */
 export const resolveMcpChannelSetup = ({
   dashboardOrigin,
   mcpUrl,
@@ -35,156 +44,214 @@ export const resolveMcpChannelSetup = ({
   mcpUrl: string
 }): McpChannelSetup => {
   const trimmedUrl = mcpUrl.trim()
-  if (!trimmedUrl) {
-    return {
-      error: 'MCP is not enabled on this deployment.',
-      label: 'MCP not enabled',
-      mcpUrl: '',
-      mode: 'disabled',
-      remediation: 'Enable the standalone MCP deployment or set NEXT_PUBLIC_MCP_URL to a reachable MCP server URL, then restart Radioso.',
-    }
-  }
+  if (!trimmedUrl) return DISABLED_SETUP
 
   let resolvedUrl: URL
   try {
     resolvedUrl = new URL(trimmedUrl, dashboardOrigin || 'http://localhost')
   } catch {
-    return {
-      error: 'The configured MCP URL is invalid.',
-      label: 'MCP not enabled',
-      mcpUrl: trimmedUrl,
-      mode: 'disabled',
-      remediation: 'Set NEXT_PUBLIC_MCP_URL to an absolute MCP server URL or a root-relative same-host MCP path.',
-    }
-  }
-  const isRootRelativeUrl = trimmedUrl.startsWith('/')
-  const sameHost = isRootRelativeUrl || resolvedUrl.origin === dashboardOrigin
-
-  if (sameHost) {
-    return {
-      error: 'The same-host merged MCP endpoint is unavailable in this release. Use standalone MCP with an agent-bound MCP credential instead.',
-      label: 'MCP unavailable',
-      mcpUrl: dashboardOrigin ? resolvedUrl.toString() : trimmedUrl,
-      mode: 'disabled',
-      remediation: 'Run the standalone MCP server at a separate origin, set NEXT_PUBLIC_MCP_URL to that URL, then create an MCP credential below.',
-    }
+    return DISABLED_SETUP
   }
 
-  return {
-    label: 'Remote setup',
-    mcpUrl: resolvedUrl.toString(),
-    mode: 'remote',
-  }
+  const sameHost = trimmedUrl.startsWith('/') || resolvedUrl.origin === dashboardOrigin
+  if (sameHost) return DISABLED_SETUP
+
+  return { mcpUrl: resolvedUrl.toString(), mode: 'enabled' }
 }
 
-export const shouldProbeMcpHealth = (setup: McpChannelSetup): boolean => setup.mode === 'same-host'
+export const useMcpChannelSetup = (): McpChannelSetup => {
+  const dashboardOrigin = useDashboardOrigin()
+  const runtimeConfig = useRuntimeConfig()
+  // Runtime config is authoritative for MCP availability. Keep destructive one-time-secret
+  // workflows unavailable until it resolves so a later empty value cannot unmount the dialog.
+  if (runtimeConfig.status === 'failed') return { mcpUrl: '', mode: 'failed', retry: runtimeConfig.retry }
+  if (!runtimeConfig.isResolved) return RESOLVING_SETUP
 
-export const useMcpChannelSetup = () => {
-  const dashboardOrigin = useSyncExternalStore(subscribeBrowserOrigin, getBrowserOrigin, getServerOrigin)
-  const [runtimeMcpUrl, setRuntimeMcpUrl] = useState(MCP_URL)
-  const [runtimeMcpError, setRuntimeMcpError] = useState<string | undefined>()
+  return resolveMcpChannelSetup({
+    dashboardOrigin,
+    mcpUrl: runtimeConfig.mcpUrl,
+  })
+}
 
-  useEffect(() => {
-    const controller = new AbortController()
-    if (MCP_URL) {
-      return () => controller.abort()
-    }
+function McpGuideLink({ children }: { children: string }) {
+  return (
+    <a
+      href={MCP_GUIDE_URL}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+    >
+      {children}
+      <ExternalLink className="h-3 w-3" />
+    </a>
+  )
+}
 
-    void fetch('/runtime-config', {
-      cache: 'no-store',
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) {
-          setRuntimeMcpError('The Radioso runtime configuration is unavailable.')
-          return null
-        }
-        return response.json()
-      })
-      .then((body: unknown) => {
-        if (body && typeof body === 'object' && 'mcpUrl' in body && typeof body.mcpUrl === 'string') {
-          setRuntimeMcpUrl(body.mcpUrl)
-        }
-      })
-      .catch((error: unknown) => {
-        if (error instanceof Error && error.name === 'AbortError') {
-          return
-        }
-        setRuntimeMcpError('The Radioso runtime configuration is unavailable.')
-      })
+function ClientConfigContent({ setup, mcpUrl, secret }: { setup: McpClientSetup; mcpUrl: string; secret: string }) {
+  return (
+    <div className="space-y-3">
+      <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+        {setup.steps.map((step) => <li key={step}>{step}</li>)}
+      </ol>
+      <CodeSnippet label={`${setup.name} configuration`} code={setup.buildSnippet(mcpUrl, secret)} />
+    </div>
+  )
+}
 
-    return () => controller.abort()
-  }, [])
+function McpConnectedClients({ agentId, mcpUrl }: { agentId: string; mcpUrl: string }) {
+  const engine = useAgentChannelCredentials(agentId, 'mcp')
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
+  // Set while connecting a specific client; a rotation has no recorded client, so it falls back
+  // to the generic configuration block.
+  const [connectSetup, setConnectSetup] = useState<McpClientSetup | null>(null)
 
-  const setup = resolveMcpChannelSetup({ dashboardOrigin, mcpUrl: runtimeMcpUrl })
-  const resolvedSetup = runtimeMcpError
-    ? {
-        ...setup,
-        error: runtimeMcpError,
-        label: 'MCP unavailable',
-        mode: 'disabled' as const,
-        remediation: 'Check that the dashboard runtime configuration can reach the standalone MCP service.',
-        steps: [],
-      }
-    : setup
+  const connect = async ({ setup, label, expiresAt }: { setup: McpClientSetup; label: string; expiresAt: string }) => {
+    setConnectSetup(setup)
+    const issued = await engine.issue({ label, expiresAt })
+    if (issued) setIsPickerOpen(false)
+  }
 
-  return resolvedSetup
+  const rotate = async (credentialId: string) => {
+    setConnectSetup(null)
+    return engine.rotate(credentialId)
+  }
+
+  const issuedSetup = connectSetup ?? getMcpClientSetup(GENERIC_MCP_CLIENT_ID)
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/40 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">Connect a client</p>
+          <p className="text-xs text-muted-foreground">Paste-ready config with its own credential per client.</p>
+        </div>
+        <Button type="button" size="sm" onClick={() => setIsPickerOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Connect a client
+        </Button>
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-foreground">MCP server</Label>
+        <CopyValueField value={mcpUrl} ariaLabel="Copy MCP server URL" className="w-full" />
+      </div>
+
+      {engine.error ? <p role="alert" className="text-sm text-destructive">{engine.error}</p> : null}
+
+      <AgentChannelCredentialList
+        heading="Connected clients"
+        emptyMessage="No clients connected yet."
+        credentials={engine.credentials}
+        busyCredentialId={engine.busyCredentialId}
+        hasMore={engine.hasMore}
+        isLoading={engine.isLoading}
+        isLoadingMore={engine.isLoadingMore}
+        onLoadMore={() => void engine.loadMore()}
+        onRevoke={engine.revoke}
+        onRotate={rotate}
+      />
+
+      <div className="flex justify-end">
+        <McpGuideLink>MCP setup guide</McpGuideLink>
+      </div>
+
+      {isPickerOpen ? (
+        <McpConnectClientDialog
+          error={engine.error}
+          isSubmitting={engine.isCreating}
+          onOpenChange={(open) => {
+            if (!open) setIsPickerOpen(false)
+          }}
+          onSubmit={(input) => void connect(input)}
+        />
+      ) : null}
+
+      {engine.issued ? (
+        <CredentialIssuedDialog
+          secret={engine.issued.secret}
+          title={connectSetup ? `Finish connecting — ${connectSetup.name}` : 'Credential issued'}
+          acknowledgeLabel={connectSetup ? 'Config pasted — the secret won’t be shown again.' : undefined}
+          copyAriaLabel="Copy MCP credential secret"
+          additionalContent={<ClientConfigContent setup={issuedSetup} mcpUrl={mcpUrl} secret={engine.issued.secret} />}
+          error={engine.error}
+          onDiscard={async () => {
+            if (engine.issued) await engine.revoke(engine.issued.credential.id)
+          }}
+          onDone={engine.clearIssued}
+        />
+      ) : null}
+    </div>
+  )
 }
 
 export function McpChannelCard({ agentId }: { agentId: string }) {
-  const resolvedSetup = useMcpChannelSetup()
+  const setup = useMcpChannelSetup()
+
+  if (setup.mode === 'resolving') {
+    return (
+      <SettingsCard
+        id="mcp-channel"
+        icon={<Plug className="h-5 w-5 text-primary" />}
+        title="MCP"
+        description={CARD_DESCRIPTION}
+        headerEnd={<Badge variant="secondary">Checking</Badge>}
+      >
+        <div className="space-y-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <p>Checking deployment configuration.</p>
+          <McpGuideLink>Deployment setup guide</McpGuideLink>
+        </div>
+      </SettingsCard>
+    )
+  }
+
+  if (setup.mode === 'failed') {
+    return (
+      <SettingsCard
+        id="mcp-channel"
+        icon={<Plug className="h-5 w-5 text-primary" />}
+        title="MCP"
+        description={CARD_DESCRIPTION}
+        headerEnd={<Badge variant="secondary">Unavailable</Badge>}
+      >
+        <div className="space-y-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <p>Could not check deployment configuration.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="button" variant="outline" size="sm" onClick={setup.retry}>
+              Retry
+            </Button>
+            <McpGuideLink>Deployment setup guide</McpGuideLink>
+          </div>
+        </div>
+      </SettingsCard>
+    )
+  }
+
+  if (setup.mode === 'disabled') {
+    return (
+      <SettingsCard
+        id="mcp-channel"
+        icon={<Plug className="h-5 w-5 text-primary" />}
+        title="MCP"
+        description={CARD_DESCRIPTION}
+        headerEnd={<Badge variant="secondary">Not enabled</Badge>}
+      >
+        <div className="space-y-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <p>Not enabled on this deployment.</p>
+          <McpGuideLink>Deployment setup guide</McpGuideLink>
+        </div>
+      </SettingsCard>
+    )
+  }
 
   return (
     <SettingsCard
       id="mcp-channel"
       icon={<Plug className="h-5 w-5 text-primary" />}
       title="MCP"
-      description="Give MCP clients one chat tool for this agent, with the same persona, directives, skills, and routines as the web chat."
+      description={CARD_DESCRIPTION}
+      headerEnd={<Badge variant="outline">Enabled</Badge>}
     >
-      <div className="space-y-5">
-        <p className="text-sm text-muted-foreground">
-          MCP (Model Context Protocol) is an open standard. Compatible clients receive one agent chat tool; direct
-          workspace retrieval and administrative tools are not exposed by this credential.
-        </p>
-
-        <div className="flex items-center">
-          <Badge variant={resolvedSetup.mode === 'disabled' ? 'secondary' : 'outline'}>{resolvedSetup.label}</Badge>
-        </div>
-
-        {resolvedSetup.error ? (
-          <div className="space-y-1 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-            <p>{resolvedSetup.error}</p>
-            {resolvedSetup.remediation ? <p>{resolvedSetup.remediation}</p> : null}
-          </div>
-        ) : null}
-
-        <div className="space-y-2">
-          <Label className="text-foreground">MCP server</Label>
-          <CopyValueField value={resolvedSetup.mcpUrl} ariaLabel="Copy MCP server URL" className="w-full" />
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <a
-            href={`${DOCS_URL}/guides/mcp-server`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          >
-            View MCP setup guide
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-
-        <AgentChannelCredentialManager
-          key={`${agentId}:mcp`}
-          agentId={agentId}
-          audience="mcp"
-          secretConfiguration={resolvedSetup.mode === 'remote' ? {
-            label: 'MCP client config',
-            buildCode: (secret) => buildConverseClientConfig(resolvedSetup.mcpUrl, secret),
-          } : undefined}
-        />
-      </div>
+      <McpConnectedClients key={`${agentId}:mcp`} agentId={agentId} mcpUrl={setup.mcpUrl} />
     </SettingsCard>
   )
 }

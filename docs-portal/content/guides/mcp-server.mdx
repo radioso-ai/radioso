@@ -1,7 +1,7 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent with an audience-bound credential."
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -17,10 +17,10 @@ Radioso's standalone MCP server lets a client talk to one agent through `ask_age
 
 The dashboard session is the management boundary. It issues, rotates, and revokes agent credentials; agent credentials do not manage credentials or workspace settings.
 
-## Enable it
+## Deployment enablement
 
 <Steps>
-### Choose a deployment shape
+### Run the MCP server
 
 Run `packages/radioso-mcp-server` as a standalone process.
 
@@ -30,10 +30,60 @@ Standalone mode needs `RADIOSO_BASE_URL` pointed at the backend and its bind set
 
 Standalone mode needs a reachable backend for agent-converse requests.
 
-### Create the agent credential
+### Point the dashboard at the MCP server
 
-Sign in to the dashboard, open the agent's **Channels → MCP** card, and create a credential with a label and expiry. Copy the one-time secret into the secure configuration of the client or connector that will send it to standalone `/mcp`. Radioso stores only its hash, so the secret is not shown again.
+Set `RADIOSO_MCP_PUBLIC_URL` on the Radioso frontend process to the public MCP endpoint, for example `https://mcp.example.com/mcp`. The frontend reads it at request time, so a restart with the new value is enough — there is nothing to rebuild.
+
+Give the MCP server its own origin, separate from the dashboard. Clients reach `/mcp` directly over HTTPS, and hosted clients such as Claude or ChatGPT need a public address; a localhost URL is reachable only from a client on the same machine.
+
+Hosted Terraform sets this variable from the deployed MCP service, so a Terraform deployment enables the card on its own.
+
+Once the value points at a reachable MCP origin, the agent's **Channels → MCP** card shows the server URL, the connect flow, and the list of connected clients.
 </Steps>
+
+## Connect a client
+
+Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client, name the connection, set an expiry, and Radioso issues a credential bound to that agent and to the MCP audience. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.
+
+Each client gets its own credential, so rotating or revoking one connection leaves the others working. The examples below use `https://mcp.example.com/mcp` as the server URL and `radioso_mcp_v1_example` as the secret.
+
+### Claude Desktop
+
+Open Claude Desktop → Settings → Developer → Edit config, merge this block into `claude_desktop_config.json`, and restart Claude Desktop.
+
+```json
+{
+  "mcpServers": {
+    "radioso": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer radioso_mcp_v1_example"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+Run this in your terminal:
+
+```bash
+claude mcp add --transport http radioso https://mcp.example.com/mcp \
+  --header "Authorization: Bearer radioso_mcp_v1_example"
+```
+
+### Cursor
+
+Open Cursor → Settings → MCP → Add new server, or merge the same `mcpServers` block into `~/.cursor/mcp.json`.
+
+### Other MCP clients
+
+Point the client at the server URL and send the secret as a bearer token. Clients that read a configuration file take the standard `mcpServers` block shown above.
+
+## Credential lifecycle
+
+Rotate a connection from its **⋯** menu when a secret leaks or a rotation window comes due: the old secret stops working immediately and the dialog shows the replacement once. Revoke removes access for that client alone.
 
 The dashboard uses the shared agent-credential lifecycle endpoints:
 
@@ -64,8 +114,6 @@ MCP credential setup exposes agent chat, not a document-management surface. Use 
 
 ## Deployment notes
 
-Standalone mode is useful when the MCP process needs separate public HTTPS exposure. Hosted remote clients such as Claude or ChatGPT need a public HTTPS URL; a localhost URL is reachable only from a client running on the same machine.
-
 `RADIOSO_MCP_SIGNING_SECRET` authenticates the digested source identity that standalone forwards to the backend. When Redis backs the MCP session-token cache, the same domain-separated secret also encrypts that material. It is different from agent credentials, personal tokens, service-account credentials, public-chat launch values, provider keys, and connector secrets.
 
 ## Authentication boundaries
@@ -78,6 +126,7 @@ Standalone mode is useful when the MCP process needs separate public HTTPS expos
 
 ## Common failure modes
 
+- **The agent's MCP card reads "Not enabled on this deployment."** The frontend process has no `RADIOSO_MCP_PUBLIC_URL`, or its value resolves to the dashboard's own origin. Set it to the MCP server's public URL and restart the frontend.
 - **The MCP endpoint returns `401`.** Confirm that the bearer is an active, unexpired MCP-audience credential for this agent. A personal token, service-account credential, or REST-audience agent credential is rejected.
 - **The converse client cannot connect.** Confirm the MCP URL is reachable over HTTPS for hosted clients, and check `RADIOSO_BASE_URL` and the standalone bind settings. When Redis is configured, check `RADIOSO_MCP_SIGNING_SECRET` too.
 - **A converse session is rejected.** Its credential may be revoked, expired, or issued for a different agent. Create or revoke credentials from the agent's MCP card with a current dashboard session.

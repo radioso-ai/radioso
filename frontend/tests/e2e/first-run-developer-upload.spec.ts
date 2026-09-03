@@ -37,7 +37,7 @@ test("first-run developer paths expose separate upload and chat instructions", a
   await expect(page.getByText("curl -sS -X POST http://localhost:8080/api/v1/document/")).toBeVisible();
   await expect(page.getByText("curl -sS -X POST http://localhost:8080/api/v1/assistant/chat")).toBeVisible();
   await expect(page.getByText("client.documents.importFile")).toHaveCount(0);
-  await expect(page.getByText("Create a credential in Workspace settings → API access.").first()).toBeVisible();
+  await expect(page.getByText("Create a credential in Settings → API access.").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy create from text with curl instruction" })).toBeVisible();
   await page.getByRole("button", { name: /^TypeScript$/ }).first().click();
   await expect(page.getByText("client.documents.create")).toBeVisible();

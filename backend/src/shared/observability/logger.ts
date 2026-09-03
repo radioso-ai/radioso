@@ -3,21 +3,34 @@ import pino from "pino";
 import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
+import { toCloudLoggingSeverity } from "./logging/cloudSeverity.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
 import { WORKER_TASK_AUTH_HEADER_LOWERCASE } from "../infra/workerTaskAuth.js";
 
-export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
-  pino({
-    level,
-    hooks: {
-      logMethod(args, method, pinoLevel) {
-        emitPinoLogRecordForOpenTelemetry(pinoLevel, args);
-        method.apply(this, args);
-      },
+const loggerOptions = (level: string): pino.LoggerOptions => ({
+  level,
+  formatters: {
+    // Keep the numeric `level` so existing log queries keep working, and add the
+    // `severity` string log platforms use to classify a line.
+    level: (_label, numericLevel) => ({
+      level: numericLevel,
+      severity: toCloudLoggingSeverity(numericLevel),
+    }),
+  },
+  hooks: {
+    logMethod(args, method, pinoLevel) {
+      emitPinoLogRecordForOpenTelemetry(pinoLevel, args);
+      method.apply(this, args);
     },
-  });
+  },
+});
+
+export const createLogger = (
+  level = process.env.NODE_ENV === "production" ? "info" : "debug",
+  destination?: pino.DestinationStream,
+) => (destination ? pino(loggerOptions(level), destination) : pino(loggerOptions(level)));
 
 export type AppLogger = ReturnType<typeof createLogger>;
 

@@ -1,4 +1,5 @@
 export const productAnalyticsEventNames = [
+  "account.registered",
   "workspace.created",
   "document.ingest_failed",
   "document.ingest_queued",

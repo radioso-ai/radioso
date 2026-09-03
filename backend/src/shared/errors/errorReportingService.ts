@@ -79,7 +79,7 @@ export class ErrorReportingService {
       tags: input.tags,
     };
 
-    this.options.logger.error(
+    this.options.logger[errorEvent.severity](
       {
         error: extractErrorLogFields(errorEvent),
         metadata: errorEvent.metadata,

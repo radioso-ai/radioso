@@ -5,6 +5,7 @@ import type { ErrorSink } from "../../src/shared/errors/errorSink.js";
 
 const createLogger = () => ({
   error: vi.fn(),
+  warn: vi.fn(),
   info: vi.fn(),
 });
 
@@ -114,5 +115,28 @@ describe("ErrorReportingService", () => {
       errorClass: "TypeError",
       stack: expect.stringContaining("/w/[workspaceKey]/chat"),
     }));
+  });
+
+  it("logs lower-severity error events at their modeled severity", async () => {
+    const logger = createLogger();
+    const service = new ErrorReportingService({
+      enabled: true,
+      environment: "test",
+      logger: logger as any,
+      service: "radioso-api",
+    });
+
+    await service.report({ errorType: "test.info", message: "notable", severity: "info" });
+    await service.report({ errorType: "test.warn", message: "warning", severity: "warn" });
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ severity: "info" }) }),
+      "error_recorded",
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.objectContaining({ severity: "warn" }) }),
+      "error_recorded",
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 });

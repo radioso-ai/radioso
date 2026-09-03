@@ -26,6 +26,10 @@ import type {
   OrganizationCreationReservation,
 } from "../../src/shared/domain/organizationCreationGuard.js";
 import { InMemoryOrganizationProvisioner } from "../support/organizationProvisioner.js";
+import type {
+  ProductAnalyticsEventInput,
+  ProductAnalyticsPort,
+} from "../../src/shared/analytics/productAnalyticsService.js";
 
 it("does not expose an ambiguous account lookup by email", () => {
   expectTypeOf<AccountRepositoryPort>().not.toHaveProperty("findByEmail");
@@ -181,6 +185,7 @@ const createAuthService = (options: {
   personalCredentialTermination?: { endAccount(input: { accountId: string; actorUserId?: string | null }): Promise<void> };
   personalCredentialLifecycle?: { deleteAccount(input: { accountId: string; actorUserId?: string | null; auditEvent?: unknown }): Promise<boolean> };
   envOverrides?: Partial<ReturnType<typeof createTestEnv>>;
+  productAnalytics?: ProductAnalyticsPort;
 }) => {
   const env = { ...createTestEnv(), ...options.envOverrides };
   const auditService = createAuditService();
@@ -210,6 +215,7 @@ const createAuthService = (options: {
       accountAccessService,
       accountInvitationService,
       onAccountCreated: options.onAccountCreated,
+      productAnalytics: options.productAnalytics,
       organizationCreationGuard: options.organizationCreationGuard,
       organizationProvisioner: options.organizationProvisioner ?? new InMemoryOrganizationProvisioner(
         accountRepository,
@@ -902,6 +908,80 @@ describe("AuthService rollback", () => {
     })).resolves.toMatchObject({
       userId,
       sessionCookie: expect.stringContaining("radioso_session="),
+    });
+  });
+});
+
+describe("registration product analytics", () => {
+  it("tracks an account.registered event so signups reach the product event stream", async () => {
+    const tracked: ProductAnalyticsEventInput[] = [];
+    const productAnalytics: ProductAnalyticsPort = {
+      async track(input) {
+        tracked.push(input);
+        return null;
+      },
+    };
+    const { authService } = createAuthService({ productAnalytics });
+
+    const result = await authService.register({
+      email: "founder@example.com",
+      password: "correct-horse-battery-staple",
+      organizationName: "Example Co",
+    });
+
+    expect(tracked).toHaveLength(1);
+    expect(tracked[0]).toMatchObject({
+      eventName: "account.registered",
+      accountId: result.accountId,
+      workspaceId: result.workspaceId,
+      actorType: "authenticated_user",
+      subjectType: "workspace",
+    });
+  });
+
+  it("does not fail a registration when the analytics port throws", async () => {
+    const productAnalytics: ProductAnalyticsPort = {
+      async track() {
+        throw new Error("analytics down");
+      },
+    };
+    const { authService } = createAuthService({ productAnalytics });
+
+    await expect(authService.register({
+      email: "founder2@example.com",
+      password: "correct-horse-battery-staple",
+      organizationName: "Example Co",
+    })).resolves.toMatchObject({ organizationName: "Example Co" });
+  });
+
+  it("tracks account.registered for first-time federated signups", async () => {
+    const tracked: ProductAnalyticsEventInput[] = [];
+    const productAnalytics: ProductAnalyticsPort = {
+      async track(input) {
+        tracked.push(input);
+        return null;
+      },
+    };
+    const { authService } = createAuthService({
+      productAnalytics,
+      sessionRepository: new WorkingSessionRepository(),
+    });
+
+    const result = await authService.federatedLogin({
+      provider: "google",
+      subject: "google-signup-analytics",
+      email: "federated-founder@example.com",
+      emailVerified: true,
+    });
+
+    expect(tracked).toHaveLength(1);
+    expect(tracked[0]).toMatchObject({
+      eventName: "account.registered",
+      accountId: result.accountId,
+      workspaceId: result.workspaceId,
+      actorType: "authenticated_user",
+      subjectType: "workspace",
+      properties: { requiresEmailVerification: false },
     });
   });
 });

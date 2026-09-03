@@ -57,6 +57,7 @@ import { ErrorReportingService } from "../../../shared/errors/errorReportingServ
 import { Database } from "../../../shared/infra/database.js";
 import { createMailService } from "../../../modules/mail/public.js";
 import { createLogger, type AppLogger } from "../../../shared/observability/logger.js";
+import { buildOpsEventSinks } from "../../../shared/observability/opsEvents/buildOpsEventSinks.js";
 import { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import {
   createDefaultAnalyticsSinks,
@@ -93,6 +94,7 @@ export const buildInfrastructure = (input: {
     sinks: [...defaultTelemetrySinks, ...composition.telemetrySinks],
     version: env.OBSERVABILITY_VERSION,
   });
+  const opsEventSinks = buildOpsEventSinks({ env, logger });
   const productAnalyticsService = new ProductAnalyticsService({
     enabled: env.OBSERVABILITY_ENABLED,
     logger,
@@ -101,6 +103,7 @@ export const buildInfrastructure = (input: {
         auditService,
         env,
         metricsRegistry,
+        opsEventSink: opsEventSinks.analytics,
       }),
       ...composition.productAnalyticsSinks,
     ],
@@ -116,6 +119,7 @@ export const buildInfrastructure = (input: {
         auditService,
         env,
         metricsRegistry,
+        opsEventSink: opsEventSinks.error,
       }),
       ...composition.errorSinks,
     ],

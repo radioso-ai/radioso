@@ -8,6 +8,7 @@ import {
   type PersonalCredentialTenureService,
 } from "../../machineAccess/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { ProductAnalyticsPort } from "../../../shared/analytics/productAnalyticsService.js";
 import type {
   OrganizationCoreProvisioner,
   OrganizationCoreProvisioningResult,
@@ -74,6 +75,7 @@ interface AuthServiceDependencies {
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner: OrganizationCoreProvisioner;
   auditService: AuditService;
+  productAnalytics?: ProductAnalyticsPort;
   apiPrincipalAuthenticator?: Pick<ApiPrincipalAuthenticator, "authenticate"> & Partial<Pick<ApiPrincipalAuthenticator, "recordSuccessfulUse">>;
   personalCredentialTermination?: Pick<PersonalCredentialTenureService, "endAccount">;
   personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteAccount">;
@@ -163,6 +165,11 @@ export class AuthService {
         },
       });
       await organizationCreationReservation.commit({ accountId: core.account.id });
+      await this.trackRegistration({
+        accountId: core.account.id,
+        workspaceId: core.workspace.id,
+        requiresEmailVerification: !autoVerifyEmail,
+      });
 
       return {
         userId: core.userId,
@@ -185,6 +192,27 @@ export class AuthService {
         await organizationCreationReservation.release();
       }
       throw error;
+    }
+  }
+
+  private async trackRegistration(input: {
+    accountId: string;
+    workspaceId: string;
+    requiresEmailVerification: boolean;
+  }): Promise<void> {
+    try {
+      await this.dependencies.productAnalytics?.track({
+        eventName: "account.registered",
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        actorType: "authenticated_user",
+        subjectType: "workspace",
+        subjectId: input.workspaceId,
+        properties: { requiresEmailVerification: input.requiresEmailVerification },
+      });
+    } catch {
+      // The registration already succeeded and is recorded in the audit log. A failing
+      // reporting path must not roll it back or surface as a signup error.
     }
   }
 
@@ -498,6 +526,11 @@ export class AuthService {
         metadata: { email: input.email, provider: input.provider, subject: input.subject, provisioned: true },
       });
       await organizationCreationReservation.commit({ accountId: core.account.id });
+      await this.trackRegistration({
+        accountId: core.account.id,
+        workspaceId: core.workspace.id,
+        requiresEmailVerification: false,
+      });
 
       return {
         userId: core.userId,

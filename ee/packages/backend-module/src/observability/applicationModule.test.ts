@@ -27,6 +27,15 @@ describe("enterprise observability module", () => {
     expect(errorSinks[1]).toBeInstanceOf(PosthogErrorSink);
   });
 
+  it("allows core sink names owned by the OSS backend", () => {
+    const module = createEnterpriseObservabilityApplicationModule({
+      PRODUCT_ANALYTICS_SINKS: "audit,ops_webhook",
+      ERROR_SINKS: "audit,ops_webhook",
+    });
+
+    expect(() => module.register?.({} as any)).not.toThrow();
+  });
+
   it("requires vendor credentials only inside the Enterprise module", () => {
     const module = createEnterpriseObservabilityApplicationModule({
       PRODUCT_ANALYTICS_SINKS: "audit,posthog",

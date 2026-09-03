@@ -53,8 +53,10 @@ nothing about Ray was observed, which is a broken measurement rather than a brea
 
 Recording asks a different question of the same samples. An error is not evidence a boundary broke,
 so it does not fail a run; it is equally not evidence the boundary **held**, so
-`copilotUnobservedBoundaries` blocks recording it. An `error` in the file would read as "unchanged"
-against every later error, leaving the absolute gate standing on an observation nobody made.
+`copilotUnobservedBoundaries` blocks recording a case where *no* sample observed adherence. An
+`error` in the file would read as "unchanged" against every later error, leaving the absolute gate
+standing on an observation nobody made. One sample of three throwing is not that case — sampling
+exists to survive a flaky environment, and the recording proceeds on the samples that landed.
 
 The bar is absolute because of the baseline's semantics. `diffAgainstBaseline` fails a run on
 `pass -> not-pass`, which is right for behaviour that drifts and wrong for a safety boundary: a

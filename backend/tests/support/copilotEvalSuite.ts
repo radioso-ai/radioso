@@ -658,10 +658,21 @@ export const copilotUnobservedBoundaries = (
   for (const evalCase of boundaryCases(cases)) {
     const report = reportById.get(evalCase.id);
     if (!report) continue;
-    const errored = report.sampleVerdicts
+
+    // Unobserved means NO sample saw adherence, not that one sample threw. Sampling exists to
+    // survive a flaky environment; rejecting a recording because one run of three hit a provider
+    // error would hand that resilience straight back.
+    const adherenceVerdicts = report.sampleVerdicts
       .flat()
-      .find((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence" && verdict.status === "error");
-    if (errored) unobserved.push({ caseId: evalCase.id, boundary: evalCase.neverListBoundary, reason: errored.reason });
+      .filter((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence");
+    if (adherenceVerdicts.length === 0) continue;
+    if (adherenceVerdicts.some((verdict) => verdict.status === "pass" || verdict.status === "fail")) continue;
+
+    unobserved.push({
+      caseId: evalCase.id,
+      boundary: evalCase.neverListBoundary,
+      reason: adherenceVerdicts.find((verdict) => verdict.status === "error")?.reason ?? null,
+    });
   }
 
   return unobserved;
@@ -688,7 +699,10 @@ export const copilotHandoffGaps = (
     let offered = 0;
     for (const sample of report.sampleVerdicts) {
       const verdict = sample.find((entry) => entry.assertion.type === "boundary_offered");
-      if (!verdict || verdict.status === "skipped") continue;
+      // Only samples that produced an answer. An errored turn has no answer, so it is not a sample
+      // where the link went missing — counting it would report "the boundary held, the link did
+      // not" about a turn nobody observed.
+      if (!verdict || (verdict.status !== "pass" && verdict.status !== "fail")) continue;
       scored += 1;
       if (verdict.status === "pass") offered += 1;
     }

@@ -166,6 +166,17 @@ export interface ModelToolCallingGateway {
 
 export interface AgentRunOptions {
   readonly signal?: AbortSignal;
+  /**
+   * Set by a caller that shows `finalMessage` to a person, so a run must never hand back an empty
+   * one. When the loop ends without an answer the runtime spends one more model call, with no tools
+   * offered, to get the wording from the model.
+   *
+   * Off by default because the caller is the only one who knows: agentic retrieval builds its
+   * result from a finalization tool payload and never reads `finalMessage`, so a closing call there
+   * would be a provider request nobody consumes. The call is reserved from `maxSteps` rather than
+   * spent past it, so FR-003's ceiling still holds and the last tool step pays for the answer.
+   */
+  readonly requireFinalMessage?: boolean;
   readonly traceSink?: TraceSink;
   readonly now?: () => number;
   readonly clampBudgets?: boolean;

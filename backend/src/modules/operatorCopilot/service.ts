@@ -286,6 +286,9 @@ export class OperatorCopilotService {
         {
           systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey, input.pageContext),
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
+          // The operator reads this answer, so a turn that gives up mid-loop still owes them a
+          // sentence rather than a blank card.
+          requireFinalMessage: true,
         },
         tools,
         COPILOT_BUDGETS,

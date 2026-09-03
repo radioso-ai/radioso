@@ -318,12 +318,42 @@ describe("DefaultAgentRuntime", () => {
         { say: "I could not do that; here is what I found." },
       ]);
 
-      const result = await runWith(gateway, [echoTool()]);
+      const result = await runWith(gateway, [echoTool()], AGENT_BUDGET_DEFAULTS, { requireFinalMessage: true });
 
       expect(result.terminatedReason).toBe("tool_validation_failed");
       expect(result.finalMessage).toBe("I could not do that; here is what I found.");
       // Offered no tools, so the closing request cannot start another tool loop.
       expect(gateway.calls.at(-1)?.toolSchemas).toEqual([]);
+    });
+
+    it("leaves the run blank for a caller that never reads the prose", async () => {
+      // Agentic retrieval builds its result from a finalization tool payload and the chunk registry
+      // and never touches finalMessage, so a closing call there is a provider request nobody reads.
+      // The caller knows whether prose matters; the runtime does not get to decide it does.
+      const gateway = makeGateway([
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+      ]);
+
+      const result = await runWith(gateway, [echoTool()]);
+
+      expect(result.finalMessage).toBe("");
+      expect(gateway.calls).toHaveLength(2);
+    });
+
+    it("keeps the closing call inside the step budget", async () => {
+      // FR-003 makes maxSteps a hard ceiling on model calls, so the answer has to be reserved from
+      // the budget rather than spent past it. A caller that wants prose trades its last tool step
+      // for it.
+      const gateway = makeGateway(
+        Array.from({ length: 8 }, () => ({ say: "", tools: [toolCall("echo", { text: "again" })] })),
+      );
+
+      const result = await runWith(gateway, [echoTool()], { ...AGENT_BUDGET_DEFAULTS, maxSteps: 3 }, { requireFinalMessage: true });
+
+      expect(result.terminatedReason).toBe("step_budget_exhausted");
+      expect(gateway.calls).toHaveLength(3);
+      expect(result.stepsTaken).toBe(3);
     });
 
     it("gives the closing call a step of its own so its usage is not deduplicated away", async () => {
@@ -336,7 +366,7 @@ describe("DefaultAgentRuntime", () => {
         { say: "could not do it" },
       ]);
 
-      await runWith(gateway, [echoTool()]);
+      await runWith(gateway, [echoTool()], AGENT_BUDGET_DEFAULTS, { requireFinalMessage: true });
 
       const indexes = gateway.calls.map((call) => call.stepIndex);
       expect(new Set(indexes).size).toBe(indexes.length);
@@ -348,7 +378,7 @@ describe("DefaultAgentRuntime", () => {
         { say: "still cannot", tools: [toolCall("ghost", { x: 1 }, "c2")] },
       ]);
 
-      const result = await runWith(gateway, [echoTool()]);
+      const result = await runWith(gateway, [echoTool()], AGENT_BUDGET_DEFAULTS, { requireFinalMessage: true });
 
       expect(result.finalMessage).toBe("still cannot");
       expect(gateway.calls).toHaveLength(2);
@@ -370,7 +400,7 @@ describe("DefaultAgentRuntime", () => {
         { systemPrompt: "s", userMessage: "u" },
         [echoTool()],
         { ...AGENT_BUDGET_DEFAULTS, maxWallTimeMs: 20 },
-        {},
+        { requireFinalMessage: true },
       );
 
       expect(result.terminatedReason).toBe("wall_time_exhausted");

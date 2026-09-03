@@ -330,6 +330,15 @@ const invokeTool = async (
 const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set(["wall_time_exhausted", "cancelled"]);
 
 /**
+ * Steps the tool loop may take. FR-003 makes `maxSteps` a hard ceiling on model calls, so a caller
+ * that requires an answer buys it out of that budget rather than on top of it: the loop stops one
+ * step early and the closing call spends what it left. Without the flag the ceiling is the budget,
+ * unchanged.
+ */
+const toolLoopMaxSteps = (ctx: RunContext): number =>
+  ctx.options.requireFinalMessage === true ? Math.max(1, ctx.budgets.maxSteps - 1) : ctx.budgets.maxSteps;
+
+/**
  * True when there is nothing to show the caller.
  *
  * The production gateway's protocol requires `text` to be empty whenever `tool_calls` is non-empty,
@@ -344,12 +353,12 @@ const isBlank = (message: string | null): boolean => message === null || message
  * explanation has to be built from.
  */
 const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<string | null> => {
-  // A step of its own. `TextRoutedToolCallingGateway` derives the usage idempotency key from
-  // `agent_step:${stepIndex}` and the recorder drops a duplicate, so reusing the failed step's
-  // index would bill this call as that one and lose its tokens. Nothing else requests at this
-  // index — the run is on its way out — and `stepsTaken` stays the count of loop steps, which is
-  // what the budget is about.
+  // A step of its own, counted. `TextRoutedToolCallingGateway` derives the usage idempotency key
+  // from `agent_step:${stepIndex}` and the recorder drops a duplicate, so reusing the failed step's
+  // index would bill this call as that one and lose its tokens. `toolLoopMaxSteps` reserved room
+  // for it, so counting it keeps `stepsTaken` equal to the model calls actually made.
   state.stepIndex += 1;
+  state.stepsTaken += 1;
   try {
     const response = await ctx.gatewayRequest({
       stepIndex: state.stepIndex,
@@ -396,7 +405,12 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
    * loop, is the difference between a dead turn and a plain one.
    */
   const finalize = async (reason: TerminatedReason): Promise<AgentRunResult> => {
-    if (isBlank(state.finalMessage) && !NO_CLOSING_CALL.has(reason) && !ctx.signal.aborted) {
+    if (
+      ctx.options.requireFinalMessage === true &&
+      isBlank(state.finalMessage) &&
+      !NO_CLOSING_CALL.has(reason) &&
+      !ctx.signal.aborted
+    ) {
       state.finalMessage = await requestClosingMessage(ctx, state);
     }
     emitTerminated(ctx.sink, reason, ctx.now);
@@ -431,7 +445,7 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
       throw err;
     }
 
-    if (state.stepIndex >= ctx.budgets.maxSteps) {
+    if (state.stepIndex >= toolLoopMaxSteps(ctx)) {
       return finalize("step_budget_exhausted");
     }
 

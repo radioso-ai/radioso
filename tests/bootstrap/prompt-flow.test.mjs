@@ -1,7 +1,64 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { PassThrough, Writable } from "node:stream";
 
-import { planQuestions, collectAnswers } from "../../scripts/bootstrap/prompt-flow.mjs";
+import { askHidden, planQuestions, collectAnswers } from "../../scripts/bootstrap/prompt-flow.mjs";
+
+test("askHidden hides TTY input through Node readline without platform commands", async () => {
+  const visibleWrites = [];
+  const input = { isTTY: true };
+  const output = {
+    write: (chunk) => {
+      visibleWrites.push(String(chunk));
+      return true;
+    },
+  };
+  let readlineOptions;
+  let closed = false;
+
+  const answer = await askHidden("Provider key: ", {
+    input,
+    output,
+    createInterface: (options) => {
+      readlineOptions = options;
+      return {
+        question: async () => {
+          options.output.write("secret-that-must-not-echo");
+          return "  secret-value  ";
+        },
+        close: () => {
+          closed = true;
+        },
+      };
+    },
+  });
+
+  assert.equal(answer, "secret-value");
+  assert.equal(readlineOptions.input, input);
+  assert.equal(readlineOptions.terminal, true);
+  assert.notEqual(readlineOptions.output, output);
+  assert.deepEqual(visibleWrites, ["Provider key: ", "\n"]);
+  assert.equal(closed, true);
+});
+
+test("askHidden reads a secret through the real Node TTY interface", async () => {
+  const input = new PassThrough();
+  input.isTTY = true;
+  input.setRawMode = () => input;
+  const visibleWrites = [];
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      visibleWrites.push(String(chunk));
+      callback();
+    },
+  });
+
+  const answerPromise = askHidden("Provider key: ", { input, output });
+  input.write("secret-value\n");
+
+  assert.equal(await answerPromise, "secret-value");
+  assert.equal(visibleWrites.join(""), "Provider key: \n");
+});
 
 test("planQuestions asks for provider key on fresh setup", () => {
   const questions = planQuestions({});

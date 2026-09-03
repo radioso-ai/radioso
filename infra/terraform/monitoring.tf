@@ -29,11 +29,19 @@ locals {
     var.action_dispatch_task_queue_name,
   ] : []
 
+  monitored_scheduler_job_names = var.deploy_services ? [
+    "${local.resource_name_prefix}-document-worker-recovery",
+    "${local.resource_name_prefix}-crawler-worker-recovery",
+    "${local.resource_name_prefix}-action-dispatch-recovery",
+    "${local.resource_name_prefix}-copilot-retention",
+  ] : []
+
   # Cloud Monitoring filters use one_of(); Cloud Logging filters use (a OR b). The two
   # query languages are not interchangeable, so each list is rendered for its consumer.
-  monitoring_service_filter = join(",", [for name in local.monitored_service_names : "\"${name}\""])
-  logging_service_filter    = join(" OR ", [for name in local.monitored_service_names : "\"${name}\""])
-  monitoring_queue_filter   = join(",", [for name in local.monitored_queue_names : "\"${name}\""])
+  monitoring_service_filter   = join(",", [for name in local.monitored_service_names : "\"${name}\""])
+  logging_service_filter      = join(" OR ", [for name in local.monitored_service_names : "\"${name}\""])
+  monitoring_queue_filter     = join(",", [for name in local.monitored_queue_names : "\"${name}\""])
+  monitoring_scheduler_filter = join(",", [for name in local.monitored_scheduler_job_names : "\"${name}\""])
 
   # coalesce() errors when every argument is null, which is the ordinary state before the
   # first apply creates the backend service. try() keeps that a null host — and so a
@@ -374,7 +382,7 @@ resource "google_monitoring_alert_policy" "task_queue_backlog" {
 }
 
 resource "google_monitoring_alert_policy" "scheduler_job_failures" {
-  count = local.monitoring_enabled && var.deploy_services ? 1 : 0
+  count = local.monitoring_enabled && length(local.monitored_scheduler_job_names) > 0 ? 1 : 0
 
   display_name = "${local.resource_name_prefix} scheduler job failures"
   combiner     = "OR"
@@ -387,6 +395,8 @@ resource "google_monitoring_alert_policy" "scheduler_job_failures" {
         "metric.type=\"cloudscheduler.googleapis.com/job/attempt_count\"",
         "resource.type=\"cloud_scheduler_job\"",
         "metric.label.\"response_code\"!=\"success\"",
+        "resource.label.\"job_id\"=one_of(${local.monitoring_scheduler_filter})",
+        "resource.label.\"location\"=\"${var.region}\"",
       ])
       comparison      = "COMPARISON_GT"
       threshold_value = var.monitoring_scheduler_failure_threshold

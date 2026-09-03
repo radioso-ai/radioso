@@ -36,6 +36,14 @@ const otelTraceSampler = emptyStringToUndefined(z.enum([
   "parentbased_traceidratio",
 ]));
 const otelLogsMinLevel = emptyStringToUndefined(z.enum(["trace", "debug", "info", "warn", "error", "fatal"]));
+const httpWebhookUrl = z.string().url().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}, { message: "must be an HTTP(S) URL" });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -58,7 +66,7 @@ const envSchema = z.object({
   OTEL_LOGS_MIN_LEVEL: otelLogsMinLevel,
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
   ERROR_SINKS: z.string().min(1).default("audit"),
-  OPS_EVENT_WEBHOOK_URL: emptyStringToUndefined(z.string().url()),
+  OPS_EVENT_WEBHOOK_URL: emptyStringToUndefined(httpWebhookUrl),
   OPS_EVENT_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(16)),
   OPS_EVENT_WEBHOOK_EVENTS: emptyStringToUndefined(z.string().min(1)),
   OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: z.enum(["info", "warn", "error"]).default("error"),

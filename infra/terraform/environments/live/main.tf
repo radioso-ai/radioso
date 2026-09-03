@@ -259,6 +259,7 @@ module "radioso" {
   ops_event_webhook_secret                  = var.ops_event_webhook_secret
   ops_event_webhook_events                  = var.ops_event_webhook_events
   ops_event_webhook_min_error_severity      = var.ops_event_webhook_min_error_severity
+  ops_event_webhook_queue_limit             = var.ops_event_webhook_queue_limit
 }
 
 output "frontend_url" {

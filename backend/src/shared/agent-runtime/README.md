@@ -66,6 +66,22 @@ global state, no shared memory across concurrent calls.
 forwards events to an optional `traceSink`. Both share termination and
 budget semantics.
 
+## Closing message
+
+A caller that shows `finalMessage` to a person sets `requireFinalMessage`. When the loop ends
+without an answer — which it does whenever the model was calling tools rather than talking, since
+`finalMessage` only ever holds the last assistant message — the runtime spends one more model call
+with no tools offered and takes the wording from the model.
+
+The call is **reserved from `maxSteps`**, not spent past it, so FR-003's ceiling still holds: the
+tool loop stops one step early and the answer costs the step it left. It is skipped when the run is
+out of wall time or cancelled, an abort during it becomes the run's outcome, and any other failure
+is suppressed but emitted as `model_call_failed` so a blank turn is distinguishable from a failed
+recovery.
+
+Off by default. Agentic retrieval builds its result from a finalization tool payload and never reads
+`finalMessage`, so a closing call there would be a provider request nobody consumes.
+
 ## Tests
 
 Focused starting point:

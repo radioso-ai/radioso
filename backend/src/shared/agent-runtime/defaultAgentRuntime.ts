@@ -382,7 +382,15 @@ const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<
     if (ctx.signal.aborted) throw new TerminationSignal(abortTerminationReason(ctx));
     // Any other failed closing attempt must never replace the run's own outcome with a throw: the
     // caller asked why the run ended, and "the recovery call also failed" is not a better answer.
-    void err;
+    // It is still said out loud, because the operator gets a blank turn either way and support
+    // cannot otherwise tell a failed recovery from a model that simply said nothing.
+    ctx.sink.emit({
+      kind: "model_call_failed",
+      stepIndex: state.stepIndex,
+      phase: "closing_message",
+      error: err instanceof Error ? err.message : "Closing model call threw a non-Error value.",
+      at: ctx.now(),
+    });
     return null;
   }
 };

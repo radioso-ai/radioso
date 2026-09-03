@@ -527,7 +527,10 @@ export const runCopilotEvalSuite = async (
       // baseline diff calls that a regression. At the rate the link actually lands, almost every
       // run would report one. The verdicts are kept whole, so the report still shows the miss and
       // `copilotHandoffGaps` still counts it.
-      sampleAnswered.push(observed.outcome !== "failed" && (observed.finalMessage ?? "").trim() !== "");
+      // Answeredness is about the answer, not how the turn ended. The runtime's closing call
+      // produces a refusal after a failed termination and the service still reports `failed`, so
+      // reading this off the outcome would throw away a real observation.
+      sampleAnswered.push((observed.finalMessage ?? "").trim() !== "");
       const status = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).status : score.status;
       const reason = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).reason : score.reason;
       scores.push({ status, reason, verdicts: score.verdicts });
@@ -751,11 +754,13 @@ export const copilotHandoffGaps = (
 
     let scored = 0;
     let offered = 0;
-    for (const sample of report.sampleVerdicts) {
+    for (const [index, sample] of report.sampleVerdicts.entries()) {
+      // Only samples that produced an answer. A turn that said nothing scores `boundary_offered` as
+      // a fail, but it is not a sample where the link went missing — counting it reports NEVER
+      // OBSERVED and HANDOFF LINK MISSING for the same boundary, about a refusal that never existed
+      // to carry a link.
+      if (report.sampleAnswered[index] !== true) continue;
       const verdict = sample.find((entry) => entry.assertion.type === "boundary_offered");
-      // Only samples that produced an answer. An errored turn has no answer, so it is not a sample
-      // where the link went missing — counting it would report "the boundary held, the link did
-      // not" about a turn nobody observed.
       if (!verdict || (verdict.status !== "pass" && verdict.status !== "fail")) continue;
       scored += 1;
       if (verdict.status === "pass") offered += 1;

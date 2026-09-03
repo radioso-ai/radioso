@@ -240,9 +240,13 @@ const SEED_ANSWER = "Shipping to Italy is nine euro.";
  * path by design (`setTriageState` only accepts `resolved`/`dismissed`), but a feedback event newer
  * than the triage row is exposed as open again, so a fresh complaint is the restore.
  *
- * The comment has to differ each time. `AnswerFeedbackService.upsert` guards its conflict update
- * with `IS DISTINCT FROM` across value, comment, and actor, so re-writing the identical complaint
- * updates nothing at all, leaves `updated_at` behind the triage row, and restores nothing.
+ * The comment has to differ from whatever is already there, every single time.
+ * `AnswerFeedbackService.upsert` guards its conflict update with `IS DISTINCT FROM` across value,
+ * comment, and actor, so writing the same text again updates nothing at all, leaves `updated_at`
+ * behind the triage row, and restores nothing. A per-sample suffix is not enough: with `--samples 2`
+ * every case writes the same `(1)`, so the first case to restore sets it and the case that actually
+ * consumed the signal later writes an identical value and restores nothing. The counter is
+ * therefore run-global rather than per-case or per-sample.
  *
  * Only ever called for a workspace this run created and seeded. Writing into an operator's real
  * workspace between samples would be the same surprise seeding is careful to avoid, so a
@@ -252,14 +256,14 @@ const restoreSeededQualitySignal = async (
   deps: Deps,
   target: EvalTarget,
   assistantMessageId: string,
-  sampleIndex: number,
+  restoreCount: number,
 ): Promise<void> => {
   await new AnswerFeedbackService(deps.connectorDb.kysely).upsert({
     workspaceId: target.workspaceId,
     agentId: target.agentId,
     assistantMessageId,
     value: "down",
-    comment: `${SEED_COMPLAINT} (${sampleIndex})`,
+    comment: `${SEED_COMPLAINT} (${restoreCount})`,
     actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
   });
 };
@@ -473,6 +477,7 @@ const main = async (): Promise<void> => {
       }
     }
 
+    let restoreCount = 0;
     const { reports, outcomes } = await runCopilotEvalSuite(
       cases,
       {
@@ -497,7 +502,12 @@ const main = async (): Promise<void> => {
         passThreshold: flags.passThreshold,
         // Only for a workspace this run seeded; see restoreSeededQualitySignal.
         ...(seeded
-          ? { restoreBetweenSamples: (_evalCase: CopilotEvalCase, sampleIndex: number) => restoreSeededQualitySignal(deps, resolved, seeded.assistantMessageId, sampleIndex) }
+          ? {
+            restoreBetweenSamples: () => {
+              restoreCount += 1;
+              return restoreSeededQualitySignal(deps, resolved, seeded.assistantMessageId, restoreCount);
+            },
+          }
           : {}),
       },
     );

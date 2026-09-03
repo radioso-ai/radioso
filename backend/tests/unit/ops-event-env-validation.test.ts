@@ -16,6 +16,16 @@ describe("ops event webhook env validation", () => {
     expect(() => getEnv(baseEnv())).not.toThrow();
   });
 
+  it("treats empty optional ops webhook settings as unset so .env.example boots", () => {
+    const env = getEnv(baseEnv({
+      OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: "",
+      OPS_EVENT_WEBHOOK_QUEUE_LIMIT: "",
+    }));
+
+    expect(env.OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY).toBe("error");
+    expect(env.OPS_EVENT_WEBHOOK_QUEUE_LIMIT).toBe(500);
+  });
+
   it("rejects an ops_webhook sink with no destination", () => {
     expect(() => getEnv(baseEnv({
       PRODUCT_ANALYTICS_SINKS: "audit,ops_webhook",

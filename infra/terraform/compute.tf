@@ -113,14 +113,14 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
-        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_min_error_severity]
+        for_each = var.ops_event_webhook_url != null ? [var.ops_event_webhook_min_error_severity] : []
         content {
           name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_queue_limit]
+        for_each = var.ops_event_webhook_url != null ? [var.ops_event_webhook_queue_limit] : []
         content {
           name  = "OPS_EVENT_WEBHOOK_QUEUE_LIMIT"
           value = tostring(env.value)
@@ -789,14 +789,14 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
-        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_min_error_severity]
+        for_each = var.ops_event_webhook_url != null ? [var.ops_event_webhook_min_error_severity] : []
         content {
           name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_queue_limit]
+        for_each = var.ops_event_webhook_url != null ? [var.ops_event_webhook_queue_limit] : []
         content {
           name  = "OPS_EVENT_WEBHOOK_QUEUE_LIMIT"
           value = tostring(env.value)
@@ -1175,14 +1175,14 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
         }
       }
       dynamic "env" {
-        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_min_error_severity]
+        for_each = var.ops_event_webhook_url != null ? [var.ops_event_webhook_min_error_severity] : []
         content {
           name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
           value = env.value
         }
       }
       dynamic "env" {
-        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_queue_limit]
+        for_each = var.ops_event_webhook_url != null ? [var.ops_event_webhook_queue_limit] : []
         content {
           name  = "OPS_EVENT_WEBHOOK_QUEUE_LIMIT"
           value = tostring(env.value)

@@ -139,6 +139,7 @@ resource "google_monitoring_alert_policy" "backend_unreachable" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "The backend stopped answering /health. Check Cloud Run revision health and Cloud SQL availability first. ${local.alert_documentation}"
   }
@@ -176,6 +177,7 @@ resource "google_monitoring_alert_policy" "cloud_run_server_errors" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "A Cloud Run service is returning 5xx responses above ${var.monitoring_server_error_rate_threshold}/s averaged over five minutes. ${local.alert_documentation}"
   }
@@ -210,6 +212,7 @@ resource "google_monitoring_alert_policy" "backend_latency" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "Backend p95 latency exceeded ${var.monitoring_backend_latency_p95_ms}ms for five minutes. Chat turns time out well before an operator notices them individually. ${local.alert_documentation}"
   }
@@ -277,6 +280,7 @@ resource "google_monitoring_alert_policy" "application_error_rate" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "More than ${var.monitoring_error_log_threshold} error-level log lines in five minutes. Open Cloud Logging for the named service and read the stack traces. ${local.alert_documentation}"
   }
@@ -340,6 +344,7 @@ resource "google_monitoring_alert_policy" "cloudsql_saturation" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "The Cloud SQL instance backing this stack is saturated. A starved instance answers slowly enough that chat turns hit their statement timeout and die without an application-level error. Raise db_tier if this is sustained rather than spiky. ${local.alert_documentation}"
   }
@@ -376,6 +381,7 @@ resource "google_monitoring_alert_policy" "task_queue_backlog" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "A Cloud Tasks queue has held more than ${var.monitoring_queue_depth_threshold} tasks for fifteen minutes. Documents stop being indexed and conversation actions stop being delivered while this is true, with no user-visible error. ${local.alert_documentation}"
   }
@@ -412,6 +418,7 @@ resource "google_monitoring_alert_policy" "scheduler_job_failures" {
   }
 
   notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
   documentation {
     content = "A Cloud Scheduler job is failing. These jobs are the recovery path for document processing, website crawls, and conversation-action delivery, so a silent failure here shows up later as a stalled queue. ${local.alert_documentation}"
   }

@@ -9,6 +9,8 @@ import {
 
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+const emptyStringToDefault = <T extends z.ZodTypeAny>(schema: T, defaultValue: z.input<T>) =>
+  z.preprocess((value) => (value === "" ? undefined : value), schema.default(defaultValue));
 
 const booleanish = (defaultValue: boolean) =>
   z.preprocess((value) => {
@@ -69,8 +71,8 @@ const envSchema = z.object({
   OPS_EVENT_WEBHOOK_URL: emptyStringToUndefined(httpWebhookUrl),
   OPS_EVENT_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(16)),
   OPS_EVENT_WEBHOOK_EVENTS: emptyStringToUndefined(z.string().min(1)),
-  OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: z.enum(["info", "warn", "error"]).default("error"),
-  OPS_EVENT_WEBHOOK_QUEUE_LIMIT: z.coerce.number().int().positive().default(500),
+  OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: emptyStringToDefault(z.enum(["info", "warn", "error"]), "error"),
+  OPS_EVENT_WEBHOOK_QUEUE_LIMIT: emptyStringToDefault(z.coerce.number().int().positive(), 500),
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
   ...realtimeEnvShape,
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),

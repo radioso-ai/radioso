@@ -37,11 +37,11 @@ export const createEnterpriseObservabilityApplicationModule = (
   register(context) {
     const productAnalyticsSinks = parseConfiguredSinks(env.PRODUCT_ANALYTICS_SINKS, {
       envName: "PRODUCT_ANALYTICS_SINKS",
-      supportedSinks: ["audit", "posthog"],
+      supportedSinks: ["audit", "ops_webhook", "posthog"],
     });
     const errorSinks = parseConfiguredSinks(env.ERROR_SINKS, {
       envName: "ERROR_SINKS",
-      supportedSinks: ["audit", "sentry", "posthog"],
+      supportedSinks: ["audit", "ops_webhook", "sentry", "posthog"],
     });
     const posthogCredentials = productAnalyticsSinks.has("posthog") || errorSinks.has("posthog")
       ? {

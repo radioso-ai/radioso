@@ -4,6 +4,7 @@ locals {
   slack_oauth_client_secret_configured = nonsensitive(try(length(trimspace(var.slack_oauth_client_secret)) > 0, false))
   slack_signing_secret_configured      = nonsensitive(try(length(trimspace(var.slack_signing_secret)) > 0, false))
   ee_usage_admin_token_configured      = nonsensitive(try(length(trimspace(var.ee_usage_admin_token)) > 0, false))
+  ops_event_webhook_secret_configured  = nonsensitive(try(length(trimspace(var.ops_event_webhook_secret)) > 0, false))
 
   secret_values = merge(
     {
@@ -37,6 +38,9 @@ locals {
     } : {},
     local.ee_usage_admin_token_configured ? {
       "ee-usage-admin-token" = var.ee_usage_admin_token
+    } : {},
+    local.ops_event_webhook_secret_configured ? {
+      "ops-event-webhook-secret" = var.ops_event_webhook_secret
     } : {},
   )
 
@@ -72,6 +76,9 @@ locals {
     } : {},
     local.ee_usage_admin_token_configured ? {
       "ee-usage-admin-token" = true
+    } : {},
+    local.ops_event_webhook_secret_configured ? {
+      "ops-event-webhook-secret" = true
     } : {},
   ))))
 }

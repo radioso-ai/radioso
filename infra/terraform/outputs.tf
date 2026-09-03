@@ -87,3 +87,18 @@ output "worker_crawl_task_queue_name" {
   description = "Cloud Tasks queue name used for website crawl dispatch"
   value       = try(google_cloud_tasks_queue.website_crawls[0].name, null)
 }
+
+output "monitoring_notification_channel_ids" {
+  description = "Notification channels alert policies deliver to, including any supplied outside Terraform."
+  value       = local.notification_channel_ids
+}
+
+output "backend_uptime_check_id" {
+  description = "Cloud Monitoring uptime check watching the backend health endpoint. Null when monitoring is disabled."
+  value       = try(google_monitoring_uptime_check_config.backend[0].uptime_check_id, null)
+}
+
+output "application_error_log_metric_name" {
+  description = "Log-based metric counting error-level application logs across this stack's Cloud Run services. Null when monitoring is disabled."
+  value       = try(google_logging_metric.application_errors[0].name, null)
+}

@@ -233,12 +233,14 @@ export const createDefaultAnalyticsSinks = (input: {
   auditService: AuditService;
   env: Pick<Env, "PRODUCT_ANALYTICS_SINKS">;
   metricsRegistry: MetricsRegistry | null;
+  opsEventSink?: ProductAnalyticsSink | null;
 }): ProductAnalyticsSink[] => buildAnalyticsSinks(input);
 
 export const createDefaultErrorSinks = (input: {
   auditService: AuditService;
   env: Pick<Env, "ERROR_SINKS">;
   metricsRegistry: MetricsRegistry | null;
+  opsEventSink?: ErrorSink | null;
 }): ErrorSink[] => buildErrorSinks(input);
 
 export const createDefaultDocumentStorage = (env: Pick<Env,

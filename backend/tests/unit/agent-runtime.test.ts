@@ -303,6 +303,60 @@ describe("DefaultAgentRuntime", () => {
       expect(result.terminatedReason).toBe("tool_validation_failed");
     });
 
+    it("asks for a closing answer when the run gave up mid-turn without one", async () => {
+      // Measured live: Ray reached for two tools that do not exist, then a tool literally named
+      // "none", and the run terminated with finalMessage null — the operator got a blank turn.
+      // Every non-completed termination has this shape whenever the model was calling tools rather
+      // than talking, because finalMessage only ever holds the last assistant message.
+      const gateway = makeGateway([
+        { say: null as unknown as string, tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: null as unknown as string, tools: [toolCall("ghost", { x: 1 }, "c2")] },
+        { say: "I could not do that; here is what I found." },
+      ]);
+
+      const result = await runWith(gateway, [echoTool()]);
+
+      expect(result.terminatedReason).toBe("tool_validation_failed");
+      expect(result.finalMessage).toBe("I could not do that; here is what I found.");
+      // Offered no tools, so the closing request cannot start another tool loop.
+      expect(gateway.calls.at(-1)?.toolSchemas).toEqual([]);
+    });
+
+    it("keeps the answer the model already gave rather than spending a closing call", async () => {
+      const gateway = makeGateway([
+        { say: "try ghost", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "still cannot", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+      ]);
+
+      const result = await runWith(gateway, [echoTool()]);
+
+      expect(result.finalMessage).toBe("still cannot");
+      expect(gateway.calls).toHaveLength(2);
+    });
+
+    it("keeps a blank turn rather than a hung one when the run is already out of time", async () => {
+      // Wall time and cancellation are the two reasons a closing call is wrong: the run is out of
+      // budget by definition, so one more model call is the opposite of what the caller asked for.
+      const hangingGateway: ModelToolCallingGateway = {
+        async request(req) {
+          return new Promise((resolve, reject) => {
+            req.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          });
+        },
+      };
+      const runtime = new DefaultAgentRuntime({ gateway: hangingGateway });
+
+      const result = await runtime.run(
+        { systemPrompt: "s", userMessage: "u" },
+        [echoTool()],
+        { ...AGENT_BUDGET_DEFAULTS, maxWallTimeMs: 20 },
+        {},
+      );
+
+      expect(result.terminatedReason).toBe("wall_time_exhausted");
+      expect(result.finalMessage).toBeNull();
+    });
+
     it("rejects unparseable JSON arguments as invalid_arguments", async () => {
       const gateway = makeGateway([
         { say: "garbled", tools: [{ callId: "c1", toolName: "echo", rawArguments: "{not json" }] },

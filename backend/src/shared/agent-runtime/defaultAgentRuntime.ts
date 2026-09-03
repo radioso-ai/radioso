@@ -323,6 +323,41 @@ const invokeTool = async (
   state.transcript.push(toolSuccessTranscriptEntry(call, output));
 };
 
+/**
+ * Terminations that must not spend another model call: the run is out of its wall-time budget, or
+ * the caller cancelled. Asking for a closing answer there is the opposite of what was asked for.
+ */
+const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set(["wall_time_exhausted", "cancelled"]);
+
+/**
+ * Asks the model to answer from the transcript it already has, with no tools offered. The wording
+ * is the model's: the transcript carries the question and every tool error, which is what an
+ * explanation has to be built from.
+ */
+const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<string | null> => {
+  try {
+    const response = await ctx.gatewayRequest({
+      stepIndex: state.stepIndex,
+      systemPrompt: ctx.input.systemPrompt,
+      transcript: state.transcript,
+      toolSchemas: [],
+      signal: ctx.signal,
+      usageContext: ctx.options.usageContext,
+    });
+    ctx.sink.emit({
+      kind: "model_message",
+      stepIndex: state.stepIndex,
+      content: response.assistantMessage,
+      at: ctx.now(),
+    });
+    return response.assistantMessage;
+  } catch {
+    // A failed closing attempt must never replace the run's own outcome with a throw: the caller
+    // asked why the run ended, and "the recovery call also failed" is not a better answer.
+    return null;
+  }
+};
+
 const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
   const startedAt = ctx.now();
   const state: RunState = {
@@ -335,7 +370,20 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
     finalMessage: null,
   };
 
-  const finalize = (reason: TerminatedReason): AgentRunResult => {
+  /**
+   * Ends the run, and refuses to end it blank.
+   *
+   * `finalMessage` only ever holds the last assistant message, so any termination reached while the
+   * model was calling tools rather than talking returns null — the caller renders nothing at all.
+   * Measured live, that is what a Ray turn looked like after it reached for two tools that do not
+   * exist and then one literally named "none": the operator got a blank answer to a question that
+   * deserved "I could not do that". One more call, with no tools offered so it cannot start another
+   * loop, is the difference between a dead turn and a plain one.
+   */
+  const finalize = async (reason: TerminatedReason): Promise<AgentRunResult> => {
+    if (state.finalMessage === null && !NO_CLOSING_CALL.has(reason) && !ctx.signal.aborted) {
+      state.finalMessage = await requestClosingMessage(ctx, state);
+    }
     emitTerminated(ctx.sink, reason, ctx.now);
     return {
       terminatedReason: reason,

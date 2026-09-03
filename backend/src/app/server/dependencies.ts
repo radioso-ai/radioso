@@ -310,6 +310,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     env,
     organizationCreationGuard,
     onAccountCreated,
+    productAnalytics: infrastructure.productAnalyticsService,
     repositories,
     workspaceService: workspace.workspaceService,
   });

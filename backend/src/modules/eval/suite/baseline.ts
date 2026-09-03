@@ -113,30 +113,40 @@ export const diffAgainstBaseline = (
       continue;
     }
     const previous = baselineCaseStatus(entry);
+    const previousRate = baselineCaseRate(entry);
+    const wouldRegress =
+      isRegression(previous, outcome.status) ||
+      (previousRate !== null && outcome.passRate !== undefined && outcome.passRate < previousRate - tolerance);
+
+    // A run that sampled less deeply than the baseline cannot support ANY regression claim, whether
+    // the status moved or only the rate did. The bare smoke run is one sample, and a case that
+    // passes seven times in eight fails that single sample often enough to blame unchanged code —
+    // the same defect sampling exists to remove. Surfaced as under-sampled so it reads as "re-run
+    // deeper" rather than as "unchanged".
+    const baselineSamples = baselineCaseSamples(entry);
+    if (
+      wouldRegress &&
+      baselineSamples !== null &&
+      outcome.samples !== undefined &&
+      outcome.samples < baselineSamples
+    ) {
+      diff.underSampled.push({
+        caseId: outcome.caseId,
+        name: outcome.name,
+        from: previous,
+        to: outcome.status,
+        samples: outcome.samples,
+        baselineSamples,
+      });
+      continue;
+    }
+
     if (isRegression(previous, outcome.status)) {
-      // A run that sampled less deeply than the baseline cannot support a regression claim. The
-      // bare smoke run is one sample, and a case that passes seven times in eight fails that single
-      // sample often enough to report a regression against unchanged code — the same defect
-      // sampling exists to remove. Surfaced as under-sampled so it reads as "re-run deeper", not as
-      // "unchanged".
-      const baselineSamples = baselineCaseSamples(entry);
-      if (baselineSamples !== null && outcome.samples !== undefined && outcome.samples < baselineSamples) {
-        diff.underSampled.push({
-          caseId: outcome.caseId,
-          name: outcome.name,
-          from: previous,
-          to: outcome.status,
-          samples: outcome.samples,
-          baselineSamples,
-        });
-        continue;
-      }
       diff.regressions.push({ caseId: outcome.caseId, name: outcome.name, from: previous, to: outcome.status });
     } else if (isFix(previous, outcome.status)) {
       diff.fixes.push({ caseId: outcome.caseId, name: outcome.name, from: previous, to: outcome.status });
     } else {
       diff.unchanged.push(outcome);
-      const previousRate = baselineCaseRate(entry);
       if (previousRate !== null && outcome.passRate !== undefined && outcome.passRate < previousRate - tolerance) {
         diff.rateRegressions.push({ caseId: outcome.caseId, name: outcome.name, from: previousRate, to: outcome.passRate });
       }

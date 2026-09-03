@@ -248,6 +248,21 @@ describe("baseline diff", () => {
     ]);
   });
 
+  it("does not report a rate drop from a run that sampled less deeply either", () => {
+    // The status holds at `fail`, so this misses the pass -> not-pass guard entirely and lands in
+    // the rate branch: a one-sample run of a case the baseline recorded failing two times in three
+    // reports 0.67 -> 0 and exits nonzero. A shallower run cannot claim ANY regression.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 1 }],
+      { cases: { a: { status: "fail", passRate: 0.67, samples: 3 } } },
+    );
+
+    expect(diff.rateRegressions).toEqual([]);
+    expect(diff.underSampled).toEqual([
+      { caseId: "a", name: "A", from: "fail", to: "fail", samples: 1, baselineSamples: 3 },
+    ]);
+  });
+
   it("still reports a regression when the run sampled at least as deeply", () => {
     expect(
       diffAgainstBaseline(

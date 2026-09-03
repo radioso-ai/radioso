@@ -305,12 +305,16 @@ describe("DefaultAgentRuntime", () => {
 
     it("asks for a closing answer when the run gave up mid-turn without one", async () => {
       // Measured live: Ray reached for two tools that do not exist, then a tool literally named
-      // "none", and the run terminated with finalMessage null — the operator got a blank turn.
-      // Every non-completed termination has this shape whenever the model was calling tools rather
-      // than talking, because finalMessage only ever holds the last assistant message.
+      // "none", and the run terminated with no answer — the operator got a blank turn. Every
+      // non-completed termination has this shape whenever the model was calling tools rather than
+      // talking, because finalMessage only ever holds the last assistant message.
+      //
+      // The empty strings are the production contract, not a convenience: TextRoutedToolCallingGateway
+      // requires "text" to be empty when tool_calls is non-empty and coerces a missing one to "",
+      // so a null check alone would never fire against a real provider.
       const gateway = makeGateway([
-        { say: null as unknown as string, tools: [toolCall("ghost", { x: 1 }, "c1")] },
-        { say: null as unknown as string, tools: [toolCall("ghost", { x: 1 }, "c2")] },
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "   ", tools: [toolCall("ghost", { x: 1 }, "c2")] },
         { say: "I could not do that; here is what I found." },
       ]);
 
@@ -320,6 +324,22 @@ describe("DefaultAgentRuntime", () => {
       expect(result.finalMessage).toBe("I could not do that; here is what I found.");
       // Offered no tools, so the closing request cannot start another tool loop.
       expect(gateway.calls.at(-1)?.toolSchemas).toEqual([]);
+    });
+
+    it("gives the closing call a step of its own so its usage is not deduplicated away", async () => {
+      // TextRoutedToolCallingGateway derives the usage idempotency key from `agent_step:${stepIndex}`
+      // and the recorder drops a duplicate, so reusing the failed step's index would bill the
+      // closing call as the one before it and lose its tokens.
+      const gateway = makeGateway([
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+        { say: "could not do it" },
+      ]);
+
+      await runWith(gateway, [echoTool()]);
+
+      const indexes = gateway.calls.map((call) => call.stepIndex);
+      expect(new Set(indexes).size).toBe(indexes.length);
     });
 
     it("keeps the answer the model already gave rather than spending a closing call", async () => {

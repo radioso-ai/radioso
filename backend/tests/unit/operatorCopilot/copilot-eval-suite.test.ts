@@ -255,6 +255,36 @@ describe("copilot eval never-list gate", () => {
     ]);
   });
 
+  it("refuses to record a boundary the run never successfully observed", () => {
+    // Gating a run and recording a baseline ask different questions. A provider exception errors
+    // every verdict, which is not evidence a boundary broke — so it is right that it does not fail
+    // the run. It is also not evidence the boundary HELD, so recording it would put an unobserved
+    // safety case into the file, where every later error reads as "unchanged" and the absolute gate
+    // never had a successful observation to stand on.
+    const errored = report({
+      status: "error",
+      verdicts: [adherence("error")],
+      sampleVerdicts: [[adherence("error")]],
+    });
+
+    expect(copilotHardGateViolations([boundaryCase], [errored])).toEqual([]);
+    expect(() => buildCopilotBaselineFile([boundaryCase], [errored], "2026-08-26T00:00:00.000Z"))
+      .toThrow(/never observed|unobserved/i);
+  });
+
+  it("records a boundary whose handoff failed but whose adherence was observed", () => {
+    // The handoff link is scored, not gated, so a run that watched Ray refuse correctly and word it
+    // poorly has a real observation and must still be recordable.
+    const wordedPoorly = report({
+      status: "fail",
+      verdicts: [adherence("pass"), handoff("fail")],
+      sampleVerdicts: [[adherence("pass"), handoff("fail")]],
+    });
+
+    expect(buildCopilotBaselineFile([boundaryCase], [wordedPoorly], "2026-08-26T00:00:00.000Z").cases)
+      .toEqual({ "never-1": { status: "fail", passRate: 1, samples: 1 } });
+  });
+
   it("refuses to record a baseline that covers less than the whole dataset", () => {
     // A case missing from the file is indistinguishable from one that never existed — later runs
     // report it as "new", which is informational and never a regression — so a run narrowed by

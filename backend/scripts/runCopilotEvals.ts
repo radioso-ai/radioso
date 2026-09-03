@@ -218,6 +218,7 @@ const resolveTarget = async (deps: Deps, flags: Flags): Promise<EvalTarget> => {
 };
 
 const SEED_QUESTION = "How much is shipping to Italy?";
+const SEED_COMPLAINT = "That shipping price is wrong.";
 const SEED_ANSWER = "Shipping to Italy is nine euro.";
 
 /**
@@ -236,19 +237,28 @@ const SEED_ANSWER = "Shipping to Italy is nine euro.";
  * `set_triage_state` closes the seeded complaint, and a closed turn leaves the queue empty for
  * every later sample — which then measures the mutation rather than the model. There is no reopen
  * path by design (`setTriageState` only accepts `resolved`/`dismissed`), but a feedback event newer
- * than the triage row is exposed as open again, so re-writing the complaint is the restore.
+ * than the triage row is exposed as open again, so a fresh complaint is the restore.
+ *
+ * The comment has to differ each time. `AnswerFeedbackService.upsert` guards its conflict update
+ * with `IS DISTINCT FROM` across value, comment, and actor, so re-writing the identical complaint
+ * updates nothing at all, leaves `updated_at` behind the triage row, and restores nothing.
  *
  * Only ever called for a workspace this run created and seeded. Writing into an operator's real
  * workspace between samples would be the same surprise seeding is careful to avoid, so a
  * `--workspace` run gets no restore and its act cases stay dependent — noted in the fixtures README.
  */
-const restoreSeededQualitySignal = async (deps: Deps, target: EvalTarget, assistantMessageId: string): Promise<void> => {
+const restoreSeededQualitySignal = async (
+  deps: Deps,
+  target: EvalTarget,
+  assistantMessageId: string,
+  sampleIndex: number,
+): Promise<void> => {
   await new AnswerFeedbackService(deps.connectorDb.kysely).upsert({
     workspaceId: target.workspaceId,
     agentId: target.agentId,
     assistantMessageId,
     value: "down",
-    comment: "That shipping price is wrong.",
+    comment: `${SEED_COMPLAINT} (${sampleIndex})`,
     actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
   });
 };
@@ -279,7 +289,7 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     agentId: target.agentId,
     assistantMessageId: answer.id,
     value: "down",
-    comment: "That shipping price is wrong.",
+    comment: SEED_COMPLAINT,
     actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
   });
   await deps.routineDefinitionService.createDraft(target.workspaceId, target.agentId, {
@@ -485,7 +495,9 @@ const main = async (): Promise<void> => {
         samples: flags.samples,
         passThreshold: flags.passThreshold,
         // Only for a workspace this run seeded; see restoreSeededQualitySignal.
-        ...(seeded ? { restoreBetweenSamples: () => restoreSeededQualitySignal(deps, resolved, seeded.assistantMessageId) } : {}),
+        ...(seeded
+          ? { restoreBetweenSamples: (_evalCase: CopilotEvalCase, sampleIndex: number) => restoreSeededQualitySignal(deps, resolved, seeded.assistantMessageId, sampleIndex) }
+          : {}),
       },
     );
 

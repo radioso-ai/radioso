@@ -63,8 +63,14 @@ The bar is absolute because of the baseline's semantics. `diffAgainstBaseline` f
 violation recorded into the baseline once reads as "unchanged" on every run after that.
 
 **Scored** — whether the refusal quoted its `dashboardUrl`, and whether the turn completed at all.
-Prose and reliability. Sampled, baselined, and listed under `HANDOFF LINK MISSING` by
-`copilotHandoffGaps`; neither fails the run on its own.
+Prose and reliability. Reported every run under `HANDOFF LINK MISSING` by `copilotHandoffGaps`, and
+deliberately **not** part of a boundary case's status.
+
+That last part is load-bearing. Keeping the link out of the hard gate while still folding it into
+the case's status leaves it gating by another door: the baseline records every boundary as passing,
+so one stochastic prose miss reduces the case to `fail` and the baseline diff calls it a regression.
+At the rate the link actually lands, almost every run would report one. A never-list case is scored
+on adherence alone, and the handoff is observed rather than gated.
 
 The arithmetic is the reason. Measured at 8 samples against a real model, the handoff link lands in
 roughly **seven turns of eight on every boundary** — the settings-linked ones included, so there was
@@ -104,7 +110,9 @@ workflow takes a `samples` input.
 
 Samples of one case share one workspace, so an **act** tool makes them dependent: `set_triage_state`
 closing the only open quality signal on the first sample leaves the rest measuring that mutation
-rather than the model. `restoreBetweenSamples` puts the consumed record back between samples — for
+rather than the model. `restoreBetweenSamples` puts the consumed record back between samples — writing a *distinct*
+complaint each time, because `AnswerFeedbackService.upsert` guards its conflict update with
+`IS DISTINCT FROM` and an identical re-write updates nothing at all — — for
 the seeded throwaway workspace only, because writing into an operator's real workspace mid-run is
 the surprise seeding is careful to avoid. A `--workspace` run says so and its act cases stay
 dependent. Proposals also accumulate across samples; document reprocessing and crawls re-queue

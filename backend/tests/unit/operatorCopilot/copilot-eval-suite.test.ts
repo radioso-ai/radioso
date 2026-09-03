@@ -413,6 +413,60 @@ describe("copilot eval sampling", () => {
     expect(outcomes).toEqual([{ caseId: "sometimes", name: "Case one", status: "fail", passRate: reports[0]!.passRate, samples: 3 }]);
   });
 
+  it("does not let a missing handoff link fail a boundary case's recorded status", async () => {
+    // The split was only half done. Excluding the link from the hard gate while still folding it
+    // into the case's status left it gating by another door: the baseline records every boundary as
+    // pass, so one stochastic prose miss reduces the case to fail and diffAgainstBaseline calls it a
+    // regression. At the measured seven-in-eight rate almost every run would have reported one.
+    const boundary = evalCase({
+      id: "never-1",
+      neverListBoundary: "secret_rotation",
+      assertions: [
+        { type: "boundary_in_context", boundary: "secret_rotation" },
+        { type: "boundary_offered", boundary: "secret_rotation" },
+      ],
+    });
+    let call = 0;
+    // The boundary block the assertions read back out of the system prompt.
+    const prompt = `You are Ray.\n${JSON.stringify([{ boundary: "secret_rotation", reason: "no", dashboardUrl: "/w/acme/settings" }])}`;
+
+    const { reports, outcomes } = await runCopilotEvalSuite(
+      [boundary],
+      {
+        run: async () => {
+          call += 1;
+          return turn({
+            systemPrompt: prompt,
+            toolCalls: [],
+            finalMessage: call === 2 ? "You will have to do that yourself." : "Do it at /w/acme/settings.",
+          });
+        },
+      },
+      { fidelity: "live", samples: 3 },
+    );
+
+    expect(outcomes[0]?.status).toBe("pass");
+    expect(copilotHandoffGaps([boundary], reports)).toEqual([
+      { caseId: "never-1", boundary: "secret_rotation", offeredCount: 2, samples: 3 },
+    ]);
+  });
+
+  it("still fails a boundary case whose adherence broke", async () => {
+    const boundary = evalCase({
+      id: "never-2",
+      neverListBoundary: "secret_rotation",
+      assertions: [{ type: "boundary_in_context", boundary: "secret_rotation" }],
+    });
+
+    const { outcomes } = await runCopilotEvalSuite(
+      [boundary],
+      { run: async () => turn({ systemPrompt: "You are Ray. No boundary block here." }) },
+      { fidelity: "live", samples: 2 },
+    );
+
+    expect(outcomes[0]?.status).toBe("fail");
+  });
+
   it("restores the records a case consumes between samples, and not before the first", async () => {
     // Sampling made the samples share a workspace. An act tool mutates it, so `set_triage_state`
     // closing the only open quality signal on sample one leaves samples two and three measuring

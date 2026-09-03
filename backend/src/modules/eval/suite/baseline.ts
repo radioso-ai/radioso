@@ -8,6 +8,12 @@ import type { EvalRunStatus } from "../domain/types.js";
  */
 export interface BaselineFile {
   generatedAt?: string;
+  /**
+   * The pass threshold the recorded statuses were reduced at. 2/3 passes is `pass` at 0.6 and
+   * `fail` at 1.0, so comparing a baseline recorded at one bar against a run gated at another
+   * reports a regression for identical behaviour. Absent on baselines recorded before sampling.
+   */
+  passThreshold?: number;
   cases: Record<string, BaselineCaseEntry>;
 }
 

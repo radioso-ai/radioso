@@ -106,7 +106,9 @@ The baseline records the rate beside the status:
 "routine-publish-proposal": { "status": "fail", "passRate": 0.33, "samples": 3 }
 ```
 
-A bare status string is still read, so an older baseline keeps working. The rate is what catches the
+The file also records the `passThreshold` it reduced at, and a run gated at a different one refuses
+to compare: 2/3 passes is `pass` at 0.6 and `fail` at 1.0, so the two disagree about behaviour that
+did not change. A bare status string is still read, so an older baseline keeps working. The rate is what catches the
 silent half of a drift: a case recorded `fail` that used to pass two runs in three and now never
 passes holds its status forever. A drop beyond `rateDropTolerance` (0.5 by default — small K makes
 the rate coarse, so the tolerance has to be wider than the sampling noise it reads through) is

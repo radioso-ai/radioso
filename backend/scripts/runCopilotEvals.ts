@@ -111,7 +111,7 @@ const parseFlags = (argv: string[]): Flags => {
 const loadBaseline = (): BaselineFile => {
   try {
     const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, cases: parsed.cases ?? {} };
+    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
   } catch {
     return { cases: {} };
   }
@@ -522,7 +522,7 @@ const main = async (): Promise<void> => {
       // buildCopilotBaselineFile throws on a never-list violation rather than recording it, so a
       // refusal that stopped working cannot be blessed as the new normal by re-running with the flag.
       // The full dataset, not the subset that ran: the recorder is what enforces that the two match.
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, reports, new Date().toISOString()), null, 2)}\n`);
+      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, reports, new Date().toISOString(), flags.passThreshold), null, 2)}\n`);
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
     }
@@ -542,6 +542,17 @@ const main = async (): Promise<void> => {
         unobserved.map((entry) => entry.caseId).join(", "),
       );
       process.exitCode = 1;
+    }
+
+    // 2/3 passes is `pass` at 0.6 and `fail` at 1.0, so a baseline recorded at one bar and a run
+    // gated at another disagree about behaviour that did not change.
+    if (baseline.passThreshold !== undefined && baseline.passThreshold !== flags.passThreshold) {
+      console.error(
+        `This run reduces at ${flags.passThreshold} but the baseline was recorded at ${baseline.passThreshold}. ` +
+        "The two cannot be compared; re-run with --pass-threshold " + String(baseline.passThreshold) + " or re-record.",
+      );
+      process.exitCode = 1;
+      return;
     }
 
     if (!isBaselineInitialized(baseline)) {

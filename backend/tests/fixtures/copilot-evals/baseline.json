@@ -1,5 +1,6 @@
 {
   "generatedAt": "2026-09-03T11:04:59.465Z",
+  "passThreshold": 1,
   "cases": {
     "agent-configuration-read": {
       "status": "pass",

@@ -758,8 +758,10 @@ describe("runtime configuration", () => {
     expect(terraformCompute).toContain("coalesce(var.frontend_backend_internal_url_override, google_cloud_run_v2_service.backend[0].uri)");
     expect(terraformVariables).toContain('variable "backend_public_invocation_enabled"');
     expect(terraformCompute).toContain("var.deploy_services && var.backend_public_invocation_enabled ? 1 : 0");
-    expect(liveEnv).toContain("frontend_backend_internal_url_override = var.frontend_backend_internal_url_override");
-    expect(liveEnv).toContain("backend_public_invocation_enabled = var.backend_public_invocation_enabled");
+    // `terraform fmt` aligns `=` across a block, so the gap widens whenever a longer
+    // argument name is added. Assert the wiring, not the column it lands in.
+    expect(liveEnv).toMatch(/frontend_backend_internal_url_override\s+= var\.frontend_backend_internal_url_override/);
+    expect(liveEnv).toMatch(/backend_public_invocation_enabled\s+= var\.backend_public_invocation_enabled/);
     expect(liveEnvVariables).toMatch(
       /variable "frontend_backend_internal_url_override" \{[\s\S]*?default\s+= null\n\}/,
     );

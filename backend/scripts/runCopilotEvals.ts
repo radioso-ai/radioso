@@ -70,6 +70,12 @@ interface Flags {
   keepWorkspace: boolean;
 }
 
+/** Falls back only for a missing or unparseable value, so an explicit `0` survives. */
+const parseNumber = (raw: string | undefined, fallback: number): number => {
+  const parsed = Number.parseFloat(raw ?? "");
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const parseFlags = (argv: string[]): Flags => {
   const flags: Flags = {
     updateBaseline: false,
@@ -86,8 +92,10 @@ const parseFlags = (argv: string[]): Flags => {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === "--update-baseline") flags.updateBaseline = true;
-    else if (arg === "--samples") flags.samples = Math.max(1, Number.parseInt(argv[++index] ?? "1", 10) || 1);
-    else if (arg === "--pass-threshold") flags.passThreshold = Math.min(1, Math.max(0, Number.parseFloat(argv[++index] ?? "1") || 1));
+    else if (arg === "--samples") flags.samples = Math.max(1, parseNumber(argv[++index], 1));
+    // Clamped, not coerced: `|| 1` turned an explicit `--pass-threshold 0` into unanimous, which is
+    // the opposite of what was asked for.
+    else if (arg === "--pass-threshold") flags.passThreshold = Math.min(1, Math.max(0, parseNumber(argv[++index], 1)));
     else if (arg === "--keep-workspace") flags.keepWorkspace = true;
     else if (arg === "--migrate") flags.migrate = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
@@ -222,7 +230,30 @@ const SEED_ANSWER = "Shipping to Italy is nine euro.";
  * workspace would be a surprise, and the whole reason to point the suite at one is that it already
  * holds the history worth measuring against.
  */
-const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promise<void> => {
+/**
+ * Puts back the one record an act tool consumes, so samples of the same case stay comparable.
+ *
+ * `set_triage_state` closes the seeded complaint, and a closed turn leaves the queue empty for
+ * every later sample — which then measures the mutation rather than the model. There is no reopen
+ * path by design (`setTriageState` only accepts `resolved`/`dismissed`), but a feedback event newer
+ * than the triage row is exposed as open again, so re-writing the complaint is the restore.
+ *
+ * Only ever called for a workspace this run created and seeded. Writing into an operator's real
+ * workspace between samples would be the same surprise seeding is careful to avoid, so a
+ * `--workspace` run gets no restore and its act cases stay dependent — noted in the fixtures README.
+ */
+const restoreSeededQualitySignal = async (deps: Deps, target: EvalTarget, assistantMessageId: string): Promise<void> => {
+  await new AnswerFeedbackService(deps.connectorDb.kysely).upsert({
+    workspaceId: target.workspaceId,
+    agentId: target.agentId,
+    assistantMessageId,
+    value: "down",
+    comment: "That shipping price is wrong.",
+    actor: { type: "authenticated_user", id: target.operatorUserId, accountId: target.accountId, userId: target.operatorUserId },
+  });
+};
+
+const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promise<{ assistantMessageId: string }> => {
   const conversation = await deps.conversationRepository.create(target.workspaceId, target.agentId, "web");
   await deps.messageRepository.create({
     conversationId: conversation.id,
@@ -260,6 +291,7 @@ const seedBootstrappedWorkspace = async (deps: Deps, target: EvalTarget): Promis
     terminals: [{ stableStepId: "done", kind: "complete", instruction: "Give the order's status.", ordinal: 0 }],
   });
   console.log("Seeded one answered conversation with a complaint, one document, and one draft routine.");
+  return { assistantMessageId: answer.id };
 };
 
 /**
@@ -395,7 +427,7 @@ const main = async (): Promise<void> => {
     // Bound to a const as well so the closures below keep the non-null narrowing.
     const resolved = await resolveTarget(deps, flags);
     target = resolved;
-    if (resolved.bootstrapped) await seedBootstrappedWorkspace(deps, resolved);
+    const seeded = resolved.bootstrapped ? await seedBootstrappedWorkspace(deps, resolved) : null;
 
     const { satisfied, conversationId, routine } = await probeWorkspace(deps, resolved);
     const selection = selectRunnableCopilotEvalCases(narrowDataset(dataset, flags), satisfied);
@@ -422,6 +454,12 @@ const main = async (): Promise<void> => {
     const cases = bindToLiveWorkspace(selection.runnable, { agentId: resolved.agentId, conversationId, routine });
     if (flags.samples > 1) {
       console.log(`Sampling each of ${cases.length} case(s) ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
+      if (!seeded) {
+        console.warn(
+          "Sampling a workspace this run did not seed: an act tool's mutation carries into later samples, " +
+          "so cases that close a queue item are measuring the workspace as much as the model.",
+        );
+      }
     }
 
     const { reports, outcomes } = await runCopilotEvalSuite(
@@ -442,7 +480,13 @@ const main = async (): Promise<void> => {
           return observed;
         },
       },
-      { fidelity: "live", samples: flags.samples, passThreshold: flags.passThreshold },
+      {
+        fidelity: "live",
+        samples: flags.samples,
+        passThreshold: flags.passThreshold,
+        // Only for a workspace this run seeded; see restoreSeededQualitySignal.
+        ...(seeded ? { restoreBetweenSamples: () => restoreSeededQualitySignal(deps, resolved, seeded.assistantMessageId) } : {}),
+      },
     );
 
     const violations = copilotHardGateViolations(cases, reports);

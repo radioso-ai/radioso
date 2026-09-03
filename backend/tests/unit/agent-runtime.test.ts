@@ -341,6 +341,47 @@ describe("DefaultAgentRuntime", () => {
       expect(gateway.calls).toHaveLength(2);
     });
 
+    it("gives the tool loop nothing when the only step is the reserved one", async () => {
+      // maxSteps 1 with an answer required means the single budgeted call IS the closing call.
+      // Letting the loop take it and then closing on top spends two against a ceiling of one.
+      const gateway = makeGateway([{ say: "I could not start." }]);
+
+      const result = await runWith(gateway, [echoTool()], { ...AGENT_BUDGET_DEFAULTS, maxSteps: 1 }, { requireFinalMessage: true });
+
+      expect(gateway.calls).toHaveLength(1);
+      expect(gateway.calls[0]?.toolSchemas).toEqual([]);
+      expect(result.finalMessage).toBe("I could not start.");
+      expect(result.terminatedReason).toBe("step_budget_exhausted");
+    });
+
+    it("reports the abort rather than the earlier reason when cancellation lands mid-closing-call", async () => {
+      // Swallowing the abort here reported `tool_validation_failed` for a turn the caller cancelled,
+      // which is the wrong outcome on the record and in the audit trail.
+      const controller = new AbortController();
+      let call = 0;
+      const gateway: ModelToolCallingGateway = {
+        async request() {
+          call += 1;
+          if (call <= 2) return { assistantMessage: "", toolCalls: [toolCall("ghost", { x: 1 }, `c${call}`)] };
+          controller.abort();
+          throw new Error("aborted");
+        },
+      };
+      const runtime = new DefaultAgentRuntime({ gateway });
+
+      const result = await runtime.run(
+        { systemPrompt: "s", userMessage: "u" },
+        [echoTool()],
+        AGENT_BUDGET_DEFAULTS,
+        { requireFinalMessage: true, signal: controller.signal },
+      );
+
+      expect(result.terminatedReason).toBe("cancelled");
+      // Whatever the model last said, which FR-004 requires be returned. The closing call was the
+      // chance to improve on it and the caller took that away.
+      expect(result.finalMessage).toBe("");
+    });
+
     it("keeps the closing call inside the step budget", async () => {
       // FR-003 makes maxSteps a hard ceiling on model calls, so the answer has to be reserved from
       // the budget rather than spent past it. A caller that wants prose trades its last tool step

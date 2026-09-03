@@ -102,6 +102,14 @@ reported as a rate regression and fails the run.
 `pnpm run evals:copilot:ci` and `evals:copilot:update-baseline` both run at 3 samples, and the
 workflow takes a `samples` input.
 
+Samples of one case share one workspace, so an **act** tool makes them dependent: `set_triage_state`
+closing the only open quality signal on the first sample leaves the rest measuring that mutation
+rather than the model. `restoreBetweenSamples` puts the consumed record back between samples — for
+the seeded throwaway workspace only, because writing into an operator's real workspace mid-run is
+the surprise seeding is careful to avoid. A `--workspace` run says so and its act cases stay
+dependent. Proposals also accumulate across samples; document reprocessing and crawls re-queue
+idempotently and do not.
+
 A run that sampled **less deeply than the baseline** does not get to call anything a regression: the
 bare one-sample smoke run would otherwise fail a case that passes seven times in eight often enough
 to blame unchanged code, which is the same defect in a different hat. Those cases are reported as

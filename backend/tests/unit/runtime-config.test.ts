@@ -78,7 +78,7 @@ describe("runtime configuration", () => {
     ]);
   });
 
-  it("uses the watch-oriented backend dev image and bind mounts in docker compose development", async () => {
+  it("uses isolated dependency volumes with source-only development binds", async () => {
     const devCompose = YAML.parse(await readFile(new URL("../../../docker-compose.dev.yml", import.meta.url), "utf8")) as {
       services?: Record<string, {
         build?: { dockerfile?: string };
@@ -95,16 +95,17 @@ describe("runtime configuration", () => {
     expect(backend?.command).toEqual(["backend-dev-entrypoint.sh", "dev:http"]);
     expect((backend as { environment?: Record<string, string> })?.environment?.AUTH_AUTO_VERIFY_EMAIL).toBe("true");
     expect(worker?.command).toEqual(["backend-dev-entrypoint.sh", "dev:worker"]);
-    expect(backend?.volumes).toEqual(expect.arrayContaining([
-      "./backend:/app/backend",
-      "./packages:/app/packages",
+    const expectedDevelopmentVolumes = [
+      "./backend/src:/app/backend/src",
+      "./backend/prompts:/app/backend/prompts",
+      "./packages/conversation-engine/src:/app/packages/conversation-engine/src",
       "radioso_backend_node_modules:/app/backend/node_modules",
-    ]));
-    expect(worker?.volumes).toEqual(expect.arrayContaining([
-      "./backend:/app/backend",
-      "./packages:/app/packages",
-      "radioso_backend_node_modules:/app/backend/node_modules",
-    ]));
+    ];
+    for (const service of [backend, worker]) {
+      expect(service?.volumes).toEqual(expect.arrayContaining(expectedDevelopmentVolumes));
+      expect(service?.volumes).not.toContain("./backend:/app/backend");
+      expect(service?.volumes).not.toContain("./packages:/app/packages");
+    }
   });
 
   it("enables development-only email auto-verification in the Enterprise dev runtime", async () => {

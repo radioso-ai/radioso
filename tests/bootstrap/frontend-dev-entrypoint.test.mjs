@@ -36,3 +36,21 @@ test("frontend dev entrypoint builds frontend workspace dependencies before star
     /build_frontend_workspace_dependencies[\s\S]+if ! next_cache_ready[\s\S]+start_next_dev/,
   );
 });
+
+test("frontend dev image contains the workspace packages used by its isolated install", async () => {
+  const dockerfile = await readFile(path.join(repoRoot, "infra/frontend.dev.Dockerfile"), "utf8");
+  const installOffset = dockerfile.indexOf("pnpm install --frozen-lockfile --filter radioso-frontend...");
+
+  assert.notEqual(installOffset, -1);
+  for (const workspace of [
+    "packages/routine-definition",
+    "packages/routine-document",
+    "packages/ui",
+    "packages/workspace-invalidation-contract",
+  ]) {
+    const manifestOffset = dockerfile.indexOf(`COPY ${workspace}/package.json`);
+    assert.notEqual(manifestOffset, -1, `${workspace} manifest should be copied`);
+    assert.equal(manifestOffset < installOffset, true, `${workspace} manifest should be copied before install`);
+    assert.match(dockerfile, new RegExp(`COPY ${workspace.replaceAll("/", "\\/")} \\.\\/${workspace.replaceAll("/", "\\/")}`));
+  }
+});

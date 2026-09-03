@@ -49,10 +49,82 @@ test("backend dev entrypoint serializes shared dependency installs", async () =>
   assert.match(entrypoint, /backend-dev-install-state\.sh write/);
 });
 
+test("every backend dev process builds MCP source dependencies in its own container", async () => {
+  const packageJson = JSON.parse(await readFile(path.join(repoRoot, "backend/package.json"), "utf8"));
+
+  assert.match(packageJson.scripts["build:workspace-deps"], /pnpm run build:mcp/);
+  for (const scriptName of [
+    "predev:http",
+    "predev:worker",
+    "predev:worker-server",
+    "predev:crawler-worker",
+    "predev:crawler-worker-server",
+  ]) {
+    assert.equal(packageJson.scripts[scriptName], "pnpm run build:workspace-deps");
+  }
+});
+
 test("backend dev image stamps the install state it seeds into the Compose volumes", async () => {
   const dockerfile = await readFile(path.join(repoRoot, "infra/backend.dev.Dockerfile"), "utf8");
 
   assert.match(dockerfile, /pnpm install --frozen-lockfile[^\n]*\\\n\s*&& backend-dev-install-state\.sh write/);
+  for (const workspace of [
+    "frontend",
+    "packages/census",
+    "packages/integration-test-support",
+    "packages/routine-definition",
+    "packages/routine-document",
+    "packages/ui",
+    "packages/workspace-invalidation-contract",
+  ]) {
+    assert.match(dockerfile, new RegExp(`COPY ${workspace}/package\\.json`));
+  }
+});
+
+test("development Compose installs the complete workspace before runtime services start", async () => {
+  const compose = await readFile(path.join(repoRoot, "docker-compose.dev.yml"), "utf8");
+  const dependencyService = compose.match(/  workspace-deps:\n[\s\S]*?(?=\n  backend:)/)?.[0] ?? "";
+  const backendService = compose.match(/  backend:\n[\s\S]*?(?=\n  backend-worker:)/)?.[0] ?? "";
+
+  assert.match(dependencyService, /pnpm install --force --frozen-lockfile/);
+  assert.match(dependencyService, /backend-dev-install-state\.sh write/);
+  assert.match(dependencyService, /volumes: \*workspace-deps-volumes/);
+  assert.match(compose, /radioso_workspace_node_modules:\/app\/node_modules/);
+  assert.match(compose, /radioso_backend_node_modules:\/app\/backend\/node_modules/);
+  assert.match(compose, /radioso_frontend_node_modules:\/app\/frontend\/node_modules/);
+  assert.match(backendService, /workspace-deps:\n\s+condition: service_completed_successfully/);
+
+  for (const overlappingBind of [
+    "./backend:/app/backend",
+    "./frontend:/app/frontend",
+    "./packages:/app/packages",
+  ]) {
+    assert.doesNotMatch(compose, new RegExp(overlappingBind.replaceAll("/", "\\/")));
+  }
+  assert.match(backendService, /volumes: \*backend-dev-volumes/);
+  assert.match(compose, /\.\/backend\/src:\/app\/backend\/src/);
+  assert.match(compose, /\.\/frontend\/app:\/app\/frontend\/app/);
+  assert.match(compose, /\.\/packages\/conversation-engine\/src:\/app\/packages\/conversation-engine\/src/);
+});
+
+test("development Compose never nests a dependency volume below a bind mount", async () => {
+  const compose = await readFile(path.join(repoRoot, "docker-compose.dev.yml"), "utf8");
+  const mappings = [...compose.matchAll(/^\s+- ([^:\n]+):([^:\n]+)(?::[^\n]+)?$/gm)]
+    .map((match) => ({ source: match[1], target: match[2] }));
+  const bindTargets = mappings.filter(({ source }) => source.startsWith(".")).map(({ target }) => target);
+  const dependencyTargets = mappings
+    .filter(({ source }) => source.startsWith("radioso_"))
+    .map(({ target }) => target);
+
+  for (const bindTarget of bindTargets) {
+    for (const dependencyTarget of dependencyTargets) {
+      assert.equal(
+        dependencyTarget.startsWith(`${bindTarget}/`),
+        false,
+        `${dependencyTarget} must not be nested below bind mount ${bindTarget}`,
+      );
+    }
+  }
 });
 
 test("install state check fails until every node_modules tree is stamped", async (t) => {

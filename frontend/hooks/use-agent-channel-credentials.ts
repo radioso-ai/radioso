@@ -65,7 +65,10 @@ export function useAgentChannelCredentials(
     void agentChannelCredentialsApi.list(agentId, audience)
       .then((response) => {
         if (active && scopeGeneration.current === generation) {
-          setCredentials(response.credentials)
+          setCredentials((current) => [
+            ...current,
+            ...response.credentials.filter((incoming) => !current.some((existing) => existing.id === incoming.id)),
+          ])
           setNextCursor(response.nextCursor)
         }
       })

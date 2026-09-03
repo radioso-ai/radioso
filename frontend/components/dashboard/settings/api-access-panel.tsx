@@ -88,7 +88,11 @@ export function ApiAccessPanel({ workspaceId }: { workspaceId: string | null | u
   const adminSelectable = summary !== null && summary.effectiveRole !== 'member'
 
   return (
-    <div id="api-access" className="space-y-6 scroll-mt-24">
+    <div
+      id="api-access"
+      className="space-y-6 scroll-mt-24"
+      data-settings-section-state={isLoading ? 'loading' : 'resolved'}
+    >
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
       {isLoading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

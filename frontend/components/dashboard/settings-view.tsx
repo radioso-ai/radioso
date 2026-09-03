@@ -7,6 +7,7 @@ import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { ProvidersPanel } from '@/components/dashboard/settings/providers-panel'
 import { ApiAccessPanel } from '@/components/dashboard/settings/api-access-panel'
+import { getSettingsSectionDescriptor } from '@/components/dashboard/settings/settings-tab-metadata'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -34,18 +35,55 @@ export function SettingsView({
       return
     }
 
-    const element = document.getElementById(routeState.anchor)
-    if (!element) {
+    const scrollToAnchor = () => {
+      const element = document.getElementById(routeState.anchor!)
+      if (!element) return false
+      element.scrollIntoView({ block: 'start', behavior: 'auto' })
+      return true
+    }
+
+    if (scrollToAnchor()) {
+      return
+    }
+
+    const clearAnchor = () => {
       router.replace(buildDashboardHref(accountId, {
         ...routeState,
         section: 'settings',
         anchor: undefined,
       }))
-      return
     }
 
-    element.scrollIntoView({ block: 'start', behavior: 'auto' })
-  }, [accountId, routeState, router])
+    if (getSettingsSectionDescriptor(activeTab, routeState.anchor)) {
+      const isWaitingForSections = () => {
+        if (activeTab !== 'api-access' || !activeWorkspaceId) return false
+        return document.getElementById('api-access')?.dataset.settingsSectionState === 'loading'
+      }
+
+      if (!isWaitingForSections()) {
+        clearAnchor()
+        return
+      }
+
+      const observer = new MutationObserver(() => {
+        if (scrollToAnchor()) {
+          observer.disconnect()
+          return
+        }
+        if (!isWaitingForSections()) {
+          observer.disconnect()
+          clearAnchor()
+        }
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+      return () => observer.disconnect()
+    }
+
+    const element = document.getElementById(routeState.anchor)
+    if (!element) {
+      clearAnchor()
+    }
+  }, [accountId, activeTab, activeWorkspaceId, routeState, router])
 
   return (
     <DashboardPage

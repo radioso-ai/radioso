@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { KeyRound, Pencil } from 'lucide-react'
 
 import {
@@ -81,6 +81,7 @@ export function ServiceAccountSheet({
   const [renameOpen, setRenameOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
+  const accountLoadGeneration = useRef(0)
 
   const mutations = useScopedRowMutations(`${workspaceId}:${accountId}`)
   const isRotatePending = Boolean(credentialAction?.type === 'rotate' && mutations.isPending(credentialAction.credential.id))
@@ -91,24 +92,37 @@ export function ServiceAccountSheet({
   )
   const credentials = usePagedList<ApiCredentialMetadata>(loadCredentials, 'Failed to load credentials.')
 
-  // The row summary can be a few seconds old; a mutation needs the current revision to be accepted.
-  useEffect(() => {
-    let active = true
-    const refreshAccount = async () => {
-      try {
-        const current = await apiAccessApi.getServiceAccount(workspaceId, accountId)
-        if (active) setAccount(current)
-      } catch (loadError) {
-        if (active) setError(getApiErrorMessage(loadError, 'Failed to load service account.'))
+  const refreshAccount = useCallback(async () => {
+    const generation = accountLoadGeneration.current + 1
+    accountLoadGeneration.current = generation
+    try {
+      const current = await apiAccessApi.getServiceAccount(workspaceId, accountId)
+      if (accountLoadGeneration.current === generation) setAccount(current)
+    } catch (loadError) {
+      if (accountLoadGeneration.current === generation) {
+        setError(getApiErrorMessage(loadError, 'Failed to load service account.'))
       }
-    }
-    void refreshAccount()
-    return () => {
-      active = false
     }
   }, [workspaceId, accountId])
 
+  // The row summary can be a few seconds old; a mutation needs the current revision to be accepted.
+  useEffect(() => {
+    void refreshAccount()
+    return () => {
+      accountLoadGeneration.current += 1
+    }
+  }, [refreshAccount])
+
+  const adjustActiveCredentialCount = (delta: number) => {
+    accountLoadGeneration.current += 1
+    setAccount((current) => ({
+      ...current,
+      activeCredentialCount: Math.max(0, current.activeCredentialCount + delta),
+    }))
+  }
+
   const applyAccount = (updated: ServiceAccountSummary) => {
+    accountLoadGeneration.current += 1
     setAccount(updated)
     onChanged()
   }
@@ -170,17 +184,23 @@ export function ServiceAccountSheet({
     if (outcome.status === 'applied') {
       setIssued(outcome.value)
       setCredentialLabel('')
+      adjustActiveCredentialCount(1)
       credentials.refresh()
+      void refreshAccount()
       onChanged()
     }
     if (outcome.status === 'failed') setError(getApiErrorMessage(outcome.error, 'Failed to issue credential.'))
   }
 
-  const revokeCredential = async (credentialId: string) => {
+  const revokeCredential = async (credential: Pick<ApiCredentialMetadata, 'id' | 'status'>) => {
     setError(null)
-    const outcome = await mutations.run(credentialId, () => apiAccessApi.revokeServiceCredential(workspaceId, accountId, credentialId))
+    const outcome = await mutations.run(credential.id, () => apiAccessApi.revokeServiceCredential(workspaceId, accountId, credential.id))
     if (outcome.status === 'applied') {
+      if (credential.status === 'active') {
+        adjustActiveCredentialCount(-1)
+      }
       credentials.refresh()
+      void refreshAccount()
       onChanged()
       return true
     }
@@ -492,7 +512,7 @@ export function ServiceAccountSheet({
         isRevoking={Boolean(credentialAction && mutations.isPending(credentialAction.credential.id))}
         onConfirm={() => {
           if (!credentialAction) return
-          void revokeCredential(credentialAction.credential.id).then((succeeded) => {
+          void revokeCredential(credentialAction.credential).then((succeeded) => {
             if (succeeded) setCredentialAction(null)
           })
         }}
@@ -507,7 +527,7 @@ export function ServiceAccountSheet({
           copyAriaLabel="Copy service credential secret"
           error={error}
           onDiscard={async () => {
-            const revoked = await revokeCredential(issued.credential.id)
+            const revoked = await revokeCredential(issued.credential)
             if (revoked) setIssued(null)
           }}
           onDone={() => setIssued(null)}

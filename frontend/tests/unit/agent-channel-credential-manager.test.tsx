@@ -142,6 +142,27 @@ describe('useAgentChannelCredentials', () => {
     expect(engine.credentials.map((entry) => entry.label)).toEqual(['Current agent'])
   })
 
+  it('keeps a newly issued credential when the opening inventory resolves later', async () => {
+    const list = deferred<CredentialPage>()
+    const issuedCredential = makeCredential({ id: 'credential-created', label: 'Created client' })
+    const existingCredential = makeCredential({ id: 'credential-existing', label: 'Existing client' })
+    apiMocks.list.mockReset()
+    apiMocks.list.mockReturnValue(list.promise)
+    apiMocks.issue.mockResolvedValue({ credential: issuedCredential, secret: 'new-secret' })
+
+    await render('agent-1', 'mcp')
+    await act(async () => {
+      await engine.issue({ label: 'Created client', expiresAt: '2027-01-01T00:00:00.000Z' })
+    })
+    expect(engine.credentials.map((entry) => entry.label)).toEqual(['Created client'])
+
+    await act(async () => {
+      list.resolve({ credentials: [existingCredential], nextCursor: 'next-page' })
+    })
+    expect(engine.credentials.map((entry) => entry.label)).toEqual(['Created client', 'Existing client'])
+    expect(engine.hasMore).toBe(true)
+  })
+
   it('ignores a delayed issue response from the previous audience', async () => {
     const issue = deferred<IssuedCredential>()
     apiMocks.issue.mockReturnValue(issue.promise)

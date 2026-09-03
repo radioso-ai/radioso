@@ -140,6 +140,24 @@ test('the old service accounts deep link lands on the API access tab', async ({ 
   await expect(page.getByRole('heading', { name: 'Service accounts' })).toBeVisible()
 })
 
+test('API access subsection anchors survive async card loading', async ({ page }) => {
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
+  await page.route('**/backend/api/v1/account/workspaces/workspace-1/api-access**', async (route) => {
+    const request = route.request()
+    const path = new URL(request.url()).pathname
+    if (request.method() === 'GET' && path.endsWith('/api-access')) return route.fulfill({ json: summary() })
+    if (request.method() === 'GET' && path.endsWith('/personal-tokens')) return route.fulfill({ json: { items: [], page: 1, limit: 50, total: 0 } })
+    if (request.method() === 'GET' && path.endsWith('/service-accounts')) return route.fulfill({ json: { items: [], page: 1, limit: 50, total: 0 } })
+    return route.fulfill({ status: 404, json: { error: { message: `Unhandled: ${request.method()} ${path}` } } })
+  })
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=api-access&anchor=service-accounts`)
+
+  await expect(page.getByRole('heading', { name: 'Service accounts' })).toBeVisible()
+  await expect(page).toHaveURL(/anchor=service-accounts/)
+})
+
 test('administrator manages a service account from the detail sheet', async ({ page }) => {
   await seedDashboardStorage(page)
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() })
@@ -231,6 +249,8 @@ test('administrator manages a service account from the detail sheet', async ({ p
       credentials = credentials.map((credential) => credential.id === 'service-credential-2'
         ? { ...credential, status: 'revoked' as const, revokedAt: '2026-08-31T13:00:00.000Z', revision: credential.revision + 1 }
         : credential)
+      account = { ...account, activeCredentialCount: 1, revision: account.revision + 1 }
+      accounts = [account]
       return route.fulfill({ json: credentials.find((credential) => credential.id === 'service-credential-2') })
     }
     return route.fulfill({ status: 404, json: { error: { message: `Unhandled: ${request.method()} ${path}` } } })
@@ -262,6 +282,9 @@ test('administrator manages a service account from the detail sheet', async ({ p
   await sheet.getByRole('button', { name: 'Issue' }).click()
   await acknowledgeSecret(page, 'radioso_svc_canary_secret')
   await expect(sheet.getByText('Canary runner')).toBeVisible()
+  await sheet.getByRole('button', { name: 'Archive', exact: true }).click()
+  await expect(page.getByRole('alertdialog').getByText('2 active credentials')).toBeVisible()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
 
   await sheet.getByRole('button', { name: 'Actions for Primary' }).click()
   await page.getByRole('menuitem', { name: 'Rename' }).click()
@@ -279,6 +302,9 @@ test('administrator manages a service account from the detail sheet', async ({ p
   await page.getByRole('menuitem', { name: 'Revoke' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Revoke' }).click()
   await expect(sheet.getByText('Revoked', { exact: true }).first()).toBeVisible()
+  await sheet.getByRole('button', { name: 'Archive', exact: true }).click()
+  await expect(page.getByRole('alertdialog').getByText('1 active credential')).toBeVisible()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
 
   await sheet.getByLabel('Service account role').selectOption('admin')
   const roleConfirm = page.getByRole('alertdialog')

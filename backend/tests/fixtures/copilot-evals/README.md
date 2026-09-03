@@ -113,7 +113,8 @@ the rate coarse, so the tolerance has to be wider than the sampling noise it rea
 reported as a rate regression and fails the run.
 
 `pnpm run evals:copilot:ci` and `evals:copilot:update-baseline` both run at 3 samples, and the
-workflow takes a `samples` input.
+workflow takes a `samples` input. A case where every sample errored is `error`, decided before the
+threshold is applied, so no threshold can turn a provider outage into a pass.
 
 Samples of one case share one workspace, so an **act** tool makes them dependent: `set_triage_state`
 closing the only open quality signal on the first sample leaves the rest measuring that mutation

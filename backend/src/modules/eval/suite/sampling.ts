@@ -45,10 +45,10 @@ export interface SampleReduction<TVerdict = SuiteAssertionVerdict> {
 
 /**
  * Collapses K per-sample scores into one stable verdict. A case with no assertions is
- * `recorded`. Otherwise it is `pass` when its pass rate clears the threshold; below
- * threshold it is `fail`, unless every non-pass sample errored (no real failures), which
- * surfaces as `error`. `flaky` means the samples disagreed — the signal that tells you a
- * `pass`/`fail` was not unanimous.
+ * `recorded`. A case where every scored sample errored is `error` — decided first, so no
+ * threshold can turn an outage into a pass. Otherwise it is `pass` when its pass rate
+ * clears the threshold and `fail` below it. `flaky` means the samples disagreed — the
+ * signal that tells you a `pass`/`fail` was not unanimous.
  */
 export const reduceSamples = <TVerdict>(
   samples: ReadonlyArray<SampleScore<TVerdict>>,
@@ -68,11 +68,14 @@ export const reduceSamples = <TVerdict>(
   const passCount = statusCounts.pass;
   const passRate = passCount / scored;
 
+  // An outage is classified before the threshold is applied, never by it. The threshold says how
+  // often a case has to pass; it is not a licence to call "every sample errored" a pass, which is
+  // exactly what `0 >= 0` did at `--pass-threshold 0`.
   let status: EvalRunStatus;
-  if (passRate >= passThreshold) {
-    status = "pass";
-  } else if (statusCounts.fail === 0 && statusCounts.pass === 0) {
+  if (statusCounts.fail === 0 && statusCounts.pass === 0) {
     status = "error";
+  } else if (passRate >= passThreshold) {
+    status = "pass";
   } else {
     status = "fail";
   }

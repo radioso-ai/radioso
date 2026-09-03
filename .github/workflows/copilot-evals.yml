@@ -69,7 +69,10 @@ jobs:
     # scheduled run never waits on an approval.
     environment: staging
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 29 cases x 3 samples is 87 sequential turns, and a turn may spend its full 30s wall-time
+    # budget, so a provider slowdown bounds the run near 45 minutes. A 30-minute cap killed the job
+    # without a report or a baseline artifact during exactly the slowdown it exists to measure.
+    timeout-minutes: 75
     services:
       postgres:
         image: pgvector/pgvector:0.8.5-pg16

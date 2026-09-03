@@ -55,34 +55,4 @@ describe("operator copilot write shapes", () => {
     ]);
   });
 
-  it("points a conversation-scoped boundary at the conversation the operator is on", () => {
-    // The three conversation boundaries otherwise all hand over the same bare queue link, which is
-    // coarser than what the turn already knows. Measured live, Ray answered those refusals by
-    // naming the conversation's raw UUID and dropping the link — a worse handoff than the id it was
-    // holding. Binding the link to the focused conversation gives it something worth writing.
-    const bound = buildCopilotNeverListContext("acme", { conversationId: "77d5efb4-3354-4ede-9a2c-4f22778c689b" });
-
-    expect(bound).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        boundary: "unattended_live_customer_reply",
-        dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=77d5efb4-3354-4ede-9a2c-4f22778c689b",
-      }),
-      expect.objectContaining({
-        boundary: "live_conversation_ownership",
-        dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=77d5efb4-3354-4ede-9a2c-4f22778c689b",
-      }),
-      expect.objectContaining({
-        boundary: "pending_decision_resolution",
-        dashboardUrl: "/w/acme/activity?itemKind=chat&itemId=77d5efb4-3354-4ede-9a2c-4f22778c689b",
-      }),
-    ]));
-    // Boundaries that are not about a conversation are untouched by what the operator is viewing.
-    expect(bound.find((entry) => entry.boundary === "secret_rotation")?.dashboardUrl).toBe("/w/acme/settings");
-  });
-
-  it("falls back to the queue when no conversation is on screen", () => {
-    expect(buildCopilotNeverListContext("acme", { conversationId: null })
-      .find((entry) => entry.boundary === "live_conversation_ownership")?.dashboardUrl)
-      .toBe("/w/acme/activity");
-  });
 });

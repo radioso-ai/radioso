@@ -40,34 +40,19 @@ export interface CopilotNeverListContextEntry {
 }
 
 /**
- * What the turn can bind a boundary's handoff to. Deliberately narrow: this module knows that a
- * conversation subject can be given an id, not that a dashboard page context exists.
+ * Trusted per-turn data: the prompt, rather than code, determines how Ray words a refusal.
+ *
+ * The three conversation boundaries deliberately share one bare queue link. Binding them to the
+ * conversation on screen was tried and reverted: the page the operator is viewing is not
+ * necessarily the conversation they are asking about, and the prompt requires Ray to hand over the
+ * supplied URL and forbids inventing another — so a mismatch points them at the wrong customer.
+ * Measured over eight samples it did not improve how often the link was quoted either, so it was
+ * a wrong link some of the time in exchange for nothing.
  */
-export interface CopilotNeverListFocus {
-  readonly conversationId?: string | null;
-}
-
-/** Trusted per-turn data: the prompt, rather than code, determines how Ray words a refusal. */
-export const buildCopilotNeverListContext = (
-  workspaceKey: string,
-  focus: CopilotNeverListFocus = {},
-): ReadonlyArray<CopilotNeverListContextEntry> =>
+export const buildCopilotNeverListContext = (workspaceKey: string): ReadonlyArray<CopilotNeverListContextEntry> =>
   (Object.entries(copilotNeverList) as ReadonlyArray<[CopilotNeverListEntry, (typeof copilotNeverList)[CopilotNeverListEntry]]>)
     .map(([boundary, entry]) => ({
       boundary,
       reason: entry.reason,
-      dashboardUrl: buildCopilotDashboardLink(workspaceKey, bindSubject(entry.dashboardSubject, focus)),
+      dashboardUrl: buildCopilotDashboardLink(workspaceKey, entry.dashboardSubject),
     }));
-
-/**
- * Points a conversation-scoped boundary at the conversation in front of the operator.
- *
- * The three conversation boundaries otherwise share one bare queue link, which is coarser than what
- * the turn already holds. Measured against a real model, Ray refused those correctly and then named
- * the conversation's raw UUID instead of linking it — sending an operator a UUID is a worse handoff
- * than the link exists to be.
- */
-const bindSubject = (subject: CopilotEntityReference, focus: CopilotNeverListFocus): CopilotEntityReference =>
-  subject.type === "conversation" && !subject.id && focus.conversationId
-    ? { ...subject, id: focus.conversationId }
-    : subject;

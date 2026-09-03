@@ -142,6 +142,8 @@ export const proposalOutputSchema = z.object({
   }).strict().optional(),
   /** True only for a proposal that permanently deletes its target; absent for an ordinary update. */
   removal: z.boolean().optional(),
+  /** True only for a proposal that changes who can reach the agent; absent for a wording change. */
+  reach: z.boolean().optional(),
 });
 
 export interface CopilotProposalEvidenceDependencies {

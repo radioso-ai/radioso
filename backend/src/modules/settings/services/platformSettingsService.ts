@@ -4,6 +4,7 @@ import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { getWebsiteEmbedSurfaceSettings, isAgentBootstrapActive } from "../../agents/public.js";
 import { buildAssistantLogoCacheKey, buildPublicAssistantLogoUrl } from "../../../app/http/shared/assistantLogoUrl.js";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { validateWebsiteEmbedSettings } from "../domain/websiteEmbedSettings.js";
 import {
@@ -22,12 +23,26 @@ export interface PlatformSettingsServiceDependencies {
   agentService: Pick<AgentService, "resolve" | "update" | "withRotatedTokens">;
   accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant">;
   auditService?: Pick<AuditService, "record">;
+  logger?: Pick<AppLogger, "warn">;
   publicChatBaseUrl?: string;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
 }
 
 export interface PlatformSettingsUpdateContext {
   accountId?: string | null;
+  /**
+   * The version the caller decided against. Passed through to the agent write's own predicate so a
+   * surface edited since then is refused rather than replaced wholesale — the copilot drafts a
+   * whole-object proposal ahead of the operator's Apply, and without this a concurrent dashboard
+   * edit would be silently overwritten by values drafted before it.
+   */
+  expectedUpdatedAt?: Date;
+}
+
+/** The settings plus the version a conditional write can be predicated on, read in one pass. */
+export interface VersionedPlatformSettings {
+  settings: PlatformSettingsResource;
+  updatedAt: Date;
 }
 
 export class PlatformSettingsService {
@@ -52,11 +67,61 @@ export class PlatformSettingsService {
     };
   }
 
+  /**
+   * Deliberately one read: pairing values from one read with a version from a later one would let
+   * an edit landing between them pass a version check it should have failed.
+   */
+  async getVersionedForWorkspace(workspaceId: string): Promise<VersionedPlatformSettings> {
+    const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
+
+    if (!workspace) {
+      throw notFound("Workspace not found");
+    }
+    const agent = await this.dependencies.agentService.resolve(workspaceId);
+
+    return {
+      settings: {
+        assistant: this.buildAssistantSection(agent),
+        channels: await this.buildChannelsSection(agent, workspace),
+      },
+      updatedAt: agent.updatedAt,
+    };
+  }
+
   async updateForWorkspace(
     workspaceId: string,
     patch: PlatformSettingsPatch,
     context: PlatformSettingsUpdateContext = {},
   ): Promise<PlatformSettingsResource> {
+    const { agent, workspace } = await this.writeForWorkspace(workspaceId, patch, context);
+
+    return {
+      assistant: this.buildAssistantSection(agent),
+      channels: await this.buildChannelsSection(agent, workspace),
+    };
+  }
+
+  /**
+   * The write on its own, for a caller that records an outcome rather than rendering one.
+   *
+   * Presenting the result reads the public launch grants — a second round trip, after the agent
+   * write has committed. A caller rendering a page can fail there and be reloaded; a caller
+   * recording whether the change happened would store "failed" for a channel that is already open,
+   * and invite the operator to make the change twice.
+   */
+  async applyForWorkspace(
+    workspaceId: string,
+    patch: PlatformSettingsPatch,
+    context: PlatformSettingsUpdateContext = {},
+  ): Promise<void> {
+    await this.writeForWorkspace(workspaceId, patch, context);
+  }
+
+  private async writeForWorkspace(
+    workspaceId: string,
+    patch: PlatformSettingsPatch,
+    context: PlatformSettingsUpdateContext,
+  ): Promise<{ agent: AgentRecord; workspace: WorkspaceRecord }> {
     const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
 
     if (!workspace) {
@@ -69,10 +134,7 @@ export class PlatformSettingsService {
       currentAgent = await this.updateAgentSections(workspaceId, currentAgent, workspace, patch, context);
     }
 
-    return {
-      assistant: this.buildAssistantSection(currentAgent),
-      channels: await this.buildChannelsSection(currentAgent, workspace),
-    };
+    return { agent: currentAgent, workspace };
   }
 
   private async updateAgentSections(
@@ -135,8 +197,12 @@ export class PlatformSettingsService {
       suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? agent.suggestedQuestionsEnabled,
       customInstruction: assistant.customInstruction ?? agent.customInstruction,
       rotateWebsiteEmbedToken,
-    }));
+    }), context.expectedUpdatedAt ? { expectedUpdatedAt: context.expectedUpdatedAt } : undefined);
 
+    // After the agent write has committed. A failing audit sink must not report a change that is
+    // already live as a failure - the same rule the ingestion settings service applies, and it
+    // matters more here: a copilot proposal whose apply reports failure invites the operator to
+    // draft it again.
     await this.recordChannelAuditEvents({
       accountId: context.accountId,
       workspaceId,
@@ -167,9 +233,22 @@ export class PlatformSettingsService {
     if (!auditService) {
       return;
     }
+    const record = async (event: Parameters<typeof auditService.record>[0]): Promise<void> => {
+      try {
+        await auditService.record(event);
+      } catch (error) {
+        // The change is already written; losing its audit line must not undo or misreport it. It
+        // must not vanish either — this is the record of a public channel opening or closing, so
+        // the loss is itself worth an operator's attention.
+        this.dependencies.logger?.warn(
+          { err: error, workspaceId: input.workspaceId, eventType: event.eventType },
+          "Channel settings audit event was not recorded",
+        );
+      }
+    };
 
     if (input.anonymousChatEnabled !== input.previousAgent.surfaceSettings.anonymousChat.enabled) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: input.anonymousChatEnabled ? "anonymous_chat.enabled" : "anonymous_chat.disabled",
@@ -179,7 +258,7 @@ export class PlatformSettingsService {
     }
 
     if (input.rotateAnonymousChatToken) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: "anonymous_chat.token_rotated",
@@ -189,7 +268,7 @@ export class PlatformSettingsService {
     }
 
     if (input.websiteEmbedEnabled !== getWebsiteEmbedSurfaceSettings(input.previousAgent).enabled) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: input.websiteEmbedEnabled ? "website_embed.enabled" : "website_embed.disabled",
@@ -202,7 +281,7 @@ export class PlatformSettingsService {
     }
 
     if (input.rotateWebsiteEmbedToken) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: "website_embed.token_rotated",

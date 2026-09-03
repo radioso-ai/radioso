@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createAgentSettingCopilotProposalAdapter,
   createAgentSkillCopilotProposalAdapter,
   createContextVariableCopilotProposalAdapter as createProductionContextVariableCopilotProposalAdapter,
 } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
@@ -734,5 +735,43 @@ describe("createAgentSkillCopilotProposalAdapter", () => {
         config: {},
       }),
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+});
+
+describe("the agent setting adapter's channel boundary", () => {
+  const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  it("refuses the whole surfaceSettings object, which would carry reach and a token past the card", async () => {
+    // Addressed by one key, `surfaceSettings` is the anonymous-chat and embed surfaces together:
+    // their enablement, their allowed origins, and their tokens. Accepting it would put a card
+    // labelled "surfaceSettings" in front of an operator while opening the agent to the public web
+    // inside it, under agent management rather than settings management, with no reach signal and
+    // none of the channel audit events the settings service records.
+    const get = vi.fn();
+    const update = vi.fn();
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+
+    await expect(adapter.validatePayload("workspace-1", { agentId, settingKey: "surfaceSettings" }, {
+      value: { anonymousChat: { enabled: true, token: "known-token" } },
+    })).rejects.toThrow(/propose_workspace_setting/);
+    expect(get).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("holds the refusal on preview and apply, which a row drafted before the boundary reaches directly", async () => {
+    // A pending proposal written by an older process never passes validatePayload again. Preview
+    // would hand its channel tokens to a caller holding only agents.read; apply would open the
+    // channel. Both are the reason the guard cannot live on the draft alone.
+    const get = vi.fn();
+    const update = vi.fn();
+    const adapter = createAgentSettingCopilotProposalAdapter({ agentService: { get, update } as never });
+    const targetRef = { agentId, settingKey: "surfaceSettings" };
+
+    await expect(adapter.preview("workspace-1", targetRef, { value: {} })).rejects.toThrow(/propose_workspace_setting/);
+    await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, { value: {} }, "2026-09-01T10:00:00.000Z"))
+      .rejects.toThrow(/propose_workspace_setting/);
+    await expect(adapter.readVersionToken("workspace-1", targetRef)).rejects.toThrow(/propose_workspace_setting/);
+    expect(get).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AlertCircle, Check, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, ChevronRight, ExternalLink, Globe } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -175,6 +175,9 @@ export const targetReference = (
   if (summary.targetType === 'ingestion_settings') {
     return { entity: { type: 'ingestion_settings' } }
   }
+  if (summary.targetType === 'workspace_setting') {
+    return { entity: { type: 'workspace_settings' } }
+  }
   if (summary.targetType === 'directive') {
     const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
     return typeof directiveId === 'string' ? {
@@ -209,7 +212,7 @@ const statusMessage = (
 const statusFromProposalDetail = (detail: CopilotProposalDetail): CopilotProposalStatus =>
   detail.status === 'pending' && !detail.currentVersionMatches ? 'stale' : detail.status
 
-export type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reversible-update'
+export type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'reach-change' | 'reversible-update'
 
 /**
  * What kind of confirmation an Apply click should show. A removal (e.g. propose_directive_removal)
@@ -219,8 +222,14 @@ export type CopilotProposalApplyConfirmationKind = 'irreversible-removal' | 'rev
  * reachable without expanding it. Reads the structural `removal` signal the backend's proposal
  * card already carries, not `summary`'s prose.
  */
-export const applyConfirmationKind = (proposal: CopilotProposalSummary): CopilotProposalApplyConfirmationKind =>
-  proposal.removal ? 'irreversible-removal' : 'reversible-update'
+export const applyConfirmationKind = (proposal: CopilotProposalSummary): CopilotProposalApplyConfirmationKind => {
+  if (proposal.removal) return 'irreversible-removal'
+  // Reversible, so not a removal - but it decides who can talk to the agent, which is a different
+  // question from whether the wording is right, and the generic "this updates X" copy does not ask
+  // it. Same reasoning as the removal branch: read the structural signal, never the prose.
+  if (proposal.reach) return 'reach-change'
+  return 'reversible-update'
+}
 
 export function CopilotProposalCard({
   proposal,
@@ -313,6 +322,12 @@ export function CopilotProposalCard({
           <Badge variant={statusVariant(effectiveState.status)} className={statusBadgeClassName(effectiveState.status)}>{STATUS_LABELS[effectiveState.status]}</Badge>
         </div>
         <p className="text-sm text-muted-foreground">{proposal.summary}</p>
+        {proposal.reach ? (
+          <p className="flex items-start gap-2 text-xs text-muted-foreground">
+            <Globe className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>Changes who can reach the agent.</span>
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent className="space-y-3 p-4 pt-2">
         {statusText ? (
@@ -369,6 +384,11 @@ export function CopilotProposalCard({
               <>
                 <AlertDialogTitle>Delete {proposal.targetLabel} permanently?</AlertDialogTitle>
                 <AlertDialogDescription>This permanently deletes {proposal.targetLabel}. This cannot be undone.</AlertDialogDescription>
+              </>
+            ) : applyConfirmationKind(proposal) === 'reach-change' ? (
+              <>
+                <AlertDialogTitle>Change who can reach the agent?</AlertDialogTitle>
+                <AlertDialogDescription>This updates {proposal.targetLabel} and changes which people can reach the agent. You can change it back afterwards.</AlertDialogDescription>
               </>
             ) : (
               <>

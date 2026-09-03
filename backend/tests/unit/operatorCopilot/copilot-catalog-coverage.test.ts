@@ -218,7 +218,10 @@ describe("operator copilot catalog coverage", () => {
     ] as const;
 
     const entries = wave5OperationIds.map((operationId) => catalogCoverage[operationId]);
-    expect(entries.every((entry) => typeof entry !== "string")).toBe(true);
+    // Every one of these still appears in the map. A covered entry (a plain tool name) is the best
+    // outcome a ground can reach; what this pins is that none of them has fallen out of the map
+    // entirely, and that nothing still deferred rides on a shared bulk reason.
+    expect(entries.every((entry) => entry !== undefined)).toBe(true);
     const reasons = entries.flatMap((entry) => typeof entry === "string" ? [] : [entry.reason]);
     expect(reasons.some((reason) => reason.includes("Deferred to Wave 5 workspace configuration"))).toBe(false);
     expect(new Set(reasons).size).toBeGreaterThanOrEqual(12);
@@ -280,17 +283,18 @@ describe("operator copilot catalog coverage", () => {
   });
 
   it("names the tool shape each remaining Wave 5 deferral waits on", () => {
-    // Both endpoints write the same assistant and embed fields, and anonymousChatEnabled /
-    // websiteEmbedAllowedOrigins among them change who can reach the agent rather than what it says.
-    for (const operationId of ["updatePlatformSettings", "updateGeneralSettings"]) {
-      expect(catalogCoverage[operationId]).toMatchObject({
-        disposition: "deferred",
-        reason: expect.stringContaining("propose_workspace_setting"),
-      });
-      expect(catalogCoverage[operationId]).toMatchObject({
-        reason: expect.stringContaining("who can reach the agent"),
-      });
-    }
+    // Both endpoints write the same assistant and embed fields through the same service.
+    // propose_workspace_setting picks the grouped one as its apply path, which is what makes the
+    // flat one a duplicate rather than a second surface to cover.
+    expect(catalogCoverage.updatePlatformSettings).toBe("propose_workspace_setting");
+    expect(catalogCoverage.updateGeneralSettings).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("same assistant and channel fields"),
+    });
+    expect(catalogCoverage.updateWorkspaceLlmModels).toMatchObject({
+      disposition: "deferred",
+      reason: expect.stringContaining("per-capability rows"),
+    });
     expect(catalogCoverage.syncConnector).toMatchObject({
       disposition: "deferred",
       reason: expect.stringContaining("act"),

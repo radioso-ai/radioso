@@ -141,7 +141,7 @@ export const withCopilotActor = (
  * tool-output zod enums) must derive from this array rather than repeating its own OR-chain or
  * literal enum, so adding a target type cannot silently miss one of those sites again.
  */
-export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl"] as const;
+export const copilotProposalTargetTypes = ["directive", "agent", "agent_setting", "routine", "agent_skill", "context_variable", "document", "ingestion_settings", "website_crawl", "workspace_setting"] as const;
 export type CopilotProposalTargetType = (typeof copilotProposalTargetTypes)[number];
 /**
  * The permission an operator needs to apply a proposal, by what it changes. Applying is a write to
@@ -161,6 +161,7 @@ export const copilotProposalPermissions = {
   document: ["workspace.documents.manage"],
   ingestion_settings: ["workspace.settings.manage"],
   website_crawl: ["workspace.documents.manage"],
+  workspace_setting: ["workspace.settings.manage"],
 } as const satisfies Record<CopilotProposalTargetType, readonly [AccountPermission, ...AccountPermission[]]>;
 
 /**
@@ -209,6 +210,15 @@ export interface CopilotProposalCard {
    * triage next-ray-epic-issue). Absent, not false, when the proposal is an ordinary update.
    */
   readonly removal?: boolean;
+  /**
+   * True only for a proposal that changes who can reach the agent — enabling the anonymous chat
+   * link, enabling the website embed, or widening its allowed origins — rather than what the agent
+   * says. The same structural signal as `removal`, for the same reason: reach and wording are
+   * different decisions, and an operator must not have to parse `summary`'s prose to tell a
+   * launcher-label edit from opening the agent to the public web. Absent, not false, when the
+   * proposal changes wording only.
+   */
+  readonly reach?: boolean;
 }
 
 export interface CopilotProposalAdapter {
@@ -327,6 +337,17 @@ export interface CopilotIngestionSettingsProposalAdapter extends CopilotProposal
 }
 
 /**
+ * A workspace settings change is supplied by Ray from settings it read, and the apply replaces the
+ * assistant and channel sections together, so `validatePayload` merges it against the stored
+ * surface and decides there whether the merge changes reach.
+ */
+export interface CopilotWorkspaceSettingProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "workspace_setting";
+  /** See {@link CopilotAgentSettingProposalAdapter.validatePayload} for why the token travels with the payload. */
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown; versionToken: string }>;
+}
+
+/**
  * An agent proposal is supplied by Ray from a website it analyzed or an operator described. Applying
  * it creates an agent and queues its website, so like a crawl it addresses no stored row and cannot
  * go stale - and like a crawl it must never be retried after an interrupted apply.
@@ -360,7 +381,8 @@ export type CopilotAnyProposalAdapter =
   | CopilotContextVariableProposalAdapter
   | CopilotDocumentProposalAdapter
   | CopilotIngestionSettingsProposalAdapter
-  | CopilotWebsiteCrawlProposalAdapter;
+  | CopilotWebsiteCrawlProposalAdapter
+  | CopilotWorkspaceSettingProposalAdapter;
 
 export type CopilotProposalAdapterRegistry = ReadonlyArray<CopilotAnyProposalAdapter>;
 
@@ -442,7 +464,7 @@ export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }
   | { readonly event: "activity"; readonly data: { toolCallId: string; tool: string; stage: "started" | "completed" | "failed"; entity?: CopilotEntityReference } }
   | { readonly event: "chunk"; readonly data: { text: string } }
-  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean } }
+  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean; reach?: boolean } }
   | { readonly event: "outcome"; readonly data: { status: CopilotTurnOutcome } }
   | { readonly event: "done"; readonly data: Record<string, never> };
 

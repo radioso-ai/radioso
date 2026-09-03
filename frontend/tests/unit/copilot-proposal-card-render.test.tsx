@@ -223,6 +223,35 @@ describe('CopilotProposalCard', () => {
     expect(applyConfirmationKind({ ...base, removal: false })).toBe('reversible-update')
   })
 
+  it('asks a different question of a change to who can reach the agent', () => {
+    const base: CopilotProposalSummary = {
+      id: 'proposal-workspace-setting',
+      targetType: 'workspace_setting',
+      targetLabel: 'Workspace settings',
+      summary: 'Change workspace anonymousChatEnabled to true. This changes who can reach the agent.',
+      status: 'pending',
+    }
+
+    expect(applyConfirmationKind(base)).toBe('reversible-update')
+    expect(applyConfirmationKind({ ...base, reach: true })).toBe('reach-change')
+    // A removal is the graver claim, so it still wins where a proposal could carry both.
+    expect(applyConfirmationKind({ ...base, reach: true, removal: true })).toBe('irreversible-removal')
+  })
+
+  it('links a workspace settings proposal at the settings surface it changed', () => {
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-workspace-setting',
+      targetType: 'workspace_setting',
+      targetLabel: 'Workspace settings',
+      summary: 'Change workspace websiteEmbedLauncherLabel to Chat with us.',
+      status: 'applied',
+    }
+
+    expect(targetReference(proposal, null, { workspaceId: 'workspace-1' })).toEqual({
+      entity: { type: 'workspace_settings' },
+    })
+  })
+
   it('renders a directive enablement proposal as a reversible update with a single enabled-field preview', async () => {
     const proposal: CopilotProposalSummary = {
       id: 'proposal-disable-directive',

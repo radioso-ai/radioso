@@ -418,6 +418,7 @@ export function CopilotChatSurface({
       status: 'pending',
       ...(event.evidence ? { evidence: event.evidence } : {}),
       ...(event.removal ? { removal: true } : {}),
+      ...(event.reach ? { reach: true } : {}),
     }
     updateSession((current) => ({
       ...current,
@@ -548,6 +549,8 @@ export function CopilotChatSurface({
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', anchor: 'assistant-skills' }))
     } else if (entity.type === 'document') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'documents', documentId: entity.id }))
+    } else if (entity.type === 'workspace_settings') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'settings' }))
     } else if (entity.type === 'ingestion_settings') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'knowledge', knowledgeTab: 'ingestion' }))
     } else if (entity.type === 'document_source') {

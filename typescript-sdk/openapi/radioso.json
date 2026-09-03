@@ -40497,7 +40497,8 @@
                           "context_variable",
                           "document",
                           "ingestion_settings",
-                          "website_crawl"
+                          "website_crawl",
+                          "workspace_setting"
                         ]
                       }
                     }
@@ -40752,7 +40753,8 @@
                                         "context_variable",
                                         "document",
                                         "ingestion_settings",
-                                        "website_crawl"
+                                        "website_crawl",
+                                        "workspace_setting"
                                       ]
                                     },
                                     "targetLabel": {
@@ -40803,6 +40805,12 @@
                                         "unchanged",
                                         "stale"
                                       ]
+                                    },
+                                    "removal": {
+                                      "type": "boolean"
+                                    },
+                                    "reach": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
@@ -41080,7 +41088,8 @@
                         "context_variable",
                         "document",
                         "ingestion_settings",
-                        "website_crawl"
+                        "website_crawl",
+                        "workspace_setting"
                       ]
                     },
                     "targetRef": {},
@@ -41098,7 +41107,8 @@
                             "context_variable",
                             "document",
                             "ingestion_settings",
-                            "website_crawl"
+                            "website_crawl",
+                            "workspace_setting"
                           ]
                         },
                         "ref": {}

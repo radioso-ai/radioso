@@ -391,7 +391,7 @@ variable "monitoring_queue_depth_threshold" {
 }
 
 variable "monitoring_scheduler_failure_threshold" {
-  description = "Non-success Cloud Scheduler attempts in fifteen minutes that trigger the scheduler alert."
+  description = "Error-level Cloud Scheduler execution logs in fifteen minutes that trigger the scheduler alert."
   type        = number
   default     = 0
 }

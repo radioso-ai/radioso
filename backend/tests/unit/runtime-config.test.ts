@@ -631,6 +631,12 @@ describe("runtime configuration", () => {
     expect(terraformApis).toContain('"cloudscheduler.googleapis.com"');
     expect(terraformApis).toContain('"monitoring.googleapis.com"');
     expect(terraformApis).toContain('"logging.googleapis.com"');
+    expect(monitoringTf).toContain('resource "google_logging_metric" "scheduler_job_failures"');
+    expect(monitoringTf).toContain('cloudscheduler.googleapis.com%2Fexecutions');
+    expect(monitoringTf).toContain('jsonPayload.\\"@type\\"');
+    expect(monitoringTf).toContain('metric.type=\\"logging.googleapis.com/user/${google_logging_metric.scheduler_job_failures[0].name}\\"');
+    expect(monitoringTf).toContain('group_by_fields      = ["metric.label.job_id"]');
+    expect(monitoringTf).not.toContain('cloudscheduler.googleapis.com/job/attempt_count');
     expect(terraformApis).not.toContain('"vpcaccess.googleapis.com"');
     expect(terraformApis).not.toContain('"cloudresourcemanager.googleapis.com"');
     expect(terraformApis).not.toContain('"iam.googleapis.com"');

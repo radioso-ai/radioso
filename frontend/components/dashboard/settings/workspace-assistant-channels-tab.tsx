@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, ShieldAlert, Trash2, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
-import { ApiAccessPanel } from '@/components/dashboard/settings/api-access-panel'
 import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
 import { AssistantProfileSection } from '@/components/dashboard/settings/assistant-profile-section'
@@ -771,8 +770,6 @@ export function WorkspaceAssistantChannelsTab({
                 {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
               </div>
             </SettingsCard>
-
-            <ApiAccessPanel key={`${activeWorkspaceId ?? 'none'}:personal`} workspaceId={activeWorkspaceId} />
 
             <WebhookDestinationsPanel onSaveStateChange={onSaveStateChange} />
 

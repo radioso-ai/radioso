@@ -418,16 +418,20 @@ describe('dashboard route state', () => {
     })
   })
 
-  it('round-trips the service accounts settings page', () => {
+  it('round-trips the API access settings page and keeps the service-accounts deep link working', () => {
+    expect(parseDashboardRoute(['settings'], new URLSearchParams({ tab: 'api-access' }))).toEqual({
+      section: 'settings',
+      settingsTab: 'api-access',
+    })
     expect(parseDashboardRoute(['settings'], new URLSearchParams({ tab: 'service-accounts' }))).toEqual({
       section: 'settings',
-      settingsTab: 'service-accounts',
+      settingsTab: 'api-access',
     })
     expect(buildDashboardHref('account-1', {
       section: 'settings',
-      settingsTab: 'service-accounts',
+      settingsTab: 'api-access',
       workspacePublicRouteKey: 'workspace-key',
-    })).toBe('/w/workspace-key/settings?tab=service-accounts')
+    })).toBe('/w/workspace-key/settings?tab=api-access')
   })
 
   it('builds legacy account routes with an explicit workspace selection', () => {

@@ -17,12 +17,12 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
   workspace: {
     id: 'workspace',
     title: 'Workspace',
-    summary: 'Control workspace identity, API access, and lifecycle.',
+    summary: 'Control workspace identity and lifecycle.',
     sections: [
       {
         id: 'workspace-access',
         label: 'Workspace and access',
-        summary: 'Organization label, workspace naming, API access, and destructive actions.',
+        summary: 'Organization label, workspace naming, and destructive actions.',
       },
       {
         id: 'webhook-destinations',
@@ -31,15 +31,25 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
       },
     ],
   },
-  'service-accounts': {
-    id: 'service-accounts',
-    title: 'Service accounts',
-    summary: 'Manage standalone workspace identities for integrations and automation.',
+  'api-access': {
+    id: 'api-access',
+    title: 'API access',
+    summary: 'Every identity that can call this workspace over the API.',
     sections: [
+      {
+        id: 'personal-tokens',
+        label: 'Personal tokens',
+        summary: 'Act as you.',
+      },
       {
         id: 'service-accounts',
         label: 'Service accounts',
-        summary: 'Create, disable, archive, and rotate credentials for non-human identities.',
+        summary: 'One identity per integration, revocable on its own.',
+      },
+      {
+        id: 'member-personal-tokens',
+        label: 'Members’ personal tokens',
+        summary: 'Revoke any; owners manage their own.',
       },
     ],
   },

@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
 description: "Installation and client setup guide for role-aware workspace automation with the Radioso TypeScript SDK."
-last_updated: 2026-09-01
+last_updated: 2026-09-02
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -16,7 +16,7 @@ This guide shows how to install the SDK, configure a client, and make your first
 
 Use a personal token when the client should act as your current workspace membership; it must expire within 90 days. Use a service-account credential for a stable CI or server identity; each credential must expire within 365 days. Both are secret bearer credentials bound to one workspace and a live role. Public chat, website embed, and role-free agent channel credentials are separate credential classes and cannot be used with this SDK client.
 
-Create a personal token from the workspace API access controls, or create the non-human identity under **Settings → Service accounts**, in a signed-in browser. Radioso returns the secret once, so store it in a secret manager rather than browser storage or source code.
+Create a personal token or a service-account credential under **Settings → API access**, in a signed-in browser. Radioso returns the secret once, so store it in a secret manager rather than browser storage or source code.
 
 To expose one agent as a chat channel, create a separate credential from **Channels → API** or **Channels → MCP**. A REST-audience credential calls `POST /api/v1/agents/{agentId}/chat`; an MCP-audience credential reaches `ask_agent`. These credentials have no workspace role.
 

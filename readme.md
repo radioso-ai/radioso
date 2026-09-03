@@ -133,7 +133,7 @@ The long versions: [Conversational directives](./docs/architecture/conversationa
 
 Five ways in: the web app, the REST API, the TypeScript SDK, an MCP client, and the website embed.
 
-**Choose the credential for the job.** Personal tokens carry the issuing user's live workspace membership and expire within 90 days. Service accounts are stable workspace identities for CI and unattended workloads; create them under **Settings → Service accounts**, and give each credential an expiry of at most 365 days. Their credentials authorize eligible role-aware workspace APIs.
+**Choose the credential for the job.** Personal tokens carry the issuing user's live workspace membership and expire within 90 days. Service accounts are stable workspace identities for CI and unattended workloads; create them under **Settings → API access**, and give each credential an expiry of at most 365 days. Their credentials authorize eligible role-aware workspace APIs.
 
 Agent chat uses a separate credential created on that agent's **Channels → API** or **Channels → MCP** card. It has no `member` or `admin` role: it is bound to one agent and one audience, expires at the time you choose, and is shown once. Workspace payloads carry both `id` and `publicRouteKey`: use `id` in API calls and `publicRouteKey` in dashboard URLs (`/w/<key>/...`). Full account and session flows: [Authentication](https://docs.radioso.ai/guides/authentication).
 

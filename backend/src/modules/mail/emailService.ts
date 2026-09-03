@@ -14,8 +14,16 @@ export interface EmailMessage {
   idempotencyKey?: string | null;
 }
 
+export interface EmailSendResult {
+  /**
+   * True only when a mail provider accepted the message. Drivers that merely record it
+   * report false, so no caller can claim an unsent message reached its recipient.
+   */
+  dispatched: boolean;
+}
+
 export interface EmailDriver {
-  send(message: EmailMessage): Promise<void>;
+  send(message: EmailMessage): Promise<EmailSendResult>;
 }
 
 export class EmailService {
@@ -27,7 +35,9 @@ export class EmailService {
     },
   ) {}
 
-  async send(message: Omit<EmailMessage, "from"> & { from?: EmailMessage["from"] }): Promise<void> {
+  async send(
+    message: Omit<EmailMessage, "from"> & { from?: EmailMessage["from"] },
+  ): Promise<EmailSendResult> {
     const normalized: EmailMessage = {
       ...message,
       from: message.from ?? {
@@ -35,12 +45,14 @@ export class EmailService {
         name: this.defaults.fromName ?? null,
       },
     };
-    await this.driver.send(normalized);
+    return this.driver.send(normalized);
   }
 }
 
 export class NoopEmailDriver implements EmailDriver {
-  async send(_message: EmailMessage): Promise<void> {}
+  async send(_message: EmailMessage): Promise<EmailSendResult> {
+    return { dispatched: false };
+  }
 }
 
 const SENSITIVE_METADATA_KEYS = new Set(["resetUrl", "verificationUrl"]);
@@ -60,7 +72,7 @@ const redactSensitiveEmailMetadata = (
 };
 
 export class LogEmailDriver implements EmailDriver {
-  async send(message: EmailMessage): Promise<void> {
+  async send(message: EmailMessage): Promise<EmailSendResult> {
     console.info("email.send", {
       to: message.to,
       replyTo: message.replyTo ?? null,
@@ -69,6 +81,7 @@ export class LogEmailDriver implements EmailDriver {
       metadata: redactSensitiveEmailMetadata(message.metadata),
       idempotencyKey: message.idempotencyKey ?? null,
     });
+    return { dispatched: false };
   }
 }
 

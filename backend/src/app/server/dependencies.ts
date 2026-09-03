@@ -120,6 +120,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
+    infrastructure,
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     repositories,

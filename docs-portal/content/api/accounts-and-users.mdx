@@ -79,6 +79,10 @@ The request body is defined by the OpenAPI schema. Use the [API Reference](/api-
 
 The invite request includes a `role` field. Use `member` by default. Use `admin` only for trusted teammates who should manage the organization.
 
+Radioso emails the invitation to the address you name, using the mail sender configured for the deployment. The response tells you what happened: `emailDelivered` is `true` when a mail provider accepted the message. It is `false` both when the provider rejected the message and when the deployment has no mail provider configured, because a server without `RESEND_MAIL_API_KEY` records outbound mail to its log rather than sending it. Either way the invitation is created and `acceptanceUrl` holds an origin-relative acceptance path — join it to your app origin and you have a link you can pass along yourself. That link is the only copy of the token, so save it if you plan to share it manually; the API never returns it again.
+
+If `emailDelivered` comes back `false`, check `MAIL_FROM_EMAIL` and `RESEND_MAIL_API_KEY` on the backend. The logs separate the two causes: a configured provider that rejects the message writes an `account_invitation_mail_delivery_failed` warning carrying the provider status code, while a deployment with no provider configured stays quiet, since recording mail to the log is what that configuration asks for. In both cases the `account.invitation.create` audit event carries `emailDelivered`, so you can tell an unsent invitation from an ignored one.
+
 ## Revoke an invitation
 
 Cancel a pending invitation that has not been accepted yet. Use the invitation id from the `invitations` array in `GET /api/v1/account/users`.

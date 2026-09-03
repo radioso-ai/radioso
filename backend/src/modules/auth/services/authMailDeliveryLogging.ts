@@ -1,3 +1,9 @@
+import {
+  readMailErrorClass,
+  readMailProviderErrorName,
+  readMailProviderStatusCode,
+} from "../../mail/public.js";
+
 interface AuthMailDeliveryLogger {
   warn(payload: Record<string, unknown>, message: string): void;
 }
@@ -11,24 +17,6 @@ interface AuthMailDeliveryFailureInput {
   error: unknown;
 }
 
-const readProviderStatusCode = (error: unknown): number | undefined => {
-  if (!error || typeof error !== "object" || !("statusCode" in error)) {
-    return undefined;
-  }
-  const statusCode = error.statusCode;
-  return typeof statusCode === "number" ? statusCode : undefined;
-};
-
-const readProviderErrorName = (error: unknown): string | undefined => {
-  if (!error || typeof error !== "object" || !("providerErrorName" in error)) {
-    return undefined;
-  }
-  const providerErrorName = error.providerErrorName;
-  return typeof providerErrorName === "string" && providerErrorName.length > 0
-    ? providerErrorName
-    : undefined;
-};
-
 export const logAuthMailDeliveryFailure = (
   logger: AuthMailDeliveryLogger | undefined,
   input: AuthMailDeliveryFailureInput,
@@ -39,9 +27,9 @@ export const logAuthMailDeliveryFailure = (
       flow: input.flow,
       userId: input.userId,
       tokenRecordId: input.tokenRecordId,
-      errorClass: input.error instanceof Error ? input.error.name : typeof input.error,
-      providerStatusCode: readProviderStatusCode(input.error),
-      providerErrorName: readProviderErrorName(input.error),
+      errorClass: readMailErrorClass(input.error),
+      providerStatusCode: readMailProviderStatusCode(input.error),
+      providerErrorName: readMailProviderErrorName(input.error),
     },
     "Transactional auth mail delivery failed",
   );

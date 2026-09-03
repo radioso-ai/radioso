@@ -20,7 +20,9 @@ export interface ContactNotificationMailer {
     subject: string;
     text: string;
     idempotencyKey?: string | null;
-  }): Promise<void>;
+    // The result is deliberately unconstrained: this handler needs the send to happen and
+    // does not read what the transport reports back.
+  }): Promise<unknown>;
 }
 
 export interface ContactDeliveryTarget {

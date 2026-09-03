@@ -7,6 +7,7 @@ import {
   InMemoryAccountMembershipRepository,
   InMemoryUserRepository,
   InMemoryWorkspaceRepository,
+  RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccountInvitationService } from "../../src/modules/account/services/accountInvitationService.js";
@@ -194,6 +195,7 @@ const createAuthService = (options: {
     userRepository,
     accountAccessService,
     auditService,
+    new RecordingAccountInvitationNotifier(),
   );
   const workspaceService = options.workspaceService ?? new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
 

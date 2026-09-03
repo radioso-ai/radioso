@@ -45,7 +45,7 @@ export function UsersPanel() {
   const [email, setEmail] = useState('')
   const [emailTouched, setEmailTouched] = useState(false)
   const [inviteRole, setInviteRole] = useState<AssignableAccountRole>('member')
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [inviteResult, setInviteResult] = useState<{ link: string; email: string; emailDelivered: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const currentUser = users.find((user) => user.userId === currentUserId)
   const canManageUsers = currentUser?.role === 'owner' || currentUser?.role === 'admin'
@@ -104,7 +104,11 @@ export function UsersPanel() {
     try {
       const response = await accountApi.createInvitation(trimmedEmail, inviteRole)
       setInvitations((current) => [response, ...current.filter((item) => item.id !== response.id)])
-      setInviteLink(typeof window === 'undefined' ? response.acceptanceUrl : `${window.location.origin}${response.acceptanceUrl}`)
+      setInviteResult({
+        link: typeof window === 'undefined' ? response.acceptanceUrl : `${window.location.origin}${response.acceptanceUrl}`,
+        email: response.email,
+        emailDelivered: response.emailDelivered,
+      })
       setEmail('')
       setEmailTouched(false)
     } catch (nextError) {
@@ -254,7 +258,7 @@ export function UsersPanel() {
                   onBlur={() => setEmailTouched(true)}
                   onChange={(event) => {
                     setEmail(event.target.value)
-                    setInviteLink(null)
+                    setInviteResult(null)
                   }}
                   disabled={isSubmitting || !canManageUsers}
                   aria-invalid={showEmailError}
@@ -293,14 +297,14 @@ export function UsersPanel() {
                 </div>
               </div>
 
-              {inviteLink ? (
+              {inviteResult ? (
                 <>
                   <div className="my-5 h-px bg-border" />
 
                   <div className="space-y-1.5">
                     <CopyValueField
-                      label="Share invite link"
-                      value={inviteLink}
+                      label={inviteResult.emailDelivered ? 'Backup invite link' : 'Share invite link'}
+                      value={inviteResult.link}
                       ariaLabel="Copy invite link"
                       truncate
                     />
@@ -316,8 +320,15 @@ export function UsersPanel() {
             </div>
 
             <DialogFooter className="mt-5 border-t border-border px-6 py-4 sm:justify-between">
-              <span className="text-xs text-muted-foreground">
-                {inviteLink ? 'Invitation sent' : ''}
+              <span
+                className={inviteResult && !inviteResult.emailDelivered ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}
+                data-testid="invite-delivery-status"
+              >
+                {inviteResult
+                  ? inviteResult.emailDelivered
+                    ? `Emailed to ${inviteResult.email}`
+                    : 'Email failed to send. Share the link instead.'
+                  : ''}
               </span>
               <div className="flex items-center gap-2">
               <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)} disabled={isSubmitting}>
@@ -374,7 +385,7 @@ export function UsersPanel() {
                 variant="outline"
                 disabled={!canManageUsers}
                 onClick={() => {
-                  setInviteLink(null)
+                  setInviteResult(null)
                   setError(null)
                   setInviteDialogOpen(true)
                 }}

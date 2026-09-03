@@ -118,7 +118,13 @@ export interface MailTransportPort {
     html?: string;
     metadata?: Record<string, string>;
     idempotencyKey?: string | null;
-  }): Promise<void>;
+  }): Promise<{
+    /**
+     * True only when a mail provider accepted the message. Deployments without a configured
+     * provider record the message instead of sending it, and report false.
+     */
+    dispatched: boolean;
+  }>;
 }
 
 export type ApplicationPublicChatActionAdvertiserRegistration =

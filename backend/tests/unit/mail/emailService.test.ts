@@ -7,13 +7,15 @@ import {
   createMailService,
   type EmailDriver,
   type EmailMessage,
+  type EmailSendResult,
 } from "../../../src/modules/mail/public.js";
 
 class RecordingEmailDriver implements EmailDriver {
   readonly messages: EmailMessage[] = [];
 
-  async send(message: EmailMessage): Promise<void> {
+  async send(message: EmailMessage): Promise<EmailSendResult> {
     this.messages.push(message);
+    return { dispatched: true };
   }
 }
 
@@ -69,6 +71,40 @@ describe("mail service", () => {
     });
 
     expect(driver.messages[0]?.from).toEqual({ email: "override@example.com", name: "Override" });
+  });
+
+  it("reports a dispatched message when the provider accepts it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 200 })));
+    const service = createMailService({ MAIL_DRIVER: "resend", RESEND_MAIL_API_KEY: "re_test" });
+
+    const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
+
+    expect(result).toEqual({ dispatched: true });
+  });
+
+  it("reports an undispatched message when the log driver only records it", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const service = createMailService({ MAIL_DRIVER: "log" });
+
+    const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
+
+    expect(result).toEqual({ dispatched: false });
+  });
+
+  it("reports an undispatched message when the noop driver discards it", async () => {
+    const service = createMailService({ MAIL_DRIVER: "noop" });
+
+    const result = await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" });
+
+    expect(result).toEqual({ dispatched: false });
+  });
+
+  it("selects the log driver when no provider key is configured", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const service = createMailService({});
+
+    expect(await service.send({ to: "ada@example.com", subject: "Hi", text: "Hello" }))
+      .toEqual({ dispatched: false });
   });
 
   it("builds a Resend-backed service from environment configuration", () => {

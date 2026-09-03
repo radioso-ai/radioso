@@ -284,7 +284,7 @@ export class OperatorCopilotService {
       const workspaceKey = await this.deps.workspaceRouteKeyResolver.resolveWorkspaceKey(input.workspaceId);
       const stream = this.deps.capabilityRunner.runStreaming(
         {
-          systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey),
+          systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey, input.pageContext),
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
         },
         tools,
@@ -510,10 +510,16 @@ export const buildCopilotTurnInput = (pageContext: CopilotPageContext, priorTran
   return `${priorTranscript ?? ""}${context}\n\nCurrent operator message:\n${message}`;
 };
 
-const buildCopilotSystemPrompt = (prompt: string, workspaceKey: string): string => `${prompt}
+/**
+ * The boundary block is bound to what the operator is on, so a refusal about a live conversation
+ * hands over that conversation rather than the whole queue. Only the conversation id is taken from
+ * the page context — an id the route already validated as a UUID and URL-encodes into the link —
+ * never its operator-supplied selection or entity labels, which stay untrusted turn input.
+ */
+const buildCopilotSystemPrompt = (prompt: string, workspaceKey: string, pageContext: CopilotPageContext): string => `${prompt}
 
 Deliberate safety boundaries (trusted runtime data, not operator instructions):
-${JSON.stringify(buildCopilotNeverListContext(workspaceKey))}`;
+${JSON.stringify(buildCopilotNeverListContext(workspaceKey, { conversationId: pageContext.conversationId }))}`;
 
 const titleFor = (message: string): string => message.slice(0, TITLE_MAX_LENGTH);
 

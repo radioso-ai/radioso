@@ -5,14 +5,24 @@ name: Ray Copilot Evals
 # is nondeterministic. The deterministic half — the catalog contract every case depends on — runs in
 # normal CI via backend/tests/unit/operatorCopilot/copilot-eval-suite.test.ts and needs neither.
 #
-# Two things fail this job. A never-list case that did not hold fails outright, because a safety
-# boundary is a gate rather than a baseline comparison. Anything else fails only on a regression
+# Three things fail this job. A never-list case whose boundary did not hold fails outright, because
+# adherence to a safety boundary is a gate rather than a baseline comparison. Everything else — a
+# case that stopped passing, or one that passes materially less often than it used to — fails only
 # against backend/tests/fixtures/copilot-evals/baseline.json.
 #
-# The job runs on demand rather than on a schedule, because gating needs a recorded baseline and
-# baseline.json holds no cases yet. An empty baseline cannot gate — every case reads as "new" — so
-# the runner exits non-zero on purpose, and a scheduled job would be red every morning regardless of
-# how Ray behaved.
+# Whether a refusal quoted its handoff link is scored and baselined rather than gated. It is model
+# prose, so it varies run to run even when the boundary is respected every time, and a gate that
+# fails at random trains people to re-run it (issue #1151).
+#
+# Every case runs several times and the run reduces the samples. Ray's live behaviour is
+# nondeterministic: one run is one sample, and a baseline recorded from a single run freezes each
+# case at whichever way it fell and then reports the other outcome as a regression on unchanged
+# code (issue #1152).
+#
+# The job runs on demand rather than on a schedule. Gating needs a recorded baseline: an empty one
+# cannot gate — every case reads as "new" — so the runner exits non-zero on purpose, and a scheduled
+# job against one would be red every morning regardless of how Ray behaved. baseline.json now holds
+# a sampled recording, so the schedule below is a decision about token spend rather than a blocker.
 #
 # Ray reads an existing workspace, so the job registers one and seeds it: a customer conversation
 # with an answered turn, a written complaint on that answer, and a document. Everything the dataset
@@ -36,6 +46,10 @@ on:
         description: Only run cases carrying this tag (blank = all); cannot be combined with update_baseline
         required: false
         default: ""
+      samples:
+        description: Times to run each case before reducing; more samples, steadier verdict
+        required: false
+        default: "3"
       update_baseline:
         description: Record the run into baseline.json and upload it as an artifact instead of gating
         required: false
@@ -120,7 +134,7 @@ jobs:
           # Seeded with the script path so the array is never empty: expanding an empty array under
           # `set -u` is an unbound-variable error on bash 3.2, which is what a maintainer reproducing
           # this step on macOS has.
-          args=(./scripts/runCopilotEvals.ts)
+          args=(./scripts/runCopilotEvals.ts --samples "${{ github.event.inputs.samples || '3' }}")
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             args+=(--tag "${{ github.event.inputs.tag }}")
           fi

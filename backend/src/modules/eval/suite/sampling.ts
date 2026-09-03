@@ -22,20 +22,24 @@ export interface RunSampledOptions {
   runIdPrefix?: string;
 }
 
-interface SampleScore {
+/**
+ * One scored run of one case. Generic in its verdict type so both committed suites reduce with the
+ * same rule: the reduction is arithmetic over statuses and never inspects a verdict.
+ */
+export interface SampleScore<TVerdict = SuiteAssertionVerdict> {
   status: EvalRunStatus;
   reason: string | null;
-  verdicts: SuiteAssertionVerdict[];
+  verdicts: TVerdict[];
 }
 
-export interface SampleReduction {
+export interface SampleReduction<TVerdict = SuiteAssertionVerdict> {
   status: EvalRunStatus;
   passCount: number;
   /** Fraction of *scored* (non-`recorded`) samples that passed, in [0, 1]. */
   passRate: number;
   flaky: boolean;
   reason: string | null;
-  verdicts: SuiteAssertionVerdict[];
+  verdicts: TVerdict[];
   statusCounts: Record<EvalRunStatus, number>;
 }
 
@@ -46,7 +50,10 @@ export interface SampleReduction {
  * surfaces as `error`. `flaky` means the samples disagreed — the signal that tells you a
  * `pass`/`fail` was not unanimous.
  */
-export const reduceSamples = (samples: SampleScore[], passThreshold: number): SampleReduction => {
+export const reduceSamples = <TVerdict>(
+  samples: ReadonlyArray<SampleScore<TVerdict>>,
+  passThreshold: number,
+): SampleReduction<TVerdict> => {
   const statusCounts: Record<EvalRunStatus, number> = { pass: 0, fail: 0, error: 0, recorded: 0 };
   for (const sample of samples) {
     statusCounts[sample.status] += 1;

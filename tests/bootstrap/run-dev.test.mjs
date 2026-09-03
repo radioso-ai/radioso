@@ -1,57 +1,92 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+import { main, resolveRunDevEnvironment } from "../../scripts/run-dev.mjs";
 
-test("run-dev exports the Conductor frontend port as app base URL for backend emails", async () => {
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-run-dev-"));
-  const nodeStub = path.join(tempDir, "node");
-  await fs.writeFile(
-    nodeStub,
-    [
-      "#!/usr/bin/env bash",
-      "set -euo pipefail",
-      "case \"$1\" in",
-      "  */scripts/sync-ee-frontend-routes.mjs)",
-      "    exit 0",
-      "    ;;",
-      "  */scripts/bootstrap/index.mjs)",
-      "    printf 'APP_BASE_URL=%s\\n' \"${APP_BASE_URL:-}\"",
-      "    printf 'PUBLIC_CHAT_BASE_URL=%s\\n' \"${PUBLIC_CHAT_BASE_URL:-}\"",
-      "    exit 0",
-      "    ;;",
-      "  *)",
-      "    echo \"unexpected node target: $1\" >&2",
-      "    exit 1",
-      "    ;;",
-      "esac",
-      "",
-    ].join("\n"),
-    "utf8",
-  );
-  await fs.chmod(nodeStub, 0o755);
+const repoRoot = path.resolve(import.meta.dirname, "../..");
 
-  try {
-    const { stdout } = await execFileAsync("bash", ["run-dev.sh"], {
-      cwd: path.resolve(import.meta.dirname, "../.."),
-      env: {
-        ...process.env,
-        CONDUCTOR_PORT: "4100",
-        PATH: `${tempDir}:${process.env.PATH}`,
-        APP_BASE_URL: "",
-        PUBLIC_CHAT_BASE_URL: "",
-        RADIOSO_FRONTEND_PORT: "",
+test("run-dev resolves Conductor ports and public URLs once for every host launcher", () => {
+  const resolved = resolveRunDevEnvironment({ CONDUCTOR_PORT: "4100" });
+
+  assert.equal(resolved.RADIOSO_FRONTEND_PORT, "4100");
+  assert.equal(resolved.RADIOSO_BACKEND_PORT, "4101");
+  assert.equal(resolved.RADIOSO_POSTGRES_PORT, "4102");
+  assert.equal(resolved.APP_BASE_URL, "http://localhost:4100");
+  assert.equal(resolved.PUBLIC_CHAT_BASE_URL, "http://localhost:4100/chat");
+});
+
+test("run-dev preserves explicit ports and public URLs", () => {
+  const resolved = resolveRunDevEnvironment({
+    CONDUCTOR_PORT: "4100",
+    RADIOSO_FRONTEND_PORT: "4400",
+    RADIOSO_BACKEND_PORT: "4401",
+    RADIOSO_POSTGRES_PORT: "4402",
+    APP_BASE_URL: "https://app.example.com",
+    PUBLIC_CHAT_BASE_URL: "https://chat.example.com",
+  });
+
+  assert.equal(resolved.RADIOSO_FRONTEND_PORT, "4400");
+  assert.equal(resolved.RADIOSO_BACKEND_PORT, "4401");
+  assert.equal(resolved.RADIOSO_POSTGRES_PORT, "4402");
+  assert.equal(resolved.APP_BASE_URL, "https://app.example.com");
+  assert.equal(resolved.PUBLIC_CHAT_BASE_URL, "https://chat.example.com");
+});
+
+test("run-dev synchronizes OSS routes before forwarding arguments to the bootstrap", async () => {
+  const calls = [];
+  const env = { CONDUCTOR_PORT: "4100" };
+
+  const exitCode = await main(["--attach"], {
+    env,
+    disableEnterpriseFrontendRoutes: async () => calls.push("sync"),
+    bootstrapMain: async (argv) => {
+      calls.push({ argv, frontendPort: env.RADIOSO_FRONTEND_PORT });
+      return 0;
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(calls, [
+    "sync",
+    { argv: ["--attach"], frontendPort: "4100" },
+  ]);
+});
+
+test("run-dev does not start the stack when OSS route synchronization fails", async () => {
+  let bootstrapCalled = false;
+
+  await assert.rejects(
+    main([], {
+      env: {},
+      disableEnterpriseFrontendRoutes: async () => {
+        throw new Error("route sync failed");
       },
-    });
+      bootstrapMain: async () => {
+        bootstrapCalled = true;
+        return 0;
+      },
+    }),
+    /route sync failed/,
+  );
+  assert.equal(bootstrapCalled, false);
+});
 
-    assert.match(stdout, /APP_BASE_URL=http:\/\/localhost:4100/);
-    assert.match(stdout, /PUBLIC_CHAT_BASE_URL=http:\/\/localhost:4100\/chat/);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
+test("host wrappers contain no duplicated startup policy", async () => {
+  const shellLauncher = await fs.readFile(path.join(repoRoot, "run-dev.sh"), "utf8");
+  const windowsLauncher = await fs.readFile(path.join(repoRoot, "run-dev.cmd"), "utf8");
+
+  assert.match(shellLauncher, /scripts\/run-dev\.mjs/);
+  assert.match(windowsLauncher, /scripts\\run-dev\.mjs/);
+  for (const launcher of [shellLauncher, windowsLauncher]) {
+    assert.doesNotMatch(launcher, /CONDUCTOR_PORT|APP_BASE_URL|sync-ee-frontend-routes/);
   }
+});
+
+test("Windows checkouts preserve LF endings for Linux container scripts", async () => {
+  const attributes = await fs.readFile(path.join(repoRoot, ".gitattributes"), "utf8");
+
+  assert.match(attributes, /^\*\.sh text eol=lf$/m);
+  assert.match(attributes, /^\*\.cmd text eol=crlf$/m);
 });

@@ -44,10 +44,18 @@ Every surface hands its turn to the same engine, and every turn records which di
 
 ## Quick start
 
-You need Node.js 24+ and Docker Desktop. A provider API key (OpenAI, Gemini, or Anthropic) can wait — enter it when the bootstrap prompts, or add it later in the app under **Settings → Credentials**.
+You need Node.js 24+ and Docker Desktop. On Windows, configure Docker Desktop to use Linux containers. A provider API key (OpenAI, Gemini, or Anthropic) can wait — enter it when the bootstrap prompts, or add it later in the app under **Settings → Credentials**.
+
+macOS or Linux:
 
 ```bash
 ./run-dev.sh
+```
+
+Windows PowerShell or Command Prompt:
+
+```powershell
+.\run-dev.cmd
 ```
 
 The bootstrap generates secrets and starts the full stack. OpenAI, OpenAI-compatible, and Gemini keys serve both text and embeddings; with a Claude key, the bootstrap asks which supported provider should create document embeddings.
@@ -66,11 +74,11 @@ Then, five minutes and three steps:
 
 That's the whole product in miniature. Everything else is tuning.
 
-Development-stack notes: source is bind-mounted into the containers, backend TypeScript restarts on change, and prompt templates under `backend/prompts/` are re-read per request. The Compose project is named `radioso` and keeps Postgres on `127.0.0.1:5432` — reachable from your machine, not from public interfaces. To run several stacks side by side, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before `./run-dev.sh`; Conductor workspaces pick up their `CONDUCTOR_PORT` allocation automatically.
+Development-stack notes: source is bind-mounted into the containers, backend TypeScript restarts on change, and prompt templates under `backend/prompts/` are re-read per request. The Compose project is named `radioso` and keeps Postgres on `127.0.0.1:5432` — reachable from your machine, not from public interfaces. To run several stacks side by side, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before your platform's launcher; Conductor workspaces pick up their `CONDUCTOR_PORT` allocation automatically.
 
 Production concerns — registration email verification, mail configuration, secrets — live in [Deployment](https://docs.radioso.ai/operators/deployment) and [Authentication](https://docs.radioso.ai/guides/authentication).
 
-For Enterprise Edition development, `./run-ee-dev.sh` starts Postgres in Docker and runs the backend, workers, frontend, and embed harness on the host with the commercial packages from `ee/packages` built in. Plain `./run-dev.sh` removes the generated Enterprise routes before starting the OSS stack.
+For Enterprise Edition development on macOS or Linux, `./run-ee-dev.sh` starts Postgres in Docker and runs the backend, workers, frontend, and embed harness on the host with the commercial packages from `ee/packages` built in. Enterprise host-service development requires a Unix-like shell. Both open-source launchers remove generated Enterprise routes before starting the OSS stack.
 
 ## How a turn works
 
@@ -229,7 +237,7 @@ The full documentation lives at [docs.radioso.ai](https://docs.radioso.ai): [qui
 
 ## Contributing
 
-Contributions are welcome. Run `./run-dev.sh` for a full local stack, then read [CONTRIBUTING.md](./CONTRIBUTING.md) for per-package test targets, the `pnpm run ci:local` check to run before opening a pull request, and the Conventional Commits format the history uses.
+Contributions are welcome. Run `./run-dev.sh` on macOS or Linux, or `.\run-dev.cmd` on Windows, for a full local stack. Then read [CONTRIBUTING.md](./CONTRIBUTING.md) for per-package test targets, the `pnpm run ci:local` check to run before opening a pull request, and the Conventional Commits format the history uses.
 
 ```
 backend/         Express API and background document worker

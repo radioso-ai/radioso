@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-09-01
+last_updated: 2026-09-03
 ---
 
 # Code Map
@@ -53,6 +53,34 @@ Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/integrationDatabaseSafety.test.ts tests/unit/integrationDatabaseCleanupPolicy.test.ts`
 - `node --test tests/bootstrap/integration-database-safety.test.mjs`
+
+## Local Development Bootstrap
+
+Owns host-side environment generation, prerequisite checks, local port allocation,
+Docker Compose startup, and readiness reporting. The Node launcher is the shared
+implementation; platform wrappers only locate and invoke it.
+
+Should not own application behavior, container dependency installation, database
+migrations, or service lifecycle rules inside the containers.
+
+Primary paths:
+
+- `scripts/run-dev.mjs`
+- `scripts/bootstrap/`
+- `run-dev.sh`
+- `run-dev.cmd`
+- `docker-compose.yml`
+- `docker-compose.dev.yml`
+- `.gitattributes`
+
+Focused checks:
+
+- `node --test tests/bootstrap/*.test.mjs`
+- `docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet`
+
+Related docs:
+
+- [Run locally](../../docs-portal/content/quickstarts/run-locally.mdx)
 
 ## Backend HTTP Surface
 

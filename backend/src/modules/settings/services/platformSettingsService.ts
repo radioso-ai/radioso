@@ -171,6 +171,10 @@ export class PlatformSettingsService {
       rotateWebsiteEmbedToken,
     }), context.expectedUpdatedAt ? { expectedUpdatedAt: context.expectedUpdatedAt } : undefined);
 
+    // After the agent write has committed. A failing audit sink must not report a change that is
+    // already live as a failure - the same rule the ingestion settings service applies, and it
+    // matters more here: a copilot proposal whose apply reports failure invites the operator to
+    // draft it again.
     await this.recordChannelAuditEvents({
       accountId: context.accountId,
       workspaceId,
@@ -201,9 +205,16 @@ export class PlatformSettingsService {
     if (!auditService) {
       return;
     }
+    const record = async (event: Parameters<typeof auditService.record>[0]): Promise<void> => {
+      try {
+        await auditService.record(event);
+      } catch {
+        // The change is already written; losing its audit line must not undo or misreport it.
+      }
+    };
 
     if (input.anonymousChatEnabled !== input.previousAgent.surfaceSettings.anonymousChat.enabled) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: input.anonymousChatEnabled ? "anonymous_chat.enabled" : "anonymous_chat.disabled",
@@ -213,7 +224,7 @@ export class PlatformSettingsService {
     }
 
     if (input.rotateAnonymousChatToken) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: "anonymous_chat.token_rotated",
@@ -223,7 +234,7 @@ export class PlatformSettingsService {
     }
 
     if (input.websiteEmbedEnabled !== getWebsiteEmbedSurfaceSettings(input.previousAgent).enabled) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: input.websiteEmbedEnabled ? "website_embed.enabled" : "website_embed.disabled",
@@ -236,7 +247,7 @@ export class PlatformSettingsService {
     }
 
     if (input.rotateWebsiteEmbedToken) {
-      await auditService.record({
+      await record({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
         eventType: "website_embed.token_rotated",

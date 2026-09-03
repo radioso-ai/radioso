@@ -373,7 +373,7 @@ describe("the composed workspace settings port", () => {
         updatedAt: new Date("2026-09-01T10:00:00.000Z"),
       }) as never,
       updateForWorkspace: async () => ({}) as never,
-    });
+    }, { resolveAccountId: async () => "account-1" });
 
     const snapshot = await port.getForWorkspace("workspace-1");
 
@@ -382,14 +382,18 @@ describe("the composed workspace settings port", () => {
     expect(snapshot).not.toHaveProperty("websiteEmbedSnippet");
   });
 
-  it("applies through the settings service without naming a rotation flag", async () => {
+  it("applies through the settings service under the workspace's account and without a rotation flag", async () => {
+    // The account matters: enabling a public channel writes an audit event an operator reads by
+    // account, and an apply happens outside the session the dashboard route stamps it from.
     const updateForWorkspace = vi.fn(async () => ({}) as never);
-    const port = createCopilotWorkspaceSettingPort({
-      getVersionedForWorkspace: async () => ({ settings: {}, updatedAt: new Date() }) as never,
-      updateForWorkspace,
-    });
+    const port = createCopilotWorkspaceSettingPort(
+      {
+        getVersionedForWorkspace: async () => ({ settings: {}, updatedAt: new Date() }) as never,
+        updateForWorkspace,
+      },
+      { resolveAccountId: async () => "account-1" },
+    );
 
-    await port.getForWorkspace("workspace-1").catch(() => undefined);
     await port.updateForWorkspace("workspace-1", {
       name: "Workspace settings", assistantName: "Ada", greetingInstruction: "Greet warmly.",
       assistantDefaultLocale: null, proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true,
@@ -398,10 +402,10 @@ describe("the composed workspace settings port", () => {
       websiteEmbedLauncherPosition: "bottom-right", changesReach: true,
     }, { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
 
-    const [, patch, context] = updateForWorkspace.mock.calls[0]!;
-    expect(patch).not.toHaveProperty("channels.rotateAnonymousChatToken");
-    expect((patch as { channels: Record<string, unknown> }).channels).not.toHaveProperty("rotateWebsiteEmbedToken");
-    expect(context).toEqual({ expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
+    const call = updateForWorkspace.mock.calls[0] as unknown as [string, { channels: Record<string, unknown> }, Record<string, unknown>];
+    expect(call[1].channels).not.toHaveProperty("rotateAnonymousChatToken");
+    expect(call[1].channels).not.toHaveProperty("rotateWebsiteEmbedToken");
+    expect(call[2]).toEqual({ accountId: "account-1", expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
   });
 });
 

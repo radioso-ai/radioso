@@ -10,6 +10,7 @@ import {
 } from "./contracts/workspaceSettingAuthoring.js";
 import type { CopilotWorkspaceSettingProposalAdapter } from "./contracts.js";
 import { isStale, versionInstant, versionToken } from "./proposalVersioning.js";
+import { validateWebsiteEmbedSettings } from "../settings/public.js";
 import { AppError, badRequest } from "../../shared/domain/errors.js";
 
 /** See the document adapter: a read that failed is not a target that vanished. */
@@ -72,6 +73,13 @@ export const changesWorkspaceReach = (changed: ReadonlyArray<string>): boolean =
  * The write replaces the assistant and channel sections at once, so a proposal that named one field
  * has to carry the rest. Merging only the keys the change actually names keeps an absent field
  * meaning "leave it alone" rather than "reset it to whatever the payload happens to hold".
+ *
+ * The embed fields go through the settings domain's own validator on the way, for the same reason
+ * the ingestion adapter runs `validateIngestionSettings`: it owns rules a single field cannot
+ * express - an enabled embed needs at least one origin - and it normalizes what it is given, so an
+ * origin written as `https://example.com/path` settles to `https://example.com`. Diffing before
+ * that normalization would report a change the write does not make, and would state reach for it.
+ * The token it settles is discarded: this payload has no field to carry one.
  */
 const merged = (
   settings: CopilotWorkspaceSettingSnapshot,
@@ -79,9 +87,26 @@ const merged = (
 ): Omit<CopilotWorkspaceSettingPayload, "changesReach"> => {
   const { rationale: _rationale, ...fields } = change;
   const named = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+  const requested = { ...settled(settings), ...named };
+  let embed;
+  try {
+    embed = validateWebsiteEmbedSettings({
+      websiteEmbedEnabled: requested.websiteEmbedEnabled,
+      websiteEmbedAllowedOrigins: [...requested.websiteEmbedAllowedOrigins],
+      websiteEmbedLauncherLabel: requested.websiteEmbedLauncherLabel,
+      websiteEmbedLauncherPosition: requested.websiteEmbedLauncherPosition,
+    });
+  } catch (error) {
+    // Refused at draft time rather than at Apply, so a combination that could only ever fail never
+    // reaches an operator's card.
+    throw badRequest(error instanceof Error ? error.message : "The proposed embed settings are not valid");
+  }
   return copilotWorkspaceSettingPayloadSchema.omit({ changesReach: true }).parse({
-    ...settled(settings),
-    ...named,
+    ...requested,
+    websiteEmbedEnabled: embed.websiteEmbedEnabled,
+    websiteEmbedAllowedOrigins: embed.websiteEmbedAllowedOrigins,
+    websiteEmbedLauncherLabel: embed.websiteEmbedLauncherLabel,
+    websiteEmbedLauncherPosition: embed.websiteEmbedLauncherPosition,
     name: WORKSPACE_SETTINGS_LABEL,
     ...(change.rationale !== undefined ? { rationale: change.rationale } : {}),
   });

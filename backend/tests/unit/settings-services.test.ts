@@ -252,6 +252,41 @@ describe("settings services", () => {
     expect(workspaceRepository.updateGeneralSettings).not.toHaveBeenCalled();
   });
 
+  it("returns the saved settings even when a channel audit event cannot be recorded", async () => {
+    // The audit runs after the agent write has committed. Reporting failure for a change that is
+    // already live invites the operator to make it twice — and a copilot proposal's card would
+    // read "failed" for a channel that is now open.
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: false,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const agentService = createAgentService(createAgent(workspace));
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService,
+      auditService: { record: vi.fn().mockRejectedValue(new Error("audit down")) },
+    } as never);
+
+    await expect(service.updateForWorkspace(
+      "workspace-1",
+      { channels: { anonymousChatEnabled: true } },
+      { accountId: "account-1" },
+    )).resolves.toMatchObject({ channels: expect.objectContaining({ anonymousChatEnabled: true }) });
+    expect(agentService.update).toHaveBeenCalled();
+  });
+
   it("carries a caller's expected version into the agent write, so a surface edited since is refused", async () => {
     const workspace = {
       id: "workspace-1",

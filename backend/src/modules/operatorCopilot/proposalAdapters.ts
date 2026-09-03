@@ -294,6 +294,15 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
   async validatePayload(workspaceId, rawTargetRef, rawPayload) {
     const targetRef = settingTargetRefSchema.parse(rawTargetRef);
     const payload = settingPayloadSchema.parse(rawPayload);
+    // An agent setting is addressed by one key, but `surfaceSettings` is a whole nested object
+    // holding the anonymous-chat and embed surfaces - their enablement, their allowed origins, and
+    // their tokens. Proposing it as one value would put a card labelled "surfaceSettings" in front
+    // of an operator while carrying a change to who can reach the agent, and a token, inside it.
+    // Those fields are proposed by name through propose_workspace_setting, which states reach on
+    // the card and cannot carry a token at all.
+    if (targetRef.settingKey === "surfaceSettings") {
+      throw badRequest("Public channel and embed settings are proposed with propose_workspace_setting, which names each field and states on the card when a change alters who can reach the agent");
+    }
     // The version token is derived from this same read, not a follow-up readVersionToken call: a
     // concurrent edit landing between two separate reads could pair a merge built from the first
     // (now stale) read with the second read's fresher token, letting a lost update pass its

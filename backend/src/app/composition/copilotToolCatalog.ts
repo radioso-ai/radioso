@@ -105,6 +105,7 @@ export const createCopilotDocumentAuthoringPort = (
  */
 export const createCopilotWorkspaceSettingPort = (
   platformSettingsService: Pick<PlatformSettingsService, "getVersionedForWorkspace" | "updateForWorkspace">,
+  workspaceAccount: CopilotWorkspaceAccountResolver,
 ): CopilotWorkspaceSettingPort => ({
   getForWorkspace: async (workspaceId) => {
     const { settings, updatedAt } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
@@ -123,7 +124,7 @@ export const createCopilotWorkspaceSettingPort = (
       updatedAt,
     };
   },
-  updateForWorkspace: (workspaceId, input, options) => platformSettingsService.updateForWorkspace(
+  updateForWorkspace: async (workspaceId, input, options) => platformSettingsService.updateForWorkspace(
     workspaceId,
     {
       assistant: {
@@ -142,7 +143,13 @@ export const createCopilotWorkspaceSettingPort = (
         websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
       },
     },
-    { ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}) },
+    {
+      // Enabling a public channel writes an audit event, and an operator reviewing account activity
+      // reads those by account. The dashboard route stamps this from the session; a proposal is
+      // applied outside one, so the account is resolved from the workspace instead of left null.
+      accountId: await workspaceAccount.resolveAccountId(workspaceId),
+      ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
+    },
   ),
 });
 

@@ -136,6 +136,26 @@ describe("propose_workspace_setting", () => {
       .rejects.toThrow(/at least one/i);
   });
 
+  it("decides reach on the origins the write will store, not the ones Ray typed", async () => {
+    // The settings domain normalizes an origin down to its scheme and host. Diffing before that
+    // would call this a reach change and then apply nothing.
+    const { adapter } = adapterFor();
+    const { descriptor } = toolFor(adapter);
+
+    await expect(descriptor.createTool(context).invoke({
+      websiteEmbedAllowedOrigins: ["https://example.com/widget"],
+    }, {} as never)).rejects.toThrow(/already/i);
+  });
+
+  it("refuses at draft time a combination the settings domain would reject at apply", async () => {
+    const { adapter } = adapterFor();
+    const { descriptor } = toolFor(adapter);
+
+    await expect(descriptor.createTool(context).invoke({
+      websiteEmbedAllowedOrigins: [],
+    }, {} as never)).rejects.toThrow(/allowed origin/i);
+  });
+
   it("refuses a change that restates what is already stored", async () => {
     const { adapter } = adapterFor();
     const { descriptor } = toolFor(adapter);

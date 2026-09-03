@@ -474,6 +474,14 @@ const main = async (): Promise<void> => {
       console.error(`${diff.regressions.length} case(s) regressed against the baseline: ${diff.regressions.map((entry) => entry.caseId).join(", ")}`);
       process.exitCode = 1;
     }
+    // Not a regression, but not "unchanged" either: say so, or a smoke run reads as a clean one.
+    if (diff.underSampled.length > 0) {
+      console.warn(
+        `${diff.underSampled.length} case(s) look worse than the baseline but this run sampled less deeply than it did; ` +
+        `re-run with --samples ${Math.max(...diff.underSampled.map((entry) => entry.baselineSamples))} to decide: ` +
+        diff.underSampled.map((entry) => entry.caseId).join(", "),
+      );
+    }
     // The half a status comparison cannot see: a case recorded `fail` that used to pass some of the
     // time and now never does holds its status and is silently worse.
     if (diff.rateRegressions.length > 0) {

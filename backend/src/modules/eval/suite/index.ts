@@ -19,6 +19,7 @@ export {
 } from "./scoring.js";
 export {
   baselineCaseRate,
+  baselineCaseSamples,
   baselineCaseStatus,
   buildBaselineFile,
   diffAgainstBaseline,

@@ -232,6 +232,38 @@ describe("baseline diff", () => {
     ).toEqual([]);
   });
 
+  it("does not call it a regression when this run sampled less than the baseline did", () => {
+    // The bare smoke run is one sample. Against a baseline recorded from three, a case that passes
+    // seven times in eight fails that single sample often enough to report a regression on
+    // unchanged code — the exact defect sampling exists to remove, wearing a different hat. A run
+    // that sampled less deeply than the baseline cannot support the claim, so it does not make it.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 1 }],
+      { cases: { a: { status: "pass", passRate: 1, samples: 3 } } },
+    );
+
+    expect(diff.regressions).toEqual([]);
+    expect(diff.underSampled).toEqual([
+      { caseId: "a", name: "A", from: "pass", to: "fail", samples: 1, baselineSamples: 3 },
+    ]);
+  });
+
+  it("still reports a regression when the run sampled at least as deeply", () => {
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 3 }],
+        { cases: { a: { status: "pass", passRate: 1, samples: 3 } } },
+      ).regressions.map((entry) => entry.caseId),
+    ).toEqual(["a"]);
+    // A baseline that recorded no sample count is the older single-sample form; nothing to compare.
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail" }],
+        { cases: { a: "pass" } },
+      ).regressions.map((entry) => entry.caseId),
+    ).toEqual(["a"]);
+  });
+
   it("builds a sorted baseline file", () => {
     const file = buildBaselineFile(
       [

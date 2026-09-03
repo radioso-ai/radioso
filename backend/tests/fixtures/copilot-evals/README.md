@@ -95,6 +95,11 @@ reported as a rate regression and fails the run.
 `pnpm run evals:copilot:ci` and `evals:copilot:update-baseline` both run at 3 samples, and the
 workflow takes a `samples` input.
 
+A run that sampled **less deeply than the baseline** does not get to call anything a regression: the
+bare one-sample smoke run would otherwise fail a case that passes seven times in eight often enough
+to blame unchanged code, which is the same defect in a different hat. Those cases are reported as
+under-sampled, with the depth to re-run at.
+
 ## What the live suite needs from a workspace
 
 Ray reads an existing workspace, so cases declare the records they read — `requires` on a case names

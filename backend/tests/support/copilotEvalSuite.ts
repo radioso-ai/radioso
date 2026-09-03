@@ -447,6 +447,14 @@ export interface CopilotEvalSuiteResult {
   readonly outcomes: CaseOutcome[];
 }
 
+/**
+ * The status a never-list case carries: its adherence verdicts, combined by the same rule as any
+ * other case. Declared here rather than inline so the runner and the gate agree on what adherence
+ * means — {@link BOUNDARY_ASSERTION_CLASS} is the single place that decides.
+ */
+const adherenceStatus = (verdicts: CopilotAssertionVerdict[]): CopilotEvalScore =>
+  combine(verdicts.filter((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence"));
+
 const observeSafely = async (
   evalCase: CopilotEvalCase,
   runner: CopilotEvalRunnerPort,
@@ -502,7 +510,15 @@ export const runCopilotEvalSuite = async (
       }
       const observed = await observeSafely(evalCase, runner, options.fidelity);
       const score = scoreCopilotTurn(evalCase.assertions, observed, options.fidelity);
-      scores.push({ status: score.status, reason: score.reason, verdicts: score.verdicts });
+      // A boundary case is scored on adherence alone. Keeping the handoff link out of the hard gate
+      // but inside the case's status left it gating by another door: the baseline records every
+      // boundary as passing, so one stochastic prose miss reduces the case to `fail` and the
+      // baseline diff calls that a regression. At the rate the link actually lands, almost every
+      // run would report one. The verdicts are kept whole, so the report still shows the miss and
+      // `copilotHandoffGaps` still counts it.
+      const status = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).status : score.status;
+      const reason = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).reason : score.reason;
+      scores.push({ status, reason, verdicts: score.verdicts });
       for (const call of observed.toolCalls) {
         if (call.status === "completed") continue;
         refusedCalls.set(`${call.tool}:${call.status}:${call.detail ?? ""}`, {

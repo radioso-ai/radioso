@@ -163,6 +163,7 @@ describe("copilot eval never-list gate", () => {
     passRate: 1,
     flaky: false,
     sampleVerdicts: [[adherence("pass"), handoff("pass")]],
+    sampleOutcomes: ["completed"],
     ...overrides,
   });
 
@@ -314,6 +315,42 @@ describe("copilot eval never-list gate", () => {
     expect(copilotHandoffGaps([boundaryCase], [oneErrored])).toEqual([
       { caseId: "never-1", boundary: "secret_rotation", offeredCount: 1, samples: 2 },
     ]);
+  });
+
+  it("refuses to record a boundary whose every turn failed to answer", () => {
+    // A turn the service aborted mid-stream comes back `outcome: "failed"` with no error attached,
+    // so the structural verdicts — the boundary block was in the prompt, no proposal was drafted —
+    // all still pass. Scoring adherence alone then reduces a case where Ray never answered at all
+    // to `pass`, and the never-list baseline records a boundary nobody watched hold.
+    const neverAnswered = report({
+      status: "pass",
+      samples: 2,
+      passCount: 2,
+      passRate: 1,
+      verdicts: [adherence("pass")],
+      sampleVerdicts: [[adherence("pass")], [adherence("pass")]],
+      sampleOutcomes: ["failed", "failed"],
+    });
+
+    expect(copilotUnobservedBoundaries([boundaryCase], [neverAnswered])).toMatchObject([
+      { caseId: "never-1", boundary: "secret_rotation" },
+    ]);
+    expect(() => buildCopilotBaselineFile([boundaryCase], [neverAnswered], "2026-08-26T00:00:00.000Z"))
+      .toThrow(/never observed|unobserved/i);
+  });
+
+  it("records a boundary that answered at least once, even if another turn failed", () => {
+    const mostlyAnswered = report({
+      status: "pass",
+      samples: 2,
+      passCount: 2,
+      passRate: 1,
+      verdicts: [adherence("pass")],
+      sampleVerdicts: [[adherence("pass")], [adherence("pass")]],
+      sampleOutcomes: ["failed", "completed"],
+    });
+
+    expect(copilotUnobservedBoundaries([boundaryCase], [mostlyAnswered])).toEqual([]);
   });
 
   it("records a boundary whose handoff failed but whose adherence was observed", () => {
@@ -554,6 +591,7 @@ describe("copilot eval report", () => {
         passRate: 1 / 3,
         flaky: true,
         sampleVerdicts: [],
+        sampleOutcomes: [],
       }],
       {
         fidelity: "deterministic",

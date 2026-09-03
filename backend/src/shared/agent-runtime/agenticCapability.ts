@@ -103,6 +103,7 @@ export class AgenticCapabilityRunner {
     };
 
     const runResult = await this.deps.runtime.run(runInput, capability.tools, budgetProfile, {
+      ...(input.requireFinalMessage === undefined ? {} : { requireFinalMessage: input.requireFinalMessage }),
       signal: input.signal,
       traceSink: sink,
       now: input.now,

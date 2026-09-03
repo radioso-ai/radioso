@@ -128,6 +128,12 @@ export interface CopilotEvalCaseReport extends CaseOutcome {
    * status: a boundary that held twice and broke once is a boundary that broke.
    */
   readonly sampleVerdicts: ReadonlyArray<ReadonlyArray<CopilotAssertionVerdict>>;
+  /**
+   * How each sample's turn ended, in run order. A turn the service aborted mid-stream comes back
+   * `failed` with no error attached, so its structural verdicts still pass — the outcome is the
+   * only thing that says Ray never answered.
+   */
+  readonly sampleOutcomes: ReadonlyArray<CopilotObservedTurn["outcome"]>;
 }
 
 const pageContextSchema = z.object({
@@ -499,6 +505,7 @@ export const runCopilotEvalSuite = async (
 
   for (const evalCase of cases) {
     const scores: Array<SampleScore<CopilotAssertionVerdict>> = [];
+    const sampleOutcomes: Array<CopilotObservedTurn["outcome"]> = [];
     // A tool that refused is the usual reason a case did not take the path it was written for, and
     // "the tool was not called" on its own never says which. Collected across samples so a refusal
     // that only happened once is still in the report.
@@ -516,6 +523,7 @@ export const runCopilotEvalSuite = async (
       // baseline diff calls that a regression. At the rate the link actually lands, almost every
       // run would report one. The verdicts are kept whole, so the report still shows the miss and
       // `copilotHandoffGaps` still counts it.
+      sampleOutcomes.push(observed.outcome);
       const status = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).status : score.status;
       const reason = evalCase.neverListBoundary ? adherenceStatus(score.verdicts).reason : score.reason;
       scores.push({ status, reason, verdicts: score.verdicts });
@@ -542,6 +550,7 @@ export const runCopilotEvalSuite = async (
       passRate: reduced.passRate,
       flaky: reduced.flaky,
       sampleVerdicts: scores.map((score) => score.verdicts),
+      sampleOutcomes,
     });
   }
 
@@ -687,19 +696,32 @@ export const copilotUnobservedBoundaries = (
     const report = reportById.get(evalCase.id);
     if (!report) continue;
 
-    // Unobserved means NO sample saw adherence, not that one sample threw. Sampling exists to
+    // Unobserved means NO sample watched Ray answer, not that one sample threw. Sampling exists to
     // survive a flaky environment; rejecting a recording because one run of three hit a provider
     // error would hand that resilience straight back.
-    const adherenceVerdicts = report.sampleVerdicts
-      .flat()
-      .filter((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence");
-    if (adherenceVerdicts.length === 0) continue;
-    if (adherenceVerdicts.some((verdict) => verdict.status === "pass" || verdict.status === "fail")) continue;
+    //
+    // A sample counts only if its turn produced something AND its adherence was scored. Both halves
+    // are load-bearing: a provider exception errors the verdicts, while a turn the service aborted
+    // mid-stream comes back `failed` with the structural verdicts still passing — the boundary was
+    // in the prompt and no proposal was drafted because nothing happened at all. Recording either
+    // as a clean observation is how a never-list baseline ends up asserting a boundary nobody saw.
+    let observedSample = false;
+    let erroredReason: string | null = null;
+    for (const [index, sample] of report.sampleVerdicts.entries()) {
+      const adherence = sample.filter((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence");
+      erroredReason ??= adherence.find((verdict) => verdict.status === "error")?.reason ?? null;
+      const scored = adherence.some((verdict) => verdict.status === "pass" || verdict.status === "fail");
+      if (scored && report.sampleOutcomes[index] !== "failed") {
+        observedSample = true;
+        break;
+      }
+    }
+    if (observedSample) continue;
 
     unobserved.push({
       caseId: evalCase.id,
       boundary: evalCase.neverListBoundary,
-      reason: adherenceVerdicts.find((verdict) => verdict.status === "error")?.reason ?? null,
+      reason: erroredReason ?? "the turn produced no answer",
     });
   }
 

@@ -246,8 +246,47 @@ describe("settings services", () => {
       expect.objectContaining({
         name: "Nora",
       }),
+      // An unconditional write: a caller that decided against a version passes one, and this one did not.
+      undefined,
     );
     expect(workspaceRepository.updateGeneralSettings).not.toHaveBeenCalled();
+  });
+
+  it("carries a caller's expected version into the agent write, so a surface edited since is refused", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: true,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const agentService = createAgentService(createAgent(workspace));
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService,
+    } as never);
+
+    await service.updateForWorkspace(
+      "workspace-1",
+      { assistant: { assistantName: "Nora" } },
+      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
+    );
+
+    expect(agentService.update).toHaveBeenCalledWith(
+      "workspace-1",
+      "workspace-1-agent",
+      expect.anything(),
+      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
+    );
   });
 
   it("delegates website embed script and snippet construction to the configured integration provider", async () => {

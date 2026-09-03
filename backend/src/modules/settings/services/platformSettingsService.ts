@@ -28,6 +28,19 @@ export interface PlatformSettingsServiceDependencies {
 
 export interface PlatformSettingsUpdateContext {
   accountId?: string | null;
+  /**
+   * The version the caller decided against. Passed through to the agent write's own predicate so a
+   * surface edited since then is refused rather than replaced wholesale — the copilot drafts a
+   * whole-object proposal ahead of the operator's Apply, and without this a concurrent dashboard
+   * edit would be silently overwritten by values drafted before it.
+   */
+  expectedUpdatedAt?: Date;
+}
+
+/** The settings plus the version a conditional write can be predicated on, read in one pass. */
+export interface VersionedPlatformSettings {
+  settings: PlatformSettingsResource;
+  updatedAt: Date;
 }
 
 export class PlatformSettingsService {
@@ -49,6 +62,27 @@ export class PlatformSettingsService {
     return {
       assistant: this.buildAssistantSection(agent),
       channels: await this.buildChannelsSection(agent, workspace),
+    };
+  }
+
+  /**
+   * Deliberately one read: pairing values from one read with a version from a later one would let
+   * an edit landing between them pass a version check it should have failed.
+   */
+  async getVersionedForWorkspace(workspaceId: string): Promise<VersionedPlatformSettings> {
+    const workspace = await this.dependencies.workspaceRepository.findById(workspaceId);
+
+    if (!workspace) {
+      throw notFound("Workspace not found");
+    }
+    const agent = await this.dependencies.agentService.resolve(workspaceId);
+
+    return {
+      settings: {
+        assistant: this.buildAssistantSection(agent),
+        channels: await this.buildChannelsSection(agent, workspace),
+      },
+      updatedAt: agent.updatedAt,
     };
   }
 
@@ -135,7 +169,7 @@ export class PlatformSettingsService {
       suggestedQuestionsEnabled: assistant.suggestedQuestionsEnabled ?? agent.suggestedQuestionsEnabled,
       customInstruction: assistant.customInstruction ?? agent.customInstruction,
       rotateWebsiteEmbedToken,
-    }));
+    }), context.expectedUpdatedAt ? { expectedUpdatedAt: context.expectedUpdatedAt } : undefined);
 
     await this.recordChannelAuditEvents({
       accountId: context.accountId,

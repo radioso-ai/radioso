@@ -272,14 +272,37 @@ because the write replaces all of them at once — the card shows the whole resu
 so nothing changes out of sight. Applying it re-chunks nothing on its own;
 reprocess a document or a source afterwards to reach what is already indexed.
 
-The embedding model is not part of this. Changing it re-embeds every chunk in the
-workspace, which is a cost decision with a typed confirmation of its own in
-**Knowledge → Ingestion**. Ray describes the change and hands you the link.
+The embedding model is a cost decision with a typed confirmation of its own in
+**Knowledge → Ingestion**: changing it re-embeds every chunk in the workspace.
+Ray describes the change and hands you the link.
+
+A workspace settings proposal covers the assistant's own wording and the public
+channels it answers on: the assistant name, greeting, default locale, custom
+instruction, and suggested questions, plus the anonymous chat link, the website
+embed, its allowed origins, and its launcher label and position. Name the one
+field you want changed and the rest carry over from the stored settings, the same
+way ingestion settings work, because this write also replaces all of them at once.
+
+Some of those fields decide *who can reach the agent* rather than what it says —
+turning on the anonymous chat link, turning on the embed, or adding an allowed
+origin. A proposal that changes one of them says **Changes who can reach the
+agent** on the card, and the Apply confirmation asks that question instead of the
+usual one. It is a reversible change, and the card tells you which kind of
+decision you are making before you expand the diff.
+
+Applying a workspace settings proposal goes through the same service the
+**Settings → Workspace** page writes through, so it gets the same validation and
+records the same audit events an operator's own edit does. The anonymous chat and
+website embed tokens stay with the operator: Ray reads neither, and applying a
+proposal rotates neither. Ask Ray to change the behavior of one agent among
+several and it drafts an agent setting proposal instead, which targets that agent
+by name.
 
 **Apply** asks for the permission that governs what the proposal changes, not one
 permission for all of them: `workspace.agents.manage` for an agent, directive, agent
 setting, routine, skill, or context variable; `workspace.documents.manage` for a
-document or a crawl; `workspace.settings.manage` for ingestion settings. An
+document or a crawl; `workspace.settings.manage` for ingestion settings and
+workspace settings. An
 operator who manages knowledge but not agents sees Apply on the document cards
 and a read-only view of the rest. Ray sends the confirmed proposal through the same guarded
 management service used by the dashboard. Operators with read access can

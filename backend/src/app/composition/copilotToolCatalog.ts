@@ -36,6 +36,8 @@ import type {
   CopilotWorkspaceRouteKeyResolver,
 } from "../../modules/operatorCopilot/public.js";
 import type { CopilotDocumentAuthoringPort, CopilotDocumentSummary, CopilotWorkspaceAccountResolver } from "../../modules/operatorCopilot/contracts/documentAuthoring.js";
+import type { CopilotWorkspaceSettingPort } from "../../modules/operatorCopilot/contracts/workspaceSettingAuthoring.js";
+import type { PlatformSettingsService } from "../../modules/settings/composition.js";
 import { websiteCrawlerCopilotPrimitives } from "../../modules/websiteCrawler/public.js";
 import type { CopilotToolContribution, CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
 import { copilotApplicationPrimitiveRegistry, resolveCopilotToolContributions } from "../../modules/operatorCopilot/public.js";
@@ -86,6 +88,62 @@ export const createCopilotDocumentAuthoringPort = (
   },
   ingest: (input) => documentIngestionService.ingest(input),
   updateRetrievalSettings: (input) => documentIngestionService.updateRetrievalSettings(input),
+});
+
+/**
+ * Projects the platform settings service down to what the copilot may propose. Two things are
+ * happening here, and both are boundaries rather than plumbing.
+ *
+ * The read drops the anonymous-chat and website-embed tokens and the embed snippet that carries
+ * one. The port's type already omits them, but a type is a compile-time claim: selecting the
+ * fields makes it a runtime fact, so no widening cast or JSON dump can put a token in a model
+ * context.
+ *
+ * The write goes through the same service the dashboard's own settings page writes through, so an
+ * applied proposal gets the embed validation and the channel audit events an operator's edit gets.
+ * It names no rotation flag, which is why applying a proposal can never rotate a token.
+ */
+export const createCopilotWorkspaceSettingPort = (
+  platformSettingsService: Pick<PlatformSettingsService, "getVersionedForWorkspace" | "updateForWorkspace">,
+): CopilotWorkspaceSettingPort => ({
+  getForWorkspace: async (workspaceId) => {
+    const { settings, updatedAt } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
+    return {
+      assistantName: settings.assistant.assistantName,
+      greetingInstruction: settings.assistant.greetingInstruction,
+      assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
+      proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+      suggestedQuestionsEnabled: settings.assistant.suggestedQuestionsEnabled,
+      customInstruction: settings.assistant.customInstruction,
+      anonymousChatEnabled: settings.channels.anonymousChatEnabled,
+      websiteEmbedEnabled: settings.channels.websiteEmbedEnabled,
+      websiteEmbedAllowedOrigins: settings.channels.websiteEmbedAllowedOrigins,
+      websiteEmbedLauncherLabel: settings.channels.websiteEmbedLauncherLabel,
+      websiteEmbedLauncherPosition: settings.channels.websiteEmbedLauncherPosition,
+      updatedAt,
+    };
+  },
+  updateForWorkspace: (workspaceId, input, options) => platformSettingsService.updateForWorkspace(
+    workspaceId,
+    {
+      assistant: {
+        assistantName: input.assistantName,
+        greetingInstruction: input.greetingInstruction,
+        assistantDefaultLocale: input.assistantDefaultLocale,
+        proactiveGreetingEnabled: input.proactiveGreetingEnabled,
+        suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
+        customInstruction: input.customInstruction,
+      },
+      channels: {
+        anonymousChatEnabled: input.anonymousChatEnabled,
+        websiteEmbedEnabled: input.websiteEmbedEnabled,
+        websiteEmbedAllowedOrigins: [...input.websiteEmbedAllowedOrigins],
+        websiteEmbedLauncherLabel: input.websiteEmbedLauncherLabel,
+        websiteEmbedLauncherPosition: input.websiteEmbedLauncherPosition,
+      },
+    },
+    { ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}) },
+  ),
 });
 
 export const createCopilotWorkspaceAccountResolver = (

@@ -11,6 +11,9 @@ import { createDocumentProposalCopilotTools } from "../../../src/modules/operato
 import { createDocumentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/ingestionSettingsProposals.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWorkspaceSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/workspaceSettingProposals.js";
+import { createWorkspaceSettingCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
+import { createCopilotWorkspaceSettingPort } from "../../../src/app/composition/copilotToolCatalog.js";
 import { createWebsiteCrawlProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/websiteCrawlProposals.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { createCopilotDocumentAuthoringPort } from "../../../src/app/composition/copilotToolCatalog.js";
@@ -80,6 +83,16 @@ describe("proposal authorization by target type", () => {
   it("keeps agent-scoped proposals on agent management", async () => {
     const directive = proposalRow({ targetType: "directive", payload: { op: "remove", name: "Do not guess" } });
     const { service, applyIfVersionMatches } = serviceFor(directive, ["workspace.agents.manage"]);
+
+    await expect(service.applyProposal(applyInput)).resolves.toMatchObject({ status: "applied" });
+    expect(applyIfVersionMatches).toHaveBeenCalled();
+  });
+
+  it("gates workspace settings on settings management", async () => {
+    const { service, applyIfVersionMatches } = serviceFor(
+      proposalRow({ targetType: "workspace_setting", targetRef: {}, payload: { name: "Workspace settings", changesReach: true } }),
+      ["workspace.settings.manage"],
+    );
 
     await expect(service.applyProposal(applyInput)).resolves.toMatchObject({ status: "applied" });
     expect(applyIfVersionMatches).toHaveBeenCalled();
@@ -159,7 +172,7 @@ describe("live and reloaded cards state the same thing", () => {
   ) => {
     const descriptor = descriptors.find((candidate) => candidate.name === name);
     if (!descriptor) throw new Error(`No descriptor named ${name}`);
-    const live = await descriptor.createTool(toolContext as never).invoke(input, {} as never) as { targetLabel: string; summary: string; removal?: boolean };
+    const live = await descriptor.createTool(toolContext as never).invoke(input, {} as never) as { targetLabel: string; summary: string; removal?: boolean; reach?: boolean };
     const persisted = createProposal.mock.calls[0]![0] as Record<string, unknown>;
     const reloaded = presentProposalCard({ ...persisted, id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", status: "pending", reason: null, appliedRef: null, messageId: null, createdAt: new Date(), updatedAt: new Date(), evidence: null } as never);
     return { live, reloaded };
@@ -203,6 +216,50 @@ describe("live and reloaded cards state the same thing", () => {
 
     expect(reloaded.summary).toBe(live.summary);
     expect(reloaded.targetLabel).toBe(live.targetLabel);
+  });
+
+  it("agrees for a workspace settings reach change", async () => {
+    // The reach signal has the same two producers as removal, and the same way to diverge: the
+    // live output states what the tool just drafted, the reload re-reads it from the payload.
+    const { createProposal, deps } = recorder();
+    const adapter = createWorkspaceSettingCopilotProposalAdapter({
+      workspaceSetting: {
+        getForWorkspace: vi.fn(async () => ({
+          assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null,
+          proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true, customInstruction: "",
+          anonymousChatEnabled: false, websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"],
+          websiteEmbedLauncherLabel: "Ask us", websiteEmbedLauncherPosition: "bottom-right",
+          updatedAt: new Date("2026-09-01T10:00:00.000Z"),
+        })),
+        updateForWorkspace: vi.fn(),
+      },
+    });
+    const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_workspace_setting", { anonymousChatEnabled: true }, createProposal);
+
+    expect(live.reach).toBe(true);
+    expect(reloaded.reach).toBe(true);
+    expect(reloaded.summary).toBe(live.summary);
+    expect(reloaded.targetLabel).toBe(live.targetLabel);
+  });
+
+  it("leaves a workspace wording change unmarked on both producers", async () => {
+    const { createProposal, deps } = recorder();
+    const adapter = createWorkspaceSettingCopilotProposalAdapter({
+      workspaceSetting: {
+        getForWorkspace: vi.fn(async () => ({
+          assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null,
+          proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true, customInstruction: "",
+          anonymousChatEnabled: false, websiteEmbedEnabled: true, websiteEmbedAllowedOrigins: ["https://example.com"],
+          websiteEmbedLauncherLabel: "Ask us", websiteEmbedLauncherPosition: "bottom-right",
+          updatedAt: new Date("2026-09-01T10:00:00.000Z"),
+        })),
+        updateForWorkspace: vi.fn(),
+      },
+    });
+    const { live, reloaded } = await drafted(createWorkspaceSettingProposalCopilotTools({ ...deps, proposalAdapters: [adapter] }) as never, "propose_workspace_setting", { websiteEmbedLauncherLabel: "Chat with us" }, createProposal);
+
+    expect(live.reach).toBeUndefined();
+    expect(reloaded.reach).toBeUndefined();
   });
 
   it("agrees for a website crawl", async () => {
@@ -288,6 +345,63 @@ describe("failure modes the adapters must tell apart", () => {
     await adapter.applyIfVersionMatches("workspace-1", drafted.targetRef, drafted.payload, drafted.versionToken);
 
     expect(enqueue).toHaveBeenCalledWith(expect.objectContaining({ limit: 25 }));
+  });
+});
+
+describe("the composed workspace settings port", () => {
+  it("hands the adapter no channel token, whatever the settings service returned", async () => {
+    // Same reasoning as the document port below: the port's type omits the tokens, but a type is a
+    // compile-time claim. This proves the object itself carries none, so a widening cast or a JSON
+    // dump downstream cannot put an anonymous-chat or embed token in a model context.
+    const port = createCopilotWorkspaceSettingPort({
+      getVersionedForWorkspace: async () => ({
+        settings: {
+          assistant: {
+            assistantName: "Ada", greetingInstruction: "Greet warmly.", assistantDefaultLocale: null,
+            proactiveGreetingEnabled: false, assistantBootstrapActive: false, suggestedQuestionsEnabled: true,
+            customInstruction: "", assistantLogoUrl: null,
+          },
+          channels: {
+            anonymousChatEnabled: false, anonymousChatUrl: null, anonymousChatLastUsedAt: null,
+            websiteEmbedEnabled: true, websiteEmbedToken: "embed-token-secret", websiteEmbedLastUsedAt: null,
+            websiteEmbedAllowedOrigins: ["https://example.com"], websiteEmbedLauncherLabel: "Ask us",
+            websiteEmbedLauncherPosition: "bottom-right", websiteEmbedScriptUrl: null,
+            websiteEmbedSnippet: "<script data-token=\"embed-token-secret\"></script>",
+            websiteEmbedTheme: {}, websiteEmbedCopy: {}, websiteEmbedExpertOverrides: {},
+          },
+        },
+        updatedAt: new Date("2026-09-01T10:00:00.000Z"),
+      }) as never,
+      updateForWorkspace: async () => ({}) as never,
+    });
+
+    const snapshot = await port.getForWorkspace("workspace-1");
+
+    expect(JSON.stringify(snapshot)).not.toContain("embed-token-secret");
+    expect(snapshot).not.toHaveProperty("websiteEmbedToken");
+    expect(snapshot).not.toHaveProperty("websiteEmbedSnippet");
+  });
+
+  it("applies through the settings service without naming a rotation flag", async () => {
+    const updateForWorkspace = vi.fn(async () => ({}) as never);
+    const port = createCopilotWorkspaceSettingPort({
+      getVersionedForWorkspace: async () => ({ settings: {}, updatedAt: new Date() }) as never,
+      updateForWorkspace,
+    });
+
+    await port.getForWorkspace("workspace-1").catch(() => undefined);
+    await port.updateForWorkspace("workspace-1", {
+      name: "Workspace settings", assistantName: "Ada", greetingInstruction: "Greet warmly.",
+      assistantDefaultLocale: null, proactiveGreetingEnabled: false, suggestedQuestionsEnabled: true,
+      customInstruction: "", anonymousChatEnabled: true, websiteEmbedEnabled: true,
+      websiteEmbedAllowedOrigins: ["https://example.com"], websiteEmbedLauncherLabel: "Ask us",
+      websiteEmbedLauncherPosition: "bottom-right", changesReach: true,
+    }, { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
+
+    const [, patch, context] = updateForWorkspace.mock.calls[0]!;
+    expect(patch).not.toHaveProperty("channels.rotateAnonymousChatToken");
+    expect((patch as { channels: Record<string, unknown> }).channels).not.toHaveProperty("rotateWebsiteEmbedToken");
+    expect(context).toEqual({ expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") });
   });
 });
 

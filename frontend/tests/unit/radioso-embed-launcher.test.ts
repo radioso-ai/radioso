@@ -689,6 +689,93 @@ describe('radioso embed launcher', () => {
     expect(button.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('names the assistant and marks the greeting teaser as AI', async () => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+
+    const head = new FakeElement('head')
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head,
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const fetch = vi.fn<(input: unknown, init?: RequestInit) => Promise<unknown>>(async () => ({
+      ok: true,
+      json: async () => ({
+        launcherLabel: 'Chat with us',
+        launcherPosition: 'bottom-right',
+        theme: { brand: '#0f172a', brandText: '#f8fafc', surface: '#ffffff', text: '#0f172a' },
+        copy: {},
+        expertOverrides: { displayMode: 'bubble', initialState: 'collapsed' },
+        proactiveGreetingEnabled: true,
+        assistantName: 'Marta',
+      }),
+    }))
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage: { getItem: vi.fn(() => null), setItem: vi.fn() },
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      visualViewport: null,
+    }
+
+    // The teaser is deferred behind a delay, so timers run eagerly to mount it.
+    // Timers scheduled from inside a running timer are dropped: the teaser
+    // schedules its own auto-hide, which would tear down what we assert on.
+    let insideTimer = false
+    const runImmediately = ((callback: () => void) => {
+      if (insideTimer) {
+        return 1
+      }
+      insideTimer = true
+      try {
+        callback()
+      } finally {
+        insideTimer = false
+      }
+      return 1
+    }) as unknown as typeof setTimeout
+
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout: runImmediately,
+      clearTimeout: vi.fn(),
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    const teasers = collectElements(body, (element) => element.className === 'radioso-teaser')
+    expect(teasers).toHaveLength(1)
+    const names = collectElements(teasers[0], (element) => element.className === 'radioso-teaser-name')
+    const chips = collectElements(teasers[0], (element) => element.className === 'radioso-teaser-ai')
+    expect(names[0]?.textContent).toBe('Marta')
+    expect(chips[0]?.textContent).toBe('AI')
+  })
+
   it('toggles the mounted embed fullscreen state on iframe request', async () => {
     const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
     const script = new FakeElement('script')

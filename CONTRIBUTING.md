@@ -9,13 +9,21 @@ Radioso's open-source edition is licensed under Apache 2.0. The files under [`ee
 ## Prerequisites
 
 - **Node.js 24** and **pnpm** (this is a pnpm workspace; run `pnpm` from the repo root, never `npm install` inside a package).
-- **Docker** with Compose, for the local stack and for the containerized checks.
+- **Docker** with Compose, for the local stack and for the containerized checks. On Windows, use Docker Desktop with Linux containers.
 - A provider API key (for example OpenAI) if you want chat and document processing to run end to end. You add it in the app under **Settings → Credentials** after the stack is up.
 
 ## Run the stack locally
 
+On macOS or Linux:
+
 ```bash
 ./run-dev.sh
+```
+
+On Windows, open PowerShell or Command Prompt in the repository root:
+
+```powershell
+.\run-dev.cmd
 ```
 
 This brings up the backend API, the document worker, the frontend, and PostgreSQL with `pgvector` in Docker. The frontend serves on `http://127.0.0.1:3000` and the backend on `http://127.0.0.1:8080`. A cold first boot installs dependencies inside the containers and can take several minutes; the runner prints a heartbeat while it works.

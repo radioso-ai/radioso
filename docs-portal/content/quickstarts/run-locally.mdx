@@ -1,27 +1,35 @@
 ---
 title: "Run locally in 5 minutes"
 description: "Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question."
-last_updated: 2026-09-01
+last_updated: 2026-09-03
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # Run locally in 5 minutes
 
-This is the fastest way to see Radioso doing its job: one script, a local stack, and a grounded answer from your own document a few minutes later. You get the dashboard, the API, and the background worker on one machine, so you can upload real content and check the answers before you think about deployment.
+This is the fastest way to see Radioso doing its job: one command, a local stack, and a grounded answer from your own document a few minutes later. You get the dashboard, the API, and the background worker on one machine, so you can upload real content and check the answers before you think about deployment.
 
 ## Prerequisites
 
 - Node.js 24+
-- Docker with `docker compose`
+- Docker with `docker compose`; on Windows, use Docker Desktop with Linux containers
 - A provider API key (OpenAI, Gemini, or Anthropic) — optional at startup, needed before your first grounded answer
 
-You need Node.js because `./run-dev.sh` runs a small Node bootstrap script before the containers come up. The provider key is what turns your documents into embeddings and your questions into answers, so pick the provider you already have credit with.
+You need Node.js because both host launchers run the same Node bootstrap before the containers come up. The provider key is what turns your documents into embeddings and your questions into answers, so pick the provider you already have credit with.
 
 ## Start the stack
 
+On macOS or Linux:
+
 ```bash
 ./run-dev.sh
+```
+
+On Windows, open PowerShell or Command Prompt in the repository root:
+
+```powershell
+.\run-dev.cmd
 ```
 
 This is the bootstrap path, and it does the fiddly parts for you. It:
@@ -40,7 +48,7 @@ When it finishes, open:
 - API: `http://localhost:8080`
 - Enterprise embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
-For Enterprise Edition embed development, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. The `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+For Enterprise Edition embed development on macOS or Linux, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. Enterprise host-service development requires a Unix-like shell. Both open-source launchers remove generated Enterprise routes before starting the OSS stack.
 
 ## Pick a local goal
 

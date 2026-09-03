@@ -589,6 +589,56 @@ describe("website crawler service", () => {
   });
 
   it.each([
+    ["an explicitly selected source", "selected-source"],
+    ["a source derived from the crawled url", undefined],
+  ])("resolves %s through the ingestion service so instance methods keep their receiver", async (_description, sourceId) => {
+    // The real DocumentIngestionService resolver reaches for private helpers on `this`;
+    // a detached method reference throws before any page is crawled.
+    class IngestionServiceStub {
+      readonly resolved: unknown[] = [];
+
+      async resolveSource(input: { workspaceId: string; source: unknown }) {
+        this.resolved.push(input.source);
+        return { id: sourceId ?? "source-1" };
+      }
+
+      async ingest() {
+        return { documentId: "doc-1", status: "queued" as const };
+      }
+
+      async updateSourceSyncState() {}
+
+      async reapMissingPages() {
+        return { deletedCount: 0, deletedContentBytes: 0 };
+      }
+    }
+    const documentIngestionService = new IngestionServiceStub();
+    const service = new WebsiteCrawlerService({
+      provider: createProvider([{
+        sourceUrl: "https://example.com/a",
+        canonicalUrl: "https://example.com/a",
+        title: "A",
+        content: "alpha",
+        metadata: {},
+      }]),
+      documentIngestionService,
+      auditService: { record: vi.fn() },
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      sourceId,
+      url: "https://example.com",
+      limit: 5,
+    });
+
+    expect(documentIngestionService.resolved).toHaveLength(1);
+    expect(result.accepted).toBe(1);
+    expect(result.failed).toBe(0);
+  });
+
+  it.each([
     ["the source resolver is absent", undefined],
     ["the selected source cannot be resolved", vi.fn().mockResolvedValue(null)],
     ["the resolver returns a different source", vi.fn().mockResolvedValue({ id: "wrong-source" })],

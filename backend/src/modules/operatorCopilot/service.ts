@@ -286,6 +286,9 @@ export class OperatorCopilotService {
         {
           systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey),
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
+          // The operator reads this answer, so a turn that gives up mid-loop still owes them a
+          // sentence rather than a blank card.
+          requireFinalMessage: true,
         },
         tools,
         COPILOT_BUDGETS,
@@ -294,6 +297,19 @@ export class OperatorCopilotService {
         if (trace.kind === "tool_call_validated") {
           const describedEntity = await this.describeActivityEntity(descriptors.get(trace.toolName), trace.input, input);
           if (describedEntity) entitiesByToolCall.set(trace.callId, describedEntity);
+        }
+        // The runtime suppresses a failed closing call so the run still ends on its own terms, but
+        // the operator is left with a blank turn. Audited rather than only traced: the trace dies
+        // with the request, and support otherwise cannot tell a failed recovery from a model that
+        // said nothing. The error message only — never a prompt or a completion.
+        if (trace.kind === "model_call_failed") {
+          await this.audit(input, {
+            accountId: input.accountId,
+            workspaceId: input.workspaceId,
+            eventType: "copilot.turn.recovery_failed",
+            eventStatus: "failure",
+            metadata: { conversationId: conversation.id, turnId, phase: trace.phase, error: trace.error },
+          });
         }
         const event = mapCopilotTraceEvent(trace, labels, entitiesByToolCall);
         trackActivity(trace, labels, entitiesByToolCall, activity);

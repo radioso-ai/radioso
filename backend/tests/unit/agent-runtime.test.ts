@@ -303,6 +303,199 @@ describe("DefaultAgentRuntime", () => {
       expect(result.terminatedReason).toBe("tool_validation_failed");
     });
 
+    it("asks for a closing answer when the run gave up mid-turn without one", async () => {
+      // Measured live: Ray reached for two tools that do not exist, then a tool literally named
+      // "none", and the run terminated with no answer — the operator got a blank turn. Every
+      // non-completed termination has this shape whenever the model was calling tools rather than
+      // talking, because finalMessage only ever holds the last assistant message.
+      //
+      // The empty strings are the production contract, not a convenience: TextRoutedToolCallingGateway
+      // requires "text" to be empty when tool_calls is non-empty and coerces a missing one to "",
+      // so a null check alone would never fire against a real provider.
+      const gateway = makeGateway([
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "   ", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+        { say: "I could not do that; here is what I found." },
+      ]);
+
+      const result = await runWith(gateway, [echoTool()], AGENT_BUDGET_DEFAULTS, { requireFinalMessage: true });
+
+      expect(result.terminatedReason).toBe("tool_validation_failed");
+      expect(result.finalMessage).toBe("I could not do that; here is what I found.");
+      // Offered no tools, so the closing request cannot start another tool loop.
+      expect(gateway.calls.at(-1)?.toolSchemas).toEqual([]);
+    });
+
+    it("leaves the run blank for a caller that never reads the prose", async () => {
+      // Agentic retrieval builds its result from a finalization tool payload and the chunk registry
+      // and never touches finalMessage, so a closing call there is a provider request nobody reads.
+      // The caller knows whether prose matters; the runtime does not get to decide it does.
+      const gateway = makeGateway([
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+      ]);
+
+      const result = await runWith(gateway, [echoTool()]);
+
+      expect(result.finalMessage).toBe("");
+      expect(gateway.calls).toHaveLength(2);
+    });
+
+    it("gives the tool loop nothing when the only step is the reserved one", async () => {
+      // maxSteps 1 with an answer required means the single budgeted call IS the closing call.
+      // Letting the loop take it and then closing on top spends two against a ceiling of one.
+      const gateway = makeGateway([{ say: "I could not start." }]);
+
+      const result = await runWith(gateway, [echoTool()], { ...AGENT_BUDGET_DEFAULTS, maxSteps: 1 }, { requireFinalMessage: true });
+
+      expect(gateway.calls).toHaveLength(1);
+      expect(gateway.calls[0]?.toolSchemas).toEqual([]);
+      expect(result.finalMessage).toBe("I could not start.");
+      expect(result.terminatedReason).toBe("step_budget_exhausted");
+    });
+
+    it("reports the abort rather than the earlier reason when cancellation lands mid-closing-call", async () => {
+      // Swallowing the abort here reported `tool_validation_failed` for a turn the caller cancelled,
+      // which is the wrong outcome on the record and in the audit trail.
+      const controller = new AbortController();
+      let call = 0;
+      const gateway: ModelToolCallingGateway = {
+        async request() {
+          call += 1;
+          if (call <= 2) return { assistantMessage: "", toolCalls: [toolCall("ghost", { x: 1 }, `c${call}`)] };
+          controller.abort();
+          throw new Error("aborted");
+        },
+      };
+      const runtime = new DefaultAgentRuntime({ gateway });
+
+      const result = await runtime.run(
+        { systemPrompt: "s", userMessage: "u" },
+        [echoTool()],
+        AGENT_BUDGET_DEFAULTS,
+        { requireFinalMessage: true, signal: controller.signal },
+      );
+
+      expect(result.terminatedReason).toBe("cancelled");
+      // Whatever the model last said, which FR-004 requires be returned. The closing call was the
+      // chance to improve on it and the caller took that away.
+      expect(result.finalMessage).toBe("");
+    });
+
+    it("says so when the closing call itself fails", async () => {
+      // The run still ends on its own terms, but the operator gets a blank turn either way and
+      // support cannot otherwise tell a failed recovery from a model that said nothing.
+      let call = 0;
+      const gateway: ModelToolCallingGateway = {
+        async request() {
+          call += 1;
+          if (call <= 2) return { assistantMessage: "", toolCalls: [toolCall("ghost", { x: 1 }, `c${call}`)] };
+          throw new Error("provider exploded");
+        },
+      };
+      const trace = collectTrace();
+      const runtime = new DefaultAgentRuntime({ gateway });
+
+      const result = await runtime.run(
+        { systemPrompt: "s", userMessage: "u" },
+        [echoTool()],
+        AGENT_BUDGET_DEFAULTS,
+        { requireFinalMessage: true, traceSink: trace.sink },
+      );
+
+      expect(result.terminatedReason).toBe("tool_validation_failed");
+      expect(trace.events.find((event) => event.kind === "model_call_failed")).toMatchObject({
+        phase: "closing_message",
+        error: "provider exploded",
+      });
+    });
+
+    it("keeps the closing call inside the step budget", async () => {
+      // FR-003 makes maxSteps a hard ceiling on model calls, so the answer has to be reserved from
+      // the budget rather than spent past it. A caller that wants prose trades its last tool step
+      // for it.
+      const gateway = makeGateway(
+        Array.from({ length: 8 }, () => ({ say: "", tools: [toolCall("echo", { text: "again" })] })),
+      );
+
+      const result = await runWith(gateway, [echoTool()], { ...AGENT_BUDGET_DEFAULTS, maxSteps: 3 }, { requireFinalMessage: true });
+
+      expect(result.terminatedReason).toBe("step_budget_exhausted");
+      expect(gateway.calls).toHaveLength(3);
+      expect(result.stepsTaken).toBe(3);
+    });
+
+    it("gives the closing call a step of its own so its usage is not deduplicated away", async () => {
+      // TextRoutedToolCallingGateway derives the usage idempotency key from `agent_step:${stepIndex}`
+      // and the recorder drops a duplicate, so reusing the failed step's index would bill the
+      // closing call as the one before it and lose its tokens.
+      const gateway = makeGateway([
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+        { say: "could not do it" },
+      ]);
+
+      await runWith(gateway, [echoTool()], AGENT_BUDGET_DEFAULTS, { requireFinalMessage: true });
+
+      const indexes = gateway.calls.map((call) => call.stepIndex);
+      expect(new Set(indexes).size).toBe(indexes.length);
+    });
+
+    it("keeps the answer the model already gave rather than spending a closing call", async () => {
+      const gateway = makeGateway([
+        { say: "try ghost", tools: [toolCall("ghost", { x: 1 }, "c1")] },
+        { say: "still cannot", tools: [toolCall("ghost", { x: 1 }, "c2")] },
+      ]);
+
+      const result = await runWith(gateway, [echoTool()], AGENT_BUDGET_DEFAULTS, { requireFinalMessage: true });
+
+      expect(result.finalMessage).toBe("still cannot");
+      expect(gateway.calls).toHaveLength(2);
+    });
+
+    it("does not resubmit a transcript that already blew the context budget", async () => {
+      // token_budget_exhausted means the tool results in the transcript are over the hard ceiling.
+      // Sending that same transcript back for a closing answer is the one case where the recovery
+      // call is guaranteed to be the wrong shape, so the blank turn is the lesser outcome.
+      const bigTool: AgentTool = {
+        name: "big",
+        description: "big",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ text: z.string() }),
+        invoke: async () => ({ text: "x".repeat(400) }),
+        estimatedResultTokens: () => 999_999,
+      };
+      const gateway = makeGateway([{ say: "", tools: [toolCall("big", {}, "c1")] }]);
+
+      const result = await runWith(gateway, [bigTool], { ...AGENT_BUDGET_DEFAULTS, maxToolResultTokens: 10 }, { requireFinalMessage: true });
+
+      expect(result.terminatedReason).toBe("token_budget_exhausted");
+      expect(gateway.calls).toHaveLength(1);
+    });
+
+    it("keeps a blank turn rather than a hung one when the run is already out of time", async () => {
+      // Wall time and cancellation are the two reasons a closing call is wrong: the run is out of
+      // budget by definition, so one more model call is the opposite of what the caller asked for.
+      const hangingGateway: ModelToolCallingGateway = {
+        async request(req) {
+          return new Promise((resolve, reject) => {
+            req.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          });
+        },
+      };
+      const runtime = new DefaultAgentRuntime({ gateway: hangingGateway });
+
+      const result = await runtime.run(
+        { systemPrompt: "s", userMessage: "u" },
+        [echoTool()],
+        { ...AGENT_BUDGET_DEFAULTS, maxWallTimeMs: 20 },
+        { requireFinalMessage: true },
+      );
+
+      expect(result.terminatedReason).toBe("wall_time_exhausted");
+      expect(result.finalMessage).toBeNull();
+    });
+
     it("rejects unparseable JSON arguments as invalid_arguments", async () => {
       const gateway = makeGateway([
         { say: "garbled", tools: [{ callId: "c1", toolName: "echo", rawArguments: "{not json" }] },

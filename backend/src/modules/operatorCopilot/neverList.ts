@@ -39,7 +39,16 @@ export interface CopilotNeverListContextEntry {
   readonly dashboardUrl: string;
 }
 
-/** Trusted per-turn data: the prompt, rather than code, determines how Ray words a refusal. */
+/**
+ * Trusted per-turn data: the prompt, rather than code, determines how Ray words a refusal.
+ *
+ * The three conversation boundaries deliberately share one bare queue link. Binding them to the
+ * conversation on screen was tried and reverted: the page the operator is viewing is not
+ * necessarily the conversation they are asking about, and the prompt requires Ray to hand over the
+ * supplied URL and forbids inventing another — so a mismatch points them at the wrong customer.
+ * Measured over eight samples it did not improve how often the link was quoted either, so it was
+ * a wrong link some of the time in exchange for nothing.
+ */
 export const buildCopilotNeverListContext = (workspaceKey: string): ReadonlyArray<CopilotNeverListContextEntry> =>
   (Object.entries(copilotNeverList) as ReadonlyArray<[CopilotNeverListEntry, (typeof copilotNeverList)[CopilotNeverListEntry]]>)
     .map(([boundary, entry]) => ({

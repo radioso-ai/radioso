@@ -19,6 +19,8 @@ export interface AgenticCapabilityRunInput {
   readonly usageContext?: AgentRunOptions["usageContext"];
   readonly signal?: AbortSignal;
   readonly now?: () => number;
+  /** See {@link AgentRunOptions.requireFinalMessage}; set by callers that show the answer to a person. */
+  readonly requireFinalMessage?: boolean;
 }
 
 export interface AgenticCapabilityFallbackInput {
@@ -101,6 +103,7 @@ export class AgenticCapabilityRunner {
     };
 
     const runResult = await this.deps.runtime.run(runInput, capability.tools, budgetProfile, {
+      ...(input.requireFinalMessage === undefined ? {} : { requireFinalMessage: input.requireFinalMessage }),
       signal: input.signal,
       traceSink: sink,
       now: input.now,
@@ -143,7 +146,12 @@ export class AgenticCapabilityRunner {
       { systemPrompt: input.systemPrompt, userMessage: input.userMessage, metadata: input.metadata },
       tools,
       resolveAgenticCapabilityBudgetProfile(budgetProfile),
-      { signal: input.signal, now: input.now, usageContext: input.usageContext },
+      {
+        signal: input.signal,
+        now: input.now,
+        usageContext: input.usageContext,
+        ...(input.requireFinalMessage === undefined ? {} : { requireFinalMessage: input.requireFinalMessage }),
+      },
     );
   }
 }

@@ -1,6 +1,6 @@
 import readline from "node:readline/promises";
-import { execFileSync } from "node:child_process";
 import { stdin as input, stdout as output } from "node:process";
+import { Writable } from "node:stream";
 
 import { formatMessage } from "./terminal-theme.mjs";
 import { getEnvContract, getProviderCredentialKeys, getProviderRequiredKeys } from "./support/env-contract.mjs";
@@ -117,24 +117,31 @@ const validateAnswer = (question, value) => {
   return null;
 };
 
-const askHidden = async (promptText) => {
-  output.write(promptText);
-  if (!input.isTTY) {
-    const rl = readline.createInterface({ input, output });
-    const answer = await rl.question("");
-    rl.close();
-    return answer.trim();
-  }
+export const askHidden = async (promptText, io = {}) => {
+  const promptInput = io.input ?? input;
+  const promptOutput = io.output ?? output;
+  const createInterface = io.createInterface ?? readline.createInterface;
+  const isInteractive = Boolean(promptInput.isTTY);
+  const hiddenOutput = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  });
 
-  execFileSync("stty", ["-echo"]);
-  const rl = readline.createInterface({ input, output });
+  promptOutput.write(promptText);
+  const rl = createInterface({
+    input: promptInput,
+    output: isInteractive ? hiddenOutput : promptOutput,
+    terminal: isInteractive,
+  });
   try {
     const answer = await rl.question("");
-    output.write("\n");
     return answer.trim();
   } finally {
     rl.close();
-    execFileSync("stty", ["echo"]);
+    if (isInteractive) {
+      promptOutput.write("\n");
+    }
   }
 };
 

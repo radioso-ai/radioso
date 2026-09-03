@@ -382,6 +382,34 @@ describe("DefaultAgentRuntime", () => {
       expect(result.finalMessage).toBe("");
     });
 
+    it("says so when the closing call itself fails", async () => {
+      // The run still ends on its own terms, but the operator gets a blank turn either way and
+      // support cannot otherwise tell a failed recovery from a model that said nothing.
+      let call = 0;
+      const gateway: ModelToolCallingGateway = {
+        async request() {
+          call += 1;
+          if (call <= 2) return { assistantMessage: "", toolCalls: [toolCall("ghost", { x: 1 }, `c${call}`)] };
+          throw new Error("provider exploded");
+        },
+      };
+      const trace = collectTrace();
+      const runtime = new DefaultAgentRuntime({ gateway });
+
+      const result = await runtime.run(
+        { systemPrompt: "s", userMessage: "u" },
+        [echoTool()],
+        AGENT_BUDGET_DEFAULTS,
+        { requireFinalMessage: true, traceSink: trace.sink },
+      );
+
+      expect(result.terminatedReason).toBe("tool_validation_failed");
+      expect(trace.events.find((event) => event.kind === "model_call_failed")).toMatchObject({
+        phase: "closing_message",
+        error: "provider exploded",
+      });
+    });
+
     it("keeps the closing call inside the step budget", async () => {
       // FR-003 makes maxSteps a hard ceiling on model calls, so the answer has to be reserved from
       // the budget rather than spent past it. A caller that wants prose trades its last tool step

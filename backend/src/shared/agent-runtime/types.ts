@@ -123,6 +123,13 @@ export type AgentTraceEvent =
       resolvedBudgets?: AgentBudgets;
       at: number;
     }
+  /**
+   * A model call the runtime made outside the tool loop failed and was suppressed, so the run still
+   * ends on its own terms. Emitted rather than swallowed because the caller is left with a blank
+   * answer either way, and support cannot otherwise tell a failed recovery from a silent model.
+   * Carries the error message only — never a prompt, a completion, or a credential.
+   */
+  | { kind: "model_call_failed"; stepIndex: number; phase: "closing_message"; error: string; at: number }
   | { kind: "terminated"; reason: TerminatedReason; at: number };
 
 export interface TraceSink {

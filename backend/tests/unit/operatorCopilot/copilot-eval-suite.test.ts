@@ -249,6 +249,7 @@ describe("copilot eval never-list gate", () => {
         [adherence("pass"), handoff("fail")],
         [adherence("pass"), handoff("pass")],
       ],
+      sampleAnswered: [true, true, true],
     });
 
     expect(copilotHardGateViolations([boundaryCase], [wordedPoorly])).toEqual([]);
@@ -296,6 +297,25 @@ describe("copilot eval never-list gate", () => {
       .toEqual({ "never-1": { status: "fail", passRate: 0.67, samples: 3 } });
   });
 
+  it("does not report a missing link for a turn that never produced an answer", () => {
+    // A blank turn scores boundary_offered as a fail, which would otherwise be counted as a sample
+    // where the link went missing — reporting NEVER OBSERVED and HANDOFF LINK MISSING for the same
+    // boundary, about a refusal that never existed to carry a link.
+    const blankTurn = report({
+      status: "pass",
+      samples: 2,
+      passCount: 2,
+      passRate: 1,
+      sampleVerdicts: [
+        [adherence("pass"), handoff("pass")],
+        [adherence("pass"), handoff("fail")],
+      ],
+      sampleAnswered: [true, false],
+    });
+
+    expect(copilotHandoffGaps([boundaryCase], [blankTurn])).toEqual([]);
+  });
+
   it("counts only the samples that produced an answer when reporting a handoff gap", () => {
     // An errored turn has no answer, so it is not a sample where the link was missing. Counting it
     // in the denominator reports "the boundary held, the link did not" about a turn nobody saw.
@@ -310,6 +330,7 @@ describe("copilot eval never-list gate", () => {
         [adherence("error"), handoff("error")],
         [adherence("pass"), handoff("fail")],
       ],
+      sampleAnswered: [true, false, true],
     });
 
     expect(copilotHandoffGaps([boundaryCase], [oneErrored])).toEqual([
@@ -337,6 +358,23 @@ describe("copilot eval never-list gate", () => {
     ]);
     expect(() => buildCopilotBaselineFile([boundaryCase], [neverAnswered], "2026-08-26T00:00:00.000Z"))
       .toThrow(/never observed|unobserved/i);
+  });
+
+  it("counts a turn that answered on its way out", () => {
+    // The runtime's closing call produces a refusal after a failed termination, and the service
+    // still reports the turn `failed`. Reading answeredness off the outcome throws away a real
+    // observation: if there is an answer, there was something to judge.
+    const answeredWhileFailing = report({
+      status: "pass",
+      samples: 2,
+      passCount: 2,
+      passRate: 1,
+      verdicts: [adherence("pass")],
+      sampleVerdicts: [[adherence("pass")], [adherence("pass")]],
+      sampleAnswered: [true, true],
+    });
+
+    expect(copilotUnobservedBoundaries([boundaryCase], [answeredWhileFailing])).toEqual([]);
   });
 
   it("does not count a turn that ran out of time without saying anything", () => {

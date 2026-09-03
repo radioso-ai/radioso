@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { isProductAnalyticsEventName } from "../../shared/analytics/productAnalyticsTypes.js";
+import { hasConfiguredSink, parseConfiguredSinks } from "../../shared/observability/configuredSinks.js";
 import { parseRealtimeConfig, realtimeEnvShape } from "../../modules/realtime/infrastructure/config.js";
 import {
   COPILOT_CONVERSATION_RETENTION_DAYS_DEFAULT,
@@ -7,6 +9,8 @@ import {
 
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+const emptyStringToDefault = <T extends z.ZodTypeAny>(schema: T, defaultValue: z.input<T>) =>
+  z.preprocess((value) => (value === "" ? undefined : value), schema.default(defaultValue));
 
 const booleanish = (defaultValue: boolean) =>
   z.preprocess((value) => {
@@ -34,6 +38,14 @@ const otelTraceSampler = emptyStringToUndefined(z.enum([
   "parentbased_traceidratio",
 ]));
 const otelLogsMinLevel = emptyStringToUndefined(z.enum(["trace", "debug", "info", "warn", "error", "fatal"]));
+const httpWebhookUrl = z.string().url().refine((value) => {
+  try {
+    const protocol = new URL(value).protocol;
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}, { message: "must be an HTTP(S) URL" });
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -56,6 +68,11 @@ const envSchema = z.object({
   OTEL_LOGS_MIN_LEVEL: otelLogsMinLevel,
   PRODUCT_ANALYTICS_SINKS: z.string().min(1).default("audit"),
   ERROR_SINKS: z.string().min(1).default("audit"),
+  OPS_EVENT_WEBHOOK_URL: emptyStringToUndefined(httpWebhookUrl),
+  OPS_EVENT_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(16)),
+  OPS_EVENT_WEBHOOK_EVENTS: emptyStringToUndefined(z.string().min(1)),
+  OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: emptyStringToDefault(z.enum(["info", "warn", "error"]), "error"),
+  OPS_EVENT_WEBHOOK_QUEUE_LIMIT: emptyStringToDefault(z.coerce.number().int().positive(), 500),
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
   ...realtimeEnvShape,
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
@@ -224,6 +241,38 @@ const envSchema = z.object({
         code: z.ZodIssueCode.custom,
         path: ["OTEL_TRACES_SAMPLER_ARG"],
         message: "OTEL_TRACES_SAMPLER_ARG is only supported with traceidratio samplers",
+      });
+    }
+  }
+
+  const opsWebhookConfigured =
+    hasConfiguredSink(value.PRODUCT_ANALYTICS_SINKS, "ops_webhook") ||
+    hasConfiguredSink(value.ERROR_SINKS, "ops_webhook");
+
+  if (opsWebhookConfigured && !value.OPS_EVENT_WEBHOOK_URL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["OPS_EVENT_WEBHOOK_URL"],
+      message: "OPS_EVENT_WEBHOOK_URL is required when a sink list includes ops_webhook",
+    });
+  }
+
+  if (opsWebhookConfigured && !value.OPS_EVENT_WEBHOOK_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["OPS_EVENT_WEBHOOK_SECRET"],
+      message: "OPS_EVENT_WEBHOOK_SECRET is required when a sink list includes ops_webhook",
+    });
+  }
+
+  if (value.OPS_EVENT_WEBHOOK_EVENTS) {
+    const unknownEvents = parseConfiguredSinks(value.OPS_EVENT_WEBHOOK_EVENTS)
+      .filter((name) => !isProductAnalyticsEventName(name));
+    if (unknownEvents.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["OPS_EVENT_WEBHOOK_EVENTS"],
+        message: `Unknown product analytics event names: ${unknownEvents.join(", ")}`,
       });
     }
   }

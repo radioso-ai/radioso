@@ -497,6 +497,7 @@ describe("runtime configuration", () => {
     const terraformMain = await readFile(new URL("../../../infra/terraform/main.tf", import.meta.url), "utf8");
     const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
     const terraformApis = await readFile(new URL("../../../infra/terraform/apis.tf", import.meta.url), "utf8");
+    const monitoringTf = await readFile(new URL("../../../infra/terraform/monitoring.tf", import.meta.url), "utf8");
     const schedulerTf = await readFile(new URL("../../../infra/terraform/scheduler.tf", import.meta.url), "utf8");
     const databaseTf = await readFile(new URL("../../../infra/terraform/database.tf", import.meta.url), "utf8");
     const secretsTf = await readFile(new URL("../../../infra/terraform/secrets.tf", import.meta.url), "utf8");
@@ -542,6 +543,10 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('name  = "COPILOT_CONVERSATION_RETENTION_DAYS"');
     expect(computeTf).toContain("value = tostring(var.copilot_conversation_retention_days)");
     expect(terraformVariables).toContain('variable "copilot_conversation_retention_days"');
+    expect((computeTf.match(/var\.ops_event_webhook_url == null \? \[\] : \[var\.ops_event_webhook_min_error_severity\]/g) ?? [])).toHaveLength(0);
+    expect((computeTf.match(/var\.ops_event_webhook_url != null \? \[var\.ops_event_webhook_min_error_severity\] : \[\]/g) ?? [])).toHaveLength(3);
+    expect((computeTf.match(/var\.ops_event_webhook_url == null \? \[\] : \[var\.ops_event_webhook_queue_limit\]/g) ?? [])).toHaveLength(0);
+    expect((computeTf.match(/var\.ops_event_webhook_url != null \? \[var\.ops_event_webhook_queue_limit\] : \[\]/g) ?? [])).toHaveLength(3);
 
     // A root variable an environment wrapper never declares is a knob the docs describe and the
     // deployment cannot set. Terraform does not substitute a child default for an explicit null —
@@ -625,6 +630,14 @@ describe("runtime configuration", () => {
     expect(terraformMain).toContain('"0 * * * *"');
     expect(terraformMain).toContain('"0 3 * * *"');
     expect(terraformApis).toContain('"cloudscheduler.googleapis.com"');
+    expect(terraformApis).toContain('"monitoring.googleapis.com"');
+    expect(terraformApis).toContain('"logging.googleapis.com"');
+    expect(monitoringTf).toContain('resource "google_logging_metric" "scheduler_job_failures"');
+    expect(monitoringTf).toContain('cloudscheduler.googleapis.com%2Fexecutions');
+    expect(monitoringTf).toContain('jsonPayload.\\"@type\\"');
+    expect(monitoringTf).toContain('metric.type=\\"logging.googleapis.com/user/${google_logging_metric.scheduler_job_failures[0].name}\\"');
+    expect(monitoringTf).toContain('group_by_fields      = ["metric.label.job_id"]');
+    expect(monitoringTf).not.toContain('cloudscheduler.googleapis.com/job/attempt_count');
     expect(terraformApis).not.toContain('"vpcaccess.googleapis.com"');
     expect(terraformApis).not.toContain('"cloudresourcemanager.googleapis.com"');
     expect(terraformApis).not.toContain('"iam.googleapis.com"');
@@ -643,6 +656,24 @@ describe("runtime configuration", () => {
     expect(schedulerJobCount).toBeGreaterThanOrEqual(4);
     expect((schedulerTf.match(/"X-Radioso-Worker-Token"\s+=\s+random_password\.worker_task_auth_token\.result/g) ?? [])).toHaveLength(schedulerJobCount);
     expect((schedulerTf.match(/oidc_token \{/g) ?? [])).toHaveLength(schedulerJobCount);
+    for (const policyName of [
+      "backend_unreachable",
+      "cloud_run_server_errors",
+      "backend_latency",
+      "application_error_rate",
+      "cloudsql_saturation",
+      "task_queue_backlog",
+      "scheduler_job_failures",
+    ]) {
+      const policyStart = monitoringTf.indexOf(`resource "google_monitoring_alert_policy" "${policyName}"`);
+      expect(policyStart, `${policyName} policy should exist`).toBeGreaterThanOrEqual(0);
+      const nextPolicyStart = monitoringTf.indexOf('resource "google_monitoring_alert_policy"', policyStart + 1);
+      const policyBlock = monitoringTf.slice(
+        policyStart,
+        nextPolicyStart === -1 ? undefined : nextPolicyStart,
+      );
+      expect(policyBlock, `${policyName} should wait for API enablement`).toMatch(/depends_on\s+= \[google_project_service\.apis\]/);
+    }
     expect(databaseTf).toContain('resource "random_password" "worker_task_auth_token"');
     expect(databaseTf).toMatch(/resource "random_password" "worker_task_auth_token" \{[\s\S]*?length\s+=\s+(?:3[2-9]|[4-9]\d|\d{3,})/);
     expect(secretsTf).toMatch(/"worker-task-auth-token"\s+=\s+random_password\.worker_task_auth_token\.result/);
@@ -759,8 +790,10 @@ describe("runtime configuration", () => {
     expect(terraformCompute).toContain("coalesce(var.frontend_backend_internal_url_override, google_cloud_run_v2_service.backend[0].uri)");
     expect(terraformVariables).toContain('variable "backend_public_invocation_enabled"');
     expect(terraformCompute).toContain("var.deploy_services && var.backend_public_invocation_enabled ? 1 : 0");
-    expect(liveEnv).toContain("frontend_backend_internal_url_override = var.frontend_backend_internal_url_override");
-    expect(liveEnv).toContain("backend_public_invocation_enabled = var.backend_public_invocation_enabled");
+    // `terraform fmt` aligns `=` across a block, so the gap widens whenever a longer
+    // argument name is added. Assert the wiring, not the column it lands in.
+    expect(liveEnv).toMatch(/frontend_backend_internal_url_override\s+= var\.frontend_backend_internal_url_override/);
+    expect(liveEnv).toMatch(/backend_public_invocation_enabled\s+= var\.backend_public_invocation_enabled/);
     expect(liveEnvVariables).toMatch(
       /variable "frontend_backend_internal_url_override" \{[\s\S]*?default\s+= null\n\}/,
     );

@@ -6,6 +6,7 @@ import { AccountAccessService, AccountInvitationService } from "../../../modules
 import { AccessGrantService, DefaultOriginMatcher } from "../../../modules/accessGrants/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
+import type { ProductAnalyticsPort } from "../../../shared/analytics/productAnalyticsService.js";
 import { AuthService } from "../../../modules/auth/services/authService.js";
 import { PostgresOrganizationProvisioner } from "../../../modules/auth/infra/postgresOrganizationProvisioner.js";
 import { EmailVerificationService } from "../../../modules/auth/services/emailVerificationService.js";
@@ -222,6 +223,7 @@ export const buildAuthService = (input: {
   env: Env;
   organizationCreationGuard: OrganizationCreationGuard;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
+  productAnalytics?: ProductAnalyticsPort;
   repositories: ReturnType<typeof buildRepositories>;
   workspaceService: WorkspaceService;
 }): AuthService =>
@@ -237,6 +239,7 @@ export const buildAuthService = (input: {
     organizationCreationGuard: input.organizationCreationGuard,
     organizationProvisioner: new PostgresOrganizationProvisioner(input.database, input.auditService),
     auditService: input.auditService,
+    productAnalytics: input.productAnalytics,
     apiPrincipalAuthenticator: input.access.apiPrincipalAuthenticator,
     personalCredentialTermination: input.access.personalCredentialTenureService,
     personalCredentialLifecycle: input.access.personalCredentialLifecycle,

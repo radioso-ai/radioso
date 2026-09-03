@@ -95,7 +95,8 @@ Ray behaviour evals (tool selection, proposal quality, never-list adherence). Th
 
 ```bash
 cd backend
-pnpm run evals:copilot                    # live run against a bootstrapped throwaway workspace
+pnpm run evals:copilot                    # one sample per case; a smoke run against a bootstrapped throwaway workspace
+pnpm run evals:copilot:ci                 # sampled 3x, reduced — the gate-worthy shape
 pnpm run evals:copilot:update-baseline    # re-record the committed baseline after an intended change
 ```
 

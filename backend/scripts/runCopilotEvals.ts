@@ -2,8 +2,14 @@
  * Headless runner for the committed Ray behaviour suite (issue #1054).
  *
  *   pnpm run evals:copilot                      # real model, diff against the baseline
+ *   pnpm run evals:copilot -- --samples 3       # run each case 3x and reduce (what the CI script does)
  *   pnpm run evals:copilot -- --update-baseline # re-record baseline.json after an intended change
  *   pnpm run evals:copilot -- --tag never_list  # only cases carrying a tag (repeatable)
+ *   pnpm run evals:copilot -- --case boundary-pending-decision --samples 8   # one case, many samples
+ *
+ * Ray's live behaviour is nondeterministic, so one run is one SAMPLE of it. A baseline recorded from
+ * a single run freezes each case at whichever way it happened to fall, and then reports the other
+ * outcome as a regression on unchanged code (issue #1152). Record and compare with `--samples`.
  *
  * It assembles the real application stack (buildDependencies) and drives each case through the
  * composed copilot catalog, prompt, and capability runner — the same three the dashboard turn uses.
@@ -37,6 +43,7 @@ import { createLogger } from "../src/shared/observability/logger.js";
 import { diffAgainstBaseline, isBaselineInitialized, type BaselineFile } from "../src/modules/eval/suite/index.js";
 import {
   buildCopilotBaselineFile,
+  copilotHandoffGaps,
   copilotHardGateViolations,
   formatCopilotEvalReport,
   parseCopilotEvalCases,
@@ -52,7 +59,10 @@ const BASELINE_PATH = fileURLToPath(new URL("../tests/fixtures/copilot-evals/bas
 
 interface Flags {
   updateBaseline: boolean;
+  samples: number;
+  passThreshold: number;
   tags: string[];
+  caseIds: string[];
   workspaceId: string;
   agentId: string;
   operatorUserId: string;
@@ -63,7 +73,10 @@ interface Flags {
 const parseFlags = (argv: string[]): Flags => {
   const flags: Flags = {
     updateBaseline: false,
+    samples: 1,
+    passThreshold: 1,
     tags: [],
+    caseIds: [],
     workspaceId: process.env.RADIOSO_EVAL_WORKSPACE_ID ?? "",
     agentId: process.env.RADIOSO_EVAL_AGENT_ID ?? "",
     operatorUserId: process.env.RADIOSO_EVAL_OPERATOR_USER_ID ?? "",
@@ -73,9 +86,12 @@ const parseFlags = (argv: string[]): Flags => {
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     if (arg === "--update-baseline") flags.updateBaseline = true;
+    else if (arg === "--samples") flags.samples = Math.max(1, Number.parseInt(argv[++index] ?? "1", 10) || 1);
+    else if (arg === "--pass-threshold") flags.passThreshold = Math.min(1, Math.max(0, Number.parseFloat(argv[++index] ?? "1") || 1));
     else if (arg === "--keep-workspace") flags.keepWorkspace = true;
     else if (arg === "--migrate") flags.migrate = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
+    else if (arg === "--case") flags.caseIds.push(argv[++index] ?? "");
     else if (arg === "--workspace") flags.workspaceId = argv[++index] ?? "";
     else if (arg === "--agent") flags.agentId = argv[++index] ?? "";
     else if (arg === "--operator") flags.operatorUserId = argv[++index] ?? "";
@@ -94,8 +110,15 @@ const loadBaseline = (): BaselineFile => {
 
 type Deps = ReturnType<typeof buildDependencies>;
 
-const filterByTags = (cases: CopilotEvalCase[], tags: string[]): CopilotEvalCase[] =>
-  tags.length === 0 ? cases : cases.filter((entry) => (entry.tags ?? []).some((tag) => tags.includes(tag)));
+/**
+ * Narrows the dataset to what this run is about. Both filters exist so iterating on one behaviour
+ * costs one case rather than the suite — a live sample is a model call, and stabilising a single
+ * flaky case needs many samples of that case, not one of everything.
+ */
+const narrowDataset = (cases: CopilotEvalCase[], flags: Pick<Flags, "tags" | "caseIds">): CopilotEvalCase[] => {
+  const byTag = flags.tags.length === 0 ? cases : cases.filter((entry) => (entry.tags ?? []).some((tag) => flags.tags.includes(tag)));
+  return flags.caseIds.length === 0 ? byTag : byTag.filter((entry) => flags.caseIds.includes(entry.id));
+};
 
 /**
  * Rewrites the fixture's placeholder ids to the live workspace's own. Cases name an agent and a
@@ -346,8 +369,8 @@ const main = async (): Promise<void> => {
   const dataset = parseCopilotEvalCases(copilotEvalCases);
   // The recorder refuses a partial baseline anyway; catching it here costs nothing and saves a
   // whole suite of model calls that could never be written.
-  if (flags.updateBaseline && flags.tags.length > 0) {
-    console.error("--update-baseline records the whole dataset, so it cannot be combined with --tag. Run the full suite to record.");
+  if (flags.updateBaseline && (flags.tags.length > 0 || flags.caseIds.length > 0)) {
+    console.error("--update-baseline records the whole dataset, so it cannot be combined with --tag or --case. Run the full suite to record.");
     process.exitCode = 1;
     return;
   }
@@ -375,7 +398,7 @@ const main = async (): Promise<void> => {
     if (resolved.bootstrapped) await seedBootstrappedWorkspace(deps, resolved);
 
     const { satisfied, conversationId, routine } = await probeWorkspace(deps, resolved);
-    const selection = selectRunnableCopilotEvalCases(filterByTags(dataset, flags.tags), satisfied);
+    const selection = selectRunnableCopilotEvalCases(narrowDataset(dataset, flags), satisfied);
     for (const skipped of selection.unmet) {
       console.warn(`SKIPPED ${skipped.caseId} "${skipped.name}" — workspace supplies no ${skipped.missing.join(", ")}.`);
     }
@@ -397,6 +420,9 @@ const main = async (): Promise<void> => {
     }
 
     const cases = bindToLiveWorkspace(selection.runnable, { agentId: resolved.agentId, conversationId, routine });
+    if (flags.samples > 1) {
+      console.log(`Sampling each of ${cases.length} case(s) ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
+    }
 
     const { reports, outcomes } = await runCopilotEvalSuite(
       cases,
@@ -416,18 +442,19 @@ const main = async (): Promise<void> => {
           return observed;
         },
       },
-      { fidelity: "live" },
+      { fidelity: "live", samples: flags.samples, passThreshold: flags.passThreshold },
     );
 
-    const violations = copilotHardGateViolations(cases, outcomes);
+    const violations = copilotHardGateViolations(cases, reports);
+    const handoffGaps = copilotHandoffGaps(cases, reports);
     const baseline = loadBaseline();
-    console.log(`\n${formatCopilotEvalReport(reports, violations, "live")}\n`);
+    console.log(`\n${formatCopilotEvalReport(reports, { fidelity: "live", violations, handoffGaps })}\n`);
 
     if (flags.updateBaseline) {
       // buildCopilotBaselineFile throws on a never-list violation rather than recording it, so a
       // refusal that stopped working cannot be blessed as the new normal by re-running with the flag.
       // The full dataset, not the subset that ran: the recorder is what enforces that the two match.
-      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, outcomes, new Date().toISOString()), null, 2)}\n`);
+      writeFileSync(BASELINE_PATH, `${JSON.stringify(buildCopilotBaselineFile(dataset, reports, new Date().toISOString()), null, 2)}\n`);
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
     }
@@ -445,6 +472,15 @@ const main = async (): Promise<void> => {
     const diff = diffAgainstBaseline(outcomes, baseline);
     if (diff.regressions.length > 0) {
       console.error(`${diff.regressions.length} case(s) regressed against the baseline: ${diff.regressions.map((entry) => entry.caseId).join(", ")}`);
+      process.exitCode = 1;
+    }
+    // The half a status comparison cannot see: a case recorded `fail` that used to pass some of the
+    // time and now never does holds its status and is silently worse.
+    if (diff.rateRegressions.length > 0) {
+      console.error(
+        `${diff.rateRegressions.length} case(s) pass materially less often than the baseline recorded: ` +
+        diff.rateRegressions.map((entry) => `${entry.caseId} ${entry.from} -> ${entry.to}`).join(", "),
+      );
       process.exitCode = 1;
     }
   } finally {

@@ -18,10 +18,15 @@ export {
   type SuiteScoreContext,
 } from "./scoring.js";
 export {
+  baselineCaseRate,
+  baselineCaseStatus,
   buildBaselineFile,
   diffAgainstBaseline,
   isBaselineInitialized,
+  type BaselineCaseEntry,
+  type BaselineCaseRecord,
   type BaselineDiff,
+  type BaselineDiffOptions,
   type BaselineFile,
   type CaseOutcome,
 } from "./baseline.js";
@@ -37,6 +42,7 @@ export {
   runConversationQualitySuiteSampled,
   type RunSampledOptions,
   type SampleReduction,
+  type SampleScore,
   type SampledSuiteResult,
 } from "./sampling.js";
 export type { ConversationQualityRunnerPort } from "./runnerPort.js";

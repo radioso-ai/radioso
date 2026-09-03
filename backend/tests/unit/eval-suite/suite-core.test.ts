@@ -184,6 +184,54 @@ describe("baseline diff", () => {
     expect(isBaselineInitialized({ cases: { a: "pass" } })).toBe(true);
   });
 
+  it("reads a status from either the bare or the sampled baseline entry", () => {
+    // A sampled recorder writes what it measured — status plus the rate it was reduced from — while
+    // the conversation-quality baseline is still a bare status. One file format has to carry both,
+    // or the two suites cannot share the regression bookkeeping.
+    const current = [
+      { caseId: "a", name: "A", status: "fail" as const },
+      { caseId: "b", name: "B", status: "pass" as const },
+    ];
+    const diff = diffAgainstBaseline(current, {
+      cases: { a: { status: "pass", passRate: 1, samples: 3 }, b: "fail" },
+    });
+    expect(diff.regressions.map((entry) => entry.caseId)).toEqual(["a"]);
+    expect(diff.fixes.map((entry) => entry.caseId)).toEqual(["b"]);
+  });
+
+  it("reports a pass rate that fell far below the recorded one, even though the status did not move", () => {
+    // The silent half of a single-sample baseline: a case recorded `fail` that used to pass two runs
+    // in three, and now never passes, reads as "unchanged" forever. Only the rate shows the drop.
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "fail", passRate: 0, samples: 3 }],
+      { cases: { a: { status: "fail", passRate: 0.67, samples: 3 } } },
+      { rateDropTolerance: 0.5 },
+    );
+    expect(diff.regressions).toEqual([]);
+    expect(diff.rateRegressions).toEqual([
+      { caseId: "a", name: "A", from: 0.67, to: 0 },
+    ]);
+  });
+
+  it("does not report a rate drop inside the tolerance, or one against a baseline that recorded no rate", () => {
+    // Small K makes the rate coarse — one sample of three moves it by a third — so the tolerance has
+    // to be wider than the sampling noise it is reading through.
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail", passRate: 0.34, samples: 3 }],
+        { cases: { a: { status: "fail", passRate: 0.67, samples: 3 } } },
+        { rateDropTolerance: 0.5 },
+      ).rateRegressions,
+    ).toEqual([]);
+    expect(
+      diffAgainstBaseline(
+        [{ caseId: "a", name: "A", status: "fail", passRate: 0 }],
+        { cases: { a: "fail" } },
+        { rateDropTolerance: 0.5 },
+      ).rateRegressions,
+    ).toEqual([]);
+  });
+
   it("builds a sorted baseline file", () => {
     const file = buildBaselineFile(
       [

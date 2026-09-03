@@ -39,11 +39,35 @@ export interface CopilotNeverListContextEntry {
   readonly dashboardUrl: string;
 }
 
+/**
+ * What the turn can bind a boundary's handoff to. Deliberately narrow: this module knows that a
+ * conversation subject can be given an id, not that a dashboard page context exists.
+ */
+export interface CopilotNeverListFocus {
+  readonly conversationId?: string | null;
+}
+
 /** Trusted per-turn data: the prompt, rather than code, determines how Ray words a refusal. */
-export const buildCopilotNeverListContext = (workspaceKey: string): ReadonlyArray<CopilotNeverListContextEntry> =>
+export const buildCopilotNeverListContext = (
+  workspaceKey: string,
+  focus: CopilotNeverListFocus = {},
+): ReadonlyArray<CopilotNeverListContextEntry> =>
   (Object.entries(copilotNeverList) as ReadonlyArray<[CopilotNeverListEntry, (typeof copilotNeverList)[CopilotNeverListEntry]]>)
     .map(([boundary, entry]) => ({
       boundary,
       reason: entry.reason,
-      dashboardUrl: buildCopilotDashboardLink(workspaceKey, entry.dashboardSubject),
+      dashboardUrl: buildCopilotDashboardLink(workspaceKey, bindSubject(entry.dashboardSubject, focus)),
     }));
+
+/**
+ * Points a conversation-scoped boundary at the conversation in front of the operator.
+ *
+ * The three conversation boundaries otherwise share one bare queue link, which is coarser than what
+ * the turn already holds. Measured against a real model, Ray refused those correctly and then named
+ * the conversation's raw UUID instead of linking it — sending an operator a UUID is a worse handoff
+ * than the link exists to be.
+ */
+const bindSubject = (subject: CopilotEntityReference, focus: CopilotNeverListFocus): CopilotEntityReference =>
+  subject.type === "conversation" && !subject.id && focus.conversationId
+    ? { ...subject, id: focus.conversationId }
+    : subject;

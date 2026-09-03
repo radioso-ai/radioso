@@ -55,14 +55,17 @@ const settled = (settings: CopilotWorkspaceSettingSnapshot): Omit<CopilotWorkspa
     websiteEmbedLauncherPosition: settings.websiteEmbedLauncherPosition,
   });
 
-/** The fields a payload states differently from what is stored. */
+/** The card's own fields, which state how the change is presented rather than what it sets. */
+const presentationKeys: ReadonlyArray<string> = ["name", "rationale", "summary", "changesReach"];
+
+/** The settings a payload states differently from what is stored. */
 export const changedWorkspaceSettingKeys = (
   settings: CopilotWorkspaceSettingSnapshot,
-  payload: Omit<CopilotWorkspaceSettingPayload, "changesReach">,
+  payload: Partial<CopilotWorkspaceSettingPayload>,
 ): ReadonlyArray<string> => {
   const current = settled(settings) as Record<string, unknown>;
   return Object.entries(payload)
-    .filter(([key]) => key !== "rationale" && key !== "name" && key !== "summary")
+    .filter(([key]) => !presentationKeys.includes(key))
     .filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(current[key]))
     .map(([key]) => key);
 };
@@ -120,6 +123,24 @@ const merged = (
   });
 };
 
+/**
+ * Whether the stored surface now states what the payload proposed. Read back only after a failure,
+ * to tell a write that never landed from one that landed and then tripped over its own follow-up.
+ * A read that fails answers no, which keeps the failure reported as a failure.
+ */
+const storesTheProposedSurface = async (
+  deps: WorkspaceSettingCopilotProposalAdapterDependencies,
+  workspaceId: string,
+  payload: CopilotWorkspaceSettingPayload,
+): Promise<boolean> => {
+  try {
+    const stored = await deps.workspaceSetting.getForWorkspace(workspaceId);
+    return changedWorkspaceSettingKeys(stored, payload).length === 0;
+  } catch {
+    return false;
+  }
+};
+
 export const createWorkspaceSettingCopilotProposalAdapter = (
   deps: WorkspaceSettingCopilotProposalAdapterDependencies,
 ): CopilotWorkspaceSettingProposalAdapter => ({
@@ -156,7 +177,17 @@ export const createWorkspaceSettingCopilotProposalAdapter = (
       return { outcome: "applied" as const, appliedRef: { workspaceId } };
     } catch (error) {
       if (isStale(error)) return { outcome: "stale" as const };
-      return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Workspace settings apply failed" };
+      const reason = error instanceof Error ? error.message : "Workspace settings apply failed";
+      // The settings write commits before the work that follows it — public launch grants, the
+      // legacy workspace mirror, the embed cache. A failure there arrives here indistinguishable
+      // from a write that never happened, and recording "failed" for settings that are already
+      // live invites the operator to apply the change twice. Asking the world which one it was is
+      // the only way to tell, and it is the case the adapter contract's `reason` on an applied
+      // outcome exists for: applied, and something still needs finishing.
+      if (await storesTheProposedSurface(deps, workspaceId, payload)) {
+        return { outcome: "applied" as const, appliedRef: { workspaceId }, reason: `The settings were saved, but the change did not finish: ${reason}` };
+      }
+      return { outcome: "failed" as const, reason };
     }
   },
 

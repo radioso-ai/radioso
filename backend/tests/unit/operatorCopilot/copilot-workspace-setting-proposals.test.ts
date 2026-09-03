@@ -203,6 +203,31 @@ describe("propose_workspace_setting", () => {
     expect(outcome).toEqual({ outcome: "stale" });
   });
 
+  it("reports a write that landed and then tripped over its own follow-up as applied, with what is unfinished", async () => {
+    // The settings write commits before the public launch grants, the legacy mirror, and the embed
+    // cache. Recording "failed" for settings that are already live invites applying them twice.
+    const applied = storedSettings({ assistantName: "Ida" });
+    const settings = settingsPorts();
+    settings.updateForWorkspace.mockRejectedValueOnce(new Error("grant sync failed"));
+    settings.getForWorkspace.mockResolvedValueOnce(applied);
+    const { adapter } = adapterFor(settings);
+
+    const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
+
+    expect(outcome).toMatchObject({ outcome: "applied", appliedRef: { workspaceId: "workspace-1" } });
+    expect((outcome as { reason?: string }).reason).toContain("grant sync failed");
+  });
+
+  it("keeps a write that never landed a failure", async () => {
+    const settings = settingsPorts();
+    settings.updateForWorkspace.mockRejectedValueOnce(new Error("database unavailable"));
+    const { adapter } = adapterFor(settings);
+
+    const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
+
+    expect(outcome).toEqual({ outcome: "failed", reason: "database unavailable" });
+  });
+
   it("previews the stored surface against the proposed one", async () => {
     const { adapter } = adapterFor();
 

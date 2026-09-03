@@ -38,10 +38,12 @@ locals {
 
   # Cloud Monitoring filters use one_of(); Cloud Logging filters use (a OR b). The two
   # query languages are not interchangeable, so each list is rendered for its consumer.
-  monitoring_service_filter   = join(",", [for name in local.monitored_service_names : "\"${name}\""])
-  logging_service_filter      = join(" OR ", [for name in local.monitored_service_names : "\"${name}\""])
-  monitoring_queue_filter     = join(",", [for name in local.monitored_queue_names : "\"${name}\""])
-  monitoring_scheduler_filter = join(",", [for name in local.monitored_scheduler_job_names : "\"${name}\""])
+  monitoring_service_filter = join(",", [for name in local.monitored_service_names : "\"${name}\""])
+  logging_service_filter    = join(" OR ", [for name in local.monitored_service_names : "\"${name}\""])
+  monitoring_queue_filter   = join(",", [for name in local.monitored_queue_names : "\"${name}\""])
+  logging_scheduler_filter = join(" OR ", [
+    for name in local.monitored_scheduler_job_names : "\"${name}\""
+  ])
 
   # coalesce() errors when every argument is null, which is the ordinary state before the
   # first apply creates the backend service. try() keeps that a null host — and so a
@@ -387,6 +389,38 @@ resource "google_monitoring_alert_policy" "task_queue_backlog" {
   }
 }
 
+resource "google_logging_metric" "scheduler_job_failures" {
+  count = local.monitoring_enabled && length(local.monitored_scheduler_job_names) > 0 ? 1 : 0
+
+  name = "${local.resource_name_prefix}-scheduler-job-failures"
+  filter = join(" AND ", [
+    "resource.type=\"cloud_scheduler_job\"",
+    "resource.labels.job_id=(${local.logging_scheduler_filter})",
+    "resource.labels.location=\"${var.region}\"",
+    "logName=\"projects/${var.project_id}/logs/cloudscheduler.googleapis.com%2Fexecutions\"",
+    "jsonPayload.\"@type\"=\"type.googleapis.com/google.cloud.scheduler.logging.AttemptFinished\"",
+    "severity>=ERROR",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+
+    labels {
+      key         = "job_id"
+      value_type  = "STRING"
+      description = "Cloud Scheduler job that logged a failed execution attempt."
+    }
+  }
+
+  label_extractors = {
+    "job_id" = "EXTRACT(resource.labels.job_id)"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_monitoring_alert_policy" "scheduler_job_failures" {
   count = local.monitoring_enabled && length(local.monitored_scheduler_job_names) > 0 ? 1 : 0
 
@@ -394,15 +428,12 @@ resource "google_monitoring_alert_policy" "scheduler_job_failures" {
   combiner     = "OR"
 
   conditions {
-    display_name = "Scheduled job attempts returning a non-success code"
+    display_name = "Scheduled job execution attempts logging errors"
 
     condition_threshold {
       filter = join(" AND ", [
-        "metric.type=\"cloudscheduler.googleapis.com/job/attempt_count\"",
+        "metric.type=\"logging.googleapis.com/user/${google_logging_metric.scheduler_job_failures[0].name}\"",
         "resource.type=\"cloud_scheduler_job\"",
-        "metric.label.\"response_code\"!=\"success\"",
-        "resource.label.\"job_id\"=one_of(${local.monitoring_scheduler_filter})",
-        "resource.label.\"location\"=\"${var.region}\"",
       ])
       comparison      = "COMPARISON_GT"
       threshold_value = var.monitoring_scheduler_failure_threshold
@@ -412,7 +443,7 @@ resource "google_monitoring_alert_policy" "scheduler_job_failures" {
         alignment_period     = "900s"
         per_series_aligner   = "ALIGN_SUM"
         cross_series_reducer = "REDUCE_SUM"
-        group_by_fields      = ["resource.label.job_id"]
+        group_by_fields      = ["metric.label.job_id"]
       }
     }
   }

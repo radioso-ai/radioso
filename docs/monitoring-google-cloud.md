@@ -54,7 +54,7 @@ Every policy delivers to the union of the email channels and this list.
 
 **Task queue backlog.** Fires when a Cloud Tasks queue holds more than `monitoring_queue_depth_threshold` tasks (default 100) for fifteen minutes. While a queue is stuck, documents stop being indexed and conversation actions stop being delivered, and neither produces a user-visible error.
 
-**Scheduler job failures.** Fires on any Cloud Scheduler attempt returning a non-success code. Those jobs are the recovery path for document processing, website crawls, and conversation-action delivery, so a quiet failure here surfaces later as a stalled queue.
+**Scheduler job failures.** A log-based metric counts error-level Cloud Scheduler `AttemptFinished` execution logs. Those jobs are the recovery path for document processing, website crawls, and conversation-action delivery, so a quiet failure here surfaces later as a stalled queue.
 
 ## Health probes
 
@@ -78,7 +78,7 @@ To sanity-check a threshold, open **Monitoring → Metrics Explorer**, chart the
 
 ## Common failure modes
 
-**Alerts create but never fire.** Cloud Monitoring accepts a filter matching no time series. Chart the policy's metric in Metrics Explorer; an empty chart means the filter is wrong, not that the system is healthy. Check the scheduler policy this way first — its `response_code` label vocabulary is what the filter keys on.
+**Alerts create but never fire.** Cloud Monitoring accepts a filter matching no time series. Chart the policy's metric in Metrics Explorer; an empty chart means the filter is wrong, not that the system is healthy. Check the Scheduler log-based metric first: it should count `cloud_scheduler_job` entries from `cloudscheduler.googleapis.com/executions` with `severity>=ERROR`.
 
 **Two of every alert.** Both regional stacks are running with the same notification emails, which is intended: each stack watches itself. The stack name is in every alert's display name.
 

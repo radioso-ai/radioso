@@ -431,6 +431,15 @@ export interface RunCopilotEvalSuiteOptions {
    * failing, so it can never sit in the baseline as `pass` and false-regress every later run.
    */
   readonly passThreshold?: number;
+  /**
+   * Puts back what the previous sample consumed, called before every sample after the first.
+   *
+   * Sampling made the samples share a workspace, so an act tool makes them dependent: closing the
+   * only open quality signal on sample one leaves the rest measuring that mutation rather than the
+   * model. The core cannot know what a case consumed — it knows nothing about workspaces — so the
+   * caller that owns the records restores them.
+   */
+  readonly restoreBetweenSamples?: (evalCase: CopilotEvalCase, sampleIndex: number) => Promise<void>;
 }
 
 export interface CopilotEvalSuiteResult {
@@ -488,6 +497,9 @@ export const runCopilotEvalSuite = async (
     const refusedCalls = new Map<string, { tool: string; status: string; detail?: string }>();
 
     for (let index = 0; index < samples; index += 1) {
+      if (index > 0 && options.restoreBetweenSamples) {
+        await options.restoreBetweenSamples(evalCase, index);
+      }
       const observed = await observeSafely(evalCase, runner, options.fidelity);
       const score = scoreCopilotTurn(evalCase.assertions, observed, options.fidelity);
       scores.push({ status: score.status, reason: score.reason, verdicts: score.verdicts });

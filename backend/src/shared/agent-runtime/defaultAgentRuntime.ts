@@ -336,7 +336,7 @@ const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set(["wall_time_exhau
  * unchanged.
  */
 const toolLoopMaxSteps = (ctx: RunContext): number =>
-  ctx.options.requireFinalMessage === true ? Math.max(1, ctx.budgets.maxSteps - 1) : ctx.budgets.maxSteps;
+  ctx.options.requireFinalMessage === true ? Math.max(0, ctx.budgets.maxSteps - 1) : ctx.budgets.maxSteps;
 
 /**
  * True when there is nothing to show the caller.
@@ -375,9 +375,14 @@ const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<
       at: ctx.now(),
     });
     return isBlank(response.assistantMessage) ? null : response.assistantMessage;
-  } catch {
-    // A failed closing attempt must never replace the run's own outcome with a throw: the caller
-    // asked why the run ended, and "the recovery call also failed" is not a better answer.
+  } catch (err) {
+    // An abort is the exception: the caller cancelled, or the deadline fired, and that is the
+    // outcome of record. Swallowing it here would report the earlier reason for a turn that was
+    // actually cancelled, and put the wrong outcome in the audit trail.
+    if (ctx.signal.aborted) throw new TerminationSignal(abortTerminationReason(ctx));
+    // Any other failed closing attempt must never replace the run's own outcome with a throw: the
+    // caller asked why the run ended, and "the recovery call also failed" is not a better answer.
+    void err;
     return null;
   }
 };
@@ -404,14 +409,21 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
    * deserved "I could not do that". One more call, with no tools offered so it cannot start another
    * loop, is the difference between a dead turn and a plain one.
    */
-  const finalize = async (reason: TerminatedReason): Promise<AgentRunResult> => {
+  const finalize = async (initialReason: TerminatedReason): Promise<AgentRunResult> => {
+    let reason = initialReason;
     if (
       ctx.options.requireFinalMessage === true &&
       isBlank(state.finalMessage) &&
       !NO_CLOSING_CALL.has(reason) &&
       !ctx.signal.aborted
     ) {
-      state.finalMessage = await requestClosingMessage(ctx, state);
+      try {
+        state.finalMessage = await requestClosingMessage(ctx, state);
+      } catch (err) {
+        if (!(err instanceof TerminationSignal)) throw err;
+        // The closing call was cancelled or ran out of time. That is what happened to this turn.
+        reason = err.reason;
+      }
     }
     emitTerminated(ctx.sink, reason, ctx.now);
     return {

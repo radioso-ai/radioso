@@ -413,6 +413,26 @@ describe("copilot eval sampling", () => {
     expect(outcomes).toEqual([{ caseId: "sometimes", name: "Case one", status: "fail", passRate: reports[0]!.passRate, samples: 3 }]);
   });
 
+  it("restores the records a case consumes between samples, and not before the first", async () => {
+    // Sampling made the samples share a workspace. An act tool mutates it, so `set_triage_state`
+    // closing the only open quality signal on sample one leaves samples two and three measuring
+    // that mutation rather than the model. The suite core cannot know what a case consumed, so the
+    // caller that owns the workspace restores it.
+    const restoredBefore: number[] = [];
+    let run = 0;
+    await runCopilotEvalSuite(
+      [evalCase({ id: "acts" })],
+      { run: async () => { run += 1; return turn(); } },
+      {
+        fidelity: "deterministic",
+        samples: 3,
+        restoreBetweenSamples: async () => { restoredBefore.push(run); },
+      },
+    );
+
+    expect(restoredBefore).toEqual([1, 2]);
+  });
+
   it("passes a case below the unanimous bar once the threshold is lowered", async () => {
     let call = 0;
     const { reports } = await runCopilotEvalSuite(

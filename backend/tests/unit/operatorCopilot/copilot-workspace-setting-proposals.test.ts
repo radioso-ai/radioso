@@ -215,6 +215,9 @@ describe("propose_workspace_setting", () => {
     const outcome = await adapter.applyIfVersionMatches("workspace-1", {}, storedPayload({ assistantName: "Ida" }), "2026-09-01T10:00:00.000Z");
 
     expect(outcome).toMatchObject({ outcome: "applied", appliedRef: { workspaceId: "workspace-1" } });
+    // Stated as what the settings hold, not as what this apply did: another writer could have
+    // stored the same values first, and that is the one claim the read-back cannot support.
+    expect((outcome as { reason?: string }).reason).toContain("now hold the proposed values");
     expect((outcome as { reason?: string }).reason).toContain("grant sync failed");
   });
 

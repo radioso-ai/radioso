@@ -185,7 +185,10 @@ export const createWorkspaceSettingCopilotProposalAdapter = (
       // the only way to tell, and it is the case the adapter contract's `reason` on an applied
       // outcome exists for: applied, and something still needs finishing.
       if (await storesTheProposedSurface(deps, workspaceId, payload)) {
-        return { outcome: "applied" as const, appliedRef: { workspaceId }, reason: `The settings were saved, but the change did not finish: ${reason}` };
+        // Stated as what the settings now hold rather than as what this apply did. The read-back
+        // answers a question about the world, and in the narrow case where another writer stored
+        // the same values first, "this apply saved them" would be the one part that is not true.
+        return { outcome: "applied" as const, appliedRef: { workspaceId }, reason: `The workspace settings now hold the proposed values, but the apply did not finish cleanly: ${reason}` };
       }
       return { outcome: "failed" as const, reason };
     }

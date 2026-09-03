@@ -453,6 +453,26 @@ describe("DefaultAgentRuntime", () => {
       expect(gateway.calls).toHaveLength(2);
     });
 
+    it("does not resubmit a transcript that already blew the context budget", async () => {
+      // token_budget_exhausted means the tool results in the transcript are over the hard ceiling.
+      // Sending that same transcript back for a closing answer is the one case where the recovery
+      // call is guaranteed to be the wrong shape, so the blank turn is the lesser outcome.
+      const bigTool: AgentTool = {
+        name: "big",
+        description: "big",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ text: z.string() }),
+        invoke: async () => ({ text: "x".repeat(400) }),
+        estimatedResultTokens: () => 999_999,
+      };
+      const gateway = makeGateway([{ say: "", tools: [toolCall("big", {}, "c1")] }]);
+
+      const result = await runWith(gateway, [bigTool], { ...AGENT_BUDGET_DEFAULTS, maxToolResultTokens: 10 }, { requireFinalMessage: true });
+
+      expect(result.terminatedReason).toBe("token_budget_exhausted");
+      expect(gateway.calls).toHaveLength(1);
+    });
+
     it("keeps a blank turn rather than a hung one when the run is already out of time", async () => {
       // Wall time and cancellation are the two reasons a closing call is wrong: the run is out of
       // budget by definition, so one more model call is the opposite of what the caller asked for.

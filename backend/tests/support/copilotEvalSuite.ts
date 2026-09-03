@@ -787,6 +787,7 @@ export const buildCopilotBaselineFile = (
   cases: ReadonlyArray<CopilotEvalCase>,
   reports: ReadonlyArray<CopilotEvalCaseReport>,
   generatedAt: string,
+  passThreshold = 1,
 ): BaselineFile => {
   const violations = copilotHardGateViolations(cases, reports);
   if (violations.length > 0) {
@@ -821,7 +822,7 @@ export const buildCopilotBaselineFile = (
       samples: report.samples,
     };
   }
-  return { generatedAt, cases: recorded };
+  return { generatedAt, passThreshold, cases: recorded };
 };
 
 const STATUS_GLYPH: Record<EvalRunStatus, string> = { pass: "PASS", fail: "FAIL", error: "ERR ", recorded: "REC " };
@@ -877,9 +878,17 @@ export const formatCopilotEvalReport = (
   for (const report of reports) {
     const sampleTag = report.samples > 1 ? ` (${report.passCount}/${report.samples}${report.flaky ? ", flaky" : ""})` : "";
     lines.push(`  [${STATUS_GLYPH[report.status]}] ${report.caseId}${sampleTag} — ${report.name}`);
-    for (const entry of report.verdicts) {
+    // Every sample's failures, not the representative sample's. A boundary case reduces on
+    // adherence, so when every sample held, the representative is a passing one and the single
+    // sample that dropped its handoff link — with the answer excerpt saying what Ray wrote instead
+    // — would be summarised away. That excerpt is the whole diagnosis for the assertion.
+    const printed = new Set<string>();
+    for (const entry of [...report.verdicts, ...report.sampleVerdicts.flat()]) {
       if (entry.status === "pass") continue;
-      lines.push(`        · ${entry.status}: ${entry.assertion.type} — ${entry.reason ?? ""}`);
+      const line = `        · ${entry.status}: ${entry.assertion.type} — ${entry.reason ?? ""}`;
+      if (printed.has(line)) continue;
+      printed.add(line);
+      lines.push(line);
     }
     for (const call of report.refusedCalls) {
       lines.push(`        ! ${call.tool} ${call.status}: ${call.detail ?? "no detail"}`);

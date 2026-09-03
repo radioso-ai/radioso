@@ -324,10 +324,18 @@ const invokeTool = async (
 };
 
 /**
- * Terminations that must not spend another model call: the run is out of its wall-time budget, or
- * the caller cancelled. Asking for a closing answer there is the opposite of what was asked for.
+ * Terminations that must not spend another model call.
+ *
+ * Out of wall time or cancelled: another call is the opposite of what was asked for. Out of
+ * tool-result tokens: the transcript is over the hard context ceiling by definition, and the
+ * closing call would resubmit exactly that transcript — the one case where the recovery request is
+ * guaranteed to be the wrong shape, so a blank turn is the lesser outcome.
  */
-const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set(["wall_time_exhausted", "cancelled"]);
+const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set([
+  "wall_time_exhausted",
+  "cancelled",
+  "token_budget_exhausted",
+]);
 
 /**
  * Steps the tool loop may take. FR-003 makes `maxSteps` a hard ceiling on model calls, so a caller

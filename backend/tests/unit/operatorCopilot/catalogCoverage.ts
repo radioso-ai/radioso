@@ -53,6 +53,7 @@ const catalogToolCoverage = {
   getAudiencePulse: "audience_topics",
   getAudiencePulseRefreshStatus: "audience_topics",
   getPlatformSettings: "workspace_settings",
+  updatePlatformSettings: "propose_workspace_setting",
   getSettingsRetrievalDefaults: "workspace_settings",
   getIngestionSettings: "workspace_settings",
   getEmbeddingCoverage: "workspace_settings",
@@ -121,11 +122,11 @@ const workspaceSetupStateRead = deferred(
 );
 // PUT /settings takes these fields grouped under `assistant`/`channels`; PUT /settings/general
 // takes the same fields flat.
-const workspaceAssistantAndChannelSettings = deferred(
-  "Deferred to propose_workspace_setting: two endpoints write these same assistant and embed settings, so a proposal picks one apply path; and the anonymous-chat and allowed-origin fields change who can reach the agent, so the card has to separate reach from wording.",
+const duplicateSettingsWritePath = permanent(
+  "Permanent exclusion: this writes flat the same assistant and channel fields updatePlatformSettings writes grouped, through the same service. propose_workspace_setting applies through that one path, and exposing the second shape would let two cards mean the same change while each one's version check saw only its own draft.",
 );
 const workspaceModelSelection = deferred(
-  "Deferred to propose_workspace_setting: chat, rewrite, and rerank model preferences change every answer the workspace produces; the embedding-model switch stays behind its own never-list entry.",
+  "Deferred to its own proposal shape: chat, rewrite, and rerank preferences are per-capability rows rather than the one assistant-and-channel surface propose_workspace_setting replaces, and a model whose provider holds no credential would break every answer, so the draft has to refuse one before an operator can apply it. The embedding-model switch stays behind its own never-list entry.",
 );
 const workspaceWideReprocess = deferred(
   "Deferred: reprocessing every eligible document is the unbounded sibling of reprocess_document, so it needs a cost guard before Ray can spend it.",
@@ -275,7 +276,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "updateWebhookDestination",
   ], webhookDestinationConfiguration),
   ...coverage(["deleteWebhookDestination"], webhookDestinationRemoval),
-  ...coverage(["updatePlatformSettings", "updateGeneralSettings"], workspaceAssistantAndChannelSettings),
+  ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
   ...coverage(["reprocessWorkspaceIngestion"], workspaceWideReprocess),
   ...coverage(["uploadAssistantLogo", "deleteAssistantLogo"], brandAssetIsOperatorSupplied),

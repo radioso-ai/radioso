@@ -44,6 +44,7 @@ export const copilotApplicationPrimitiveRegistry = {
   "routines.proposal.prepare": { owningModule: "routines", exportedPort: "RoutineDraftAssistService" },
   "routines.validation": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },
   "settings.workspace.read": { owningModule: "settings", exportedPort: "PlatformSettingsService" },
+  "settings.workspace.propose": { owningModule: "settings", exportedPort: "PlatformSettingsService" },
 } as const;
 
 export type CopilotApplicationPrimitiveId = keyof typeof copilotApplicationPrimitiveRegistry;

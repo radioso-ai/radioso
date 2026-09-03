@@ -246,8 +246,150 @@ describe("settings services", () => {
       expect.objectContaining({
         name: "Nora",
       }),
+      // An unconditional write: a caller that decided against a version passes one, and this one did not.
+      undefined,
     );
     expect(workspaceRepository.updateGeneralSettings).not.toHaveBeenCalled();
+  });
+
+  it("returns the saved settings even when a channel audit event cannot be recorded", async () => {
+    // The audit runs after the agent write has committed. Reporting failure for a change that is
+    // already live invites the operator to make it twice — and a copilot proposal's card would
+    // read "failed" for a channel that is now open.
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: false,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const agentService = createAgentService(createAgent(workspace));
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService,
+      auditService: { record: vi.fn().mockRejectedValue(new Error("audit down")) },
+    } as never);
+
+    await expect(service.updateForWorkspace(
+      "workspace-1",
+      { channels: { anonymousChatEnabled: true } },
+      { accountId: "account-1" },
+    )).resolves.toMatchObject({ channels: expect.objectContaining({ anonymousChatEnabled: true }) });
+    expect(agentService.update).toHaveBeenCalled();
+  });
+
+  it("logs a lost channel audit line rather than dropping it silently", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: false,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const warn = vi.fn();
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService: createAgentService(createAgent(workspace)),
+      auditService: { record: vi.fn().mockRejectedValue(new Error("audit down")) },
+      logger: { warn },
+    } as never);
+
+    await service.updateForWorkspace("workspace-1", { channels: { anonymousChatEnabled: true } }, { accountId: "account-1" });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: "workspace-1", eventType: "anonymous_chat.enabled" }),
+      expect.stringContaining("audit event was not recorded"),
+    );
+  });
+
+  it("applies without presenting, so reading the result back cannot fail a committed change", async () => {
+    // The presentation reads the public launch grants after the agent write has committed. A
+    // caller that records an outcome — a copilot proposal apply — must not store "failed" for a
+    // channel that is already open.
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: false,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const agentService = createAgentService(createAgent(workspace));
+    const resolvePublicLaunchGrant = vi.fn().mockRejectedValue(new Error("grant lookup failed"));
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService,
+      accessGrantService: { resolvePublicLaunchGrant },
+    } as never);
+
+    await expect(service.applyForWorkspace("workspace-1", { channels: { anonymousChatEnabled: true } })).resolves.toBeUndefined();
+    expect(agentService.update).toHaveBeenCalled();
+    expect(resolvePublicLaunchGrant).not.toHaveBeenCalled();
+    // The presenting caller still surfaces the failure, because it has a page to render.
+    await expect(service.updateForWorkspace("workspace-1", { channels: { anonymousChatEnabled: true } })).rejects.toThrow("grant lookup failed");
+  });
+
+  it("carries a caller's expected version into the agent write, so a surface edited since is refused", async () => {
+    const workspace = {
+      id: "workspace-1",
+      name: "Workspace",
+      assistantName: "Nora",
+      greetingInstruction: "",
+      assistantDefaultLocale: null,
+      proactiveGreetingEnabled: false,
+      anonymousChatEnabled: true,
+      anonymousChatToken: "public-token",
+      anonymousRateLimit: 10,
+      websiteEmbedEnabled: false,
+      websiteEmbedToken: null,
+      websiteEmbedAllowedOrigins: [],
+      websiteEmbedLauncherLabel: "Ask Nora",
+      websiteEmbedLauncherPosition: "bottom-right" as const,
+    };
+    const agentService = createAgentService(createAgent(workspace));
+    const service = new PlatformSettingsService({
+      workspaceRepository: { findById: vi.fn().mockResolvedValue(workspace), updateGeneralSettings: vi.fn() },
+      agentService,
+    } as never);
+
+    await service.updateForWorkspace(
+      "workspace-1",
+      { assistant: { assistantName: "Nora" } },
+      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
+    );
+
+    expect(agentService.update).toHaveBeenCalledWith(
+      "workspace-1",
+      "workspace-1-agent",
+      expect.anything(),
+      { expectedUpdatedAt: new Date("2026-09-01T10:00:00.000Z") },
+    );
   });
 
   it("delegates website embed script and snippet construction to the configured integration provider", async () => {

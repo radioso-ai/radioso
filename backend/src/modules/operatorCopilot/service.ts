@@ -317,7 +317,7 @@ export class OperatorCopilotService {
         const proposal = proposalFromTrace(trace);
         if (proposal) {
           proposals.push(proposal);
-          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}), ...(proposal.removal ? { removal: true as const } : {}) } };
+          yield { event: "proposal", data: { proposalId: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetLabel, summary: proposal.summary, ...(proposal.evidence ? { evidence: proposal.evidence } : {}), ...(proposal.removal ? { removal: true as const } : {}), ...(proposal.reach ? { reach: true as const } : {}) } };
         }
       }
       const result = await stream.result;
@@ -492,10 +492,11 @@ const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null =
     ...card,
     ...(trace.output.evidence ? { evidence: trace.output.evidence } : {}),
     ...(trace.output.removal ? { removal: true as const } : {}),
+    ...(trace.output.reach ? { reach: true as const } : {}),
   };
 };
 
-const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean } => {
+const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string; evidence?: CopilotProposalEvidenceSummary; removal?: boolean; reach?: boolean } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
   return typeof output.proposalId === "string" && (copilotProposalTargetTypes as ReadonlyArray<unknown>).includes(output.targetType) && typeof output.targetLabel === "string" && typeof output.summary === "string";

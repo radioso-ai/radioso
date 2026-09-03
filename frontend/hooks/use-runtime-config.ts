@@ -20,6 +20,12 @@ export interface ResolvedRuntimeConfig extends RuntimeConfig {
   retry: () => void
 }
 
+const LOADING_CONFIG: Omit<ResolvedRuntimeConfig, 'retry'> = {
+  ...EMPTY_RUNTIME_CONFIG,
+  isResolved: false,
+  status: 'loading',
+}
+
 /**
  * Deployment values the server resolves at request time. They are read once per mount;
  * a failed read stays distinct from an authoritative empty config so consumers can
@@ -27,17 +33,15 @@ export interface ResolvedRuntimeConfig extends RuntimeConfig {
  */
 export function useRuntimeConfig(): ResolvedRuntimeConfig {
   const [reloadToken, setReloadToken] = useState(0)
-  const retry = useCallback(() => setReloadToken((token) => token + 1), [])
-  const [config, setConfig] = useState<Omit<ResolvedRuntimeConfig, 'retry'>>({
-    ...EMPTY_RUNTIME_CONFIG,
-    isResolved: false,
-    status: 'loading',
-  })
+  const [config, setConfig] = useState<Omit<ResolvedRuntimeConfig, 'retry'>>(LOADING_CONFIG)
+  const retry = useCallback(() => {
+    setConfig(LOADING_CONFIG)
+    setReloadToken((token) => token + 1)
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
 
-    setConfig({ ...EMPTY_RUNTIME_CONFIG, isResolved: false, status: 'loading' })
     void fetch('/runtime-config', { cache: 'no-store', signal: controller.signal })
       .then((response) => {
         if (!response.ok) throw new Error(`Runtime config request failed with ${response.status}`)

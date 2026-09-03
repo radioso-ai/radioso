@@ -92,17 +92,21 @@ export function ServiceAccountSheet({
   )
   const credentials = usePagedList<ApiCredentialMetadata>(loadCredentials, 'Failed to load credentials.')
 
-  const refreshAccount = useCallback(async () => {
+  // Promise chain rather than async/await: the react-hooks effect analyzer reads a post-await
+  // setState inside try/catch as a synchronous one, and rejects this being called from an effect.
+  const refreshAccount = useCallback(() => {
     const generation = accountLoadGeneration.current + 1
     accountLoadGeneration.current = generation
-    try {
-      const current = await apiAccessApi.getServiceAccount(workspaceId, accountId)
-      if (accountLoadGeneration.current === generation) setAccount(current)
-    } catch (loadError) {
-      if (accountLoadGeneration.current === generation) {
-        setError(getApiErrorMessage(loadError, 'Failed to load service account.'))
-      }
-    }
+    return apiAccessApi
+      .getServiceAccount(workspaceId, accountId)
+      .then((current) => {
+        if (accountLoadGeneration.current === generation) setAccount(current)
+      })
+      .catch((loadError: unknown) => {
+        if (accountLoadGeneration.current === generation) {
+          setError(getApiErrorMessage(loadError, 'Failed to load service account.'))
+        }
+      })
   }, [workspaceId, accountId])
 
   // The row summary can be a few seconds old; a mutation needs the current revision to be accepted.

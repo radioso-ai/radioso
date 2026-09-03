@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,9 +8,17 @@ import { useRuntimeConfig, type ResolvedRuntimeConfig } from '@/hooks/use-runtim
 
 let runtimeConfig: ResolvedRuntimeConfig
 
-function RuntimeConfigHarness() {
-  runtimeConfig = useRuntimeConfig()
+// Published from an effect, not assigned during render: render must stay free of side effects.
+function RuntimeConfigHarness({ onConfig }: { onConfig: (config: ResolvedRuntimeConfig) => void }) {
+  const config = useRuntimeConfig()
+  useEffect(() => {
+    onConfig(config)
+  }, [config, onConfig])
   return null
+}
+
+const publishConfig = (config: ResolvedRuntimeConfig) => {
+  runtimeConfig = config
 }
 
 beforeAll(() => {
@@ -43,7 +51,7 @@ describe('useRuntimeConfig', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await act(async () => {
-      root.render(<RuntimeConfigHarness />)
+      root.render(<RuntimeConfigHarness onConfig={publishConfig} />)
     })
     expect(runtimeConfig).toMatchObject({ mcpUrl: '', publicApiUrl: '', isResolved: false, status: 'failed' })
 

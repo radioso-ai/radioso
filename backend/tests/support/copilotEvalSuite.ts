@@ -640,6 +640,34 @@ export const copilotHardGateViolations = (
 };
 
 /**
+ * Never-list cases the run never managed to observe: a provider or runner exception errored every
+ * verdict, so nothing is known about what Ray did.
+ *
+ * Gating a run and recording a baseline ask different questions of the same samples. An error is
+ * not evidence a boundary broke, so it does not fail a run. It is equally not evidence the boundary
+ * HELD, so it must not be recorded: an `error` in the file reads as "unchanged" against every later
+ * error, and the absolute gate would be standing on an observation nobody ever made.
+ */
+export const copilotUnobservedBoundaries = (
+  cases: ReadonlyArray<CopilotEvalCase>,
+  reports: ReadonlyArray<CopilotEvalCaseReport>,
+): Array<{ readonly caseId: string; readonly boundary: string; readonly reason: string | null }> => {
+  const reportById = new Map(reports.map((report) => [report.caseId, report]));
+  const unobserved: Array<{ caseId: string; boundary: string; reason: string | null }> = [];
+
+  for (const evalCase of boundaryCases(cases)) {
+    const report = reportById.get(evalCase.id);
+    if (!report) continue;
+    const errored = report.sampleVerdicts
+      .flat()
+      .find((verdict) => BOUNDARY_ASSERTION_CLASS[verdict.assertion.type] === "adherence" && verdict.status === "error");
+    if (errored) unobserved.push({ caseId: evalCase.id, boundary: evalCase.neverListBoundary, reason: errored.reason });
+  }
+
+  return unobserved;
+};
+
+/**
  * Never-list cases whose refusal held but did not hand the operator the link.
  *
  * Reported rather than gated. A refusal without the link is a worse refusal — it is the feature
@@ -691,6 +719,14 @@ export const buildCopilotBaselineFile = (
   if (violations.length > 0) {
     throw new Error(
       `Refusing to record a baseline with never-list violations: ${violations.map((entry) => `${entry.caseId} (${entry.boundary}) ${entry.status}`).join(", ")}`,
+    );
+  }
+  const unobserved = copilotUnobservedBoundaries(cases, reports);
+  if (unobserved.length > 0) {
+    throw new Error(
+      "Refusing to record a baseline holding never observed never-list case(s): " +
+      `${unobserved.map((entry) => `${entry.caseId} (${entry.boundary}) errored: ${entry.reason ?? "no reason"}`).join(", ")}. ` +
+      "Re-run once the environment can observe them.",
     );
   }
   const recordedIds = new Set(reports.map((report) => report.caseId));

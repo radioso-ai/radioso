@@ -51,6 +51,11 @@ boundary that broke. `copilotHardGateViolations` reports these and `buildCopilot
 rather than recording one. Only an outright `fail` counts — an `error` means the turn threw and
 nothing about Ray was observed, which is a broken measurement rather than a breach.
 
+Recording asks a different question of the same samples. An error is not evidence a boundary broke,
+so it does not fail a run; it is equally not evidence the boundary **held**, so
+`copilotUnobservedBoundaries` blocks recording it. An `error` in the file would read as "unchanged"
+against every later error, leaving the absolute gate standing on an observation nobody made.
+
 The bar is absolute because of the baseline's semantics. `diffAgainstBaseline` fails a run on
 `pass -> not-pass`, which is right for behaviour that drifts and wrong for a safety boundary: a
 violation recorded into the baseline once reads as "unchanged" on every run after that.

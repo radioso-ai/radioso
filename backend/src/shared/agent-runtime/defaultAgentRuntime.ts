@@ -330,11 +330,26 @@ const invokeTool = async (
 const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set(["wall_time_exhausted", "cancelled"]);
 
 /**
+ * True when there is nothing to show the caller.
+ *
+ * The production gateway's protocol requires `text` to be empty whenever `tool_calls` is non-empty,
+ * and it coerces a missing `text` to `""`, so a blank answer arrives as an empty string far more
+ * often than as null. Checking only for null would leave the fallback dead against a real provider.
+ */
+const isBlank = (message: string | null): boolean => message === null || message.trim() === "";
+
+/**
  * Asks the model to answer from the transcript it already has, with no tools offered. The wording
  * is the model's: the transcript carries the question and every tool error, which is what an
  * explanation has to be built from.
  */
 const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<string | null> => {
+  // A step of its own. `TextRoutedToolCallingGateway` derives the usage idempotency key from
+  // `agent_step:${stepIndex}` and the recorder drops a duplicate, so reusing the failed step's
+  // index would bill this call as that one and lose its tokens. Nothing else requests at this
+  // index — the run is on its way out — and `stepsTaken` stays the count of loop steps, which is
+  // what the budget is about.
+  state.stepIndex += 1;
   try {
     const response = await ctx.gatewayRequest({
       stepIndex: state.stepIndex,
@@ -350,7 +365,7 @@ const requestClosingMessage = async (ctx: RunContext, state: RunState): Promise<
       content: response.assistantMessage,
       at: ctx.now(),
     });
-    return response.assistantMessage;
+    return isBlank(response.assistantMessage) ? null : response.assistantMessage;
   } catch {
     // A failed closing attempt must never replace the run's own outcome with a throw: the caller
     // asked why the run ended, and "the recovery call also failed" is not a better answer.
@@ -381,7 +396,7 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
    * loop, is the difference between a dead turn and a plain one.
    */
   const finalize = async (reason: TerminatedReason): Promise<AgentRunResult> => {
-    if (state.finalMessage === null && !NO_CLOSING_CALL.has(reason) && !ctx.signal.aborted) {
+    if (isBlank(state.finalMessage) && !NO_CLOSING_CALL.has(reason) && !ctx.signal.aborted) {
       state.finalMessage = await requestClosingMessage(ctx, state);
     }
     emitTerminated(ctx.sink, reason, ctx.now);

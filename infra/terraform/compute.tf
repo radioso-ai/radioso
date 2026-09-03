@@ -42,6 +42,36 @@ resource "google_cloud_run_v2_service" "backend" {
         container_port = 8080
       }
 
+      # Cloud Run's default startup probe only opens a TCP connection, which a process
+      # that boots but cannot serve still satisfies. Probing the health route instead
+      # makes a broken revision fail its rollout rather than take traffic.
+      dynamic "startup_probe" {
+        for_each = var.container_health_probes_enabled ? [1] : []
+        content {
+          initial_delay_seconds = 10
+          period_seconds        = 10
+          timeout_seconds       = 5
+          failure_threshold     = 12
+          http_get {
+            path = "/health"
+            port = 8080
+          }
+        }
+      }
+
+      dynamic "liveness_probe" {
+        for_each = var.container_health_probes_enabled ? [1] : []
+        content {
+          period_seconds    = 30
+          timeout_seconds   = 5
+          failure_threshold = 3
+          http_get {
+            path = "/health"
+            port = 8080
+          }
+        }
+      }
+
       env {
         name  = "NODE_ENV"
         value = "production"
@@ -67,6 +97,39 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "ERROR_SINKS"
         value = var.error_sinks
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_url]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_events == null ? [] : [var.ops_event_webhook_events]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_EVENTS"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_min_error_severity]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.ops_event_webhook_secret_configured ? [true] : []
+        content {
+          name = "OPS_EVENT_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["ops-event-webhook-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
       }
       dynamic "env" {
         for_each = var.posthog_host == null ? [] : [var.posthog_host]
@@ -479,6 +542,36 @@ resource "google_cloud_run_v2_service" "mcp" {
         container_port = 8080
       }
 
+      # Cloud Run's default startup probe only opens a TCP connection, which a process
+      # that boots but cannot serve still satisfies. Probing the health route instead
+      # makes a broken revision fail its rollout rather than take traffic.
+      dynamic "startup_probe" {
+        for_each = var.container_health_probes_enabled ? [1] : []
+        content {
+          initial_delay_seconds = 10
+          period_seconds        = 10
+          timeout_seconds       = 5
+          failure_threshold     = 12
+          http_get {
+            path = "/healthz"
+            port = 8080
+          }
+        }
+      }
+
+      dynamic "liveness_probe" {
+        for_each = var.container_health_probes_enabled ? [1] : []
+        content {
+          period_seconds    = 30
+          timeout_seconds   = 5
+          failure_threshold = 3
+          http_get {
+            path = "/healthz"
+            port = 8080
+          }
+        }
+      }
+
       env {
         name  = "NODE_ENV"
         value = "production"
@@ -673,6 +766,39 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "ERROR_SINKS"
         value = var.error_sinks
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_url]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_events == null ? [] : [var.ops_event_webhook_events]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_EVENTS"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_min_error_severity]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.ops_event_webhook_secret_configured ? [true] : []
+        content {
+          name = "OPS_EVENT_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["ops-event-webhook-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
       }
       dynamic "env" {
         for_each = var.posthog_host == null ? [] : [var.posthog_host]
@@ -1019,6 +1145,39 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       env {
         name  = "ERROR_SINKS"
         value = var.error_sinks
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_url]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_URL"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_events == null ? [] : [var.ops_event_webhook_events]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_EVENTS"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.ops_event_webhook_url == null ? [] : [var.ops_event_webhook_min_error_severity]
+        content {
+          name  = "OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY"
+          value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = local.ops_event_webhook_secret_configured ? [true] : []
+        content {
+          name = "OPS_EVENT_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.secrets["ops-event-webhook-secret"].secret_id
+              version = "latest"
+            }
+          }
+        }
       }
       dynamic "env" {
         for_each = var.posthog_host == null ? [] : [var.posthog_host]

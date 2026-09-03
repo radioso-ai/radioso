@@ -34,3 +34,19 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-staging/radioso-staging/fro
 # copilot_probe_budget_per_turn       = 6    # replayed turns one Ray turn may spend verifying
 # copilot_conversation_retention_days = 90   # 0 keeps Ray conversations indefinitely
 # copilot_retention_schedule          = "30 4 * * *"
+
+# --- Monitoring and alerting ---
+# monitoring_enabled             = true
+# monitoring_notification_emails = ["ops@your-domain.example"]
+# Slack: create the channel once in Cloud Monitoring (it holds an OAuth token Terraform
+# should not keep in state), then paste its ID here.
+# monitoring_extra_notification_channel_ids = ["projects/YOUR_PROJECT/notificationChannels/1234567890"]
+# container_health_probes_enabled = true
+
+# --- Ops event feed ---
+# Add ops_webhook to the sink lists above to push product events and errors out.
+# product_analytics_sinks  = "audit,ops_webhook"
+# error_sinks              = "audit,ops_webhook"
+# ops_event_webhook_url    = "https://hooks.example.com/radioso"
+# ops_event_webhook_secret = ""   # prefer TF_VAR_ops_event_webhook_secret in CI
+# ops_event_webhook_events = "account.registered,chat.failed"

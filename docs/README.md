@@ -16,6 +16,9 @@ Before creating or revising documentation in this repo, read the [Docs Style Gui
 - [Topic Census](./architecture/topic-census.md) - how Audience Pulse computes an exact topic distribution over visitor questions and tracks topic identity across analyses
 - [Agent Context Workflow](./agent-context-workflow.md) - lightweight workflow and `.context/` template for low-context feature starts
 - [OSS And SaaS Observability](./oss-saas-observability.md) - runtime flags, `/metrics`, and optional PostHog or Sentry adapters
+- [Monitoring And Alerts](./monitoring-alerts.md) - which signals a deployment exposes, and example Prometheus alert rules
+- [Monitoring On Google Cloud](./monitoring-google-cloud.md) - Terraform alert policies, uptime check, and Cloud Run health probes
+- [Ops Event Feed](./ops-event-feed.md) - push signups, completed conversations, and errors to a signed webhook
 - [Self-hosting Operations](../docs-portal/content/operators/self-hosting-operations.mdx) - backup, restore, upgrade, and worker error practices
 - [Assistant Execution Model](./assistant-execution-model.md) - why interactive chat and deferred work stay separate
 - [Architecture Extension Points](./architecture-extension-points.md) - supported module boundaries, default composition, and extension rules

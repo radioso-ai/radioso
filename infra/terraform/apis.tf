@@ -9,6 +9,8 @@ locals {
     "cloudscheduler.googleapis.com",
     "servicenetworking.googleapis.com",
     "compute.googleapis.com",
+    "monitoring.googleapis.com",
+    "logging.googleapis.com",
   ]
 }
 

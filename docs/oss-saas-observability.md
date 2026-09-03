@@ -101,6 +101,21 @@ The Prometheus-style surface is intentionally small and low-cardinality:
 Additional traces, request-in-flight gauges, and richer chat-specific metrics can
 be layered on later without changing the internal seams.
 
+### Alerting
+
+Metrics answer a question you already thought to ask; alerting is what tells you to ask
+it. [Monitoring And Alerts](monitoring-alerts.md) maps each signal to the question it
+answers and gives example Prometheus rules that run on any host.
+
+Two implementations build on the same signals. `infra/terraform/monitoring.tf` turns them
+into Cloud Monitoring alert policies, an uptime check, and a log-based error metric for a
+Google Cloud deployment — see [Monitoring On Google Cloud](monitoring-google-cloud.md).
+Platform-owned signals are worth having wherever you run, because they survive the process
+they watch.
+
+The backend logger cooperates in one place: it writes a `severity` string alongside the
+numeric Pino level, so a log platform classifies error lines without extra parsing rules.
+
 ### Trace boundaries
 
 Create spans around:
@@ -343,6 +358,23 @@ OTEL_TRACES_SAMPLER_ARG=
 PRODUCT_ANALYTICS_SINKS=audit
 ERROR_SINKS=audit
 ```
+
+Add `ops_webhook` to either list to push events to an HTTP endpoint as signed JSON. It is a
+first-party sink in the OSS backend, so it needs no vendor account:
+
+```bash
+PRODUCT_ANALYTICS_SINKS=audit,ops_webhook
+ERROR_SINKS=audit,ops_webhook
+OPS_EVENT_WEBHOOK_URL=https://hooks.example.com/radioso
+OPS_EVENT_WEBHOOK_SECRET=a-long-random-shared-secret
+OPS_EVENT_WEBHOOK_EVENTS=account.registered,chat.failed
+OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY=error
+OPS_EVENT_WEBHOOK_QUEUE_LIMIT=500
+```
+
+[Ops Event Feed](ops-event-feed.md) covers the envelope shape, signature verification, and
+the delivery guarantees. `audit` stays in the list because the webhook queue is bounded and
+in memory; `audit_events` is the durable copy.
 
 `OBSERVABILITY_ENVIRONMENT` falls back to `NODE_ENV` when unset. `METRICS_ENABLED=true` requires `METRICS_AUTH_TOKEN`, and the backend serves `/metrics` only to callers that present `Authorization: Bearer <token>`.
 

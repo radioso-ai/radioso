@@ -288,3 +288,110 @@ variable "copilot_retention_schedule" {
   type        = string
   default     = null
 }
+
+# --- Monitoring and alerting ---
+
+variable "monitoring_enabled" {
+  description = "Whether this stack creates Cloud Monitoring alert policies, the backend uptime check, and the application error log metric."
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_notification_emails" {
+  description = "Addresses that receive alert notifications."
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_extra_notification_channel_ids" {
+  description = "Full IDs of notification channels created outside Terraform, such as a Slack channel whose OAuth token should not live in state."
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_uptime_host" {
+  description = "Hostname the backend uptime check probes. Defaults to this stack's own Cloud Run backend host."
+  type        = string
+  default     = null
+}
+
+variable "monitoring_server_error_rate_threshold" {
+  description = "Cloud Run 5xx responses per second, averaged over five minutes, that trigger the server-error alert."
+  type        = number
+  default     = 0.1
+}
+
+variable "monitoring_backend_latency_p95_ms" {
+  description = "Backend p95 request latency in milliseconds that triggers the latency alert."
+  type        = number
+  default     = 5000
+}
+
+variable "monitoring_error_log_threshold" {
+  description = "Error-level log lines from one service in five minutes that trigger the application error alert."
+  type        = number
+  default     = 10
+}
+
+variable "monitoring_cloudsql_memory_threshold" {
+  description = "Cloud SQL memory utilization ratio that triggers the saturation alert."
+  type        = number
+  default     = 0.9
+}
+
+variable "monitoring_cloudsql_cpu_threshold" {
+  description = "Cloud SQL CPU utilization ratio that triggers the saturation alert."
+  type        = number
+  default     = 0.9
+}
+
+variable "monitoring_cloudsql_disk_threshold" {
+  description = "Cloud SQL disk utilization ratio that triggers the saturation alert."
+  type        = number
+  default     = 0.85
+}
+
+variable "monitoring_queue_depth_threshold" {
+  description = "Cloud Tasks queue depth held for fifteen minutes that triggers the backlog alert."
+  type        = number
+  default     = 100
+}
+
+variable "monitoring_scheduler_failure_threshold" {
+  description = "Non-success Cloud Scheduler attempts in fifteen minutes that trigger the scheduler alert."
+  type        = number
+  default     = 0
+}
+
+variable "container_health_probes_enabled" {
+  description = "Whether the backend and MCP Cloud Run services probe their health routes for startup and liveness."
+  type        = bool
+  default     = false
+}
+
+# --- Ops event feed ---
+
+variable "ops_event_webhook_url" {
+  description = "Destination for the ops event feed. Required when a sink list includes ops_webhook."
+  type        = string
+  default     = null
+}
+
+variable "ops_event_webhook_secret" {
+  description = "Shared secret the ops event feed signs each delivery with."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "ops_event_webhook_events" {
+  description = "Comma-separated product analytics event names to forward. Every event is forwarded when unset."
+  type        = string
+  default     = null
+}
+
+variable "ops_event_webhook_min_error_severity" {
+  description = "Lowest error severity the ops event feed forwards: info, warn, or error."
+  type        = string
+  default     = "error"
+}

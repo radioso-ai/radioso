@@ -558,3 +558,130 @@ variable "worker_tasks_service_url_override" {
   type        = string
   default     = null
 }
+
+# --- Monitoring and alerting ---
+
+variable "monitoring_enabled" {
+  description = "Whether this stack creates Cloud Monitoring alert policies, the backend uptime check, and the application error log metric."
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_notification_emails" {
+  description = "Addresses that receive alert notifications. One Cloud Monitoring email channel is created per address."
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_extra_notification_channel_ids" {
+  description = "Full IDs of notification channels created outside Terraform, such as a Slack channel whose OAuth token should not live in state. Format: projects/<project>/notificationChannels/<id>."
+  type        = list(string)
+  default     = []
+}
+
+variable "monitoring_uptime_host" {
+  description = "Hostname the backend uptime check probes. Defaults to this stack's own Cloud Run backend host, which isolates the alert to one region."
+  type        = string
+  default     = null
+}
+
+variable "monitoring_server_error_rate_threshold" {
+  description = "Cloud Run 5xx responses per second, averaged over five minutes, that trigger the server-error alert."
+  type        = number
+  default     = 0.1
+}
+
+variable "monitoring_backend_latency_p95_ms" {
+  description = "Backend p95 request latency in milliseconds that triggers the latency alert."
+  type        = number
+  default     = 5000
+}
+
+variable "monitoring_error_log_threshold" {
+  description = "Error-level log lines from one service in five minutes that trigger the application error alert."
+  type        = number
+  default     = 10
+}
+
+variable "monitoring_cloudsql_memory_threshold" {
+  description = "Cloud SQL memory utilization ratio that triggers the saturation alert."
+  type        = number
+  default     = 0.9
+
+  validation {
+    condition     = var.monitoring_cloudsql_memory_threshold > 0 && var.monitoring_cloudsql_memory_threshold <= 1
+    error_message = "monitoring_cloudsql_memory_threshold is a utilization ratio between 0 and 1."
+  }
+}
+
+variable "monitoring_cloudsql_cpu_threshold" {
+  description = "Cloud SQL CPU utilization ratio that triggers the saturation alert."
+  type        = number
+  default     = 0.9
+
+  validation {
+    condition     = var.monitoring_cloudsql_cpu_threshold > 0 && var.monitoring_cloudsql_cpu_threshold <= 1
+    error_message = "monitoring_cloudsql_cpu_threshold is a utilization ratio between 0 and 1."
+  }
+}
+
+variable "monitoring_cloudsql_disk_threshold" {
+  description = "Cloud SQL disk utilization ratio that triggers the saturation alert."
+  type        = number
+  default     = 0.85
+
+  validation {
+    condition     = var.monitoring_cloudsql_disk_threshold > 0 && var.monitoring_cloudsql_disk_threshold <= 1
+    error_message = "monitoring_cloudsql_disk_threshold is a utilization ratio between 0 and 1."
+  }
+}
+
+variable "monitoring_queue_depth_threshold" {
+  description = "Cloud Tasks queue depth held for fifteen minutes that triggers the backlog alert."
+  type        = number
+  default     = 100
+}
+
+variable "monitoring_scheduler_failure_threshold" {
+  description = "Non-success Cloud Scheduler attempts in fifteen minutes that trigger the scheduler alert."
+  type        = number
+  default     = 0
+}
+
+variable "container_health_probes_enabled" {
+  description = "Whether the backend and MCP Cloud Run services probe their health routes for startup and liveness. Enabling this makes a revision that boots but cannot serve fail its rollout instead of receiving traffic."
+  type        = bool
+  default     = false
+}
+
+# --- Ops event feed ---
+
+variable "ops_event_webhook_url" {
+  description = "Destination for the ops event feed. Required when a sink list includes ops_webhook."
+  type        = string
+  default     = null
+}
+
+variable "ops_event_webhook_secret" {
+  description = "Shared secret the ops event feed signs each delivery with. Required when a sink list includes ops_webhook."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "ops_event_webhook_events" {
+  description = "Comma-separated product analytics event names to forward. Every event is forwarded when unset."
+  type        = string
+  default     = null
+}
+
+variable "ops_event_webhook_min_error_severity" {
+  description = "Lowest error severity the ops event feed forwards."
+  type        = string
+  default     = "error"
+
+  validation {
+    condition     = contains(["info", "warn", "error"], var.ops_event_webhook_min_error_severity)
+    error_message = "ops_event_webhook_min_error_severity must be info, warn, or error."
+  }
+}

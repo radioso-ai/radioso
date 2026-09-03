@@ -51,7 +51,7 @@ test("operator configures one chat surface for both placements", async ({ page }
 
   // The saved value survives a reload rather than only living in local state.
   await page.reload();
-  await expect(page.getByText("1 of 10 phrases customized.")).toBeVisible();
+  await expect(page.getByText("1 of 11 phrases customized.")).toBeVisible();
   await page.getByRole("button", { name: "Edit wording" }).click();
   await expect(page.locator("#websiteEmbedCopy-startPrompt")).toHaveValue("Ask us anything");
 

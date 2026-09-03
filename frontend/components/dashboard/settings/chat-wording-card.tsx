@@ -27,6 +27,7 @@ const COPY_FIELDS = [
   ['publicChatContactHumanLabel', 'Contact-human button', 'Talk to a human'],
   ['publicChatContactHumanMessage', 'Contact-human message', 'I want to talk to a human.'],
   ['publicChatDisclaimerTemplate', 'Disclaimer', '{name} uses AI and can make mistakes.'],
+  ['publicChatAiLabel', 'AI chip', 'AI'],
   ['publicChatOpenFullScreenLabel', 'Full-screen button', 'Open full screen'],
   ['publicChatOpenNewTabLabel', 'New-tab menu item', 'Open in new tab'],
 ] as const

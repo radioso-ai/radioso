@@ -1,4 +1,4 @@
-import type { EmailDriver, EmailMessage } from "../emailService.js";
+import type { EmailDriver, EmailMessage, EmailSendResult } from "../emailService.js";
 
 export class ResendEmailDeliveryError extends Error {
   constructor(
@@ -13,7 +13,7 @@ export class ResendEmailDeliveryError extends Error {
 export class ResendEmailDriver implements EmailDriver {
   constructor(private readonly apiKey: string) {}
 
-  async send(message: EmailMessage): Promise<void> {
+  async send(message: EmailMessage): Promise<EmailSendResult> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
       "Content-Type": "application/json",
@@ -38,6 +38,8 @@ export class ResendEmailDriver implements EmailDriver {
       const providerErrorName = await readProviderErrorName(response);
       throw new ResendEmailDeliveryError(response.status, providerErrorName);
     }
+
+    return { dispatched: true };
   }
 }
 

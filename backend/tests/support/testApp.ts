@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
 import type { Env } from "../../src/app/config/env.js";
+import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
@@ -751,6 +752,10 @@ export const createTestDependencies = (overrides: {
     userRepository,
     accountAccessService,
     auditService,
+    createMailAccountInvitationNotifier({
+      env: {},
+      mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
   );
   const sessionRepository = new InMemorySessionRepository();
   const machineAccessRepository = new InMemoryMachineAccessRepository();

@@ -10,6 +10,7 @@ import type {
   AccountInvitationStatus,
 } from "../../../db/repositories/accountInvitationRepository.js";
 import { normalizeEmail, sha256 } from "../../auth/contracts/index.js";
+import type { AccountInvitationNotifier } from "../contracts/accountInvitationNotifier.js";
 import { AccountAccessService } from "./accountAccessService.js";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -43,6 +44,7 @@ export class AccountInvitationService {
     private readonly userRepository: UserRepositoryPort,
     private readonly accountAccessService: AccountAccessService,
     private readonly auditService: AuditService,
+    private readonly invitationNotifier: AccountInvitationNotifier,
   ) {}
 
   async listForAccount(accountId: string): Promise<AccountInvitationSummary[]> {
@@ -57,7 +59,7 @@ export class AccountInvitationService {
     invitedByUserId: string;
     email: string;
     role?: AccountInvitationRole;
-  }): Promise<AccountInvitationSummary & { acceptanceUrl: string }> {
+  }): Promise<AccountInvitationSummary & { acceptanceUrl: string; emailDelivered: boolean }> {
     const membership = await this.accountAccessService.requireActiveMembership(input.accountId, input.invitedByUserId);
     await this.accountAccessService.requirePermission({
       accountId: input.accountId,
@@ -101,16 +103,27 @@ export class AccountInvitationService {
       expiresAt: new Date(Date.now() + INVITATION_TTL_MS),
     });
 
+    const acceptanceUrl = `/invite/${invitationToken}`;
+    // Notification is best-effort: the invitation stands on its own and the operator can
+    // still share the acceptance link, so a delivery failure is reported, not thrown.
+    const { delivered } = await this.invitationNotifier.notifyInvited({
+      email,
+      acceptancePath: acceptanceUrl,
+      invitedByEmail: (await this.userRepository.findById(input.invitedByUserId))?.email ?? null,
+      expiresAt: invitation.expiresAt,
+    });
+
     await this.auditService.record({
       accountId: input.accountId,
       eventType: "account.invitation.create",
       eventStatus: "success",
-      metadata: { email },
+      metadata: { email, emailDelivered: delivered },
     });
 
     return {
       ...serializeInvitation(invitation, "pending"),
-      acceptanceUrl: `/invite/${invitationToken}`,
+      acceptanceUrl,
+      emailDelivered: delivered,
     };
   }
 

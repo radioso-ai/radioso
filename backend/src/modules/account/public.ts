@@ -3,3 +3,8 @@ export type { AccountPermission, AuthenticatedPrincipal, Permission, PublicChatP
 export { AGENT_CONVERSE_PERMISSIONS } from "./services/accountAccessService.js";
 export { AccountInvitationService } from "./services/accountInvitationService.js";
 export type { AccountInvitationSummary } from "./services/accountInvitationService.js";
+export type {
+  AccountInvitationNotification,
+  AccountInvitationNotificationResult,
+  AccountInvitationNotifier,
+} from "./contracts/accountInvitationNotifier.js";

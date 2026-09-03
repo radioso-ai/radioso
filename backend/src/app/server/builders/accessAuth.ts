@@ -23,6 +23,7 @@ import type { AccessGrantLifecycleUnitOfWorkPort } from "../../../modules/access
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { Env } from "../../config/env.js";
+import { createMailAccountInvitationNotifier } from "../../composition/accountInvitationNotifier.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import {
   ApiPrincipalAuthenticator,
@@ -37,13 +38,14 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 
 export const buildAccessServices = (input: {
   auditService: AuditService;
-  env: Pick<Env, "WORKSPACE_TOKEN_SECRET">;
+  env: Pick<Env, "WORKSPACE_TOKEN_SECRET" | "APP_BASE_URL">;
+  infrastructure: Pick<ReturnType<typeof buildInfrastructure>, "mailService">;
   logger: Pick<AppLogger, "warn">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   repositories: ReturnType<typeof buildRepositories>;
   lifecycleUnitOfWork: AccessGrantLifecycleUnitOfWorkPort;
 }) => {
-  const { auditService, env, logger, metricsRegistry, repositories, lifecycleUnitOfWork } = input;
+  const { auditService, env, infrastructure, logger, metricsRegistry, repositories, lifecycleUnitOfWork } = input;
   const machineAccessSecurityObserver: MachineAccessSecurityObserver = {
     recordAuthentication(event) {
       metricsRegistry?.incrementCounter("machine_access_authentication_total", {
@@ -116,6 +118,11 @@ export const buildAccessServices = (input: {
     repositories.userRepository,
     accountAccessService,
     auditService,
+    createMailAccountInvitationNotifier({
+      env,
+      mailService: infrastructure.mailService,
+      logger,
+    }),
   );
 
   return {

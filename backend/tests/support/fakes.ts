@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  AccountInvitationNotification,
+  AccountInvitationNotifier,
+  AccountInvitationNotificationResult,
+} from "../../src/modules/account/contracts/accountInvitationNotifier.js";
+import type {
   AccountMembershipRecord,
   AccountMembershipRepositoryPort,
   AccountMembershipRole,
@@ -4562,5 +4567,16 @@ export class InMemoryDocumentTypeCatalogRepository implements DocumentTypeCatalo
     };
     this.items.set(input.workspaceId, record);
     return record;
+  }
+}
+
+export class RecordingAccountInvitationNotifier implements AccountInvitationNotifier {
+  readonly notifications: AccountInvitationNotification[] = [];
+
+  constructor(private readonly outcome: AccountInvitationNotificationResult = { delivered: true }) {}
+
+  async notifyInvited(notification: AccountInvitationNotification): Promise<AccountInvitationNotificationResult> {
+    this.notifications.push(notification);
+    return this.outcome;
   }
 }

@@ -19,6 +19,7 @@ import {
   createAuditService,
   InMemoryAccountInvitationRepository,
   InMemorySessionRepository,
+  RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
 import { createTestEnv } from "../support/testApp.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -195,6 +196,7 @@ const createAuthService = (database: Database): AuthService => {
       userRepository,
       accountAccessService,
       auditService,
+      new RecordingAccountInvitationNotifier(),
     ),
     organizationCreationGuard: new OssOrganizationCreationGuard(
       new PostgresOssOrganizationBootstrap(database, auditService),

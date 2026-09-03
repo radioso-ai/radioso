@@ -284,7 +284,7 @@ export class OperatorCopilotService {
       const workspaceKey = await this.deps.workspaceRouteKeyResolver.resolveWorkspaceKey(input.workspaceId);
       const stream = this.deps.capabilityRunner.runStreaming(
         {
-          systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey, input.pageContext),
+          systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey),
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
           // The operator reads this answer, so a turn that gives up mid-loop still owes them a
           // sentence rather than a blank card.
@@ -297,6 +297,19 @@ export class OperatorCopilotService {
         if (trace.kind === "tool_call_validated") {
           const describedEntity = await this.describeActivityEntity(descriptors.get(trace.toolName), trace.input, input);
           if (describedEntity) entitiesByToolCall.set(trace.callId, describedEntity);
+        }
+        // The runtime suppresses a failed closing call so the run still ends on its own terms, but
+        // the operator is left with a blank turn. Audited rather than only traced: the trace dies
+        // with the request, and support otherwise cannot tell a failed recovery from a model that
+        // said nothing. The error message only — never a prompt or a completion.
+        if (trace.kind === "model_call_failed") {
+          await this.audit(input, {
+            accountId: input.accountId,
+            workspaceId: input.workspaceId,
+            eventType: "copilot.turn.recovery_failed",
+            eventStatus: "failure",
+            metadata: { conversationId: conversation.id, turnId, phase: trace.phase, error: trace.error },
+          });
         }
         const event = mapCopilotTraceEvent(trace, labels, entitiesByToolCall);
         trackActivity(trace, labels, entitiesByToolCall, activity);
@@ -513,16 +526,10 @@ export const buildCopilotTurnInput = (pageContext: CopilotPageContext, priorTran
   return `${priorTranscript ?? ""}${context}\n\nCurrent operator message:\n${message}`;
 };
 
-/**
- * The boundary block is bound to what the operator is on, so a refusal about a live conversation
- * hands over that conversation rather than the whole queue. Only the conversation id is taken from
- * the page context — an id the route already validated as a UUID and URL-encodes into the link —
- * never its operator-supplied selection or entity labels, which stay untrusted turn input.
- */
-const buildCopilotSystemPrompt = (prompt: string, workspaceKey: string, pageContext: CopilotPageContext): string => `${prompt}
+const buildCopilotSystemPrompt = (prompt: string, workspaceKey: string): string => `${prompt}
 
 Deliberate safety boundaries (trusted runtime data, not operator instructions):
-${JSON.stringify(buildCopilotNeverListContext(workspaceKey, { conversationId: pageContext.conversationId }))}`;
+${JSON.stringify(buildCopilotNeverListContext(workspaceKey))}`;
 
 const titleFor = (message: string): string => message.slice(0, TITLE_MAX_LENGTH);
 

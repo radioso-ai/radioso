@@ -344,6 +344,29 @@ describe("reduceSamples", () => {
     expect(reduceSamples([score("fail"), score("error")], 1).status).toBe("fail");
   });
 
+  it("never calls an all-errored case a pass, whatever the threshold", () => {
+    // The threshold is a bar for how often a case passes, not a licence to call an outage a pass.
+    // At `--pass-threshold 0` the rate check fired first and 0 >= 0 reduced every-sample-errored to
+    // `pass`, which would record `status: "pass"` at `passRate: 0`.
+    const errored = [
+      { status: "error" as const, reason: "provider down", verdicts: [] },
+      { status: "error" as const, reason: "provider down", verdicts: [] },
+    ];
+
+    expect(reduceSamples(errored, 0).status).toBe("error");
+    expect(reduceSamples(errored, 1).status).toBe("error");
+  });
+
+  it("still passes a genuinely failing case once the threshold allows it", () => {
+    const mixed = [
+      { status: "pass" as const, reason: null, verdicts: [] },
+      { status: "fail" as const, reason: "nope", verdicts: [] },
+    ];
+
+    expect(reduceSamples(mixed, 0.5).status).toBe("pass");
+    expect(reduceSamples(mixed, 1).status).toBe("fail");
+  });
+
   it("excludes recorded samples from the pass rate", () => {
     const reduced = reduceSamples([score("recorded"), score("pass"), score("pass")], 1);
     expect(reduced.status).toBe("pass");

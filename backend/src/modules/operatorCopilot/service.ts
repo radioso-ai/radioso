@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { AGENT_BUDGET_DEFAULTS, type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
+import { type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import {
   copilotProposalPermissions,
@@ -26,10 +26,10 @@ import {
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 import { COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT, createCopilotProbeBudget, meteredCopilotTool, type CopilotProbeBudget } from "./probeBudget.js";
+import { COPILOT_TURN_BUDGET } from "./turnBudget.js";
 import { hasAllCopilotToolPermissions, hasCurrentCopilotToolPermissions } from "./catalog.js";
 import { buildCopilotNeverListContext } from "./neverList.js";
 
-const COPILOT_BUDGETS = AGENT_BUDGET_DEFAULTS;
 const TITLE_MAX_LENGTH = 120;
 // Bounded history keeps follow-up turns anchored without letting long copilot
 // conversations grow the model context unboundedly (spec 104 edge case).
@@ -301,7 +301,7 @@ export class OperatorCopilotService {
           requireFinalMessage: true,
         },
         tools,
-        COPILOT_BUDGETS,
+        COPILOT_TURN_BUDGET,
       );
       for await (const trace of stream.events) {
         if (trace.kind === "tool_call_validated") {

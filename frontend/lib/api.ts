@@ -127,5 +127,20 @@ export type {
 } from './api-customer-email'
 export { workbenchApi } from './api-workbench'
 export { publicChatApi } from './api-public-chat'
+export { agentBundleApi } from './api-agent-bundle'
+export {
+  agentBundleFileName,
+  groupUnresolvedByElement,
+  readAgentBundle,
+  unresolvedElementLabel,
+  AGENT_BUNDLE_SCHEMA_VERSION,
+} from './agent-bundle'
+export type {
+  AgentBundle,
+  AgentBundleImportResponse,
+  AgentBundleSummary,
+  AgentBundleUnresolvedKind,
+  AgentBundleUnresolvedReference,
+} from './agent-bundle'
 export { agentsApi, generalSettingsApi, settingsApi, webhookDestinationsApi } from './api-settings'
 export { workspaceApi } from './api-workspace'

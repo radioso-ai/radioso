@@ -19,7 +19,11 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   name: "Support Bot",
   createdAt: new Date(0),
   updatedAt: new Date(0),
+  internalName: "Procurement (EU)",
   customInstruction: "Answer with precise procurement guidance.",
+  // Always written by the repository (`?? false`), so a fixture standing in for a
+  // stored agent carries it too.
+  handoffOnRetrievalMiss: true,
   suggestedQuestionsEnabled: false,
   assistantLinkUtmEnabled: false,
   citationDisplayEnabled: false,

@@ -15,8 +15,17 @@ import {
   routineValidationCodes,
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
+import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+
+// Bundle collections are name-keyed, not id-keyed: see `agentBundle/domain.ts`
+// for why. The enums below mirror the route-level validation in
+// `agentBundleRoutes.ts` rather than importing zod schemas cross-module.
+const AgentConfigPortabilityValueSchema = z.enum(["portable", "ref", "secret"]);
+const AgentBundleContextVariableSourceSchema = z.enum(["pushed", "browser", "resolver"]);
+const AgentBundleContextVariableSurfacingSchema = z.enum(["always", "on_reference", "operator_only"]);
+const AgentBundleSkillInvocationModeSchema = z.enum(["default_answer", "routine_named", "agent_selectable"]);
 
 export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const AgentSchema = registry.register(
@@ -643,6 +652,160 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const AgentConfigRefPlaceholderSchema = registry.register(
+    "AgentConfigRefPlaceholder",
+    z.object({
+      __ref: z.enum([
+        "documentSource",
+        "storageBucket",
+        "storageObjectPath",
+        "storageGeneration",
+        "websiteEmbedAllowedOrigin",
+        "mcpConnection",
+        "agentSkillTarget",
+      ]),
+      key: z.string().optional(),
+    }).openapi({
+      description:
+        "A workspace-scoped reference that does not travel between workspaces (for example a credential-bearing "
+        + "connection). The bundle carries only the kind so the caller can see what did not come along; `key` "
+        + "links the placeholder back to another entity exported in the same bundle when re-binding on import is possible.",
+    }),
+  );
+
+  const AgentBundleAgentConfigSchema = registry.register(
+    "AgentBundleAgentConfig",
+    z.object({ schemaVersion: z.number().int() }).passthrough().openapi({
+      description:
+        "The agent configuration projection (AgentConfig) at schemaVersion 3, as produced and consumed by the "
+        + "agents module for export/import. Not exhaustively typed here: this is the same versioned projection "
+        + "the agents module already validates internally, carried through unchanged.",
+    }),
+  );
+
+  const AgentBundleRoutineSchema = registry.register(
+    "AgentBundleRoutine",
+    z.object({
+      name: z.string(),
+      version: z.number().int().openapi({ description: "Source version, carried for provenance only; import always creates v1." }),
+      definition: routineDefinitionDraftInputSchema,
+    }),
+  );
+
+  const AgentBundleContextVariableSchema = registry.register(
+    "AgentBundleContextVariable",
+    z.object({
+      variableName: z.string(),
+      source: AgentBundleContextVariableSourceSchema,
+      resolverSkillName: z.string().nullable(),
+      maxAgeSeconds: z.number().int().nullable(),
+      resolverTimeoutMs: z.number().int().nullable(),
+      surfacing: AgentBundleContextVariableSurfacingSchema,
+      enabled: z.boolean(),
+    }),
+  );
+
+  const AgentBundleSkillSchema = registry.register(
+    "AgentBundleSkill",
+    z.object({
+      name: z.string(),
+      capability: z.string(),
+      invocationMode: AgentBundleSkillInvocationModeSchema,
+      enabled: z.boolean(),
+      config: z.record(z.unknown()).openapi({ description: "Only the fields a capability marked portable." }),
+      omittedConfigKeys: z.array(z.string()).openapi({
+        description: "Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter.",
+      }),
+      target: z.object({
+        kind: z.string().nullable(),
+        id: AgentConfigRefPlaceholderSchema.nullable(),
+      }).openapi({
+        description: "Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound.",
+      }),
+    }),
+  );
+
+  const AgentBundleUnresolvedKindSchema = registry.register(
+    "AgentBundleUnresolvedKind",
+    z.enum([
+      "context_variable_missing",
+      "resolver_skill_missing",
+      "skill_target_unbound",
+      "skill_capability_unknown",
+      "routine_invalid",
+      "document_source_unresolved",
+      "surface_credential_unbound",
+      "mcp_connection_unbound",
+      "asset_not_portable",
+      "skill_config_not_portable",
+      "directive_binding_unbound",
+    ]).openapi({
+      description: [
+        "Why a bundle element could not be fully applied to the target workspace. Every element is reported",
+        "rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that",
+        "looks configured and answers wrong.",
+        "- context_variable_missing: the bundle names a context variable that does not exist in this workspace.",
+        "- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.",
+        "- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.",
+        "- skill_capability_unknown: no capability with this id is registered in this deployment.",
+        "- routine_invalid: the routine imported as a draft because publish validation rejected it.",
+        "- document_source_unresolved: selected document sources cannot be matched; scope imports empty, not \"all\".",
+        "- surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.",
+        "- mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.",
+        "- asset_not_portable: binary stored outside the database (the logo); not part of the bundle.",
+        "- skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.",
+        "- directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.",
+      ].join("\n"),
+    }),
+  );
+
+  const AgentBundleUnresolvedReferenceSchema = registry.register(
+    "AgentBundleUnresolvedReference",
+    z.object({
+      kind: AgentBundleUnresolvedKindSchema,
+      element: z.string().openapi({ description: "The bundle element the caller must fix, named the way they authored it." }),
+      detail: z.string(),
+    }),
+  );
+
+  const AgentBundleSchema = registry.register(
+    "AgentBundle",
+    z.object({
+      bundleVersion: z.literal(AGENT_BUNDLE_SCHEMA_VERSION),
+      portability: z.record(AgentConfigPortabilityValueSchema).openapi({
+        description: "Portability of the bundle's own top-level collections, keyed by field path (for example \"agentSkills[].config\").",
+      }),
+      agent: AgentBundleAgentConfigSchema,
+      routines: z.array(AgentBundleRoutineSchema),
+      contextVariables: z.array(AgentBundleContextVariableSchema),
+      agentSkills: z.array(AgentBundleSkillSchema),
+    }),
+  );
+
+  const AgentBundleImportRequestSchema = registry.register(
+    "AgentBundleImportRequest",
+    z.object({
+      bundleVersion: z.number().int(),
+      portability: z.record(AgentConfigPortabilityValueSchema).optional(),
+      agent: AgentBundleAgentConfigSchema,
+      routines: z.array(AgentBundleRoutineSchema).default([]),
+      contextVariables: z.array(AgentBundleContextVariableSchema).default([]),
+      agentSkills: z.array(AgentBundleSkillSchema).default([]),
+    }).openapi({
+      description:
+        "A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what "
+        + "this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially.",
+    }),
+  );
+
+  const AgentBundleImportResponseSchema = registry.register(
+    "AgentBundleImportResponse",
+    z.object({
+      agentId: z.string().uuid(),
+      unresolved: z.array(AgentBundleUnresolvedReferenceSchema),
+    }),
+  );
+
   Object.assign(schemas, {
     AgentSchema,
     AgentContactRequestDeliverySchema,
@@ -695,5 +858,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
     WorkspaceIngestionReprocessResponseSchema,
+    AgentConfigRefPlaceholderSchema,
+    AgentBundleAgentConfigSchema,
+    AgentBundleRoutineSchema,
+    AgentBundleContextVariableSchema,
+    AgentBundleSkillSchema,
+    AgentBundleUnresolvedKindSchema,
+    AgentBundleUnresolvedReferenceSchema,
+    AgentBundleSchema,
+    AgentBundleImportRequestSchema,
+    AgentBundleImportResponseSchema,
   });
 };

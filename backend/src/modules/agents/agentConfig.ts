@@ -132,7 +132,15 @@ export interface AgentConfig {
   schemaVersion: typeof AGENT_CONFIG_SCHEMA_VERSION;
   portability: Record<string, AgentConfigPortability>;
   name: string;
+  /** Operator-facing label, distinct from the name visitors see. */
+  internalName: string | null;
   customInstruction: string;
+  /**
+   * Whether a retrieval miss asks for a human. Read at turn time by
+   * `chat/services/handoffOwnership.ts`, so a config that omits it describes an
+   * agent that escalates differently from the one it was taken from.
+   */
+  handoffOnRetrievalMiss: boolean;
   contactRequestsEnabled: boolean;
   webhookExportsEnabled: boolean;
   contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
@@ -323,7 +331,14 @@ const optionalBoolean = (value: unknown, fallback: boolean): boolean =>
 const isInternalRetrievalDefaults = (value: unknown): value is InternalAgentRetrievalDefaultsConfig =>
   isRecord(value);
 
-const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSettingsConfig): {
+/**
+ * Exported so the bundle importer splits the retrieval envelope the same way
+ * replay materialization does. The projection is enveloped
+ * (`skillSettings["retrieval.answer"].settings.__agentRetrievalDefaults`) while the
+ * stored agent is flat, and a second implementation of that split would be a
+ * second place for the two shapes to disagree.
+ */
+export const splitRetrievalAnswerEnvelope = (skillSettings: InternalAgentSkillSettingsConfig): {
   retrievalEnabled: boolean;
   sourceScope: InternalAgentSourceScopeConfig;
   suggestedQuestionsEnabled: boolean;
@@ -640,9 +655,17 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.name,
   }),
+  internalName: descriptor({
+    portability: "portable",
+    serialize: (agent) => agent.internalName ?? null,
+  }),
   customInstruction: descriptor({
     portability: "portable",
     serialize: (agent) => agent.customInstruction,
+  }),
+  handoffOnRetrievalMiss: descriptor({
+    portability: "portable",
+    serialize: (agent) => agent.handoffOnRetrievalMiss ?? false,
   }),
   contactRequestsEnabled: descriptor({
     portability: "portable",
@@ -753,7 +776,9 @@ export const projectInternalAgentConfig = (
   schemaVersion: AGENT_CONFIG_SCHEMA_VERSION,
   portability: buildPortabilityMap(),
   name: agent.name,
+  internalName: agent.internalName ?? null,
   customInstruction: agent.customInstruction,
+  handoffOnRetrievalMiss: agent.handoffOnRetrievalMiss ?? false,
   contactRequestsEnabled: agent.contactRequestsEnabled,
   webhookExportsEnabled: agent.webhookExportsEnabled,
   contactRequestDelivery: cloneJson(agent.contactRequestDelivery),
@@ -832,6 +857,13 @@ export const materializeAgentFromConfig = (
     citationDisplayEnabled: retrievalAnswer.citationDisplayEnabled,
     contactRequestsEnabled: config.contactRequestsEnabled,
     webhookExportsEnabled: config.webhookExportsEnabled,
+    // Defensive defaults, matching the `enabled` precedent above: a config
+    // serialized before these fields existed carries neither, and that silence
+    // must read as the stored column default rather than as an authored choice.
+    // `internalName` is optional on the agent, so an absent one stays absent
+    // rather than becoming an explicit `undefined` key.
+    ...(config.internalName ? { internalName: config.internalName } : {}),
+    handoffOnRetrievalMiss: config.handoffOnRetrievalMiss ?? false,
     contactRequestDelivery: cloneJson(config.contactRequestDelivery),
     retrievalEnabled: retrievalAnswer.retrievalEnabled,
     logo: config.logo ? cloneJson(config.logo) : null,

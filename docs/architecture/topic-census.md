@@ -188,16 +188,16 @@ search — a run reads its whole window into memory and clusters there.
 Each topic in a census run carries its recorded transition, including parent
 topic ids and the centroid-fallback signal, into the Audience Pulse report.
 
-When every current topic survives, no topic dissolves, each topic's membership
-count changes by less than 20 percent, the population size and unclassified
-question count each change by less than 20 percent, a saved summary exists, and
-the current content-gap theme-id set matches the saved report, Audience Pulse
-reuses the saved summary and recommendations without a narrative model call. A
-saved report that lacks an unclassified question count triggers a regenerated
-narrative. Every reused recommendation evidence id resolves inside the current
-analysis window; an expired reference triggers a regenerated narrative. Themes,
-counts, shares, weekly pulse, grounding, and content gaps always derive from
-the fresh census.
+Audience Pulse reuses a saved summary and recommendations without a narrative
+model call when every current topic survives, no topic dissolves, each topic's
+membership count and share change by less than 20 percent, the population size
+and unclassified question count each change by less than 20 percent, a saved
+summary exists, and the current content-gap theme-id set matches the saved
+report. A saved report without an unclassified question count or a topic share
+regenerates the narrative. Every reused recommendation evidence id resolves in
+the current analysis window and remains content-gap eligible; an expired or
+ineligible reference regenerates the narrative. Themes, counts, shares, weekly
+pulse, grounding, and content gaps always derive from the fresh census.
 
 ## Backfill
 

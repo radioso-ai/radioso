@@ -1,14 +1,17 @@
 import { Router } from "express";
 import { z } from "zod";
+import { OPERATOR_MCP_LIFECYCLE_SCOPE, OPERATOR_MCP_SCOPES } from "@radioso/operator-mcp-contract";
 
 import { requireApiAccessCsrf } from "../../app/http/middleware/requireApiAccessCsrf.js";
+import { createPreAuthSourceRateLimiter } from "../../app/http/middleware/preAuthSourceRateLimiter.js";
 import { requireSession } from "../../app/http/middleware/requireSession.js";
 import type { AppDependencies } from "../../app/server/types.js";
 import { OperatorMcpProtocolError, operatorMcpRolloutWorkspaceIds, validateRedirectUri } from "./domain.js";
 
 type Dependencies = Pick<AppDependencies,
   "env" | "authService" | "accountAccessService" | "workspaceService" | "userRepository" |
-  "operatorMcpAuthorizationService" | "operatorMcpClientResolver" | "operatorMcpReadiness"
+  "operatorMcpAuthorizationService" | "operatorMcpClientResolver" | "operatorMcpReadiness" |
+  "abuseControlService"
 >;
 
 const authorizeQuery = z.object({
@@ -19,7 +22,7 @@ const authorizeQuery = z.object({
 const transactionParams = z.object({ transactionId: z.string().uuid() });
 const decisionBody = z.object({
   decision: z.enum(["approve", "deny"]), workspaceId: z.string().uuid().optional(),
-  approvedToolScopes: z.array(z.enum(["operator:read", "operator:probe", "operator:act", "operator:propose"])).min(1).max(4).optional(),
+  approvedToolScopes: z.array(z.enum(OPERATOR_MCP_SCOPES)).min(1).max(OPERATOR_MCP_SCOPES.length).optional(),
   offlineAccess: z.boolean().default(false),
 });
 
@@ -30,6 +33,7 @@ const noStore = (_req: unknown, res: { setHeader(name: string, value: string): v
 };
 
 const oauthError = (error: unknown): string => error instanceof OperatorMcpProtocolError ? error.code : "invalid_request";
+const issuerEndpoint = (issuer: string, path: string): string => new URL(path, issuer).toString();
 
 export const createOperatorMcpDiscoveryRoutes = (dependencies: Pick<Dependencies, "env">): Router => {
   const router = Router();
@@ -41,14 +45,14 @@ export const createOperatorMcpDiscoveryRoutes = (dependencies: Pick<Dependencies
     }
     res.status(200).json({
       issuer,
-      authorization_endpoint: `${issuer}/api/v1/operator-mcp/oauth/authorize`,
-      token_endpoint: `${issuer}/api/v1/operator-mcp/oauth/token`,
-      revocation_endpoint: `${issuer}/api/v1/operator-mcp/oauth/revoke`,
+      authorization_endpoint: issuerEndpoint(issuer, "/api/v1/operator-mcp/oauth/authorize"),
+      token_endpoint: issuerEndpoint(issuer, "/api/v1/operator-mcp/oauth/token"),
+      revocation_endpoint: issuerEndpoint(issuer, "/api/v1/operator-mcp/oauth/revoke"),
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"],
       token_endpoint_auth_methods_supported: ["none"],
-      scopes_supported: ["operator:read", "operator:probe", "operator:act", "operator:propose", "offline_access"],
+      scopes_supported: [...OPERATOR_MCP_SCOPES, OPERATOR_MCP_LIFECYCLE_SCOPE],
     });
   });
   return router;
@@ -59,8 +63,15 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
   const rolloutWorkspaceIds = operatorMcpRolloutWorkspaceIds(dependencies.env.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS);
   const sessionOnly = requireSession(dependencies);
   const service = dependencies.operatorMcpAuthorizationService;
+  const authorizeRateLimit = createPreAuthSourceRateLimiter({
+    service: dependencies.abuseControlService,
+    scope: "api.operator_mcp_oauth_authorize",
+    limit: dependencies.env.AUTH_RATE_LIMIT_MAX_ATTEMPTS,
+    windowMs: dependencies.env.AUTH_RATE_LIMIT_WINDOW_MS,
+    trustedProxyHops: dependencies.env.RADIOSO_TRUSTED_PROXY_HOPS,
+  });
 
-  router.get("/authorize", noStore, async (req, res) => {
+  router.get("/authorize", noStore, authorizeRateLimit, async (req, res) => {
     if (!service || !await dependencies.operatorMcpReadiness) {
       res.status(503).json({ error: "temporarily_unavailable" });
       return;
@@ -171,7 +182,10 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
 
   router.post("/transactions/:transactionId/decision", noStore, sessionOnly, requireApiAccessCsrf, async (req, res, next) => {
     try {
-      if (!service) throw new OperatorMcpProtocolError("invalid_request", "invalid_request");
+      if (!service || !await dependencies.operatorMcpReadiness) {
+        res.status(503).json({ error: "temporarily_unavailable" });
+        return;
+      }
       const { transactionId } = transactionParams.parse(req.params);
       const body = decisionBody.parse(req.body);
       const locals = res.locals as { userId: string; accountId: string; sessionId: string };

@@ -1,7 +1,29 @@
-import { describe, expect, it } from 'vitest'
+/* @vitest-environment jsdom */
 
-import { consentWarnings } from '@/components/operator-mcp/operator-mcp-consent'
+import { act, createElement } from 'react'
+import { createRoot, type Root } from 'react-dom/client'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { OperatorMcpConsent, consentWarnings } from '@/components/operator-mcp/operator-mcp-consent'
 import type { OperatorMcpTransactionResponse } from '@/lib/api-operator-mcp'
+import { AuthProvider } from '@/lib/auth-context'
+
+const operatorMcpApiMocks = vi.hoisted(() => ({
+  decideTransaction: vi.fn(),
+  getTransaction: vi.fn(),
+}))
+
+vi.mock('@/lib/api-operator-mcp', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/api-operator-mcp')>(),
+  operatorMcpApi: operatorMcpApiMocks,
+}))
+
+vi.mock('@/components/auth/auth-page', async () => {
+  const React = await import('react')
+  return {
+    AuthPage: () => React.createElement('div', { 'data-testid': 'auth-page' }, 'Welcome back'),
+  }
+})
 
 const transaction = (redirectUri: string): OperatorMcpTransactionResponse => ({
   transactionId: 'tx-1',
@@ -35,5 +57,63 @@ describe('operator MCP consent warnings', () => {
 
   it('does not classify an ordinary HTTPS redirect as loopback', () => {
     expect(consentWarnings(transaction('https://client.example/callback'))).toHaveLength(1)
+  })
+})
+
+describe('OperatorMcpConsent', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeAll(() => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  })
+
+  beforeEach(() => {
+    localStorage.clear()
+    operatorMcpApiMocks.getTransaction.mockReset()
+    operatorMcpApiMocks.decideTransaction.mockReset()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('renders login instead of a generic unavailable state when the transaction API returns 401', async () => {
+    localStorage.setItem('radioso.authUser', JSON.stringify({
+      userId: 'user-1',
+      accountId: 'account-1',
+      email: 'user@example.com',
+    }))
+    operatorMcpApiMocks.getTransaction.mockRejectedValueOnce({
+      status: 401,
+      error: { code: 'unauthorized', message: 'Unauthorized' },
+    })
+
+    await act(async () => {
+      root.render(createElement(AuthProvider, null, createElement(OperatorMcpConsent, { transactionId: 'tx-1' })))
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Welcome back')
+    expect(container.textContent).not.toContain('Authorization unavailable')
+    expect(operatorMcpApiMocks.getTransaction).toHaveBeenCalledWith('tx-1', expect.any(AbortSignal))
+  })
+
+  it('renders login without loading a transaction when no session is bootstrapped', async () => {
+    await act(async () => {
+      root.render(createElement(AuthProvider, null, createElement(OperatorMcpConsent, { transactionId: 'tx-1' })))
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Welcome back')
+    expect(operatorMcpApiMocks.getTransaction).not.toHaveBeenCalled()
   })
 })

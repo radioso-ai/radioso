@@ -160,4 +160,42 @@ describe("operator MCP stateless request handler", () => {
     expect(oversized.status).toBe(200);
     await expect(oversized.json()).resolves.toMatchObject({ error: { code: -32600 } });
   });
+
+  it("returns backend validation errors as invalid params instead of runtime unavailable", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was rejected.", 400, "operation_required");
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(new Request("https://mcp.example/operator/mcp", {
+      body: JSON.stringify({ id: "validation", jsonrpc: "2.0", method: "tools/call", protocolVersion: "2026-07-28", params: { name: "workspace_settings" } }),
+      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: -32602, message: "operation_required" } });
+  });
+
+  it("returns backend budget exhaustion as a rate-limit response", async () => {
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      call: vi.fn<OperatorMcpRequestHandlerDependencies["call"]>(async () => {
+        throw new OperatorBackendAdapterError("Operator request was throttled.", 429, "budget_exhausted");
+      }),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+
+    const response = await handler(new Request("https://mcp.example/operator/mcp", {
+      body: JSON.stringify({ id: "budget", jsonrpc: "2.0", method: "tools/call", protocolVersion: "2026-07-28", params: { name: "workspace_settings" } }),
+      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toEqual({ error: "budget_exhausted" });
+  });
 });

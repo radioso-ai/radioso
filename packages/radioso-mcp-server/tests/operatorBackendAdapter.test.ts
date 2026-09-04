@@ -32,6 +32,38 @@ describe("operator backend adapter", () => {
     await expect(createOperatorBackendAdapter({ baseUrl: "https://app.example", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1 }).admit({ accessToken: "opaque", bodyDigest: sha256Digest("{}"), invocationId: id, method: "tools/list", nonce: "n", resource: "https://mcp.example/operator/mcp", timestamp: "1" })).rejects.toMatchObject({ code: "unavailable", status: 503 });
   });
 
+  it("preserves safe backend application errors without leaking response bodies", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "operation_required", message: "contains customer data" }), { status: 400 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "workspace_settings",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "operation_required", status: 400 });
+  });
+
+  it("maps backend budget exhaustion to a throttling error", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ code: "budget_exhausted", message: "limit" }), { status: 429 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "workspace_settings",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "budget_exhausted", status: 429 });
+  });
+
   it("carries the canonical call digest through the signed invocation request", async () => {
     const call = { name: "workspace_settings", arguments: { section: "retrieval" } };
     const bodyDigest = digestOperatorMcpCall(call);

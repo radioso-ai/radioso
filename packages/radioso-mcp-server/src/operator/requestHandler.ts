@@ -63,6 +63,9 @@ const insufficientScope = (metadataUrl: string | undefined, scope: string | unde
   return new Response(JSON.stringify({ error: "insufficient_scope" }), { headers, status: 403 });
 };
 
+const throttled = (error: "budget_exhausted" | "rate_limit_exceeded"): Response =>
+  new Response(JSON.stringify({ error }), { headers: { "content-type": "application/json" }, status: 429 });
+
 const objectParams = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 
@@ -74,6 +77,16 @@ const shapeForScope = (scope: string | undefined): OperatorMcpShape | undefined 
   const shape = scope?.startsWith("operator:") ? scope.slice("operator:".length) : undefined;
   return shape === "read" || shape === "probe" || shape === "act" || shape === "propose" ? shape : undefined;
 };
+
+const isBackendInvalidParams = (error: OperatorBackendAdapterError): boolean =>
+  error.status === 400 && (
+    error.code === "invalid_arguments"
+    || error.code === "operation_required"
+    || error.code === "operation_conflict"
+  );
+
+const isBackendRateLimit = (error: OperatorBackendAdapterError): error is OperatorBackendAdapterError & { code: "budget_exhausted" | "rate_limit_exceeded" } =>
+  error.status === 429 && (error.code === "budget_exhausted" || error.code === "rate_limit_exceeded");
 
 const principalDigest = (proof: OperatorMcpProof): string => sha256Digest([
   proof.accountId,
@@ -180,6 +193,14 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     if (error instanceof OperatorBackendAdapterError && error.status === 403) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, shape: shapeForScope(error.requiredScope), reason: "insufficient_scope" });
       return insufficientScope(dependencies.resourceMetadataUrl, error.requiredScope);
+    }
+    if (error instanceof OperatorBackendAdapterError && isBackendInvalidParams(error)) {
+      reportOutcome(dependencies, { method, outcome: "error", descriptorName, reason: "invalid_request" });
+      return rpcError(id, -32602, error.code);
+    }
+    if (error instanceof OperatorBackendAdapterError && isBackendRateLimit(error)) {
+      reportOutcome(dependencies, { method, outcome: "denied", descriptorName, shape: shapeForScope(error.requiredScope), reason: "rate_limit_exceeded" });
+      return throttled(error.code);
     }
     reportOutcome(dependencies, { method, outcome: "error", descriptorName, reason: "runtime_unavailable" });
     return rpcError(id, -32002, "Operator MCP runtime is unavailable.");

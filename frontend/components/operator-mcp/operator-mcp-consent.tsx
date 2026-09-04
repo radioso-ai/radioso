@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, LockKeyhole } from 'lucide-r
 import { getApiErrorMessage } from '@/lib/api-error'
 import { operatorMcpApi, type OperatorMcpToolScope, type OperatorMcpTransactionResponse } from '@/lib/api-operator-mcp'
 import { useAuth } from '@/lib/auth-context'
+import { AuthPage } from '@/components/auth/auth-page'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
@@ -34,12 +35,17 @@ export const consentWarnings = (transaction: OperatorMcpTransactionResponse): st
 
 type ConsentState =
   | { kind: 'loading' }
+  | { kind: 'auth' }
   | { kind: 'ready'; transaction: OperatorMcpTransactionResponse }
   | { kind: 'error'; message: string }
   | { kind: 'decided'; message: string }
 
+const isUnauthorizedApiError = (error: unknown): boolean => (
+  Boolean(error && typeof error === 'object' && 'status' in error && error.status === 401)
+)
+
 export function OperatorMcpConsent({ transactionId }: { transactionId: string }) {
-  const { user } = useAuth()
+  const { user, isAuthenticated, isBootstrapping } = useAuth()
   const [state, setState] = useState<ConsentState>({ kind: 'loading' })
   const [workspaceId, setWorkspaceId] = useState('')
   const [scopes, setScopes] = useState<OperatorMcpToolScope[]>([])
@@ -48,6 +54,7 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (isBootstrapping || !isAuthenticated) return
     const controller = new AbortController()
     void operatorMcpApi.getTransaction(transactionId, controller.signal)
       .then((transaction) => {
@@ -59,10 +66,15 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
         setOfflineAccess(false)
       })
       .catch((loadError) => {
-        if (!controller.signal.aborted) setState({ kind: 'error', message: getApiErrorMessage(loadError, 'This authorization request is no longer available.') })
+        if (controller.signal.aborted) return
+        if (isUnauthorizedApiError(loadError)) {
+          setState({ kind: 'auth' })
+          return
+        }
+        setState({ kind: 'error', message: getApiErrorMessage(loadError, 'This authorization request is no longer available.') })
       })
     return () => controller.abort()
-  }, [transactionId])
+  }, [isAuthenticated, isBootstrapping, transactionId])
 
   useEffect(() => {
     document.title = 'Authorize Radioso MCP'
@@ -97,6 +109,8 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
     }
   }
 
+  if (isBootstrapping) return <ConsentShell><Spinner className="h-6 w-6" /></ConsentShell>
+  if (!isAuthenticated || state.kind === 'auth') return <AuthPage />
   if (state.kind === 'loading') return <ConsentShell><Spinner className="h-6 w-6" /></ConsentShell>
   if (state.kind === 'error') return <ConsentShell><StatePanel title="Authorization unavailable" message={state.message} /></ConsentShell>
   if (state.kind === 'decided') return <ConsentShell><StatePanel title="Authorization decided" message={state.message} /></ConsentShell>

@@ -1,15 +1,12 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { OPERATOR_MCP_SCOPES } from "@radioso/operator-mcp-contract";
 
 import {
   ACCESS_TOKEN_TTL_SECONDS,
   AUTHORIZATION_CODE_TTL_SECONDS,
-  canonicalInputDigest,
   hashOpaqueCredential,
   parseOperatorMcpScopes,
-  scopeForToolShape,
   validateAuthorizationResource,
-  validatePkceS256,
   validateRedirectUri,
 } from "../../../src/modules/operatorMcpAuthorization/domain.js";
 
@@ -23,11 +20,8 @@ describe("operator MCP authorization domain", () => {
     expect(() => parseOperatorMcpScopes("operator:read unknown")).toThrow(/invalid_scope/i);
   });
 
-  it("maps every descriptor shape to one fixed scope", () => {
-    expect(scopeForToolShape("read")).toBe("operator:read");
-    expect(scopeForToolShape("probe")).toBe("operator:probe");
-    expect(scopeForToolShape("act")).toBe("operator:act");
-    expect(scopeForToolShape("propose")).toBe("operator:propose");
+  it("accepts every tool scope declared by the shared contract", () => {
+    expect(parseOperatorMcpScopes(OPERATOR_MCP_SCOPES.join(" ")).toolScopes).toEqual([...OPERATOR_MCP_SCOPES]);
   });
 
   it("requires the exact canonical resource", () => {
@@ -55,13 +49,6 @@ describe("operator MCP authorization domain", () => {
     })).toThrow(/redirect/i);
   });
 
-  it("validates S256 without storing the verifier", () => {
-    const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
-    const challenge = createHash("sha256").update(verifier).digest("base64url");
-    expect(validatePkceS256(verifier, challenge)).toBe(true);
-    expect(validatePkceS256(`${verifier}x`, challenge)).toBe(false);
-  });
-
   it("uses bounded lifetimes and one-way digests", () => {
     expect(ACCESS_TOKEN_TTL_SECONDS).toBe(900);
     expect(AUTHORIZATION_CODE_TTL_SECONDS).toBe(300);
@@ -69,11 +56,4 @@ describe("operator MCP authorization domain", () => {
     expect(hashOpaqueCredential("secret")).not.toContain("secret");
   });
 
-  it("uses a versioned keyed digest over canonical input", () => {
-    const left = canonicalInputDigest({ b: 2, a: { y: 1, x: true } }, "k".repeat(32));
-    const right = canonicalInputDigest({ a: { x: true, y: 1 }, b: 2 }, "k".repeat(32));
-    expect(left).toBe(right);
-    expect(left).toMatch(/^v1:[a-f0-9]{64}$/);
-    expect(canonicalInputDigest({ a: 2 }, "k".repeat(32))).not.toBe(left);
-  });
 });

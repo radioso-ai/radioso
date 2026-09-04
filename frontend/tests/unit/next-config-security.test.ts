@@ -82,4 +82,17 @@ describe('next security headers', () => {
       destination: 'https://app.radioso.ai/:path*',
     })
   })
+
+  it('proxies public operator MCP OAuth issuer paths to the backend API', async () => {
+    const routes = await getRewriteRoutes()
+
+    expect(routes).toContainEqual({
+      source: '/.well-known/oauth-authorization-server',
+      destination: '/backend/.well-known/oauth-authorization-server',
+    })
+    expect(routes).toContainEqual({
+      source: '/api/v1/operator-mcp/oauth/:path*',
+      destination: '/backend/api/v1/operator-mcp/oauth/:path*',
+    })
+  })
 })

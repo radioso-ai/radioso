@@ -1,9 +1,9 @@
+import type { OperatorMcpMethod, OperatorMcpShape } from "@radioso/operator-mcp-contract";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import { createFixedWindowPreAuthSourceBudget, type PreAuthSourceBudget } from "../http/preAuthSourceBudget.js";
 
-export type OperatorMcpMethod = "ping" | "tools/list" | "tools/call";
+export type { OperatorMcpMethod, OperatorMcpShape } from "@radioso/operator-mcp-contract";
 export type OperatorMcpOutcome = "success" | "denied" | "error";
-export type OperatorMcpShape = "read" | "probe" | "act" | "propose";
 export type OperatorMcpReason = "invalid_request" | "invalid_token" | "insufficient_scope" | "rate_limit_exceeded" | "runtime_unavailable" | "workspace_not_in_rollout";
 
 export interface OperatorMcpAuditObservation {

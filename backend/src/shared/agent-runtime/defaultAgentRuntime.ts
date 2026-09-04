@@ -1,3 +1,4 @@
+import { estimateAgentResultTokens } from "./resultTokens.js";
 import {
   AGENT_BUDGET_CEILINGS,
   type AgentBudgets,
@@ -27,23 +28,12 @@ interface InvocationFailureFingerprint {
   readonly argsKey: string;
 }
 
-const APPROX_TOKEN_BYTES = 4;
-
 const stableArgsKey = (raw: string): string => {
   try {
     const parsed: unknown = JSON.parse(raw);
     return JSON.stringify(parsed, Object.keys(parsed ?? {}).sort());
   } catch {
     return raw;
-  }
-};
-
-const estimateTokensFromOutput = (output: unknown): number => {
-  try {
-    const serialized = JSON.stringify(output) ?? "";
-    return Math.max(1, Math.ceil(serialized.length / APPROX_TOKEN_BYTES));
-  } catch {
-    return 1;
   }
 };
 
@@ -307,7 +297,7 @@ const invokeTool = async (
   const latencyMs = ctx.now() - invokedAt;
   const tokens = tool.estimatedResultTokens
     ? tool.estimatedResultTokens(input as never)
-    : estimateTokensFromOutput(output);
+    : estimateAgentResultTokens(output);
   state.toolResultTokensUsed += tokens;
   state.lastInvocationFailure = null;
   ctx.sink.emit({
@@ -324,18 +314,29 @@ const invokeTool = async (
 };
 
 /**
- * Terminations that must not spend another model call.
- *
- * Out of wall time or cancelled: another call is the opposite of what was asked for. Out of
- * tool-result tokens: the transcript is over the hard context ceiling by definition, and the
- * closing call would resubmit exactly that transcript — the one case where the recovery request is
- * guaranteed to be the wrong shape, so a blank turn is the lesser outcome.
+ * Terminations that must not spend another model call: another call is the opposite of what was
+ * asked for, because the run is out of time or the caller withdrew it.
  */
 const NO_CLOSING_CALL: ReadonlySet<TerminatedReason> = new Set([
   "wall_time_exhausted",
   "cancelled",
-  "token_budget_exhausted",
 ]);
+
+/**
+ * Whether the run may still buy an answer for the caller after the loop stopped.
+ *
+ * Token exhaustion is conditional rather than absolute. Spending the caller's `maxToolResultTokens`
+ * says the run is out of *its allowance*, which is not the same as being out of context: the
+ * closing call resubmits the transcript, and a caller budgeting below
+ * {@link AGENT_BUDGET_CEILINGS}.maxToolResultTokens leaves that transcript comfortably inside the
+ * step input cap `AGENT_STEP_MAX_INPUT_TOKENS`. Only at the ceiling is the resubmission guaranteed
+ * to be the wrong shape, and there a blank turn stays the lesser outcome.
+ */
+const canBuyClosingMessage = (reason: TerminatedReason, toolResultTokensUsed: number): boolean => {
+  if (NO_CLOSING_CALL.has(reason)) return false;
+  if (reason !== "token_budget_exhausted") return true;
+  return toolResultTokensUsed < AGENT_BUDGET_CEILINGS.maxToolResultTokens;
+};
 
 /**
  * Steps the tool loop may take. FR-003 makes `maxSteps` a hard ceiling on model calls, so a caller
@@ -430,7 +431,7 @@ const runLoop = async (ctx: RunContext): Promise<AgentRunResult> => {
     if (
       ctx.options.requireFinalMessage === true &&
       isBlank(state.finalMessage) &&
-      !NO_CLOSING_CALL.has(reason) &&
+      canBuyClosingMessage(reason, state.toolResultTokensUsed) &&
       !ctx.signal.aborted
     ) {
       try {

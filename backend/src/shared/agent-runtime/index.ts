@@ -21,6 +21,7 @@ export {
   type ToolSchema,
   type TraceSink,
 } from "./types.js";
+export { agentResultCharBudget, estimateAgentResultTokens } from "./resultTokens.js";
 export { DefaultAgentRuntime, type DefaultAgentRuntimeDeps } from "./defaultAgentRuntime.js";
 export {
   AgenticCapabilityRunner,

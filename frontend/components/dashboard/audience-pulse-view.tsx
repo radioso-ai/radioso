@@ -62,6 +62,7 @@ const numberFormat = new Intl.NumberFormat()
 const percentFormat = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+const MATERIAL_MEMBER_COUNT_CHANGE = 0.2
 
 const formatDate = (iso: string) => {
   const date = new Date(iso)
@@ -71,6 +72,17 @@ const formatDate = (iso: string) => {
 const formatDateTime = (iso: string) => {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? iso : dateTimeFormat.format(date)
+}
+
+const getMemberCountDelta = (theme: AudiencePulseTheme): string | null => {
+  if (theme.transition?.kind !== 'survived' || theme.previousMemberCount === null) return null
+
+  const relativeChange = Math.abs(theme.memberCount - theme.previousMemberCount) / Math.max(theme.previousMemberCount, 1)
+  if (relativeChange < MATERIAL_MEMBER_COUNT_CHANGE) return null
+
+  return theme.memberCount > theme.previousMemberCount
+    ? `up from ${numberFormat.format(theme.previousMemberCount)}`
+    : `down from ${numberFormat.format(theme.previousMemberCount)}`
 }
 
 
@@ -689,6 +701,14 @@ function TopicRow({
     theme.grounding.contentGapEligible,
     theme.memberCount,
   )
+  const memberCountDelta = getMemberCountDelta(theme)
+  const transitionBadge = theme.transition?.kind === 'emerged'
+    ? 'New'
+    : theme.transition?.kind === 'split'
+      ? 'Split'
+      : theme.transition?.kind === 'merged'
+        ? 'Merged'
+        : null
 
   return (
     <div className="border-b last:border-b-0" data-testid="audience-pulse-topic-row">
@@ -702,6 +722,10 @@ function TopicRow({
         >
           <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-foreground">{theme.title}</span>
+            {transitionBadge ? <Badge variant="secondary">{transitionBadge}</Badge> : null}
+            {theme.transition?.viaCentroidFallback ? (
+              <Badge variant="outline" className="text-muted-foreground">Estimated</Badge>
+            ) : null}
             {gap ? (
               <>
                 <Badge
@@ -727,7 +751,8 @@ function TopicRow({
         </button>
         <TopicShareBar normalizedShare={normalizedShare} coverageGapFraction={coverageGapFraction} />
         <p className="text-xs tabular-nums text-muted-foreground">
-          asked {numberFormat.format(theme.memberCount)}× · {percentFormat.format(theme.share)} of questions
+          asked {numberFormat.format(theme.memberCount)}×
+          {memberCountDelta ? ` · ${memberCountDelta}` : ''} · {percentFormat.format(theme.share)} of questions
         </p>
         {expanded ? (
           <div id={contentId} className="space-y-3 pt-1">

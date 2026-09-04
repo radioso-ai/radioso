@@ -107,10 +107,9 @@ Semantic and lexical scores keep their source-specific meanings until candidate
 preparation:
 
 - `semanticScore` is cosine similarity from vector search.
-- `lexicalScore` is relative to the best lexical result for one query and is only
-  suitable for lexical-local comparisons.
-- `lexicalRankScore` is the absolute PostgreSQL `ts_rank_cd` value used for
-  lexical quality gates.
+- `lexicalScore` is `ts_rank_cd / maxRank` within one lexical query call, so the top
+  hit for a query is always `1.0`. It supports lexical-local comparisons.
+- `lexicalRankScore` is the absolute PostgreSQL `ts_rank_cd` value.
 - `fusedScore` is the normalized `[0, 1]` candidate score used for merged ordering
   and rerank fallback. The backward-compatible candidate `similarity` field mirrors
   this value.
@@ -120,6 +119,29 @@ secondary-source boost. Metadata and temporal boosts remain bounded in the same
 range. The semantic similarity threshold still applies inside vector search before
 semantic and lexical candidates are merged.
 
+### Two lexical gates
+
+`candidateScoring.ts` holds two lexical gates that answer different questions, so
+they read different scores and disagree by design.
+
+- **Fusion gate** — `fuseCandidateRanks` compares candidates against each other, so
+  it reads the query-relative `lexicalScore` against
+  `RETRIEVAL_BEHAVIOR.hybrid.lexicalFusionMinimumRelativeScore` (`0.2`). A candidate
+  below the threshold contributes no lexical RRF term.
+- **Evidence gate** — `hasUsefulCandidateEvidence` asks whether a turn found real
+  lexical signal, which is an absolute question, so it reads `lexicalRankScore`
+  against `RETRIEVAL_BEHAVIOR.hybrid.lexicalMinimumUsefulRankScore` (`0.05`). It
+  feeds the trigger-backoff count in `candidatePreparationStage.ts` and a trace
+  diagnostic in `retrievalActivityTraceAssembler.ts`; it never filters candidates.
+
+A rare-term query scores every match far below the absolute floor. Its top hits
+still fuse and rank against their peers, and they still register as thin evidence.
+
+`lexicalScore` is normalized per lexical query call, and
+`CandidatePreparationService.addSource` takes `Math.max` across branches, so a
+multi-subquery turn lifts each branch's best hit to `1.0`. Each branch contributes
+its own best candidate to the pooled set.
+
 ## Tests
 
 Focused starting points:
@@ -127,6 +149,8 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts`
 - `cd backend && pnpm test -- tests/unit/retrieval-shape-resolver.test.ts`
 - `cd backend && pnpm test -- tests/unit/hybrid-retrieval-search.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/retrieval/candidateScoring.test.ts`
+  for the fusion gate, the evidence gate, and rank fusion arithmetic.
 - `cd backend && pnpm run test:integration` for end-to-end retrieval behavior.
 - `cd backend && pnpm test -- tests/unit/retrieval/vectorIndexReconciler.test.ts`
   for projection drain and checkpoint callback behavior.

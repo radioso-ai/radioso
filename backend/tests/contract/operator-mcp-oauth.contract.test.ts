@@ -114,6 +114,18 @@ describe("operator MCP OAuth HTTP contract", () => {
     expect(service.revoke).toHaveBeenCalledWith("unknown", expect.any(Date));
   });
 
+  it("rejects JSON token requests instead of widening the advertised OAuth contract", async () => {
+    const { app, service } = createHarness();
+
+    const response = await request(app).post("/api/v1/operator-mcp/oauth/token").send({
+      grant_type: "authorization_code", code: "code", client_id: "client", redirect_uri: "https://client.example/callback",
+      code_verifier: "a".repeat(43), resource: env.OPERATOR_MCP_RESOURCE_URL,
+    }).expect(400);
+
+    expect(response.body).toEqual({ error: "invalid_request" });
+    expect(service.exchangeAuthorizationCode).not.toHaveBeenCalled();
+  });
+
   it("does not decide a transaction when credential readiness is unavailable", async () => {
     const { app, dependencies, service } = createHarness();
     dependencies.operatorMcpReadiness = Promise.resolve(false);

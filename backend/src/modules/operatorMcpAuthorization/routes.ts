@@ -110,6 +110,10 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       res.status(503).json({ error: "temporarily_unavailable" });
       return;
     }
+    if (!req.is("application/x-www-form-urlencoded")) {
+      res.status(400).json({ error: "invalid_request" });
+      return;
+    }
     try {
       const body = z.record(z.string(), z.string()).parse(req.body);
       if (body.grant_type === "authorization_code") {

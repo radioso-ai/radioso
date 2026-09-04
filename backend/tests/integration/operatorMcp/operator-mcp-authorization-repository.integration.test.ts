@@ -103,6 +103,65 @@ describeIntegration("OperatorMcpAuthorizationRepository", () => {
     await expect(repository.ensureDeploymentCredentialState({ resource: epochResource, credentialEpoch: "7", keyFingerprint: "key-a", now: new Date() })).rejects.toThrow(/epoch/i);
   });
 
+  it("initializes one deployment credential row safely across concurrent replicas", async () => {
+    const epochResource = `https://mcp.example/operator/mcp?concurrent=${randomUUID()}`;
+    const suffix = randomUUID().replaceAll("-", "_");
+    const functionName = `test_operator_mcp_init_${suffix}`;
+    const triggerName = `test_operator_mcp_init_trigger_${suffix}`;
+    const advisoryKey = 1_148_166;
+    const input = {
+      resource: epochResource,
+      credentialEpoch: "13",
+      keyFingerprint: "shared-key",
+      now: new Date(),
+    };
+    const lockClient = await database.pool.connect();
+    try {
+      await database.query(`
+        CREATE FUNCTION ${functionName}() RETURNS trigger AS $$
+        BEGIN
+          IF NEW.resource = TG_ARGV[0] THEN
+            PERFORM pg_advisory_xact_lock(TG_ARGV[1]::bigint);
+          END IF;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql
+      `);
+      await database.query(`
+        CREATE TRIGGER ${triggerName}
+        BEFORE INSERT ON operator_mcp_deployment_credential_state
+        FOR EACH ROW EXECUTE FUNCTION ${functionName}('${epochResource}', '${advisoryKey}')
+      `);
+      await lockClient.query("SELECT pg_advisory_lock($1)", [advisoryKey]);
+      const attempts = [
+        repository.ensureDeploymentCredentialState(input),
+        repository.ensureDeploymentCredentialState(input),
+      ];
+      for (let poll = 0; poll < 100; poll += 1) {
+        const waiting = await database.query<{ count: string }>(`
+          SELECT COUNT(*)::text AS count
+          FROM pg_stat_activity
+          WHERE wait_event = 'advisory'
+            AND query LIKE '%INSERT INTO operator_mcp_deployment_credential_state%'
+        `);
+        if (Number(waiting[0]?.count ?? 0) >= 2) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      await lockClient.query("SELECT pg_advisory_unlock($1)", [advisoryKey]);
+      const outcomes = await Promise.all(attempts);
+      expect(outcomes).toEqual(expect.arrayContaining(["initialized", "current"]));
+      await expect(database.query(
+        "SELECT resource FROM operator_mcp_deployment_credential_state WHERE resource = $1",
+        [epochResource],
+      )).resolves.toHaveLength(1);
+    } finally {
+      await lockClient.query("SELECT pg_advisory_unlock($1)", [advisoryKey]).catch(() => undefined);
+      lockClient.release();
+      await database.query(`DROP TRIGGER IF EXISTS ${triggerName} ON operator_mcp_deployment_credential_state`).catch(() => undefined);
+      await database.query(`DROP FUNCTION IF EXISTS ${functionName}()`).catch(() => undefined);
+    }
+  });
+
   it("projects an elapsed pending transaction as expired for the consent surface", async () => {
     const transactionId = randomUUID();
     const testNow = new Date();

@@ -1,4 +1,5 @@
 import {
+  digestOperatorMcpCall,
   digestOperatorMcpInput,
   sha256Digest,
   type OperatorAdmissionRequest,
@@ -282,6 +283,14 @@ export class OperatorMcpApplicationService {
     const principal = await this.currentProofPrincipal(input.proof, "tools/call");
     let capabilityShape: "read" | "probe" | "act" | "propose" | null = null;
     try {
+      const expectedBodyDigest = digestOperatorMcpCall({
+        name: input.name,
+        arguments: input.arguments,
+        ...(input.operationId ? { operationId: input.operationId } : {}),
+      });
+      if (input.bodyDigest !== input.proof.bodyDigest || expectedBodyDigest !== input.bodyDigest) {
+        throw new OperatorMcpApplicationError("invalid_proof");
+      }
       if (input.proof.descriptorName !== input.name) throw new OperatorMcpApplicationError("unknown_tool");
       const descriptor = this.dependencies.catalog.descriptor(input.name);
       const disposition = descriptor?.mcpDisposition;

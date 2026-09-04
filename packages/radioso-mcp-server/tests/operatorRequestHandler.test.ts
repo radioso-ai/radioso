@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { digestOperatorMcpCall } from "@radioso/operator-mcp-contract";
 import { createOperatorMcpRequestHandler, type OperatorMcpRequestHandlerDependencies } from "../src/operator/requestHandler.js";
 import { OperatorBackendAdapterError } from "../src/operator/backendAdapter.js";
 
@@ -76,6 +77,10 @@ describe("operator MCP stateless request handler", () => {
     expect(dependencies.call).toHaveBeenCalledWith(expect.objectContaining({ name: "retrieval_probe", operationId }));
     expect(dependencies.admit).toHaveBeenLastCalledWith(expect.objectContaining({
       invocationId: expect.not.stringMatching(operationId),
+      bodyDigest: digestOperatorMcpCall({ name: "retrieval_probe", arguments: { query: "safe" }, operationId }),
+    }));
+    expect(dependencies.call).toHaveBeenLastCalledWith(expect.objectContaining({
+      bodyDigest: digestOperatorMcpCall({ name: "retrieval_probe", arguments: { query: "safe" }, operationId }),
     }));
   });
 

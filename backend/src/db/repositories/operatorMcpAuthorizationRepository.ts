@@ -217,6 +217,15 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
     now: Date;
   }): Promise<"initialized" | "current"> {
     return this.db.transaction().execute(async (trx) => {
+      const inserted = await sql<{ resource: string }>`
+        INSERT INTO operator_mcp_deployment_credential_state
+          (resource, credential_epoch, key_fingerprint, updated_at)
+        VALUES (${input.resource}, ${input.credentialEpoch}, ${input.keyFingerprint}, ${input.now})
+        ON CONFLICT (resource) DO NOTHING
+        RETURNING resource
+      `.execute(trx);
+      if (inserted.rows.length === 1) return "initialized" as const;
+
       const selected = await sql<DeploymentCredentialStateRow>`
         SELECT credential_epoch::text AS credential_epoch, key_fingerprint
         FROM operator_mcp_deployment_credential_state
@@ -224,14 +233,7 @@ export class OperatorMcpAuthorizationRepository implements OperatorMcpAuthorizat
         FOR UPDATE
       `.execute(trx);
       const current = selected.rows[0];
-      if (!current) {
-        await sql`
-          INSERT INTO operator_mcp_deployment_credential_state
-            (resource, credential_epoch, key_fingerprint, updated_at)
-          VALUES (${input.resource}, ${input.credentialEpoch}, ${input.keyFingerprint}, ${input.now})
-        `.execute(trx);
-        return "initialized" as const;
-      }
+      if (!current) throw new Error("Operator MCP credential state initialization did not produce a row");
       const configuredEpoch = BigInt(input.credentialEpoch);
       const persistedEpoch = BigInt(current.credential_epoch);
       if (configuredEpoch < persistedEpoch) throw new Error("Configured operator MCP credential epoch is older than persisted state");

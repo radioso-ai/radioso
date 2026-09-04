@@ -1,4 +1,4 @@
-import { OperatorMcpRequestSchema, type OperatorMcpProof } from "@radioso/operator-mcp-contract";
+import { OperatorMcpRequestSchema, digestOperatorMcpCall, type OperatorMcpProof } from "@radioso/operator-mcp-contract";
 import { OperatorBackendAdapterError } from "./backendAdapter.js";
 import { createOperatorInvocationId, sha256Digest } from "@radioso/operator-mcp-contract";
 import type { OperatorMcpAuditObservation, OperatorMcpShape } from "./observability.js";
@@ -26,6 +26,7 @@ export interface OperatorMcpRequestHandlerDependencies {
     name: string;
     arguments: Record<string, unknown>;
     operationId?: string;
+    bodyDigest: string;
   }): Promise<unknown>;
   principalRateLimit?: OperatorRequestRateLimit;
   resourceMetadataUrl?: string;
@@ -120,11 +121,12 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     call = { name: callParams.name, arguments: argumentsValue, ...(operationId === undefined ? {} : { operationId }) };
   }
   const descriptorName = call?.name;
+  const bodyDigest = call ? digestOperatorMcpCall(call) : sha256Digest(body);
   try {
     const admission = await dependencies.admit({
       accessToken: token,
       descriptorName,
-      bodyDigest: sha256Digest(body),
+      bodyDigest,
       invocationId: createOperatorInvocationId(),
       method,
       requestBody: parsed.data,
@@ -160,6 +162,7 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
       name: call!.name,
       operationId: call!.operationId,
       proof: admission.proof,
+      bodyDigest,
     });
     if (!responseIsBounded(result)) {
       reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "runtime_unavailable" });

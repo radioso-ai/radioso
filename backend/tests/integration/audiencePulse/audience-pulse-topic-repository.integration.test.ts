@@ -311,7 +311,6 @@ describeIntegration("TopicRepository (Postgres)", () => {
       ]);
       await trxRepository.saveTransitions(runId, [
         { topicId: topicAId, kind: "emerged", parentTopicIds: [] },
-        { topicId: topicBId, kind: "emerged", parentTopicIds: [] },
       ]);
     });
 
@@ -325,13 +324,51 @@ describeIntegration("TopicRepository (Postgres)", () => {
     expect(topicB?.memberCount).toBe(2);
     expect(topicA?.title).toBe("Topic A");
     expect(topicA?.dissolvedAt).toBeNull();
+    expect(topicA?.transition).toEqual({
+      kind: "emerged",
+      parentTopicIds: [],
+      viaCentroidFallback: false,
+    });
+    expect(topicB?.transition).toBeNull();
 
     const transitionRows = await database.query<{ kind: string; topic_id: string }>(
       "SELECT kind, topic_id FROM topic_transitions WHERE run_id = $1 ORDER BY topic_id",
       [runId],
     );
-    expect(transitionRows).toHaveLength(2);
+    expect(transitionRows).toHaveLength(1);
     expect(transitionRows.every((row) => row.kind === "emerged")).toBe(true);
+  });
+
+  it("keeps memberCount exact when a topic carries more than one transition row for the run", async () => {
+    // `topic_transitions` has no unique constraint on (run_id, topic_id), so reading
+    // transitions must not fan the membership rows out: a second row for one topic
+    // would otherwise double every count derived from the same query.
+    const workspaceId = randomUUID();
+    const runId = await createRun(workspaceId, { seed: "duplicate-transition" });
+    const topicId = randomUUID();
+    const messageIds = await createMessages(workspaceId, 3);
+
+    await repository.saveTopics(runId, [
+      { id: topicId, workspaceId, centroid: [0.2, 0.2, 0.2], radius: 0.3, title: "Topic", description: "Only topic" },
+    ]);
+    await repository.saveMemberships(runId, [
+      { topicId, messageId: messageIds[0]!, distance: 0.01 },
+      { topicId, messageId: messageIds[1]!, distance: 0.02 },
+      { topicId, messageId: messageIds[2]!, distance: 0.03 },
+    ]);
+    await repository.saveTransitions(runId, [{ topicId, kind: "emerged", parentTopicIds: [] }]);
+    await repository.saveTransitions(runId, [{ topicId, kind: "survived", parentTopicIds: [] }]);
+
+    const transitionRows = await database.query<{ topic_id: string }>(
+      "SELECT topic_id FROM topic_transitions WHERE run_id = $1",
+      [runId],
+    );
+    expect(transitionRows).toHaveLength(2);
+
+    const run = await repository.loadRun(runId);
+
+    expect(run?.topics).toHaveLength(1);
+    expect(run?.topics[0]?.memberCount).toBe(3);
   });
 
   it("saves transitions with parent topic ids intact", async () => {

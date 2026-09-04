@@ -185,6 +185,9 @@ follow the workspace's active embedding profile. Neither table carries an
 HNSW or IVFFlat index, because the census never performs a nearest-neighbour
 search — a run reads its whole window into memory and clusters there.
 
+Each topic in a census run carries its recorded transition, including parent
+topic ids and the centroid-fallback signal, into the Audience Pulse report.
+
 ## Backfill
 
 `backend/scripts/dev/backfillFacetExtractionJobs.ts` enqueues facet

@@ -220,6 +220,8 @@ describe("AudiencePulseService", () => {
         description: "Visitors ask about plans.",
         evidenceIds: ["evidence-1", "evidence-2"],
         memberCount: 2,
+        previousMemberCount: null,
+        transition: null,
         share: 2 / 3,
         weeklyPulse: [],
         grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
@@ -309,6 +311,43 @@ describe("AudiencePulseService", () => {
     expect(hydrated.coverage.facetReadyQuestionCount).toBe(3);
     expect(hydrated.unclassifiedQuestionCount).toBe(1);
     expect(hydrated.themes[0]).toMatchObject({ memberCount: 2, share: 2 / 3 });
+    expect(hydrated.themes[0]?.transition).toBeNull();
+    expect(hydrated.themes[0]?.previousMemberCount).toBeNull();
+  });
+
+  it("reads the prior snapshot before replacing it to carry forward full member counts", async () => {
+    const lifecycle: string[] = [];
+    const priorSnapshot = {
+      workspaceId: WORKSPACE_ID,
+      revision: "revision-0",
+      period: { start: new Date("2026-06-01T00:00:00.000Z"), end: new Date("2026-06-30T00:00:00.000Z") },
+      generatedAt: new Date("2026-07-01T00:00:00.000Z"),
+      report: {
+        themes: [{ id: "topic-1", memberCount: 7 }],
+      },
+      promptEvidenceRefs: [],
+    } as unknown as AudiencePulseSnapshotRecord;
+    const { service } = createService({
+      snapshotStore: {
+        async find() {
+          lifecycle.push("find");
+          return priorSnapshot;
+        },
+        async replace(input) {
+          lifecycle.push("replace");
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: { themes: [{ id: "topic-1", previousMemberCount: 7 }] },
+    });
+    expect(lifecycle).toEqual(["find", "replace"]);
   });
 
   it("delegates an evidence anchor to the Chat-owned history port without report or provider work", async () => {

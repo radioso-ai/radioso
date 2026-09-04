@@ -9,6 +9,7 @@ import type {
   TopicMembershipInput,
   TopicRepositoryPort,
   TopicSaveInput,
+  TopicTransitionKind,
   TopicTransitionInput,
 } from "../../modules/audiencePulse/contracts/topicCensus.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -371,29 +372,44 @@ export class TopicRepository implements TopicRepositoryPort {
   }
 
   private async hydrateRun(run: TopicCensusRunRow): Promise<TopicCensusRunDetail> {
-    const memberCounts = await this.db
+    const topicRows = await this.db
       .selectFrom("topic_memberships")
-      .select(["topic_id", (eb) => eb.fn.countAll<string>().as("member_count")])
-      .where("run_id", "=", run.id)
-      .groupBy("topic_id")
+      .innerJoin("topics", "topics.id", "topic_memberships.topic_id")
+      .select([
+        "topics.id as id",
+        "topics.title as title",
+        "topics.description as description",
+        "topics.centroid as centroid",
+        "topics.radius as radius",
+        "topics.dissolved_at as dissolved_at",
+        (eb) => eb.fn.countAll<string>().as("member_count"),
+      ])
+      .where("topic_memberships.run_id", "=", run.id)
+      .groupBy([
+        "topics.id",
+        "topics.title",
+        "topics.description",
+        "topics.centroid",
+        "topics.radius",
+        "topics.dissolved_at",
+      ])
       .execute();
 
-    const topicIds = memberCounts.map((row) => row.topic_id);
-    const topicRows = topicIds.length === 0
-      ? []
-      : await this.db
-          .selectFrom("topics")
-          .select(["id", "title", "description", "centroid", "radius", "dissolved_at"])
-          .where("id", "in", topicIds)
-          .execute();
-    const topicsById = new Map(topicRows.map((topic) => [topic.id, topic]));
+    // Transitions are read in their own query rather than joined into the aggregate
+    // above: `topic_transitions` carries no unique constraint on (run_id, topic_id), so
+    // a second row for one topic would fan the membership rows out and inflate
+    // `member_count` -- silently reintroducing a count that does not match real
+    // membership, the defect class spec 956 removed.
+    const transitionRows = await this.db
+      .selectFrom("topic_transitions")
+      .select(["topic_id", "kind", "parent_topic_ids", "via_centroid_fallback"])
+      .where("run_id", "=", run.id)
+      .execute();
+    const transitionByTopicId = new Map(transitionRows.map((row) => [row.topic_id, row]));
 
-    const topics: TopicCensusRunTopicSummary[] = memberCounts
-      .map((memberCount) => {
-        const topic = topicsById.get(memberCount.topic_id);
-        if (!topic) {
-          return null;
-        }
+    const topics: TopicCensusRunTopicSummary[] = topicRows
+      .map((topic) => {
+        const transition = transitionByTopicId.get(topic.id);
         return {
           id: topic.id,
           title: topic.title,
@@ -401,10 +417,14 @@ export class TopicRepository implements TopicRepositoryPort {
           centroid: parseVector(topic.centroid),
           radius: topic.radius,
           dissolvedAt: topic.dissolved_at,
-          memberCount: Number(memberCount.member_count),
+          memberCount: Number(topic.member_count),
+          transition: transition === undefined ? null : {
+            kind: transition.kind as TopicTransitionKind,
+            parentTopicIds: transition.parent_topic_ids ?? [],
+            viaCentroidFallback: transition.via_centroid_fallback ?? false,
+          },
         };
       })
-      .filter((topic): topic is TopicCensusRunTopicSummary => topic !== null)
       .sort((a, b) => b.memberCount - a.memberCount || a.id.localeCompare(b.id));
 
     return {

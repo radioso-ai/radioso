@@ -32,6 +32,12 @@ export interface AudiencePulseGroundingSummary {
   contentGapEligible: number
 }
 
+export interface AudiencePulseTopicTransition {
+  kind: 'survived' | 'split' | 'merged' | 'emerged' | 'dissolved'
+  parentTopicIds: string[]
+  viaCentroidFallback: boolean
+}
+
 export interface AudiencePulseThemeEvidence {
   reference: string
   conversationId: string
@@ -46,6 +52,8 @@ export interface AudiencePulseTheme {
   description: string
   /** Exact count of population questions in this topic -- a census, never a sample. */
   memberCount: number
+  previousMemberCount: number | null
+  transition: AudiencePulseTopicTransition | null
   /** `memberCount` divided by the window population size. */
   share: number
   distinctQuestionCount: number

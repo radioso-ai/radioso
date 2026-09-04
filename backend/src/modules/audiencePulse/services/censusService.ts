@@ -28,6 +28,7 @@ import type {
   TopicSaveInput,
   TopicTransitionInput,
   TopicTransitionKind,
+  TopicTransition as PersistedTopicTransition,
 } from "../contracts/topicCensus.js";
 import type {
   TopicLabel,
@@ -87,6 +88,8 @@ export interface CensusRunTopicResult {
   memberIds: string[];
   memberCount: number;
   share: number;
+  /** Null when this partial run does not persist its identity classifications. */
+  transition?: PersistedTopicTransition | null;
 }
 
 export interface CensusRunResult {
@@ -343,6 +346,11 @@ export class CensusService {
           distanceByMessageId.get(left)! - distanceByMessageId.get(right)! || left.localeCompare(right)),
         memberCount: cluster.memberIds.length,
         share: populationSize === 0 ? 0 : cluster.memberIds.length / populationSize,
+        transition: fullyFacetReady ? {
+          kind: toPersistedTransitionKind(transition.kind),
+          parentTopicIds,
+          viaCentroidFallback: transition.viaCentroidFallback,
+        } : null,
       });
       transitions.push({
         topicId,

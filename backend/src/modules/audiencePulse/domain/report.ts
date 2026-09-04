@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { TopicTransition } from "../contracts/topicCensus.js";
 import {
   AUDIENCE_PULSE_GROUNDING_SIGNALS,
   audiencePulseContentGapEligible,
@@ -67,6 +68,10 @@ export interface AudiencePulseStoredTheme {
   evidenceIds: string[];
   /** Exact count of population questions assigned to this topic -- never a sample. */
   memberCount: number;
+  /** Exact count assigned to the same topic in the prior stored snapshot, if available. */
+  previousMemberCount: number | null;
+  /** Identity classification persisted for this topic in this census run. */
+  transition: TopicTransition | null;
   /** `memberCount / populationSize`, computed in code from the same membership. */
   share: number;
   weeklyPulse: Array<{ weekStart: string; count: number }>;
@@ -85,6 +90,8 @@ export interface AudiencePulseCensusTopic {
   title: string;
   description: string;
   evidenceIds: string[];
+  /** Optional only for callers constructed before transition persistence existed. */
+  transition?: TopicTransition | null;
 }
 
 export interface AudiencePulseStoredRecommendation {
@@ -295,6 +302,7 @@ export const buildAudiencePulseReport = (input: {
   weeklyVolume: AudiencePulseWeeklyVolume[];
   population: AudiencePulseEvidence[];
   topics: AudiencePulseCensusTopic[];
+  previousThemeMemberCounts?: Map<string, number>;
   model: AudiencePulseModelOutput;
 }): AudiencePulseStoredReport => {
   const model = audiencePulseModelOutputSchema.parse(input.model);
@@ -326,6 +334,8 @@ export const buildAudiencePulseReport = (input: {
       description: topic.description,
       evidenceIds: memberEvidenceIds.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX),
       memberCount,
+      previousMemberCount: input.previousThemeMemberCounts?.get(topic.id) ?? null,
+      transition: topic.transition ?? null,
       share: populationSize === 0 ? 0 : memberCount / populationSize,
       weeklyPulse: createWeeklyPulse(items, input.weeklyVolume),
       grounding: groundingSummary(items),

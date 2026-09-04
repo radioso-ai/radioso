@@ -1,14 +1,14 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-import type { CopilotToolShape } from "../operatorCopilot/public.js";
+import {
+  OPERATOR_MCP_SCOPES,
+  operatorScopeForShape,
+  type OperatorMcpScope,
+  type OperatorMcpShape,
+} from "@radioso/operator-mcp-contract";
 
-export const OPERATOR_MCP_TOOL_SCOPES = [
-  "operator:read",
-  "operator:probe",
-  "operator:act",
-  "operator:propose",
-] as const;
-export type OperatorMcpToolScope = (typeof OPERATOR_MCP_TOOL_SCOPES)[number];
+export const OPERATOR_MCP_TOOL_SCOPES = OPERATOR_MCP_SCOPES;
+export type OperatorMcpToolScope = OperatorMcpScope;
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
@@ -47,8 +47,8 @@ export const parseOperatorMcpScopes = (
   return { toolScopes, offlineAccess: requested.includes("offline_access") };
 };
 
-export const scopeForToolShape = (shape: CopilotToolShape): OperatorMcpToolScope =>
-  `operator:${shape}` as OperatorMcpToolScope;
+export const scopeForToolShape = (shape: OperatorMcpShape): OperatorMcpToolScope =>
+  operatorScopeForShape(shape);
 
 export const validateAuthorizationResource = (requested: string, canonical: string): string => {
   if (requested !== canonical) {

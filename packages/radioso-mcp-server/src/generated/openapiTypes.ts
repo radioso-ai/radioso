@@ -3128,7 +3128,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read a copilot proposal preview */
+        /**
+         * Read a copilot proposal preview
+         * @description Dashboard session only. The proposal resolves its owning workspace before workspace authorization, so an external handoff does not depend on stored dashboard workspace state.
+         */
         get: operations["getCopilotProposal"];
         put?: never;
         post?: never;
@@ -21719,6 +21722,8 @@ export interface operations {
                     "application/json": {
                         /** Format: uuid */
                         id: string;
+                        /** Format: uuid */
+                        workspaceId: string;
                         /** @enum {string} */
                         targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "ingestion_settings" | "website_crawl" | "workspace_setting";
                         targetRef?: unknown;

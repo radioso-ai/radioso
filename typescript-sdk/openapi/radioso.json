@@ -42251,6 +42251,7 @@
           "Copilot"
         ],
         "summary": "Read a copilot proposal preview",
+        "description": "Dashboard session only. The proposal resolves its owning workspace before workspace authorization, so an external handoff does not depend on stored dashboard workspace state.",
         "operationId": "getCopilotProposal",
         "security": [
           {
@@ -42278,6 +42279,10 @@
                   "type": "object",
                   "properties": {
                     "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "workspaceId": {
                       "type": "string",
                       "format": "uuid"
                     },
@@ -42438,6 +42443,7 @@
                   },
                   "required": [
                     "id",
+                    "workspaceId",
                     "targetType",
                     "target",
                     "targetLabel",

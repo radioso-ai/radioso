@@ -16,10 +16,10 @@ const setupArtifacts = [
     id: "codex-cli",
     displayName: "Codex CLI",
     clientVersion: "0.149.0",
-    status: "verified",
-    description: "Use the current Codex CLI build.",
-    setupInstructions: ["Run the command below, then complete OAuth in your browser."],
-    command: "codex mcp add radioso https://mcp.example.com/operator/mcp",
+    status: "unavailable",
+    description: "This exact client build has not completed the compatibility gate.",
+    setupInstructions: [],
+    command: null,
     configuration: null,
     handoffUrl: null,
     permittedLaunchTarget: "codex CLI",
@@ -163,11 +163,12 @@ test("Operator MCP chooser shows exact-build gating and generic setup without in
   const card = page.locator("#operator-mcp");
   await expect(card.getByRole("heading", { name: "Radioso MCP for your favorite engine" })).toBeVisible();
   await expect(card.getByText("Available", { exact: true })).toBeVisible();
-  await expect(card.locator("p").filter({ hasText: "Codex CLI (0.149.0)" })).toBeVisible();
+  await expect(card.getByRole("combobox", { name: "Choose MCP client" })).toHaveValue("generic");
+  await expect(card.getByText("Another MCP client", { exact: true })).toBeVisible();
   await expect(card.getByText(resource, { exact: true })).toBeVisible();
+  await expect(card.getByRole("option", { name: /Codex CLI/ })).toBeDisabled();
   await expect(card.getByRole("option", { name: /Claude Code/ })).toBeDisabled();
   await expect(card.getByText("No operator MCP grants yet.")).toBeVisible();
-  await card.getByRole("combobox", { name: "Choose MCP client" }).selectOption("generic");
   await expect(card.getByText("Unverified", { exact: true })).toBeVisible();
   await expect(card.getByText(/selection only prepares setup/i)).toBeVisible();
 });
@@ -322,6 +323,7 @@ test("member sees an owner-controlled grant without a revoke action", async ({ p
 
 const proposalDetail = {
   id: "33333333-3333-4333-8333-333333333333",
+  workspaceId,
   targetType: "ingestion_settings",
   targetLabel: "Ingestion settings",
   summary: "Increase the chunk overlap for course material.",
@@ -334,20 +336,23 @@ const proposalDetail = {
   appliedRef: null,
 };
 
-const installProposalRoutes = async (page: Page, calls: string[]) => {
+const installProposalRoutes = async (page: Page, calls: string[], workspaceHeaders: string[]) => {
   await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333", async (route) => route.fulfill({ json: proposalDetail }));
-  await page.route("**/backend/api/v1/copilot/availability", async (route) => route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["ingestion_settings"] } }));
-  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333/apply", async (route) => { calls.push("apply"); return route.fulfill({ json: { status: "applied" } }); });
-  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333/dismiss", async (route) => { calls.push("dismiss"); return route.fulfill({ json: { status: "dismissed" } }); });
+  await page.route("**/backend/api/v1/copilot/availability", async (route) => { workspaceHeaders.push(route.request().headers()["x-workspace-id"] ?? ""); return route.fulfill({ json: { available: true, reason: "ok", canManage: true, applyableProposalTargets: ["ingestion_settings"] } }); });
+  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333/apply", async (route) => { workspaceHeaders.push(route.request().headers()["x-workspace-id"] ?? ""); calls.push("apply"); return route.fulfill({ json: { status: "applied" } }); });
+  await page.route("**/backend/api/v1/copilot/proposals/33333333-3333-4333-8333-333333333333/dismiss", async (route) => { workspaceHeaders.push(route.request().headers()["x-workspace-id"] ?? ""); calls.push("dismiss"); return route.fulfill({ json: { status: "dismissed" } }); });
 };
 
-test("proposal deep-link reuses the Ray review card for apply and dismiss", async ({ page }) => {
+test("proposal deep-link resolves its workspace independently for review, apply, and dismiss", async ({ page }) => {
   await seedDashboardStorage(page);
+  await page.addInitScript(() => window.localStorage.setItem("radioso.activeWorkspaceId", "different-workspace"));
   const calls: string[] = [];
-  await installProposalRoutes(page, calls);
+  const workspaceHeaders: string[] = [];
+  await installProposalRoutes(page, calls, workspaceHeaders);
   await page.goto("/oauth/operator-mcp/proposal/33333333-3333-4333-8333-333333333333");
   await expect(page.getByText("Review proposal from Radioso MCP", { exact: true })).toBeVisible();
   await expect(page.getByText("Increase the chunk overlap for course material.")).toBeVisible();
+  await expect.poll(() => workspaceHeaders).toContain(workspaceId);
   await page.getByRole("button", { name: /Show proposed changes/ }).click();
   await page.getByRole("button", { name: "Apply" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Apply proposal" }).click();
@@ -356,4 +361,5 @@ test("proposal deep-link reuses the Ray review card for apply and dismiss", asyn
   await page.reload();
   await page.getByRole("button", { name: "Dismiss" }).click();
   await expect.poll(() => calls).toContain("dismiss");
+  expect(workspaceHeaders).not.toContain("different-workspace");
 });

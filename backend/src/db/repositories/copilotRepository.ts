@@ -202,6 +202,17 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
     return mapProposal(row as CopilotProposalRow);
   }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapProposal(row) : null; }
+  async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("copilot_proposals as proposal")
+      .innerJoin("workspaces as workspace", "workspace.id", "proposal.workspace_id")
+      .select("proposal.workspace_id as workspace_id")
+      .where("proposal.id", "=", input.id)
+      .where("proposal.operator_user_id", "=", input.operatorUserId)
+      .where("workspace.account_id", "=", input.accountId)
+      .executeTakeFirst();
+    return row?.workspace_id ?? null;
+  }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { if (input.proposalIds.length === 0) return; await this.db.updateTable("copilot_proposals").set({ message_id: input.messageId, updated_at: new Date() }).where("id", "in", input.proposalIds).where("conversation_id", "=", input.conversationId).execute(); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
     let query = this.db.updateTable("copilot_proposals")

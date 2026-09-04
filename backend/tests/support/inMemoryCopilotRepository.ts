@@ -128,6 +128,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     return this.proposals.find((proposal) => proposal.id === input.id && proposal.workspaceId === input.workspaceId && proposal.operatorUserId === input.operatorUserId) ?? null;
   }
 
+  async findProposalWorkspace(input: { id: string; accountId: string; operatorUserId: string }): Promise<string | null> {
+    return this.proposals.find((proposal) => proposal.id === input.id && proposal.operatorUserId === input.operatorUserId)?.workspaceId ?? null;
+  }
+
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> {
     this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
   }

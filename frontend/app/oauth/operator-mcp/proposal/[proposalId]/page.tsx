@@ -17,8 +17,12 @@ export default function OperatorMcpProposalPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    void Promise.all([copilotApi.getProposal(params.proposalId, controller.signal), copilotApi.getAvailability(controller.signal)])
-      .then(([nextProposal, nextAvailability]) => { setProposal(nextProposal); setAvailability(nextAvailability) })
+    void copilotApi.getProposal(params.proposalId, controller.signal)
+      .then(async (nextProposal) => ({
+        nextProposal,
+        nextAvailability: await copilotApi.getAvailability(controller.signal, nextProposal.workspaceId),
+      }))
+      .then(({ nextProposal, nextAvailability }) => { setProposal(nextProposal); setAvailability(nextAvailability) })
       .catch((loadError) => { if (!controller.signal.aborted) setError(getApiErrorMessage(loadError, 'Could not load this proposal.')) })
     return () => controller.abort()
   }, [params.proposalId])
@@ -34,6 +38,7 @@ export default function OperatorMcpProposalPage() {
           <CopilotProposalCard
             proposal={proposal}
             canApply={availability.available && (availability.applyableProposalTargets ?? []).includes(proposal.targetType)}
+            workspaceId={proposal.workspaceId}
             onOpenEntity={() => undefined}
           />
         </CardContent>

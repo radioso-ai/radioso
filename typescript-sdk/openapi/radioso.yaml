@@ -4936,48 +4936,15 @@ components:
             - string
             - "null"
         binding:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/AuthoredDirectiveBinding"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
         lifecycle:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/AuthoredDirectiveLifecycle"
-            - oneOf:
-                - type: object
-                  properties:
-                    kind:
-                      type: string
-                      enum:
-                        - repeatable
-                  required:
-                    - kind
-                  additionalProperties: false
-                - type: object
-                  properties:
-                    kind:
-                      type: string
-                      enum:
-                        - once_per_conversation
-                  required:
-                    - kind
-                  additionalProperties: false
-                - type: object
-                  properties:
-                    kind:
-                      type: string
-                      enum:
-                        - cooldown
-                    turns:
-                      type: integer
-                      minimum: 1
-                      maximum: 1000
-                  required:
-                    - kind
-                    - turns
-                  additionalProperties: false
-                - type: "null"
+            - type: "null"
+            - type: "null"
         enabled:
           type: boolean
         metadata:
@@ -5018,11 +4985,10 @@ components:
               authMethod:
                 type: string
               credential:
-                allOf:
+                anyOf:
                   - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
-                  - type:
-                      - object
-                      - "null"
+                  - type: "null"
+                  - type: "null"
               oauth:
                 type:
                   - object
@@ -5035,11 +5001,10 @@ components:
                   clientId:
                     type: string
                   clientSecret:
-                    allOf:
+                    anyOf:
                       - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
-                      - type:
-                          - object
-                          - "null"
+                      - type: "null"
+                      - type: "null"
                   scopes:
                     type: array
                     items:
@@ -5147,11 +5112,10 @@ components:
             objectPath:
               $ref: "#/components/schemas/AgentConfigRefPlaceholder"
             generation:
-              allOf:
+              anyOf:
                 - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
-                - type:
-                    - object
-                    - "null"
+                - type: "null"
+                - type: "null"
             mimeType:
               type: string
             filename:
@@ -5218,11 +5182,10 @@ components:
                 enabled:
                   type: boolean
                 token:
-                  allOf:
+                  anyOf:
                     - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
-                    - type:
-                        - object
-                        - "null"
+                    - type: "null"
+                    - type: "null"
               required:
                 - enabled
                 - token
@@ -5232,11 +5195,10 @@ components:
                 enabled:
                   type: boolean
                 token:
-                  allOf:
+                  anyOf:
                     - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
-                    - type:
-                        - object
-                        - "null"
+                    - type: "null"
+                    - type: "null"
                 allowedOrigins:
                   type: array
                   items:
@@ -5752,11 +5714,10 @@ components:
                 - string
                 - "null"
             id:
-              allOf:
+              anyOf:
                 - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
-                - type:
-                    - object
-                    - "null"
+                - type: "null"
+                - type: "null"
           required:
             - kind
             - id
@@ -5886,11 +5847,10 @@ components:
             objectPath:
               $ref: "#/components/schemas/AgentConfigRefPlaceholder"
             generation:
-              allOf:
+              anyOf:
                 - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
-                - type:
-                    - object
-                    - "null"
+                - type: "null"
+                - type: "null"
             mimeType:
               type: string
             filename:
@@ -5957,11 +5917,10 @@ components:
                 enabled:
                   type: boolean
                 token:
-                  allOf:
+                  anyOf:
                     - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
-                    - type:
-                        - object
-                        - "null"
+                    - type: "null"
+                    - type: "null"
               required:
                 - enabled
                 - token
@@ -5971,11 +5930,10 @@ components:
                 enabled:
                   type: boolean
                 token:
-                  allOf:
+                  anyOf:
                     - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
-                    - type:
-                        - object
-                        - "null"
+                    - type: "null"
+                    - type: "null"
                 allowedOrigins:
                   type: array
                   items:
@@ -6100,11 +6058,10 @@ components:
                 - string
                 - "null"
             id:
-              allOf:
+              anyOf:
                 - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
-                - type:
-                    - object
-                    - "null"
+                - type: "null"
+                - type: "null"
           required:
             - kind
             - id

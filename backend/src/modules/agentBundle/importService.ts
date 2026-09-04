@@ -163,20 +163,31 @@ export class AgentBundleImportService {
       }
 
       // The export placeheld a connection id, so we are deliberately creating this
-      // skill without the target it had. That is the one create failure this import
-      // expects and can explain.
+      // skill without the target it had.
       const targetDidNotTravel = skill.target.id !== null;
+      // And it emptied every non-portable config value, naming the keys it took.
+      // Both are create failures this import causes and can explain. A capability
+      // whose whole config is non-portable — `notify`, whose recipient emails and
+      // webhook URL never travel — hits only this second one, and treating it as an
+      // unbuildable bundle meant no agent with a notify skill could be imported.
+      const configDidNotTravel = (skill.omittedConfigKeys?.length ?? 0) > 0;
       try {
         await this.options.skills.create(workspaceId, agentId, {
           ...skill,
           // A skill whose connection did not travel must not answer with a target it
           // does not have. It imports disabled and the operator re-binds it.
+          //
+          // Stripped config deliberately does NOT disable: `retrieve` loses only its
+          // `sourceScope` ids and stays a working skill, and disabling it would
+          // cascade — a directive bound to it cannot bind to a disabled skill, so the
+          // directive would arrive switched off too. The omitted keys are reported
+          // instead, which is what tells the operator what to re-enter.
           enabled: skill.enabled && !targetDidNotTravel,
           target: { kind: skill.target.kind, id: null },
         });
         imported.add(skill.name);
       } catch (error) {
-        if (!targetDidNotTravel) {
+        if (!targetDidNotTravel && !configDidNotTravel) {
           // Anything else — invalid config, a duplicate name, an invocation mode this
           // deployment does not support, a target-kind mismatch — is a bundle this
           // deployment cannot build. Reporting it as an unbound target would name the
@@ -188,11 +199,18 @@ export class AgentBundleImportService {
         // rejects the null one we just passed, and aborting would mean an agent with a
         // single webhook skill could never be imported at all. The underlying message
         // travels with it so the operator sees the real reason even if it differs.
-        unresolved.push({
-          kind: "skill_target_unbound",
-          element: `skill:${skill.name}`,
-          detail: `"${skill.name}" needs a ${skill.target.kind ?? "connection"} in this workspace before it can be created: ${error instanceof Error ? error.message : String(error)}`,
-        });
+        const reason = error instanceof Error ? error.message : String(error);
+        unresolved.push(targetDidNotTravel
+          ? {
+            kind: "skill_target_unbound",
+            element: `skill:${skill.name}`,
+            detail: `"${skill.name}" needs a ${skill.target.kind ?? "connection"} in this workspace before it can be created: ${reason}`,
+          }
+          : {
+            kind: "skill_config_not_portable",
+            element: `skill:${skill.name}`,
+            detail: `"${skill.name}" could not be created without the ${skill.omittedConfigKeys?.join(", ")} its source workspace held — re-create it here: ${reason}`,
+          });
         continue;
       }
 

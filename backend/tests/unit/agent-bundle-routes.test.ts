@@ -367,4 +367,85 @@ describe("agent bundle routes", () => {
       .set(adminSessionHeaders(session))
       .expect(404);
   });
+
+  it("round-trips an agent whose only skill has no portable settings", async () => {
+    // `notify` declares recipient emails and a webhook URL and nothing else, and
+    // neither travels. Export therefore hands import a config with every declared
+    // value gone, and import creates the skill from exactly that object — so the
+    // capability has to accept its own stripped config. When it did not, an agent
+    // carrying a notify skill could not be imported at all: the create rejection
+    // aborted the whole bundle and the compensating delete removed the new agent.
+    const { app, dependencies, session } = await setup();
+    const { workspaceId } = session;
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set(adminSessionHeaders(session))
+      .send({ name: "Escalation Bot", customInstruction: "Escalate when asked." })
+      .expect(201);
+    const agentId: string = created.body.id;
+
+    await dependencies.agentSkillsService.create(workspaceId, agentId, {
+      name: "notify_ops",
+      capability: "notify",
+      target: { kind: "notify_delivery", id: null },
+      config: {
+        delivery: {
+          recipientEmails: ["ops@example.com"],
+          webhook: { url: "https://hooks.example.com/inbound" },
+        },
+      },
+      invocationMode: "routine_named",
+      enabled: true,
+    });
+
+    const exported = await request(app)
+      .get(`/api/v1/agents/${agentId}/bundle`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    const [exportedSkill] = exported.body.agentSkills;
+    expect(exportedSkill.name).toBe("notify_ops");
+    // The values stayed home; only their key names travelled.
+    expect(JSON.stringify(exportedSkill.config)).not.toContain("ops@example.com");
+    expect(JSON.stringify(exportedSkill.config)).not.toContain("hooks.example.com");
+    expect(exportedSkill.omittedConfigKeys).toEqual(expect.arrayContaining([
+      "delivery.recipientEmails",
+      "delivery.webhook.url",
+    ]));
+
+    const imported = await request(app)
+      .post("/api/v1/agents/bundle")
+      .set(adminSessionHeaders(session))
+      .send(exported.body)
+      .expect(201);
+
+    // The skill exists on the new agent — reported, not refused, and not skipped.
+    const reExported = await request(app)
+      .get(`/api/v1/agents/${imported.body.agentId}/bundle`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    expect(reExported.body.agentSkills).toContainEqual(
+      expect.objectContaining({ name: "notify_ops", capability: "notify" }),
+    );
+    expect(imported.body.unresolved).toContainEqual(expect.objectContaining({
+      kind: "skill_config_not_portable",
+      element: "skill:notify_ops",
+    }));
+  });
+
+  it("answers a malformed bundle with 400 rather than an unhandled server error", async () => {
+    // The body schema checks that this is a bundle, not what a bundle contains, so
+    // a body this shallow reaches the import service. Reading through its absent
+    // sections used to be a TypeError, which the error handler could only render
+    // as a 500 for what is plainly a bad request.
+    const { app, session } = await setup();
+
+    const response = await request(app)
+      .post("/api/v1/agents/bundle")
+      .set(adminSessionHeaders(session))
+      .send({ bundleVersion: AGENT_BUNDLE_SCHEMA_VERSION, agent: { schemaVersion: 3 } });
+
+    expect(response.status).toBe(400);
+  });
 });

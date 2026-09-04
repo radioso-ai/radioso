@@ -11,6 +11,7 @@ import type {
   AgentBundleContextVariableRecord,
 } from "../../src/modules/agentBundle/ports.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
+import { notifyCapability } from "../../src/modules/skills/capabilities/notify.js";
 
 const baseAgent = (): ConversationAgent => ({
   id: "agent-1",
@@ -260,5 +261,44 @@ describe("AgentBundleExportService", () => {
     expect(JSON.stringify(bundle)).not.toContain("hooks.example.com");
     // Names travel so import can say what to re-enter; values do not.
     expect(skill.omittedConfigKeys).toEqual(["delivery.recipientEmails", "delivery.webhook.url"]);
+  });
+
+  it("exports a notify skill as a config its own capability still accepts", async () => {
+    // Every notify settings field is non-portable (a webhook URL carries a signed
+    // token, recipient emails are personal data), so export strips all of them. The
+    // stripped shape still has to satisfy `validateConfig`, because import creates
+    // the skill from exactly this object — a config only the source workspace could
+    // validate is a bundle that cannot be imported anywhere.
+    const record: AgentBundleAgentSkillRecord = {
+      name: "notify.ops",
+      capability: "notify",
+      invocationMode: "routine_named",
+      enabled: true,
+      config: {
+        delivery: { recipientEmails: ["ops@example.com"], webhook: { url: "https://hooks.example.com/x" } },
+        exposedInputs: { message: true },
+      },
+      target: { kind: "notify_delivery", id: null },
+    };
+
+    const bundle = await new AgentBundleExportService({
+      agents: { load: async () => baseAgent() },
+      externalSkills: { load: async () => null },
+      routines: { listByAgent: async () => [] },
+      contextVariables: { listByAgent: async () => [] },
+      agentSkills: { listByAgent: async () => [record] },
+      skillConfigPortability: {
+        // The real descriptor: nothing here is portable, and that is the point.
+        portableFieldKeys: () => new Set<string>(),
+        settingsFieldKeys: () => new Set(notifyCapability.settingsFields.map((field) => field.key)),
+      },
+    }).export("workspace-1", "agent-1");
+
+    const [skill] = bundle.agentSkills;
+    expect(skill.omittedConfigKeys).toEqual(expect.arrayContaining([
+      "delivery.recipientEmails",
+      "delivery.webhook.url",
+    ]));
+    expect(notifyCapability.validateConfig(skill.config).success).toBe(true);
   });
 });

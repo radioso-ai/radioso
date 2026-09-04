@@ -305,3 +305,23 @@ request now derives from the response schema with the fields added since the old
 accepted version made optional, and the collections the route defaults are optional
 too. Guarded by tests that read the generated `openapi.json`, since that artifact is
 what the SDK is built from and therefore what a consumer is actually held to.
+
+## Review round four
+
+**Eight bundle fields published a type nothing could satisfy.** `Schema.nullable()`
+on a *registered* schema emits `allOf: [$ref, { type: [..., "null"] }]`, which
+openapi-typescript renders as `Ref & (Record<string, never> | null)` — an
+intersection neither `null` nor an instance of the schema satisfies, so an SDK
+consumer could not construct the field at all. It reached placeheld tokens, the logo
+generation ref, the skill target id, MCP credentials and the OAuth client secret, and
+in two cases (`binding`, `lifecycle`) it diverged from the `z.union([Schema,
+z.null()])` form the rest of `agentSchemas.ts` already used. All eight now use the
+union form, with the reason written where the first one lives.
+
+The check that would have caught it lives in
+`backend/tests/contract/openapi-nullable-refs.contract.test.ts`, scanning the
+generated document rather than the builders — the document is what the SDK is
+generated from, so it is what a consumer is actually held to. Three fields outside
+this feature have the same defect (`DocumentSummary.enrichment`,
+`DocumentSummary.source`, `LowQualityTurn.skillStatus`); they are frozen as a
+baseline that may shrink but never grow, and tracked in #1186 rather than fixed here.

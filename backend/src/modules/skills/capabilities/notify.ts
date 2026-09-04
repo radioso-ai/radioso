@@ -14,7 +14,12 @@ const notifyDeliverySchema = z.object({
 }).strict();
 
 export const notifyConfigSchema = z.object({
-  delivery: notifyDeliverySchema,
+  // Defaulted, not required. Both of its fields already default, so `{}` and an
+  // absent `delivery` describe the same skill — one with no destination configured
+  // yet. Requiring the key only meant an agent-export bundle, which strips every
+  // delivery value as non-portable, produced a config this capability then refused
+  // to create: an agent carrying a notify skill could not be imported at all.
+  delivery: notifyDeliverySchema.default({}),
   exposedInputs: z.object({
     message: z.boolean().default(true),
     email: z.boolean().optional(),

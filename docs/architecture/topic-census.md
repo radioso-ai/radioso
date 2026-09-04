@@ -1,7 +1,7 @@
 ---
 title: "Topic Census"
 description: "How Audience Pulse computes an exact, deterministic topic distribution over visitor questions and tracks topic identity across analyses."
-last_updated: 2026-08-05
+last_updated: 2026-09-05
 ---
 
 # Topic Census
@@ -187,6 +187,14 @@ search — a run reads its whole window into memory and clusters there.
 
 Each topic in a census run carries its recorded transition, including parent
 topic ids and the centroid-fallback signal, into the Audience Pulse report.
+
+When every current topic survives, no topic dissolves, each topic's membership
+count changes by less than 20 percent, and a saved summary exists, Audience
+Pulse reuses the saved summary and recommendations without a narrative model
+call. Every reused recommendation evidence id resolves inside the current
+analysis window; an expired reference triggers a regenerated narrative. Themes,
+counts, shares, weekly pulse, grounding, and content gaps always derive from
+the fresh census.
 
 ## Backfill
 

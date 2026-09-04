@@ -55,6 +55,8 @@ interface SafeLogger {
   warn?(context: Record<string, unknown>, message: string): void;
 }
 
+export const AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT = 0.2;
+
 export interface AudiencePulseServiceDependencies {
   historySource: AudiencePulseHistorySource;
   snapshotStore: AudiencePulseSnapshotStore;
@@ -340,6 +342,47 @@ const previousThemeMemberCounts = (snapshot: AudiencePulseSnapshotRecord | null)
   return counts;
 };
 
+type AudiencePulseNarrativeSnapshot = AudiencePulseSnapshotRecord & {
+  report: AudiencePulseStoredReport & { summary: string };
+};
+
+const reusableNarrativeSnapshot = (input: {
+  snapshot: AudiencePulseSnapshotRecord | null;
+  censusResult: CensusRunResult;
+  currentEvidenceById: ReadonlyMap<string, AudiencePulseEvidence>;
+}): AudiencePulseNarrativeSnapshot | null => {
+  const { snapshot, censusResult, currentEvidenceById } = input;
+  if (!snapshot || typeof snapshot.report.summary !== "string" || snapshot.report.summary.trim().length === 0) {
+    return null;
+  }
+  if (censusResult.topics.some((topic) => topic.transition?.kind !== "survived")) {
+    return null;
+  }
+  if (censusResult.dissolvedTopicIds.length > 0) {
+    return null;
+  }
+
+  const priorCounts = previousThemeMemberCounts(snapshot);
+  const hasMaterialTopicDrift = censusResult.topics.some((topic) => {
+    const previousMemberCount = priorCounts.get(topic.topicId);
+    if (previousMemberCount === undefined) {
+      return true;
+    }
+    return Math.abs(topic.memberCount - previousMemberCount) / Math.max(previousMemberCount, 1)
+      >= AUDIENCE_PULSE_NARRATIVE_REUSE_MAX_DRIFT;
+  });
+  if (hasMaterialTopicDrift) {
+    return null;
+  }
+
+  if (snapshot.report.recommendations.some((recommendation) =>
+    recommendation.evidenceIds.some((evidenceId) => !currentEvidenceById.has(evidenceId)))) {
+    return null;
+  }
+
+  return snapshot as AudiencePulseNarrativeSnapshot;
+};
+
 /**
  * Builds the narrative call's input (spec 956): the richest
  * `AUDIENCE_PULSE_SUMMARY_MAX_TOPICS` topics, each with a bounded set of real member
@@ -606,115 +649,155 @@ export class AudiencePulseService implements AudiencePulsePort {
         return { kind: "completed", report: hydrated };
       }
 
-      const censusTopics = censusTopicsFromRun({ topics: censusResult.topics });
-
       const evidenceById = new Map(history.evidence.map((item) => [item.id, item]));
-      const { shown, additionalTopics } = buildSummaryTopics({
-        topics: censusResult.topics,
-        evidenceById,
+      const priorSnapshot = await this.deps.snapshotStore.find(input.workspaceId);
+      const censusTopics = censusTopicsFromRun({ topics: censusResult.topics });
+      const reusableSnapshot = reusableNarrativeSnapshot({
+        snapshot: priorSnapshot,
+        censusResult,
+        currentEvidenceById: evidenceById,
       });
-      const summaryInput: AudiencePulseSummaryInput = {
-        period: { start: analysisStart, end: analysisEnd },
-        coverage: {
-          populationSize: history.coverage.populationSize,
-          unclassifiedQuestionCount: censusResult.unclassifiedCount,
-          facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
-        },
-        weeklyVolume: history.weeklyVolume,
-        topics: shown,
-        additionalTopics,
-      };
-      const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
-      const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
-      // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
-      const shownQualifyingTopicIndexes = shown.flatMap((topic, index) =>
-        topic.contentGapQualifies ? [index] : []);
-      const responseFormat = buildAudiencePulseResponseFormat(shownQualifyingTopicIndexes);
-      const modelCallContext = {
-        accountId: input.accountId,
-        workspaceId: input.workspaceId,
-        requestId: randomUUID(),
-        surface: "audience_pulse",
-        operation: "analysis",
-        attemptKey: randomUUID(),
-      };
-      const inference = await this.deps.inferenceFactory.create({
-        workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
-        modelCallContext,
-      });
-
-      let completion: Awaited<ReturnType<typeof inference.complete>>;
-      try {
-        completion = await inference.complete({
-          prompt,
-          maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
-          maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
-          responseFormat,
-          signal: input.signal,
-          operation: modelCallContext,
-          validateResult(result) {
-            parseModelResult(result.text, shownQualifyingTopicIndexes);
-          },
-        });
-      } catch (error) {
-        if (errorStatusCode(error) !== undefined) throw error;
-        const reason = unavailableReason(error);
-        deferredFailureOutcome = reason;
-        return { kind: "unavailable", reason };
-      }
+      const narrativeReused = reusableSnapshot !== null;
 
       let report: AudiencePulseStoredReport;
       let generatedAt: Date;
-      try {
-        const model = parseModelResult(completion.text, shownQualifyingTopicIndexes);
+      if (reusableSnapshot) {
         generatedAt = this.now();
-        report = buildAudiencePulseReport({
+        const refreshedReport = buildAudiencePulseReport({
           period: { start: analysisStart, end: analysisEnd },
           generatedAt,
           coverage: reportCoverage,
           weeklyVolume: history.weeklyVolume,
           population: history.evidence,
           topics: censusTopics,
-          previousThemeMemberCounts: previousThemeMemberCounts(
-            await this.deps.snapshotStore.find(input.workspaceId),
-          ),
-          model,
+          previousThemeMemberCounts: previousThemeMemberCounts(reusableSnapshot),
+          model: {
+            summary: reusableSnapshot.report.summary,
+            themes: [],
+            recommendations: [],
+            caveats: [],
+          },
         });
-        // Belt-and-suspenders on the invariant the whole feature exists for (spec 956
-        // FR-005): every eligible question is a member of exactly one topic, or
-        // unclassified, and the two sum to the population. `buildAudiencePulseReport`
-        // derives `unclassifiedQuestionCount` independently of the census's own
-        // count; they must agree.
-        if (report.unclassifiedQuestionCount !== censusResult.unclassifiedCount) {
-          throw new Error(
-            `audience_pulse: report unclassified count (${report.unclassifiedQuestionCount}) does not match `
-            + `census unclassified count (${censusResult.unclassifiedCount}) for workspace ${input.workspaceId}`,
-          );
+        report = {
+          ...refreshedReport,
+          recommendations: reusableSnapshot.report.recommendations.map((recommendation) => ({
+            ...recommendation,
+            questions: [...recommendation.questions],
+            evidenceIds: [...recommendation.evidenceIds],
+          })),
+          // Summary, recommendations and caveats all come from one completion, so they
+          // carry over together. Reusing the narrative while dropping its caveats would
+          // strip qualifications the operator saw a moment ago and bring them back on
+          // the next regenerated run.
+          caveats: [...reusableSnapshot.report.caveats],
+        };
+      } else {
+        const { shown, additionalTopics } = buildSummaryTopics({
+          topics: censusResult.topics,
+          evidenceById,
+        });
+        const summaryInput: AudiencePulseSummaryInput = {
+          period: { start: analysisStart, end: analysisEnd },
+          coverage: {
+            populationSize: history.coverage.populationSize,
+            unclassifiedQuestionCount: censusResult.unclassifiedCount,
+            facetReadyQuestionCount: censusResult.facetReadyQuestionCount,
+          },
+          weeklyVolume: history.weeklyVolume,
+          topics: shown,
+          additionalTopics,
+        };
+        const boundedSummaryInput = boundAudiencePulseSummaryInputForPrompt(summaryInput);
+        const prompt = buildAudiencePulsePrompt(boundedSummaryInput);
+        // Qualifying topics beyond the narrative cap retain their badge but cannot receive model copy.
+        const shownQualifyingTopicIndexes = shown.flatMap((topic, index) =>
+          topic.contentGapQualifies ? [index] : []);
+        const responseFormat = buildAudiencePulseResponseFormat(shownQualifyingTopicIndexes);
+        const modelCallContext = {
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          requestId: randomUUID(),
+          surface: "audience_pulse",
+          operation: "analysis",
+          attemptKey: randomUUID(),
+        };
+        const inference = await this.deps.inferenceFactory.create({
+          workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
+          modelCallContext,
+        });
+
+        let completion: Awaited<ReturnType<typeof inference.complete>>;
+        try {
+          completion = await inference.complete({
+            prompt,
+            maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
+            maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
+            responseFormat,
+            signal: input.signal,
+            operation: modelCallContext,
+            validateResult(result) {
+              parseModelResult(result.text, shownQualifyingTopicIndexes);
+            },
+          });
+        } catch (error) {
+          if (errorStatusCode(error) !== undefined) throw error;
+          const reason = unavailableReason(error);
+          deferredFailureOutcome = reason;
+          return { kind: "unavailable", reason };
         }
-        const shownQualifyingThemeIds = shownQualifyingTopicIndexes
-          .flatMap((topicIndex) => report.themes[topicIndex]?.id ?? [])
-          .sort();
-        const recommendationThemeIds = report.recommendations.map((recommendation) => recommendation.themeId).sort();
-        if (shownQualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
-          this.deps.logger?.warn?.({
-            workspaceId: input.workspaceId,
-            qualifyingThemeCount: shownQualifyingThemeIds.length,
-            recommendationThemeCount: recommendationThemeIds.length,
-            qualifyingThemeIds: shownQualifyingThemeIds,
-            recommendationThemeIds,
-          }, "audience_pulse_recommendation_divergence");
+
+        try {
+          const model = parseModelResult(completion.text, shownQualifyingTopicIndexes);
+          generatedAt = this.now();
+          report = buildAudiencePulseReport({
+            period: { start: analysisStart, end: analysisEnd },
+            generatedAt,
+            coverage: reportCoverage,
+            weeklyVolume: history.weeklyVolume,
+            population: history.evidence,
+            topics: censusTopics,
+            previousThemeMemberCounts: previousThemeMemberCounts(priorSnapshot),
+            model,
+          });
+          const shownQualifyingThemeIds = shownQualifyingTopicIndexes
+            .flatMap((topicIndex) => report.themes[topicIndex]?.id ?? [])
+            .sort();
+          const recommendationThemeIds = report.recommendations.map((recommendation) => recommendation.themeId).sort();
+          if (shownQualifyingThemeIds.join("\u0000") !== recommendationThemeIds.join("\u0000")) {
+            this.deps.logger?.warn?.({
+              workspaceId: input.workspaceId,
+              qualifyingThemeCount: shownQualifyingThemeIds.length,
+              recommendationThemeCount: recommendationThemeIds.length,
+              qualifyingThemeIds: shownQualifyingThemeIds,
+              recommendationThemeIds,
+            }, "audience_pulse_recommendation_divergence");
+          }
+        } catch (error) {
+          if (!isAbortError(error) && !isModelValidationError(error)) throw error;
+          const reason = unavailableReason(error);
+          deferredFailureOutcome = reason;
+          return { kind: "unavailable", reason };
         }
-      } catch (error) {
-        if (!isAbortError(error) && !isModelValidationError(error)) throw error;
-        const reason = unavailableReason(error);
-        deferredFailureOutcome = reason;
-        return { kind: "unavailable", reason };
+      }
+
+      // Belt-and-suspenders on the invariant the whole feature exists for (spec 956
+      // FR-005): every eligible question is a member of exactly one topic, or
+      // unclassified, and the two sum to the population. `buildAudiencePulseReport`
+      // derives `unclassifiedQuestionCount` independently of the census's own
+      // count; they must agree on both generated and reused narratives.
+      if (report.unclassifiedQuestionCount !== censusResult.unclassifiedCount) {
+        throw new Error(
+          `audience_pulse: report unclassified count (${report.unclassifiedQuestionCount}) does not match `
+          + `census unclassified count (${censusResult.unclassifiedCount}) for workspace ${input.workspaceId}`,
+        );
       }
 
       // A validated model completion is billable even when a later snapshot write or
       // accounting operation fails, so do not release its reservation afterward.
-      reservationMustRemain = true;
-      await reservation.commit();
+      if (!narrativeReused) {
+        reservationMustRemain = true;
+        await reservation.commit();
+      }
       // Only evidence a theme or recommendation actually references ever needs to
       // rehydrate later -- an unclassified question's evidence ref would never be
       // read again, and the population can be far larger than what any topic claimed.
@@ -736,6 +819,7 @@ export class AudiencePulseService implements AudiencePulsePort {
         sampleSize: history.coverage.sampleSize,
         unclassifiedCount: censusResult.unclassifiedCount,
         topicCount: censusTopics.length,
+        narrativeReused,
       });
       return { kind: "completed", report: hydrated };
     } catch (error) {
@@ -763,11 +847,11 @@ export class AudiencePulseService implements AudiencePulsePort {
     input: { accountId: string; userId: string; workspaceId: string },
     outcome: string,
     startedAt: Date,
-    counts: Record<string, number>,
+    counts: Record<string, number | boolean>,
   ): Promise<void> {
     const durationMs = Math.max(0, this.now().getTime() - startedAt.getTime());
     const eventStatus: "success" | "failure" = outcome === "completed" || outcome === "no_traffic" ? "success" : "failure";
-    const metadata = { userId: input.userId, outcome, durationMs, ...counts };
+    const metadata = { userId: input.userId, outcome, durationMs, narrativeReused: false, ...counts };
     await safeAudit(this.deps.auditService, {
       accountId: input.accountId,
       workspaceId: input.workspaceId,
@@ -777,7 +861,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       eventStatus,
       metadata,
     });
-    const context = { workspaceId: input.workspaceId, outcome, durationMs, ...counts };
+    const context = { workspaceId: input.workspaceId, outcome, durationMs, narrativeReused: false, ...counts };
     if (eventStatus === "success") {
       this.deps.logger?.info?.(context, "audience_pulse_refresh");
     } else {

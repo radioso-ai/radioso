@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createOperatorBackendAdapter } from "../src/operator/backendAdapter.js";
-import { createOperatorMcpProof, sha256Digest } from "@radioso/operator-mcp-contract";
+import { createOperatorMcpProof, digestOperatorMcpCall, sha256Digest } from "@radioso/operator-mcp-contract";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const proof = createOperatorMcpProof({
@@ -30,5 +30,30 @@ describe("operator backend adapter", () => {
       init?.signal?.addEventListener("abort", () => reject(new DOMException("timed out", "AbortError")), { once: true });
     }));
     await expect(createOperatorBackendAdapter({ baseUrl: "https://app.example", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1 }).admit({ accessToken: "opaque", bodyDigest: sha256Digest("{}"), invocationId: id, method: "tools/list", nonce: "n", resource: "https://mcp.example/operator/mcp", timestamp: "1" })).rejects.toMatchObject({ code: "unavailable", status: 503 });
+  });
+
+  it("carries the canonical call digest through the signed invocation request", async () => {
+    const call = { name: "workspace_settings", arguments: { section: "retrieval" } };
+    const bodyDigest = digestOperatorMcpCall(call);
+    const { signature: _signature, ...proofClaims } = proof;
+    const callProof = createOperatorMcpProof({
+      ...proofClaims,
+      method: "tools/call",
+      descriptorName: call.name,
+      bodyDigest,
+      secret: "adapter-secret-key-12345678901234567890",
+    });
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ content: [], safeOutcomeCode: "completed" }), { status: 200 }));
+    const adapter = createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    });
+
+    await adapter.invoke({ proof: callProof, ...call, bodyDigest });
+
+    const payload = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+    expect(payload.bodyDigest).toBe(bodyDigest);
   });
 });

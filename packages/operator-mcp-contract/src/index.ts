@@ -110,6 +110,7 @@ export const OperatorInvocationRequestSchema = z.object({
   name: boundedText(128),
   arguments: z.record(z.string(), z.unknown()).default({}),
   operationId: boundedText(256).optional(),
+  bodyDigest: digest,
 }).strict();
 export type OperatorInvocationRequest = z.infer<typeof OperatorInvocationRequestSchema>;
 
@@ -148,6 +149,17 @@ const canonicalJson = (value: unknown): string => {
 };
 
 export const sha256Digest = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("base64url");
+
+export const digestOperatorMcpCall = (input: {
+  name: string;
+  arguments: Record<string, unknown>;
+  operationId?: string;
+}): string => sha256Digest(canonicalJson({
+  arguments: input.arguments,
+  method: "tools/call",
+  name: input.name,
+  operationId: input.operationId ?? null,
+}));
 
 const signature = (context: string, secret: string, payload: string): string =>
   createHmac("sha256", secret).update(`${context}\n${payload}`).digest("base64url");

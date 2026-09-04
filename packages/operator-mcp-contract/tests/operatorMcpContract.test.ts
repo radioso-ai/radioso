@@ -3,9 +3,11 @@ import {
   OperatorAdmissionRequestSchema,
   OperatorAdmissionResponseSchema,
   OperatorCatalogResponseSchema,
+  OperatorInvocationRequestSchema,
   OPERATOR_MCP_PROTOCOL_VERSION,
   createOperatorMcpProof,
   canonicalizeOperatorResource,
+  digestOperatorMcpCall,
   verifyOperatorMcpProof,
   sha256Digest,
 } from "../src/index.js";
@@ -108,5 +110,28 @@ describe("operator MCP contract", () => {
   it("requires an exact canonical audience and rejects a trailing slash", () => {
     expect(canonicalizeOperatorResource("https://mcp.example/operator/mcp")).toBe("https://mcp.example/operator/mcp");
     expect(canonicalizeOperatorResource("https://mcp.example/operator/mcp/")).toBeNull();
+  });
+
+  it("canonically binds call name, arguments, and operation identity", () => {
+    const bodyDigest = digestOperatorMcpCall({
+      arguments: { query: "safe", filters: { b: 2, a: 1 } },
+      name: "retrieval_probe",
+      operationId: "operation-1",
+    });
+    expect(bodyDigest).toBe(digestOperatorMcpCall({
+      arguments: { filters: { a: 1, b: 2 }, query: "safe" },
+      name: "retrieval_probe",
+      operationId: "operation-1",
+    }));
+    expect(bodyDigest).not.toBe(digestOperatorMcpCall({
+      arguments: { query: "tampered" },
+      name: "retrieval_probe",
+      operationId: "operation-1",
+    }));
+    expect(() => OperatorInvocationRequestSchema.parse({
+      proof: createOperatorMcpProof({ ...base, method: "tools/call", descriptorName: "retrieval_probe", bodyDigest, secret: "a-secure-test-key" }),
+      name: "retrieval_probe",
+      arguments: { query: "safe" },
+    })).toThrow();
   });
 });

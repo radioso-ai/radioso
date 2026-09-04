@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
-import { sha256Digest } from "@radioso/operator-mcp-contract";
+import { digestOperatorMcpCall, sha256Digest } from "@radioso/operator-mcp-contract";
 
 import { OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
@@ -22,6 +22,8 @@ const descriptor: CopilotToolDescriptor = {
   mcpDisposition: { status: "eligible", inputStrategy: "explicit", scope: "operator:read", retry: { effect: "none", idempotent: true, requiresOperationId: false } },
   createTool: () => ({ name: "workspace_settings", description: "Read settings", inputSchema: z.object({ section: z.string() }), outputSchema: z.object({ section: z.string() }), invoke: vi.fn(async (input: { section: string }) => input) }),
 };
+const callDigest = (argumentsValue: Record<string, unknown>, operationId?: string): string =>
+  digestOperatorMcpCall({ name: descriptor.name, arguments: argumentsValue, ...(operationId ? { operationId } : {}) });
 
 const build = () => {
   const credentialValidation = { validate: vi.fn(async () => principal), revalidateCredential: vi.fn(async () => principal) };
@@ -81,8 +83,10 @@ describe("OperatorMcpApplicationService", () => {
 
   it("records bounded attributed failures without persisting arguments", async () => {
     const { service, invocations, audit } = build();
-    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest: sha256Digest("call") });
-    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: { section: "retrieval", secret: "do-not-record" } }))
+    const argumentsValue = { section: "retrieval", secret: "do-not-record" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
+    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest }))
       .rejects.toMatchObject({ code: "invalid_arguments" });
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "refused", safeOutcomeCode: "invalid_arguments" }));
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
@@ -92,22 +96,59 @@ describe("OperatorMcpApplicationService", () => {
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("do-not-record");
   });
 
+  it("rejects call metadata tampering against the signed admission digest before preparation", async () => {
+    const original = {
+      name: descriptor.name,
+      arguments: { section: "retrieval" },
+      operationId: "operation-1",
+    };
+    const bodyDigest = digestOperatorMcpCall(original);
+    for (const tampered of [
+      { ...original, arguments: { section: "security" } },
+      { ...original, name: "retrieval_probe" },
+      { ...original, operationId: "operation-2" },
+    ]) {
+      const { service, invocations } = build();
+      const admitted = await service.admit({
+        accessToken: "operator-access",
+        invocationId: uuid("12"),
+        method: "tools/call",
+        descriptorName: descriptor.name,
+        resource: principal.resource,
+        timestamp: "1788480000",
+        nonce: "edge",
+        bodyDigest,
+      });
+
+      await expect(service.invoke({
+        proof: admitted.proof,
+        ...tampered,
+        bodyDigest,
+      })).rejects.toMatchObject({ code: "invalid_proof" });
+      expect(invocations.prepareInvocation).not.toHaveBeenCalled();
+    }
+  });
+
   it("suppresses a result when grant authority changes before final enrichment", async () => {
     const { service, credentialValidation, invocations } = build();
     credentialValidation.revalidateCredential
       .mockResolvedValueOnce(principal)
       .mockResolvedValueOnce(principal)
       .mockResolvedValueOnce({ ...principal, grantVersion: "4" });
-    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest: sha256Digest("call") });
-    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: { section: "retrieval" } }))
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
+    await expect(service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest }))
       .rejects.toMatchObject({ code: "forbidden" });
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", safeOutcomeCode: "forbidden" }));
   });
 
   it("validates, prepares, invokes, and records a bounded direct result", async () => {
     const { service, invocations, audit } = build();
-    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest: sha256Digest("call") });
-    const result = await service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: { section: "retrieval" } });
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue);
+    const admitted = await service.admit({ accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name, resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest });
+    const result = await service.invoke({ proof: admitted.proof, name: descriptor.name, arguments: argumentsValue, bodyDigest });
     expect(result).toMatchObject({ structuredContent: { section: "retrieval" }, safeOutcomeCode: "completed" });
     expect(invocations.prepareInvocation).toHaveBeenCalledWith(expect.objectContaining({ descriptorName: descriptor.name, verificationCost: 0 }));
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({ status: "completed", safeOutcomeCode: "completed" }));
@@ -135,9 +176,12 @@ describe("OperatorMcpApplicationService", () => {
 
   it("closes a new receipt when a stable operation reconciles to an earlier result", async () => {
     const { service, invocations, invocation } = build();
+    const operationId = "stable-operation";
+    const argumentsValue = { section: "retrieval" };
+    const bodyDigest = callDigest(argumentsValue, operationId);
     const admitted = await service.admit({
       accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name,
-      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest: sha256Digest("call"),
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest,
     });
     invocations.prepareInvocation.mockResolvedValueOnce({
       status: "replay",
@@ -147,8 +191,9 @@ describe("OperatorMcpApplicationService", () => {
     await expect(service.invoke({
       proof: admitted.proof,
       name: descriptor.name,
-      arguments: { section: "retrieval" },
-      operationId: "stable-operation",
+      arguments: argumentsValue,
+      operationId,
+      bodyDigest,
     })).resolves.toMatchObject({ safeOutcomeCode: "completed", resultReference: "proposal-1" });
     expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({
       invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed", resultReference: "proposal-1",

@@ -43,7 +43,7 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
       resource: operatorMcp.resource.resource,
       timestamp: Math.floor(Date.now() / 1000).toString(),
     }),
-    call: (input) => operatorMcp.adapter.invoke({ proof: input.proof, name: input.name, arguments: input.arguments, operationId: input.operationId }),
+    call: (input) => operatorMcp.adapter.invoke({ proof: input.proof, name: input.name, arguments: input.arguments, operationId: input.operationId, bodyDigest: input.bodyDigest }),
     list: (input) => operatorMcp.adapter.catalog(input.proof),
     onOutcome: (observation) => {
       try { operatorMcp.metrics?.observe(observation); } catch { /* metrics cannot affect protocol */ }

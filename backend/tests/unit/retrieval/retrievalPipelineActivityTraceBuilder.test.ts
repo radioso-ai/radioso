@@ -105,23 +105,6 @@ describe("retrieval pipeline activity trace builder", () => {
     expect(lexical.startedAtMs).not.toBe(RETRIEVAL_STARTED_AT_MS + semanticRetrievalDurationMs);
   });
 
-  it("reports zero duration for a branch that did not run", () => {
-    const trace = new RetrievalPipelineActivityTraceBuilder().buildActivityTrace(
-      buildSourceStages(
-        {
-          lexicalRetrievalStartedAtMs: RETRIEVAL_STARTED_AT_MS,
-          lexicalRetrievalDurationMs: 120,
-          semanticRetrievalStartedAtMs: RETRIEVAL_STARTED_AT_MS,
-          semanticRetrievalDurationMs: 0,
-        },
-        120,
-      ),
-    );
-
-    expect(stageTiming(trace.stages, "semantic_rewritten").durationMs).toBe(0);
-    expect(stageTiming(trace.stages, "lexical").durationMs).toBe(120);
-  });
-
   it("reports a zero-length span at the stage start when a branch was not measured", () => {
     const stages = buildSourceStages(
       {

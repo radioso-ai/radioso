@@ -2,8 +2,9 @@
 
 import React, { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Globe2, RefreshCw } from 'lucide-react'
+import { FileJson, Globe2, RefreshCw } from 'lucide-react'
 
+import { AgentBundleImportDialog } from '@/components/dashboard/agent-bundle-import-dialog'
 import { AgentSwitcher, DashboardSubNav, type ChannelStatus } from '@/components/dashboard/dashboard-subnav'
 import { agentSectionFromRoute, agentSectionRoute, type AgentSectionId } from '@/lib/dashboard-areas'
 import { Button } from '@/components/ui/button'
@@ -76,6 +77,7 @@ export function AgentSubNavContainer({
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [newAgentName, setNewAgentName] = useState('')
   const [isCreatingAgent, setIsCreatingAgent] = useState(false)
   const [createAgentError, setCreateAgentError] = useState<string | null>(null)
@@ -293,13 +295,34 @@ export function AgentSubNavContainer({
                   </p>
                 </div>
               </button>
-              <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-muted-foreground">
-                <div className="h-px flex-1 bg-border" />
-                <span>or create manually</span>
-                <div className="h-px flex-1 bg-border" />
-              </div>
             </>
           ) : null}
+
+          <button
+            type="button"
+            onClick={() => {
+              setCreateDialogOpen(false)
+              setImportOpen(true)
+            }}
+            data-testid="create-agent-import-option"
+            className="group flex w-full items-start gap-4 rounded-lg border border-border bg-muted/20 p-4 text-left transition-colors hover:border-primary/40 hover:bg-muted/40"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <FileJson className="h-5 w-5" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <span className="text-sm font-medium">Import a bundle</span>
+              <p className="text-xs text-muted-foreground">
+                Bring an agent over from another workspace.
+              </p>
+            </div>
+          </button>
+
+          <div className="flex items-center gap-3 text-xs uppercase tracking-wider text-muted-foreground">
+            <div className="h-px flex-1 bg-border" />
+            <span>or create manually</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
 
           <form onSubmit={handleCreateAgent} className="space-y-4">
             <div className="space-y-2">
@@ -328,6 +351,22 @@ export function AgentSubNavContainer({
           </form>
         </DialogContent>
       </Dialog>
+
+      <AgentBundleImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={() => { void loadAgents() }}
+        agentSettingsHrefBuilder={(agentId) =>
+          buildDashboardHref(accountId, {
+            section: 'agents',
+            agentId,
+            agentTab: 'behavior',
+            anchor: 'assistant-profile',
+            workspaceId: activeWorkspaceId ?? undefined,
+            workspacePublicRouteKey,
+          })
+        }
+      />
 
       {WizardDialog ? (
         <WizardDialog

@@ -448,6 +448,14 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   reviseAgentRoutine: "propose_routine_edit",
   archiveAgentRoutine: "propose_routine_lifecycle",
   restoreAgentRoutine: "propose_routine_lifecycle",
+  // Bundle export/import moves a whole agent as a file between workspaces. Export is a
+  // bulk dump of what Ray already reads field by field through get_agent, so a tool for
+  // it would add reach without adding an operator outcome. Import is the stronger
+  // exclusion: it creates a whole agent from a document the operator holds, so the
+  // operator supplying that file IS the review step, and there is nothing for Ray to
+  // propose that the operator has not already decided.
+  exportAgentBundle: permanent("Bulk read of configuration Ray already reads field by field through get_agent; a tool would widen reach without giving the operator a new outcome."),
+  importAgentBundle: permanent("Creates a whole agent from an operator-supplied file. The operator choosing the file is the decision; Ray has no bundle to propose and no way to review one it did not author."),
   getCopilotAvailability: copilotUiOnly,
   listCopilotConversations: copilotUiOnly,
   getCopilotConversation: copilotUiOnly,

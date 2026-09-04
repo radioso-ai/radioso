@@ -25,6 +25,7 @@ import {
   resolveAssistantLocaleInput,
 } from '@/components/dashboard/settings/assistant-locale-options'
 import { DEFAULT_ASSISTANT_THEME } from '@/components/dashboard/settings/assistant-theme-form-helpers'
+import { AgentBundleExportCard } from '@/components/dashboard/settings/agent-bundle-export-card'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
@@ -801,6 +802,9 @@ export function WorkspaceAssistantChannelsTab({
             ) : (
               <p className="text-sm text-muted-foreground">Failed to load assistant settings.</p>
             )}
+            {agentId ? (
+              <AgentBundleExportCard agentId={agentId} agentName={operatorAgentName} />
+            ) : null}
           </section>
           ) : null}
 

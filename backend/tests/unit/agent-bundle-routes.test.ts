@@ -1,7 +1,7 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../src/modules/agentBundle/public.js";
 
 const setup = async () => {
@@ -447,5 +447,84 @@ describe("agent bundle routes", () => {
       .send({ bundleVersion: AGENT_BUNDLE_SCHEMA_VERSION, agent: { schemaVersion: 3 } });
 
     expect(response.status).toBe(400);
+  });
+
+  it("rejects raw public-surface tokens from machine bundle imports", async () => {
+    const { app } = createTestApp();
+    const token = await issueTestToken(app);
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", `Bearer ${token.token}`)
+      .send({ name: "Machine Import Source" })
+      .expect(201);
+
+    const exported = await request(app)
+      .get(`/api/v1/agents/${created.body.id}/bundle`)
+      .set("Authorization", `Bearer ${token.token}`)
+      .expect(200);
+
+    exported.body.agent.surfaceSettings.anonymousChat = {
+      enabled: true,
+      token: "raw-anonymous-token",
+    };
+    exported.body.agent.surfaceSettings.websiteEmbed = {
+      ...exported.body.agent.surfaceSettings.websiteEmbed,
+      enabled: true,
+      token: "raw-embed-token",
+    };
+
+    await request(app)
+      .post("/api/v1/agents/bundle")
+      .set("Authorization", `Bearer ${token.token}`)
+      .send(exported.body)
+      .expect(403);
+  });
+
+  it("allows machine bundle imports with exported placeholder surface credentials", async () => {
+    const { app, dependencies } = createTestApp();
+    const token = await issueTestToken(app);
+
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set(adminSessionHeaders({ cookie: token.cookie, workspaceId: token.workspaceId }))
+      .send({ name: "Placeholder Surface Bot" })
+      .expect(201);
+    await dependencies.agentService.update(token.workspaceId, created.body.id, {
+      surfaceSettings: {
+        anonymousChat: { enabled: true, token: "source-anonymous-token" },
+        websiteEmbed: {
+          enabled: true,
+          token: "source-embed-token",
+          allowedOrigins: ["https://example.com"],
+        },
+      },
+    } as never);
+
+    const exported = await request(app)
+      .get(`/api/v1/agents/${created.body.id}/bundle`)
+      .set("Authorization", `Bearer ${token.token}`)
+      .expect(200);
+
+    expect(exported.body.agent.surfaceSettings.anonymousChat.token).toEqual({ __redacted: "secret" });
+    expect(exported.body.agent.surfaceSettings.websiteEmbed.token).toEqual({ __redacted: "secret" });
+
+    const imported = await request(app)
+      .post("/api/v1/agents/bundle")
+      .set("Authorization", `Bearer ${token.token}`)
+      .send(exported.body)
+      .expect(201);
+
+    expect(imported.body.unresolved).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "surface_credential_unbound", element: "surfaceSettings.anonymousChat" }),
+      expect.objectContaining({ kind: "surface_credential_unbound", element: "surfaceSettings.websiteEmbed" }),
+    ]));
+
+    const reExported = await request(app)
+      .get(`/api/v1/agents/${imported.body.agentId}/bundle`)
+      .set("Authorization", `Bearer ${token.token}`)
+      .expect(200);
+    expect(reExported.body.agent.surfaceSettings.anonymousChat.enabled).toBe(false);
+    expect(reExported.body.agent.surfaceSettings.websiteEmbed.enabled).toBe(false);
   });
 });

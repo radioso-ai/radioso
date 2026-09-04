@@ -325,3 +325,29 @@ generated from, so it is what a consumer is actually held to. Three fields outsi
 this feature have the same defect (`DocumentSummary.enrichment`,
 `DocumentSummary.source`, `LowQualityTurn.skillStatus`); they are frozen as a
 baseline that may shrink but never grow, and tracked in #1186 rather than fixed here.
+
+## Review round five
+
+**`contactRequestDelivery` now travels redacted.** The plan above defended carrying
+it, on the grounds that spec 079 already classified it `portable` and it is authored
+behaviour. That reasoning weighed the data exposure — staff emails, a webhook URL
+that routinely carries a token — and missed the sharper problem: an imported agent
+that *kept* those destinations delivers its contact requests to the **source**
+workspace's people and endpoint, from a different workspace, silently. That is not a
+trade-off, it is a defect. It is a `secret` placeholder on export and cleared on
+import, with `contact_delivery_unbound` reported whenever contact requests are on.
+`InternalAgentConfig` keeps the real value, so eval replay is unaffected.
+
+**A skill could lose two things and be told about one.** The recovery path reported
+only the missing target, so a webhook or Slack skill that also lost its authored
+payload config left the operator rebinding it and believing they were done. Both are
+reported now, from one shared helper so the success and recovery paths cannot drift
+into reporting different halves again. The old code also had an unreachable branch —
+the config-only case could not occur once non-target failures became fatal.
+
+**The import report vanished when importing into an empty workspace.** A successful
+import refreshed the agent list, which moved the agents view out of its zero-agent
+branch and remounted the dialog, resetting the very result it was displaying.
+Rendering the dialog in both branches was not enough, because the remount is what
+clears it; the refresh now waits until the operator closes the report. Covered by an
+e2e that imports from the empty state and asserts the report survives.

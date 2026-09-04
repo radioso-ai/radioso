@@ -49,6 +49,14 @@ export interface AgentConfigImportProjection {
 export const projectAgentConfigForImport = (config: AgentConfig): AgentConfigImportProjection => {
   const unresolved: AgentBundleUnresolvedReference[] = [];
 
+  if (config.contactRequestsEnabled) {
+    unresolved.push({
+      kind: "contact_delivery_unbound",
+      element: "contactRequestDelivery",
+      detail: "Contact requests are on, but the recipients and webhook stay in the source workspace — an imported agent must not deliver to another workspace's people. Set a destination under the agent's contact settings.",
+    });
+  }
+
   if (config.logo) {
     unresolved.push({
       kind: "asset_not_portable",
@@ -98,7 +106,11 @@ export const projectAgentConfigForImport = (config: AgentConfig): AgentConfigImp
       citationDisplayEnabled: retrieval.citationDisplayEnabled,
       contactRequestsEnabled: config.contactRequestsEnabled,
       webhookExportsEnabled: config.webhookExportsEnabled,
-      contactRequestDelivery: config.contactRequestDelivery,
+      // Cleared, never carried: keeping the source workspace's recipients or webhook
+      // would have the imported agent quietly deliver contact requests to another
+      // workspace's people. Contact requests still collect; they just have nowhere to
+      // go until the operator sets a destination here.
+      contactRequestDelivery: { recipientEmails: [], webhook: null },
       // The logo is the only behavior-settings field the bundle cannot carry.
       logo: null,
       theme: config.theme,

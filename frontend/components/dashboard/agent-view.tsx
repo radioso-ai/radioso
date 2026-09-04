@@ -539,6 +539,11 @@ export function AgentView({
           setSaveState={setSaveState}
         />
         {wizard}
+        {/* Also rendered here, not only in the agent-unavailable branch: a successful
+            import refreshes the agent list, which moves this component out of the
+            zero-agent branch. Rendering the dialog only there would unmount it at the
+            exact moment it has the unresolved report to show. */}
+        {bundleImport}
       </RoutineHeaderActionsProvider>
     </SkillsHeaderActionProvider>
   )

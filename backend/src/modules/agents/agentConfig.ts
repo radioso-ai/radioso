@@ -152,7 +152,14 @@ export interface AgentConfig {
   handoffOnRetrievalMiss: boolean;
   contactRequestsEnabled: boolean;
   webhookExportsEnabled: boolean;
-  contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
+  /**
+   * Redacted. The recipient list is staff personal data and the webhook URL
+   * routinely carries a token in its query string — but the sharper reason is
+   * behavioural: an imported agent that kept these would route its contact requests
+   * to the *source* workspace's people and endpoint, silently, from a different
+   * workspace. Only the internal projection keeps the real value.
+   */
+  contactRequestDelivery: AgentConfigSecretPlaceholder;
   logo: AgentLogoConfig | null;
   theme: ConversationAgent["theme"];
   branding: ConversationAgent["branding"];
@@ -170,9 +177,11 @@ type InternalAgentConfigValueField =
   | "logo"
   | "surfaceSettings"
   | "skillSettings"
-  | "externalSkills";
+  | "externalSkills"
+  | "contactRequestDelivery";
 
 export interface InternalAgentConfig extends Omit<AgentConfig, InternalAgentConfigValueField> {
+  contactRequestDelivery: ConversationAgent["contactRequestDelivery"];
   logo: InternalAgentLogoConfig | null;
   surfaceSettings: InternalAgentSurfaceConfig;
   skillSettings: InternalAgentSkillSettingsConfig;
@@ -685,8 +694,8 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     serialize: (agent) => agent.webhookExportsEnabled,
   }),
   contactRequestDelivery: descriptor({
-    portability: "portable",
-    serialize: (agent) => cloneJson(agent.contactRequestDelivery),
+    portability: "secret",
+    serialize: () => secretPlaceholder(),
   }),
   logo: descriptor({
     portability: "portable",

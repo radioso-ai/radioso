@@ -49,6 +49,7 @@ names. Only three references are workspace-scoped ids:
 | `agent_context_variables.variable_id` | re-keyed to the variable's name |
 | `agent_context_variables.resolver_skill_id` | re-keyed to the skill's name |
 | `agent_skills.target_type` / `target_id` | a credential-bearing connection: `ref` placeholder, imported unbound |
+| `contactRequestDelivery` | staff emails and a webhook URL: `secret` placeholder, cleared on import |
 
 Skill `config` values travel only for fields a capability marks
 `portable: true` (see `skills/capabilityRegistry.ts`). The default is that a value
@@ -67,6 +68,10 @@ accepted only while every field it lacks defaults to the behaviour that version 
 
 ## Import rules worth keeping
 
+- **Never re-route.** `contactRequestDelivery` is redacted on export and cleared on
+  import. The data exposure matters, but the sharper reason is behavioural: an agent
+  that kept it would deliver contact requests to the *source* workspace's people from
+  a different workspace, silently.
 - **Never widen.** A selected source scope whose ids cannot be matched imports as
   selected-and-empty, never as `all`. A surface whose token was redacted imports
   off rather than minting a new one.

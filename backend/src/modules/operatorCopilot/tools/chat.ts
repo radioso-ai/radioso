@@ -285,6 +285,33 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
   })),
 });
 
+/**
+ * Whether the spine already carries this turn's `activityTrace` as one of its capability leaves.
+ *
+ * `activityTrace` is the pre-spine field for a capability's own trace, and the spine hangs that
+ * same trace off the stage that dispatched it — including for legacy turns, whose envelope is
+ * synthesized by wrapping `activityTrace` as the sub-trace of a synthetic dispatch stage. Sending
+ * both charges a diagnostic read twice for one trace.
+ *
+ * Matched on `traceId` rather than by comparing the two payloads, because a trace is large and the
+ * identifier is what makes it the same run. An unrecognisable shape simply does not match, so the
+ * field is kept.
+ */
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+const subTraceTraceId = (stage: unknown): unknown =>
+  record(record(record(stage)?.subTrace)?.payload)?.traceId;
+
+const spineCarriesActivityTrace = (turnTrace: unknown, activityTrace: unknown): boolean => {
+  const traceId = record(activityTrace)?.traceId;
+  if (typeof traceId !== "string") return false;
+  const stages = record(record(turnTrace)?.spine)?.stages;
+  return Array.isArray(stages) && stages.some((stage) => subTraceTraceId(stage) === traceId);
+};
+
 const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string, unknown> => {
   const { message } = detail;
   const debug = message.debug;
@@ -311,7 +338,9 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
             skill: projectSkill(debug),
             route: debug.route ?? null,
             activitySummary: debug.activitySummary ?? null,
-            activityTrace: debug.activityTrace ?? null,
+            activityTrace: spineCarriesActivityTrace(debug.turnTrace, debug.activityTrace)
+              ? null
+              : debug.activityTrace ?? null,
             turnTrace: debug.turnTrace ?? null,
             errorMessage: debug.errorMessage ?? null,
           }

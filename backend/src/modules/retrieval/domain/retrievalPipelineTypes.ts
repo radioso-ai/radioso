@@ -315,6 +315,8 @@ export interface RetrievalExecutionDiagnostics {
   normalizedCandidateCount: number;
   finalContextCount: number;
   queryEmbeddingDurationMs?: number;
+  semanticRetrievalDurationMs?: number;
+  lexicalRetrievalDurationMs?: number;
   semanticRetrievalAvailability?: "available" | "degraded" | "unavailable";
   semanticRetrievalFailureReason?:
     | "query_embedding_unavailable"

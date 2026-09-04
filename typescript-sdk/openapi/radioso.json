@@ -7237,6 +7237,1879 @@
           "status"
         ]
       },
+      "AgentConfigRefPlaceholder": {
+        "type": "object",
+        "properties": {
+          "__ref": {
+            "type": "string",
+            "enum": [
+              "documentSource",
+              "storageBucket",
+              "storageObjectPath",
+              "storageGeneration",
+              "websiteEmbedAllowedOrigin",
+              "mcpConnection",
+              "agentSkillTarget"
+            ]
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "__ref"
+        ],
+        "description": "A workspace-scoped reference that does not travel between workspaces (for example a credential-bearing connection). The bundle carries only the kind so the caller can see what did not come along; `key` links the placeholder back to another entity exported in the same bundle when re-binding on import is possible."
+      },
+      "AgentConfigSecretPlaceholder": {
+        "type": "object",
+        "properties": {
+          "__redacted": {
+            "type": "string",
+            "enum": [
+              "secret"
+            ]
+          }
+        },
+        "required": [
+          "__redacted"
+        ],
+        "description": "Stands in for a credential the export withholds. Only its absence travels, never the value."
+      },
+      "AgentBundleAuthoredDirective": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/AuthoredDirectiveCondition"
+          },
+          "action": {
+            "type": "string"
+          },
+          "priority": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "retrieval",
+                "direct"
+              ]
+            }
+          },
+          "surfaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GenerationSurface"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveBinding"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "name",
+          "condition",
+          "action",
+          "priority",
+          "requiredCapabilities",
+          "dependsOn",
+          "excludes",
+          "routes",
+          "surfaces",
+          "tags",
+          "description",
+          "binding",
+          "lifecycle",
+          "enabled",
+          "metadata"
+        ],
+        "description": "An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and `excludes` — so nothing here needs re-keying on import."
+      },
+      "AgentBundleExternalSkills": {
+        "type": "object",
+        "properties": {
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "Within-bundle linkage key, never a database id."
+                },
+                "displayName": {
+                  "type": "string"
+                },
+                "serverUrl": {
+                  "type": "string"
+                },
+                "authMethod": {
+                  "type": "string"
+                },
+                "credential": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+                    },
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "oauth": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "authorizationEndpoint": {
+                      "type": "string"
+                    },
+                    "tokenEndpoint": {
+                      "type": "string"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "clientSecret": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+                        },
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "authorizationEndpoint",
+                    "tokenEndpoint",
+                    "clientId",
+                    "clientSecret",
+                    "scopes"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "displayName",
+                "serverUrl",
+                "authMethod",
+                "credential",
+                "oauth"
+              ]
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "skillName": {
+                  "type": "string"
+                },
+                "connection": {
+                  "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                },
+                "toolName": {
+                  "type": "string"
+                },
+                "boundParams": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "exposedParams": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "description": {
+                        "type": "string"
+                      },
+                      "slotBinding": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "declaredOutcomes": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "outcomeMap": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "skillName",
+                "connection",
+                "toolName",
+                "boundParams",
+                "exposedParams",
+                "declaredOutcomes",
+                "outcomeMap",
+                "enabled"
+              ]
+            }
+          }
+        },
+        "required": [
+          "connections",
+          "skills"
+        ],
+        "description": "Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild."
+      },
+      "AgentBundleAgentConfig": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "portability": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "portable",
+                "ref",
+                "secret"
+              ]
+            },
+            "description": "Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders."
+          },
+          "name": {
+            "type": "string"
+          },
+          "internalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customInstruction": {
+            "type": "string"
+          },
+          "handoffOnRetrievalMiss": {
+            "type": "boolean"
+          },
+          "contactRequestsEnabled": {
+            "type": "boolean"
+          },
+          "webhookExportsEnabled": {
+            "type": "boolean"
+          },
+          "contactRequestDelivery": {
+            "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+          },
+          "logo": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "bucket": {
+                "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+              },
+              "objectPath": {
+                "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+              },
+              "generation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "bucket",
+              "objectPath",
+              "generation",
+              "mimeType",
+              "filename",
+              "sizeBytes"
+            ],
+            "description": "Metadata only. The image lives in object storage and is not part of the bundle."
+          },
+          "theme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string"
+              },
+              "brandText": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brand",
+              "brandText",
+              "surface",
+              "text"
+            ]
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "hidePoweredBy",
+              "privacyPolicyUrl"
+            ]
+          },
+          "greetingInstruction": {
+            "type": "string"
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
+          },
+          "surfaceSettings": {
+            "type": "object",
+            "properties": {
+              "authenticatedChat": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "anonymousChat": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "token": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "token"
+                ]
+              },
+              "websiteEmbed": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "token": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "allowedOrigins": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                    }
+                  },
+                  "launcherLabel": {
+                    "type": "string"
+                  },
+                  "launcherPosition": {
+                    "type": "string",
+                    "enum": [
+                      "bottom-right",
+                      "bottom-left"
+                    ]
+                  },
+                  "theme": {
+                    "type": "object",
+                    "properties": {
+                      "brand": {
+                        "type": "string"
+                      },
+                      "brandText": {
+                        "type": "string"
+                      },
+                      "surface": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "brand",
+                      "brandText",
+                      "surface",
+                      "text"
+                    ]
+                  },
+                  "copy": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "expertOverrides": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "token",
+                  "allowedOrigins",
+                  "launcherLabel",
+                  "launcherPosition",
+                  "theme",
+                  "copy",
+                  "expertOverrides"
+                ]
+              },
+              "extensions": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Surface extensions keyed by extension id; shape is owned by the contributing extension."
+              }
+            },
+            "required": [
+              "authenticatedChat",
+              "anonymousChat",
+              "websiteEmbed",
+              "extensions"
+            ]
+          },
+          "skillSettings": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope."
+          },
+          "chatModelOverride": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ]
+          },
+          "authoredDirectives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleAuthoredDirective"
+            }
+          },
+          "externalSkills": {
+            "$ref": "#/components/schemas/AgentBundleExternalSkills"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "portability",
+          "name",
+          "internalName",
+          "customInstruction",
+          "handoffOnRetrievalMiss",
+          "contactRequestsEnabled",
+          "webhookExportsEnabled",
+          "contactRequestDelivery",
+          "logo",
+          "theme",
+          "branding",
+          "greetingInstruction",
+          "assistantDefaultLocale",
+          "proactiveGreetingEnabled",
+          "surfaceSettings",
+          "skillSettings",
+          "chatModelOverride",
+          "authoredDirectives",
+          "externalSkills"
+        ],
+        "description": "The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on."
+      },
+      "AgentBundleRoutine": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "description": "Source version, carried for provenance only; import always creates v1."
+          },
+          "definition": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "activation": {
+                "type": "object",
+                "properties": {
+                  "triggerDescription": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "gateRef": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "reentryMode": {
+                    "type": "string",
+                    "enum": [
+                      "once_per_conversation",
+                      "always",
+                      "semantic"
+                    ],
+                    "default": "once_per_conversation"
+                  }
+                },
+                "required": [
+                  "triggerDescription",
+                  "priority"
+                ],
+                "additionalProperties": false
+              },
+              "slots": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableSlotId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "text",
+                        "number",
+                        "boolean",
+                        "email",
+                        "date"
+                      ]
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 1000
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mutable": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "stableSlotId",
+                    "key",
+                    "type",
+                    "required",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableStepId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "chat",
+                        "tool",
+                        "action",
+                        "approval"
+                      ]
+                    },
+                    "toolRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "actionType": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 300
+                    },
+                    "captureKey": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "properties": {
+                        "inputBindings": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "literal"
+                                    ]
+                                  },
+                                  "value": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "boolean"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "variableRef"
+                                    ]
+                                  },
+                                  "ref": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "ref"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "contextVariableRef"
+                                    ]
+                                  },
+                                  "contextVariable": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120,
+                                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                                  }
+                                },
+                                "required": [
+                                  "kind",
+                                  "contextVariable"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "outputAssignments": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          }
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "typed",
+                            "untyped"
+                          ]
+                        }
+                      },
+                      "default": {}
+                    },
+                    "instruction": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "minLength": 1,
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
+                    }
+                  },
+                  "required": [
+                    "stableStepId",
+                    "kind",
+                    "ordinal",
+                    "instruction"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "fromStep": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "toRef": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "guardKind": {
+                      "type": "string",
+                      "enum": [
+                        "llm",
+                        "default",
+                        "slot_filled",
+                        "outcome",
+                        "counter",
+                        "field"
+                      ]
+                    },
+                    "guardText": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 2000
+                    },
+                    "outcomeStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "counterLimit": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
+                    },
+                    "fieldRef": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "fieldOp": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "is_true",
+                        "is_false",
+                        "equals",
+                        "not_equals",
+                        "in",
+                        "is_present",
+                        "is_absent",
+                        "gt",
+                        "gte",
+                        "lt",
+                        "lte",
+                        "older_than",
+                        "within"
+                      ]
+                    },
+                    "fieldValue": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fieldValues": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 500
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      },
+                      "minItems": 1
+                    },
+                    "fieldUnit": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "days",
+                        "weeks",
+                        "months",
+                        "years"
+                      ]
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "fromStep",
+                    "toRef",
+                    "guardKind",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "default": []
+              },
+              "terminals": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "stableStepId": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    },
+                    "instruction": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "ordinal": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "stableStepId",
+                    "kind",
+                    "ordinal"
+                  ],
+                  "additionalProperties": false
+                },
+                "minItems": 1
+              },
+              "completionExport": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "triggerKinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "complete",
+                        "handoff"
+                      ]
+                    },
+                    "default": []
+                  },
+                  "destinationRef": {
+                    "type": "string",
+                    "maxLength": 300,
+                    "default": ""
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "name",
+              "activation",
+              "steps",
+              "terminals"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "definition"
+        ]
+      },
+      "AgentBundleContextVariable": {
+        "type": "object",
+        "properties": {
+          "variableName": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "pushed",
+              "browser",
+              "resolver"
+            ]
+          },
+          "resolverSkillName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "maxAgeSeconds": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "resolverTimeoutMs": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "surfacing": {
+            "type": "string",
+            "enum": [
+              "always",
+              "on_reference",
+              "operator_only"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "variableName",
+          "source",
+          "resolverSkillName",
+          "maxAgeSeconds",
+          "resolverTimeoutMs",
+          "surfacing",
+          "enabled"
+        ]
+      },
+      "AgentBundleSkill": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "capability": {
+            "type": "string"
+          },
+          "invocationMode": {
+            "type": "string",
+            "enum": [
+              "default_answer",
+              "routine_named",
+              "agent_selectable"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Only the fields a capability marked portable."
+          },
+          "omittedConfigKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter."
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "description": "Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound."
+          }
+        },
+        "required": [
+          "name",
+          "capability",
+          "invocationMode",
+          "enabled",
+          "config",
+          "omittedConfigKeys",
+          "target"
+        ]
+      },
+      "AgentBundleUnresolvedKind": {
+        "type": "string",
+        "enum": [
+          "context_variable_missing",
+          "resolver_skill_missing",
+          "skill_target_unbound",
+          "skill_capability_unknown",
+          "routine_invalid",
+          "document_source_unresolved",
+          "surface_credential_unbound",
+          "mcp_connection_unbound",
+          "asset_not_portable",
+          "skill_config_not_portable",
+          "directive_binding_unbound",
+          "contact_delivery_unbound"
+        ],
+        "description": "Why a bundle element could not be fully applied to the target workspace. Every element is reported\nrather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that\nlooks configured and answers wrong.\n- context_variable_missing: the bundle names a context variable that does not exist in this workspace.\n- resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.\n- skill_target_unbound: the skill's connection target is a credential-bearing workspace row.\n- skill_capability_unknown: no capability with this id is registered in this deployment.\n- routine_invalid: the routine imported as a draft because publish validation rejected it.\n- document_source_unresolved: selected document sources cannot be matched; scope imports empty, not \"all\".\n- surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.\n- mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.\n- asset_not_portable: binary stored outside the database (the logo); not part of the bundle.\n- skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.\n- directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.\n- contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace."
+      },
+      "AgentBundleUnresolvedReference": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/AgentBundleUnresolvedKind"
+          },
+          "element": {
+            "type": "string",
+            "description": "The bundle element the caller must fix, named the way they authored it."
+          },
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "element",
+          "detail"
+        ]
+      },
+      "AgentBundle": {
+        "type": "object",
+        "properties": {
+          "bundleVersion": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "portability": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "portable",
+                "ref",
+                "secret"
+              ]
+            },
+            "description": "Portability of the bundle's own top-level collections, keyed by field path (for example \"agentSkills[].config\")."
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentBundleAgentConfig"
+          },
+          "routines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleRoutine"
+            }
+          },
+          "contextVariables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleContextVariable"
+            }
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleSkill"
+            }
+          }
+        },
+        "required": [
+          "bundleVersion",
+          "portability",
+          "agent",
+          "routines",
+          "contextVariables",
+          "agentSkills"
+        ]
+      },
+      "AgentBundleImportAgentConfig": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "integer"
+          },
+          "portability": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "portable",
+                "ref",
+                "secret"
+              ]
+            },
+            "description": "Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders."
+          },
+          "name": {
+            "type": "string"
+          },
+          "internalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "customInstruction": {
+            "type": "string"
+          },
+          "handoffOnRetrievalMiss": {
+            "type": "boolean"
+          },
+          "contactRequestsEnabled": {
+            "type": "boolean"
+          },
+          "webhookExportsEnabled": {
+            "type": "boolean"
+          },
+          "contactRequestDelivery": {
+            "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+          },
+          "logo": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "bucket": {
+                "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+              },
+              "objectPath": {
+                "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+              },
+              "generation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "bucket",
+              "objectPath",
+              "generation",
+              "mimeType",
+              "filename",
+              "sizeBytes"
+            ],
+            "description": "Metadata only. The image lives in object storage and is not part of the bundle."
+          },
+          "theme": {
+            "type": "object",
+            "properties": {
+              "brand": {
+                "type": "string"
+              },
+              "brandText": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "brand",
+              "brandText",
+              "surface",
+              "text"
+            ]
+          },
+          "branding": {
+            "type": "object",
+            "properties": {
+              "hidePoweredBy": {
+                "type": "boolean"
+              },
+              "privacyPolicyUrl": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "hidePoweredBy",
+              "privacyPolicyUrl"
+            ]
+          },
+          "greetingInstruction": {
+            "type": "string"
+          },
+          "assistantDefaultLocale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "proactiveGreetingEnabled": {
+            "type": "boolean"
+          },
+          "surfaceSettings": {
+            "type": "object",
+            "properties": {
+              "authenticatedChat": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              },
+              "anonymousChat": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "token": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "token"
+                ]
+              },
+              "websiteEmbed": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "token": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "allowedOrigins": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                    }
+                  },
+                  "launcherLabel": {
+                    "type": "string"
+                  },
+                  "launcherPosition": {
+                    "type": "string",
+                    "enum": [
+                      "bottom-right",
+                      "bottom-left"
+                    ]
+                  },
+                  "theme": {
+                    "type": "object",
+                    "properties": {
+                      "brand": {
+                        "type": "string"
+                      },
+                      "brandText": {
+                        "type": "string"
+                      },
+                      "surface": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "brand",
+                      "brandText",
+                      "surface",
+                      "text"
+                    ]
+                  },
+                  "copy": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "expertOverrides": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "token",
+                  "allowedOrigins",
+                  "launcherLabel",
+                  "launcherPosition",
+                  "theme",
+                  "copy",
+                  "expertOverrides"
+                ]
+              },
+              "extensions": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Surface extensions keyed by extension id; shape is owned by the contributing extension."
+              }
+            },
+            "required": [
+              "authenticatedChat",
+              "anonymousChat",
+              "websiteEmbed",
+              "extensions"
+            ]
+          },
+          "skillSettings": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope."
+          },
+          "chatModelOverride": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "provider",
+              "model"
+            ]
+          },
+          "authoredDirectives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleAuthoredDirective"
+            }
+          },
+          "externalSkills": {
+            "$ref": "#/components/schemas/AgentBundleExternalSkills"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "portability",
+          "name",
+          "customInstruction",
+          "contactRequestsEnabled",
+          "webhookExportsEnabled",
+          "contactRequestDelivery",
+          "logo",
+          "theme",
+          "branding",
+          "greetingInstruction",
+          "assistantDefaultLocale",
+          "proactiveGreetingEnabled",
+          "surfaceSettings",
+          "skillSettings",
+          "chatModelOverride",
+          "authoredDirectives",
+          "externalSkills"
+        ],
+        "description": "An agent configuration on any version this deployment reads. Fields introduced after the oldest accepted version are optional; an older bundle that omits them imports with the behaviour that version had. Export always emits the current version, with every field present."
+      },
+      "AgentBundleImportSkill": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "capability": {
+            "type": "string"
+          },
+          "invocationMode": {
+            "type": "string",
+            "enum": [
+              "default_answer",
+              "routine_named",
+              "agent_selectable"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Only the fields a capability marked portable."
+          },
+          "omittedConfigKeys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter."
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "description": "Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound."
+          }
+        },
+        "required": [
+          "name",
+          "capability",
+          "invocationMode",
+          "enabled",
+          "target"
+        ],
+        "description": "A skill as accepted on import. `config` and `omittedConfigKeys` default to empty when absent, so a hand-written bundle need not restate them."
+      },
+      "AgentBundleImportRequest": {
+        "type": "object",
+        "properties": {
+          "bundleVersion": {
+            "type": "integer"
+          },
+          "portability": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "portable",
+                "ref",
+                "secret"
+              ]
+            }
+          },
+          "agent": {
+            "$ref": "#/components/schemas/AgentBundleImportAgentConfig"
+          },
+          "routines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleRoutine"
+            }
+          },
+          "contextVariables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleContextVariable"
+            }
+          },
+          "agentSkills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleImportSkill"
+            }
+          }
+        },
+        "required": [
+          "bundleVersion",
+          "agent"
+        ],
+        "description": "A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. Collections default to empty when omitted."
+      },
+      "AgentBundleImportResponse": {
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentBundleUnresolvedReference"
+            }
+          }
+        },
+        "required": [
+          "agentId",
+          "unresolved"
+        ]
+      },
       "DocumentCreateRequest": {
         "type": "object",
         "properties": {
@@ -27934,6 +29807,121 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/bundle": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Export a portable agent bundle",
+        "description": "Composes the agent's config, routines, context-variable enablements and skills into one portable bundle for import into another workspace.",
+        "operationId": "exportAgentBundle",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent bundle returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBundle"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/bundle": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Import a portable agent bundle as a new agent",
+        "description": "Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.",
+        "operationId": "importAgentBundle",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentBundleImportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created from bundle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentBundleImportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported bundle version or agent schema version",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
             "content": {
               "application/json": {
                 "schema": {

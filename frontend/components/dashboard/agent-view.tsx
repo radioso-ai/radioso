@@ -2,8 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Globe2, RefreshCw, X } from 'lucide-react'
+import { FileJson, Globe2, RefreshCw, X } from 'lucide-react'
 
+import { AgentBundleImportDialog } from '@/components/dashboard/agent-bundle-import-dialog'
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { RoutineHeaderActionsProvider, useRoutineHeaderState } from '@/components/dashboard/shared/routine-header-actions'
@@ -222,6 +223,7 @@ export function AgentView({
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
   const [agentCreationActionDefinitions, setAgentCreationActionDefinitions] = useState<AgentCreationActionDefinition[]>([])
   const [wizardOpen, setWizardOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const agentCreationActions = useMemo(
     () => agentCreationExtensionsEnabled
       ? resolveAgentCreationActions(agentCreationActionDefinitions, {
@@ -402,6 +404,17 @@ export function AgentView({
             {action.label}
           </Button>
         ))}
+        {/* A workspace with no agents is the strongest case for import: there is
+            nothing here yet to move an agent alongside. */}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setImportOpen(true)}
+          data-testid="empty-state-import-bundle"
+        >
+          <FileJson className="mr-2 h-4 w-4" />
+          Import a bundle
+        </Button>
       </div>
     </div>
   ) : (
@@ -439,6 +452,24 @@ export function AgentView({
     </DashboardPage>
   )
 
+  const bundleImport = (
+    <AgentBundleImportDialog
+      open={importOpen}
+      onOpenChange={setImportOpen}
+      onImported={() => { void loadAgents() }}
+      agentSettingsHrefBuilder={(agentId) =>
+        buildDashboardHref(accountId, {
+          section: 'agents',
+          agentId,
+          agentTab: 'behavior',
+          anchor: 'assistant-profile',
+          workspaceId: activeWorkspaceId ?? undefined,
+          workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
+        })
+      }
+    />
+  )
+
   const wizard = WizardDialog ? (
     <WizardDialog
       open={wizardOpen}
@@ -461,6 +492,7 @@ export function AgentView({
       <>
         {renderAgentUnavailablePage('')}
         {wizard}
+        {bundleImport}
       </>
     )
   }
@@ -507,6 +539,11 @@ export function AgentView({
           setSaveState={setSaveState}
         />
         {wizard}
+        {/* Also rendered here, not only in the agent-unavailable branch: a successful
+            import refreshes the agent list, which moves this component out of the
+            zero-agent branch. Rendering the dialog only there would unmount it at the
+            exact moment it has the unresolved report to show. */}
+        {bundleImport}
       </RoutineHeaderActionsProvider>
     </SkillsHeaderActionProvider>
   )

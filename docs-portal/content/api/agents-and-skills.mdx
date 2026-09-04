@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-09-01
+last_updated: 2026-09-04
 ---
 
 # Agents and skills
@@ -263,6 +263,108 @@ Each request carries an `Idempotency-Key` header. Delivery is at-least-once, so 
 
 Radioso sends the request with `POST`, follows redirects only to publicly routable hosts, and applies a short delivery timeout. Point the webhook at a stable public endpoint.
 
+## Move an agent between workspaces
+
+In the dashboard, an agent's Profile page carries **Move this agent → Export bundle**, which downloads the file. To bring one in, open the agent switcher, choose **New agent**, then **Import a bundle**; the dialog shows what the file contains before it creates anything, and reports what needs your attention afterwards. The API below is the same pair of operations.
+
+`GET /api/v1/agents/{agentId}/bundle` reads one agent — its configuration, published routines, context-variable enablements, and named skills — into a single portable document. `POST /api/v1/agents/bundle` reads that document back and creates a new agent from it. Use the pair to back up an agent, promote one from a staging workspace into production, or hand a configured agent to a teammate's workspace.
+
+Export needs `workspace.agents.read`; import needs `workspace.agents.manage`, because it creates an agent.
+
+```bash
+curl -sS https://api.radioso.ai/api/v1/agents/<agent-id>/bundle \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -o support-agent-bundle.json
+```
+
+The bundle looks like this, trimmed:
+
+```json
+{
+  "bundleVersion": 1,
+  "agent": { "schemaVersion": 4, "name": "Support", "customInstruction": "..." },
+  "routines": [
+    {
+      "name": "refund-flow",
+      "version": 3,
+      "definition": {
+        "name": "refund-flow",
+        "steps": [{ "stableStepId": "step_refund", "kind": "tool", "toolRef": "issue_refund", "...": "..." }],
+        "...": "..."
+      }
+    }
+  ],
+  "contextVariables": [
+    { "variableName": "cart", "source": "resolver", "resolverSkillName": "cart_lookup", "enabled": true }
+  ],
+  "agentSkills": [
+    {
+      "name": "cart_lookup",
+      "capability": "mcp_tool",
+      "invocationMode": "agent_selectable",
+      "enabled": true,
+      "config": {},
+      "omittedConfigKeys": [],
+      "target": { "kind": "mcp_connection", "id": { "__ref": "agentSkillTarget" } }
+    }
+  ]
+}
+```
+
+`routines` carries only [routines](/concepts) with `published` status — a draft is unfinished work the source agent isn't running, and superseded or archived versions are history, so neither exports. A routine names its own skills and context variables (`toolRef`, slot bindings) rather than a database id, so nothing in it needs remapping on import. `contextVariables` re-keys each enablement to `variableName` and `resolverSkillName` in place of the ids the source database used. `agent.contactRequestDelivery` is always redacted: its recipients and webhook URL stay in the source workspace, because an imported agent that kept them would quietly route contact requests to the original workspace's people and endpoint. `agentSkills` carries only the config fields the skill's capability marked portable — a webhook URL or delivery recipient stays home — and replaces `target.id`, the workspace connection the skill points at, with a `{ "__ref": "agentSkillTarget" }` placeholder, because that connection is where the credential lives. Each skill also carries `omittedConfigKeys`: the names — never the values — of the settings that stayed behind, so import can tell you exactly what to re-enter.
+
+Move the file wherever you're importing into — a different workspace, a different Radioso deployment — and post it:
+
+```bash
+curl -sS -X POST https://api.radioso.ai/api/v1/agents/bundle \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @support-agent-bundle.json
+```
+
+A successful import returns `201` with a new `agentId` and an `unresolved` array. Read it before treating the agent as ready:
+
+```json
+{
+  "agentId": "b6e21c3e-2f6a-4d1a-9e3c-8f1a2c9a11de",
+  "unresolved": [
+    {
+      "kind": "skill_target_unbound",
+      "element": "skill:cart_lookup",
+      "detail": "Bind \"cart_lookup\" to a mcp_connection in this workspace, then enable it."
+    },
+    {
+      "kind": "context_variable_missing",
+      "element": "contextVariable:cart",
+      "detail": "No context variable named \"cart\" exists in this workspace. Create it, then enable it on the agent."
+    }
+  ]
+}
+```
+
+Each `kind` names one thing to go fix, and where:
+
+- `skill_target_unbound`: the skill's connection — a webhook, an MCP server, a mailbox — holds a credential and stayed in the source workspace. Point the skill at a connection here, then enable it.
+- `skill_capability_unknown`: the bundle names a capability this deployment doesn't register. The skill wasn't created, so anything that called it stays unbound.
+- `context_variable_missing`: no context variable with this name exists in the destination workspace. Create it, then re-enable the enablement on the agent.
+- `resolver_skill_missing`: the enablement's resolver skill isn't on the imported agent — often because that skill itself hit `skill_capability_unknown`. Re-enable the variable once the skill exists.
+- `routine_invalid`: the routine imported as a draft because publish validation rejected it, usually a step calling a skill that didn't come across. Open the routine, fix the step, and publish it by hand.
+- `document_source_unresolved`: the source agent answered from a specific set of documents. Document ids don't carry across workspaces, so the imported agent starts with no sources selected — pick its sources under Knowledge.
+- `surface_credential_unbound`: a chat surface (public chat link, website embed) was on, but its access token stayed in the source workspace. The surface imports off; turn it on to mint a new token.
+- `mcp_connection_unbound`: an external MCP connection, or a skill built on one. Reconnect the server under External skills, re-entering its credential.
+- `asset_not_portable`: the agent's logo lives in object storage, not in the bundle. Re-upload it.
+- `contact_delivery_unbound`: contact requests are on, but the recipient list and webhook stayed in the source workspace — an imported agent must never deliver to another workspace's people. Set a destination under the agent's contact settings.
+- `directive_binding_unbound`: the directive is bound to a skill that did not come across, so it imports switched off rather than being dropped. Rebind it to a skill here, then enable it.
+- `skill_config_not_portable`: the source agent set skill settings whose values stay in their own workspace — a delivery webhook URL, a recipient list, a document-source scope. The `detail` names the exact settings; re-enter them on the imported skill. Where those settings are all a skill has, the skill itself is reported rather than created, and the `detail` says so — create it here and fill in its settings.
+
+Every one of these is a safety default, and the pattern is the same throughout: import never grants an agent more access than you explicitly restore. A skill without its connection imports disabled, not live and broken. A surface without its token imports off, not serving on a token it never had. A source scope that named documents imports with none selected, not defaulted to every document in the new workspace. A routine that can't publish imports as a draft, not dropped, so the steps you wrote are still there to fix once the missing skill exists.
+
+Import reads the bundle from the request body, which is capped at 1 MB like every other Radioso API request. An agent with a very large number of routines can exceed that; split the move by importing the agent first and adding the remaining routines through the routine endpoints.
+
+Both `bundleVersion` and the bundle's `agent.schemaVersion` are checked against what this deployment reads, and the accepted versions are declared rather than inferred: an older `agent.schemaVersion` is accepted only while every field it predates defaults to the behaviour that version had. A bundle on a version this deployment does not read is rejected with `400` rather than partially applied.
+
+Both routes record an audit event — `agent.bundle.exported`, `agent.bundle.imported` — with the agent id and the routine, skill, context-variable, and unresolved-reference counts, never the bundle's contents: a bundle carries the agent's custom instruction and every directive's action text.
+
 ## Read-only skills catalog
 
 The skills catalog is read-only. It helps API, SDK, and assistant clients understand what work is available and which stable contract owns it.
@@ -291,6 +393,8 @@ PUT    /api/v1/agents/{agentId}
 POST   /api/v1/agents/{agentId}/assistant-logo
 DELETE /api/v1/agents/{agentId}/assistant-logo
 POST   /api/v1/agents/{agentId}/default
+GET    /api/v1/agents/{agentId}/bundle
+POST   /api/v1/agents/bundle
 GET    /api/v1/agents/{agentId}/skill-capabilities
 GET    /api/v1/agents/{agentId}/directives
 POST   /api/v1/agents/{agentId}/directives
@@ -322,6 +426,7 @@ GET    /api/v1/skills/{skillName}
 - `401` means the personal or service credential is missing, invalid, expired, or outside the route's accepted credential scope.
 - `404` means the agent or skill name does not exist in the current workspace context.
 - A skill can be listed even when the work is executed through another route. Use `contractReferences` to find the stable execution path.
+- `400` on a bundle import usually means an unsupported `bundleVersion` or `agent.schemaVersion` — re-export the agent from a deployment this one reads.
 
 ## Read next
 

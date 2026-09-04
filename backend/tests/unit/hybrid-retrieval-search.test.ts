@@ -70,7 +70,11 @@ describe("hybrid retrieval search", () => {
     });
   });
 
-  it("does not let a query-relative lexical top hit outrank strong semantic evidence", () => {
+  // A lexical branch returning a single row normalizes that row to 1.0, so the
+  // relative fusion gate cannot reject it however weak its absolute rank. What still
+  // holds is narrower than a gate: it ties the top semantic hit on fused score and
+  // loses the semanticScore tiebreak in compareByFusedScore.
+  it("keeps a lone weak lexical hit behind the top semantic hit on the tiebreak", () => {
     const candidates = new CandidatePreparationService().prepare({
       original: [
         {
@@ -98,9 +102,10 @@ describe("hybrid retrieval search", () => {
       "strong-semantic",
       "junk-lexical",
     ]);
-    expect(candidates.every((candidate) =>
-      (candidate.fusedScore ?? -1) >= 0 && (candidate.fusedScore ?? 2) <= 1,
-    )).toBe(true);
+    // The gate admits it: both are rank 1 in their own branch, so both fuse to the
+    // same score and only the tiebreak separates them.
+    expect(candidates[1].fusedScore).toBe(candidates[0].fusedScore);
+    expect(candidates[1].fusedScore).toBeGreaterThan(0);
   });
 
   it("keeps an explicit bounded rank-up for candidates found by both sources", () => {

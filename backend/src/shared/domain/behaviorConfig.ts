@@ -225,7 +225,14 @@ export const RETRIEVAL_BEHAVIOR = {
   hybrid: {
     lexicalTopK: 20,
     // Absolute ts_rank_cd evidence floor; query-relative lexicalScore cannot satisfy quality gates.
+    // This answers "is there lexical evidence at all?" and is deliberately scale-dependent.
     lexicalMinimumUsefulRankScore: 0.05,
+    // Fusion ranks candidates against each other, so its gate must be query-relative:
+    // lexicalScore is ts_rank_cd / maxRank within one lexical query, so the top hit is
+    // always 1.0 regardless of the query's absolute ts_rank_cd scale. A rare-term query
+    // can score every real match below the absolute floor above; gating fusion on that
+    // floor makes the only on-topic documents unrankable.
+    lexicalFusionMinimumRelativeScore: 0.2,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,

@@ -76,6 +76,7 @@ export const emailCapability: SkillCapabilityDescriptor<"email", "customer_email
       ],
       help: "Choose whether the skill drafts an email or sends it directly.",
       showValueToCopilot: true,
+      portable: true,
     },
   ],
   outcomeVocabulary: customerEmailSkillOutcomes,

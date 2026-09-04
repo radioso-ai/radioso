@@ -473,6 +473,38 @@ describe("DefaultAgentRuntime", () => {
       expect(gateway.calls).toHaveLength(1);
     });
 
+    it("still answers when the caller's own token budget ran out well under the context ceiling", async () => {
+      // A caller that budgets below AGENT_BUDGET_CEILINGS.maxToolResultTokens is out of *its*
+      // allowance, not out of context: the transcript it would resubmit is nowhere near the step
+      // input cap, so the closing call is affordable and the operator gets an answer instead of a
+      // blank card.
+      const costly: AgentTool = {
+        name: "costly",
+        description: "costly",
+        inputSchema: z.object({}),
+        outputSchema: z.object({ text: z.string() }),
+        invoke: async () => ({ text: "measured" }),
+        estimatedResultTokens: () => 900,
+      };
+      const gateway = makeGateway([
+        { say: "", tools: [toolCall("costly", {}, "c1")] },
+        { say: "here is what I measured before running out of budget" },
+      ]);
+
+      const result = await runWith(
+        gateway,
+        [costly],
+        { ...AGENT_BUDGET_DEFAULTS, maxToolResultTokens: 500 },
+        { requireFinalMessage: true },
+      );
+
+      expect(result.terminatedReason).toBe("token_budget_exhausted");
+      expect(result.finalMessage).toBe("here is what I measured before running out of budget");
+      expect(gateway.calls).toHaveLength(2);
+      // The closing call is offered no tools, so it cannot restart the loop it just left.
+      expect(gateway.calls.at(-1)?.toolSchemas).toEqual([]);
+    });
+
     it("keeps a blank turn rather than a hung one when the run is already out of time", async () => {
       // Wall time and cancellation are the two reasons a closing call is wrong: the run is out of
       // budget by definition, so one more model call is the opposite of what the caller asked for.

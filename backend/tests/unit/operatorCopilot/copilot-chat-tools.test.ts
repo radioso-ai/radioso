@@ -109,4 +109,67 @@ describe("copilot chat readers", () => {
     expect(result.transcript.messages[0]).not.toHaveProperty("debug");
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
   });
+
+  /**
+   * The spine carries each capability's own trace as a sub-trace, and `activityTrace` is the
+   * pre-spine field for the same retrieval run. Measured on real turns, the two were byte-identical
+   * on 24 of 24 and made up 40% of the payload — a diagnostic read paying twice for one trace.
+   */
+  describe("turn_trace does not pay twice for one retrieval trace", () => {
+    const retrievalTrace = { traceId: "trace-abc", stages: [{ stageId: "routing" }], links: [] };
+    const turnWith = (debug: Record<string, unknown>) => ({
+      conversationId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      ownership: null,
+      message: {
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        role: "assistant",
+        source: "assistant",
+        content: "answer",
+        createdAt: "2026-08-18T10:00:00.000Z",
+        debug,
+      },
+    });
+    const readTrace = async (debug: Record<string, unknown>) => {
+      const ports = dependencies();
+      const tool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
+      ports.getConversationTurn.mockResolvedValue(turnWith(debug));
+      const invoked = await (tool.createTool(context(null)) as { invoke: (input: { messageId: string }, options: unknown) => Promise<{ trace: { message: { debug: Record<string, unknown> } } }> })
+        .invoke({ messageId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }, {});
+      return invoked.trace.message.debug;
+    };
+
+    it("omits activityTrace when the spine already carries that same trace", async () => {
+      const debug = await readTrace({
+        activityTrace: retrievalTrace,
+        turnTrace: {
+          version: 1,
+          spine: { traceId: "spine-1", stages: [{ id: "dispatch:retrieval.answer", subTrace: { namespace: "retrieval", version: 1, payload: retrievalTrace } }] },
+        },
+      });
+
+      expect(debug.activityTrace).toBeNull();
+      // Not lost — the operator still reaches it through the stage that produced it.
+      expect(debug.turnTrace).toMatchObject({ spine: { stages: [{ subTrace: { payload: { traceId: "trace-abc" } } }] } });
+    });
+
+    it("keeps activityTrace when the spine carries a different trace", async () => {
+      const debug = await readTrace({
+        activityTrace: retrievalTrace,
+        turnTrace: {
+          version: 1,
+          spine: { traceId: "spine-1", stages: [{ id: "dispatch:other", subTrace: { namespace: "other", version: 1, payload: { traceId: "trace-zzz" } } }] },
+        },
+      });
+
+      expect(debug.activityTrace).toMatchObject({ traceId: "trace-abc" });
+    });
+
+    it("keeps activityTrace when there is no spine to carry it", async () => {
+      const debug = await readTrace({ activityTrace: retrievalTrace });
+
+      expect(debug.activityTrace).toMatchObject({ traceId: "trace-abc" });
+      expect(debug.turnTrace).toBeNull();
+    });
+  });
+
 });

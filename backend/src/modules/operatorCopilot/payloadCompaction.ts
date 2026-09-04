@@ -86,21 +86,65 @@ export const withTruncation = <T extends Record<string, unknown>>(
       },
     } as T;
 
+const fitsBudget = <T extends Record<string, unknown>>(
+  result: CompactionResult<T>,
+  charBudget: number,
+): boolean => serializedLength(withTruncation(result.value, result.truncation)) <= charBudget;
+
+/**
+ * How much of each dimension one tightening step keeps.
+ *
+ * Shallow enough that the first profile to fit lands near the budget rather than far under it: the
+ * payloads that reach this search are the large diagnostic ones, where the difference between
+ * landing at half the budget and landing near it is detail an operator asked to see. `Math.floor`
+ * of any ratio below 1 strictly decreases every positive integer, so the search still terminates.
+ */
+const TIGHTENING_RATIO = 0.75;
+
+/** The next profile down, or `null` once nothing is left to tighten. */
+const tightened = (profile: CompactionOptions): CompactionOptions | null =>
+  profile.maxStringChars === 0 && profile.maxArrayItems === 0
+    ? null
+    : {
+        maxStringChars: Math.floor(profile.maxStringChars * TIGHTENING_RATIO),
+        maxArrayItems: Math.floor(profile.maxArrayItems * TIGHTENING_RATIO),
+      };
+
+/**
+ * Compacts a payload to fit `charBudget`, keeping the most generous profile that fits.
+ *
+ * The supplied profiles are where the search starts, not where it stops. A caller's ladder is a
+ * statement about what it would *like* to keep — full strings for a diagnostic spine, say — and a
+ * payload can always arrive with more collections than the ladder's author imagined. Stopping at
+ * the last rung would return a payload over the budget, and the budget's whole purpose is to bound
+ * what a single tool result costs the turn that reads it, so tightening continues past the ladder
+ * until the payload fits.
+ *
+ * Post-condition: the returned value, with its truncation record attached, serializes within
+ * `charBudget` for any budget large enough to hold an empty marked-truncated record.
+ */
 export const compactForBudget = <T extends Record<string, unknown>>(
   payload: T,
   profiles: ReadonlyArray<CompactionOptions>,
   charBudget: number,
   initialTruncation: ReadonlyArray<TruncationEntry> = [],
 ): CompactionResult<T> => {
-  let finalResult = compactRecord(payload, profiles.at(-1)!, initialTruncation);
   for (const profile of profiles) {
     const result = compactRecord(payload, profile, initialTruncation);
-    finalResult = result;
-    if (serializedLength(withTruncation(result.value, result.truncation)) <= charBudget) {
-      return result;
-    }
+    if (fitsBudget(result, charBudget)) return result;
   }
-  return finalResult;
+
+  let profile = tightened(profiles.at(-1) ?? { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS });
+  while (profile) {
+    const result = compactRecord(payload, profile, initialTruncation);
+    if (fitsBudget(result, charBudget)) return result;
+    profile = tightened(profile);
+  }
+
+  // Nothing of this payload's shape survives the budget — its breadth is in its keys rather than
+  // in the strings and arrays compaction can shrink. Say so, rather than returning the oversized
+  // payload the caller asked not to be given.
+  return { value: {} as T, truncation: [{ path: "$", reason: "budget_omitted" }] };
 };
 
 /**

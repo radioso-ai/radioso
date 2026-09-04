@@ -132,6 +132,20 @@ describe("AgentBundleImportService", () => {
     ).rejects.toThrow(/Unsupported agent config version 99/);
   });
 
+  it("still reads the previous agent config version, defaulting the fields it predates", async () => {
+    const { service } = harness();
+
+    // v3 predates internalName and handoffOnRetrievalMiss. Accepting it is explicit,
+    // not incidental: both default to the behaviour a v3 agent actually had.
+    const legacy = agentConfig({ schemaVersion: 3 }) as Record<string, unknown>;
+    delete legacy.internalName;
+    delete legacy.handoffOnRetrievalMiss;
+
+    const result = await service.import("workspace-1", bundle({ agent: legacy as never }));
+
+    expect(result.agentId).toBe("new-agent");
+  });
+
   it("imports a skill whose connection did not travel as disabled, and says so", async () => {
     const { service, created } = harness();
 
@@ -157,7 +171,51 @@ describe("AgentBundleImportService", () => {
     }));
   });
 
-  it("reports a skill the target workspace cannot create, without failing the import", async () => {
+  it("fails the import when a skill cannot be created for a reason that is not its target", async () => {
+    // A duplicate name, invalid config or unsupported invocation mode means this
+    // deployment cannot build the bundle. Reporting it as an unbound target would
+    // name the wrong cause and hand back an agent quietly missing behaviour.
+    const deleted: string[] = [];
+    const service = new AgentBundleImportService({
+      agents: {
+        create: async () => ({ agentId: "new-agent" }),
+        delete: async (_workspaceId, agentId) => { deleted.push(agentId); },
+      },
+      directives: { create: async () => undefined },
+      skills: {
+        hasCapability: () => true,
+        create: async () => { throw new Error('Skill name "crm.create_lead" is already in use'); },
+      },
+      contextVariables: {
+        findVariableIdByName: async () => null,
+        findSkillIdByName: async () => null,
+        enable: async () => undefined,
+      },
+      routines: {
+        createDraft: async () => ({ routineId: "r1" }),
+        publish: async () => ({ published: true as const }),
+      },
+    });
+
+    await expect(
+      service.import("workspace-1", bundle({
+        agentSkills: [{
+          name: "crm.create_lead",
+          capability: "webhook.call",
+          invocationMode: "routine_named",
+          enabled: true,
+          config: {},
+          omittedConfigKeys: [],
+          // No placeheld target: nothing about this failure is a missing connection.
+          target: { kind: "webhook_destination", id: null },
+        }],
+      })),
+    ).rejects.toThrow(/already in use/);
+
+    expect(deleted).toEqual(["new-agent"]);
+  });
+
+  it("reports a skill whose placeheld target the workspace cannot supply, without failing the import", async () => {
     const service = new AgentBundleImportService({
       agents: { create: async () => ({ agentId: "new-agent" }), delete: async () => undefined },
       directives: { create: async () => undefined },
@@ -184,7 +242,7 @@ describe("AgentBundleImportService", () => {
         enabled: true,
         config: {},
         omittedConfigKeys: [],
-        target: { kind: "webhook_destination", id: null },
+        target: { kind: "webhook_destination", id: { __ref: "agentSkillTarget" } },
       }],
     }));
 

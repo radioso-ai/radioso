@@ -7,7 +7,13 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../../schemas/agentChannelSchemas.js";
-import { agentSurfacePositions, authoredDirectiveSurfaceValues } from "../../../../modules/agents/public.js";
+import {
+  AGENT_CONFIG_SCHEMA_VERSION,
+  agentSurfacePositions,
+  authoredDirectiveRouteValues,
+  authoredDirectiveSurfaceValues,
+} from "../../../../modules/agents/public.js";
+import type { AgentConfig } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
   routineDraftAssistRequestSchema,
@@ -673,15 +679,182 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-  const AgentBundleAgentConfigSchema = registry.register(
-    "AgentBundleAgentConfig",
-    z.object({ schemaVersion: z.number().int() }).passthrough().openapi({
-      description:
-        "The agent configuration projection (AgentConfig) at schemaVersion 3, as produced and consumed by the "
-        + "agents module for export/import. Not exhaustively typed here: this is the same versioned projection "
-        + "the agents module already validates internally, carried through unchanged.",
+  const AgentConfigSecretPlaceholderSchema = registry.register(
+    "AgentConfigSecretPlaceholder",
+    z.object({ __redacted: z.literal("secret") }).openapi({
+      description: "Stands in for a credential the export withholds. Only its absence travels, never the value.",
     }),
   );
+
+  const AgentBundleLogoSchema = z.object({
+    bucket: AgentConfigRefPlaceholderSchema,
+    objectPath: AgentConfigRefPlaceholderSchema,
+    generation: AgentConfigRefPlaceholderSchema.nullable(),
+    mimeType: z.string(),
+    filename: z.string(),
+    sizeBytes: z.number().int(),
+  });
+
+  const AgentBundleThemeSchema = z.object({
+    brand: z.string(),
+    brandText: z.string(),
+    surface: z.string(),
+    text: z.string(),
+  });
+
+  const AgentBundleSourceScopeSchema = z.discriminatedUnion("mode", [
+    z.object({ mode: z.literal("all") }),
+    z.object({
+      mode: z.literal("selected"),
+      sourceIds: z.array(AgentConfigRefPlaceholderSchema).openapi({
+        description: "Placeheld: document source ids exist in one workspace only. Import starts with none selected.",
+      }),
+    }),
+  ]);
+
+  const AgentBundleWebsiteEmbedSchema = z.object({
+    enabled: z.boolean(),
+    token: AgentConfigSecretPlaceholderSchema.nullable(),
+    allowedOrigins: z.array(AgentConfigRefPlaceholderSchema),
+    launcherLabel: z.string(),
+    launcherPosition: z.enum(agentSurfacePositions),
+    theme: AgentBundleThemeSchema,
+    copy: z.record(z.record(z.string())),
+    expertOverrides: z.record(z.string()),
+  });
+
+  const AgentBundleAuthoredDirectiveSchema = registry.register(
+    "AgentBundleAuthoredDirective",
+    z.object({
+      name: z.string(),
+      condition: AuthoredDirectiveConditionSchema,
+      action: z.string(),
+      priority: z.number().int().nullable(),
+      requiredCapabilities: z.array(z.string()),
+      dependsOn: z.array(z.string()),
+      excludes: z.array(z.string()),
+      routes: z.array(z.enum(authoredDirectiveRouteValues)),
+      surfaces: z.array(GenerationSurfaceSchema),
+      tags: z.array(z.string()),
+      description: z.string().nullable(),
+      binding: AuthoredDirectiveBindingSchema.nullable(),
+      lifecycle: AuthoredDirectiveLifecycleSchema.nullable(),
+      enabled: z.boolean(),
+      metadata: z.record(z.unknown()),
+    }).openapi({
+      description:
+        "An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and "
+        + "`excludes` — so nothing here needs re-keying on import.",
+    }),
+  );
+
+  const AgentBundleExternalSkillsSchema = registry.register(
+    "AgentBundleExternalSkills",
+    z.object({
+      connections: z.array(z.object({
+        key: z.string().openapi({ description: "Within-bundle linkage key, never a database id." }),
+        displayName: z.string(),
+        serverUrl: z.string(),
+        authMethod: z.string(),
+        credential: AgentConfigSecretPlaceholderSchema.nullable(),
+        oauth: z.object({
+          authorizationEndpoint: z.string(),
+          tokenEndpoint: z.string(),
+          clientId: z.string(),
+          clientSecret: AgentConfigSecretPlaceholderSchema.nullable(),
+          scopes: z.array(z.string()),
+        }).nullable(),
+      })),
+      skills: z.array(z.object({
+        skillName: z.string(),
+        connection: AgentConfigRefPlaceholderSchema,
+        toolName: z.string(),
+        boundParams: z.record(z.unknown()),
+        exposedParams: z.record(z.object({
+          description: z.string().optional(),
+          slotBinding: z.string().optional(),
+        })),
+        declaredOutcomes: z.array(z.string()).nullable(),
+        outcomeMap: z.record(z.string()).nullable(),
+        enabled: z.boolean(),
+      })),
+    }).openapi({
+      description:
+        "Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its "
+        + "credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild.",
+    }),
+  );
+
+  /**
+   * The real shape, not a placeholder. An SDK consumer has to be able to read an
+   * exported agent and construct one to import, and a schema that published only
+   * `schemaVersion` made `{ agent: { schemaVersion: 3 } }` look like a valid bundle
+   * while silently dropping every behaviour-carrying field.
+   */
+  const AgentBundleAgentConfigSchema = registry.register(
+    "AgentBundleAgentConfig",
+    z.object({
+      schemaVersion: z.number().int(),
+      portability: z.record(z.enum(["portable", "ref", "secret"])).openapi({
+        description: "Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders.",
+      }),
+      name: z.string(),
+      internalName: z.string().nullable(),
+      customInstruction: z.string(),
+      handoffOnRetrievalMiss: z.boolean(),
+      contactRequestsEnabled: z.boolean(),
+      webhookExportsEnabled: z.boolean(),
+      contactRequestDelivery: AgentContactRequestDeliverySchema,
+      logo: AgentBundleLogoSchema.nullable().openapi({
+        description: "Metadata only. The image lives in object storage and is not part of the bundle.",
+      }),
+      theme: AgentBundleThemeSchema,
+      branding: z.object({
+        hidePoweredBy: z.boolean(),
+        privacyPolicyUrl: z.string().nullable(),
+      }),
+      greetingInstruction: z.string(),
+      assistantDefaultLocale: z.string().nullable(),
+      proactiveGreetingEnabled: z.boolean(),
+      surfaceSettings: z.object({
+        authenticatedChat: z.object({ enabled: z.boolean() }),
+        anonymousChat: z.object({
+          enabled: z.boolean(),
+          token: AgentConfigSecretPlaceholderSchema.nullable(),
+        }),
+        websiteEmbed: AgentBundleWebsiteEmbedSchema,
+        extensions: z.record(z.unknown()).openapi({
+          description: "Surface extensions keyed by extension id; shape is owned by the contributing extension.",
+        }),
+      }),
+      skillSettings: z.record(z.unknown()).openapi({
+        description:
+          "Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope "
+          + "whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope.",
+      }),
+      chatModelOverride: z.object({
+        provider: z.string(),
+        model: z.string(),
+      }).nullable(),
+      authoredDirectives: z.array(AgentBundleAuthoredDirectiveSchema),
+      externalSkills: AgentBundleExternalSkillsSchema,
+    }).openapi({
+      description:
+        "The agent configuration projection (AgentConfig) at schemaVersion "
+        + `${AGENT_CONFIG_SCHEMA_VERSION}. Fields classified \`ref\` or \`secret\` in \`portability\` carry `
+        + "placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id.",
+    }),
+  );
+
+  /**
+   * Compile-time guard: a field added to `AgentConfig` without being described above
+   * fails the build here rather than silently vanishing from the published contract,
+   * which is how the placeholder version of this schema went unnoticed.
+   */
+  type DescribedAgentConfigKeys = keyof z.infer<typeof AgentBundleAgentConfigSchema>;
+  type UndescribedAgentConfigKeys = Exclude<keyof AgentConfig, DescribedAgentConfigKeys>;
+  const _agentBundleAgentConfigIsExhaustive: [UndescribedAgentConfigKeys] extends [never] ? true : never = true;
+  void _agentBundleAgentConfigIsExhaustive;
 
   const AgentBundleRoutineSchema = registry.register(
     "AgentBundleRoutine",

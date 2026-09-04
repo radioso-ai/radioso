@@ -282,7 +282,7 @@ The bundle looks like this, trimmed:
 ```json
 {
   "bundleVersion": 1,
-  "agent": { "schemaVersion": 3, "name": "Support", "customInstruction": "..." },
+  "agent": { "schemaVersion": 4, "name": "Support", "customInstruction": "..." },
   "routines": [
     {
       "name": "refund-flow",
@@ -360,7 +360,7 @@ Every one of these is a safety default, and the pattern is the same throughout: 
 
 Import reads the bundle from the request body, which is capped at 1 MB like every other Radioso API request. An agent with a very large number of routines can exceed that; split the move by importing the agent first and adding the remaining routines through the routine endpoints.
 
-Both `bundleVersion` and the bundle's `agent.schemaVersion` are checked against what this deployment reads. A bundle exported from a deployment on a newer version of either is rejected with `400` rather than partially applied.
+Both `bundleVersion` and the bundle's `agent.schemaVersion` are checked against what this deployment reads, and the accepted versions are declared rather than inferred: an older `agent.schemaVersion` is accepted only while every field it predates defaults to the behaviour that version had. A bundle on a version this deployment does not read is rejected with `400` rather than partially applied.
 
 Both routes record an audit event — `agent.bundle.exported`, `agent.bundle.imported` — with the agent id and the routine, skill, context-variable, and unresolved-reference counts, never the bundle's contents: a bundle carries the agent's custom instruction and every directive's action text.
 

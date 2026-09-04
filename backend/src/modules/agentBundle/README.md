@@ -24,8 +24,8 @@ validation, uniqueness rules and audit behavior apply unchanged.
 
 ## The bundle composes `AgentConfig`; it does not extend it
 
-`AgentConfig` (in `modules/agents`) stays at `schemaVersion` 3 and stays
-agent-shaped, because its other consumer is eval replay:
+`AgentConfig` (in `modules/agents`) stays agent-shaped and
+keeps its own version, because its other consumer is eval replay:
 `materializeAgentFromConfig` turns an `InternalAgentConfig` back into a
 `ConversationAgent`. Routines, context-variable enablements and agent skills are
 not part of a `ConversationAgent`, so putting them in `AgentConfig` would add
@@ -54,6 +54,16 @@ Skill `config` values travel only for fields a capability marks
 `portable: true` (see `skills/capabilityRegistry.ts`). The default is that a value
 stays home, because `agent_skills.config` is where a webhook URL or a recipient
 list lives.
+
+## Versioning rule
+
+`AGENT_CONFIG_SCHEMA_VERSION` bumps whenever the field set changes, including
+additively. A defaultable new field is harmless to an older reader, but leaving the
+version alone lets two deployments disagree about what one version contains — and
+the import gate would wave through a config whose new fields it silently ignores.
+Readers therefore declare the versions they accept (`SUPPORTED_AGENT_CONFIG_VERSIONS`
+in `importService.ts`) and what an absent field means. An older version stays
+accepted only while every field it lacks defaults to the behaviour that version had.
 
 ## Import rules worth keeping
 

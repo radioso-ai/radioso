@@ -162,21 +162,32 @@ export class AgentBundleImportService {
         continue;
       }
 
-      const needsTarget = skill.target.id !== null;
+      // The export placeheld a connection id, so we are deliberately creating this
+      // skill without the target it had. That is the one create failure this import
+      // expects and can explain.
+      const targetDidNotTravel = skill.target.id !== null;
       try {
         await this.options.skills.create(workspaceId, agentId, {
           ...skill,
           // A skill whose connection did not travel must not answer with a target it
           // does not have. It imports disabled and the operator re-binds it.
-          enabled: skill.enabled && !needsTarget,
+          enabled: skill.enabled && !targetDidNotTravel,
           target: { kind: skill.target.kind, id: null },
         });
         imported.add(skill.name);
       } catch (error) {
-        // A capability that requires a bound target rejects a null one. That is the
-        // expected shape of "this connection did not travel", not a broken import —
-        // aborting here would mean an agent with one webhook skill could never be
-        // imported at all.
+        if (!targetDidNotTravel) {
+          // Anything else — invalid config, a duplicate name, an invocation mode this
+          // deployment does not support, a target-kind mismatch — is a bundle this
+          // deployment cannot build. Reporting it as an unbound target would name the
+          // wrong cause and hand back an agent quietly missing authored behaviour, so
+          // it fails and the compensating delete runs.
+          throw error;
+        }
+        // Still reported rather than fatal: a capability that requires a bound target
+        // rejects the null one we just passed, and aborting would mean an agent with a
+        // single webhook skill could never be imported at all. The underlying message
+        // travels with it so the operator sees the real reason even if it differs.
         unresolved.push({
           kind: "skill_target_unbound",
           element: `skill:${skill.name}`,
@@ -185,7 +196,7 @@ export class AgentBundleImportService {
         continue;
       }
 
-      if (needsTarget) {
+      if (targetDidNotTravel) {
         unresolved.push({
           kind: "skill_target_unbound",
           element: `skill:${skill.name}`,
@@ -296,6 +307,17 @@ export class AgentBundleImportService {
 }
 
 /**
+ * Agent-config versions this deployment can read, declared rather than derived.
+ *
+ * An older version stays on this list only while every field it lacks has a default
+ * that reads as the behaviour that version actually had: v3 predates `internalName`
+ * and `handoffOnRetrievalMiss`, and both default to the stored column defaults, so a
+ * v3 bundle imports as the agent it described. A version whose absent fields would
+ * change behaviour must be dropped from this list, not defaulted.
+ */
+const SUPPORTED_AGENT_CONFIG_VERSIONS: readonly number[] = [3, AGENT_CONFIG_SCHEMA_VERSION];
+
+/**
  * Versions are declared and checked, never guessed. A bundle written against a
  * future schema is rejected rather than partially understood.
  */
@@ -305,9 +327,9 @@ const assertSupportedVersions = (bundle: AgentBundle): void => {
       `Unsupported bundle version ${String(bundle.bundleVersion)}; this deployment reads version ${AGENT_BUNDLE_SCHEMA_VERSION}.`,
     );
   }
-  if (bundle.agent?.schemaVersion !== AGENT_CONFIG_SCHEMA_VERSION) {
+  if (!SUPPORTED_AGENT_CONFIG_VERSIONS.includes(bundle.agent?.schemaVersion as number)) {
     throw badRequest(
-      `Unsupported agent config version ${String(bundle.agent?.schemaVersion)}; this deployment reads version ${AGENT_CONFIG_SCHEMA_VERSION}.`,
+      `Unsupported agent config version ${String(bundle.agent?.schemaVersion)}; this deployment reads ${SUPPORTED_AGENT_CONFIG_VERSIONS.join(", ")}.`,
     );
   }
 };

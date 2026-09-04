@@ -53,6 +53,9 @@ export interface OpenApiSchemaCatalog {
   AgentContextVariableEnablementResponseSchema: z.ZodTypeAny;
   AgentContextVariableParamsSchema: RouteParameterSchema;
   AgentConfigRefPlaceholderSchema: z.ZodTypeAny;
+  AgentConfigSecretPlaceholderSchema: z.ZodTypeAny;
+  AgentBundleAuthoredDirectiveSchema: z.ZodTypeAny;
+  AgentBundleExternalSkillsSchema: z.ZodTypeAny;
   AgentBundleAgentConfigSchema: z.ZodTypeAny;
   AgentBundleRoutineSchema: z.ZodTypeAny;
   AgentBundleContextVariableSchema: z.ZodTypeAny;

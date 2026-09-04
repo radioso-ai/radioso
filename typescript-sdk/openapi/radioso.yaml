@@ -4881,14 +4881,459 @@ components:
       required:
         - __ref
       description: A workspace-scoped reference that does not travel between workspaces (for example a credential-bearing connection). The bundle carries only the kind so the caller can see what did not come along; `key` links the placeholder back to another entity exported in the same bundle when re-binding on import is possible.
+    AgentConfigSecretPlaceholder:
+      type: object
+      properties:
+        __redacted:
+          type: string
+          enum:
+            - secret
+      required:
+        - __redacted
+      description: Stands in for a credential the export withholds. Only its absence travels, never the value.
+    AgentBundleAuthoredDirective:
+      type: object
+      properties:
+        name:
+          type: string
+        condition:
+          $ref: "#/components/schemas/AuthoredDirectiveCondition"
+        action:
+          type: string
+        priority:
+          type:
+            - integer
+            - "null"
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+        dependsOn:
+          type: array
+          items:
+            type: string
+        excludes:
+          type: array
+          items:
+            type: string
+        routes:
+          type: array
+          items:
+            type: string
+            enum:
+              - retrieval
+              - direct
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationSurface"
+        tags:
+          type: array
+          items:
+            type: string
+        description:
+          type:
+            - string
+            - "null"
+        binding:
+          allOf:
+            - $ref: "#/components/schemas/AuthoredDirectiveBinding"
+            - type:
+                - object
+                - "null"
+        lifecycle:
+          allOf:
+            - $ref: "#/components/schemas/AuthoredDirectiveLifecycle"
+            - oneOf:
+                - type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                        - repeatable
+                  required:
+                    - kind
+                  additionalProperties: false
+                - type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                        - once_per_conversation
+                  required:
+                    - kind
+                  additionalProperties: false
+                - type: object
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                        - cooldown
+                    turns:
+                      type: integer
+                      minimum: 1
+                      maximum: 1000
+                  required:
+                    - kind
+                    - turns
+                  additionalProperties: false
+                - type: "null"
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: {}
+      required:
+        - name
+        - condition
+        - action
+        - priority
+        - requiredCapabilities
+        - dependsOn
+        - excludes
+        - routes
+        - surfaces
+        - tags
+        - description
+        - binding
+        - lifecycle
+        - enabled
+        - metadata
+      description: An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and `excludes` — so nothing here needs re-keying on import.
+    AgentBundleExternalSkills:
+      type: object
+      properties:
+        connections:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                description: Within-bundle linkage key, never a database id.
+              displayName:
+                type: string
+              serverUrl:
+                type: string
+              authMethod:
+                type: string
+              credential:
+                allOf:
+                  - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                  - type:
+                      - object
+                      - "null"
+              oauth:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  authorizationEndpoint:
+                    type: string
+                  tokenEndpoint:
+                    type: string
+                  clientId:
+                    type: string
+                  clientSecret:
+                    allOf:
+                      - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                      - type:
+                          - object
+                          - "null"
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - authorizationEndpoint
+                  - tokenEndpoint
+                  - clientId
+                  - clientSecret
+                  - scopes
+            required:
+              - key
+              - displayName
+              - serverUrl
+              - authMethod
+              - credential
+              - oauth
+        skills:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+              connection:
+                $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+              toolName:
+                type: string
+              boundParams:
+                type: object
+                additionalProperties: {}
+              exposedParams:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    description:
+                      type: string
+                    slotBinding:
+                      type: string
+              declaredOutcomes:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type: string
+              outcomeMap:
+                type:
+                  - object
+                  - "null"
+                additionalProperties:
+                  type: string
+              enabled:
+                type: boolean
+            required:
+              - skillName
+              - connection
+              - toolName
+              - boundParams
+              - exposedParams
+              - declaredOutcomes
+              - outcomeMap
+              - enabled
+      required:
+        - connections
+        - skills
+      description: "Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild."
     AgentBundleAgentConfig:
       type: object
       properties:
         schemaVersion:
           type: integer
+        portability:
+          type: object
+          additionalProperties:
+            type: string
+            enum:
+              - portable
+              - ref
+              - secret
+          description: Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders.
+        name:
+          type: string
+        internalName:
+          type:
+            - string
+            - "null"
+        customInstruction:
+          type: string
+        handoffOnRetrievalMiss:
+          type: boolean
+        contactRequestsEnabled:
+          type: boolean
+        webhookExportsEnabled:
+          type: boolean
+        contactRequestDelivery:
+          $ref: "#/components/schemas/AgentContactRequestDelivery"
+        logo:
+          type:
+            - object
+            - "null"
+          properties:
+            bucket:
+              $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+            objectPath:
+              $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+            generation:
+              allOf:
+                - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                - type:
+                    - object
+                    - "null"
+            mimeType:
+              type: string
+            filename:
+              type: string
+            sizeBytes:
+              type: integer
+          required:
+            - bucket
+            - objectPath
+            - generation
+            - mimeType
+            - filename
+            - sizeBytes
+          description: Metadata only. The image lives in object storage and is not part of the bundle.
+        theme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
+        greetingInstruction:
+          type: string
+        assistantDefaultLocale:
+          type:
+            - string
+            - "null"
+        proactiveGreetingEnabled:
+          type: boolean
+        surfaceSettings:
+          type: object
+          properties:
+            authenticatedChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required:
+                - enabled
+            anonymousChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                token:
+                  allOf:
+                    - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                    - type:
+                        - object
+                        - "null"
+              required:
+                - enabled
+                - token
+            websiteEmbed:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                token:
+                  allOf:
+                    - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                    - type:
+                        - object
+                        - "null"
+                allowedOrigins:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                launcherLabel:
+                  type: string
+                launcherPosition:
+                  type: string
+                  enum: *a14
+                theme:
+                  type: object
+                  properties:
+                    brand:
+                      type: string
+                    brandText:
+                      type: string
+                    surface:
+                      type: string
+                    text:
+                      type: string
+                  required:
+                    - brand
+                    - brandText
+                    - surface
+                    - text
+                copy:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                expertOverrides:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required:
+                - enabled
+                - token
+                - allowedOrigins
+                - launcherLabel
+                - launcherPosition
+                - theme
+                - copy
+                - expertOverrides
+            extensions:
+              type: object
+              additionalProperties: {}
+              description: Surface extensions keyed by extension id; shape is owned by the contributing extension.
+          required:
+            - authenticatedChat
+            - anonymousChat
+            - websiteEmbed
+            - extensions
+        skillSettings:
+          type: object
+          additionalProperties: {}
+          description: Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope.
+        chatModelOverride:
+          type:
+            - object
+            - "null"
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+          required:
+            - provider
+            - model
+        authoredDirectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleAuthoredDirective"
+        externalSkills:
+          $ref: "#/components/schemas/AgentBundleExternalSkills"
       required:
         - schemaVersion
-      description: "The agent configuration projection (AgentConfig) at schemaVersion 3, as produced and consumed by the agents module for export/import. Not exhaustively typed here: this is the same versioned projection the agents module already validates internally, carried through unchanged."
+        - portability
+        - name
+        - internalName
+        - customInstruction
+        - handoffOnRetrievalMiss
+        - contactRequestsEnabled
+        - webhookExportsEnabled
+        - contactRequestDelivery
+        - logo
+        - theme
+        - branding
+        - greetingInstruction
+        - assistantDefaultLocale
+        - proactiveGreetingEnabled
+        - surfaceSettings
+        - skillSettings
+        - chatModelOverride
+        - authoredDirectives
+        - externalSkills
+      description: The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id.
     AgentBundleRoutine:
       type: object
       properties:

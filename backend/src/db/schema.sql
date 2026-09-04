@@ -316,6 +316,33 @@ $$;
 
 
 --
+-- Name: enforce_copilot_replay_evidence_origin(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_copilot_replay_evidence_origin() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  proposal_conversation_id UUID;
+  proposal_invocation_id UUID;
+BEGIN
+  IF NEW.proposal_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  SELECT conversation_id, operator_mcp_invocation_id
+    INTO proposal_conversation_id, proposal_invocation_id
+    FROM copilot_proposals
+    WHERE id = NEW.proposal_id;
+  IF NOT FOUND OR proposal_conversation_id IS DISTINCT FROM NEW.conversation_id
+    OR proposal_invocation_id IS DISTINCT FROM NEW.operator_mcp_invocation_id THEN
+    RAISE EXCEPTION 'copilot replay evidence origin must match proposal origin';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: enforce_published_routine_completion_export_destination(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1835,7 +1862,7 @@ CREATE TABLE public.copilot_proposals (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     operator_user_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
+    conversation_id uuid,
     message_id uuid,
     target_type text NOT NULL,
     target_ref jsonb NOT NULL,
@@ -1848,6 +1875,9 @@ CREATE TABLE public.copilot_proposals (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     evidence jsonb,
+    operator_mcp_invocation_id uuid,
+    CONSTRAINT copilot_proposals_exactly_one_origin_check CHECK (((conversation_id IS NOT NULL) <> (operator_mcp_invocation_id IS NOT NULL))),
+    CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
     CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'ingestion_settings'::text, 'website_crawl'::text])))
 );
@@ -1861,7 +1891,7 @@ CREATE TABLE public.copilot_replay_evidence (
     id uuid NOT NULL,
     workspace_id uuid NOT NULL,
     operator_user_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
+    conversation_id uuid,
     agent_id uuid NOT NULL,
     case_id uuid NOT NULL,
     case_name text NOT NULL,
@@ -1872,6 +1902,9 @@ CREATE TABLE public.copilot_replay_evidence (
     overrides jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     directives_excluded jsonb DEFAULT '[]'::jsonb NOT NULL,
+    operator_mcp_invocation_id uuid,
+    proposal_id uuid,
+    CONSTRAINT copilot_replay_evidence_exactly_one_origin_check CHECK (((conversation_id IS NOT NULL) <> (operator_mcp_invocation_id IS NOT NULL))),
     CONSTRAINT copilot_replay_evidence_recorded_status_check CHECK ((recorded_status = ANY (ARRAY['pending'::text, 'passing'::text, 'failing'::text, 'error'::text]))),
     CONSTRAINT copilot_replay_evidence_verdict_check CHECK ((verdict = ANY (ARRAY['pass'::text, 'fail'::text, 'error'::text, 'recorded'::text])))
 );
@@ -2323,6 +2356,244 @@ CREATE TABLE public.messages (
     CONSTRAINT messages_grounding_complete_check CHECK ((((grounding_verdict IS NULL) AND (grounding_claim_count IS NULL) AND (grounding_sourced_claim_count IS NULL) AND (grounding_unsourced_claim_count IS NULL) AND (grounding_invalid_source_count IS NULL)) OR ((grounding_verdict IS NOT NULL) AND (grounding_claim_count IS NOT NULL) AND (grounding_sourced_claim_count IS NOT NULL) AND (grounding_unsourced_claim_count IS NOT NULL) AND (grounding_invalid_source_count IS NOT NULL)))),
     CONSTRAINT messages_grounding_counts_check CHECK (((grounding_claim_count IS NULL) OR ((grounding_claim_count >= 0) AND (grounding_sourced_claim_count >= 0) AND (grounding_unsourced_claim_count >= 0) AND (grounding_invalid_source_count >= 0) AND ((grounding_sourced_claim_count + grounding_unsourced_claim_count) = grounding_claim_count)))),
     CONSTRAINT messages_grounding_verdict_check CHECK (((grounding_verdict IS NULL) OR (grounding_verdict = ANY (ARRAY['grounded'::text, 'degraded'::text, 'no_support'::text]))))
+);
+
+
+--
+-- Name: operator_mcp_access_credentials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_access_credentials (
+    id uuid NOT NULL,
+    grant_id uuid NOT NULL,
+    token_digest text NOT NULL,
+    issued_grant_version bigint NOT NULL,
+    issued_client_version bigint NOT NULL,
+    issued_client_metadata_snapshot_id uuid NOT NULL,
+    issued_credential_epoch numeric(39,0) NOT NULL,
+    issued_tool_scopes text[] NOT NULL,
+    issued_offline_access boolean NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone,
+    CONSTRAINT operator_mcp_access_credentials_issued_client_version_check CHECK ((issued_client_version > 0)),
+    CONSTRAINT operator_mcp_access_credentials_issued_credential_epoch_check CHECK ((issued_credential_epoch > (0)::numeric)),
+    CONSTRAINT operator_mcp_access_credentials_issued_grant_version_check CHECK ((issued_grant_version > 0)),
+    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
+    CONSTRAINT operator_mcp_access_credentials_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text]))
+);
+
+
+--
+-- Name: operator_mcp_authorization_transactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_authorization_transactions (
+    id uuid NOT NULL,
+    client_id uuid NOT NULL,
+    client_metadata_snapshot_id uuid NOT NULL,
+    client_metadata_digest text NOT NULL,
+    redirect_uri text NOT NULL,
+    state text NOT NULL,
+    code_challenge text NOT NULL,
+    resource text NOT NULL,
+    requested_tool_scopes text[] NOT NULL,
+    requested_offline_access boolean DEFAULT false NOT NULL,
+    account_id uuid,
+    user_id uuid,
+    session_id uuid,
+    workspace_id uuid,
+    membership_id uuid,
+    approved_tool_scopes text[],
+    approved_offline_access boolean,
+    status text DEFAULT 'pending'::text NOT NULL,
+    authorization_code_digest text,
+    expires_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    consumed_at timestamp with time zone,
+    CONSTRAINT operator_mcp_authorization_transac_requested_tool_scopes_check1 CHECK ((requested_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_authorization_transact_requested_tool_scopes_check CHECK (((cardinality(requested_tool_scopes) >= 1) AND (cardinality(requested_tool_scopes) <= 4))),
+    CONSTRAINT operator_mcp_authorization_transactions_check CHECK (((approved_tool_scopes IS NULL) OR (((cardinality(approved_tool_scopes) >= 1) AND (cardinality(approved_tool_scopes) <= 4)) AND (approved_tool_scopes <@ requested_tool_scopes)))),
+    CONSTRAINT operator_mcp_authorization_transactions_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'denied'::text, 'consumed'::text, 'expired'::text])))
+);
+
+
+--
+-- Name: operator_mcp_client_metadata_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_client_metadata_snapshots (
+    id uuid NOT NULL,
+    client_id uuid NOT NULL,
+    client_version bigint NOT NULL,
+    metadata_digest text NOT NULL,
+    normalized_metadata jsonb NOT NULL,
+    source text NOT NULL,
+    validated_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operator_mcp_client_metadata_snapshot_normalized_metadata_check CHECK ((jsonb_typeof(normalized_metadata) = 'object'::text)),
+    CONSTRAINT operator_mcp_client_metadata_snapshots_client_version_check CHECK ((client_version > 0)),
+    CONSTRAINT operator_mcp_client_metadata_snapshots_source_check CHECK ((source = ANY (ARRAY['metadata_document'::text, 'preregistered'::text, 'compatibility'::text])))
+);
+
+
+--
+-- Name: operator_mcp_clients; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_clients (
+    id uuid NOT NULL,
+    client_id text NOT NULL,
+    registration_method text NOT NULL,
+    application_type text NOT NULL,
+    display_name text NOT NULL,
+    client_uri text,
+    redirect_uris jsonb NOT NULL,
+    token_endpoint_auth_method text DEFAULT 'none'::text NOT NULL,
+    metadata_digest text NOT NULL,
+    version bigint DEFAULT 1 NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    expires_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    revocation_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operator_mcp_clients_application_type_check CHECK ((application_type = ANY (ARRAY['web'::text, 'native'::text]))),
+    CONSTRAINT operator_mcp_clients_display_name_check CHECK ((btrim(display_name) <> ''::text)),
+    CONSTRAINT operator_mcp_clients_redirect_uris_check CHECK ((jsonb_typeof(redirect_uris) = 'array'::text)),
+    CONSTRAINT operator_mcp_clients_registration_method_check CHECK ((registration_method = ANY (ARRAY['metadata_document'::text, 'preregistered'::text, 'dynamic'::text]))),
+    CONSTRAINT operator_mcp_clients_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'expired'::text]))),
+    CONSTRAINT operator_mcp_clients_token_endpoint_auth_method_check CHECK ((token_endpoint_auth_method = 'none'::text)),
+    CONSTRAINT operator_mcp_clients_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: operator_mcp_deployment_credential_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_deployment_credential_state (
+    resource text NOT NULL,
+    credential_epoch numeric(39,0) NOT NULL,
+    key_fingerprint text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operator_mcp_deployment_credential_state_credential_epoch_check CHECK ((credential_epoch > (0)::numeric))
+);
+
+
+--
+-- Name: operator_mcp_grants; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_grants (
+    id uuid NOT NULL,
+    client_id uuid NOT NULL,
+    client_version bigint NOT NULL,
+    client_metadata_snapshot_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    membership_id uuid NOT NULL,
+    resource text NOT NULL,
+    tool_scopes text[] NOT NULL,
+    offline_access boolean DEFAULT false NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    version bigint DEFAULT 1 NOT NULL,
+    credential_epoch numeric(39,0) NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    revoked_reason text,
+    CONSTRAINT operator_mcp_grants_client_version_check CHECK ((client_version > 0)),
+    CONSTRAINT operator_mcp_grants_credential_epoch_check CHECK ((credential_epoch > (0)::numeric)),
+    CONSTRAINT operator_mcp_grants_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'superseded'::text, 'expired'::text]))),
+    CONSTRAINT operator_mcp_grants_tool_scopes_check CHECK (((cardinality(tool_scopes) >= 1) AND (cardinality(tool_scopes) <= 4))),
+    CONSTRAINT operator_mcp_grants_tool_scopes_check1 CHECK ((tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_grants_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: operator_mcp_invocations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_invocations (
+    id uuid NOT NULL,
+    credential_id uuid NOT NULL,
+    grant_id uuid NOT NULL,
+    grant_version bigint NOT NULL,
+    account_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    client_id uuid NOT NULL,
+    method text NOT NULL,
+    descriptor_name text,
+    shape text,
+    operation_id text,
+    input_digest text NOT NULL,
+    verification_cost integer DEFAULT 0 NOT NULL,
+    budget_reserved_at timestamp with time zone,
+    proof_nonce_digest text NOT NULL,
+    proof_consumed_at timestamp with time zone,
+    status text DEFAULT 'admitted'::text NOT NULL,
+    safe_outcome_code text,
+    result_reference text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    retained_until timestamp with time zone NOT NULL,
+    CONSTRAINT operator_mcp_invocations_grant_version_check CHECK ((grant_version > 0)),
+    CONSTRAINT operator_mcp_invocations_method_check CHECK ((method = ANY (ARRAY['ping'::text, 'tools/list'::text, 'tools/call'::text]))),
+    CONSTRAINT operator_mcp_invocations_shape_check CHECK (((shape IS NULL) OR (shape = ANY (ARRAY['read'::text, 'probe'::text, 'act'::text, 'propose'::text])))),
+    CONSTRAINT operator_mcp_invocations_status_check CHECK ((status = ANY (ARRAY['admitted'::text, 'running'::text, 'completed'::text, 'refused'::text, 'failed'::text]))),
+    CONSTRAINT operator_mcp_invocations_verification_cost_check CHECK (((verification_cost >= 0) AND (verification_cost <= 6)))
+);
+
+
+--
+-- Name: operator_mcp_refresh_generations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_refresh_generations (
+    lineage_id uuid NOT NULL,
+    generation bigint NOT NULL,
+    token_digest text NOT NULL,
+    issued_tool_scopes text[] NOT NULL,
+    consumed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operator_mcp_refresh_generations_generation_check CHECK ((generation > 0)),
+    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
+    CONSTRAINT operator_mcp_refresh_generations_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text]))
+);
+
+
+--
+-- Name: operator_mcp_refresh_lineages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operator_mcp_refresh_lineages (
+    id uuid NOT NULL,
+    grant_id uuid NOT NULL,
+    client_version bigint NOT NULL,
+    client_metadata_snapshot_id uuid NOT NULL,
+    credential_epoch numeric(39,0) NOT NULL,
+    status text DEFAULT 'active'::text NOT NULL,
+    current_generation bigint DEFAULT 1 NOT NULL,
+    issued_tool_scopes text[] NOT NULL,
+    offline_access boolean NOT NULL,
+    idle_expires_at timestamp with time zone NOT NULL,
+    absolute_expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    revoked_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT operator_mcp_refresh_lineages_client_version_check CHECK ((client_version > 0)),
+    CONSTRAINT operator_mcp_refresh_lineages_credential_epoch_check CHECK ((credential_epoch > (0)::numeric)),
+    CONSTRAINT operator_mcp_refresh_lineages_current_generation_check CHECK ((current_generation > 0)),
+    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_check CHECK (((cardinality(issued_tool_scopes) >= 1) AND (cardinality(issued_tool_scopes) <= 4))),
+    CONSTRAINT operator_mcp_refresh_lineages_issued_tool_scopes_check1 CHECK ((issued_tool_scopes <@ ARRAY['operator:read'::text, 'operator:probe'::text, 'operator:act'::text, 'operator:propose'::text])),
+    CONSTRAINT operator_mcp_refresh_lineages_status_check CHECK ((status = ANY (ARRAY['active'::text, 'revoked'::text, 'expired'::text])))
 );
 
 
@@ -2795,7 +3066,8 @@ CREATE TABLE public.users (
     password_hash text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    email_verified_at timestamp with time zone
+    email_verified_at timestamp with time zone,
+    disabled_at timestamp with time zone
 );
 
 
@@ -4275,6 +4547,126 @@ ALTER TABLE ONLY public.messages
 
 
 --
+-- Name: operator_mcp_access_credentials operator_mcp_access_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_access_credentials
+    ADD CONSTRAINT operator_mcp_access_credentials_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operator_mcp_access_credentials operator_mcp_access_credentials_token_digest_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_access_credentials
+    ADD CONSTRAINT operator_mcp_access_credentials_token_digest_key UNIQUE (token_digest);
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transa_authorization_code_digest_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transa_authorization_code_digest_key UNIQUE (authorization_code_digest);
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operator_mcp_client_metadata_snapshots operator_mcp_client_metadata__client_id_client_version_meta_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_client_metadata_snapshots
+    ADD CONSTRAINT operator_mcp_client_metadata__client_id_client_version_meta_key UNIQUE (client_id, client_version, metadata_digest);
+
+
+--
+-- Name: operator_mcp_client_metadata_snapshots operator_mcp_client_metadata_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_client_metadata_snapshots
+    ADD CONSTRAINT operator_mcp_client_metadata_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operator_mcp_clients operator_mcp_clients_client_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_clients
+    ADD CONSTRAINT operator_mcp_clients_client_id_key UNIQUE (client_id);
+
+
+--
+-- Name: operator_mcp_clients operator_mcp_clients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_clients
+    ADD CONSTRAINT operator_mcp_clients_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operator_mcp_deployment_credential_state operator_mcp_deployment_credential_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_deployment_credential_state
+    ADD CONSTRAINT operator_mcp_deployment_credential_state_pkey PRIMARY KEY (resource);
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_proof_nonce_digest_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_proof_nonce_digest_key UNIQUE (proof_nonce_digest);
+
+
+--
+-- Name: operator_mcp_refresh_generations operator_mcp_refresh_generations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_refresh_generations
+    ADD CONSTRAINT operator_mcp_refresh_generations_pkey PRIMARY KEY (lineage_id, generation);
+
+
+--
+-- Name: operator_mcp_refresh_generations operator_mcp_refresh_generations_token_digest_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_refresh_generations
+    ADD CONSTRAINT operator_mcp_refresh_generations_token_digest_key UNIQUE (token_digest);
+
+
+--
+-- Name: operator_mcp_refresh_lineages operator_mcp_refresh_lineages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_refresh_lineages
+    ADD CONSTRAINT operator_mcp_refresh_lineages_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: password_reset_tokens password_reset_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5643,6 +6035,13 @@ CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals 
 
 
 --
+-- Name: copilot_proposals_operator_mcp_invocation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_operator_mcp_invocation_idx ON public.copilot_proposals USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
+
+
+--
 -- Name: copilot_replay_evidence_conversation_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5654,6 +6053,13 @@ CREATE INDEX copilot_replay_evidence_conversation_idx ON public.copilot_replay_e
 --
 
 CREATE INDEX copilot_replay_evidence_operator_created_idx ON public.copilot_replay_evidence USING btree (workspace_id, operator_user_id, created_at DESC);
+
+
+--
+-- Name: copilot_replay_evidence_operator_mcp_invocation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_replay_evidence_operator_mcp_invocation_idx ON public.copilot_replay_evidence USING btree (operator_mcp_invocation_id) WHERE (operator_mcp_invocation_id IS NOT NULL);
 
 
 --
@@ -6564,6 +6970,48 @@ CREATE INDEX messages_workspace_role_created_id_idx ON public.messages USING btr
 --
 
 CREATE INDEX messages_workspace_skill_turn_idx ON public.messages USING btree (workspace_id, skill_name, skill_outcome, skill_status, created_at DESC);
+
+
+--
+-- Name: operator_mcp_access_credentials_expiry_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX operator_mcp_access_credentials_expiry_idx ON public.operator_mcp_access_credentials USING btree (expires_at, id);
+
+
+--
+-- Name: operator_mcp_grants_active_identity_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX operator_mcp_grants_active_identity_idx ON public.operator_mcp_grants USING btree (user_id, client_id, workspace_id, resource) WHERE (status = 'active'::text);
+
+
+--
+-- Name: operator_mcp_grants_workspace_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX operator_mcp_grants_workspace_created_idx ON public.operator_mcp_grants USING btree (workspace_id, created_at DESC, id DESC);
+
+
+--
+-- Name: operator_mcp_invocations_budget_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX operator_mcp_invocations_budget_idx ON public.operator_mcp_invocations USING btree (grant_id, budget_reserved_at) WHERE (budget_reserved_at IS NOT NULL);
+
+
+--
+-- Name: operator_mcp_invocations_operation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX operator_mcp_invocations_operation_idx ON public.operator_mcp_invocations USING btree (grant_id, operation_id) WHERE (operation_id IS NOT NULL);
+
+
+--
+-- Name: operator_mcp_transactions_expiry_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX operator_mcp_transactions_expiry_idx ON public.operator_mcp_authorization_transactions USING btree (expires_at, id);
 
 
 --
@@ -7764,6 +8212,13 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p9_wor
 
 
 --
+-- Name: copilot_replay_evidence copilot_replay_evidence_origin_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER copilot_replay_evidence_origin_guard BEFORE INSERT OR UPDATE OF proposal_id, conversation_id, operator_mcp_invocation_id ON public.copilot_replay_evidence FOR EACH ROW EXECUTE FUNCTION public.enforce_copilot_replay_evidence_origin();
+
+
+--
 -- Name: embedding_spaces embedding_spaces_identity_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8299,6 +8754,14 @@ ALTER TABLE ONLY public.copilot_proposals
 
 
 --
+-- Name: copilot_proposals copilot_proposals_operator_mcp_invocation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_operator_mcp_invocation_id_fkey FOREIGN KEY (operator_mcp_invocation_id) REFERENCES public.operator_mcp_invocations(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: copilot_proposals copilot_proposals_operator_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8339,11 +8802,27 @@ ALTER TABLE ONLY public.copilot_replay_evidence
 
 
 --
+-- Name: copilot_replay_evidence copilot_replay_evidence_operator_mcp_invocation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_operator_mcp_invocation_id_fkey FOREIGN KEY (operator_mcp_invocation_id) REFERENCES public.operator_mcp_invocations(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: copilot_replay_evidence copilot_replay_evidence_operator_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.copilot_replay_evidence
     ADD CONSTRAINT copilot_replay_evidence_operator_user_id_fkey FOREIGN KEY (operator_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_replay_evidence copilot_replay_evidence_proposal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_replay_evidence
+    ADD CONSTRAINT copilot_replay_evidence_proposal_id_fkey FOREIGN KEY (proposal_id) REFERENCES public.copilot_proposals(id) ON DELETE CASCADE;
 
 
 --
@@ -8688,6 +9167,214 @@ ALTER TABLE ONLY public.messages
 
 ALTER TABLE ONLY public.messages
     ADD CONSTRAINT messages_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_access_credentials operator_mcp_access_credentia_issued_client_metadata_snaps_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_access_credentials
+    ADD CONSTRAINT operator_mcp_access_credentia_issued_client_metadata_snaps_fkey FOREIGN KEY (issued_client_metadata_snapshot_id) REFERENCES public.operator_mcp_client_metadata_snapshots(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_access_credentials operator_mcp_access_credentials_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_access_credentials
+    ADD CONSTRAINT operator_mcp_access_credentials_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.operator_mcp_grants(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_tra_client_metadata_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_tra_client_metadata_snapshot_id_fkey FOREIGN KEY (client_metadata_snapshot_id) REFERENCES public.operator_mcp_client_metadata_snapshots(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.operator_mcp_clients(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_membership_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_membership_id_fkey FOREIGN KEY (membership_id) REFERENCES public.account_memberships(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.sessions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_authorization_transactions operator_mcp_authorization_transactions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_authorization_transactions
+    ADD CONSTRAINT operator_mcp_authorization_transactions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_client_metadata_snapshots operator_mcp_client_metadata_snapshots_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_client_metadata_snapshots
+    ADD CONSTRAINT operator_mcp_client_metadata_snapshots_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.operator_mcp_clients(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.operator_mcp_clients(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_client_metadata_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_client_metadata_snapshot_id_fkey FOREIGN KEY (client_metadata_snapshot_id) REFERENCES public.operator_mcp_client_metadata_snapshots(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_workspace_id_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_workspace_id_account_id_fkey FOREIGN KEY (workspace_id, account_id) REFERENCES public.workspaces(id, account_id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_grants operator_mcp_grants_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_grants
+    ADD CONSTRAINT operator_mcp_grants_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_client_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_client_id_fkey FOREIGN KEY (client_id) REFERENCES public.operator_mcp_clients(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_credential_id_fkey FOREIGN KEY (credential_id) REFERENCES public.operator_mcp_access_credentials(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.operator_mcp_grants(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_workspace_id_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_workspace_id_account_id_fkey FOREIGN KEY (workspace_id, account_id) REFERENCES public.workspaces(id, account_id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_invocations operator_mcp_invocations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_invocations
+    ADD CONSTRAINT operator_mcp_invocations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_refresh_generations operator_mcp_refresh_generations_lineage_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_refresh_generations
+    ADD CONSTRAINT operator_mcp_refresh_generations_lineage_id_fkey FOREIGN KEY (lineage_id) REFERENCES public.operator_mcp_refresh_lineages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operator_mcp_refresh_lineages operator_mcp_refresh_lineages_client_metadata_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_refresh_lineages
+    ADD CONSTRAINT operator_mcp_refresh_lineages_client_metadata_snapshot_id_fkey FOREIGN KEY (client_metadata_snapshot_id) REFERENCES public.operator_mcp_client_metadata_snapshots(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: operator_mcp_refresh_lineages operator_mcp_refresh_lineages_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operator_mcp_refresh_lineages
+    ADD CONSTRAINT operator_mcp_refresh_lineages_grant_id_fkey FOREIGN KEY (grant_id) REFERENCES public.operator_mcp_grants(id) ON DELETE CASCADE;
 
 
 --

@@ -43,6 +43,7 @@
     "db:migrate": "tsx ./scripts/migrate.ts",
     "db:schema": "bash ./scripts/dump-schema.sh",
     "db:schema:check": "bash ./scripts/dump-schema.sh --check",
+    "operator-mcp:rotate-credential-state": "tsx ./scripts/rotateOperatorMcpCredentialState.ts",
     "db:types": "bash ./scripts/generate-kysely-types.sh",
     "db:types:check": "bash ./scripts/generate-kysely-types.sh --check",
     "lint": "pnpm run lint:boundaries && pnpm run lint:no-raw-sql && pnpm run lint:legacy-chunk-vectors",
@@ -93,6 +94,7 @@
     "@radioso/document-parser": "workspace:*",
     "@radioso/mcp-server": "workspace:*",
     "@radioso/mcp-source-proof": "workspace:*",
+    "@radioso/operator-mcp-contract": "workspace:*",
     "@radioso/routine-definition": "workspace:*",
     "@radioso/routine-document": "workspace:*",
     "@radioso/skill-contract": "workspace:*",
@@ -117,7 +119,8 @@
     "swagger-ui-express": "^5.0.1",
     "undici": "8.10.0",
     "yaml": "^2.8.3",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "3.25.2"
   },
   "devDependencies": {
     "@radioso/integration-test-support": "workspace:*",

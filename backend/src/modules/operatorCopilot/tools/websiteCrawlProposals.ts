@@ -10,7 +10,7 @@ import {
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -79,7 +79,7 @@ export const createWebsiteCrawlProposalCopilotTools = (
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "website_crawl",
           targetRef: validated.targetRef,
           payload: copilotWebsiteCrawlPayloadSchema.parse({ ...payload, summary }),

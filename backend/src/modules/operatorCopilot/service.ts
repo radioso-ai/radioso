@@ -12,6 +12,7 @@ import {
   type CopilotCurrentAuthorizationPort,
   type CopilotAuditPort,
   type CopilotProposal,
+  type CopilotProposalDraft,
   type CopilotProposalAdapter,
   type CopilotProposalCard,
   type CopilotProposalTargetType,
@@ -113,7 +114,7 @@ export interface CopilotRepositoryPort {
   listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>>;
   acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null>;
   finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void>;
-  createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal>;
+  createProposal(input: CopilotProposalDraft): Promise<CopilotProposal>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
   updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null>;

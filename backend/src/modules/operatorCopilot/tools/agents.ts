@@ -12,7 +12,7 @@ import {
   describeNamedAgent,
   entity,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentListItem,
   type CopilotAgentLookupPort,
@@ -307,7 +307,7 @@ export const createAgentSettingProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "agent_setting",
             targetRef: validated.targetRef,
             payload: validated.payload,

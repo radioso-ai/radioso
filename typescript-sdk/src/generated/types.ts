@@ -621,6 +621,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Operator MCP setup options */
+        get: operations["getOperatorMcpSetup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List visible Operator MCP grants */
+        get: operations["listOperatorMcpGrants"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read an Operator MCP grant */
+        get: operations["getOperatorMcpGrant"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke an Operator MCP grant */
+        post: operations["revokeOperatorMcpGrant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a pending Operator MCP consent transaction */
+        get: operations["getOperatorMcpConsentTransaction"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or deny an Operator MCP consent transaction */
+        post: operations["decideOperatorMcpConsentTransaction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -10422,6 +10524,523 @@ export interface operations {
             };
             /** @description Stale revision, quota, or invalid lifecycle transition */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current setup availability and client artifacts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        availability: "available" | "disabled" | "misconfigured" | "unavailable";
+                        /** Format: uri */
+                        resource: string | null;
+                        artifacts: {
+                            id: string;
+                            displayName: string;
+                            clientVersion: string | null;
+                            /** @enum {string} */
+                            status: "verified" | "unavailable" | "unverified";
+                            description: string;
+                            setupInstructions: string[];
+                            command: string | null;
+                            configuration: string | null;
+                            /** Format: uri */
+                            handoffUrl: string | null;
+                            permittedLaunchTarget: string;
+                            expectedClientId: string | null;
+                            redirectMechanism: string;
+                            failureRecovery: string;
+                        }[];
+                        /** Format: date-time */
+                        checkedAt: string;
+                        message: string | null;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listOperatorMcpGrants: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description User or workspace grant inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        grants: {
+                            /** Format: uuid */
+                            id: string;
+                            clientId: string;
+                            clientName: string;
+                            clientVersion: string | null;
+                            clientMetadataDigest: string;
+                            /** Format: uuid */
+                            workspaceId: string;
+                            workspaceName: string;
+                            /** Format: uuid */
+                            userId: string;
+                            userName: string | null;
+                            scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                            offlineAccess: boolean;
+                            /** @enum {string} */
+                            status: "active" | "revoked" | "superseded" | "expired";
+                            /** Format: date-time */
+                            createdAt: string;
+                            /** Format: date-time */
+                            lastUsedAt: string | null;
+                            /** Format: date-time */
+                            revokedAt: string | null;
+                            revokedReason: string | null;
+                            canRevoke: boolean;
+                            isOwner: boolean;
+                        }[];
+                        canViewWorkspace: boolean;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpGrant: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspaceId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Grant detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        clientId: string;
+                        clientName: string;
+                        clientVersion: string | null;
+                        clientMetadataDigest: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        workspaceName: string;
+                        /** Format: uuid */
+                        userId: string;
+                        userName: string | null;
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        offlineAccess: boolean;
+                        /** @enum {string} */
+                        status: "active" | "revoked" | "superseded" | "expired";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        revokedReason: string | null;
+                        canRevoke: boolean;
+                        isOwner: boolean;
+                        redirectHost: string;
+                        /** Format: uri */
+                        resource: string;
+                        credentialCount: number;
+                        recentInvocationCount: number;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    revokeOperatorMcpGrant: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                workspaceId: string;
+                grantId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked grant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        clientId: string;
+                        clientName: string;
+                        clientVersion: string | null;
+                        clientMetadataDigest: string;
+                        /** Format: uuid */
+                        workspaceId: string;
+                        workspaceName: string;
+                        /** Format: uuid */
+                        userId: string;
+                        userName: string | null;
+                        scopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        offlineAccess: boolean;
+                        /** @enum {string} */
+                        status: "active" | "revoked" | "superseded" | "expired";
+                        /** Format: date-time */
+                        createdAt: string;
+                        /** Format: date-time */
+                        lastUsedAt: string | null;
+                        /** Format: date-time */
+                        revokedAt: string | null;
+                        revokedReason: string | null;
+                        canRevoke: boolean;
+                        isOwner: boolean;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOperatorMcpConsentTransaction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                transactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Consent transaction bound to the current session */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        transactionId: string;
+                        client: {
+                            clientId: string;
+                            displayName: string;
+                            /** Format: uri */
+                            clientUri: string | null;
+                            clientVersion: string | null;
+                            metadataDigest: string;
+                            /** @enum {string} */
+                            applicationType: "web" | "native";
+                        };
+                        requestedScopes: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                        requestedOfflineAccess: boolean;
+                        redirectHost: string;
+                        /** Format: uri */
+                        redirectUri: string;
+                        /** Format: uri */
+                        resource: string;
+                        currentUser: {
+                            /** Format: uuid */
+                            id: string;
+                            displayName: string;
+                            /** Format: email */
+                            email: string | null;
+                        };
+                        workspaces: {
+                            /** Format: uuid */
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            role: "member" | "admin" | "owner";
+                        }[];
+                        /** @enum {string} */
+                        status: "pending" | "approved" | "denied" | "consumed" | "expired";
+                        /** Format: date-time */
+                        expiresAt: string;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    decideOperatorMcpConsentTransaction: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Radioso-CSRF": "1";
+            };
+            path: {
+                transactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "approve" | "deny";
+                    /** Format: uuid */
+                    workspaceId?: string;
+                    approvedToolScopes?: ("operator:read" | "operator:probe" | "operator:act" | "operator:propose")[];
+                    offlineAccess: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OAuth redirect for the client */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uri */
+                        redirectUrl: string;
+                    };
+                };
+            };
+            /** @description Invalid Operator MCP request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Interactive session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace access required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Operator MCP resource not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

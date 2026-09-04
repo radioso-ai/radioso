@@ -87,7 +87,7 @@ export class EvalCaseReplayService implements CopilotEvalCaseReplayPort {
     const evidenceId = evalCase.sourceAgentId === null || evalCase.snapshotCapturedAt === null ? null : (await this.dependencies.evidence.record({
       workspaceId: input.workspaceId,
       operatorUserId: input.operatorUserId,
-      conversationId: input.copilotConversationId,
+      origin: { type: "conversation", conversationId: input.copilotConversationId },
       agentId: evalCase.sourceAgentId,
       caseId: evalCase.id,
       caseName: evalCase.name,

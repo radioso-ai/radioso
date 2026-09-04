@@ -1242,6 +1242,7 @@ Focused checks:
 Related docs and specs:
 
 - [MCP Client Setup](../mcp-client-setup.md)
+- [Operator MCP OAuth Access](../operator-mcp.md)
 - `packages/radioso-mcp-server/README.md`
 - `specs/043-mcp-context-server/`
 - `specs/061-mcp-deployment-modes/`

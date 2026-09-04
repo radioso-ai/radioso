@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "kysely";
 
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { SessionRecord, SessionRepositoryPort } from "../../modules/auth/services/authService.js";
@@ -62,6 +63,10 @@ export class SessionRepository implements SessionRepositoryPort {
       .where("session_token_hash", "=", sessionTokenHash)
       .where("revoked_at", "is", null)
       .where("expires_at", ">", now)
+      .where(sql<boolean>`EXISTS (
+        SELECT 1 FROM users account_user
+        WHERE account_user.id = sessions.user_id AND account_user.disabled_at IS NULL
+      )`)
       .executeTakeFirst();
 
     return row ? mapSession(row) : null;

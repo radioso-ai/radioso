@@ -1,7 +1,7 @@
 ---
 title: "MCP server"
-description: "Connect an MCP client to one Radioso agent with an audience-bound credential."
-last_updated: 2026-09-02
+description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
+last_updated: 2026-09-04
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -14,6 +14,7 @@ Radioso's standalone MCP server lets a client talk to one agent through `ask_age
 
 - **Workspace document work** uses the REST API with a personal token or service-account credential.
 - **Agent chat over MCP** binds a client to one agent's persona, directives, routines, history, and retrieval settings. A signed-in user with permission to manage that agent creates an MCP-audience credential. The server exchanges it for a short-lived converse session.
+- **Operator MCP** connects a user's preferred engine to Ray's governed workspace tools through OAuth. The grant follows the user's live workspace access and is reviewed under **Settings → API access**. It is a separate resource at `/operator/mcp`, with its own client identity, grant, and revocation lifecycle.
 
 The dashboard session is the management boundary. It issues, rotates, and revokes agent credentials; agent credentials do not manage credentials or workspace settings.
 
@@ -40,6 +41,16 @@ Hosted Terraform sets this variable from the deployed MCP service, so a Terrafor
 
 Once the value points at a reachable MCP origin, the agent's **Channels → MCP** card shows the server URL, the connect flow, and the list of connected clients.
 </Steps>
+
+## Connect Ray from your favorite engine
+
+Open **Settings → API access → Radioso MCP**. Choose Codex, Claude Code, ChatGPT, or **another MCP client**. The chooser shows a versioned setup artifact when that client build has exact-build evidence; otherwise the named client is marked unavailable and the generic route is labeled unverified. Every setup uses the canonical resource URL and starts browser OAuth, so the dashboard selection never counts as a connection by itself.
+
+The current Operator MCP boundary exposes three capabilities: `operator:read` for workspace and agent state, `operator:probe` for bounded diagnostics such as retrieval probes, and `operator:propose` for reviewable ingestion-setting changes. `operator:act` is not part of the current tool catalog. A successful consent decision creates a grant tied to one user, workspace, client, and resource; the grant appears in the same API access card and can be revoked there.
+
+The browser consent page identifies the actual client, redirect host, workspace, requested scopes, and signed-in user. It warns that the client may receive accessible workspace data. `offline_access` is a separate choice for a refresh credential, and can be denied while approving tool access.
+
+For a self-hosted deployment, the frontend reads `RADIOSO_OPERATOR_MCP_PUBLIC_URL` at request time. Point it at the exact public resource, for example `https://mcp.example.com/operator/mcp`. A deployment must also enable and configure the Operator MCP backend values described in [Deployment](/operators/deployment#operator-mcp).
 
 ## Connect a client
 

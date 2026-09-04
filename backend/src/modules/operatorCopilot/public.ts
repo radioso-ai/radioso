@@ -27,6 +27,11 @@ export type {
 } from "./contracts/evalCases.js";
 export { MAX_COPILOT_EVAL_SUITE_CASES } from "./contracts/evalCases.js";
 export * from "./neverList.js";
+export * from "./operatorMcpDisposition.js";
+export * from "./mcpCatalog.js";
+export * from "./mcpApplicationService.js";
+export * from "./mcpRoutes.js";
+export * from "./mcpContracts.js";
 export * from "./sse.js";
 export * from "./service.js";
 export { AgentTurnProbeService } from "./services/agentTurnProbeService.js";

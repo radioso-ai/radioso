@@ -37,6 +37,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
     summary: 'Every identity that can call this workspace over the API.',
     sections: [
       {
+        id: 'operator-mcp',
+        label: 'Radioso MCP',
+        summary: 'Delegated OAuth access for your preferred MCP client.',
+      },
+      {
         id: 'personal-tokens',
         label: 'Personal tokens',
         summary: 'Act as you.',

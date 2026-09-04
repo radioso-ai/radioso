@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { nowMinusSeconds } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
+import type { CopilotConversation, CopilotMessage, CopilotProposal, CopilotProposalApplyClaimGuard, CopilotProposalCard, CopilotProposalClaim, CopilotProposalDraft, CopilotProposalEvidence, CopilotRepositoryPort, CopilotRetentionPort } from "../../modules/operatorCopilot/public.js";
 import { copilotProposalTargetTypes, summarizeProposalEvidence } from "../../modules/operatorCopilot/public.js";
 
 interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
 interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
-interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; status: string; failure_reason: string | null; applied_ref: unknown | null; created_at: Date; updated_at: Date; }
+interface CopilotProposalRow { id: string; workspace_id: string; operator_user_id: string; conversation_id: string | null; operator_mcp_invocation_id: string | null; message_id: string | null; target_type: string; target_ref: unknown; payload: unknown; version_token: string; evidence: unknown; status: string; failure_reason: string | null; applied_ref: unknown | null; created_at: Date; updated_at: Date; }
 const conversationColumns = ["id", "workspace_id", "operator_user_id", "title", "status", "created_at", "updated_at"] as const;
 const messageColumns = ["id", "conversation_id", "role", "content", "outcome", "activity", "created_at"] as const;
-const proposalColumns = ["id", "workspace_id", "operator_user_id", "conversation_id", "message_id", "target_type", "target_ref", "payload", "version_token", "evidence", "status", "failure_reason", "applied_ref", "created_at", "updated_at"] as const;
+const proposalColumns = ["id", "workspace_id", "operator_user_id", "conversation_id", "operator_mcp_invocation_id", "message_id", "target_type", "target_ref", "payload", "version_token", "evidence", "status", "failure_reason", "applied_ref", "created_at", "updated_at"] as const;
 const narrowStatus = (status: string): CopilotConversation["status"] => (status === "running" ? "running" : "idle");
 const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | undefined =>
   outcome === "completed" || outcome === "budget_exhausted" || outcome === "failed" ? outcome : undefined;
@@ -21,7 +23,7 @@ const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => 
   throw new Error(`Unknown copilot proposal target type: ${targetType}`);
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
-const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, conversationId: row.conversation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, evidence: narrowEvidence(row.evidence), status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
+const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, origin: row.conversation_id ? { type: "conversation", conversationId: row.conversation_id } : { type: "operator_mcp_invocation", invocationId: row.operator_mcp_invocation_id! }, conversationId: row.conversation_id, operatorMcpInvocationId: row.operator_mcp_invocation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, evidence: narrowEvidence(row.evidence), status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
 /** Stored as JSONB, so a row written before evidence existed reads as unmeasured, not as empty. */
 const narrowEvidence = (value: unknown): CopilotProposalEvidence | null => {
   const record = asRecord(value);
@@ -80,7 +82,70 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { const [messages, proposals] = await Promise.all([this.db.selectFrom("copilot_messages").select(messageColumns).where("conversation_id", "=", input.conversationId).orderBy("created_at", "asc").execute(), this.db.selectFrom("copilot_proposals").select(proposalColumns).where("conversation_id", "=", input.conversationId).where("message_id", "is not", null).orderBy("created_at", "asc").execute()]); const cardsByMessage = new Map<string, CopilotProposalCard[]>(); for (const proposal of proposals.map(mapProposal)) { if (proposal.messageId) cardsByMessage.set(proposal.messageId, [...(cardsByMessage.get(proposal.messageId) ?? []), presentProposalCard(proposal)]); } return messages.map((row) => { const message = mapMessage(row); const cards = cardsByMessage.get(message.id); return cards ? { ...message, proposals: cards } : message; }); }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation) return null; if (conversation.status === "running") return "running"; const row = await this.db.updateTable("copilot_conversations").set({ status: "running", updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).where("status", "=", "idle").returning(conversationColumns).executeTakeFirst(); return row ? mapConversation(row) : "running"; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { await this.db.updateTable("copilot_conversations").set({ status: "idle", updated_at: new Date() }).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).execute(); }
-  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const row = await this.db.insertInto("copilot_proposals").values({ id: randomUUID(), workspace_id: input.workspaceId, operator_user_id: input.operatorUserId, conversation_id: input.conversationId, target_type: input.targetType, target_ref: JSON.stringify(input.targetRef), payload: JSON.stringify(input.payload), version_token: input.versionToken, evidence: input.evidence ? JSON.stringify(input.evidence) : null }).returning(proposalColumns).executeTakeFirstOrThrow(); return mapProposal(row); }
+  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> {
+    const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId };
+    const id = randomUUID();
+    if (origin.type === "operator_mcp_invocation") {
+      const result = await sql<CopilotProposalRow>`
+        WITH current_authorization AS (
+          SELECT invocation.id
+          FROM operator_mcp_invocations invocation
+          JOIN operator_mcp_grants oauth_grant ON oauth_grant.id = invocation.grant_id
+          JOIN operator_mcp_access_credentials credential ON credential.id = invocation.credential_id
+          JOIN operator_mcp_clients client ON client.id = oauth_grant.client_id
+          JOIN account_memberships membership ON membership.id = oauth_grant.membership_id
+          JOIN users account_user ON account_user.id = oauth_grant.user_id
+          JOIN operator_mcp_deployment_credential_state deployment ON deployment.resource = oauth_grant.resource
+          WHERE invocation.id = ${origin.invocationId}
+            AND invocation.workspace_id = ${input.workspaceId}
+            AND invocation.user_id = ${input.operatorUserId}
+            AND invocation.status = 'running'
+            AND invocation.shape = 'propose'
+            AND oauth_grant.status = 'active'
+            AND oauth_grant.version = invocation.grant_version
+            AND 'operator:propose' = ANY(oauth_grant.tool_scopes)
+            AND membership.status = 'active'
+            AND membership.id = oauth_grant.membership_id
+            AND account_user.disabled_at IS NULL
+            AND client.status = 'active'
+            AND client.version = oauth_grant.client_version
+            AND credential.grant_id = oauth_grant.id
+            AND credential.issued_grant_version = oauth_grant.version
+            AND credential.issued_client_version = oauth_grant.client_version
+            AND credential.issued_client_metadata_snapshot_id = oauth_grant.client_metadata_snapshot_id
+            AND credential.issued_credential_epoch = oauth_grant.credential_epoch
+            AND credential.expires_at > NOW()
+            AND deployment.credential_epoch = oauth_grant.credential_epoch
+          FOR UPDATE OF invocation, oauth_grant, credential, client, membership, account_user, deployment
+        )
+        INSERT INTO copilot_proposals (
+          id, workspace_id, operator_user_id, conversation_id, operator_mcp_invocation_id,
+          target_type, target_ref, payload, version_token, evidence
+        )
+        SELECT ${id}, ${input.workspaceId}, ${input.operatorUserId}, NULL, ${origin.invocationId},
+          ${input.targetType}, ${JSON.stringify(input.targetRef)}::jsonb, ${JSON.stringify(input.payload)}::jsonb,
+          ${input.versionToken}, ${input.evidence ? JSON.stringify(input.evidence) : null}::jsonb
+        FROM current_authorization
+        RETURNING *
+      `.execute(this.db);
+      const row = result.rows[0];
+      if (!row) throw new Error("Operator MCP proposal authorization is no longer current");
+      return mapProposal(row);
+    }
+    const row = await this.db.insertInto("copilot_proposals").values({
+      id,
+      workspace_id: input.workspaceId,
+      operator_user_id: input.operatorUserId,
+      conversation_id: origin.conversationId,
+      operator_mcp_invocation_id: null,
+      target_type: input.targetType,
+      target_ref: JSON.stringify(input.targetRef),
+      payload: JSON.stringify(input.payload),
+      version_token: input.versionToken,
+      evidence: input.evidence ? JSON.stringify(input.evidence) : null,
+    }).returning(proposalColumns).executeTakeFirstOrThrow();
+    return mapProposal(row as CopilotProposalRow);
+  }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const row = await this.db.selectFrom("copilot_proposals").select(proposalColumns).where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return row ? mapProposal(row) : null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { if (input.proposalIds.length === 0) return; await this.db.updateTable("copilot_proposals").set({ message_id: input.messageId, updated_at: new Date() }).where("id", "in", input.proposalIds).where("conversation_id", "=", input.conversationId).execute(); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
@@ -105,10 +170,12 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
     // this, an operator who cleared a stale proposal today would watch the thread it belongs to
     // disappear on the next sweep. Claiming an apply re-dates it too, so an apply lands here
     // already fresh and this is a harmless second touch.
-    await this.db.updateTable("copilot_conversations")
-      .set({ updated_at: new Date() })
-      .where("id", "=", row.conversation_id)
-      .execute();
+    if (row.conversation_id) {
+      await this.db.updateTable("copilot_conversations")
+        .set({ updated_at: new Date() })
+        .where("id", "=", row.conversation_id)
+        .execute();
+    }
     return mapProposal(row);
   }
 
@@ -152,10 +219,12 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       // from deleting the row mid-apply: the domain mutation happens after this transaction
       // commits, and the delete rechecks its cutoff against the current version of this row. In
       // the same transaction as the claim so the two cannot be observed apart.
-      await trx.updateTable("copilot_conversations")
-        .set({ updated_at: claimedAt })
-        .where("id", "=", row.conversation_id)
-        .execute();
+      if (row.conversation_id) {
+        await trx.updateTable("copilot_conversations")
+          .set({ updated_at: claimedAt })
+          .where("id", "=", row.conversation_id)
+          .execute();
+      }
       return { proposal: mapProposal(row), claimedAt, previousAttemptStartedAt: previous?.apply_started_at ?? null };
     });
   }

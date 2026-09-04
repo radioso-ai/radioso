@@ -15,6 +15,7 @@ import {
   type CopilotConversation,
   type CopilotMessage,
   type CopilotProposal,
+  type CopilotProposalDraft,
   type CopilotProposalApplyClaimGuard,
   type CopilotProposalClaim,
   type CopilotProposalTargetType,
@@ -43,6 +44,15 @@ const unmeasured = () => ({
   evidence: { record: vi.fn(), findMany: vi.fn(async () => []) },
   agentVersion: { get: vi.fn(async () => ({ updatedAt: new Date("2026-08-25T10:00:00.000Z") })) },
 });
+
+const proposalOriginFields = (input: CopilotProposalDraft) => {
+  const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId };
+  return {
+    origin,
+    conversationId: origin.type === "conversation" ? origin.conversationId : null,
+    operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null,
+  };
+};
 
 const createProposalTools = (deps: ProposalToolDependencies) => [
   ...createDirectiveProposalCopilotTools(deps),
@@ -173,7 +183,7 @@ describe("US3 copilot proposals", () => {
 
   it("creates draft-only directive and setting proposals, validating setting values before persistence", async () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
-      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+      id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
@@ -219,7 +229,7 @@ describe("US3 copilot proposals", () => {
 
   it("creates a reversible directive enablement proposal after reading its version first", async () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
-      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+      id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const readVersionToken = vi.fn(async () => "directive-version");
     const preview = vi.fn(async () => ({
@@ -279,7 +289,7 @@ describe("US3 copilot proposals", () => {
 
   it("creates a pending removal proposal for an existing directive, drafting nothing", async () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
-      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+      id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const draft = vi.fn();
     const descriptors = createDirectiveProposalCopilotTools({
@@ -341,7 +351,7 @@ describe("US3 copilot proposals", () => {
 
   it("creates a pending routine proposal from the authored assist draft", async () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
-      id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
+      id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const payload = { name: "Return intake", steps: [] };
     const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics.", diagnostics: [] }));
@@ -374,6 +384,7 @@ describe("US3 copilot proposals", () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
       id: randomUUID(),
       ...input,
+      ...proposalOriginFields(input),
       messageId: null,
       status: "pending" as const,
       appliedRef: null,
@@ -645,7 +656,7 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { return this.messages.filter((item) => item.conversationId === input.conversationId).map((message) => ({ ...message, proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map(presentProposal) })); }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation || conversation.status === "running") return conversation ? "running" : null; const next = { ...conversation, status: "running" as const }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.conversations[this.conversations.indexOf(conversation)] = { ...conversation, status: "idle" }; }
-  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
+  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> { const createdAt = new Date(); const origin = input.origin ?? { type: "conversation" as const, conversationId: input.conversationId }; const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
   async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null; applyClaimGuard: CopilotProposalApplyClaimGuard }): Promise<CopilotProposal | null> {
@@ -1543,7 +1554,7 @@ describe("proposal card presentation", () => {
   it("keeps a routine proposal's drafted summary across a reload", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
       targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -1561,7 +1572,7 @@ describe("proposal card presentation", () => {
   it("marks a reloaded directive removal proposal's card with removal: true", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -1573,7 +1584,7 @@ describe("proposal card presentation", () => {
   it("does not mark an ordinary directive save proposal's card as a removal", async () => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     const base = {
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation" as const, conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
       targetType: "directive" as const, targetRef: { agentId: "agent-1", directiveId: "directive-1" }, versionToken: "v1", evidence: null,
       status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     };
@@ -1596,7 +1607,7 @@ describe("proposal card evidence", () => {
   const card = async (evidence: CopilotProposal["evidence"]) => {
     const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
     return presentProposalCard({
-      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", origin: { type: "conversation", conversationId: "conversation-1" }, conversationId: "conversation-1", operatorMcpInvocationId: null, messageId: "message-1",
       targetType: "directive", targetRef: { agentId: "agent-1", directiveId: null }, payload: { name: "Refund window", rationale: "State it" },
       versionToken: "v1", evidence, status: "pending", reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
     });

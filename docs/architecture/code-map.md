@@ -473,6 +473,46 @@ Related docs, specs, and issues:
 - `specs/104-in-product-operator-copilot/`
 - Issues `#1036`, `#1041`, `#1043`, `#1044`, and `#1054`
 
+## Agent Bundle (portable agent export/import)
+
+Owns the portable form of a whole agent. Export composes the `AgentConfig`
+projection with the agent's published routines, context-variable enablements, and
+skills, re-keying workspace-scoped references to natural keys and placeholding the
+ones that cannot travel. Import creates a new agent from that bundle through each
+owning module's own service, and returns every reference it could not resolve
+rather than dropping it. `AgentConfig` itself stays agent-shaped, because eval replay
+materializes a `ConversationAgent` from it, and keeps its own version:
+`AGENT_CONFIG_SCHEMA_VERSION` bumps whenever its field set changes, including
+additively, and readers declare which versions they accept
+(`SUPPORTED_AGENT_CONFIG_VERSIONS` in `agentBundle/importService.ts`). The current
+number lives in code, not here.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agentBundle/README.md` (boundaries, portability rules)
+- `backend/src/modules/agentBundle/public.ts`
+- `backend/src/modules/agentBundle/domain.ts` (bundle shape, `unresolved` kinds)
+- `backend/src/modules/agentBundle/exportService.ts`
+- `backend/src/modules/agentBundle/importService.ts`
+- `backend/src/modules/agentBundle/importProjection.ts` (placeholder handling)
+- `backend/src/app/composition/agentBundleComposition.ts` (port adapting)
+- `backend/src/app/http/routes/agentBundleRoutes.ts`
+- `backend/src/modules/skills/capabilityRegistry.ts` (`portable` settings flag)
+- `frontend/lib/agent-bundle.ts` (file reading, filename, unresolved grouping)
+- `frontend/lib/api-agent-bundle.ts`
+- `frontend/components/dashboard/settings/agent-bundle-export-card.tsx`
+- `frontend/components/dashboard/agent-bundle-import-dialog.tsx`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/agent-bundle-export.test.ts tests/unit/agent-bundle-import.test.ts tests/unit/agent-bundle-routes.test.ts tests/unit/skill-capability-portability.test.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/agent-bundle.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/agent-bundle.spec.ts`
+
+Related specs and issues:
+
+- `specs/100-portable-agent-authoring/` (`plan-agent-bundle.md` is the design record)
+
 ## Context Variables
 
 Owns workspace context-variable definitions, per-agent enablements, pushed

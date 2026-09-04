@@ -1,3 +1,4 @@
+import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
 import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
@@ -2114,8 +2115,21 @@ export const createTestDependencies = (overrides: {
       workspaceService,
     ),
   });
+  const agentBundleServices = createAgentBundleServices({
+    agentService,
+    authoredDirectiveService,
+    agentSkillsService,
+    contextVariableService,
+    routineDefinitionService,
+    capabilityRegistry: skillCapabilityRegistry,
+    agentRepository,
+    mcpConnectionRepository,
+    externalSkillDefinitionRepository,
+  });
   const dependencies: AppDependencies = {
     env,
+    agentBundleExportService: agentBundleServices.exportService,
+    agentBundleImportService: agentBundleServices.importService,
     workspaceInvalidationPublisher: { enqueue: () => ({ accepted: false, reason: "disabled" }) },
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,

@@ -132,9 +132,12 @@ const declarations: readonly PolicyDeclaration[] = [
   // public-launch values from those responses and reject machine launch-surface input.
   ...["", "/:agentId"]
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
-  ...["/:agentId/channels/lifecycle", "/:agentId/directives", "/:agentId/routine-skill-catalog", "/:agentId/routines", "/:agentId/routines/:routineId"]
+  ...["/:agentId/channels/lifecycle", "/:agentId/directives", "/:agentId/routine-skill-catalog", "/:agentId/routines", "/:agentId/routines/:routineId", "/:agentId/bundle"]
     .map((path) => allow("GET", `/api/v1/agents${path}`, "workspace.agents.read")),
   allow("POST", "/api/v1/agents", "workspace.agents.manage"),
+  // Importing a bundle creates an agent, so it sits with agent creation rather than
+  // with the per-agent authoring routes below.
+  allow("POST", "/api/v1/agents/bundle", "workspace.agents.manage"),
   ...["/:agentId/directives", "/:agentId/directives/draft", "/:agentId/routines", "/:agentId/routines/draft-assist"]
     .map((path) => allow("POST", `/api/v1/agents${path}`, "workspace.agents.manage")),
   allow("POST", "/api/v1/agents/:agentId/routines/:routineId/validate", "workspace.agents.read"),

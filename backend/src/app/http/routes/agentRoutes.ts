@@ -18,7 +18,12 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { AppError, badRequest, notFound } from "../../../shared/domain/errors.js";
+import {
+  isMachinePrincipal,
+  rejectMachineLaunchSurfaceInput,
+  type MachineAwareRoutePrincipal,
+} from "../shared/machinePublicSurfacePolicy.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
@@ -191,12 +196,7 @@ const presentAgentChannelCredentialSecret = ({ grant, token }: AccessGrantSecret
   secret: token,
 });
 
-type AgentRoutePrincipal = {
-  type?: string;
-} | null | undefined;
-
-const isMachinePrincipal = (principal: AgentRoutePrincipal): boolean =>
-  principal?.type === "personal_api_credential" || principal?.type === "service_account_credential";
+type AgentRoutePrincipal = MachineAwareRoutePrincipal;
 
 const lifecycleActor = (locals: {
   userId?: string;
@@ -241,13 +241,6 @@ const presentAgentForPrincipal = (agent: AgentSettingsResource, principal: Agent
       ...(safeExtensions ? { extensions: safeExtensions } : {}),
     },
   };
-};
-
-const rejectMachineLaunchSurfaceInput = (principal: AgentRoutePrincipal, input: AgentInput): void => {
-  if (!isMachinePrincipal(principal)) return;
-  if (input.surfaceSettings?.anonymousChat !== undefined || input.surfaceSettings?.websiteEmbed !== undefined) {
-    throw forbidden("Public launch surfaces require an interactive session");
-  }
 };
 
 const assertAgentExists = async (

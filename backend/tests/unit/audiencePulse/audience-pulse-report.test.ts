@@ -62,6 +62,40 @@ const baseInput = {
 };
 
 describe("Audience Pulse report domain", () => {
+  it("carries census transitions and prior full-membership counts into stored themes", () => {
+    const population = buildPopulation(13);
+
+    const report = buildAudiencePulseReport({
+      ...baseInput,
+      coverage: { populationSize: 13, sampleSize: 13, sampled: false, facetReadyQuestionCount: 13 },
+      population,
+      topics: [{
+        id: "topic-survived",
+        title: "Plans",
+        description: "Questions about plans.",
+        evidenceIds: population.map((item) => item.id),
+        transition: {
+          kind: "survived",
+          parentTopicIds: ["topic-before"],
+          viaCentroidFallback: false,
+        },
+      }],
+      previousThemeMemberCounts: new Map([["topic-survived", 9]]),
+      model: emptyModel,
+    });
+
+    expect(report.themes[0]).toMatchObject({
+      memberCount: 13,
+      previousMemberCount: 9,
+      transition: {
+        kind: "survived",
+        parentTopicIds: ["topic-before"],
+        viaCentroidFallback: false,
+      },
+    });
+    expect(report.themes[0]!.evidenceIds).toHaveLength(12);
+  });
+
   it("qualifies only the two typed retrieval outcomes with matching diagnostics", () => {
     expect(contentGapEligible({
       assistantAuthorship: "ai",

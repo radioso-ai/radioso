@@ -130,6 +130,24 @@ const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, 
 
 type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
 type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
+type LegacyAudiencePulseStoredTheme = Omit<
+  AudiencePulseStoredReport["themes"][number],
+  "memberCount" | "previousMemberCount" | "transition" | "share"
+> & {
+  memberCount?: number;
+  previousMemberCount?: number | null;
+  transition?: AudiencePulseStoredReport["themes"][number]["transition"];
+  sampleCount?: number;
+  share?: number;
+};
+type LegacyAudiencePulseStoredReport = Omit<
+  AudiencePulseStoredReport,
+  "unclassifiedQuestionCount" | "coverage" | "themes"
+> & {
+  unclassifiedQuestionCount?: number;
+  coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
+  themes: LegacyAudiencePulseStoredTheme[];
+};
 
 const normalizeQuestionForDisplay = (question: string): string => question
   .trim()
@@ -177,11 +195,7 @@ const hydrateReport = (
     return evidence;
   };
 
-  const legacyReport = report as AudiencePulseStoredReport & {
-    unclassifiedQuestionCount?: number;
-    coverage: AudiencePulseStoredReport["coverage"] & { facetReadyQuestionCount?: number };
-    themes: Array<AudiencePulseStoredReport["themes"][number] & { sampleCount?: number }>;
-  };
+  const legacyReport = report as LegacyAudiencePulseStoredReport;
   const populationSize = legacyReport.coverage.populationSize;
   const groupedEvidenceIds = new Set(legacyReport.themes.flatMap((theme) => theme.evidenceIds));
   const unclassifiedQuestionCount = typeof legacyReport.unclassifiedQuestionCount === "number"
@@ -204,11 +218,7 @@ const hydrateReport = (
     // reconstructed here from whichever evidence ids happened to rehydrate.
     unclassifiedQuestionCount,
     themes: legacyReport.themes.map((theme) => {
-      const legacyTheme = theme as AudiencePulseStoredReport["themes"][number] & {
-        memberCount?: number;
-        sampleCount?: number;
-        share?: number;
-      };
+      const legacyTheme: LegacyAudiencePulseStoredTheme = theme;
       const memberCount = legacyTheme.memberCount ?? legacyTheme.sampleCount ?? theme.evidenceIds.length;
       const share = legacyTheme.share ?? (populationSize === 0 ? 0 : memberCount / populationSize);
       return {
@@ -216,6 +226,8 @@ const hydrateReport = (
         title: theme.title,
         description: theme.description,
         memberCount,
+        previousMemberCount: theme.previousMemberCount ?? null,
+        transition: theme.transition ?? null,
         share,
         ...hydrateThemeEvidence(theme.evidenceIds, resolve),
         weeklyPulse: theme.weeklyPulse,
@@ -309,8 +321,24 @@ const richestFirst = (topics: readonly CensusRunTopicResult[]): CensusRunTopicRe
 const censusTopicsFromRun = (input: {
   topics: readonly CensusRunTopicResult[];
 }): AudiencePulseCensusTopic[] => richestFirst(input.topics).map((topic) => {
-  return { id: topic.topicId, title: topic.title, description: topic.description, evidenceIds: topic.memberIds };
+  return {
+    id: topic.topicId,
+    title: topic.title,
+    description: topic.description,
+    evidenceIds: topic.memberIds,
+    transition: topic.transition,
+  };
 });
+
+const previousThemeMemberCounts = (snapshot: AudiencePulseSnapshotRecord | null): Map<string, number> => {
+  const counts = new Map<string, number>();
+  for (const theme of snapshot?.report.themes ?? []) {
+    if (typeof theme.memberCount === "number") {
+      counts.set(theme.id, theme.memberCount);
+    }
+  }
+  return counts;
+};
 
 /**
  * Builds the narrative call's input (spec 956): the richest
@@ -647,6 +675,9 @@ export class AudiencePulseService implements AudiencePulsePort {
           weeklyVolume: history.weeklyVolume,
           population: history.evidence,
           topics: censusTopics,
+          previousThemeMemberCounts: previousThemeMemberCounts(
+            await this.deps.snapshotStore.find(input.workspaceId),
+          ),
           model,
         });
         // Belt-and-suspenders on the invariant the whole feature exists for (spec 956

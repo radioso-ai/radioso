@@ -60,6 +60,12 @@ export interface TopicMembershipInput {
 
 export type TopicTransitionKind = "survived" | "split" | "merged" | "emerged" | "dissolved";
 
+export interface TopicTransition {
+  kind: TopicTransitionKind;
+  parentTopicIds: string[];
+  viaCentroidFallback: boolean;
+}
+
 export interface TopicTransitionInput {
   topicId: string;
   kind: TopicTransitionKind;
@@ -82,6 +88,8 @@ export interface TopicCensusRunTopicSummary {
   radius: number;
   dissolvedAt: Date | null;
   memberCount: number;
+  /** The identity classification recorded for this topic in this run, if one exists. */
+  transition: TopicTransition | null;
 }
 
 export interface TopicCensusRunDetail {

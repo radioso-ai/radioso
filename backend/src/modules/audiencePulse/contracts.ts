@@ -32,6 +32,7 @@ export {
   type TopicSaveInput,
   type TopicTransitionInput,
   type TopicTransitionKind,
+  type TopicTransition,
 } from "./contracts/topicCensus.js";
 export {
   type TopicLabel,
@@ -106,6 +107,12 @@ const groundingSchema = z.object({
   contentGapEligible: z.number().int().min(0),
 });
 
+const topicTransitionSchema = z.object({
+  kind: z.enum(["survived", "split", "merged", "emerged", "dissolved"]),
+  parentTopicIds: z.array(z.string()),
+  viaCentroidFallback: z.boolean(),
+});
+
 export const audiencePulseReportResponseSchema = z.object({
   period: z.object({ start: dateTime, end: dateTime }),
   generatedAt: dateTime,
@@ -130,6 +137,8 @@ export const audiencePulseReportResponseSchema = z.object({
     title: z.string(),
     description: z.string(),
     memberCount: z.number().int().min(0),
+    previousMemberCount: z.number().int().min(0).nullable(),
+    transition: topicTransitionSchema.nullable(),
     share: z.number().min(0).max(1),
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: dateTime, count: z.number().int().min(0) })),

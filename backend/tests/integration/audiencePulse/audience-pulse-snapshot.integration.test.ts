@@ -54,6 +54,8 @@ const reportWithEvidence = (summary: string, evidenceId: string): AudiencePulseS
     description: "Evidence-backed discussion theme.",
     evidenceIds: [evidenceId],
     memberCount: 1,
+    previousMemberCount: null,
+    transition: null,
     share: 0.5,
     weeklyPulse: [],
     grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 1, contentGapEligible: 0 },

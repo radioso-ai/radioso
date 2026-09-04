@@ -1,3 +1,4 @@
+import { badRequest } from "../../shared/domain/errors.js";
 import { splitRetrievalAnswerEnvelope } from "../agents/public.js";
 import type { AgentConfig, AgentInput } from "../agents/public.js";
 import type { AgentBundleUnresolvedReference } from "./domain.js";
@@ -13,6 +14,13 @@ import type { AgentBundleUnresolvedReference } from "./domain.js";
  * selected-and-empty, never as `all`: widening what an agent may read is the one
  * failure mode an operator would not notice.
  */
+
+const requireConfigSection = <T>(value: T, path: string): NonNullable<T> => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw badRequest(`Bundle agent config is missing ${path}; this is not an exported agent bundle.`);
+  }
+  return value as NonNullable<T>;
+};
 
 const isPlaceholder = (value: unknown): boolean =>
   typeof value === "object"
@@ -137,7 +145,16 @@ const projectSurfaceSettings = (
   config: AgentConfig,
   unresolved: AgentBundleUnresolvedReference[],
 ): AgentInput["surfaceSettings"] => {
-  const surfaces = config.surfaceSettings;
+  // The transport schema decides whether a body is a bundle, not what one contains,
+  // so a body shallow enough to be missing these reaches this far. Reading through
+  // it would be an unhandled TypeError — a 500 for a malformed request. Rejecting is
+  // also the only safe answer: defaulting an absent surface section would create an
+  // agent whose surfaces nobody described, and getting that wrong in the permissive
+  // direction is what this file exists to prevent.
+  const surfaces = requireConfigSection(config.surfaceSettings, "surfaceSettings");
+  requireConfigSection(surfaces.authenticatedChat, "surfaceSettings.authenticatedChat");
+  requireConfigSection(surfaces.anonymousChat, "surfaceSettings.anonymousChat");
+  requireConfigSection(surfaces.websiteEmbed, "surfaceSettings.websiteEmbed");
   const anonymousBlocked = surfaces.anonymousChat.enabled && isPlaceholder(surfaces.anonymousChat.token);
   const embedBlocked = surfaces.websiteEmbed.enabled && isPlaceholder(surfaces.websiteEmbed.token);
 

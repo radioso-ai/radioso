@@ -623,4 +623,64 @@ describe("AgentBundleImportService", () => {
     expect(input.surfaceSettings.websiteEmbed.launcherLabel).toBe("Ask us");
     expect(result.unresolved.filter((entry) => entry.kind === "surface_credential_unbound")).toHaveLength(2);
   });
+
+  it("reports a skill whose non-portable config was stripped, without failing the bundle", async () => {
+    // A notify skill has no target, so `targetDidNotTravel` is false and the create
+    // rejection below used to be treated as "this deployment cannot build the
+    // bundle" and abort the whole import. But the export is what emptied the config,
+    // and it said so in omittedConfigKeys: a failure the export caused is one the
+    // import expects and can explain, not a reason to refuse the agent.
+    const deleted: string[] = [];
+    const service = new AgentBundleImportService({
+      agents: {
+        create: async () => ({ agentId: "new-agent" }),
+        delete: async (_workspaceId, agentId) => { deleted.push(agentId); },
+      },
+      directives: { create: async () => undefined },
+      skills: {
+        hasCapability: () => true,
+        create: async () => { throw new Error("Invalid skill config"); },
+      },
+      contextVariables: {
+        findVariableIdByName: async () => null,
+        findSkillIdByName: async () => null,
+        enable: async () => undefined,
+      },
+      routines: {
+        createDraft: async () => ({ routineId: "r1" }),
+        publish: async () => ({ published: true as const }),
+      },
+    });
+
+    const result = await service.import("workspace-1", bundle({
+      agentSkills: [{
+        name: "notify.ops",
+        capability: "notify",
+        invocationMode: "routine_named",
+        enabled: true,
+        config: {},
+        omittedConfigKeys: ["delivery.recipientEmails", "delivery.webhook.url"],
+        target: { kind: "notify_delivery", id: null },
+      }],
+    }));
+
+    expect(deleted).toEqual([]);
+    expect(result.unresolved).toContainEqual(expect.objectContaining({
+      kind: "skill_config_not_portable",
+      element: "skill:notify.ops",
+    }));
+  });
+
+  it("rejects a bundle whose agent config is missing a section the import must read", async () => {
+    // The transport schema checks that a body is a bundle, not what a bundle
+    // contains, so a body this shallow reaches the service. Dereferencing it
+    // would be an unhandled TypeError — a 500 for what is a malformed request.
+    const { service } = harness();
+
+    await expect(
+      service.import("workspace-1", bundle({
+        agent: { schemaVersion: AGENT_CONFIG_SCHEMA_VERSION } as never,
+      })),
+    ).rejects.toMatchObject({ statusCode: 400, code: "bad_request" });
+  });
 });

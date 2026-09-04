@@ -73,9 +73,23 @@ accepted only while every field it lacks defaults to the behaviour that version 
 - **Report, never drop.** Everything that could not be applied comes back in
   `unresolved` as `{ kind, element, detail }`. An agent that imports quietly minus
   a skill binding is an agent that looks configured and answers wrong.
-- **Per-element failures are not fatal.** A skill whose capability requires a bound
-  target legitimately fails to create; that is reported and the import continues.
-  Only the agent create is fatal, and a fatal failure deletes the agent it created.
+- **Per-element failures are not fatal — when the export caused them.** Two create
+  failures are expected: a capability that requires the bound target the export
+  placeheld, and a capability whose config the export emptied because none of its
+  settings are portable (`notify` holds only recipient emails and a webhook URL).
+  Both are reported and the import continues. Anything else — a duplicate name, an
+  unsupported invocation mode — is a bundle this deployment cannot build and is
+  fatal. Only the agent create is unconditionally fatal, and a fatal failure deletes
+  the agent it created.
+- **Stripped config does not disable a skill.** A missing *connection* does, because
+  the skill cannot act without it. A missing config *value* does not: `retrieve`
+  loses only its `sourceScope` ids and still works, and disabling it would cascade
+  into any directive bound to it, since a binding cannot resolve against a disabled
+  skill. The omitted keys are reported instead.
+- **A capability's config schema must accept its own stripped config.** Export
+  removes every non-portable value; if what is left fails the capability's
+  `validateConfig`, no agent using it can be imported anywhere. A settings group
+  whose fields all default should default as a group for that reason.
 - **Order is load-bearing.** Skills are written first because everything else names
   one: a directive's `binding.skillName`, a routine step's `toolRef`, and a
   context-variable enablement's resolver are all validated against the agent's

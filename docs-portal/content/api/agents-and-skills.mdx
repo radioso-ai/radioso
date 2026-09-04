@@ -354,7 +354,7 @@ Each `kind` names one thing to go fix, and where:
 - `mcp_connection_unbound`: an external MCP connection, or a skill built on one. Reconnect the server under External skills, re-entering its credential.
 - `asset_not_portable`: the agent's logo lives in object storage, not in the bundle. Re-upload it.
 - `directive_binding_unbound`: the directive is bound to a skill that did not come across, so it imports switched off rather than being dropped. Rebind it to a skill here, then enable it.
-- `skill_config_not_portable`: the source agent set skill settings whose values stay in their own workspace — a delivery webhook URL, a recipient list, a document-source scope. The `detail` names the exact settings; re-enter them on the imported skill.
+- `skill_config_not_portable`: the source agent set skill settings whose values stay in their own workspace — a delivery webhook URL, a recipient list, a document-source scope. The `detail` names the exact settings; re-enter them on the imported skill. Where those settings are all a skill has, the skill itself is reported rather than created, and the `detail` says so — create it here and fill in its settings.
 
 Every one of these is a safety default, and the pattern is the same throughout: import never grants an agent more access than you explicitly restore. A skill without its connection imports disabled, not live and broken. A surface without its token imports off, not serving on a token it never had. A source scope that named documents imports with none selected, not defaulted to every document in the new workspace. A routine that can't publish imports as a draft, not dropped, so the steps you wrote are still there to fix once the missing skill exists.
 

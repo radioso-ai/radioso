@@ -686,10 +686,17 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  /**
+   * `z.union([Schema, z.null()])` rather than `Schema.nullable()` wherever the inner
+   * schema is registered. `.nullable()` on a `$ref` emits `allOf: [$ref, {type:
+   * [..., "null"]}]`, which openapi-typescript renders as `Ref & (Record<string,
+   * never> | null)` — a type nothing satisfies, so an SDK consumer cannot construct
+   * the field at all. This is the convention the rest of this file already follows.
+   */
   const AgentBundleLogoSchema = z.object({
     bucket: AgentConfigRefPlaceholderSchema,
     objectPath: AgentConfigRefPlaceholderSchema,
-    generation: AgentConfigRefPlaceholderSchema.nullable(),
+    generation: z.union([AgentConfigRefPlaceholderSchema, z.null()]),
     mimeType: z.string(),
     filename: z.string(),
     sizeBytes: z.number().int(),
@@ -714,7 +721,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   const AgentBundleWebsiteEmbedSchema = z.object({
     enabled: z.boolean(),
-    token: AgentConfigSecretPlaceholderSchema.nullable(),
+    token: z.union([AgentConfigSecretPlaceholderSchema, z.null()]),
     allowedOrigins: z.array(AgentConfigRefPlaceholderSchema),
     launcherLabel: z.string(),
     launcherPosition: z.enum(agentSurfacePositions),
@@ -737,8 +744,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       surfaces: z.array(GenerationSurfaceSchema),
       tags: z.array(z.string()),
       description: z.string().nullable(),
-      binding: AuthoredDirectiveBindingSchema.nullable(),
-      lifecycle: AuthoredDirectiveLifecycleSchema.nullable(),
+      binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
+      lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
       enabled: z.boolean(),
       metadata: z.record(z.unknown()),
     }).openapi({
@@ -756,12 +763,12 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         displayName: z.string(),
         serverUrl: z.string(),
         authMethod: z.string(),
-        credential: AgentConfigSecretPlaceholderSchema.nullable(),
+        credential: z.union([AgentConfigSecretPlaceholderSchema, z.null()]),
         oauth: z.object({
           authorizationEndpoint: z.string(),
           tokenEndpoint: z.string(),
           clientId: z.string(),
-          clientSecret: AgentConfigSecretPlaceholderSchema.nullable(),
+          clientSecret: z.union([AgentConfigSecretPlaceholderSchema, z.null()]),
           scopes: z.array(z.string()),
         }).nullable(),
       })),
@@ -820,7 +827,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         authenticatedChat: z.object({ enabled: z.boolean() }),
         anonymousChat: z.object({
           enabled: z.boolean(),
-          token: AgentConfigSecretPlaceholderSchema.nullable(),
+          token: z.union([AgentConfigSecretPlaceholderSchema, z.null()]),
         }),
         websiteEmbed: AgentBundleWebsiteEmbedSchema,
         extensions: z.record(z.unknown()).openapi({
@@ -891,7 +898,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       }),
       target: z.object({
         kind: z.string().nullable(),
-        id: AgentConfigRefPlaceholderSchema.nullable(),
+        id: z.union([AgentConfigRefPlaceholderSchema, z.null()]),
       }).openapi({
         description: "Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound.",
       }),

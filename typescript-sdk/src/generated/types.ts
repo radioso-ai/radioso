@@ -5145,18 +5145,8 @@ export interface components {
             surfaces: components["schemas"]["GenerationSurface"][];
             tags: string[];
             description: string | null;
-            binding: components["schemas"]["AuthoredDirectiveBinding"] & (Record<string, never> | null);
-            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] & ({
-                /** @enum {string} */
-                kind: "repeatable";
-            } | {
-                /** @enum {string} */
-                kind: "once_per_conversation";
-            } | {
-                /** @enum {string} */
-                kind: "cooldown";
-                turns: number;
-            } | null);
+            binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
             enabled: boolean;
             metadata: {
                 [key: string]: unknown;
@@ -5170,12 +5160,12 @@ export interface components {
                 displayName: string;
                 serverUrl: string;
                 authMethod: string;
-                credential: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                credential: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
                 oauth: {
                     authorizationEndpoint: string;
                     tokenEndpoint: string;
                     clientId: string;
-                    clientSecret: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    clientSecret: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
                     scopes: string[];
                 } | null;
             }[];
@@ -5217,7 +5207,7 @@ export interface components {
             logo: {
                 bucket: components["schemas"]["AgentConfigRefPlaceholder"];
                 objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
-                generation: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] | null;
                 mimeType: string;
                 filename: string;
                 sizeBytes: number;
@@ -5241,11 +5231,11 @@ export interface components {
                 };
                 anonymousChat: {
                     enabled: boolean;
-                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
                 };
                 websiteEmbed: {
                     enabled: boolean;
-                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
                     allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
                     launcherLabel: string;
                     /** @enum {string} */
@@ -5407,7 +5397,7 @@ export interface components {
             /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
             target: {
                 kind: string | null;
-                id: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+                id: components["schemas"]["AgentConfigRefPlaceholder"] | null;
             };
         };
         /**
@@ -5464,7 +5454,7 @@ export interface components {
             logo: {
                 bucket: components["schemas"]["AgentConfigRefPlaceholder"];
                 objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
-                generation: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] | null;
                 mimeType: string;
                 filename: string;
                 sizeBytes: number;
@@ -5488,11 +5478,11 @@ export interface components {
                 };
                 anonymousChat: {
                     enabled: boolean;
-                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
                 };
                 websiteEmbed: {
                     enabled: boolean;
-                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] | null;
                     allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
                     launcherLabel: string;
                     /** @enum {string} */
@@ -5544,7 +5534,7 @@ export interface components {
             /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
             target: {
                 kind: string | null;
-                id: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+                id: components["schemas"]["AgentConfigRefPlaceholder"] | null;
             };
         };
         /** @description A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. Collections default to empty when omitted. */

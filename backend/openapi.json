@@ -7338,80 +7338,28 @@
             ]
           },
           "binding": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveBinding"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "lifecycle": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
               },
               {
-                "oneOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "repeatable"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "kind"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "once_per_conversation"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "kind"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "cooldown"
-                        ]
-                      },
-                      "turns": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 1000
-                      }
-                    },
-                    "required": [
-                      "kind",
-                      "turns"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -7464,15 +7412,15 @@
                   "type": "string"
                 },
                 "credential": {
-                  "allOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
                     },
                     {
-                      "type": [
-                        "object",
-                        "null"
-                      ]
+                      "type": "null"
+                    },
+                    {
+                      "type": "null"
                     }
                   ]
                 },
@@ -7492,15 +7440,15 @@
                       "type": "string"
                     },
                     "clientSecret": {
-                      "allOf": [
+                      "anyOf": [
                         {
                           "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
                         },
                         {
-                          "type": [
-                            "object",
-                            "null"
-                          ]
+                          "type": "null"
+                        },
+                        {
+                          "type": "null"
                         }
                       ]
                     },
@@ -7658,15 +7606,15 @@
                 "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
               },
               "generation": {
-                "allOf": [
+                "anyOf": [
                   {
                     "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
                   },
                   {
-                    "type": [
-                      "object",
-                      "null"
-                    ]
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
                   }
                 ]
               },
@@ -7764,15 +7712,15 @@
                     "type": "boolean"
                   },
                   "token": {
-                    "allOf": [
+                    "anyOf": [
                       {
                         "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
                       },
                       {
-                        "type": [
-                          "object",
-                          "null"
-                        ]
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
                       }
                     ]
                   }
@@ -7789,15 +7737,15 @@
                     "type": "boolean"
                   },
                   "token": {
-                    "allOf": [
+                    "anyOf": [
                       {
                         "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
                       },
                       {
-                        "type": [
-                          "object",
-                          "null"
-                        ]
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
                       }
                     ]
                   },
@@ -8572,15 +8520,15 @@
                 ]
               },
               "id": {
-                "allOf": [
+                "anyOf": [
                   {
                     "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
                   },
                   {
-                    "type": [
-                      "object",
-                      "null"
-                    ]
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
                   }
                 ]
               }
@@ -8746,15 +8694,15 @@
                 "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
               },
               "generation": {
-                "allOf": [
+                "anyOf": [
                   {
                     "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
                   },
                   {
-                    "type": [
-                      "object",
-                      "null"
-                    ]
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
                   }
                 ]
               },
@@ -8852,15 +8800,15 @@
                     "type": "boolean"
                   },
                   "token": {
-                    "allOf": [
+                    "anyOf": [
                       {
                         "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
                       },
                       {
-                        "type": [
-                          "object",
-                          "null"
-                        ]
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
                       }
                     ]
                   }
@@ -8877,15 +8825,15 @@
                     "type": "boolean"
                   },
                   "token": {
-                    "allOf": [
+                    "anyOf": [
                       {
                         "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
                       },
                       {
-                        "type": [
-                          "object",
-                          "null"
-                        ]
+                        "type": "null"
+                      },
+                      {
+                        "type": "null"
                       }
                     ]
                   },
@@ -9065,15 +9013,15 @@
                 ]
               },
               "id": {
-                "allOf": [
+                "anyOf": [
                   {
                     "$ref": "#/components/schemas/AgentConfigRefPlaceholder"
                   },
                   {
-                    "type": [
-                      "object",
-                      "null"
-                    ]
+                    "type": "null"
+                  },
+                  {
+                    "type": "null"
                   }
                 ]
               }

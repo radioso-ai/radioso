@@ -583,4 +583,41 @@ export const registerAgentsPaths = (
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/bundle",
+    tags: ["Agents"],
+    summary: "Export a portable agent bundle",
+    description: "Composes the agent's config, routines, context-variable enablements and skills into one portable bundle for import into another workspace.",
+    operationId: "exportAgentBundle",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent bundle returned", content: { "application/json": { schema: schemas.AgentBundleSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/bundle",
+    tags: ["Agents"],
+    summary: "Import a portable agent bundle as a new agent",
+    description: "Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.",
+    operationId: "importAgentBundle",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.AgentBundleImportRequestSchema } },
+      },
+    },
+    responses: {
+      201: { description: "Agent created from bundle", content: { "application/json": { schema: schemas.AgentBundleImportResponseSchema } } },
+      400: { description: "Unsupported bundle version or agent schema version", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
 };

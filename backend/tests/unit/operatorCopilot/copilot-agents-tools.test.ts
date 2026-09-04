@@ -65,7 +65,7 @@ describe("copilot agent readers", () => {
     expect(ports.listAgents).not.toHaveBeenCalled();
     expect(result.agent).toMatchObject({
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      schemaVersion: 3,
+      schemaVersion: 4,
       directiveCount: 1,
       directivesTruncated: false,
       directiveRefs: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Do not guess" }],

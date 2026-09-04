@@ -84,6 +84,7 @@ export {
   projectInternalAgentConfig,
   serializeAgentConfig,
   serializeAuthoredDirectivesWithIds,
+  splitRetrievalAnswerEnvelope,
   type AgentConfig,
   type AgentConfigPortability,
   type AgentConfigRefKind,
@@ -98,6 +99,7 @@ export {
   type InternalWebsiteEmbedSurfaceConfig,
   type RetrieveAnswerSkillEffectiveSettings,
 } from "./agentConfig.js";
+export { refPlaceholder, secretPlaceholder } from "./agentConfigPlaceholders.js";
 export {
   projectInternalAgentExternalSkills,
   resolveExternalSkillRefs,

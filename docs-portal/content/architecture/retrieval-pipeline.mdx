@@ -26,6 +26,8 @@ Radioso parses the original query, applies rewrite logic when enabled, and can s
 
 The system runs semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.
 
+The two run concurrently. Lexical queries go out before the query embedding resolves, so lexical results are often already in hand when vector search starts.
+
 For listing-style event date questions, the pipeline can also ask a retrieval-owned temporal candidate port for ongoing and upcoming chunks with `dateFrom` and `dateTo` metadata. This path is controlled by the agent's temporal structured lookup setting.
 
 ### Candidate preparation
@@ -47,6 +49,8 @@ When deterministic temporal sort is enabled, selected dated event contexts can b
 ### Prompt assembly and diagnostics
 
 Radioso builds the final prompt, generates citations, and captures diagnostics and a retrieval trace. Chat then uses that result to generate the answer.
+
+Each retrieval branch is timed around its own work, so the trace shows the semantic and lexical spans as they actually ran. Read them as overlapping: the two stages can start at different moments, and because they run concurrently their durations can add up to more than the retrieval stage that contains them.
 </Steps>
 
 ## What operators can adjust

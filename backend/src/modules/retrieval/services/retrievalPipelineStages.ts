@@ -104,6 +104,12 @@ export const DEGRADABLE_RETRIEVAL_CHANNELS: readonly DegradableRetrievalChannel[
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
   activeEmbedding: number[];
   activeEmbeddingDurationMs: number;
+  // Measured per branch, not derived from the enclosing stage: the branches overlap,
+  // so these spans can start at different times and can sum past the stage duration.
+  semanticRetrievalStartedAtMs?: number;
+  semanticRetrievalDurationMs?: number;
+  lexicalRetrievalStartedAtMs?: number;
+  lexicalRetrievalDurationMs?: number;
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];

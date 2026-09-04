@@ -17,8 +17,6 @@ const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
     route: "retrieval",
     isIdentityQuestion: false,
     intentTopic: "refund policy",
-    inScopeRequest: "refund window",
-    outsideScopeRequest: null,
     rewrite: {
       rewrittenQuery: "What is the refund window?",
       semanticQuery: "refund window duration",
@@ -88,6 +86,8 @@ describe("parseTurnPlan", () => {
     const plan = parseTurnPlan(validPlanJson(), candidates);
     expect(plan).not.toBeNull();
     expect(plan?.route).toBe("retrieval");
+    // Scope is never classified from the turn — retrieval evidence decides support —
+    // so the planner is not asked for it and framing never carries it.
     expect(plan?.framing.inScopeRequest).toBeUndefined();
     expect(plan?.framing.outsideScopeRequest).toBeUndefined();
     expect(plan?.responseLanguage).toBe("English");
@@ -226,8 +226,6 @@ describe("parseTurnPlan", () => {
         route: "direct",
         isIdentityQuestion: false,
         intentTopic: null,
-        inScopeRequest: null,
-        outsideScopeRequest: null,
         rewrite: null,
         responseLanguage: "English",
       }),
@@ -342,8 +340,6 @@ describe("turnPlanDirectiveClassifications", () => {
         route: "direct",
         isIdentityQuestion: false,
         intentTopic: null,
-        inScopeRequest: null,
-        outsideScopeRequest: null,
         rewrite: null,
         responseLanguage: "English",
         routineRankings: [],

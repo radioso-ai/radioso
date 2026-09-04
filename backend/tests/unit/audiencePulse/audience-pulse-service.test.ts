@@ -322,6 +322,141 @@ describe("AudiencePulseService", () => {
     expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
   });
 
+  it("regenerates when the analysis population exceeds the narrative reuse drift", async () => {
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 3, sampleSize: 3, sampled: false },
+      evidence: [...history().evidence, {
+        id: "evidence-unclassified",
+        reference: { messageId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", conversationId: "ffffffff-ffff-ffff-ffff-ffffffffffff" },
+        question: "A one-off question outside this topic.",
+        weekStart: "2026-06-29T00:00:00.000Z",
+        channel: null,
+        grounding: "unknown" as const,
+        contentGapEligible: false,
+      }],
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage.populationSize = 2;
+    snapshot.report.unclassifiedQuestionCount = 1;
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 3,
+          unclassifiedCount: 1,
+          facetReadyQuestionCount: 3,
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when the unclassified question count exceeds the narrative reuse drift", async () => {
+    const currentHistory = {
+      ...history(),
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false },
+      evidence: [...history().evidence, ...[3, 4].map((ordinal) => ({
+        id: `evidence-unclassified-${ordinal}`,
+        reference: {
+          messageId: `eeeeeeee-eeee-eeee-eeee-${String(ordinal).padStart(12, "0")}`,
+          conversationId: `ffffffff-ffff-ffff-ffff-${String(ordinal).padStart(12, "0")}`,
+        },
+        question: `A one-off question ${ordinal}.`,
+        weekStart: "2026-06-29T00:00:00.000Z",
+        channel: null,
+        grounding: "unknown" as const,
+        contentGapEligible: false,
+      }))],
+    };
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.coverage.populationSize = 4;
+    snapshot.report.coverage.sampleSize = 4;
+    snapshot.report.unclassifiedQuestionCount = 0;
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return currentHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => ({
+          ...censusResultWithDissolved([]),
+          populationSize: 4,
+          unclassifiedCount: 2,
+          facetReadyQuestionCount: 4,
+        }) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a current content gap has closed", async () => {
+    const closedGapHistory = {
+      ...history(),
+      evidence: history().evidence.map((evidence) => ({ ...evidence, contentGapEligible: false })),
+    };
+    const { service, calls } = createService({
+      historySource: {
+        async read() { return closedGapHistory; },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() {
+              calls.inference += 1;
+              return { text: JSON.stringify({ summary: "The gap closed.", themes: [], recommendations: {}, caveats: [] }) };
+            },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({ kind: "completed", report: { recommendations: [] } });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a current content gap has newly opened", async () => {
+    const snapshot = priorNarrativeSnapshot({ recommendations: [] });
+    snapshot.report.contentGaps = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
   it("regenerates when a survived topic has no prior report member count", async () => {
     const snapshot = priorNarrativeSnapshot();
     snapshot.report.themes = [];

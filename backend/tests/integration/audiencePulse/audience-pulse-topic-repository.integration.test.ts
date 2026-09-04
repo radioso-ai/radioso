@@ -358,6 +358,15 @@ describeIntegration("TopicRepository (Postgres)", () => {
     ]);
     await repository.saveTransitions(runId, [{ topicId, kind: "emerged", parentTopicIds: [] }]);
     await repository.saveTransitions(runId, [{ topicId, kind: "survived", parentTopicIds: [] }]);
+    await database.query(
+      `UPDATE topic_transitions
+       SET created_at = CASE kind
+         WHEN 'emerged' THEN '2026-07-01T00:00:00.000Z'::timestamptz
+         WHEN 'survived' THEN '2026-07-01T00:00:01.000Z'::timestamptz
+       END
+       WHERE run_id = $1 AND topic_id = $2`,
+      [runId, topicId],
+    );
 
     const transitionRows = await database.query<{ topic_id: string }>(
       "SELECT topic_id FROM topic_transitions WHERE run_id = $1",
@@ -369,6 +378,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
 
     expect(run?.topics).toHaveLength(1);
     expect(run?.topics[0]?.memberCount).toBe(3);
+    expect(run?.topics[0]?.transition?.kind).toBe("emerged");
   });
 
   it("saves transitions with parent topic ids intact", async () => {

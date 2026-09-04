@@ -402,10 +402,20 @@ export class TopicRepository implements TopicRepositoryPort {
     // membership, the defect class spec 956 removed.
     const transitionRows = await this.db
       .selectFrom("topic_transitions")
-      .select(["topic_id", "kind", "parent_topic_ids", "via_centroid_fallback"])
+      .select(["topic_id", "kind", "parent_topic_ids", "via_centroid_fallback", "created_at", "id"])
       .where("run_id", "=", run.id)
+      .orderBy("created_at", "asc")
+      .orderBy("id", "asc")
       .execute();
-    const transitionByTopicId = new Map(transitionRows.map((row) => [row.topic_id, row]));
+    const transitionByTopicId = new Map<typeof transitionRows[number]["topic_id"], typeof transitionRows[number]>();
+    for (const transition of transitionRows) {
+      // Duplicate rows can exist for a run/topic. The stable query order and first-row
+      // selection make that data anomaly deterministic without joining transitions
+      // into the membership aggregate and inflating member counts.
+      if (!transitionByTopicId.has(transition.topic_id)) {
+        transitionByTopicId.set(transition.topic_id, transition);
+      }
+    }
 
     const topics: TopicCensusRunTopicSummary[] = topicRows
       .map((topic) => {

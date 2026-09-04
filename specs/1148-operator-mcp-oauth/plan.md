@@ -183,7 +183,7 @@ adapter, a settings card, and a dedicated consent surface.
 ### Phase 1 — Foundation and contracts
 
 Add the shared DTO/proof contract and a minimal isolated operator transport that
-passes Radioso's proposed `2026-07-28`, stateless/no-initialize wire profile.
+passes the standard MCP `2026-07-28` stateless/no-initialize wire profile.
 This phase does not claim MCP SDK or real-client conformance: the operator
 dispatcher is deliberately isolated from the compatibility-protected agent SDK
 runtime. Freeze the available Codex CLI 0.149.0 and Claude Code 2.1.149 build

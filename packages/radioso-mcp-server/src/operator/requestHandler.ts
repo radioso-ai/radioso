@@ -1,4 +1,10 @@
-import { OperatorMcpRequestSchema, digestOperatorMcpCall, type OperatorMcpProof } from "@radioso/operator-mcp-contract";
+import {
+  OPERATOR_MCP_PROTOCOL_VERSION,
+  OperatorMcpRequestSchema,
+  digestOperatorMcpCall,
+  isOperatorMcpMethod,
+  type OperatorMcpProof,
+} from "@radioso/operator-mcp-contract";
 import { OperatorBackendAdapterError } from "./backendAdapter.js";
 import { createOperatorInvocationId, sha256Digest } from "@radioso/operator-mcp-contract";
 import type { OperatorMcpAuditObservation, OperatorMcpShape } from "./observability.js";
@@ -38,11 +44,27 @@ export interface OperatorMcpRequestHandlerDependencies {
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
-const rpcError = (id: string | number | null, code: number, message: string): Response => Response.json({
+const rpcError = (
+  id: string | number | null,
+  code: number,
+  message: string,
+  options: { status?: number } = {},
+): Response => Response.json({
   error: { code, message },
   id,
   jsonrpc: "2.0",
-}, { status: 200 });
+}, { status: options.status ?? 200 });
+
+const protocolError = (
+  id: string | number | null,
+  code: -32020 | -32022,
+  message: string,
+  data?: unknown,
+): Response => Response.json({
+  error: { code, message, ...(data === undefined ? {} : { data }) },
+  id,
+  jsonrpc: "2.0",
+}, { status: 400 });
 
 const bearerToken = (request: Request): string | null => {
   const authorization = request.headers.get("authorization");
@@ -68,6 +90,23 @@ const throttled = (error: "budget_exhausted" | "rate_limit_exceeded"): Response 
 
 const objectParams = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+
+const requestId = (value: unknown): string | number | null =>
+  typeof value === "string" || (typeof value === "number" && Number.isFinite(value)) ? value : null;
+
+const supportedWireMethod = (value: string): boolean => value === "server/discover" || isOperatorMcpMethod(value);
+
+const decodedHeaderValue = (value: string): string | null => {
+  if (!value.startsWith("=?base64?") || !value.endsWith("?=")) return value;
+  const encoded = value.slice("=?base64?".length, -"?=".length);
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(encoded)) return null;
+  const decoded = Buffer.from(encoded, "base64");
+  if (decoded.toString("base64") !== encoded) return null;
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(decoded); } catch { return null; }
+};
+
+const SERVER_INFO = { name: "radioso-operator-mcp", version: "0.1.0" } as const;
+const resultMetadata = { "io.modelcontextprotocol/serverInfo": SERVER_INFO } as const;
 
 const reportOutcome = (dependencies: OperatorMcpRequestHandlerDependencies, observation: OperatorMcpAuditObservation): void => {
   try { void Promise.resolve(dependencies.onOutcome?.(observation)).catch(() => undefined); } catch { /* telemetry cannot affect protocol */ }
@@ -105,16 +144,67 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
   if (!token) return unauthorized(dependencies.resourceMetadataUrl);
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { allow: "POST" } });
 
+  const protocolVersionHeader = request.headers.get("mcp-protocol-version");
+  const methodHeader = request.headers.get("mcp-method");
+  if (!protocolVersionHeader || !methodHeader) {
+    return protocolError(null, -32020, "Required MCP routing header is missing or malformed.");
+  }
+  if (protocolVersionHeader !== OPERATOR_MCP_PROTOCOL_VERSION) {
+    return protocolError(null, -32022, "Unsupported protocol version.", {
+      requested: protocolVersionHeader,
+      supported: [OPERATOR_MCP_PROTOCOL_VERSION],
+    });
+  }
+  if (!supportedWireMethod(methodHeader)) return rpcError(null, -32601, "Method not found", { status: 404 });
+  const nameHeader = request.headers.get("mcp-name");
+  if (methodHeader === "tools/call" && !nameHeader) {
+    return protocolError(null, -32020, "Required Mcp-Name header is missing or malformed.");
+  }
+
   const body = await request.text();
   if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) return rpcError(null, -32600, "Invalid Request");
 
   let parsedBody: unknown;
   try { parsedBody = JSON.parse(body); } catch { return rpcError(null, -32700, "Parse error"); }
-  const parsed = OperatorMcpRequestSchema.safeParse(parsedBody);
-  if (!parsed.success) return rpcError(null, -32600, "Invalid Request");
 
-  const { id, method, params } = parsed.data;
-  const parameterObject = params ?? {};
+  const envelope = objectParams(parsedBody);
+  const id = requestId(envelope?.id);
+  const bodyMethod = envelope?.method;
+  const parameterObject = objectParams(envelope?.params);
+  const metadata = objectParams(parameterObject?._meta);
+  const bodyProtocolVersion = metadata?.["io.modelcontextprotocol/protocolVersion"];
+  if (typeof bodyProtocolVersion !== "string" || bodyProtocolVersion !== protocolVersionHeader) {
+    return protocolError(id, -32020, "MCP-Protocol-Version header does not match request metadata.");
+  }
+  if (typeof bodyMethod !== "string" || bodyMethod !== methodHeader) {
+    return protocolError(id, -32020, "Mcp-Method header does not match the JSON-RPC method.");
+  }
+  if (bodyMethod === "tools/call") {
+    const bodyName = parameterObject?.name;
+    if (typeof bodyName !== "string" || !nameHeader || decodedHeaderValue(nameHeader) !== bodyName) {
+      return protocolError(id, -32020, "Mcp-Name header does not match the tool name.");
+    }
+  }
+
+  const parsed = OperatorMcpRequestSchema.safeParse(parsedBody);
+  if (!parsed.success) return rpcError(id, -32600, "Invalid Request");
+
+  const { method, params } = parsed.data;
+  if (method === "server/discover") {
+    return Response.json({
+      id,
+      jsonrpc: "2.0",
+      result: {
+        _meta: resultMetadata,
+        cacheScope: "public",
+        capabilities: { tools: {} },
+        resultType: "complete",
+        supportedVersions: [OPERATOR_MCP_PROTOCOL_VERSION],
+        ttlMs: 3_600_000,
+      },
+    });
+  }
+
   let call: { name: string; arguments: Record<string, unknown>; operationId?: string } | null = null;
   if (method === "tools/call") {
     const callParams = objectParams(parameterObject);
@@ -158,16 +248,23 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     }
     if (method === "ping") {
       reportOutcome(dependencies, { method, outcome: "success" });
-      return Response.json({ id, jsonrpc: "2.0", result: {} });
+      return Response.json({ id, jsonrpc: "2.0", result: { _meta: resultMetadata, resultType: "complete" } });
     }
     if (method === "tools/list") {
       const result = await dependencies.list({ proof: admission.proof });
-      if (!Array.isArray(result.tools) || result.tools.length > 128 || !responseIsBounded(result)) {
+      const responseResult = {
+        ...result,
+        _meta: resultMetadata,
+        cacheScope: "private",
+        resultType: "complete",
+        ttlMs: 0,
+      };
+      if (!Array.isArray(result.tools) || result.tools.length > 128 || !responseIsBounded(responseResult)) {
         reportOutcome(dependencies, { method, outcome: "error", reason: "runtime_unavailable" });
         return rpcError(id, -32603, "Internal error");
       }
       reportOutcome(dependencies, { method, outcome: "success" });
-      return Response.json({ id, jsonrpc: "2.0", result });
+      return Response.json({ id, jsonrpc: "2.0", result: responseResult });
     }
 
     const result = await dependencies.call({
@@ -177,12 +274,16 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
       proof: admission.proof,
       bodyDigest,
     });
-    if (!responseIsBounded(result)) {
+    const resultObject = objectParams(result);
+    const responseResult = resultObject
+      ? { ...resultObject, _meta: resultMetadata, resultType: "complete" }
+      : null;
+    if (!responseResult || !responseIsBounded(responseResult)) {
       reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "runtime_unavailable" });
       return rpcError(id, -32603, "Internal error");
     }
     reportOutcome(dependencies, { method, outcome: "success", descriptorName, shape: shapeForScope(admission.requiredScope) });
-    return Response.json({ id, jsonrpc: "2.0", result });
+    return Response.json({ id, jsonrpc: "2.0", result: responseResult });
   } catch (error) {
     // Never serialize dependency errors: they can contain credentials or
     // customer content from a misconfigured backend.

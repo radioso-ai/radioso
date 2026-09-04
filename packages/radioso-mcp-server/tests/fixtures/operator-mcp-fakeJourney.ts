@@ -113,16 +113,36 @@ export const runFakeOperatorJourney = async (): Promise<{ status: string }> => {
     list: async () => ({ tools: [{ description: "Read current workspace settings", inputSchema: {}, name: "workspace_settings", requiredScope: "operator:read", shape: "read" }] }),
     resourceMetadataUrl: METADATA_URL,
   });
-  const resourceRequest = async (accessToken: string, body: unknown): Promise<Response> => handler(new Request(RESOURCE, {
-    body: JSON.stringify(body),
-    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+  const resourceRequest = async (accessToken: string, body: {
+    id: string | number;
+    method: "ping" | "tools/list" | "tools/call";
+    params?: Record<string, unknown>;
+  }): Promise<Response> => handler(new Request(RESOURCE, {
+    body: JSON.stringify({
+      ...body,
+      jsonrpc: "2.0",
+      params: {
+        _meta: {
+          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/protocolVersion": OPERATOR_MCP_PROTOCOL_VERSION,
+        },
+        ...body.params,
+      },
+    }),
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+      "mcp-method": body.method,
+      "mcp-protocol-version": OPERATOR_MCP_PROTOCOL_VERSION,
+      ...(body.method === "tools/call" ? { "mcp-name": String(body.params?.name) } : {}),
+    },
     method: "POST",
   }));
 
   const issued = exchangeCode(code, verifier, RESOURCE);
-  let response = await resourceRequest(issued.accessToken, { id: 1, jsonrpc: "2.0", method: "tools/list", protocolVersion: OPERATOR_MCP_PROTOCOL_VERSION });
+  let response = await resourceRequest(issued.accessToken, { id: 1, method: "tools/list" });
   invariant(response.status === 200, "tools/list was not accepted");
-  response = await resourceRequest(issued.accessToken, { id: 2, jsonrpc: "2.0", method: "tools/call", params: { arguments: { query: "ok" }, name: "workspace_settings", operationId: "operation-1" }, protocolVersion: OPERATOR_MCP_PROTOCOL_VERSION });
+  response = await resourceRequest(issued.accessToken, { id: 2, method: "tools/call", params: { arguments: { query: "ok" }, name: "workspace_settings", operationId: "operation-1" } });
   invariant(response.status === 200, "tools/call was not accepted");
 
   const rotated = refresh(issued.refreshToken, RESOURCE);
@@ -130,7 +150,7 @@ export const runFakeOperatorJourney = async (): Promise<{ status: string }> => {
   let refreshReplayRejected = false;
   try { refresh(issued.refreshToken, RESOURCE); } catch { refreshReplayRejected = true; }
   invariant(refreshReplayRejected, "consumed refresh credential was accepted");
-  response = await resourceRequest(rotated.accessToken, { id: 3, jsonrpc: "2.0", method: "ping", protocolVersion: OPERATOR_MCP_PROTOCOL_VERSION });
+  response = await resourceRequest(rotated.accessToken, { id: 3, method: "ping" });
   invariant(response.status === 401, "revoked token was accepted");
   let successorRefreshRejected = false;
   try { refresh(rotated.refreshToken, RESOURCE); } catch { successorRefreshRejected = true; }
@@ -138,7 +158,7 @@ export const runFakeOperatorJourney = async (): Promise<{ status: string }> => {
   // Revocation remains an idempotent explicit lifecycle operation after the
   // replay path has already revoked the lineage.
   revoke(rotated.accessToken);
-  response = await resourceRequest(rotated.accessToken, { id: 4, jsonrpc: "2.0", method: "tools/list", protocolVersion: OPERATOR_MCP_PROTOCOL_VERSION });
+  response = await resourceRequest(rotated.accessToken, { id: 4, method: "tools/list" });
   invariant(response.status === 401, "explicitly revoked token was accepted");
   return { status: "revoked" };
 };

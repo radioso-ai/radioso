@@ -23,7 +23,7 @@ stateless protocol without touching the compatibility-protected agent runtime.
 - [X] T009 Run the focused contract/protocol/compatibility tests and the full existing MCP suite green, then record exact commands and results in `specs/1148-operator-mcp-oauth/quickstart.md`; no named client may be advertised as supported while its exact-build fixture is unverified
 
 **Checkpoint**: Shared contract and isolated operator handler are green for
-Radioso's proposed stateless `2026-07-28` wire profile; this is not an MCP SDK
+the standard stateless MCP `2026-07-28` wire profile; this is not an MCP SDK
 or named-client conformance claim. Every named-client support claim has a
 frozen, passing exact-build fixture; existing `/mcp` tests remain green. If an
 exact client journey cannot be executed, its artifact remains unavailable and

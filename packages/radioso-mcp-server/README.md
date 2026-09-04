@@ -91,7 +91,7 @@ Operator MCP setup starts under **Settings → API access**. Named client choice
 
 ## Operator OAuth Resource
 
-The operator transport is stateless and uses MCP protocol `2026-07-28`. It accepts `ping`, `tools/list`, and `tools/call` without an initialize exchange. The standalone service validates the Bearer header, applies independent source and principal limits, and asks the backend for a short-lived signed admission proof. The backend rechecks the credential row, grant version, client snapshot, external credential epoch, membership, user status, scope, and current descriptor permission before listing or invoking.
+The operator transport is stateless and uses MCP protocol `2026-07-28`. It accepts `server/discover`, `ping`, `tools/list`, and `tools/call` without an initialize exchange. Each POST carries matching `MCP-Protocol-Version` and `Mcp-Method` headers plus protocol version and client capabilities in `params._meta`; `tools/call` also mirrors `params.name` in `Mcp-Name`. Discovery reports the server's tool capability, and tool lists use a zero TTL with grant-private cache scope. The standalone service validates routing headers and the Bearer credential before admitting tool operations, applies independent source and principal limits, and asks the backend for a short-lived signed admission proof. The backend rechecks the credential row, grant version, client snapshot, external credential epoch, membership, user status, scope, and current descriptor permission before listing or invoking.
 
 The backend catalog is never cached by the standalone process. A permission or grant change therefore takes effect on the next request.
 

@@ -184,12 +184,13 @@ import { createCopilotToolCatalog, createCopilotWorkspaceRouteKeyResolver } from
 import { createAgentSettingCopilotProposalAdapter, createAgentSkillCopilotProposalAdapter, createContextVariableCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/modules/operatorCopilot/proposalAdapters.js";
 import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
+import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
 import { createAgentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/agentProposalAdapter.js";
 import { WebsiteAnalysisProbeService } from "../../src/modules/operatorCopilot/services/websiteAnalysisProbeService.js";
 import { AgentWizardService } from "../../src/modules/agentWizard/service.js";
-import { createCopilotDocumentAuthoringPort, createCopilotWorkspaceAccountResolver } from "../../src/app/composition/copilotToolCatalog.js";
+import { createCopilotDocumentAuthoringPort, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceSettingPort } from "../../src/app/composition/copilotToolCatalog.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -1913,6 +1914,7 @@ export const createTestDependencies = (overrides: {
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
+    createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService, createCopilotWorkspaceAccountResolver({ workspaceRepository })) }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),

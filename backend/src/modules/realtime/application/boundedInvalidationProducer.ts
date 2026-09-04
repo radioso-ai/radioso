@@ -111,7 +111,7 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
 
   flushNow(input: { force?: boolean } = {}): Promise<void> {
     if (this.flushing) return this.flushing;
-    this.flushing = this.flush(input.force ?? true).finally(() => { this.flushing = undefined; });
+    this.flushing = this.flush(input.force ?? true).then(() => undefined).finally(() => { this.flushing = undefined; });
     return this.flushing;
   }
 
@@ -158,8 +158,14 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
     }, this.options.shutdownTimeoutMs);
     try {
       await this.flushing;
+      // Drains the batches still queued — `flushBatchSize` bounds one flush, so several may be
+      // owed. It is not a retry loop: a failed publish puts its change kinds back on the entry, so
+      // asking only whether work remains re-sends the same batch as fast as the event loop allows
+      // until the budget runs out, and lands one last publish at the deadline that is aborted on
+      // the next tick. A flush that published nothing has nothing left to make progress on.
       while (this.hasPublishableEntries() && Date.now() < deadline) {
-        await this.flush(true, deadline);
+        const { attempted, failed } = await this.flush(true, deadline);
+        if (attempted === 0 || failed === attempted) break;
       }
     } finally {
       clearTimeout(abortAtDeadline);
@@ -173,7 +179,8 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
     return [...this.pending.values()].some((entry) => entry.kinds.size > 0 || entry.publishing);
   }
 
-  private async flush(force: boolean, deadline?: number): Promise<void> {
+  /** Reports what it sent, so a caller draining batch by batch can tell progress from a standstill. */
+  private async flush(force: boolean, deadline?: number): Promise<{ attempted: number; failed: number }> {
     const now = this.now();
     for (const [workspaceId, entry] of this.pending) {
       if (!entry.publishing && entry.kinds.size === 0 && entry.cooldownExpiresAt <= now) this.pending.delete(workspaceId);
@@ -184,7 +191,7 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
     this.reportQueueDepth();
     if (ready.length === 0) {
       if (!this.stopping) this.arm();
-      return;
+      return { attempted: 0, failed: 0 };
     }
 
     const publishBatch = async () => {
@@ -207,15 +214,11 @@ export class BoundedInvalidationProducer implements WorkspaceInvalidationPublish
       return { attempted, failed };
     };
 
-    if (this.input.telemetry) {
-      await this.input.telemetry.flush(
-        { batchSize: ready.length, pendingWorkspaces: this.pending.size },
-        publishBatch,
-      );
-    } else {
-      await publishBatch();
-    }
+    const outcome = this.input.telemetry
+      ? await this.input.telemetry.flush({ batchSize: ready.length, pendingWorkspaces: this.pending.size }, publishBatch)
+      : await publishBatch();
     if (!this.stopping) this.arm();
+    return outcome;
   }
 
   private async publishEntry(entry: PendingEntry, deadline?: number): Promise<boolean> {

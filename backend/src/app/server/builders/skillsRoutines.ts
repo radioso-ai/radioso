@@ -92,6 +92,7 @@ export const buildSkillCatalogServices = (input: {
     agentService: input.agentService,
     accessGrantService: input.accessGrantService,
     auditService: input.infrastructure.auditService,
+    logger: input.logger,
     publicChatBaseUrl: input.publicChatBaseUrl,
     websiteEmbedIntegration: input.composition.websiteEmbedIntegration,
   });

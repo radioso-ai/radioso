@@ -200,12 +200,13 @@ export class WebsiteCrawlerService {
     let documentSource: { id: string } | null = null;
     try {
       await (this.dependencies.assertCrawlUrlAllowed ?? assertPublicWebsiteUrl)(websiteBaseUrl);
-      const resolveSource = this.dependencies.documentIngestionService.resolveSource;
+      // Call through the service so instance resolvers keep their receiver.
+      const ingestionService = this.dependencies.documentIngestionService;
       if (input.sourceId) {
-        if (!resolveSource) {
+        if (!ingestionService.resolveSource) {
           throw new Error("Unable to resolve selected source");
         }
-        documentSource = await resolveSource({
+        documentSource = await ingestionService.resolveSource({
           workspaceId: input.workspaceId,
           source: { id: input.sourceId },
         });
@@ -213,7 +214,7 @@ export class WebsiteCrawlerService {
           throw new Error("Unable to resolve selected source");
         }
       } else {
-        documentSource = await resolveSource?.({
+        documentSource = await ingestionService.resolveSource?.({
           workspaceId: input.workspaceId,
           source: {
             kind: "website",

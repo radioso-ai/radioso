@@ -26821,6 +26821,7 @@ paths:
                         - document
                         - ingestion_settings
                         - website_crawl
+                        - workspace_setting
                 required:
                   - available
                   - reason
@@ -27018,6 +27019,10 @@ paths:
                                       - regressed
                                       - unchanged
                                       - stale
+                                  removal:
+                                    type: boolean
+                                  reach:
+                                    type: boolean
                                 required:
                                   - id
                                   - targetType

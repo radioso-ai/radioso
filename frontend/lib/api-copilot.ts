@@ -51,7 +51,7 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document' | 'ingestion_settings' | 'website_crawl'
+export type CopilotProposalTargetType = 'directive' | 'agent' | 'agent_setting' | 'routine' | 'agent_skill' | 'context_variable' | 'document' | 'ingestion_settings' | 'website_crawl' | 'workspace_setting'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 /** What the card states about replays run before the draft. Absent when nothing was measured. */
@@ -88,6 +88,14 @@ export interface CopilotProposalSummary {
    * through the card itself.
    */
   removal?: boolean
+  /**
+   * True only for a proposal that changes who can reach the agent - opening the anonymous chat
+   * link, enabling the website embed, or widening its allowed origins - rather than what the agent
+   * says. Absent, not false, for a wording change. Read this instead of parsing `summary`: the
+   * backend decides reach against the settings the draft was made from, and a client re-deriving
+   * it from field names would have to know which of them mean reach.
+   */
+  reach?: boolean
 }
 
 export interface CopilotProposalPreview {
@@ -203,6 +211,7 @@ export interface CopilotProposalEvent {
   summary: string
   evidence?: CopilotProposalEvidenceSummary
   removal?: boolean
+  reach?: boolean
 }
 
 export interface CopilotChunkEvent {

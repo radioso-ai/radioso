@@ -480,8 +480,12 @@ projection with the agent's published routines, context-variable enablements, an
 skills, re-keying workspace-scoped references to natural keys and placeholding the
 ones that cannot travel. Import creates a new agent from that bundle through each
 owning module's own service, and returns every reference it could not resolve
-rather than dropping it. `AgentConfig` itself stays agent-shaped at
-`schemaVersion` 3 because eval replay materializes a `ConversationAgent` from it.
+rather than dropping it. `AgentConfig` itself stays agent-shaped, because eval replay
+materializes a `ConversationAgent` from it, and keeps its own version:
+`AGENT_CONFIG_SCHEMA_VERSION` bumps whenever its field set changes, including
+additively, and readers declare which versions they accept
+(`SUPPORTED_AGENT_CONFIG_VERSIONS` in `agentBundle/importService.ts`). The current
+number lives in code, not here.
 
 Public surfaces and key files:
 

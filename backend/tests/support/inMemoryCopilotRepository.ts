@@ -4,6 +4,7 @@ import type {
   CopilotConversation,
   CopilotMessage,
   CopilotProposal,
+  CopilotProposalDraft,
   CopilotProposalApplyClaimGuard,
   CopilotProposalClaim,
   CopilotRepositoryPort,
@@ -33,7 +34,7 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     const ids = new Set(expired.map((conversation) => conversation.id));
     this.conversations = this.conversations.filter((conversation) => !ids.has(conversation.id));
     this.messages = this.messages.filter((message) => !ids.has(message.conversationId));
-    this.proposals = this.proposals.filter((proposal) => !ids.has(proposal.conversationId));
+    this.proposals = this.proposals.filter((proposal) => proposal.conversationId === null || !ids.has(proposal.conversationId));
     return ids.size;
   }
 
@@ -115,9 +116,10 @@ export class InMemoryCopilotRepository implements CopilotRepositoryPort, Copilot
     if (conversation) this.replaceStatus(conversation, "idle");
   }
 
-  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> {
+  async createProposal(input: CopilotProposalDraft): Promise<CopilotProposal> {
     const createdAt = new Date();
-    const proposal: CopilotProposal = { ...input, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
+    const origin = input.origin ?? { type: "conversation", conversationId: input.conversationId } as const;
+    const proposal: CopilotProposal = { ...input, origin, conversationId: origin.type === "conversation" ? origin.conversationId : null, operatorMcpInvocationId: origin.type === "operator_mcp_invocation" ? origin.invocationId : null, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
     this.proposals.push(proposal);
     return proposal;
   }

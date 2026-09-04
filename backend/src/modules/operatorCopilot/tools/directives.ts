@@ -8,7 +8,7 @@ import {
   describeNamedAgent,
   entity,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   requiredPageAgent,
   type CopilotAgentLookupPort,
   citedEvidenceSchema,
@@ -60,7 +60,7 @@ export const createDirectiveProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "directive",
             targetRef,
             payload: draft.payload,
@@ -98,7 +98,7 @@ export const createDirectiveProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "directive",
             targetRef,
             payload: { op: "remove" as const, removesTarget: true as const, name: preview.targetLabel, rationale: summary },
@@ -139,7 +139,7 @@ export const createDirectiveProposalCopilotTools = (
           const proposal = await deps.proposalRepository.createProposal({
             workspaceId: context.workspaceId,
             operatorUserId: context.operatorUserId,
-            conversationId: requiredCopilotConversation(context),
+            origin: copilotProposalOrigin(context),
             targetType: "directive",
             targetRef,
             payload: { op: "set_enabled" as const, enabled, name: preview.targetLabel, rationale: summary },

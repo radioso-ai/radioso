@@ -1,9 +1,11 @@
 export interface RuntimeConfig {
   mcpUrl: string
+  /** Canonical delegated operator MCP resource, distinct from authored-agent MCP. */
+  operatorMcpUrl: string
   publicApiUrl: string
 }
 
-export const EMPTY_RUNTIME_CONFIG: RuntimeConfig = { mcpUrl: '', publicApiUrl: '' }
+export const EMPTY_RUNTIME_CONFIG: RuntimeConfig = { mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '' }
 
 const readString = (body: Record<string, unknown>, key: string): string => {
   const value = body[key]
@@ -15,6 +17,7 @@ export const parseRuntimeConfig = (body: unknown): RuntimeConfig => {
   const record = body as Record<string, unknown>
   return {
     mcpUrl: readString(record, 'mcpUrl'),
+    operatorMcpUrl: readString(record, 'operatorMcpUrl'),
     publicApiUrl: readString(record, 'publicApiUrl'),
   }
 }

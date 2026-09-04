@@ -43,6 +43,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
       if (!membership || membership.user_id !== input.userId) return false;
 
       const invalidated = await this.invalidateByMembership(trx, input.membershipId, input.actorUserId, "membership_ended");
+      await this.invalidateOperatorGrantsByMembership(trx, input.membershipId, "membership_ended");
       await trx.deleteFrom("workspace_grants")
         .where("account_id", "=", input.accountId)
         .where("user_id", "=", input.userId)
@@ -76,10 +77,12 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
         .executeTakeFirst();
       if (!workspace) return false;
       const invalidated = await this.invalidateByWorkspace(trx, input.workspaceId, input.actorUserId, "workspace_deleted");
+      await this.invalidateOperatorGrantsByWorkspace(trx, input.workspaceId, "workspace_deleted");
       await this.insertAuditEvents(trx, [
         ...this.invalidationEvents(input.accountId, invalidated, input.actorUserId, "workspace_deleted"),
         ...(input.auditEvent ? [this.contextualize(input.auditEvent)] : []),
       ]);
+      await this.deleteOperatorMcpWorkspaceHistory(trx, input.workspaceId);
       const deleted = await trx.deleteFrom("workspaces")
         .where("id", "=", input.workspaceId)
         .where("account_id", "=", input.accountId)
@@ -100,6 +103,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
       const account = await trx.selectFrom("accounts").select("id").where("id", "=", input.accountId).forUpdate().executeTakeFirst();
       if (!account) return false;
       const invalidated = await this.invalidateByAccount(trx, input.accountId, input.actorUserId, "account_deleted");
+      await this.invalidateOperatorGrantsByAccount(trx, input.accountId, "account_deleted");
       await this.insertAuditEvents(trx, [
         ...this.invalidationEvents(input.accountId, invalidated, input.actorUserId, "account_deleted"),
         ...(input.auditEvent ? [this.contextualize(input.auditEvent)] : []),
@@ -108,6 +112,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
       // boundary explicit, this lets audit_events.workspace_id transition to
       // NULL before audit_events.account_id does, avoiding Postgres' competing
       // account->workspace and account->audit cascade paths.
+      await this.deleteOperatorMcpAccountHistory(trx, input.accountId);
       await trx.deleteFrom("workspaces").where("account_id", "=", input.accountId).execute();
       const deleted = await trx.deleteFrom("accounts").where("id", "=", input.accountId).executeTakeFirst();
       return Number(deleted.numDeletedRows) === 1;
@@ -136,6 +141,63 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
     }).where("kind", "=", "personal").where("account_id", "=", accountId).where("revoked_at", "is", null)
       .returning(["id", "workspace_id", "owner_user_id"]).execute();
     return rows as InvalidatedCredential[];
+  }
+
+  private async invalidateOperatorGrantsByMembership(trx: Db, membershipId: string, reason: "membership_ended") {
+    await trx.updateTable("operator_mcp_grants").set({
+      status: "revoked",
+      revoked_at: new Date(),
+      revoked_reason: reason,
+      updated_at: new Date(),
+      version: sql<string>`version + 1`,
+    }).where("membership_id", "=", membershipId).where("status", "=", "active").execute();
+  }
+
+  private async invalidateOperatorGrantsByWorkspace(trx: Db, workspaceId: string, reason: "workspace_deleted") {
+    await trx.updateTable("operator_mcp_grants").set({
+      status: "revoked",
+      revoked_at: new Date(),
+      revoked_reason: reason,
+      updated_at: new Date(),
+      version: sql<string>`version + 1`,
+    }).where("workspace_id", "=", workspaceId).where("status", "=", "active").execute();
+  }
+
+  private async invalidateOperatorGrantsByAccount(trx: Db, accountId: string, reason: "account_deleted") {
+    await trx.updateTable("operator_mcp_grants").set({
+      status: "revoked",
+      revoked_at: new Date(),
+      revoked_reason: reason,
+      updated_at: new Date(),
+      version: sql<string>`version + 1`,
+    }).where("account_id", "=", accountId).where("status", "=", "active").execute();
+  }
+
+  private async deleteOperatorMcpWorkspaceHistory(trx: Db, workspaceId: string): Promise<void> {
+    await trx.deleteFrom("copilot_replay_evidence")
+      .where("workspace_id", "=", workspaceId)
+      .where("operator_mcp_invocation_id", "is not", null)
+      .execute();
+    await trx.deleteFrom("copilot_proposals")
+      .where("workspace_id", "=", workspaceId)
+      .where("operator_mcp_invocation_id", "is not", null)
+      .execute();
+    await trx.deleteFrom("operator_mcp_invocations").where("workspace_id", "=", workspaceId).execute();
+    await trx.deleteFrom("operator_mcp_grants").where("workspace_id", "=", workspaceId).execute();
+  }
+
+  private async deleteOperatorMcpAccountHistory(trx: Db, accountId: string): Promise<void> {
+    const invocationIds = trx.selectFrom("operator_mcp_invocations")
+      .select("id")
+      .where("account_id", "=", accountId);
+    await trx.deleteFrom("copilot_replay_evidence")
+      .where("operator_mcp_invocation_id", "in", invocationIds)
+      .execute();
+    await trx.deleteFrom("copilot_proposals")
+      .where("operator_mcp_invocation_id", "in", invocationIds)
+      .execute();
+    await trx.deleteFrom("operator_mcp_invocations").where("account_id", "=", accountId).execute();
+    await trx.deleteFrom("operator_mcp_grants").where("account_id", "=", accountId).execute();
   }
 
   private invalidationEvents(accountId: string, credentials: InvalidatedCredential[], actorUserId: string | null | undefined, reason: "membership_ended" | "workspace_deleted" | "account_deleted"): MachineAccessAuditEvent[] {

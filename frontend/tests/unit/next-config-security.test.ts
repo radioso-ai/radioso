@@ -63,6 +63,16 @@ describe('next security headers', () => {
     expect(frameHeaderValues.get('Permissions-Policy')).toContain('camera=()')
   })
 
+  it('hardens the operator MCP consent screen against framing, referrers, and caching', async () => {
+    const routes = await getHeaderRoutes()
+    const consentHeaders = routes.find((route) => route.source === '/oauth/operator-mcp/consent')?.headers ?? []
+    const values = new Map(consentHeaders.map((header) => [header.key, header.value]))
+    expect(values.get('Content-Security-Policy')).toContain("frame-ancestors 'none'")
+    expect(values.get('Referrer-Policy')).toBe('no-referrer')
+    expect(values.get('Cache-Control')).toBe('no-store')
+    expect(values.get('X-Frame-Options')).toBe('DENY')
+  })
+
   it('proxies the legacy widget hostname to the primary EU frontend', async () => {
     const routes = await getRewriteRoutes()
 

@@ -15,7 +15,7 @@ import {
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -109,7 +109,7 @@ const documentProposalDescriptor = <TInput>(
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "document",
           targetRef: validated.targetRef,
           payload: copilotDocumentPayloadSchema.parse({ ...payload, summary }),

@@ -100,6 +100,15 @@ const nextConfig = {
         source: "/embed-frame",
         headers: embedSecurityHeaders,
       },
+      {
+        source: "/oauth/operator-mcp/consent",
+        headers: [
+          { key: "Content-Security-Policy", value: buildCspDirectives({ frameAncestors: "frame-ancestors 'none'" }) },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
     ];
   },
   webpack(config) {

@@ -104,6 +104,12 @@ export const requiredCopilotConversation = (context: { copilotConversationId?: s
   if (!conversationId) throw new Error("Copilot proposal drafting requires a persisted conversation");
   return conversationId;
 };
+export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {
+  if (context.operatorMcpInvocationId && !context.copilotConversationId) {
+    return { type: "operator_mcp_invocation" as const, invocationId: context.operatorMcpInvocationId };
+  }
+  return { type: "conversation" as const, conversationId: requiredCopilotConversation(context) };
+};
 export const recordProposalCreated = async (
   auditService: CopilotAuditPort,
   context: CopilotActor & { accountId: string; workspaceId: string },

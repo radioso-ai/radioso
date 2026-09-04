@@ -67,6 +67,9 @@
     },
     {
       "name": "MCP Converse"
+    },
+    {
+      "name": "Operator MCP"
     }
   ],
   "components": {
@@ -22878,6 +22881,1207 @@
           },
           "409": {
             "description": "Stale revision, quota, or invalid lifecycle transition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/setup": {
+      "get": {
+        "tags": [
+          "Operator MCP"
+        ],
+        "summary": "Read Operator MCP setup options",
+        "operationId": "getOperatorMcpSetup",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current setup availability and client artifacts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "availability": {
+                      "type": "string",
+                      "enum": [
+                        "available",
+                        "disabled",
+                        "misconfigured",
+                        "unavailable"
+                      ]
+                    },
+                    "resource": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "uri"
+                    },
+                    "artifacts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "clientVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "verified",
+                              "unavailable",
+                              "unverified"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "setupInstructions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "command": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "configuration": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "handoffUrl": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "uri"
+                          },
+                          "permittedLaunchTarget": {
+                            "type": "string"
+                          },
+                          "expectedClientId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "redirectMechanism": {
+                            "type": "string"
+                          },
+                          "failureRecovery": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "displayName",
+                          "clientVersion",
+                          "status",
+                          "description",
+                          "setupInstructions",
+                          "command",
+                          "configuration",
+                          "handoffUrl",
+                          "permittedLaunchTarget",
+                          "expectedClientId",
+                          "redirectMechanism",
+                          "failureRecovery"
+                        ]
+                      }
+                    },
+                    "checkedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "message": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "availability",
+                    "resource",
+                    "artifacts",
+                    "checkedAt",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Operator MCP request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operator MCP resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants": {
+      "get": {
+        "tags": [
+          "Operator MCP"
+        ],
+        "summary": "List visible Operator MCP grants",
+        "operationId": "listOperatorMcpGrants",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User or workspace grant inventory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "grants": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "clientId": {
+                            "type": "string"
+                          },
+                          "clientName": {
+                            "type": "string"
+                          },
+                          "clientVersion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "clientMetadataDigest": {
+                            "type": "string"
+                          },
+                          "workspaceId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "workspaceName": {
+                            "type": "string"
+                          },
+                          "userId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "userName": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "operator:read",
+                                "operator:probe",
+                                "operator:act",
+                                "operator:propose"
+                              ]
+                            }
+                          },
+                          "offlineAccess": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "active",
+                              "revoked",
+                              "superseded",
+                              "expired"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "lastUsedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "revokedAt": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date-time"
+                          },
+                          "revokedReason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "canRevoke": {
+                            "type": "boolean"
+                          },
+                          "isOwner": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "clientId",
+                          "clientName",
+                          "clientVersion",
+                          "clientMetadataDigest",
+                          "workspaceId",
+                          "workspaceName",
+                          "userId",
+                          "userName",
+                          "scopes",
+                          "offlineAccess",
+                          "status",
+                          "createdAt",
+                          "lastUsedAt",
+                          "revokedAt",
+                          "revokedReason",
+                          "canRevoke",
+                          "isOwner"
+                        ]
+                      }
+                    },
+                    "canViewWorkspace": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "grants",
+                    "canViewWorkspace"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Operator MCP request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operator MCP resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}": {
+      "get": {
+        "tags": [
+          "Operator MCP"
+        ],
+        "summary": "Read an Operator MCP grant",
+        "operationId": "getOperatorMcpGrant",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "grantId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Grant detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "clientName": {
+                      "type": "string"
+                    },
+                    "clientVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "clientMetadataDigest": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "workspaceName": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "userName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "operator:read",
+                          "operator:probe",
+                          "operator:act",
+                          "operator:propose"
+                        ]
+                      }
+                    },
+                    "offlineAccess": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "revoked",
+                        "superseded",
+                        "expired"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "canRevoke": {
+                      "type": "boolean"
+                    },
+                    "isOwner": {
+                      "type": "boolean"
+                    },
+                    "redirectHost": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "credentialCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "recentInvocationCount": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "clientId",
+                    "clientName",
+                    "clientVersion",
+                    "clientMetadataDigest",
+                    "workspaceId",
+                    "workspaceName",
+                    "userId",
+                    "userName",
+                    "scopes",
+                    "offlineAccess",
+                    "status",
+                    "createdAt",
+                    "lastUsedAt",
+                    "revokedAt",
+                    "revokedReason",
+                    "canRevoke",
+                    "isOwner",
+                    "redirectHost",
+                    "resource",
+                    "credentialCount",
+                    "recentInvocationCount"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Operator MCP request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operator MCP resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/operator-mcp/grants/{grantId}/revoke": {
+      "post": {
+        "tags": [
+          "Operator MCP"
+        ],
+        "summary": "Revoke an Operator MCP grant",
+        "operationId": "revokeOperatorMcpGrant",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "grantId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated Operator MCP mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "clientId": {
+                      "type": "string"
+                    },
+                    "clientName": {
+                      "type": "string"
+                    },
+                    "clientVersion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "clientMetadataDigest": {
+                      "type": "string"
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "workspaceName": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "userName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "operator:read",
+                          "operator:probe",
+                          "operator:act",
+                          "operator:propose"
+                        ]
+                      }
+                    },
+                    "offlineAccess": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "active",
+                        "revoked",
+                        "superseded",
+                        "expired"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "lastUsedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "revokedReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "canRevoke": {
+                      "type": "boolean"
+                    },
+                    "isOwner": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "clientId",
+                    "clientName",
+                    "clientVersion",
+                    "clientMetadataDigest",
+                    "workspaceId",
+                    "workspaceName",
+                    "userId",
+                    "userName",
+                    "scopes",
+                    "offlineAccess",
+                    "status",
+                    "createdAt",
+                    "lastUsedAt",
+                    "revokedAt",
+                    "revokedReason",
+                    "canRevoke",
+                    "isOwner"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Operator MCP request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operator MCP resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}": {
+      "get": {
+        "tags": [
+          "Operator MCP"
+        ],
+        "summary": "Read a pending Operator MCP consent transaction",
+        "operationId": "getOperatorMcpConsentTransaction",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "transactionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Consent transaction bound to the current session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transactionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "client": {
+                      "type": "object",
+                      "properties": {
+                        "clientId": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "clientUri": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "uri"
+                        },
+                        "clientVersion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "metadataDigest": {
+                          "type": "string"
+                        },
+                        "applicationType": {
+                          "type": "string",
+                          "enum": [
+                            "web",
+                            "native"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "clientId",
+                        "displayName",
+                        "clientUri",
+                        "clientVersion",
+                        "metadataDigest",
+                        "applicationType"
+                      ]
+                    },
+                    "requestedScopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "operator:read",
+                          "operator:probe",
+                          "operator:act",
+                          "operator:propose"
+                        ]
+                      }
+                    },
+                    "requestedOfflineAccess": {
+                      "type": "boolean"
+                    },
+                    "redirectHost": {
+                      "type": "string"
+                    },
+                    "redirectUri": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "resource": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "currentUser": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "format": "email"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "displayName",
+                        "email"
+                      ]
+                    },
+                    "workspaces": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "member",
+                              "admin",
+                              "owner"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "role"
+                        ]
+                      }
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "denied",
+                        "consumed",
+                        "expired"
+                      ]
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "transactionId",
+                    "client",
+                    "requestedScopes",
+                    "requestedOfflineAccess",
+                    "redirectHost",
+                    "redirectUri",
+                    "resource",
+                    "currentUser",
+                    "workspaces",
+                    "status",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Operator MCP request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operator MCP resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/operator-mcp/oauth/transactions/{transactionId}/decision": {
+      "post": {
+        "tags": [
+          "Operator MCP"
+        ],
+        "summary": "Approve or deny an Operator MCP consent transaction",
+        "operationId": "decideOperatorMcpConsentTransaction",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "transactionId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required non-simple header for cookie-authenticated Operator MCP mutations."
+            },
+            "required": true,
+            "in": "header",
+            "name": "X-Radioso-CSRF"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "deny"
+                    ]
+                  },
+                  "workspaceId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "approvedToolScopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "operator:read",
+                        "operator:probe",
+                        "operator:act",
+                        "operator:propose"
+                      ]
+                    },
+                    "minItems": 1,
+                    "maxItems": 4
+                  },
+                  "offlineAccess": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "decision",
+                  "offlineAccess"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth redirect for the client",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    }
+                  },
+                  "required": [
+                    "redirectUrl"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid Operator MCP request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Interactive session required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Operator MCP resource not found",
             "content": {
               "application/json": {
                 "schema": {

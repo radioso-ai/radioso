@@ -49,6 +49,7 @@ export const createOpenApiDocument = (
       { name: "Audience Pulse" },
       { name: "Copilot" },
       { name: "MCP Converse" },
+      { name: "Operator MCP" },
     ],
   });
 

@@ -68,6 +68,16 @@ const assertDeclaresVerificationCost = (moduleId: string, descriptor: CopilotToo
   }
 };
 
+const assertDeclaresMcpDisposition = (moduleId: string, descriptor: CopilotToolDescriptor): void => {
+  const disposition = descriptor.mcpDisposition;
+  if (!disposition) {
+    throw new Error(`Copilot tool "${descriptor.name}" contributed by "${moduleId}" declares no operator MCP disposition.`);
+  }
+  if (disposition.status === "excluded" && disposition.reason.trim().length === 0) {
+    throw new Error(`Copilot tool "${descriptor.name}" contributed by "${moduleId}" has a blank operator MCP exclusion reason.`);
+  }
+};
+
 export const resolveCopilotToolContributions = (
   contributions: ReadonlyArray<CopilotToolContribution>,
   firstParty: { readonly operationIds: ReadonlySet<string>; readonly applicationPrimitiveIds: ReadonlySet<string> },
@@ -78,7 +88,10 @@ export const resolveCopilotToolContributions = (
   const applicationPrimitiveIds = new Set<string>();
 
   for (const contribution of contributions) {
-    for (const descriptor of contribution.descriptors) assertDeclaresVerificationCost(contribution.moduleId, descriptor);
+    for (const descriptor of contribution.descriptors) {
+      assertDeclaresVerificationCost(contribution.moduleId, descriptor);
+      assertDeclaresMcpDisposition(contribution.moduleId, descriptor);
+    }
     descriptors.push(...contribution.descriptors);
     for (const [operationId, permissions] of Object.entries(contribution.operationPermissions ?? {})) {
       assertUnclaimed(contribution.moduleId, "operation", operationId, firstParty.operationIds, operationIds);

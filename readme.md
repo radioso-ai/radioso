@@ -212,9 +212,11 @@ Start with [Getting started](https://docs.radioso.ai/sdk/typescript-getting-star
 
 ### MCP
 
-Radioso's supported MCP surface is the standalone HTTP server. It exposes `ask_agent`, which talks to exactly one agent through its full turn loop. A signed-in user with permission to manage that agent creates an MCP-audience credential from **Channels → MCP**; the dashboard uses `POST /api/v1/agents/{agentId}/channel-credentials`. Send the one-time secret to standalone `/mcp`, where the server exchanges it for a short-lived session. Personal and service API credentials are workspace credentials and are not MCP credentials. Operator-minted MCP credentials use a static bearer, so Radioso does not require an OAuth flow.
+The standalone HTTP server has two separate MCP surfaces. `/mcp` exposes `ask_agent`, which talks to exactly one agent through its full turn loop. A signed-in user with permission to manage that agent creates its audience-bound credential from **Channels → MCP** and sends the one-time secret to standalone.
 
-The package has no stdio MCP entrypoint. Run the standalone HTTP server and give it the original MCP-audience agent credential. Hosted clients such as Claude Desktop and ChatGPT require a public HTTPS deployment; local clients can use the standalone HTTP URL.
+`/operator/mcp` lets the signed-in person connect an OAuth-capable client to Ray's governed read, probe, and proposal tools. Start under **Settings → API access**, review the client, workspace, scopes, redirect host, and offline access in browser consent, then manage the grant from the same page. See [Operator MCP OAuth access](./docs/operator-mcp.md) for the current tool boundary and exact-build compatibility gate.
+
+The package has no stdio MCP entrypoint. Hosted clients require a public HTTPS deployment; local clients can use the standalone HTTP URL supported by their connection profile.
 
 ### Website embed
 

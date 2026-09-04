@@ -9,6 +9,7 @@ afterEach(() => {
 describe('runtime configuration route', () => {
   it('exposes the standalone MCP URL and canonical API origin at request time', async () => {
     vi.stubEnv('RADIOSO_MCP_PUBLIC_URL', 'https://radioso-mcp.example.com/mcp')
+    vi.stubEnv('RADIOSO_OPERATOR_MCP_PUBLIC_URL', 'https://radioso-mcp.example.com/operator/mcp')
     vi.stubEnv('RADIOSO_PUBLIC_API_URL', 'https://api.example.com')
 
     const response = await GET()
@@ -16,16 +17,18 @@ describe('runtime configuration route', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     await expect(response.json()).resolves.toEqual({
       mcpUrl: 'https://radioso-mcp.example.com/mcp',
+      operatorMcpUrl: 'https://radioso-mcp.example.com/operator/mcp',
       publicApiUrl: 'https://api.example.com',
     })
   })
 
   it('reports empty values when neither surface is configured', async () => {
     vi.stubEnv('RADIOSO_MCP_PUBLIC_URL', '')
+    vi.stubEnv('RADIOSO_OPERATOR_MCP_PUBLIC_URL', '')
     vi.stubEnv('RADIOSO_PUBLIC_API_URL', '')
 
     const response = await GET()
 
-    await expect(response.json()).resolves.toEqual({ mcpUrl: '', publicApiUrl: '' })
+    await expect(response.json()).resolves.toEqual({ mcpUrl: '', operatorMcpUrl: '', publicApiUrl: '' })
   })
 })

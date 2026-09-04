@@ -112,6 +112,7 @@ import type {
   EmbeddingCoverageReadPort,
 } from "../../modules/embeddingProfiles/public.js";
 import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import type { OperatorMcpApplicationService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
@@ -130,6 +131,12 @@ import type {
 import type { MachineAccessSecurityObserver } from "../../modules/machineAccess/public.js";
 import type { ApiPrincipalRouteInventory } from "../http/apiPrincipalRoutePolicy.js";
 import type { AgentConverseSessionMappingPort } from "../../modules/settings/contracts/agentConverseSession.js";
+import type {
+  OperatorMcpAuthorizationService,
+  OperatorMcpCredentialValidationService,
+  OperatorMcpGrantService,
+} from "../../modules/operatorMcpAuthorization/public.js";
+import type { PersistedOperatorMcpClient } from "../../modules/operatorMcpAuthorization/contracts.js";
 
 export interface AppDependencies {
   env: Env;
@@ -314,4 +321,10 @@ export interface AppDependencies {
     defaultLimit: number;
     maxLimit: number;
   };
+  operatorMcpAuthorizationService?: OperatorMcpAuthorizationService;
+  operatorMcpCredentialValidationService?: OperatorMcpCredentialValidationService;
+  operatorMcpGrantService: OperatorMcpGrantService;
+  operatorMcpReadiness: Promise<boolean>;
+  operatorMcpClientResolver: { resolve(clientId: string, redirectUri: string): Promise<PersistedOperatorMcpClient> };
+  operatorMcpApplicationService?: OperatorMcpApplicationService;
 }

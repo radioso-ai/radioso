@@ -10,7 +10,7 @@ import {
   proposalAdapterFor,
   proposalOutputSchema,
   recordProposalCreated,
-  requiredCopilotConversation,
+  copilotProposalOrigin,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
 
@@ -59,7 +59,7 @@ export const createIngestionSettingsProposalCopilotTools = (
         const proposal = await deps.proposalRepository.createProposal({
           workspaceId: context.workspaceId,
           operatorUserId: context.operatorUserId,
-          conversationId: requiredCopilotConversation(context),
+          origin: copilotProposalOrigin(context),
           targetType: "ingestion_settings",
           targetRef: validated.targetRef,
           payload: copilotIngestionSettingsPayloadSchema.parse({ ...payload, summary }),

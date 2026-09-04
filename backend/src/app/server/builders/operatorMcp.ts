@@ -42,7 +42,7 @@ export const buildOperatorMcpServices = (input: {
     return {
       operatorMcpAuthorizationService: undefined,
       operatorMcpCredentialValidationService: undefined,
-      operatorMcpGrantService: new OperatorMcpGrantService(repository, input.accountAccessService),
+      operatorMcpGrantService: new OperatorMcpGrantService(repository, input.accountAccessService, input.auditService),
       operatorMcpReadiness: Promise.resolve(false),
       operatorMcpClientResolver,
       operatorMcpApplicationService: undefined,
@@ -89,7 +89,7 @@ export const buildOperatorMcpServices = (input: {
       rolloutWorkspaceIds,
     }, input.auditService, input.metricsRegistry ?? undefined),
     operatorMcpCredentialValidationService: credentialValidation,
-    operatorMcpGrantService: new OperatorMcpGrantService(repository, input.accountAccessService),
+    operatorMcpGrantService: new OperatorMcpGrantService(repository, input.accountAccessService, input.auditService),
     operatorMcpReadiness,
     operatorMcpClientResolver,
     operatorMcpApplicationService,

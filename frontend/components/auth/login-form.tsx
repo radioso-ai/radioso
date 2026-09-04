@@ -8,8 +8,10 @@ import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib/api'
 import { getStoredLastAccountId, useOptionalAuth } from '@/lib/auth-context'
+import { normalizeSameOriginReturnPath } from '@/lib/auth-return-url'
 
 interface LoginFormProps {
+  returnTo?: string
   registrationAvailable: boolean | null
   registrationAvailabilityFailed: boolean
   onRetryRegistrationAvailability: () => void
@@ -33,6 +35,7 @@ const getErrorMessage = (error: unknown) => {
 }
 
 export function LoginForm({
+  returnTo,
   registrationAvailable,
   registrationAvailabilityFailed,
   onRetryRegistrationAvailability,
@@ -58,7 +61,7 @@ export function LoginForm({
   }, [])
 
   const handleGoogleSignIn = () => {
-    window.location.assign(authApi.getGoogleLoginStartUrl())
+    window.location.assign(authApi.getGoogleLoginStartUrl(returnTo))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,6 +79,10 @@ export function LoginForm({
         throw new Error('Login is unavailable outside the auth shell')
       }
       await auth.login(email, response.userId, response.accountId, response.organizationName)
+      const target = normalizeSameOriginReturnPath(returnTo)
+      if (target) {
+        window.location.assign(target)
+      }
     } catch (error) {
       setError(getErrorMessage(error))
     } finally {

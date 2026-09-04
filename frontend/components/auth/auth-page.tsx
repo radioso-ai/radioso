@@ -6,7 +6,7 @@ import { authApi } from '@/lib/api'
 import { LoginForm } from './login-form'
 import { RegisterForm } from './register-form'
 
-export function AuthPage() {
+export function AuthPage({ returnTo }: { returnTo?: string }) {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [registrationAvailable, setRegistrationAvailable] = useState<boolean | null>(null)
   const [registrationAvailabilityFailed, setRegistrationAvailabilityFailed] = useState(false)
@@ -72,6 +72,7 @@ export function AuthPage() {
           </h2>
           {mode === 'login' ? (
             <LoginForm
+              returnTo={returnTo}
               registrationAvailable={registrationAvailable}
               registrationAvailabilityFailed={registrationAvailabilityFailed}
               onRetryRegistrationAvailability={() => {

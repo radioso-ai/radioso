@@ -13,6 +13,7 @@ type RouteDependencies = Parameters<ApplicationRouteMount["createRouter"]>[0];
 type FetchLike = typeof fetch;
 
 const STATE_COOKIE = "radioso_google_login_state";
+const RETURN_TO_COOKIE = "radioso_google_login_return_to";
 const STATE_TTL_SECONDS = 600;
 const PROVIDER = "google";
 
@@ -84,12 +85,34 @@ const withErrorParam = (target: string): string => {
   return `${target}${separator}error=google_login_failed`;
 };
 
+const resolveReturnPath = (candidate: unknown, successRedirect: string): string | undefined => {
+  if (typeof candidate !== "string" || !candidate.startsWith("/")) {
+    return undefined;
+  }
+
+  try {
+    const successUrl = new URL(successRedirect);
+    const targetUrl = new URL(candidate, successUrl);
+    return targetUrl.origin === successUrl.origin
+      ? `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const resolveReturnTarget = (candidate: unknown, successRedirect: string): string => {
+  const returnPath = resolveReturnPath(candidate, successRedirect);
+  return returnPath ? new URL(returnPath, successRedirect).toString() : successRedirect;
+};
+
 export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Router => {
   const router = Router();
   const { config, successRedirect, authService } = options;
   const fetchImpl = options.fetchImpl ?? fetch;
   const generateState = options.generateState ?? (() => randomBytes(32).toString("hex"));
-  const failureRedirect = withErrorParam(successRedirect);
+  const returnTargetFor = (req: Request): string =>
+    resolveReturnTarget(readCookie(req, RETURN_TO_COOKIE), successRedirect);
 
   const recordFailure = async (reason: string): Promise<void> => {
     try {
@@ -107,12 +130,13 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
     res.json({ enabled: config !== null });
   });
 
-  router.get("/start", (_req, res) => {
+  router.get("/start", (req, res) => {
     if (!config) {
       res.status(404).json({ error: { code: "not_found", message: "Google login is not enabled" } });
       return;
     }
     const state = generateState();
+    const returnPath = resolveReturnPath(req.query.return_to, successRedirect);
     res.append(
       "Set-Cookie",
       serializeCookie(STATE_COOKIE, state, {
@@ -123,6 +147,18 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
         maxAge: STATE_TTL_SECONDS,
       }),
     );
+    res.append(
+      "Set-Cookie",
+      returnPath
+        ? serializeCookie(RETURN_TO_COOKIE, encodeURIComponent(returnPath), {
+            httpOnly: true,
+            secure: true,
+            sameSite: "Lax",
+            path: "/",
+            maxAge: STATE_TTL_SECONDS,
+          })
+        : clearCookie(RETURN_TO_COOKIE),
+    );
     res.redirect(buildGoogleAuthorizationUrl({ config, state }));
   });
 
@@ -132,10 +168,13 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
       return;
     }
 
+    const returnTarget = returnTargetFor(req);
+    const failureRedirect = withErrorParam(returnTarget);
     const { code, state, error } = req.query;
     if (typeof error === "string" && error.length > 0) {
       await recordFailure(`provider_error:${error}`);
       res.append("Set-Cookie", clearCookie(STATE_COOKIE));
+      res.append("Set-Cookie", clearCookie(RETURN_TO_COOKIE));
       res.redirect(failureRedirect);
       return;
     }
@@ -144,11 +183,13 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
     if (typeof code !== "string" || typeof state !== "string" || !cookieState || cookieState !== state) {
       await recordFailure("invalid_state");
       res.append("Set-Cookie", clearCookie(STATE_COOKIE));
+      res.append("Set-Cookie", clearCookie(RETURN_TO_COOKIE));
       res.redirect(failureRedirect);
       return;
     }
 
     res.append("Set-Cookie", clearCookie(STATE_COOKIE));
+    res.append("Set-Cookie", clearCookie(RETURN_TO_COOKIE));
 
     try {
       const identity = await resolveGoogleIdentity({ config, code, fetchImpl });
@@ -159,7 +200,7 @@ export const createGoogleLoginRouter = (options: GoogleLoginRouterOptions): Rout
         emailVerified: identity.emailVerified,
       });
       res.append("Set-Cookie", result.sessionCookie);
-      res.redirect(successRedirect);
+      res.redirect(returnTarget);
     } catch {
       // federatedLogin records its own audit for verified-but-rejected cases;
       // this covers OAuth exchange / userinfo failures.

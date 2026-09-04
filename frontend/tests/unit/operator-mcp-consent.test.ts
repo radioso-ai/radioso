@@ -21,7 +21,7 @@ vi.mock('@/lib/api-operator-mcp', async (importOriginal) => ({
 vi.mock('@/components/auth/auth-page', async () => {
   const React = await import('react')
   return {
-    AuthPage: () => React.createElement('div', { 'data-testid': 'auth-page' }, 'Welcome back'),
+    AuthPage: ({ returnTo }: { returnTo?: string }) => React.createElement('div', { 'data-testid': 'auth-page', 'data-return-to': returnTo }, 'Welcome back'),
   }
 })
 
@@ -103,9 +103,15 @@ describe('OperatorMcpConsent', () => {
     expect(container.textContent).toContain('Welcome back')
     expect(container.textContent).not.toContain('Authorization unavailable')
     expect(operatorMcpApiMocks.getTransaction).toHaveBeenCalledWith('tx-1', expect.any(AbortSignal))
+    expect(container.querySelector('[data-testid="auth-page"]')?.getAttribute('data-return-to')).toBe('/oauth/operator-mcp/consent?transaction=tx-1')
   })
 
-  it('renders login without loading a transaction when no session is bootstrapped', async () => {
+  it('renders login after the server rejects a browser without client auth bootstrap', async () => {
+    operatorMcpApiMocks.getTransaction.mockRejectedValueOnce({
+      status: 401,
+      error: { code: 'unauthorized', message: 'Unauthorized' },
+    })
+
     await act(async () => {
       root.render(createElement(AuthProvider, null, createElement(OperatorMcpConsent, { transactionId: 'tx-1' })))
     })
@@ -114,6 +120,22 @@ describe('OperatorMcpConsent', () => {
     })
 
     expect(container.textContent).toContain('Welcome back')
-    expect(operatorMcpApiMocks.getTransaction).not.toHaveBeenCalled()
+    expect(operatorMcpApiMocks.getTransaction).toHaveBeenCalledWith('tx-1', expect.any(AbortSignal))
+    expect(container.querySelector('[data-testid="auth-page"]')?.getAttribute('data-return-to')).toBe('/oauth/operator-mcp/consent?transaction=tx-1')
+  })
+
+  it('uses a valid server session when the client auth cache is absent after federated login', async () => {
+    operatorMcpApiMocks.getTransaction.mockResolvedValueOnce(transaction('http://127.0.0.1:3210/callback'))
+
+    await act(async () => {
+      root.render(createElement(AuthProvider, null, createElement(OperatorMcpConsent, { transactionId: 'tx-1' })))
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Authorize Radioso MCP')
+    expect(container.textContent).toContain('Example client')
+    expect(container.textContent).not.toContain('Welcome back')
   })
 })

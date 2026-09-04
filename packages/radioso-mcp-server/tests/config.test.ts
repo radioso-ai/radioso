@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "../src/config.js";
+import { loadConfig, type RadiosoMcpConfig } from "../src/config.js";
 
 describe("loadConfig", () => {
+  it("keeps operatorMcp optional for programmatic legacy configurations", () => {
+    const config: RadiosoMcpConfig = {
+      baseUrl: "http://localhost:8080",
+      bindHost: "127.0.0.1",
+      bindPort: 8787,
+      redisKeyPrefix: "radioso-mcp",
+      requestTimeoutMs: 30_000,
+      serverName: "radioso-context",
+      trustedProxyHops: 0,
+    };
+
+    expect(config.operatorMcp).toBeUndefined();
+  });
+
   it("reads the remote runtime env vars and applies defaults", () => {
     const config = loadConfig({
       RADIOSO_BASE_URL: "http://localhost:8080",

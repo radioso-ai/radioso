@@ -1,4 +1,5 @@
 import { forbidden, notFound } from "../../shared/domain/errors.js";
+import type { AuditPort } from "../audit/contracts/index.js";
 
 import type { OperatorMcpGrantRepositoryPort, OperatorMcpGrantSummaryRecord } from "./contracts.js";
 
@@ -33,7 +34,32 @@ export class OperatorMcpGrantService {
   constructor(
     private readonly repository: OperatorMcpGrantRepositoryPort,
     private readonly roles: WorkspaceRoleReader,
+    private readonly audit?: Pick<AuditPort, "record">,
   ) {}
+
+  private async recordDashboardRevocation(input: {
+    accountId: string;
+    workspaceId: string;
+    actorUserId: string;
+    grant: Pick<OperatorMcpGrantSummaryRecord, "id" | "clientId" | "clientVersion" | "userId">;
+  }): Promise<void> {
+    await this.audit?.record({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "operator_mcp.revocation",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: input.actorUserId,
+        userId: input.grant.userId,
+        clientId: input.grant.clientId,
+        clientVersion: input.grant.clientVersion,
+        grantId: input.grant.id,
+        callingSurface: "operator_mcp_dashboard",
+        outcome: "revoked",
+        reason: "dashboard_revocation",
+      },
+    }).catch(() => undefined);
+  }
 
   private async role(input: { accountId: string; workspaceId: string; actorUserId: string }): Promise<string> {
     const role = await this.roles.resolveWorkspaceRole({
@@ -72,7 +98,15 @@ export class OperatorMcpGrantService {
     const current = await this.get(input);
     if (!current.canRevoke) throw forbidden();
     if (current.status === "active") {
-      await this.repository.revokeGrant({ grantId: input.grantId, reason: "dashboard_revocation", now: input.now });
+      const revoked = await this.repository.revokeGrant({ grantId: input.grantId, reason: "dashboard_revocation", now: input.now });
+      if (revoked) {
+        await this.recordDashboardRevocation({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          actorUserId: input.actorUserId,
+          grant: current,
+        });
+      }
     }
     return (await this.repository.findGrant({ workspaceId: input.workspaceId, grantId: input.grantId }))
       ? this.get(input)

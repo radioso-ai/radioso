@@ -54,7 +54,7 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (isBootstrapping || !isAuthenticated) return
+    if (isBootstrapping) return
     const controller = new AbortController()
     void operatorMcpApi.getTransaction(transactionId, controller.signal)
       .then((transaction) => {
@@ -110,7 +110,9 @@ export function OperatorMcpConsent({ transactionId }: { transactionId: string })
   }
 
   if (isBootstrapping) return <ConsentShell><Spinner className="h-6 w-6" /></ConsentShell>
-  if (!isAuthenticated || state.kind === 'auth') return <AuthPage />
+  if (state.kind === 'auth') {
+    return <AuthPage returnTo={`/oauth/operator-mcp/consent?transaction=${encodeURIComponent(transactionId)}`} />
+  }
   if (state.kind === 'loading') return <ConsentShell><Spinner className="h-6 w-6" /></ConsentShell>
   if (state.kind === 'error') return <ConsentShell><StatePanel title="Authorization unavailable" message={state.message} /></ConsentShell>
   if (state.kind === 'decided') return <ConsentShell><StatePanel title="Authorization decided" message={state.message} /></ConsentShell>

@@ -24,10 +24,37 @@ describe("OperatorMcpGrantService", () => {
 
   it("allows self or owner/admin revocation and makes it idempotent", async () => {
     const repository = { listGrants: vi.fn(), findGrant: vi.fn(async () => record), revokeGrant: vi.fn(async () => true) };
-    const service = new OperatorMcpGrantService(repository, { resolveWorkspaceRole: vi.fn(async () => "member") });
+    const audit = { record: vi.fn(async () => undefined) };
+    const service = new OperatorMcpGrantService(repository, { resolveWorkspaceRole: vi.fn(async () => "member") }, audit);
     await expect(service.revoke({ accountId: "account", workspaceId: record.workspaceId, actorUserId: record.userId, grantId: record.id, now: new Date() })).resolves.toMatchObject({ id: record.id, canRevoke: true });
+    expect(audit.record).toHaveBeenCalledWith({
+      accountId: "account",
+      workspaceId: record.workspaceId,
+      eventType: "operator_mcp.revocation",
+      eventStatus: "success",
+      metadata: {
+        actorUserId: record.userId,
+        userId: record.userId,
+        clientId: record.clientId,
+        clientVersion: record.clientVersion,
+        grantId: record.id,
+        callingSurface: "operator_mcp_dashboard",
+        outcome: "revoked",
+        reason: "dashboard_revocation",
+      },
+    });
     repository.revokeGrant.mockResolvedValueOnce(false);
     await expect(service.revoke({ accountId: "account", workspaceId: record.workspaceId, actorUserId: record.userId, grantId: record.id, now: new Date() })).resolves.toMatchObject({ id: record.id });
+    expect(audit.record).toHaveBeenCalledOnce();
+  });
+
+  it("does not fail a completed dashboard revocation when audit storage is unavailable", async () => {
+    const repository = { listGrants: vi.fn(), findGrant: vi.fn(async () => record), revokeGrant: vi.fn(async () => true) };
+    const audit = { record: vi.fn(async () => { throw new Error("audit unavailable"); }) };
+    const service = new OperatorMcpGrantService(repository, { resolveWorkspaceRole: vi.fn(async () => "admin") }, audit);
+
+    await expect(service.revoke({ accountId: "account", workspaceId: record.workspaceId, actorUserId: "admin", grantId: record.id, now: new Date() })).resolves.toMatchObject({ id: record.id });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ actorUserId: "admin" }) }));
   });
 
   it("denies a member attempting to inspect another user's grant", async () => {

@@ -1,4 +1,5 @@
 import { API_BASE, request } from './api-client'
+import { normalizeSameOriginReturnPath } from './auth-return-url'
 import type {
   AcceptedResponse,
   EmailVerificationResendRequest,
@@ -51,8 +52,12 @@ export const authApi = {
 
   // Full-page navigation target that begins the Google OAuth redirect dance.
   // Same-origin via the `/backend` proxy so the session cookie lands on the app.
-  getGoogleLoginStartUrl(): string {
-    return `${API_BASE}/ee/auth/google/start`
+  getGoogleLoginStartUrl(returnTo?: string): string {
+    const target = normalizeSameOriginReturnPath(returnTo)
+    if (!target) {
+      return `${API_BASE}/ee/auth/google/start`
+    }
+    return `${API_BASE}/ee/auth/google/start?return_to=${encodeURIComponent(target)}`
   },
 
   async requestPasswordReset(data: PasswordResetRequest): Promise<AcceptedResponse> {

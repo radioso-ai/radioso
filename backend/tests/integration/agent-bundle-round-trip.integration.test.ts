@@ -224,6 +224,39 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     expect(enablements[0].resolverSkillId).not.toBeNull();
   });
 
+  it("removes the agent it created when the import fails in a workspace that had none", async () => {
+    // The dashboard offers import from the zero-agent empty state, so the first
+    // agent a workspace ever has can be one this import created. The operator-facing
+    // rule that a workspace keeps at least one agent must not strand it there.
+    const { workspace } = await seedWorkspace();
+    expect(await agentRepository.listByWorkspaceId(workspace.id)).toHaveLength(0);
+
+    const services = buildServices();
+    const bundle = {
+      bundleVersion: 1,
+      portability: {},
+      agent: {
+        ...(await (async () => {
+          const donor = await agentRepository.create(workspace.id, { name: "Donor" });
+          const exported = await services.exportService.export(workspace.id, donor.id);
+          await agentRepository.deleteByIdAndWorkspaceId(donor.id, workspace.id);
+          return exported.agent;
+        })()),
+        // A directive the service rejects: directive writes are fatal, so this drives
+        // the compensating delete.
+        authoredDirectives: [{ name: "", action: "" }],
+      },
+      routines: [],
+      contextVariables: [],
+      agentSkills: [],
+    } as never;
+
+    await expect(services.importService.import(workspace.id, bundle)).rejects.toThrow();
+
+    // Nothing left behind, and no dangling workspace default pointing at it.
+    expect(await agentRepository.listByWorkspaceId(workspace.id)).toHaveLength(0);
+  });
+
   it("reports a context variable the target workspace does not have, and still creates the agent", async () => {
     const { workspace: sourceWorkspace } = await seedWorkspace();
     const { workspace: targetWorkspace } = await seedWorkspace();

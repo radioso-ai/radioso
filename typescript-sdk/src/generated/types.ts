@@ -5446,19 +5446,117 @@ export interface components {
             contextVariables: components["schemas"]["AgentBundleContextVariable"][];
             agentSkills: components["schemas"]["AgentBundleSkill"][];
         };
-        /** @description A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. */
+        /** @description An agent configuration on any version this deployment reads. Fields introduced after the oldest accepted version are optional; an older bundle that omits them imports with the behaviour that version had. Export always emits the current version, with every field present. */
+        AgentBundleImportAgentConfig: {
+            schemaVersion: number;
+            /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            name: string;
+            internalName?: string | null;
+            customInstruction: string;
+            handoffOnRetrievalMiss?: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
+            /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
+            logo: {
+                bucket: components["schemas"]["AgentConfigRefPlaceholder"];
+                objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            surfaceSettings: {
+                authenticatedChat: {
+                    enabled: boolean;
+                };
+                anonymousChat: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                };
+                websiteEmbed: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
+                    launcherLabel: string;
+                    /** @enum {string} */
+                    launcherPosition: "bottom-right" | "bottom-left";
+                    theme: {
+                        brand: string;
+                        brandText: string;
+                        surface: string;
+                        text: string;
+                    };
+                    copy: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides: {
+                        [key: string]: string;
+                    };
+                };
+                /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
+                extensions: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope. */
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            chatModelOverride: {
+                provider: string;
+                model: string;
+            } | null;
+            authoredDirectives: components["schemas"]["AgentBundleAuthoredDirective"][];
+            externalSkills: components["schemas"]["AgentBundleExternalSkills"];
+        };
+        /** @description A skill as accepted on import. `config` and `omittedConfigKeys` default to empty when absent, so a hand-written bundle need not restate them. */
+        AgentBundleImportSkill: {
+            name: string;
+            capability: string;
+            /** @enum {string} */
+            invocationMode: "default_answer" | "routine_named" | "agent_selectable";
+            enabled: boolean;
+            /** @description Only the fields a capability marked portable. */
+            config?: {
+                [key: string]: unknown;
+            };
+            /** @description Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter. */
+            omittedConfigKeys?: string[];
+            /** @description Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound. */
+            target: {
+                kind: string | null;
+                id: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+            };
+        };
+        /** @description A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. Collections default to empty when omitted. */
         AgentBundleImportRequest: {
             bundleVersion: number;
             portability?: {
                 [key: string]: "portable" | "ref" | "secret";
             };
-            agent: components["schemas"]["AgentBundleAgentConfig"];
-            /** @default [] */
-            routines: components["schemas"]["AgentBundleRoutine"][];
-            /** @default [] */
-            contextVariables: components["schemas"]["AgentBundleContextVariable"][];
-            /** @default [] */
-            agentSkills: components["schemas"]["AgentBundleSkill"][];
+            agent: components["schemas"]["AgentBundleImportAgentConfig"];
+            routines?: components["schemas"]["AgentBundleRoutine"][];
+            contextVariables?: components["schemas"]["AgentBundleContextVariable"][];
+            agentSkills?: components["schemas"]["AgentBundleImportSkill"][];
         };
         AgentBundleImportResponse: {
             /** Format: uuid */

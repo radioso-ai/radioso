@@ -282,3 +282,26 @@ evidence the version is a contract other code depends on.
 Tracked separately rather than in this change: the missing writer for
 `handoffOnRetrievalMiss` (#1182) and import job state / idempotency / orphan cleanup
 (#1183).
+
+## Review round three
+
+Both findings came out of the round-two fixes rather than the original design.
+
+**Compensation could not remove the workspace's first agent.** `AgentService.delete`
+refuses when the workspace would be left with none — an operator-facing rule that
+protects someone from deleting their only assistant. But the dashboard offers import
+from the zero-agent empty state, and `create` also makes that first agent the
+workspace default, so a failed import there left a half-built *default* agent behind
+and the compensating delete always failed. `delete` now takes an explicit
+`allowLastAgent` for this one caller: compensation is unwinding a create, not
+removing something the operator ever had. Covered by an integration test that asserts
+an empty workspace is still empty after a failed import.
+
+**The published request contract rejected a version the service accepts.** Describing
+the agent config faithfully made the *request* schema demand the current field set,
+while import reads every version in `SUPPORTED_AGENT_CONFIG_VERSIONS` — so an SDK
+consumer would have had to cast around their own contract to send a v3 bundle. The
+request now derives from the response schema with the fields added since the oldest
+accepted version made optional, and the collections the route defaults are optional
+too. Guarded by tests that read the generated `openapi.json`, since that artifact is
+what the SDK is built from and therefore what a consumer is actually held to.

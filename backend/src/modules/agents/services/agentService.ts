@@ -124,7 +124,17 @@ export class AgentService {
     return this.present(updated, workspace.defaultAgentId);
   }
 
-  async delete(workspaceId: string, agentId: string): Promise<void> {
+  /**
+   * `allowLastAgent` exists for one caller: undoing a create that failed part-way.
+   * The last-agent rule protects an operator from removing the only assistant their
+   * workspace has; it must not strand an agent the operator never had, which is what
+   * happens when a bundle import creates a workspace's first agent and then fails.
+   */
+  async delete(
+    workspaceId: string,
+    agentId: string,
+    options: { allowLastAgent?: boolean } = {},
+  ): Promise<void> {
     const workspace = await this.requireWorkspace(workspaceId);
     const agent = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!agent) {
@@ -132,7 +142,7 @@ export class AgentService {
     }
 
     const total = await this.agentRepository.countByWorkspaceId(workspaceId);
-    if (total <= 1) {
+    if (total <= 1 && options.allowLastAgent !== true) {
       throw badRequest("Cannot delete the last agent in this workspace");
     }
 

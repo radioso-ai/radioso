@@ -126,7 +126,11 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
         return { agentId: agent.id };
       },
       delete: async (workspaceId, agentId) => {
-        await deps.agentService.delete(workspaceId, agentId);
+        // Compensation, not an operator action: this agent was created moments ago by
+        // the import that is now unwinding, so the last-agent rule does not apply. A
+        // workspace can start with none, and the dashboard offers import from that
+        // empty state, so this is the common case rather than an edge one.
+        await deps.agentService.delete(workspaceId, agentId, { allowLastAgent: true });
       },
     },
     directives: {

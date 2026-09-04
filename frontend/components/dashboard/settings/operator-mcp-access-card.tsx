@@ -42,6 +42,15 @@ export const isOperatorMcpResource = (value: string): boolean => {
 const artifactLabel = (artifact: OperatorMcpClientSetupArtifact) =>
   artifact.clientVersion ? `${artifact.displayName} (${artifact.clientVersion})` : artifact.displayName
 
+export const selectOperatorMcpArtifactId = (
+  artifacts: ReadonlyArray<Pick<OperatorMcpClientSetupArtifact, 'id' | 'status'>>,
+  currentId: string | null,
+): string | null => {
+  const current = artifacts.find((artifact) => artifact.id === currentId)
+  if (current && current.status !== 'unavailable') return current.id
+  return artifacts.find((artifact) => artifact.status !== 'unavailable')?.id ?? artifacts[0]?.id ?? null
+}
+
 const availabilityLabel: Record<OperatorMcpSetupResponse['availability'], string> = {
   available: 'Available',
   disabled: 'Disabled',
@@ -210,7 +219,7 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
       ])
       setSetup(nextSetup)
       setGrants(nextGrants.grants)
-      setSelectedArtifactId((current) => current ?? nextSetup.artifacts[0]?.id ?? null)
+      setSelectedArtifactId((current) => selectOperatorMcpArtifactId(nextSetup.artifacts, current))
     } catch (loadError) {
       setError(getApiErrorMessage(loadError, 'Could not load operator MCP access.'))
     } finally {

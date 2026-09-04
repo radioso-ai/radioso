@@ -81,6 +81,26 @@ describeIntegration("CopilotRepository apply-claim recovery (Postgres)", () => {
     expect(recoveredClaim!.proposal.id).toBe(proposal.id);
   });
 
+  it("resolves a proposal workspace only for its owning operator and account", async () => {
+    const proposal = await createPendingProposal();
+
+    await expect(repository.findProposalWorkspace({
+      id: proposal.id,
+      accountId,
+      operatorUserId,
+    })).resolves.toBe(workspaceId);
+    await expect(repository.findProposalWorkspace({
+      id: proposal.id,
+      accountId: randomUUID(),
+      operatorUserId,
+    })).resolves.toBeNull();
+    await expect(repository.findProposalWorkspace({
+      id: proposal.id,
+      accountId,
+      operatorUserId: randomUUID(),
+    })).resolves.toBeNull();
+  });
+
   it("finalizes an outcome only for the exact claim it holds, so a superseded claim cannot overwrite a newer one's result", async () => {
     const proposal = await createPendingProposal();
     const claim = await repository.claimProposalApply({ id: proposal.id, workspaceId, operatorUserId, claimTtlSeconds: 300 });

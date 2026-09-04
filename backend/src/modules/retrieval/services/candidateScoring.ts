@@ -19,10 +19,16 @@ export const reciprocalRankContribution = (rank: number | undefined): number => 
 export const fuseCandidateRanks = (input: {
   semanticRank?: number;
   lexicalRank?: number;
-  lexicalRankScore: number;
+  lexicalScore: number;
 }): number => {
   const semantic = reciprocalRankContribution(input.semanticRank);
-  const lexical = input.lexicalRankScore >= RETRIEVAL_BEHAVIOR.hybrid.lexicalMinimumUsefulRankScore
+  // Fusion is comparative, so the lexical gate reads the query-relative lexicalScore
+  // rather than the absolute ts_rank_cd floor used by hasUsefulCandidateEvidence.
+  // lexicalScore is normalized per lexical query call (rank / maxRank in
+  // infra/lexicalSearch.ts), and candidatePreparationService.addSource takes the max
+  // across branches, so in a multi-subquery turn each branch's best hit reaches 1.0.
+  // That is intended: every branch contributes its own best candidate to the pool.
+  const lexical = input.lexicalScore >= RETRIEVAL_BEHAVIOR.hybrid.lexicalFusionMinimumRelativeScore
     ? reciprocalRankContribution(input.lexicalRank)
     : 0;
   const primary = Math.max(semantic, lexical);

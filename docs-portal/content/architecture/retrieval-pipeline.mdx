@@ -32,7 +32,9 @@ For listing-style event date questions, the pipeline can also ask a retrieval-ow
 
 Retrieved chunks are normalized, merged, and scored. Metadata rules and explicit metadata filters narrow or boost the candidate set here.
 
-Semantic cosine and query-relative lexical scores stay separate. Candidate preparation combines their source ranks into a fused score from 0 to 1, with a bounded boost when both sources find the same chunk. Weak lexical results must also meet an absolute lexical-rank floor before they can contribute to fusion or minimum-useful-candidate checks.
+Semantic cosine and query-relative lexical scores stay separate. Candidate preparation combines their source ranks into a fused score from 0 to 1, with a bounded boost when both sources find the same chunk.
+
+Two lexical gates apply, and they answer different questions. Fusion ranks candidates against each other, so it gates on the query-relative lexical score: a chunk contributes its lexical rank once it reaches 0.2 against the best lexical hit for that query. Evidence checks — trigger backoff and minimum-useful-candidate counts — ask whether the turn found real lexical signal at all, so they gate on the absolute PostgreSQL `ts_rank_cd` value against a floor of 0.05. A rare-term query can produce top hits whose absolute rank sits well under that floor. Those hits rank normally against their peers, and they count as thin evidence.
 
 When upcoming-event boost is enabled, dated event evidence can receive a temporal boost during event date lookups. Topic relevance still applies; the temporal signal refines the candidate set rather than replacing it.
 

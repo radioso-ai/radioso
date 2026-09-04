@@ -33,6 +33,10 @@ into a per-call catalog.
 - `types.ts`: contracts (`AgentRuntime`, `AgentTool`, `AgentBudgets`,
   `AgentTraceEvent`, `ModelToolCallingGateway`, etc.).
 - `defaultAgentRuntime.ts`: the default tool-calling loop implementation.
+- `resultTokens.ts`: the currency `maxToolResultTokens` is kept in.
+  `estimateAgentResultTokens` is what the runtime charges a tool result that
+  does not declare `estimatedResultTokens`; `agentResultCharBudget` is the
+  inverse, for a caller sizing a payload it is about to be charged for.
 
 The default implementation is wired by `backend/src/app/composition/`. Domain
 modules MUST depend on the port (`AgentRuntime`) and never construct the
@@ -74,10 +78,15 @@ without an answer — which it does whenever the model was calling tools rather 
 with no tools offered and takes the wording from the model.
 
 The call is **reserved from `maxSteps`**, not spent past it, so FR-003's ceiling still holds: the
-tool loop stops one step early and the answer costs the step it left. It is skipped when the run is
-out of wall time or cancelled, an abort during it becomes the run's outcome, and any other failure
-is suppressed but emitted as `model_call_failed` so a blank turn is distinguishable from a failed
-recovery.
+tool loop stops one step early and the answer costs the step it left. An abort during it becomes
+the run's outcome, and any other failure is suppressed but emitted as `model_call_failed` so a blank
+turn is distinguishable from a failed recovery.
+
+It is skipped when the run is out of wall time or cancelled — one more model call is the opposite of
+what the caller asked for. Token exhaustion skips it only at
+`AGENT_BUDGET_CEILINGS.maxToolResultTokens`, where resubmitting the transcript is guaranteed to be
+the wrong shape. A caller that budgets below the ceiling is out of its own allowance, not out of
+context, so it still buys the answer it asked for rather than handing back a blank turn.
 
 Off by default. Agentic retrieval builds its result from a finalization tool payload and never reads
 `finalMessage`, so a closing call there would be a provider request nobody consumes.

@@ -614,3 +614,175 @@ describe("candidate retrieval branches", () => {
     expect(result.rewrittenContexts).toHaveLength(2);
   });
 });
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+const singleBranchStageInput = () => ({
+  request: {
+    workspaceId: "w1",
+    query: "recover account access",
+    history: [],
+  },
+  settings: {
+    workspaceId: "w1",
+    queryRewriteEnabled: true,
+    semanticRewriteInstructions: "",
+    lexicalRewriteInstructions: "",
+    suggestedQuestionsEnabled: true,
+    suggestedQuestionsCount: 3,
+    rerankEnabled: false,
+    vectorTopK: 20,
+    similarityThreshold: 0.2,
+    rerankTopK: 5,
+    metadataRules: [],
+    customInstruction: "",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  contextWindow: {
+    selectedMessages: [],
+    truncated: false,
+    selectionReason: "no-history",
+  },
+  originalParsedQuery: {
+    originalQuery: "recover account access",
+    semanticQuery: "recover account access",
+    lexicalQuery: "recover account access",
+    constraints: [],
+  },
+  originalPreparedQuery: {
+    originalQuery: "recover account access",
+    semanticQuery: "recover account access",
+    lexicalQuery: "recover account access",
+    constraints: [],
+  },
+  rewrittenQuery: {
+    originalQuery: "recover account access",
+    rewrittenQuery: "recover account access",
+    effectiveQuery: "recover account access",
+    semanticQuery: "recover account access",
+    lexicalQuery: "recover account access",
+    retrievalSubqueries: [
+      { id: "subquery_1", label: "forgot password", semanticQuery: "account recovery", lexicalQuery: '"forgot password"' },
+    ],
+    rewriteApplied: true,
+    retrievalEligible: true,
+    status: "applied" as const,
+    confidence: 0.9,
+  },
+  activeQuery: "recover account access",
+  activeParsedQuery: {
+    originalQuery: "recover account access",
+    semanticQuery: "recover account access",
+    lexicalQuery: "recover account access",
+    constraints: [],
+  },
+  activeSemanticQuery: "recover account access",
+  activeRetrievalSubqueries: [
+    { id: "subquery_1", label: "forgot password", semanticQuery: "account recovery", lexicalQuery: '"forgot password"' },
+  ],
+  triggerAnalysis: {
+    status: "skipped_not_configured" as const,
+    consideredRules: [],
+    matchedRuleIds: [],
+    unmatchedRuleIds: [],
+    matchCount: 0,
+    matcherVersion: "test",
+  },
+  promptHistory: [],
+  promptHistoryReset: false,
+  continuityDecision: "updated" as const,
+});
+
+describe("candidate retrieval branch timings", () => {
+  it("measures each branch around its own work rather than splitting the stage span", async () => {
+    const embeddingDelayMs = 40;
+    const lexicalDelayMs = 140;
+    const semanticDelayMs = 30;
+    const stage = new CandidateRetrievalStageService(
+      {
+        async embedQueries(input) {
+          await delay(embeddingDelayMs);
+          return { space: embeddingSpace, vectors: input.texts.map((_, index) => [index + 1]) };
+        },
+      },
+      {
+        async search(input) {
+          await delay(semanticDelayMs);
+          return [
+            {
+              chunkId: "semantic-1",
+              documentId: "doc-semantic-1",
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.9,
+            },
+          ];
+        },
+      },
+      {
+        async search(input) {
+          await delay(lexicalDelayMs);
+          return [
+            {
+              chunkId: `lexical-${input.query}`,
+              documentId: `doc-lexical-${input.query}`,
+              title: input.query,
+              content: "recovery",
+              similarity: 0.8,
+            },
+          ];
+        },
+      },
+      hydrateSemanticCandidates,
+    );
+
+    const result = await stage.execute(singleBranchStageInput());
+
+    // Lexical search is issued before the embedding is awaited, so it starts first.
+    expect(result.lexicalRetrievalStartedAtMs).toBeLessThan(result.semanticRetrievalStartedAtMs);
+    // Each branch reports its own elapsed time, so the slower branch here is lexical.
+    // A proportional split of the stage span always makes lexical the smaller share.
+    expect(result.lexicalRetrievalDurationMs).toBeGreaterThan(result.semanticRetrievalDurationMs);
+    expect(result.lexicalRetrievalDurationMs).toBeGreaterThanOrEqual(lexicalDelayMs - 10);
+    expect(result.semanticRetrievalDurationMs).toBeGreaterThanOrEqual(semanticDelayMs - 10);
+    // The branches overlap: lexical is still running when semantic search starts.
+    expect(result.lexicalRetrievalStartedAtMs + result.lexicalRetrievalDurationMs)
+      .toBeGreaterThan(result.semanticRetrievalStartedAtMs);
+  });
+
+  it("reports zero semantic duration when the embedding is unavailable", async () => {
+    const stage = new CandidateRetrievalStageService(
+      {
+        async embedQueries() {
+          throw new Error("embedding provider down");
+        },
+      },
+      {
+        async search() {
+          throw new Error("vector search must not run without an embedding");
+        },
+      },
+      {
+        async search(input) {
+          await delay(20);
+          return [
+            {
+              chunkId: `lexical-${input.query}`,
+              documentId: `doc-lexical-${input.query}`,
+              title: input.query,
+              content: "recovery",
+              similarity: 0.8,
+            },
+          ];
+        },
+      },
+      hydrateSemanticCandidates,
+    );
+
+    const result = await stage.execute(singleBranchStageInput());
+
+    expect(result.semanticRetrievalDurationMs).toBe(0);
+    expect(result.lexicalRetrievalDurationMs).toBeGreaterThan(0);
+  });
+});

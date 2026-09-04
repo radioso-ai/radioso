@@ -21,13 +21,25 @@ export class OperatorBackendAdapterError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code: "unauthorized" | "insufficient_scope" | "unavailable" | "invalid_response" | "request_failed",
+    readonly code: OperatorBackendAdapterErrorCode,
     readonly requiredScope?: string,
   ) {
     super(message);
     this.name = "OperatorBackendAdapterError";
   }
 }
+
+export type OperatorBackendAdapterErrorCode =
+  | "unauthorized"
+  | "insufficient_scope"
+  | "unavailable"
+  | "invalid_response"
+  | "request_failed"
+  | "invalid_arguments"
+  | "operation_required"
+  | "operation_conflict"
+  | "budget_exhausted"
+  | "rate_limit_exceeded";
 
 export interface OperatorBackendAdapter {
   admit(request: OperatorAdmissionRequest): Promise<OperatorAdmissionResponse>;
@@ -52,9 +64,31 @@ const ENDPOINTS = {
 
 const isAbort = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
 
-const responseErrorCode = (status: number): OperatorBackendAdapterError["code"] => {
+const SAFE_BACKEND_ERROR_CODES = new Set<OperatorBackendAdapterErrorCode>([
+  "invalid_arguments",
+  "operation_required",
+  "operation_conflict",
+  "budget_exhausted",
+  "rate_limit_exceeded",
+]);
+
+const readSafeBackendErrorCode = async (response: Response): Promise<OperatorBackendAdapterErrorCode | null> => {
+  try {
+    const payload = await response.json() as unknown;
+    if (!payload || typeof payload !== "object" || !("code" in payload) || typeof payload.code !== "string") return null;
+    return SAFE_BACKEND_ERROR_CODES.has(payload.code as OperatorBackendAdapterErrorCode)
+      ? payload.code as OperatorBackendAdapterErrorCode
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const responseErrorCode = (status: number, backendCode: OperatorBackendAdapterErrorCode | null): OperatorBackendAdapterError["code"] => {
+  if (backendCode) return backendCode;
   if (status === 401) return "unauthorized";
   if (status === 403) return "insufficient_scope";
+  if (status === 429) return "rate_limit_exceeded";
   if (status >= 500) return "unavailable";
   return "request_failed";
 };
@@ -101,10 +135,11 @@ export const createOperatorBackendAdapter = ({
       clearTimeout(timer);
     }
     if (!response.ok) {
+      const code = await readSafeBackendErrorCode(response);
       throw new OperatorBackendAdapterError(
         response.status === 403 ? "Operator capability scope is insufficient." : response.status >= 500 ? "Operator backend is unavailable." : "Operator authorization failed.",
         response.status,
-        responseErrorCode(response.status),
+        responseErrorCode(response.status, code),
         response.headers.get("x-radioso-required-scope") ?? undefined,
       );
     }

@@ -1,14 +1,10 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import {
+  OPERATOR_MCP_LIFECYCLE_SCOPE,
   OPERATOR_MCP_SCOPES,
-  operatorScopeForShape,
   type OperatorMcpScope,
-  type OperatorMcpShape,
 } from "@radioso/operator-mcp-contract";
-
-export const OPERATOR_MCP_TOOL_SCOPES = OPERATOR_MCP_SCOPES;
-export type OperatorMcpToolScope = OperatorMcpScope;
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
@@ -34,21 +30,18 @@ export class OperatorMcpProtocolError extends Error {
 
 export const parseOperatorMcpScopes = (
   value: string,
-): { toolScopes: OperatorMcpToolScope[]; offlineAccess: boolean } => {
+): { toolScopes: OperatorMcpScope[]; offlineAccess: boolean } => {
   const requested = [...new Set(value.split(/\s+/u).filter(Boolean))];
-  const known = new Set<string>([...OPERATOR_MCP_TOOL_SCOPES, "offline_access"]);
+  const known = new Set<string>([...OPERATOR_MCP_SCOPES, OPERATOR_MCP_LIFECYCLE_SCOPE]);
   if (requested.some((scope) => !known.has(scope))) {
     throw new OperatorMcpProtocolError("invalid_scope", "invalid_scope");
   }
-  const toolScopes = OPERATOR_MCP_TOOL_SCOPES.filter((scope) => requested.includes(scope));
+  const toolScopes = OPERATOR_MCP_SCOPES.filter((scope) => requested.includes(scope));
   if (toolScopes.length === 0) {
     throw new OperatorMcpProtocolError("invalid_scope", "At least one operator tool scope is required");
   }
-  return { toolScopes, offlineAccess: requested.includes("offline_access") };
+  return { toolScopes, offlineAccess: requested.includes(OPERATOR_MCP_LIFECYCLE_SCOPE) };
 };
-
-export const scopeForToolShape = (shape: OperatorMcpShape): OperatorMcpToolScope =>
-  operatorScopeForShape(shape);
 
 export const validateAuthorizationResource = (requested: string, canonical: string): string => {
   if (requested !== canonical) {
@@ -98,27 +91,5 @@ export const validateRedirectUri = (input: {
   return requested.toString();
 };
 
-const PKCE_VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/u;
-
-export const validatePkceS256 = (verifier: string, challenge: string): boolean => {
-  if (!PKCE_VERIFIER.test(verifier)) return false;
-  const actual = Buffer.from(createHash("sha256").update(verifier).digest("base64url"));
-  const expected = Buffer.from(challenge);
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
-};
-
 export const generateOpaqueCredential = (): string => randomBytes(32).toString("base64url");
 export const hashOpaqueCredential = (value: string): string => createHash("sha256").update(value).digest("hex");
-
-const canonicalSerialize = (value: unknown): string => {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalSerialize).join(",")}]`;
-  return `{${Object.entries(value as Record<string, unknown>)
-    .filter(([, item]) => item !== undefined)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, item]) => `${JSON.stringify(key)}:${canonicalSerialize(item)}`)
-    .join(",")}}`;
-};
-
-export const canonicalInputDigest = (value: unknown, key: string): string =>
-  `v1:${createHmac("sha256", key).update("radioso:operator-mcp:input:v1\0").update(canonicalSerialize(value)).digest("hex")}`;

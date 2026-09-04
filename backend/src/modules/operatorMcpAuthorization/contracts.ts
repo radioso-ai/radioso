@@ -133,15 +133,6 @@ export interface OperatorMcpAuthorizationTransactionRecord {
   consumedAt: Date | null;
 }
 
-export interface OperatorMcpIssuedCredentials {
-  accessToken: string;
-  accessExpiresAt: Date;
-  refreshToken: string | null;
-  scope: readonly OperatorMcpScope[];
-  offlineAccess: boolean;
-  grantId: string;
-}
-
 export interface OperatorMcpAuthorizationFlowRepositoryPort {
   createTransaction(input: Omit<OperatorMcpAuthorizationTransactionRecord,
     "clientId" | "clientVersion" | "clientDisplayName" | "applicationType" | "accountId" | "userId" | "sessionId" |

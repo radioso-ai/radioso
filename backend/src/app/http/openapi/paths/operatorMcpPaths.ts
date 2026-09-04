@@ -1,12 +1,13 @@
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import { z } from "zod";
+import { OPERATOR_MCP_SCOPES } from "@radioso/operator-mcp-contract";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
 const workspaceParams = z.object({ workspaceId: z.string().uuid() });
 const grantParams = workspaceParams.extend({ grantId: z.string().uuid() });
 const transactionParams = z.object({ transactionId: z.string().uuid() });
-const toolScope = z.enum(["operator:read", "operator:probe", "operator:act", "operator:propose"]);
+const toolScope = z.enum(OPERATOR_MCP_SCOPES);
 const grantStatus = z.enum(["active", "revoked", "superseded", "expired"]);
 
 const setupArtifact = z.object({

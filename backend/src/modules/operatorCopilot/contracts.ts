@@ -1,4 +1,5 @@
 import { z, type ZodType } from "zod";
+import type { OperatorMcpScope } from "@radioso/operator-mcp-contract";
 
 import type { AccountPermission } from "../account/public.js";
 import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
@@ -452,7 +453,7 @@ export type CopilotMcpDisposition =
   | {
       readonly status: "eligible";
       readonly inputStrategy: "explicit";
-      readonly scope: "operator:read" | "operator:probe" | "operator:act" | "operator:propose";
+      readonly scope: OperatorMcpScope;
       readonly retry: {
         readonly effect: "none" | "proposal" | "act";
         readonly idempotent: boolean;

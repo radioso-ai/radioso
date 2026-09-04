@@ -1,7 +1,9 @@
 import {
   digestOperatorMcpCall,
   digestOperatorMcpInput,
+  createOperatorMcpProof,
   sha256Digest,
+  verifyOperatorMcpProof,
   type OperatorAdmissionRequest,
   type OperatorAdmissionResponse,
   type OperatorCatalogResponse,
@@ -11,11 +13,9 @@ import {
   type OperatorMcpScope,
 } from "@radioso/operator-mcp-contract";
 
-import {
-  createOperatorProof,
-  verifyOperatorProof,
-  type OperatorMcpCredentialValidationService,
-  type OperatorMcpPrincipal,
+import type {
+  OperatorMcpCredentialValidationService,
+  OperatorMcpPrincipal,
 } from "../operatorMcpAuthorization/public.js";
 import type { AuditPort } from "../audit/contracts/index.js";
 import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } from "./contracts.js";
@@ -167,7 +167,7 @@ export class OperatorMcpApplicationService {
 
   private async currentProofPrincipal(proof: OperatorMcpProof, expectedMethod: OperatorMcpProof["method"]): Promise<OperatorMcpPrincipal> {
     const now = this.now();
-    if (proof.method !== expectedMethod || !verifyOperatorProof(proof, this.dependencies.secret, now.getTime())) {
+    if (proof.method !== expectedMethod || !verifyOperatorMcpProof({ proof, secret: this.dependencies.secret, now: now.getTime() })) {
       throw new OperatorMcpApplicationError("invalid_proof");
     }
     const principal = await this.dependencies.credentialValidation.revalidateCredential({
@@ -226,7 +226,7 @@ export class OperatorMcpApplicationService {
       await this.dependencies.invocations.recordOutcome({ invocationId: request.invocationId, status: "completed", safeOutcomeCode: "completed", now });
     }
     const issuedAt = now.getTime();
-    const proof = createOperatorProof({
+    const proof = createOperatorMcpProof({
       version: 1,
       credentialId: principal.credentialId,
       credentialEpoch: principal.credentialEpoch,
@@ -248,7 +248,8 @@ export class OperatorMcpApplicationService {
       issuedAt,
       expiresAt: issuedAt + PROOF_TTL_MS,
       nonce: proofNonce,
-    }, this.dependencies.secret);
+      secret: this.dependencies.secret,
+    });
     return { proof, ...(requiredScope ? { requiredScope } : {}) };
   }
 

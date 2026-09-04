@@ -16,12 +16,21 @@
 - Protocol version: `2026-07-28` only.
 - Stateless JSON-RPC request over HTTP POST; no operator session ID and no
   initialization handshake.
-- Supported methods: `ping`, `tools/list`, `tools/call`.
-- Every request declares the protocol version and method before an unrestricted
-  body is parsed. `tools/call` declares `params.name`, bounded arguments, and a
-  stable operation identity for stateful descriptors.
+- Supported methods: `server/discover`, `ping`, `tools/list`, `tools/call`.
+- Every request mirrors the protocol version and method in
+  `MCP-Protocol-Version` and `Mcp-Method` before an unrestricted body is parsed.
+  The header values must match the JSON-RPC method and the protocol version in
+  `params._meta`; `tools/call` also mirrors `params.name` in `Mcp-Name` before
+  parsing bounded arguments and a stable operation identity for stateful
+  descriptors.
+- Every request carries client capabilities in `params._meta` and may carry
+  client identity there. `server/discover` reports the supported version,
+  server identity, and tool capability without requiring an initialization
+  exchange.
 - Responses are JSON only. Tool catalog caching is disabled initially; each
-  list is rebuilt from current grant, client, tenure, role, and descriptor state.
+  list is marked grant-private with a zero TTL and rebuilt from current grant,
+  client, tenure, role, and descriptor state. Every successful response carries
+  `resultType: "complete"`.
 
 ## Tool mapping
 

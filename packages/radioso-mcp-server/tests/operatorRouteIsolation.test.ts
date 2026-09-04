@@ -76,7 +76,26 @@ describe("operator route isolation", () => {
     await server.listen();
     const address = server.server.address();
     if (!address || typeof address === "string") throw new Error("expected TCP address");
-    const response = await fetch(`http://127.0.0.1:${address.port}/operator/mcp`, { method: "POST", body: JSON.stringify({ id: 1, jsonrpc: "2.0", method: "ping", protocolVersion: "2026-07-28" }), headers: { authorization: "Bearer opaque", "content-type": "application/json" } });
+    const response = await fetch(`http://127.0.0.1:${address.port}/operator/mcp`, {
+      method: "POST",
+      body: JSON.stringify({
+        id: 1,
+        jsonrpc: "2.0",
+        method: "ping",
+        params: {
+          _meta: {
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          },
+        },
+      }),
+      headers: {
+        authorization: "Bearer opaque",
+        "content-type": "application/json",
+        "mcp-method": "ping",
+        "mcp-protocol-version": "2026-07-28",
+      },
+    });
     expect(response.status).toBe(200);
     await new Promise((resolve) => setImmediate(resolve));
     expect(emit).toHaveBeenCalledWith({ eventType: "operator_mcp_method", metadata: { method: "ping", surface: "operator_mcp" }, outcome: "success" });

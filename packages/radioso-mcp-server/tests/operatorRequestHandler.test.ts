@@ -31,17 +31,43 @@ const dependencies: {
   list: vi.fn<OperatorMcpRequestHandlerDependencies["list"]>(async () => ({ tools: [] })),
 };
 
+const requestMetadata = {
+  "io.modelcontextprotocol/clientCapabilities": {},
+  "io.modelcontextprotocol/clientInfo": { name: "operator-test", version: "1.0.0" },
+  "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+};
+
+const operatorRequest = (
+  body: { id: string | number; method: string; params?: Record<string, unknown>; [key: string]: unknown },
+  headerOverrides: Record<string, string> = {},
+): Request => {
+  const params = { _meta: requestMetadata, ...body.params };
+  const name = typeof params.name === "string" ? params.name : undefined;
+  return new Request("https://mcp.example/operator/mcp", {
+    body: JSON.stringify({ ...body, params }),
+    headers: {
+      authorization: "Bearer opaque-access-token",
+      "content-type": "application/json",
+      "mcp-protocol-version": "2026-07-28",
+      "mcp-method": body.method,
+      ...(body.method === "tools/call" && name ? { "mcp-name": name } : {}),
+      ...headerOverrides,
+    },
+    method: "POST",
+  });
+};
+
 describe("operator MCP stateless request handler", () => {
   it("dispatches a self-describing 2026-07-28 ping without initialization or session state", async () => {
     const handler = createOperatorMcpRequestHandler(dependencies);
-    const response = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: "1", jsonrpc: "2.0", method: "ping", params: {}, protocolVersion: "2026-07-28" }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-      method: "POST",
-    }));
+    const response = await handler(operatorRequest({ id: "1", jsonrpc: "2.0", method: "ping" }));
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ id: "1", jsonrpc: "2.0", result: {} });
+    await expect(response.json()).resolves.toMatchObject({
+      id: "1",
+      jsonrpc: "2.0",
+      result: { resultType: "complete" },
+    });
     expect(dependencies.admit).toHaveBeenCalledOnce();
   });
 
@@ -50,30 +76,28 @@ describe("operator MCP stateless request handler", () => {
     dependencies.list.mockResolvedValue({ tools: [{ name: "workspace_settings" }] });
     const handler = createOperatorMcpRequestHandler(dependencies);
 
-    const listResponse = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: 2, jsonrpc: "2.0", method: "tools/list", protocolVersion: "2026-07-28" }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-      method: "POST",
-    }));
+    const listResponse = await handler(operatorRequest({ id: 2, jsonrpc: "2.0", method: "tools/list" }));
     expect(listResponse.status).toBe(200);
-    await expect(listResponse.json()).resolves.toMatchObject({ result: { tools: [{ name: "workspace_settings" }] } });
+    await expect(listResponse.json()).resolves.toMatchObject({
+      result: {
+        cacheScope: "private",
+        resultType: "complete",
+        tools: [{ name: "workspace_settings" }],
+        ttlMs: 0,
+      },
+    });
 
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
     dependencies.call.mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
     const operationId = "00000000-0000-4000-8000-000000000099";
-    const callResponse = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({
+    const callResponse = await handler(operatorRequest({
         id: 3,
         jsonrpc: "2.0",
         method: "tools/call",
         params: { arguments: { query: "safe" }, name: "retrieval_probe", operationId },
-        protocolVersion: "2026-07-28",
-      }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-      method: "POST",
     }));
     expect(callResponse.status).toBe(200);
-    await expect(callResponse.json()).resolves.toMatchObject({ result: { content: [{ text: "ok" }] } });
+    await expect(callResponse.json()).resolves.toMatchObject({ result: { content: [{ text: "ok" }], resultType: "complete" } });
     expect(dependencies.call).toHaveBeenCalledWith(expect.objectContaining({ name: "retrieval_probe", operationId }));
     expect(dependencies.admit).toHaveBeenLastCalledWith(expect.objectContaining({
       invocationId: expect.not.stringMatching(operationId),
@@ -87,14 +111,94 @@ describe("operator MCP stateless request handler", () => {
   it("rejects initialization and older protocol revisions before admission", async () => {
     const handler = createOperatorMcpRequestHandler(dependencies);
     const before = dependencies.admit.mock.calls.length;
-    for (const method of ["initialize", "tools/list"] as const) {
-      const response = await handler(new Request("https://mcp.example/operator/mcp", {
-        body: JSON.stringify({ id: "bad", jsonrpc: "2.0", method, protocolVersion: method === "initialize" ? "2026-07-28" : "2025-11-25" }),
+    const initialize = await handler(operatorRequest({ id: "initialize", jsonrpc: "2.0", method: "initialize" }));
+    expect(initialize.status).toBe(404);
+    await expect(initialize.json()).resolves.toMatchObject({ error: { code: -32601 } });
+
+    const oldProtocol = await handler(operatorRequest(
+      {
+        id: "old-protocol",
+        jsonrpc: "2.0",
+        method: "tools/list",
+        params: {
+          _meta: {
+            ...requestMetadata,
+            "io.modelcontextprotocol/protocolVersion": "2025-11-25",
+          },
+        },
+      },
+      { "mcp-protocol-version": "2025-11-25" },
+    ));
+    expect(oldProtocol.status).toBe(400);
+    await expect(oldProtocol.json()).resolves.toMatchObject({
+      error: {
+        code: -32022,
+        data: { requested: "2025-11-25", supported: ["2026-07-28"] },
+      },
+    });
+    expect(dependencies.admit.mock.calls.length).toBe(before);
+  });
+
+  it("discovers the standard stateless server profile without durable admission", async () => {
+    const handler = createOperatorMcpRequestHandler(dependencies);
+    const before = dependencies.admit.mock.calls.length;
+    const response = await handler(operatorRequest({ id: "discover", jsonrpc: "2.0", method: "server/discover" }));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      result: {
+        cacheScope: "public",
+        capabilities: { tools: {} },
+        resultType: "complete",
+        supportedVersions: ["2026-07-28"],
+      },
+    });
+    expect(dependencies.admit.mock.calls.length).toBe(before);
+  });
+
+  it("decodes a sentinel-encoded Mcp-Name before comparing it with the body", async () => {
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+    const handler = createOperatorMcpRequestHandler(dependencies);
+    const name = "rétrieval_probe";
+    const encodedName = `=?base64?${Buffer.from(name, "utf8").toString("base64")}?=`;
+    const response = await handler(operatorRequest(
+      { id: "encoded-name", jsonrpc: "2.0", method: "tools/call", params: { arguments: {}, name } },
+      { "mcp-name": encodedName },
+    ));
+
+    expect(response.status).toBe(200);
+    expect(dependencies.call).toHaveBeenLastCalledWith(expect.objectContaining({ name }));
+  });
+
+  it("rejects missing or mismatched routing headers before admission", async () => {
+    const handler = createOperatorMcpRequestHandler(dependencies);
+    const before = dependencies.admit.mock.calls.length;
+    const cases = [
+      new Request("https://mcp.example/operator/mcp", {
+        body: "not-json",
         headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
         method: "POST",
-      }));
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toMatchObject({ error: { code: -32600 } });
+      }),
+      operatorRequest({ id: "missing-method", jsonrpc: "2.0", method: "tools/list" }, { "mcp-method": "" }),
+      operatorRequest({ id: "method-mismatch", jsonrpc: "2.0", method: "tools/list" }, { "mcp-method": "ping" }),
+      operatorRequest(
+        { id: "name-mismatch", jsonrpc: "2.0", method: "tools/call", params: { arguments: {}, name: "workspace_settings" } },
+        { "mcp-name": "retrieval_probe" },
+      ),
+      operatorRequest(
+        {
+          id: "version-mismatch",
+          jsonrpc: "2.0",
+          method: "tools/list",
+          params: { _meta: { ...requestMetadata, "io.modelcontextprotocol/protocolVersion": "2025-11-25" } },
+        },
+      ),
+    ];
+
+    for (const request of cases) {
+      const response = await handler(request);
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({ error: { code: -32020 } });
     }
     expect(dependencies.admit.mock.calls.length).toBe(before);
   });
@@ -107,11 +211,7 @@ describe("operator MCP stateless request handler", () => {
       { name: "retrieval_probe", arguments: {}, operationId: "" },
       { name: "x".repeat(129), arguments: {} },
     ]) {
-      const response = await handler(new Request("https://mcp.example/operator/mcp", {
-        body: JSON.stringify({ id: "bad-call", jsonrpc: "2.0", method: "tools/call", params, protocolVersion: "2026-07-28" }),
-        headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-        method: "POST",
-      }));
+      const response = await handler(operatorRequest({ id: "bad-call", jsonrpc: "2.0", method: "tools/call", params }));
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({ error: { code: -32602 } });
     }
@@ -127,11 +227,7 @@ describe("operator MCP stateless request handler", () => {
     });
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/list" } });
 
-    const response = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: "rollout", jsonrpc: "2.0", method: "tools/list", protocolVersion: "2026-07-28" }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-      method: "POST",
-    }));
+    const response = await handler(operatorRequest({ id: "rollout", jsonrpc: "2.0", method: "tools/list" }));
 
     expect(response.status).toBe(401);
     expect(list).not.toHaveBeenCalled();
@@ -145,17 +241,21 @@ describe("operator MCP stateless request handler", () => {
       }),
       resourceMetadataUrl: "https://mcp.example/.well-known/oauth-protected-resource/operator/mcp",
     });
-    const response = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: 4, jsonrpc: "2.0", method: "tools/call", protocolVersion: "2026-07-28", params: { name: "retrieval_probe" } }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" }, method: "POST",
+    const response = await handler(operatorRequest({
+      id: 4,
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "retrieval_probe" },
     }));
     expect(response.status).toBe(403);
     expect(response.headers.get("www-authenticate")).toContain("insufficient_scope");
     expect(response.headers.get("www-authenticate")).toContain("operator:probe");
 
-    const oversized = await createOperatorMcpRequestHandler(dependencies)(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: 5, jsonrpc: "2.0", method: "tools/list", protocolVersion: "2026-07-28", padding: "x".repeat(300_000) }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" }, method: "POST",
+    const oversized = await createOperatorMcpRequestHandler(dependencies)(operatorRequest({
+      id: 5,
+      jsonrpc: "2.0",
+      method: "tools/list",
+      padding: "x".repeat(300_000),
     }));
     expect(oversized.status).toBe(200);
     await expect(oversized.json()).resolves.toMatchObject({ error: { code: -32600 } });
@@ -170,10 +270,11 @@ describe("operator MCP stateless request handler", () => {
     });
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
 
-    const response = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: "validation", jsonrpc: "2.0", method: "tools/call", protocolVersion: "2026-07-28", params: { name: "workspace_settings" } }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-      method: "POST",
+    const response = await handler(operatorRequest({
+      id: "validation",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "workspace_settings" },
     }));
 
     expect(response.status).toBe(200);
@@ -189,10 +290,11 @@ describe("operator MCP stateless request handler", () => {
     });
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
 
-    const response = await handler(new Request("https://mcp.example/operator/mcp", {
-      body: JSON.stringify({ id: "budget", jsonrpc: "2.0", method: "tools/call", protocolVersion: "2026-07-28", params: { name: "workspace_settings" } }),
-      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
-      method: "POST",
+    const response = await handler(operatorRequest({
+      id: "budget",
+      jsonrpc: "2.0",
+      method: "tools/call",
+      params: { name: "workspace_settings" },
     }));
 
     expect(response.status).toBe(429);

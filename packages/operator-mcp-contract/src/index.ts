@@ -17,6 +17,7 @@ export const OPERATOR_MCP_SHAPES = ["read", "probe", "act", "propose"] as const;
 export type OperatorMcpScope = (typeof OPERATOR_MCP_SCOPES)[number];
 export type OperatorMcpShape = (typeof OPERATOR_MCP_SHAPES)[number];
 export type OperatorMcpMethod = "ping" | "tools/list" | "tools/call";
+export type OperatorMcpWireMethod = "server/discover" | OperatorMcpMethod;
 
 const digestPattern = /^[A-Za-z0-9_-]{43}$/u;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -25,16 +26,27 @@ const digest = z.string().regex(digestPattern);
 const uuid = z.string().regex(uuidPattern);
 const canonicalDecimal = z.string().regex(/^(?:0|[1-9]\d*)$/u);
 const method = z.enum(["ping", "tools/list", "tools/call"]);
+const wireMethod = z.enum(["server/discover", "ping", "tools/list", "tools/call"]);
 const shape = z.enum(OPERATOR_MCP_SHAPES);
 const scope = z.enum(OPERATOR_MCP_SCOPES);
 const jsonSchema = z.record(z.string(), z.unknown());
 
+export const OperatorMcpRequestMetadataSchema = z.object({
+  "io.modelcontextprotocol/protocolVersion": z.literal(OPERATOR_MCP_PROTOCOL_VERSION),
+  "io.modelcontextprotocol/clientCapabilities": z.record(z.string(), z.unknown()),
+  "io.modelcontextprotocol/clientInfo": z.object({
+    name: boundedText(256),
+    version: boundedText(256),
+  }).passthrough().optional(),
+}).passthrough();
+
 export const OperatorMcpRequestSchema = z.object({
   jsonrpc: z.literal("2.0"),
-  id: z.union([z.string().max(256), z.number().finite(), z.null()]),
-  protocolVersion: z.literal(OPERATOR_MCP_PROTOCOL_VERSION),
-  method,
-  params: z.record(z.string(), z.unknown()).optional(),
+  id: z.union([z.string().max(256), z.number().finite()]),
+  method: wireMethod,
+  params: z.object({
+    _meta: OperatorMcpRequestMetadataSchema,
+  }).passthrough(),
 }).strict();
 export type OperatorMcpRequest = z.infer<typeof OperatorMcpRequestSchema>;
 

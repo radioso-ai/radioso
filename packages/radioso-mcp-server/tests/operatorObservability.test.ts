@@ -7,6 +7,32 @@ import {
 } from "../src/operator/observability.js";
 import { createOperatorMcpRequestHandler } from "../src/operator/requestHandler.js";
 
+const operatorRequest = (method: "ping" | "tools/call", params: Record<string, unknown> = {}): Request => new Request(
+  "https://mcp.example/operator/mcp",
+  {
+    method: "POST",
+    headers: {
+      authorization: "Bearer bearer-secret",
+      "content-type": "application/json",
+      "mcp-method": method,
+      "mcp-protocol-version": "2026-07-28",
+      ...(method === "tools/call" ? { "mcp-name": String(params.name) } : {}),
+    },
+    body: JSON.stringify({
+      id: "1",
+      jsonrpc: "2.0",
+      method,
+      params: {
+        _meta: {
+          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        },
+        ...params,
+      },
+    }),
+  },
+);
+
 describe("operator MCP observability", () => {
   it("classifies handler outcomes without forwarding bearer or arguments to telemetry", async () => {
     const observations: unknown[] = [];
@@ -19,12 +45,9 @@ describe("operator MCP observability", () => {
       onOutcome(observation) { observations.push(observation); },
     });
 
-    await handler(new Request("https://mcp.example/operator/mcp", {
-      method: "POST",
-      headers: { authorization: "Bearer bearer-secret", "content-type": "application/json" },
-      body: JSON.stringify({ id: "1", jsonrpc: "2.0", method: "tools/call", protocolVersion: "2026-07-28", params: {
-        name: "retrieval_probe", arguments: { query: "customer content" },
-      } }),
+    await handler(operatorRequest("tools/call", {
+      name: "retrieval_probe",
+      arguments: { query: "customer content" },
     }));
 
     expect(observations).toEqual([{
@@ -45,11 +68,7 @@ describe("operator MCP observability", () => {
       principalRateLimit,
     });
 
-    const response = await handler(new Request("https://mcp.example/operator/mcp", {
-      method: "POST",
-      headers: { authorization: "Bearer bearer", "content-type": "application/json" },
-      body: JSON.stringify({ id: "1", jsonrpc: "2.0", method: "ping", protocolVersion: "2026-07-28" }),
-    }));
+    const response = await handler(operatorRequest("ping"));
 
     expect(response.status).toBe(429);
     expect(principalRateLimit.consume).toHaveBeenCalledOnce();

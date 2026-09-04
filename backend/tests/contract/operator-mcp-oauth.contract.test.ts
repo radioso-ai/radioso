@@ -3,6 +3,7 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { captureRequestBody } from "../../src/app/server/createApp.js";
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../src/modules/operatorMcpAuthorization/routes.js";
 
 const env = {
@@ -35,7 +36,7 @@ const createHarness = (envOverrides: Partial<typeof env> = {}) => {
     abuseControlService: { enforce: vi.fn(async () => undefined) },
   };
   const app = express();
-  app.use(express.urlencoded({ extended: false })); app.use(express.json()); app.use(cookieParser());
+  app.use(captureRequestBody); app.use(cookieParser());
   app.use("/.well-known", createOperatorMcpDiscoveryRoutes(dependencies as never));
   app.use("/api/v1/operator-mcp/oauth", createOperatorMcpOauthRoutes(dependencies as never));
   app.use((error: { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => res.status(error.statusCode ?? 500).json({ error: "request_failed" }));
@@ -112,6 +113,29 @@ describe("operator MCP OAuth HTTP contract", () => {
     expect(token.body).toEqual({ access_token: "access", token_type: "Bearer", expires_in: 900, scope: "operator:read" });
     await request(app).post("/api/v1/operator-mcp/oauth/revoke").type("form").send({ token: "unknown" }).expect(200);
     expect(service.revoke).toHaveBeenCalledWith("unknown", expect.any(Date));
+  });
+
+  it.each([
+    ["authorization_code", "authorization-code", "exchangeAuthorizationCode"],
+    ["refresh_token", "refresh-token", "refresh"],
+  ] as const)("parses mixed-case form media types for %s token exchanges", async (grantType, secret, serviceMethod) => {
+    const { app, service } = createHarness();
+    service.refresh.mockResolvedValue({ accessToken: "refreshed-access", tokenType: "Bearer", expiresIn: 900, refreshToken: "refreshed-refresh", scope: "operator:read" });
+
+    const form = new URLSearchParams({
+      grant_type: grantType,
+      ...(grantType === "authorization_code"
+        ? { code: secret, client_id: "client", redirect_uri: "https://client.example/callback", code_verifier: "a".repeat(43), resource: env.OPERATOR_MCP_RESOURCE_URL }
+        : { refresh_token: secret, client_id: "client", resource: env.OPERATOR_MCP_RESOURCE_URL }),
+    }).toString();
+    const response = await request(app)
+      .post("/api/v1/operator-mcp/oauth/token")
+      .set("Content-Type", "Application/X-Www-Form-Urlencoded")
+      .send(form)
+      .expect(200);
+
+    expect(response.body.access_token).toBe(grantType === "authorization_code" ? "access" : "refreshed-access");
+    expect(service[serviceMethod]).toHaveBeenCalled();
   });
 
   it("rejects JSON token requests instead of widening the advertised OAuth contract", async () => {

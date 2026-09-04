@@ -222,6 +222,7 @@ const installConsentRoutes = async (page: Page, transaction: Record<string, unkn
 
 test("consent identifies the real client, warns about loopback/external data, and submits narrowed scopes", async ({ page }) => {
   await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   const decisions: unknown[] = [];
   await installConsentRoutes(page, consentTransaction(), decisions);
   const response = await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
@@ -246,6 +247,7 @@ test("consent identifies the real client, warns about loopback/external data, an
 
 test("consent supports deny and safe no-access, expired, decided, and account-swap states", async ({ page }) => {
   await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   const decisions: unknown[] = [];
   await installConsentRoutes(page, consentTransaction(), decisions);
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
@@ -272,6 +274,39 @@ test("consent supports deny and safe no-access, expired, decided, and account-sw
   await installConsentRoutes(page, consentTransaction({ status: "approved" }), decisions);
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
   await expect(page.getByText("Authorization already decided", { exact: true })).toBeVisible();
+});
+
+test("password sign-in returns to the pending consent transaction", async ({ page }) => {
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  await installConsentRoutes(page, consentTransaction(), []);
+  let authenticated = false;
+  await page.route("**/backend/api/v1/auth/registration", async (route) => route.fulfill({ json: { available: false } }));
+  await page.route("**/backend/api/v1/ee/auth/google/status", async (route) => route.fulfill({ json: { enabled: false } }));
+  await page.route("**/backend/api/v1/auth/login", async (route) => {
+    authenticated = true;
+    await route.fulfill({ json: {
+      userId: "user-1",
+      accountId: "account-1",
+      organizationName: "Demo account",
+      workspaceId,
+      workspaceName: "Demo workspace",
+      workspacePublicRouteKey: workspaceKey,
+    } });
+  });
+  await page.route(`**/backend/api/v1/operator-mcp/oauth/transactions/${transactionId}`, async (route) => {
+    await route.fulfill(authenticated
+      ? { json: consentTransaction() }
+      : { status: 401, json: { error: { code: "unauthorized", message: "Unauthorized" } } });
+  });
+
+  await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await page.getByLabel("Email").fill("operator@example.com");
+  await page.getByLabel("Password").fill("password-for-test");
+  await page.getByRole("button", { name: "Sign In" }).click();
+
+  await expect(page).toHaveURL(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
+  await expect(page.getByText("Authorize Radioso MCP", { exact: true })).toBeVisible();
 });
 
 test("consent rejects a session swap before showing approval controls", async ({ page }) => {

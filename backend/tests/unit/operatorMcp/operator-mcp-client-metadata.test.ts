@@ -109,8 +109,9 @@ describe("operator MCP client metadata", () => {
 
   it("allows only literal native loopback redirects and supports immutable preregistration", async () => {
     const native = { ...metadata, application_type: "native", redirect_uris: ["http://127.0.0.1:43123/oauth/callback"] };
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(response(native));
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async () => response(native));
     await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: native.redirect_uris[0] })).resolves.toMatchObject({ applicationType: "native" });
+    await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: "http://127.0.0.1:54131/oauth/callback" })).resolves.toMatchObject({ applicationType: "native" });
     fetchImpl.mockResolvedValue(response({ ...native, redirect_uris: ["http://localhost:43123/oauth/callback"] }));
     await expect(createOperatorMcpClientMetadataService({ fetchImpl }).resolve({ clientId, redirectUri: "http://localhost:43123/oauth/callback" })).rejects.toThrow(/redirect|native/i);
 

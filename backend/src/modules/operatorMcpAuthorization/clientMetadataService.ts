@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { OperatorMcpClientSnapshot } from "./contracts.js";
+import { validateRedirectUri } from "./domain.js";
 import { assertPublicHttpUrl } from "../../shared/infra/http/publicUrlFetch.js";
 import { fetchPublicUrl } from "../../shared/infra/http/publicUrlFetch.js";
 
@@ -90,6 +91,33 @@ const assertRedirect = (uri: string, applicationType: "web" | "native"): string 
   return uri;
 };
 
+const isLiteralLoopbackRedirect = (uri: string): boolean => {
+  try {
+    const url = new URL(uri);
+    return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "[::1]");
+  } catch {
+    return false;
+  }
+};
+
+const assertRequestedRedirect = (input: {
+  applicationType: "web" | "native";
+  requested: string;
+  registered: readonly string[];
+}): void => {
+  if (input.applicationType === "native" && isLiteralLoopbackRedirect(input.requested)) {
+    try {
+      validateRedirectUri(input);
+      return;
+    } catch {
+      throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Redirect URI is not registered");
+    }
+  }
+  if (!input.registered.includes(input.requested)) {
+    throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Redirect URI is not registered");
+  }
+};
+
 const readBoundedText = async (response: Response): Promise<string> => {
   const declaredLength = response.headers.get("content-length");
   if (declaredLength && Number.isFinite(Number(declaredLength)) && Number(declaredLength) > MAX_METADATA_BYTES) {
@@ -166,7 +194,11 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
     async resolve(input) {
       const preregistered = options.preregisteredClients?.get(input.clientId);
       if (preregistered) {
-        if (input.redirectUri && !preregistered.redirectUris.includes(input.redirectUri)) throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Redirect URI is not registered");
+        if (input.redirectUri) assertRequestedRedirect({
+          applicationType: preregistered.applicationType,
+          requested: input.redirectUri,
+          registered: preregistered.redirectUris,
+        });
         return Object.freeze({
           ...preregistered,
           redirectUris: Object.freeze([...preregistered.redirectUris]),
@@ -195,7 +227,11 @@ export const createOperatorMcpClientMetadataService = (options: OperatorMcpClien
         await assertPublicUrl(metadata.client_uri);
       }
       const redirectUris = metadata.redirect_uris.map((uri) => assertRedirect(uri, metadata.application_type));
-      if (input.redirectUri && !redirectUris.includes(input.redirectUri)) throw new OperatorMcpClientMetadataError("invalid_client_metadata", "Redirect URI is not registered");
+      if (input.redirectUri) assertRequestedRedirect({
+        applicationType: metadata.application_type,
+        requested: input.redirectUri,
+        registered: redirectUris,
+      });
       const normalized = Object.freeze({
         applicationType: metadata.application_type,
         clientId: metadata.client_id,

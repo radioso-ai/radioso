@@ -1559,7 +1559,15 @@ resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker" {
 }
 check "operator_mcp_configuration" {
   assert {
-    condition     = !var.operator_mcp_enabled || (var.radioso_mcp_enabled && var.operator_mcp_public_origin != null)
-    error_message = "operator_mcp_enabled requires radioso_mcp_enabled and operator_mcp_public_origin."
+    condition = (
+      !var.operator_mcp_enabled || (
+        var.radioso_mcp_enabled &&
+        var.operator_mcp_public_origin != null &&
+        !can(regex("^https://example\\.invalid(?::[0-9]+)?$", lower(trimspace(var.operator_mcp_public_origin)))) &&
+        can(regex("^https://[^/?#]+/?$", trimspace(var.app_base_url_override))) &&
+        !can(regex("^https://example\\.invalid(?::[0-9]+)?/?$", lower(trimspace(var.app_base_url_override))))
+      )
+    )
+    error_message = "operator_mcp_enabled requires radioso_mcp_enabled, a real HTTPS operator_mcp_public_origin, and a real HTTPS app_base_url_override; neither origin may use the example.invalid placeholder."
   }
 }

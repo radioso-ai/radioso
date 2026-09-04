@@ -7,6 +7,7 @@ import {
   OperatorMcpCredentialValidationService,
   OperatorMcpGrantService,
   createOperatorMcpClientMetadataService,
+  operatorMcpRolloutWorkspaceIds,
 } from "../../../modules/operatorMcpAuthorization/public.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type { Env } from "../../config/env.js";
@@ -36,6 +37,7 @@ export const buildOperatorMcpServices = (input: {
   const issuer = input.env.OPERATOR_MCP_ISSUER_URL;
   const secret = input.env.OPERATOR_MCP_INTERNAL_SECRET;
   const credentialEpoch = input.env.OPERATOR_MCP_CREDENTIAL_EPOCH;
+  const rolloutWorkspaceIds = operatorMcpRolloutWorkspaceIds(input.env.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS);
   if (!input.env.OPERATOR_MCP_ENABLED || !resource || !issuer || !secret || !credentialEpoch) {
     return {
       operatorMcpAuthorizationService: undefined,
@@ -55,10 +57,12 @@ export const buildOperatorMcpServices = (input: {
     input.logger.error({ error }, "operator_mcp_credential_state_not_ready");
     return false;
   });
-  const credentialValidation = new OperatorMcpCredentialValidationService(repository, { resource, credentialEpoch });
+  const credentialValidation = new OperatorMcpCredentialValidationService(repository, { resource, credentialEpoch, rolloutWorkspaceIds });
   const operatorMcpApplicationService = new OperatorMcpApplicationService({
     credentialValidation,
-    invocations: new OperatorMcpInvocationRepository(input.database.kysely),
+    invocations: new OperatorMcpInvocationRepository(input.database.kysely, {
+      verificationBudgetPerMinute: input.env.OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE,
+    }),
     catalog: new OperatorMcpCatalogService(input.copilotToolCatalog),
     currentAuthorization: {
       hasAllPermissions: ({ workspaceId, accountId, operatorUserId, requiredPermissions }) =>
@@ -69,6 +73,9 @@ export const buildOperatorMcpServices = (input: {
     },
     audit: input.auditService,
     secret,
+    receiptRetentionDays: input.env.COPILOT_CONVERSATION_RETENTION_DAYS > 0
+      ? input.env.COPILOT_CONVERSATION_RETENTION_DAYS
+      : 90,
   });
   return {
     operatorMcpAuthorizationService: new OperatorMcpAuthorizationService(repository, {
@@ -79,6 +86,7 @@ export const buildOperatorMcpServices = (input: {
       accessTokenTtlSeconds: input.env.OPERATOR_MCP_ACCESS_TOKEN_TTL_SECONDS ?? 900,
       refreshIdleTtlDays: input.env.OPERATOR_MCP_REFRESH_IDLE_TTL_DAYS ?? 30,
       refreshAbsoluteTtlDays: input.env.OPERATOR_MCP_REFRESH_ABSOLUTE_TTL_DAYS ?? 90,
+      rolloutWorkspaceIds,
     }, input.auditService, input.metricsRegistry ?? undefined),
     operatorMcpCredentialValidationService: credentialValidation,
     operatorMcpGrantService: new OperatorMcpGrantService(repository, input.accountAccessService),

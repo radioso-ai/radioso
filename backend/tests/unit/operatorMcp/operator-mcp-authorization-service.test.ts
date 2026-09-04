@@ -98,6 +98,28 @@ describe("OperatorMcpAuthorizationService", () => {
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("operator:read");
   });
 
+  it("refuses consent for a workspace outside the deployment rollout", async () => {
+    const repository = flowRepository();
+    const service = new OperatorMcpAuthorizationService(repository, {
+      ...config,
+      rolloutWorkspaceIds: new Set([id("99")]),
+    });
+
+    await expect(service.decide({
+      transactionId: transaction.id,
+      decision: "approve",
+      sessionId: id("5"),
+      accountId: id("6"),
+      userId: id("7"),
+      workspaceId: id("8"),
+      membershipId: id("9"),
+      approvedToolScopes: ["operator:read"],
+      approvedOfflineAccess: false,
+      now,
+    })).rejects.toMatchObject({ code: "invalid_request" });
+    expect(repository.decideTransaction).not.toHaveBeenCalled();
+  });
+
   it("returns terminal transactions for safe consent UX but refuses to decide them again", async () => {
     const repository = flowRepository();
     repository.findTransaction.mockResolvedValueOnce({ ...transaction, status: "expired" });

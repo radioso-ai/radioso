@@ -94,6 +94,44 @@ describe("operator MCP stateless request handler", () => {
     expect(dependencies.admit.mock.calls.length).toBe(before);
   });
 
+  it("rejects malformed call parameters before creating a durable admission", async () => {
+    const handler = createOperatorMcpRequestHandler(dependencies);
+    const before = dependencies.admit.mock.calls.length;
+    for (const params of [
+      { name: "retrieval_probe", arguments: "not-an-object" },
+      { name: "retrieval_probe", arguments: {}, operationId: "" },
+      { name: "x".repeat(129), arguments: {} },
+    ]) {
+      const response = await handler(new Request("https://mcp.example/operator/mcp", {
+        body: JSON.stringify({ id: "bad-call", jsonrpc: "2.0", method: "tools/call", params, protocolVersion: "2026-07-28" }),
+        headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
+        method: "POST",
+      }));
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({ error: { code: -32602 } });
+    }
+    expect(dependencies.admit.mock.calls.length).toBe(before);
+  });
+
+  it("fails closed when the admitted workspace is outside the standalone rollout", async () => {
+    const list = vi.fn<OperatorMcpRequestHandlerDependencies["list"]>(async () => ({ tools: [] }));
+    const handler = createOperatorMcpRequestHandler({
+      ...dependencies,
+      list,
+      rolloutWorkspaceIds: new Set(["00000000-0000-4000-8000-000000000099"]),
+    });
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/list" } });
+
+    const response = await handler(new Request("https://mcp.example/operator/mcp", {
+      body: JSON.stringify({ id: "rollout", jsonrpc: "2.0", method: "tools/list", protocolVersion: "2026-07-28" }),
+      headers: { authorization: "Bearer opaque-access-token", "content-type": "application/json" },
+      method: "POST",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(list).not.toHaveBeenCalled();
+  });
+
   it("returns safe 401/403 challenges and rejects oversized calls", async () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,

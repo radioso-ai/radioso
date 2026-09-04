@@ -50,6 +50,22 @@ describe("CopilotRetentionWorker", () => {
     expect(result).toEqual({ status: "swept", deleted: 5 });
   });
 
+  it("also sweeps expired operator MCP records through the same bounded worker", async () => {
+    const deleteConversationsUpdatedBefore = vi.fn(async () => 0);
+    const deleteExpiredOperatorMcpRecords = vi.fn(async () => 3);
+    const worker = new CopilotRetentionWorker({
+      retention: { deleteConversationsUpdatedBefore, deleteExpiredOperatorMcpRecords },
+      audit: { record: vi.fn(async () => {}) },
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      retentionDays: 90,
+      batchSize: 10,
+      now: () => now,
+    });
+
+    await expect(worker.sweep()).resolves.toEqual({ status: "swept", deleted: 3 });
+    expect(deleteExpiredOperatorMcpRecords).toHaveBeenCalledWith({ now, limit: 10 });
+  });
+
   it("records what it removed so a vanished copilot conversation is explainable", async () => {
     const { worker, record } = harness({ retentionDays: 30, deletedPerBatch: [4] });
 

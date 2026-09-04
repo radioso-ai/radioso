@@ -102,4 +102,21 @@ describe("OperatorMcpCredentialValidationService", () => {
     await expect(service.validate({ accessToken: "opaque-access-token", resource: `${current.grant.resource}/`, now })).rejects.toMatchObject({ code: "invalid_target" });
     expect(repository.findCurrentCredential).not.toHaveBeenCalled();
   });
+
+  it("rejects credentials outside the configured deployment rollout", async () => {
+    const repository = {
+      findCurrentCredential: vi.fn(async () => current),
+      findCurrentCredentialById: vi.fn(),
+      markCredentialUsed: vi.fn(async () => undefined),
+    };
+    const service = new OperatorMcpCredentialValidationService(repository, {
+      credentialEpoch: "4",
+      resource: current.grant.resource,
+      rolloutWorkspaceIds: new Set(["00000000-0000-4000-8000-000000000099"]),
+    });
+
+    await expect(service.validate({ accessToken: "opaque-access-token", resource: current.grant.resource, now }))
+      .rejects.toMatchObject({ code: "invalid_token" });
+    expect(repository.markCredentialUsed).not.toHaveBeenCalled();
+  });
 });

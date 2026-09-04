@@ -24,6 +24,8 @@ const MAX_BATCHES_PER_SWEEP = 25;
 export interface CopilotRetentionPort {
   /** Deletes at most `limit` conversations last active before `cutoff`; returns how many went. */
   deleteConversationsUpdatedBefore(input: { cutoff: Date; limit: number }): Promise<number>;
+  /** Deletes expired MCP evidence, resolved proposals, then unreferenced invocation receipts. */
+  deleteExpiredOperatorMcpRecords?(input: { now: Date; limit: number }): Promise<number>;
 }
 
 export interface CopilotRetentionLoggerPort {
@@ -112,6 +114,16 @@ export class CopilotRetentionWorker {
         const removed = await this.options.retention.deleteConversationsUpdatedBefore({ cutoff, limit: batchSize });
         deleted += removed;
         if (removed < batchSize) break;
+      }
+      if (this.options.retention.deleteExpiredOperatorMcpRecords) {
+        for (let batch = 0; batch < MAX_BATCHES_PER_SWEEP; batch += 1) {
+          const removed = await this.options.retention.deleteExpiredOperatorMcpRecords({
+            now: (this.options.now ?? (() => new Date()))(),
+            limit: batchSize,
+          });
+          deleted += removed;
+          if (removed < batchSize) break;
+        }
       }
       if (deleted > 0) await this.report(deleted, cutoff);
       return { status: "swept", deleted };

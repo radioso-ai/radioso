@@ -92,7 +92,15 @@ const sameOperationInput = (existing: OperatorMcpInvocationRecord, input: AdmitO
   && existing.inputDigest === input.inputDigest;
 
 export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRepositoryPort {
-  constructor(private readonly db: Db) {}
+  private readonly verificationBudgetPerMinute: number;
+
+  constructor(private readonly db: Db, options: { verificationBudgetPerMinute?: number } = {}) {
+    const budget = options.verificationBudgetPerMinute ?? 6;
+    if (!Number.isInteger(budget) || budget < 1 || budget > 6) {
+      throw new Error("verification budget per minute must be an integer between one and six");
+    }
+    this.verificationBudgetPerMinute = budget;
+  }
 
   async admit(input: AdmitOperatorMcpInvocationInput): Promise<OperatorMcpInvocationAdmission> {
     validateAdmissionInput(input);
@@ -132,7 +140,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
             AND budget_reserved_at IS NOT NULL
             AND budget_reserved_at >= (${input.now}::timestamptz - INTERVAL '60 seconds')
         `.execute(trx);
-        if (Number(spent.rows[0]?.units ?? 0) + input.verificationCost > 6) return { status: "budget_exhausted" };
+        if (Number(spent.rows[0]?.units ?? 0) + input.verificationCost > this.verificationBudgetPerMinute) return { status: "budget_exhausted" };
       }
 
       const inserted = await sql<OperatorMcpInvocationRow>`
@@ -269,7 +277,7 @@ export class OperatorMcpInvocationRepository implements OperatorMcpInvocationRep
             AND budget_reserved_at IS NOT NULL
             AND budget_reserved_at >= (${input.now}::timestamptz - INTERVAL '60 seconds')
         `.execute(trx);
-        if (Number(spent.rows[0]?.units ?? 0) + input.verificationCost > 6) return { status: "budget_exhausted" as const };
+        if (Number(spent.rows[0]?.units ?? 0) + input.verificationCost > this.verificationBudgetPerMinute) return { status: "budget_exhausted" as const };
       }
       const updated = await sql<OperatorMcpInvocationRow>`
         UPDATE operator_mcp_invocations SET operation_id = ${input.operationId}, shape = ${input.shape},

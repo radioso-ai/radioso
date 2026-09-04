@@ -25,7 +25,11 @@ const harness = (bound: Partial<typeof transaction> = {}) => {
     startAuthorization: vi.fn(), exchangeAuthorizationCode: vi.fn(), refresh: vi.fn(), revoke: vi.fn(),
   };
   const dependencies = {
-    env: { SESSION_COOKIE_NAME: "session", OPERATOR_MCP_ENABLED: true }, service,
+    env: {
+      SESSION_COOKIE_NAME: "session",
+      OPERATOR_MCP_ENABLED: true,
+      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: "00000000-0000-4000-8000-000000000002",
+    }, service,
     operatorMcpAuthorizationService: service, operatorMcpReadiness: Promise.resolve(true), operatorMcpClientResolver: { resolve: vi.fn() },
     authService: { authenticateSession: vi.fn(async () => ({ userId: "user", accountId: "account", sessionId: "browser-session" })) },
     accountAccessService: {

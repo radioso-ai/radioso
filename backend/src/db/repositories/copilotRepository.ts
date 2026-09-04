@@ -81,6 +81,57 @@ export class CopilotRepository implements CopilotRepositoryPort, CopilotRetentio
       .executeTakeFirst();
     return Number(result.numDeletedRows);
   }
+  async deleteExpiredOperatorMcpRecords(input: { now: Date; limit: number }): Promise<number> {
+    if (!Number.isInteger(input.limit) || input.limit < 1) throw new Error("retention limit must be a positive integer");
+    return this.db.transaction().execute(async (trx) => {
+      const selected = await sql<{ id: string }>`
+        SELECT id
+        FROM operator_mcp_invocations
+        WHERE retained_until < ${input.now}
+        ORDER BY retained_until ASC, id ASC
+        LIMIT ${input.limit}
+        FOR UPDATE SKIP LOCKED
+      `.execute(trx);
+      const ids = selected.rows.map((row) => row.id);
+      if (ids.length === 0) return 0;
+      const idList = sql.join(ids.map((id) => sql`${id}`));
+
+      await sql`
+        UPDATE copilot_proposals
+        SET status = 'stale', updated_at = ${input.now}
+        WHERE operator_mcp_invocation_id IN (${idList}) AND status = 'pending'
+      `.execute(trx);
+      await sql`
+        DELETE FROM copilot_replay_evidence AS evidence
+        WHERE evidence.operator_mcp_invocation_id IN (${idList})
+          AND (
+            evidence.proposal_id IS NULL
+            OR EXISTS (
+              SELECT 1 FROM copilot_proposals AS proposal
+              WHERE proposal.id = evidence.proposal_id AND proposal.status <> 'pending'
+            )
+          )
+      `.execute(trx);
+      await sql`
+        DELETE FROM copilot_proposals
+        WHERE operator_mcp_invocation_id IN (${idList}) AND status <> 'pending'
+      `.execute(trx);
+      const deleted = await sql<{ id: string }>`
+        DELETE FROM operator_mcp_invocations AS invocation
+        WHERE invocation.id IN (${idList})
+          AND NOT EXISTS (
+            SELECT 1 FROM copilot_proposals AS proposal
+            WHERE proposal.operator_mcp_invocation_id = invocation.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM copilot_replay_evidence AS evidence
+            WHERE evidence.operator_mcp_invocation_id = invocation.id
+          )
+        RETURNING invocation.id
+      `.execute(trx);
+      return deleted.rows.length;
+    });
+  }
   async deleteConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> { const result = await this.db.deleteFrom("copilot_conversations").where("id", "=", input.id).where("workspace_id", "=", input.workspaceId).where("operator_user_id", "=", input.operatorUserId).executeTakeFirst(); return Number(result.numDeletedRows) > 0; }
   async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> { const row = await this.db.insertInto("copilot_messages").values({ id: randomUUID(), conversation_id: input.conversationId, role: input.role, content: input.content, outcome: input.outcome ?? null, activity: input.activity ? JSON.stringify(input.activity) : null }).returning(messageColumns).executeTakeFirstOrThrow(); return mapMessage(row); }
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { const [messages, proposals] = await Promise.all([this.db.selectFrom("copilot_messages").select(messageColumns).where("conversation_id", "=", input.conversationId).orderBy("created_at", "asc").execute(), this.db.selectFrom("copilot_proposals").select(proposalColumns).where("conversation_id", "=", input.conversationId).where("message_id", "is not", null).orderBy("created_at", "asc").execute()]); const cardsByMessage = new Map<string, CopilotProposalCard[]>(); for (const proposal of proposals.map(mapProposal)) { if (proposal.messageId) cardsByMessage.set(proposal.messageId, [...(cardsByMessage.get(proposal.messageId) ?? []), presentProposalCard(proposal)]); } return messages.map((row) => { const message = mapMessage(row); const cards = cardsByMessage.get(message.id); return cards ? { ...message, proposals: cards } : message; }); }

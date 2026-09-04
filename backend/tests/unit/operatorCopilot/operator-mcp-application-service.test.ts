@@ -47,7 +47,7 @@ const build = () => {
     credentialValidation, invocations, catalog: new OperatorMcpCatalogService([descriptor]),
     currentAuthorization, audit, secret: "internal-secret-at-least-thirty-two-bytes", now: () => now,
   });
-  return { service, credentialValidation, invocations, audit };
+  return { service, credentialValidation, invocations, audit, invocation };
 };
 
 describe("OperatorMcpApplicationService", () => {
@@ -131,5 +131,27 @@ describe("OperatorMcpApplicationService", () => {
     });
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("operator-access");
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("retrieval");
+  });
+
+  it("closes a new receipt when a stable operation reconciles to an earlier result", async () => {
+    const { service, invocations, invocation } = build();
+    const admitted = await service.admit({
+      accessToken: "operator-access", invocationId: uuid("12"), method: "tools/call", descriptorName: descriptor.name,
+      resource: principal.resource, timestamp: "1788480000", nonce: "edge", bodyDigest: sha256Digest("call"),
+    });
+    invocations.prepareInvocation.mockResolvedValueOnce({
+      status: "replay",
+      invocation: { ...invocation, id: uuid("13"), status: "completed", safeOutcomeCode: "completed", resultReference: "proposal-1" },
+    });
+
+    await expect(service.invoke({
+      proof: admitted.proof,
+      name: descriptor.name,
+      arguments: { section: "retrieval" },
+      operationId: "stable-operation",
+    })).resolves.toMatchObject({ safeOutcomeCode: "completed", resultReference: "proposal-1" });
+    expect(invocations.recordOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      invocationId: uuid("12"), status: "completed", safeOutcomeCode: "replayed", resultReference: "proposal-1",
+    }));
   });
 });

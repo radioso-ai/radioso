@@ -72,6 +72,7 @@ describe("copilot tool contributions", () => {
     ], base);
 
     expect(resolved.descriptors.map((entry) => entry.name)).toEqual(["extension_tool", "second_extension_tool"]);
+    expect(resolved.descriptors.every((entry) => entry.mcpDisposition?.status === "excluded")).toBe(true);
     expect([...resolved.operationIds]).toEqual(["getEnterpriseUsage"]);
     expect([...resolved.applicationPrimitiveIds]).toEqual(["usageLimits.account-usage.read"]);
     expect(resolved.operationPermissions).toEqual({ getEnterpriseUsage: ["workspace.settings.read"] });

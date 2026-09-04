@@ -36,6 +36,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     scope: "operator:propose",
     retry: { effect: "proposal", idempotent: true, requiresOperationId: true },
   },
+  propose_workspace_setting: deferredProposal,
   start_crawl: deferredProposal,
   propose_directive_enablement: deferredProposal,
   propose_directive_removal: deferredProposal,

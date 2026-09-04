@@ -1,3 +1,4 @@
+-- Operator MCP authorization and invocation persistence.
 ALTER TABLE users
   ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ NULL;
 
@@ -196,6 +197,8 @@ CREATE UNIQUE INDEX operator_mcp_invocations_operation_idx
 CREATE INDEX operator_mcp_invocations_budget_idx
   ON operator_mcp_invocations (grant_id, budget_reserved_at)
   WHERE budget_reserved_at IS NOT NULL;
+CREATE INDEX operator_mcp_invocations_retention_idx
+  ON operator_mcp_invocations (retained_until, id);
 
 ALTER TABLE copilot_proposals
   ALTER COLUMN conversation_id DROP NOT NULL,

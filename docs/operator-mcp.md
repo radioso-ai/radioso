@@ -57,6 +57,8 @@ radioso_mcp_enabled          = true
 operator_mcp_enabled         = true
 operator_mcp_public_origin   = "https://mcp.example.com"
 operator_mcp_credential_epoch = "1"
+operator_mcp_rollout_workspace_ids = ["00000000-0000-4000-8000-000000000001"]
+operator_mcp_verification_budget_per_minute = 6
 ```
 
 Terraform generates one `OPERATOR_MCP_INTERNAL_SECRET`, injects the exact same bytes into the backend and standalone service, and exports `operator_mcp_resource_url`. It also sends that URL to the dashboard as `RADIOSO_OPERATOR_MCP_PUBLIC_URL`.
@@ -69,6 +71,8 @@ OPERATOR_MCP_RESOURCE_URL=https://mcp.example.com/operator/mcp
 OPERATOR_MCP_ISSUER_URL=https://app.example.com
 OPERATOR_MCP_INTERNAL_SECRET=<at least 32 random characters>
 OPERATOR_MCP_CREDENTIAL_EPOCH=1
+OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS=00000000-0000-4000-8000-000000000001
+OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE=6
 ```
 
 Production resource and issuer URLs must use HTTPS. Local development may use HTTP only on a loopback host.
@@ -76,6 +80,8 @@ Production resource and issuer URLs must use HTTPS. Local development may use HT
 ## Rotate or restore credentials
 
 `OPERATOR_MCP_CREDENTIAL_EPOCH` is an external monotonic generation, not data recovered from a database backup. All enabled backend replicas and the standalone service must use the same epoch and internal-secret fingerprint.
+
+`OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` is a comma-separated allowlist. An empty value exposes Operator MCP to no workspaces, even when the service is enabled. `OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE` may be set from 1 through 6 and defaults to 6.
 
 To rotate the internal secret or restore an older database:
 

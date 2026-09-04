@@ -63,6 +63,8 @@ OPERATOR_MCP_RESOURCE_URL=https://mcp.example.com/operator/mcp
 OPERATOR_MCP_ISSUER_URL=https://app.example.com
 OPERATOR_MCP_INTERNAL_SECRET=<at-least-32-character-secret>
 OPERATOR_MCP_CREDENTIAL_EPOCH=1
+OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS=00000000-0000-4000-8000-000000000001
+OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE=6
 RADIOSO_OPERATOR_MCP_PUBLIC_URL=https://mcp.example.com/operator/mcp
 ```
 
@@ -70,7 +72,7 @@ RADIOSO_OPERATOR_MCP_PUBLIC_URL=https://mcp.example.com/operator/mcp
 
 The credential epoch is a deployment-wide monotonic security value. Start at `1`, and increase it when rotating the Operator MCP internal secret or invalidating all issued Operator MCP credentials. Before rolling replicas, load `DATABASE_URL`, `OPERATOR_MCP_RESOURCE_URL`, the new `OPERATOR_MCP_INTERNAL_SECRET`, and the new `OPERATOR_MCP_CREDENTIAL_EPOCH`; set `OPERATOR_MCP_PREVIOUS_CREDENTIAL_EPOCH` to the current persisted epoch; then run `pnpm --dir backend run operator-mcp:rotate-credential-state` once. Roll the same new epoch and secret to every backend and MCP instance before serving traffic. Instances with an older epoch or a different secret fingerprint fail readiness. Tokens and refresh lineages issued under an older epoch stop working, including after a database restore. Keep the epoch value at or above the last value used by the deployment.
 
-The dashboard exposes `operator:read`, `operator:probe`, and `operator:propose` through the current limited catalog. Configure `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` when access should be limited to an explicit workspace rollout. The API access card reports disabled, misconfigured, or unavailable states without offering a personal-token workaround.
+The dashboard exposes `operator:read`, `operator:probe`, and `operator:propose` through the current limited catalog. Configure `OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS` with one or more workspace UUIDs; an empty value exposes Operator MCP to no workspaces. `OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE` accepts 1 through 6 and defaults to 6. The API access card reports disabled, misconfigured, or unavailable states without offering a personal-token workaround.
 
 ## Enterprise Edition deployment
 

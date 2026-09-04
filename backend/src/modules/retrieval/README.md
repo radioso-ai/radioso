@@ -142,6 +142,24 @@ still fuse and rank against their peers, and they still register as thin evidenc
 multi-subquery turn lifts each branch's best hit to `1.0`. Each branch contributes
 its own best candidate to the pooled set.
 
+## Stage Timings
+
+`candidateRetrievalStage.ts` issues the lexical searches before it awaits the query
+embedding, then joins both channels per branch. Semantic and lexical work therefore
+overlap, and each is timed around its own promises:
+`semanticRetrievalStartedAtMs`, `semanticRetrievalDurationMs`,
+`lexicalRetrievalStartedAtMs`, and `lexicalRetrievalDurationMs` ride the stage result
+alongside `activeEmbeddingDurationMs`.
+
+Read the two spans as concurrent. They start at different times, and their durations
+can sum to more than the retrieval stage that contains them. A channel that issues no
+work reports a duration of `0`.
+
+`retrievalDiagnosticsStage.ts` forwards the durations to
+`retrievalExecutionTelemetryService.ts` as telemetry metrics, and
+`retrievalPipelineActivityTraceBuilder.ts` reads all four values off the stage result
+to time the `semantic_*` and `lexical` activity trace stages.
+
 ## Tests
 
 Focused starting points:
@@ -151,6 +169,8 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/hybrid-retrieval-search.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/retrieval/candidateScoring.test.ts`
   for the fusion gate, the evidence gate, and rank fusion arithmetic.
+- `cd backend && pnpm exec vitest run tests/unit/retrieval/retrievalPipelineActivityTraceBuilder.test.ts`
+  and `tests/unit/candidate-retrieval-branches.test.ts` for measured stage timings.
 - `cd backend && pnpm run test:integration` for end-to-end retrieval behavior.
 - `cd backend && pnpm test -- tests/unit/retrieval/vectorIndexReconciler.test.ts`
   for projection drain and checkpoint callback behavior.

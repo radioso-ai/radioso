@@ -54,6 +54,15 @@ export interface SkillCapabilitySettingsField {
   // never for anything that can carry a credential, token, or personal data (for example notify's
   // delivery.webhook.url or delivery.recipientEmails).
   showValueToCopilot?: boolean;
+  // Opt-in only: an agent-export bundle carries this field's *value* to another workspace only
+  // when this is exactly `true`. Default is false (omitted) - a capability author adding a field
+  // must deliberately opt it in. This is NOT the same trust boundary as `showValueToCopilot`:
+  // that flag gates what the model reads inside this workspace, this flag gates what leaves the
+  // workspace entirely in an export. Set it only for settings that are genuinely portable
+  // behavior tuning, never for anything that can carry a credential, token, a URL that embeds a
+  // secret, or personal data (for example notify's delivery.webhook.url or
+  // delivery.recipientEmails).
+  portable?: boolean;
 }
 
 export interface SkillCapabilityDescriptor<
@@ -119,6 +128,21 @@ export class SkillCapabilityRegistry {
 
   supportsInvocationMode(id: SkillCapabilityId, mode: AgentSkillInvocationMode): boolean {
     return this.byId.get(id)?.supportedInvocationModes.includes(mode) ?? false;
+  }
+
+  // Keys of the settings fields an agent-export bundle is allowed to carry for this capability.
+  // An unknown capability id yields an empty set rather than throwing, matching the lookup-style
+  // getters above.
+  portableSettingsFieldKeys(capability: SkillCapabilityId): Set<string> {
+    const descriptor = this.byId.get(capability);
+    if (!descriptor) {
+      return new Set();
+    }
+    return new Set(
+      descriptor.settingsFields
+        .filter((field) => field.portable === true)
+        .map((field) => field.key),
+    );
   }
 }
 

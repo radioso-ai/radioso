@@ -11,6 +11,7 @@ import {
 import { streamChat, type RadiosoChatStreamEvent } from "./streaming/chatStream.js";
 import { createRoutinesResource } from "./resources/routines.js";
 import { createDirectivesResource } from "./resources/directives.js";
+import { createAgentBundleResource } from "./resources/bundle.js";
 import {
   createAgentContextVariablesResource,
   createContextVariablesResource,
@@ -100,6 +101,11 @@ export type {
   AuthoredDirectiveUpdateRequest,
   AuthoredDirectiveSaveResponse,
 } from "./resources/directives.js";
+export type {
+  AgentBundle,
+  AgentBundleImportRequest,
+  AgentBundleImportResponse,
+} from "./resources/bundle.js";
 export type {
   AgentContextVariableEnablementListResponse,
   AgentContextVariableEnablementRequest,
@@ -195,6 +201,7 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
 
   const routines = createRoutinesResource(config);
   const directives = createDirectivesResource(config);
+  const bundle = createAgentBundleResource(config);
   const agentContextVariables = createAgentContextVariablesResource(config);
   const contextVariables = createContextVariablesResource(config);
   const skills = createSkillsResource(config);
@@ -236,6 +243,7 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       setDefault: (agentId: string) => generated.setDefaultAgent(agentId),
       routines,
       directives,
+      bundle,
       contextVariables: agentContextVariables,
       skills,
       emailSkills,

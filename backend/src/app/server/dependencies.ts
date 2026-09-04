@@ -52,6 +52,7 @@ import { noopOrganizationCreationGuard } from "../../shared/domain/organizationC
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { AccessGrantLifecycleUnitOfWork } from "../../db/repositories/accessGrantRepository.js";
 import { ContextVariableService } from "../../modules/context-variables/public.js";
+import { createAgentBundleServices } from "../composition/agentBundleComposition.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
@@ -782,6 +783,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metricsRegistry: infrastructure.metricsRegistry,
     copilotToolCatalog,
   });
+
+  const agentBundleServices = createAgentBundleServices({
+    logger,
+    agentService,
+    authoredDirectiveService,
+    agentSkillsService,
+    contextVariableService,
+    routineDefinitionService,
+    capabilityRegistry: skillCapabilityRegistry,
+    agentRepository: repositories.agentRepository,
+    mcpConnectionRepository,
+    externalSkillDefinitionRepository,
+  });
   return {
     env,
     logger,
@@ -883,6 +897,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     platformSettingsService,
     agentService,
     authoredDirectiveService,
+    agentBundleExportService: agentBundleServices.exportService,
+    agentBundleImportService: agentBundleServices.importService,
     routineDefinitionService,
     routineDraftAssistService,
     directiveAuthorService,

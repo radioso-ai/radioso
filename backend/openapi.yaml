@@ -4608,7 +4608,7 @@ components:
           type: string
         status:
           type: string
-          enum: &a29
+          enum: &a32
             - active
             - paused
             - awaiting_confirmation
@@ -4824,14 +4824,14 @@ components:
                   type:
                     - string
                     - "null"
-                  enum: &a36
+                  enum: &a39
                     - metadata
                     - content
                 supportedOperations:
                   type: array
                   items:
                     type: string
-                    enum: &a37
+                    enum: &a40
                       - metadata
                       - lookup
                       - summarize
@@ -4864,6 +4864,1259 @@ components:
         - queuedDocumentCount
         - skippedDocumentCount
         - status
+    AgentConfigRefPlaceholder:
+      type: object
+      properties:
+        __ref:
+          type: string
+          enum:
+            - documentSource
+            - storageBucket
+            - storageObjectPath
+            - storageGeneration
+            - websiteEmbedAllowedOrigin
+            - mcpConnection
+            - agentSkillTarget
+        key:
+          type: string
+      required:
+        - __ref
+      description: A workspace-scoped reference that does not travel between workspaces (for example a credential-bearing connection). The bundle carries only the kind so the caller can see what did not come along; `key` links the placeholder back to another entity exported in the same bundle when re-binding on import is possible.
+    AgentConfigSecretPlaceholder:
+      type: object
+      properties:
+        __redacted:
+          type: string
+          enum:
+            - secret
+      required:
+        - __redacted
+      description: Stands in for a credential the export withholds. Only its absence travels, never the value.
+    AgentBundleAuthoredDirective:
+      type: object
+      properties:
+        name:
+          type: string
+        condition:
+          $ref: "#/components/schemas/AuthoredDirectiveCondition"
+        action:
+          type: string
+        priority:
+          type:
+            - integer
+            - "null"
+        requiredCapabilities:
+          type: array
+          items:
+            type: string
+        dependsOn:
+          type: array
+          items:
+            type: string
+        excludes:
+          type: array
+          items:
+            type: string
+        routes:
+          type: array
+          items:
+            type: string
+            enum:
+              - retrieval
+              - direct
+        surfaces:
+          type: array
+          items:
+            $ref: "#/components/schemas/GenerationSurface"
+        tags:
+          type: array
+          items:
+            type: string
+        description:
+          type:
+            - string
+            - "null"
+        binding:
+          anyOf:
+            - $ref: "#/components/schemas/AuthoredDirectiveBinding"
+            - type: "null"
+            - type: "null"
+        lifecycle:
+          anyOf:
+            - $ref: "#/components/schemas/AuthoredDirectiveLifecycle"
+            - type: "null"
+            - type: "null"
+        enabled:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: {}
+      required:
+        - name
+        - condition
+        - action
+        - priority
+        - requiredCapabilities
+        - dependsOn
+        - excludes
+        - routes
+        - surfaces
+        - tags
+        - description
+        - binding
+        - lifecycle
+        - enabled
+        - metadata
+      description: An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and `excludes` — so nothing here needs re-keying on import.
+    AgentBundleExternalSkills:
+      type: object
+      properties:
+        connections:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                description: Within-bundle linkage key, never a database id.
+              displayName:
+                type: string
+              serverUrl:
+                type: string
+              authMethod:
+                type: string
+              credential:
+                anyOf:
+                  - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                  - type: "null"
+                  - type: "null"
+              oauth:
+                type:
+                  - object
+                  - "null"
+                properties:
+                  authorizationEndpoint:
+                    type: string
+                  tokenEndpoint:
+                    type: string
+                  clientId:
+                    type: string
+                  clientSecret:
+                    anyOf:
+                      - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                      - type: "null"
+                      - type: "null"
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - authorizationEndpoint
+                  - tokenEndpoint
+                  - clientId
+                  - clientSecret
+                  - scopes
+            required:
+              - key
+              - displayName
+              - serverUrl
+              - authMethod
+              - credential
+              - oauth
+        skills:
+          type: array
+          items:
+            type: object
+            properties:
+              skillName:
+                type: string
+              connection:
+                $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+              toolName:
+                type: string
+              boundParams:
+                type: object
+                additionalProperties: {}
+              exposedParams:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    description:
+                      type: string
+                    slotBinding:
+                      type: string
+              declaredOutcomes:
+                type:
+                  - array
+                  - "null"
+                items:
+                  type: string
+              outcomeMap:
+                type:
+                  - object
+                  - "null"
+                additionalProperties:
+                  type: string
+              enabled:
+                type: boolean
+            required:
+              - skillName
+              - connection
+              - toolName
+              - boundParams
+              - exposedParams
+              - declaredOutcomes
+              - outcomeMap
+              - enabled
+      required:
+        - connections
+        - skills
+      description: "Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild."
+    AgentBundleAgentConfig:
+      type: object
+      properties:
+        schemaVersion:
+          type: integer
+        portability:
+          type: object
+          additionalProperties:
+            type: string
+            enum: &a27
+              - portable
+              - ref
+              - secret
+          description: Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders.
+        name:
+          type: string
+        internalName:
+          type:
+            - string
+            - "null"
+        customInstruction:
+          type: string
+        handoffOnRetrievalMiss:
+          type: boolean
+        contactRequestsEnabled:
+          type: boolean
+        webhookExportsEnabled:
+          type: boolean
+        contactRequestDelivery:
+          $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+        logo:
+          type:
+            - object
+            - "null"
+          properties:
+            bucket:
+              $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+            objectPath:
+              $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+            generation:
+              anyOf:
+                - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                - type: "null"
+                - type: "null"
+            mimeType:
+              type: string
+            filename:
+              type: string
+            sizeBytes:
+              type: integer
+          required:
+            - bucket
+            - objectPath
+            - generation
+            - mimeType
+            - filename
+            - sizeBytes
+          description: Metadata only. The image lives in object storage and is not part of the bundle.
+        theme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
+        greetingInstruction:
+          type: string
+        assistantDefaultLocale:
+          type:
+            - string
+            - "null"
+        proactiveGreetingEnabled:
+          type: boolean
+        surfaceSettings:
+          type: object
+          properties:
+            authenticatedChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required:
+                - enabled
+            anonymousChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                token:
+                  anyOf:
+                    - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                    - type: "null"
+                    - type: "null"
+              required:
+                - enabled
+                - token
+            websiteEmbed:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                token:
+                  anyOf:
+                    - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                    - type: "null"
+                    - type: "null"
+                allowedOrigins:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                launcherLabel:
+                  type: string
+                launcherPosition:
+                  type: string
+                  enum: *a14
+                theme:
+                  type: object
+                  properties:
+                    brand:
+                      type: string
+                    brandText:
+                      type: string
+                    surface:
+                      type: string
+                    text:
+                      type: string
+                  required:
+                    - brand
+                    - brandText
+                    - surface
+                    - text
+                copy:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                expertOverrides:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required:
+                - enabled
+                - token
+                - allowedOrigins
+                - launcherLabel
+                - launcherPosition
+                - theme
+                - copy
+                - expertOverrides
+            extensions:
+              type: object
+              additionalProperties: {}
+              description: Surface extensions keyed by extension id; shape is owned by the contributing extension.
+          required:
+            - authenticatedChat
+            - anonymousChat
+            - websiteEmbed
+            - extensions
+        skillSettings:
+          type: object
+          additionalProperties: {}
+          description: Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope.
+        chatModelOverride:
+          type:
+            - object
+            - "null"
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+          required:
+            - provider
+            - model
+        authoredDirectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleAuthoredDirective"
+        externalSkills:
+          $ref: "#/components/schemas/AgentBundleExternalSkills"
+      required:
+        - schemaVersion
+        - portability
+        - name
+        - internalName
+        - customInstruction
+        - handoffOnRetrievalMiss
+        - contactRequestsEnabled
+        - webhookExportsEnabled
+        - contactRequestDelivery
+        - logo
+        - theme
+        - branding
+        - greetingInstruction
+        - assistantDefaultLocale
+        - proactiveGreetingEnabled
+        - surfaceSettings
+        - skillSettings
+        - chatModelOverride
+        - authoredDirectives
+        - externalSkills
+      description: "The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on."
+    AgentBundleRoutine:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: integer
+          description: Source version, carried for provenance only; import always creates v1.
+        definition:
+          type: object
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 200
+            activation:
+              type: object
+              properties:
+                triggerDescription:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+                gateRef:
+                  type:
+                    - string
+                    - "null"
+                  minLength: 1
+                  maxLength: 300
+                priority:
+                  type: integer
+                reentryMode:
+                  type: string
+                  enum: *a16
+                  default: once_per_conversation
+              required:
+                - triggerDescription
+                - priority
+              additionalProperties: false
+            slots:
+              type: array
+              items:
+                type: object
+                properties:
+                  stableSlotId:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  key:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  type:
+                    type: string
+                    enum: *a17
+                  required:
+                    type: boolean
+                  description:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 1000
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                  mutable:
+                    type: boolean
+                required:
+                  - stableSlotId
+                  - key
+                  - type
+                  - required
+                  - ordinal
+                additionalProperties: false
+              default: *a18
+            steps:
+              type: array
+              items:
+                type: object
+                properties:
+                  stableStepId:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  kind:
+                    type: string
+                    enum: *a19
+                  toolRef:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 300
+                  actionType:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 300
+                  captureKey:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                  metadata:
+                    type: object
+                    properties:
+                      inputBindings:
+                        type: object
+                        additionalProperties:
+                          oneOf:
+                            - type: object
+                              properties:
+                                kind:
+                                  type: string
+                                  enum:
+                                    - literal
+                                value:
+                                  anyOf:
+                                    - type: string
+                                    - type: number
+                                    - type: boolean
+                              required:
+                                - kind
+                                - value
+                              additionalProperties: false
+                            - type: object
+                              properties:
+                                kind:
+                                  type: string
+                                  enum:
+                                    - variableRef
+                                ref:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 120
+                                  pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                              required:
+                                - kind
+                                - ref
+                              additionalProperties: false
+                            - type: object
+                              properties:
+                                kind:
+                                  type: string
+                                  enum:
+                                    - contextVariableRef
+                                contextVariable:
+                                  type: string
+                                  minLength: 1
+                                  maxLength: 120
+                                  pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                              required:
+                                - kind
+                                - contextVariable
+                              additionalProperties: false
+                      outputAssignments:
+                        type: object
+                        additionalProperties:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                          pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      mode:
+                        type: string
+                        enum: *a20
+                    default: *a21
+                  instruction:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                          pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                        label:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                        description:
+                          type:
+                            - string
+                            - "null"
+                          minLength: 1
+                          maxLength: 500
+                      required:
+                        - id
+                        - label
+                      additionalProperties: false
+                    maxItems: 8
+                required:
+                  - stableStepId
+                  - kind
+                  - ordinal
+                  - instruction
+                additionalProperties: false
+              minItems: 1
+            transitions:
+              type: array
+              items:
+                type: object
+                properties:
+                  fromStep:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  toRef:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  guardKind:
+                    type: string
+                    enum: *a22
+                  guardText:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 2000
+                  outcomeStatus:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 120
+                  counterLimit:
+                    type:
+                      - integer
+                      - "null"
+                    exclusiveMinimum: 0
+                  fieldRef:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 200
+                  fieldOp:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a23
+                  fieldValue:
+                    anyOf:
+                      - type: string
+                        minLength: 1
+                        maxLength: 500
+                      - type: number
+                      - type: boolean
+                      - type: "null"
+                  fieldValues:
+                    type:
+                      - array
+                      - "null"
+                    items:
+                      anyOf:
+                        - type: string
+                          minLength: 1
+                          maxLength: 500
+                        - type: number
+                        - type: boolean
+                    minItems: 1
+                  fieldUnit:
+                    type:
+                      - string
+                      - "null"
+                    enum: *a24
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                required:
+                  - fromStep
+                  - toRef
+                  - guardKind
+                  - ordinal
+                additionalProperties: false
+              default: *a25
+            terminals:
+              type: array
+              items:
+                type: object
+                properties:
+                  stableStepId:
+                    type: string
+                    minLength: 1
+                    maxLength: 120
+                    pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                  kind:
+                    type: string
+                    enum: *a15
+                  instruction:
+                    type:
+                      - string
+                      - "null"
+                    minLength: 1
+                    maxLength: 4000
+                  ordinal:
+                    type: integer
+                    minimum: 0
+                required:
+                  - stableStepId
+                  - kind
+                  - ordinal
+                additionalProperties: false
+              minItems: 1
+            completionExport:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                triggerKinds:
+                  type: array
+                  items:
+                    type: string
+                    enum: *a15
+                  default: *a26
+                destinationRef:
+                  type: string
+                  maxLength: 300
+                  default: ""
+              additionalProperties: false
+          required:
+            - name
+            - activation
+            - steps
+            - terminals
+          additionalProperties: false
+      required:
+        - name
+        - version
+        - definition
+    AgentBundleContextVariable:
+      type: object
+      properties:
+        variableName:
+          type: string
+        source:
+          type: string
+          enum:
+            - pushed
+            - browser
+            - resolver
+        resolverSkillName:
+          type:
+            - string
+            - "null"
+        maxAgeSeconds:
+          type:
+            - integer
+            - "null"
+        resolverTimeoutMs:
+          type:
+            - integer
+            - "null"
+        surfacing:
+          type: string
+          enum:
+            - always
+            - on_reference
+            - operator_only
+        enabled:
+          type: boolean
+      required:
+        - variableName
+        - source
+        - resolverSkillName
+        - maxAgeSeconds
+        - resolverTimeoutMs
+        - surfacing
+        - enabled
+    AgentBundleSkill:
+      type: object
+      properties:
+        name:
+          type: string
+        capability:
+          type: string
+        invocationMode:
+          type: string
+          enum: &a28
+            - default_answer
+            - routine_named
+            - agent_selectable
+        enabled:
+          type: boolean
+        config:
+          type: object
+          additionalProperties: {}
+          description: Only the fields a capability marked portable.
+        omittedConfigKeys:
+          type: array
+          items:
+            type: string
+          description: Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter.
+        target:
+          type: object
+          properties:
+            kind:
+              type:
+                - string
+                - "null"
+            id:
+              anyOf:
+                - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                - type: "null"
+                - type: "null"
+          required:
+            - kind
+            - id
+          description: Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound.
+      required:
+        - name
+        - capability
+        - invocationMode
+        - enabled
+        - config
+        - omittedConfigKeys
+        - target
+    AgentBundleUnresolvedKind:
+      type: string
+      enum:
+        - context_variable_missing
+        - resolver_skill_missing
+        - skill_target_unbound
+        - skill_capability_unknown
+        - routine_invalid
+        - document_source_unresolved
+        - surface_credential_unbound
+        - mcp_connection_unbound
+        - asset_not_portable
+        - skill_config_not_portable
+        - directive_binding_unbound
+        - contact_delivery_unbound
+      description: |-
+        Why a bundle element could not be fully applied to the target workspace. Every element is reported
+        rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
+        looks configured and answers wrong.
+        - context_variable_missing: the bundle names a context variable that does not exist in this workspace.
+        - resolver_skill_missing: the enablement's resolver skill did not survive import, so it stays unbound.
+        - skill_target_unbound: the skill's connection target is a credential-bearing workspace row.
+        - skill_capability_unknown: no capability with this id is registered in this deployment.
+        - routine_invalid: the routine imported as a draft because publish validation rejected it.
+        - document_source_unresolved: selected document sources cannot be matched; scope imports empty, not "all".
+        - surface_credential_unbound: a surface whose token cannot travel; imported disabled so it cannot serve.
+        - mcp_connection_unbound: an external MCP connection reference; the skill imports without its server.
+        - asset_not_portable: binary stored outside the database (the logo); not part of the bundle.
+        - skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.
+        - directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.
+        - contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.
+    AgentBundleUnresolvedReference:
+      type: object
+      properties:
+        kind:
+          $ref: "#/components/schemas/AgentBundleUnresolvedKind"
+        element:
+          type: string
+          description: The bundle element the caller must fix, named the way they authored it.
+        detail:
+          type: string
+      required:
+        - kind
+        - element
+        - detail
+    AgentBundle:
+      type: object
+      properties:
+        bundleVersion:
+          type: number
+          enum:
+            - 1
+        portability:
+          type: object
+          additionalProperties:
+            type: string
+            enum: &a29
+              - portable
+              - ref
+              - secret
+          description: Portability of the bundle's own top-level collections, keyed by field path (for example "agentSkills[].config").
+        agent:
+          $ref: "#/components/schemas/AgentBundleAgentConfig"
+        routines:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleRoutine"
+        contextVariables:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleContextVariable"
+        agentSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleSkill"
+      required:
+        - bundleVersion
+        - portability
+        - agent
+        - routines
+        - contextVariables
+        - agentSkills
+    AgentBundleImportAgentConfig:
+      type: object
+      properties:
+        schemaVersion:
+          type: integer
+        portability:
+          type: object
+          additionalProperties:
+            type: string
+            enum: *a27
+          description: Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders.
+        name:
+          type: string
+        internalName:
+          type:
+            - string
+            - "null"
+        customInstruction:
+          type: string
+        handoffOnRetrievalMiss:
+          type: boolean
+        contactRequestsEnabled:
+          type: boolean
+        webhookExportsEnabled:
+          type: boolean
+        contactRequestDelivery:
+          $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+        logo:
+          type:
+            - object
+            - "null"
+          properties:
+            bucket:
+              $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+            objectPath:
+              $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+            generation:
+              anyOf:
+                - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                - type: "null"
+                - type: "null"
+            mimeType:
+              type: string
+            filename:
+              type: string
+            sizeBytes:
+              type: integer
+          required:
+            - bucket
+            - objectPath
+            - generation
+            - mimeType
+            - filename
+            - sizeBytes
+          description: Metadata only. The image lives in object storage and is not part of the bundle.
+        theme:
+          type: object
+          properties:
+            brand:
+              type: string
+            brandText:
+              type: string
+            surface:
+              type: string
+            text:
+              type: string
+          required:
+            - brand
+            - brandText
+            - surface
+            - text
+        branding:
+          type: object
+          properties:
+            hidePoweredBy:
+              type: boolean
+            privacyPolicyUrl:
+              type:
+                - string
+                - "null"
+          required:
+            - hidePoweredBy
+            - privacyPolicyUrl
+        greetingInstruction:
+          type: string
+        assistantDefaultLocale:
+          type:
+            - string
+            - "null"
+        proactiveGreetingEnabled:
+          type: boolean
+        surfaceSettings:
+          type: object
+          properties:
+            authenticatedChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required:
+                - enabled
+            anonymousChat:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                token:
+                  anyOf:
+                    - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                    - type: "null"
+                    - type: "null"
+              required:
+                - enabled
+                - token
+            websiteEmbed:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                token:
+                  anyOf:
+                    - $ref: "#/components/schemas/AgentConfigSecretPlaceholder"
+                    - type: "null"
+                    - type: "null"
+                allowedOrigins:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                launcherLabel:
+                  type: string
+                launcherPosition:
+                  type: string
+                  enum: *a14
+                theme:
+                  type: object
+                  properties:
+                    brand:
+                      type: string
+                    brandText:
+                      type: string
+                    surface:
+                      type: string
+                    text:
+                      type: string
+                  required:
+                    - brand
+                    - brandText
+                    - surface
+                    - text
+                copy:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    additionalProperties:
+                      type: string
+                expertOverrides:
+                  type: object
+                  additionalProperties:
+                    type: string
+              required:
+                - enabled
+                - token
+                - allowedOrigins
+                - launcherLabel
+                - launcherPosition
+                - theme
+                - copy
+                - expertOverrides
+            extensions:
+              type: object
+              additionalProperties: {}
+              description: Surface extensions keyed by extension id; shape is owned by the contributing extension.
+          required:
+            - authenticatedChat
+            - anonymousChat
+            - websiteEmbed
+            - extensions
+        skillSettings:
+          type: object
+          additionalProperties: {}
+          description: Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope.
+        chatModelOverride:
+          type:
+            - object
+            - "null"
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+          required:
+            - provider
+            - model
+        authoredDirectives:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleAuthoredDirective"
+        externalSkills:
+          $ref: "#/components/schemas/AgentBundleExternalSkills"
+      required:
+        - schemaVersion
+        - portability
+        - name
+        - customInstruction
+        - contactRequestsEnabled
+        - webhookExportsEnabled
+        - contactRequestDelivery
+        - logo
+        - theme
+        - branding
+        - greetingInstruction
+        - assistantDefaultLocale
+        - proactiveGreetingEnabled
+        - surfaceSettings
+        - skillSettings
+        - chatModelOverride
+        - authoredDirectives
+        - externalSkills
+      description: An agent configuration on any version this deployment reads. Fields introduced after the oldest accepted version are optional; an older bundle that omits them imports with the behaviour that version had. Export always emits the current version, with every field present.
+    AgentBundleImportSkill:
+      type: object
+      properties:
+        name:
+          type: string
+        capability:
+          type: string
+        invocationMode:
+          type: string
+          enum: *a28
+        enabled:
+          type: boolean
+        config:
+          type: object
+          additionalProperties: {}
+          description: Only the fields a capability marked portable.
+        omittedConfigKeys:
+          type: array
+          items:
+            type: string
+          description: Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter.
+        target:
+          type: object
+          properties:
+            kind:
+              type:
+                - string
+                - "null"
+            id:
+              anyOf:
+                - $ref: "#/components/schemas/AgentConfigRefPlaceholder"
+                - type: "null"
+                - type: "null"
+          required:
+            - kind
+            - id
+          description: Addresses a workspace connection that holds credentials, so the id is placeheld and the skill imports unbound.
+      required:
+        - name
+        - capability
+        - invocationMode
+        - enabled
+        - target
+      description: A skill as accepted on import. `config` and `omittedConfigKeys` default to empty when absent, so a hand-written bundle need not restate them.
+    AgentBundleImportRequest:
+      type: object
+      properties:
+        bundleVersion:
+          type: integer
+        portability:
+          type: object
+          additionalProperties:
+            type: string
+            enum: *a29
+        agent:
+          $ref: "#/components/schemas/AgentBundleImportAgentConfig"
+        routines:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleRoutine"
+        contextVariables:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleContextVariable"
+        agentSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleImportSkill"
+      required:
+        - bundleVersion
+        - agent
+      description: A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially. Collections default to empty when omitted.
+    AgentBundleImportResponse:
+      type: object
+      properties:
+        agentId:
+          type: string
+          format: uuid
+        unresolved:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentBundleUnresolvedReference"
+      required:
+        - agentId
+        - unresolved
     DocumentCreateRequest:
       type: object
       properties:
@@ -4910,7 +6163,7 @@ components:
               additionalProperties: false
         documentEnrichmentOverride:
           type: string
-          enum: &a27
+          enum: &a30
             - on
             - off
       required:
@@ -5078,7 +6331,7 @@ components:
       properties:
         documentEnrichmentOverride:
           type: string
-          enum: *a27
+          enum: *a30
       additionalProperties: false
     SourceReprocessResponse:
       type: object
@@ -5998,7 +7251,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a32
+              enum: &a35
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -6009,7 +7262,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a33
+              enum: &a36
                 - assistant
                 - retrieval_api
                 - sdk
@@ -6046,7 +7299,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a34
+              enum: &a37
                 - success
                 - unsupported
                 - forbidden
@@ -6083,14 +7336,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a30
+                  enum: &a33
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a31
+                  enum: &a34
                     - supported
                     - unsupported
                     - not_checked
@@ -6401,7 +7654,7 @@ components:
           properties:
             status:
               type: string
-              enum: &a28
+              enum: &a31
                 - supported
                 - unsupported
                 - not_checked
@@ -6447,7 +7700,7 @@ components:
           properties:
             status:
               type: string
-              enum: *a28
+              enum: *a31
           required:
             - status
         debug:
@@ -6546,7 +7799,7 @@ components:
           type: string
         status:
           type: string
-          enum: *a29
+          enum: *a32
         groundedAnswer:
           type: boolean
         tone:
@@ -6583,10 +7836,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a30
+          enum: *a33
         supportStatus:
           type: string
-          enum: *a31
+          enum: *a34
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -6600,7 +7853,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a32
+          enum: *a35
         selectionReason:
           type: string
         selectionConfidence:
@@ -6609,7 +7862,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a33
+          enum: *a36
         capabilityChecks:
           type: array
           items:
@@ -6640,7 +7893,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a34
+          enum: *a37
         error:
           type: object
           properties:
@@ -6672,10 +7925,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a30
+              enum: *a33
             supportStatus:
               type: string
-              enum: *a31
+              enum: *a34
             groundingOutcome:
               type: string
       required:
@@ -6724,7 +7977,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a33
+            enum: *a36
         requiredCapabilities:
           type: array
           items:
@@ -6751,7 +8004,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a33
+                enum: *a36
             intent:
               type: object
               properties:
@@ -7202,7 +8455,7 @@ components:
           properties:
             state:
               type: string
-              enum: &a35
+              enum: &a38
                 - ai_owned
                 - human_owned
             suppressed:
@@ -7249,7 +8502,7 @@ components:
           properties:
             state:
               type: string
-              enum: *a35
+              enum: *a38
             suppressed:
               type: boolean
           required:
@@ -7404,12 +8657,12 @@ components:
                   type:
                     - string
                     - "null"
-                  enum: *a36
+                  enum: *a39
                 supportedOperations:
                   type: array
                   items:
                     type: string
-                    enum: *a37
+                    enum: *a40
                   maxItems: 3
               required:
                 - available
@@ -7870,7 +9123,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a38
+          enum: &a41
             - up
             - down
         comment:
@@ -7879,7 +9132,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a39
+          enum: &a42
             - authenticated_user
             - api_token
             - anonymous_user
@@ -7939,14 +9192,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a38
+          enum: *a41
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a39
+          enum: *a42
         actorId:
           type: string
         accountId:
@@ -7995,13 +9248,13 @@ components:
           format: uuid
         role:
           type: string
-          enum: &a40
+          enum: &a43
             - user
             - assistant
             - system
         source:
           type: string
-          enum: &a41
+          enum: &a44
             - customer
             - ai_agent
             - human_agent
@@ -8017,7 +9270,7 @@ components:
           properties:
             method:
               type: string
-              enum: &a42
+              enum: &a45
                 - typed
                 - suggestion_click
                 - intent_click
@@ -8071,10 +9324,10 @@ components:
           format: uuid
         role:
           type: string
-          enum: *a40
+          enum: *a43
         source:
           type: string
-          enum: *a41
+          enum: *a44
         content:
           type: string
         createdAt:
@@ -8085,7 +9338,7 @@ components:
           properties:
             method:
               type: string
-              enum: *a42
+              enum: *a45
             suggestionSourceMessageId:
               type: string
               format: uuid
@@ -9625,22 +10878,22 @@ components:
             - "null"
         valueType:
           type: string
-          enum: &a43
+          enum: &a46
             - string
             - json
         trustTier:
           type: string
-          enum: &a44
+          enum: &a47
             - unverified
             - signed
         sensitivity:
           type: string
-          enum: &a45
+          enum: &a48
             - normal
             - sensitive
         defaultSurfacing:
           type: string
-          enum: &a46
+          enum: &a49
             - always
             - on_reference
             - operator_only
@@ -9675,16 +10928,16 @@ components:
           maxLength: 2000
         valueType:
           type: string
-          enum: *a43
+          enum: *a46
         trustTier:
           type: string
-          enum: *a44
+          enum: *a47
         sensitivity:
           type: string
-          enum: *a45
+          enum: *a48
         defaultSurfacing:
           type: string
-          enum: *a46
+          enum: *a49
       required:
         - name
         - valueType
@@ -9705,16 +10958,16 @@ components:
           maxLength: 2000
         valueType:
           type: string
-          enum: *a43
+          enum: *a46
         trustTier:
           type: string
-          enum: *a44
+          enum: *a47
         sensitivity:
           type: string
-          enum: *a45
+          enum: *a48
         defaultSurfacing:
           type: string
-          enum: *a46
+          enum: *a49
     ContextVariableResponse:
       type: object
       properties:
@@ -9745,7 +10998,7 @@ components:
           format: uuid
         source:
           type: string
-          enum: &a47
+          enum: &a50
             - pushed
             - browser
             - resolver
@@ -9764,7 +11017,7 @@ components:
             - "null"
         surfacing:
           type: string
-          enum: *a46
+          enum: *a49
         enabled:
           type: boolean
         createdAt:
@@ -9792,7 +11045,7 @@ components:
       properties:
         source:
           type: string
-          enum: *a47
+          enum: *a50
         resolverSkillId:
           type:
             - string
@@ -9810,7 +11063,7 @@ components:
           exclusiveMinimum: 0
         surfacing:
           type: string
-          enum: *a46
+          enum: *a49
         enabled:
           type: boolean
       required:
@@ -10767,7 +12020,7 @@ components:
               maxLength: 4000
             matchMode:
               type: string
-              enum: &a48
+              enum: &a51
                 - substring
                 - regex
             caseSensitive:
@@ -10788,7 +12041,7 @@ components:
               maxLength: 4000
             matchMode:
               type: string
-              enum: *a48
+              enum: *a51
             caseSensitive:
               type: boolean
           required:
@@ -10938,7 +12191,7 @@ components:
                         maxLength: 4000
                       matchMode:
                         type: string
-                        enum: *a48
+                        enum: *a51
                       caseSensitive:
                         type: boolean
                     required:
@@ -10957,7 +12210,7 @@ components:
                         maxLength: 4000
                       matchMode:
                         type: string
-                        enum: *a48
+                        enum: *a51
                       caseSensitive:
                         type: boolean
                     required:
@@ -10983,12 +12236,12 @@ components:
               maxItems: 20
             executionMode:
               type: string
-              enum: &a49
+              enum: &a52
                 - safe_test
                 - live
             status:
               type: string
-              enum: &a50
+              enum: &a53
                 - pending
                 - passing
                 - failing
@@ -11073,7 +12326,7 @@ components:
                 - assistantMessageId
             fidelity:
               type: string
-              enum: &a51
+              enum: &a54
                 - full
                 - messages_only
             messages:
@@ -11086,7 +12339,7 @@ components:
                     format: uuid
                   role:
                     type: string
-                    enum: &a52
+                    enum: &a55
                       - user
                       - assistant
                       - system
@@ -11202,10 +12455,10 @@ components:
           maxItems: 20
         executionMode:
           type: string
-          enum: *a49
+          enum: *a52
         status:
           type: string
-          enum: *a50
+          enum: *a53
         lastRunId:
           type:
             - string
@@ -11286,7 +12539,7 @@ components:
             - assistantMessageId
         fidelity:
           type: string
-          enum: *a51
+          enum: *a54
         messages:
           type: array
           items:
@@ -11297,7 +12550,7 @@ components:
                 format: uuid
               role:
                 type: string
-                enum: *a52
+                enum: *a55
               content:
                 type: string
               createdAt:
@@ -12301,7 +13554,7 @@ paths:
         - API Access
       summary: Read API-access capabilities and limits
       operationId: getApiAccessSummary
-      security: &a53
+      security: &a56
         - sessionCookie: []
       parameters:
         - schema:
@@ -12433,7 +13686,7 @@ paths:
         - API Access
       summary: List personal-token metadata
       operationId: listPersonalApiTokens
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -12480,7 +13733,7 @@ paths:
                           format: uuid
                         kind:
                           type: string
-                          enum: &a55
+                          enum: &a58
                             - personal
                             - service
                         label:
@@ -12493,7 +13746,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: &a54
+                          enum: &a57
                             - member
                             - admin
                         ownerUserId:
@@ -12517,7 +13770,7 @@ paths:
                           format: date-time
                         status:
                           type: string
-                          enum: &a56
+                          enum: &a59
                             - active
                             - expired
                             - revoked
@@ -12631,7 +13884,7 @@ paths:
         - API Access
       summary: Issue a personal API token
       operationId: issuePersonalApiToken
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -12660,7 +13913,7 @@ paths:
                   maxLength: 80
                 roleCeiling:
                   type: string
-                  enum: *a54
+                  enum: *a57
                 expiresAt:
                   type: string
                   format: date-time
@@ -12684,7 +13937,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a55
+                        enum: *a58
                       label:
                         type: string
                         minLength: 1
@@ -12695,7 +13948,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a54
+                        enum: *a57
                       ownerUserId:
                         type:
                           - string
@@ -12717,7 +13970,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a56
+                        enum: *a59
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -12817,7 +14070,7 @@ paths:
         - API Access
       summary: Relabel an owned personal token
       operationId: relabelPersonalApiToken
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -12869,7 +14122,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a55
+                    enum: *a58
                   label:
                     type: string
                     minLength: 1
@@ -12880,7 +14133,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a54
+                    enum: *a57
                   ownerUserId:
                     type:
                       - string
@@ -12902,7 +14155,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a56
+                    enum: *a59
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -12997,7 +14250,7 @@ paths:
         - API Access
       summary: Immediately rotate an owned personal token
       operationId: rotatePersonalApiToken
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13047,7 +14300,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a55
+                        enum: *a58
                       label:
                         type: string
                         minLength: 1
@@ -13058,7 +14311,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a54
+                        enum: *a57
                       ownerUserId:
                         type:
                           - string
@@ -13080,7 +14333,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a56
+                        enum: *a59
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -13180,7 +14433,7 @@ paths:
         - API Access
       summary: Revoke a personal token
       operationId: revokePersonalApiToken
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13215,7 +14468,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a55
+                    enum: *a58
                   label:
                     type: string
                     minLength: 1
@@ -13226,7 +14479,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a54
+                    enum: *a57
                   ownerUserId:
                     type:
                       - string
@@ -13248,7 +14501,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a56
+                    enum: *a59
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -13343,7 +14596,7 @@ paths:
         - API Access
       summary: List workspace service accounts
       operationId: listServiceAccounts
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13386,10 +14639,10 @@ paths:
                           maxLength: 80
                         role:
                           type: string
-                          enum: *a54
+                          enum: *a57
                         status:
                           type: string
-                          enum: &a57
+                          enum: &a60
                             - enabled
                             - disabled
                             - archived
@@ -13486,7 +14739,7 @@ paths:
         - API Access
       summary: Create a service account and first credential
       operationId: createServiceAccount
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13515,7 +14768,7 @@ paths:
                   maxLength: 80
                 role:
                   type: string
-                  enum: *a54
+                  enum: *a57
                 credentialExpiresAt:
                   type: string
                   format: date-time
@@ -13543,10 +14796,10 @@ paths:
                         maxLength: 80
                       role:
                         type: string
-                        enum: *a54
+                        enum: *a57
                       status:
                         type: string
-                        enum: *a57
+                        enum: *a60
                       createdByUserId:
                         type: string
                         format: uuid
@@ -13598,7 +14851,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a55
+                        enum: *a58
                       label:
                         type: string
                         minLength: 1
@@ -13609,7 +14862,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a54
+                        enum: *a57
                       ownerUserId:
                         type:
                           - string
@@ -13631,7 +14884,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a56
+                        enum: *a59
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -13732,7 +14985,7 @@ paths:
         - API Access
       summary: Read a service account
       operationId: getServiceAccount
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13763,10 +15016,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a54
+                    enum: *a57
                   status:
                     type: string
-                    enum: *a57
+                    enum: *a60
                   createdByUserId:
                     type: string
                     format: uuid
@@ -13845,7 +15098,7 @@ paths:
         - API Access
       summary: Rename or change a service-account role
       operationId: updateServiceAccount
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -13880,7 +15133,7 @@ paths:
                   maxLength: 80
                 role:
                   type: string
-                  enum: *a54
+                  enum: *a57
                 revision:
                   type: integer
                   exclusiveMinimum: 0
@@ -13903,10 +15156,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a54
+                    enum: *a57
                   status:
                     type: string
-                    enum: *a57
+                    enum: *a60
                   createdByUserId:
                     type: string
                     format: uuid
@@ -13986,7 +15239,7 @@ paths:
         - API Access
       summary: Disable a service account
       operationId: disableServiceAccount
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14037,10 +15290,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a54
+                    enum: *a57
                   status:
                     type: string
-                    enum: *a57
+                    enum: *a60
                   createdByUserId:
                     type: string
                     format: uuid
@@ -14120,7 +15373,7 @@ paths:
         - API Access
       summary: Enable a service account
       operationId: enableServiceAccount
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14171,10 +15424,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a54
+                    enum: *a57
                   status:
                     type: string
-                    enum: *a57
+                    enum: *a60
                   createdByUserId:
                     type: string
                     format: uuid
@@ -14254,7 +15507,7 @@ paths:
         - API Access
       summary: Archive a service account
       operationId: archiveServiceAccount
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14305,10 +15558,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a54
+                    enum: *a57
                   status:
                     type: string
-                    enum: *a57
+                    enum: *a60
                   createdByUserId:
                     type: string
                     format: uuid
@@ -14388,7 +15641,7 @@ paths:
         - API Access
       summary: List service-account credentials
       operationId: listServiceAccountCredentials
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14433,7 +15686,7 @@ paths:
                           format: uuid
                         kind:
                           type: string
-                          enum: *a55
+                          enum: *a58
                         label:
                           type: string
                           minLength: 1
@@ -14444,7 +15697,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: *a54
+                          enum: *a57
                         ownerUserId:
                           type:
                             - string
@@ -14466,7 +15719,7 @@ paths:
                           format: date-time
                         status:
                           type: string
-                          enum: *a56
+                          enum: *a59
                         expiryWarningDays:
                           anyOf:
                             - type: number
@@ -14575,7 +15828,7 @@ paths:
         - API Access
       summary: Issue another service-account credential
       operationId: issueServiceAccountCredential
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14630,7 +15883,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a55
+                        enum: *a58
                       label:
                         type: string
                         minLength: 1
@@ -14641,7 +15894,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a54
+                        enum: *a57
                       ownerUserId:
                         type:
                           - string
@@ -14663,7 +15916,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a56
+                        enum: *a59
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -14763,7 +16016,7 @@ paths:
         - API Access
       summary: Relabel a service-account credential
       operationId: relabelServiceAccountCredential
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -14821,7 +16074,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a55
+                    enum: *a58
                   label:
                     type: string
                     minLength: 1
@@ -14832,7 +16085,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a54
+                    enum: *a57
                   ownerUserId:
                     type:
                       - string
@@ -14854,7 +16107,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a56
+                    enum: *a59
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -14949,7 +16202,7 @@ paths:
         - API Access
       summary: Immediately rotate a service-account credential
       operationId: rotateServiceAccountCredential
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -15005,7 +16258,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a55
+                        enum: *a58
                       label:
                         type: string
                         minLength: 1
@@ -15016,7 +16269,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a54
+                        enum: *a57
                       ownerUserId:
                         type:
                           - string
@@ -15038,7 +16291,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a56
+                        enum: *a59
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -15138,7 +16391,7 @@ paths:
         - API Access
       summary: Revoke a service-account credential
       operationId: revokeServiceAccountCredential
-      security: *a53
+      security: *a56
       parameters:
         - schema:
             type: string
@@ -15179,7 +16432,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a55
+                    enum: *a58
                   label:
                     type: string
                     minLength: 1
@@ -15190,7 +16443,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a54
+                    enum: *a57
                   ownerUserId:
                     type:
                       - string
@@ -15212,7 +16465,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a56
+                    enum: *a59
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -18376,6 +19629,75 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/bundle:
+    get:
+      tags:
+        - Agents
+      summary: Export a portable agent bundle
+      description: Composes the agent's config, routines, context-variable enablements and skills into one portable bundle for import into another workspace.
+      operationId: exportAgentBundle
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Agent bundle returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBundle"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/bundle:
+    post:
+      tags:
+        - Agents
+      summary: Import a portable agent bundle as a new agent
+      description: Creates a new agent from a previously exported bundle. References that cannot travel between workspaces (credential-bearing skill targets, missing context variables, unresolved document sources) import unbound and are reported in `unresolved` rather than dropped silently.
+      operationId: importAgentBundle
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentBundleImportRequest"
+      responses:
+        "201":
+          description: Agent created from bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentBundleImportResponse"
+        "400":
+          description: Unsupported bundle version or agent schema version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
           content:
             application/json:
               schema:
@@ -24828,7 +26150,7 @@ paths:
                       additionalProperties: false
                 documentEnrichmentOverride:
                   type: string
-                  enum: *a27
+                  enum: *a30
               required:
                 - title
                 - content
@@ -27606,7 +28928,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a48
+                            enum: *a51
                           caseSensitive:
                             type: boolean
                         required:
@@ -27625,7 +28947,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a48
+                            enum: *a51
                           caseSensitive:
                             type: boolean
                         required:
@@ -28079,7 +29401,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a48
+                            enum: *a51
                           caseSensitive:
                             type: boolean
                         required:
@@ -28098,7 +29420,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a48
+                            enum: *a51
                           caseSensitive:
                             type: boolean
                         required:

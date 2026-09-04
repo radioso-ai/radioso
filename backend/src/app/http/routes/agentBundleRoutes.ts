@@ -5,6 +5,10 @@ import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
+import {
+  rejectMachineBundlePublicSurfaceSecrets,
+  type MachineAwareRoutePrincipal,
+} from "../shared/machinePublicSurfacePolicy.js";
 import type { AgentBundle } from "../../../modules/agentBundle/public.js";
 
 const agentParamsSchema = z.object({ agentId: z.string().uuid() });
@@ -99,8 +103,13 @@ export const createAgentBundleRoutes = (dependencies: AppDependencies): Router =
     validateBody(agentBundleBodySchema),
     async (req, res, next) => {
       try {
-        const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId?: string };
+        const { workspaceId, accountId, authPrincipal } = res.locals as {
+          workspaceId: string;
+          accountId?: string;
+          authPrincipal?: MachineAwareRoutePrincipal;
+        };
         const bundle = req.body as AgentBundle;
+        rejectMachineBundlePublicSurfaceSecrets(authPrincipal, bundle.agent);
 
         let result;
         try {

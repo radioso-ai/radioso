@@ -247,3 +247,38 @@ Beyond the two defects above, review found four more:
 Also corrected: the README and this plan claimed `domain.ts` holds a Zod schema for
 the bundle. It does not — the only runtime shape check is the deliberately loose
 `agentBundleBodySchema` at the route.
+
+## Review round two
+
+**The published contract described the agent as `{ schemaVersion }`.** The OpenAPI
+schema for the bundle's `agent` field was a `passthrough` placeholder, and
+`passthrough` emits no `additionalProperties`, so the generated SDK type was
+literally one number — an SDK consumer could neither read an exported agent nor
+construct one, and `{ agent: { schemaVersion: 4 } }` type-checked as a valid bundle.
+The real shape is now described, reusing the directive/contact-delivery/placeholder
+schemas that already existed, and a compile-time exhaustiveness guard makes a field
+added to `AgentConfig` without a contract entry a build error rather than a silent
+omission — which is how the placeholder went unnoticed in the first place.
+
+**Skill-create recovery caught too much.** Every create failure was reported as
+`skill_target_unbound`, but the skills service also throws for invalid config, a
+duplicate name, an unsupported invocation mode or a target-kind mismatch. A
+hand-edited or older-deployment bundle would then import "successfully" while
+quietly dropping a skill and naming the wrong cause. Recovery is now restricted to
+the case import itself created — the export placeheld a connection id, so the skill
+is deliberately created without its target. Anything else fails the import and the
+compensation runs.
+
+**`AGENT_CONFIG_SCHEMA_VERSION` bumped to 4.** Adding `internalName` and
+`handoffOnRetrievalMiss` without a bump left two deployments able to disagree about
+what version 3 contains, and the import gate would then wave through a config whose
+new fields it silently ignores — `handoffOnRetrievalMiss` changes runtime escalation
+behaviour, so that is not a harmless difference. Readers now declare the versions
+they accept (`SUPPORTED_AGENT_CONFIG_VERSIONS`), v3 stays accepted while every field
+it predates defaults to the behaviour that version had, and the rule is written down
+in the module README. Three unrelated tests pinned the old literal, which is fair
+evidence the version is a contract other code depends on.
+
+Tracked separately rather than in this change: the missing writer for
+`handoffOnRetrievalMiss` (#1182) and import job state / idempotency / orphan cleanup
+(#1183).

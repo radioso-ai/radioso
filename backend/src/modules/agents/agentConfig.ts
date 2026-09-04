@@ -31,7 +31,16 @@ import {
   type InternalAgentExternalSkillsConfig,
 } from "./externalSkillsConfig.js";
 
-export const AGENT_CONFIG_SCHEMA_VERSION = 3;
+/**
+ * Bumped when the field set changes, including additively. An additive field with a
+ * defaultable value is safe for a reader that predates it, but leaving the version
+ * alone means two deployments can disagree about what the same version contains —
+ * and the bundle importer's version gate would then wave through a config whose new
+ * fields it silently ignores. Version 4 added `internalName` and
+ * `handoffOnRetrievalMiss`; readers declare which versions they accept and what an
+ * absent field means (see SUPPORTED_AGENT_CONFIG_VERSIONS in agentBundle).
+ */
+export const AGENT_CONFIG_SCHEMA_VERSION = 4;
 
 export type {
   AgentConfigPortability,

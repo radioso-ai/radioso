@@ -5127,9 +5127,159 @@ export interface components {
             __ref: "documentSource" | "storageBucket" | "storageObjectPath" | "storageGeneration" | "websiteEmbedAllowedOrigin" | "mcpConnection" | "agentSkillTarget";
             key?: string;
         };
-        /** @description The agent configuration projection (AgentConfig) at schemaVersion 3, as produced and consumed by the agents module for export/import. Not exhaustively typed here: this is the same versioned projection the agents module already validates internally, carried through unchanged. */
+        /** @description Stands in for a credential the export withholds. Only its absence travels, never the value. */
+        AgentConfigSecretPlaceholder: {
+            /** @enum {string} */
+            __redacted: "secret";
+        };
+        /** @description An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and `excludes` — so nothing here needs re-keying on import. */
+        AgentBundleAuthoredDirective: {
+            name: string;
+            condition: components["schemas"]["AuthoredDirectiveCondition"];
+            action: string;
+            priority: number | null;
+            requiredCapabilities: string[];
+            dependsOn: string[];
+            excludes: string[];
+            routes: ("retrieval" | "direct")[];
+            surfaces: components["schemas"]["GenerationSurface"][];
+            tags: string[];
+            description: string | null;
+            binding: components["schemas"]["AuthoredDirectiveBinding"] & (Record<string, never> | null);
+            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] & ({
+                /** @enum {string} */
+                kind: "repeatable";
+            } | {
+                /** @enum {string} */
+                kind: "once_per_conversation";
+            } | {
+                /** @enum {string} */
+                kind: "cooldown";
+                turns: number;
+            } | null);
+            enabled: boolean;
+            metadata: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Exported for completeness. Import does not re-create these: an MCP connection cannot serve until its credential is re-entered, so each one comes back in `unresolved` for the operator to rebuild. */
+        AgentBundleExternalSkills: {
+            connections: {
+                /** @description Within-bundle linkage key, never a database id. */
+                key: string;
+                displayName: string;
+                serverUrl: string;
+                authMethod: string;
+                credential: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                oauth: {
+                    authorizationEndpoint: string;
+                    tokenEndpoint: string;
+                    clientId: string;
+                    clientSecret: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    scopes: string[];
+                } | null;
+            }[];
+            skills: {
+                skillName: string;
+                connection: components["schemas"]["AgentConfigRefPlaceholder"];
+                toolName: string;
+                boundParams: {
+                    [key: string]: unknown;
+                };
+                exposedParams: {
+                    [key: string]: {
+                        description?: string;
+                        slotBinding?: string;
+                    };
+                };
+                declaredOutcomes: string[] | null;
+                outcomeMap: {
+                    [key: string]: string;
+                } | null;
+                enabled: boolean;
+            }[];
+        };
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. */
         AgentBundleAgentConfig: {
             schemaVersion: number;
+            /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
+            portability: {
+                [key: string]: "portable" | "ref" | "secret";
+            };
+            name: string;
+            internalName: string | null;
+            customInstruction: string;
+            handoffOnRetrievalMiss: boolean;
+            contactRequestsEnabled: boolean;
+            webhookExportsEnabled: boolean;
+            contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
+            /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
+            logo: {
+                bucket: components["schemas"]["AgentConfigRefPlaceholder"];
+                objectPath: components["schemas"]["AgentConfigRefPlaceholder"];
+                generation: components["schemas"]["AgentConfigRefPlaceholder"] & (Record<string, never> | null);
+                mimeType: string;
+                filename: string;
+                sizeBytes: number;
+            } | null;
+            theme: {
+                brand: string;
+                brandText: string;
+                surface: string;
+                text: string;
+            };
+            branding: {
+                hidePoweredBy: boolean;
+                privacyPolicyUrl: string | null;
+            };
+            greetingInstruction: string;
+            assistantDefaultLocale: string | null;
+            proactiveGreetingEnabled: boolean;
+            surfaceSettings: {
+                authenticatedChat: {
+                    enabled: boolean;
+                };
+                anonymousChat: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                };
+                websiteEmbed: {
+                    enabled: boolean;
+                    token: components["schemas"]["AgentConfigSecretPlaceholder"] & (Record<string, never> | null);
+                    allowedOrigins: components["schemas"]["AgentConfigRefPlaceholder"][];
+                    launcherLabel: string;
+                    /** @enum {string} */
+                    launcherPosition: "bottom-right" | "bottom-left";
+                    theme: {
+                        brand: string;
+                        brandText: string;
+                        surface: string;
+                        text: string;
+                    };
+                    copy: {
+                        [key: string]: {
+                            [key: string]: string;
+                        };
+                    };
+                    expertOverrides: {
+                        [key: string]: string;
+                    };
+                };
+                /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
+                extensions: {
+                    [key: string]: unknown;
+                };
+            };
+            /** @description Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope. */
+            skillSettings: {
+                [key: string]: unknown;
+            };
+            chatModelOverride: {
+                provider: string;
+                model: string;
+            } | null;
+            authoredDirectives: components["schemas"]["AgentBundleAuthoredDirective"][];
+            externalSkills: components["schemas"]["AgentBundleExternalSkills"];
         };
         AgentBundleRoutine: {
             name: string;

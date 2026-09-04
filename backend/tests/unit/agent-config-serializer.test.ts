@@ -241,7 +241,10 @@ describe("serializeAgentConfig", () => {
     const config = serializeAgentConfig(fullyConfiguredAgent());
 
     expect(config.schemaVersion).toBe(AGENT_CONFIG_SCHEMA_VERSION);
-    expect(config.schemaVersion).toBe(3);
+    // Pinned to a literal on purpose: the field set changed (internalName,
+    // handoffOnRetrievalMiss), so bumping it is a conscious edit rather than a
+    // constant that quietly follows along.
+    expect(config.schemaVersion).toBe(4);
     expect(config.name).toBe("Support Bot");
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);

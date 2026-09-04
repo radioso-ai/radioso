@@ -75,7 +75,7 @@ describe("createCopilotRoutes", () => {
       available: true,
       reason: "ok",
       canManage: false,
-      applyableProposalTargets: ["document", "ingestion_settings", "website_crawl"],
+      applyableProposalTargets: ["document", "ingestion_settings", "website_crawl", "workspace_setting"],
     });
   });
 

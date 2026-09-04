@@ -41,7 +41,11 @@ export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalC
   // the warning when document removal arrived. The directive clause reads rows written before the
   // flag existed; every proposal drafted since carries `removesTarget`.
   const removal = payload.removesTarget === true || (proposal.targetType === "directive" && payload.op === "remove");
-  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}) };
+  // Read from the payload for the same reason as removal: the draft decided reach against the
+  // settings it was made from, and a reader re-deriving it from field names would have to know
+  // which of them mean reach.
+  const reach = payload.changesReach === true;
+  const card = { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.summary, textValue(payload.rationale, targetLabel)), status: proposal.status, reason: proposal.reason ?? null, ...(removal ? { removal: true as const } : {}), ...(reach ? { reach: true as const } : {}) };
   return proposal.evidence ? { ...card, evidence: summarizeProposalEvidence(proposal.evidence) } : card;
 };
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

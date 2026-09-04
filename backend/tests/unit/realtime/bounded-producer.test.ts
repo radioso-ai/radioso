@@ -4,6 +4,7 @@ import { BoundedInvalidationProducer } from "../../../src/modules/realtime/appli
 
 const first = "4d7293c8-d241-4f8f-a4db-3df5b88da44c";
 const second = "b4f5c8d3-d241-4f8f-a4db-3df5b88da44c";
+const third = "c9a1e2f4-d241-4f8f-a4db-3df5b88da44c";
 
 describe("bounded invalidation producer", () => {
   it("enqueues synchronously, merges workspace kinds, and performs no broker work on mutations", async () => {
@@ -165,6 +166,40 @@ describe("bounded invalidation producer", () => {
     await producer.flushNow();
     expect(publish).toHaveBeenCalledOnce();
     expect(producer.debugState()).toEqual({ pendingWorkspaces: 0, scheduledTimers: 0 });
+  });
+
+  it("stops draining when a publish fails during shutdown instead of retrying it until the deadline", async () => {
+    // The drain loop exists to send the batches still queued, not to retry the batch it just sent.
+    // A failed publish puts its change kinds back on the entry, so a loop that asks only whether
+    // work remains re-sends the same batch for the whole shutdown budget — and, at the moment the
+    // budget runs out, can start one more publish it aborts on the next tick.
+    const publish = vi.fn(async () => { throw new Error("transport down"); });
+    const producer = new BoundedInvalidationProducer({
+      transport: { publish },
+      options: { publishTimeoutMs: 1_000, shutdownTimeoutMs: 200 },
+    });
+    producer.enqueue(first, ["crawl.progress"]);
+
+    await producer.shutdown();
+
+    expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it("keeps draining while batches are still being sent, so shutdown does not abandon queued work", async () => {
+    // The other half of the same rule: a flush that published something has made progress, and the
+    // next batch is still owed. One workspace per batch, three queued, so draining takes three.
+    const publish = vi.fn(async () => undefined);
+    const producer = new BoundedInvalidationProducer({
+      transport: { publish },
+      options: { flushBatchSize: 1, publishConcurrency: 1, shutdownTimeoutMs: 1_000 },
+    });
+    producer.enqueue(first, ["crawl.progress"]);
+    producer.enqueue(second, ["crawl.progress"]);
+    producer.enqueue(third, ["crawl.progress"]);
+
+    await producer.shutdown();
+
+    expect(publish).toHaveBeenCalledTimes(3);
   });
 
   it("expires idle cooldown records so completed work does not become an unbounded workspace cache", async () => {

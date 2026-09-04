@@ -26,6 +26,7 @@ import type { DocumentProposalCopilotToolDependencies } from "./documentProposal
 import { createWebsiteCrawlProposalCopilotTools } from "./websiteCrawlProposals.js";
 import type { WebsiteCrawlProposalCopilotToolDependencies } from "./websiteCrawlProposals.js";
 import { createIngestionSettingsProposalCopilotTools } from "./ingestionSettingsProposals.js";
+import { createWorkspaceSettingProposalCopilotTools } from "./workspaceSettingProposals.js";
 import type { IngestionSettingsProposalCopilotToolDependencies } from "./ingestionSettingsProposals.js";
 import { createEvalCopilotTools, createEvalVerificationCopilotTools } from "./eval.js";
 import type { CopilotEvalResultsPort, EvalCopilotToolDependencies, EvalVerificationCopilotToolDependencies } from "./eval.js";
@@ -105,6 +106,7 @@ export const createCopilotToolDescriptors = (
   ...createAgentProposalCopilotTools(deps),
   ...createDocumentProposalCopilotTools(deps),
   ...createIngestionSettingsProposalCopilotTools(deps),
+  ...createWorkspaceSettingProposalCopilotTools(deps),
   ...createWebsiteCrawlProposalCopilotTools(deps),
 ]));
 

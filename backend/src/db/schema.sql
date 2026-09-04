@@ -7008,6 +7008,13 @@ CREATE UNIQUE INDEX operator_mcp_invocations_operation_idx ON public.operator_mc
 
 
 --
+-- Name: operator_mcp_invocations_retention_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX operator_mcp_invocations_retention_idx ON public.operator_mcp_invocations USING btree (retained_until, id);
+
+
+--
 -- Name: operator_mcp_transactions_expiry_idx; Type: INDEX; Schema: public; Owner: -
 --
 

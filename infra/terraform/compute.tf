@@ -510,6 +510,20 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_rollout_workspace_ids] : []
+        content {
+          name  = "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"
+          value = join(",", var.operator_mcp_rollout_workspace_ids)
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_verification_budget_per_minute] : []
+        content {
+          name  = "OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE"
+          value = tostring(var.operator_mcp_verification_budget_per_minute)
+        }
+      }
+      dynamic "env" {
         for_each = var.operator_mcp_enabled ? [true] : []
         content {
           name = "OPERATOR_MCP_INTERNAL_SECRET"
@@ -676,6 +690,13 @@ resource "google_cloud_run_v2_service" "mcp" {
         content {
           name  = "OPERATOR_MCP_CREDENTIAL_EPOCH"
           value = env.value
+        }
+      }
+      dynamic "env" {
+        for_each = var.operator_mcp_enabled ? [var.operator_mcp_rollout_workspace_ids] : []
+        content {
+          name  = "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"
+          value = join(",", var.operator_mcp_rollout_workspace_ids)
         }
       }
       dynamic "env" {

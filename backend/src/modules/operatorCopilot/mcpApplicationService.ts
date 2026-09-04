@@ -10,9 +10,13 @@ import {
   type OperatorMcpScope,
 } from "@radioso/operator-mcp-contract";
 
-import type { OperatorMcpCredentialValidationService, OperatorMcpPrincipal } from "../operatorMcpAuthorization/public.js";
+import {
+  createOperatorProof,
+  verifyOperatorProof,
+  type OperatorMcpCredentialValidationService,
+  type OperatorMcpPrincipal,
+} from "../operatorMcpAuthorization/public.js";
 import type { AuditPort } from "../audit/contracts/index.js";
-import { createOperatorProof, verifyOperatorProof } from "../operatorMcpAuthorization/proof.js";
 import type { CopilotCurrentAuthorizationPort, CopilotToolInvocationContext } from "./contracts.js";
 import { OperatorMcpCatalogError, OperatorMcpCatalogService } from "./mcpCatalog.js";
 import type { OperatorMcpInvocationRecord, OperatorMcpInvocationRepositoryPort } from "./mcpContracts.js";
@@ -106,6 +110,7 @@ export class OperatorMcpApplicationService {
     currentAuthorization: CopilotCurrentAuthorizationPort;
     audit?: Pick<AuditPort, "record">;
     secret: string;
+    receiptRetentionDays?: number;
     now?: () => Date;
   }) {}
 
@@ -213,7 +218,7 @@ export class OperatorMcpApplicationService {
       verificationCost: 0,
       proofNonceDigest: sha256Digest(proofNonce),
       now,
-      retainedUntil: new Date(now.getTime() + 90 * 86_400_000),
+      retainedUntil: new Date(now.getTime() + (this.dependencies.receiptRetentionDays ?? 90) * 86_400_000),
     });
     if (admitted.status !== "admitted") throw new OperatorMcpApplicationError("invalid_admission");
     if (request.method === "ping") {
@@ -298,6 +303,13 @@ export class OperatorMcpApplicationService {
       if (prepared.status === "conflict") throw new OperatorMcpApplicationError("operation_conflict");
       if (prepared.status === "budget_exhausted") throw new OperatorMcpApplicationError("budget_exhausted");
       if (prepared.status === "replay") {
+        await this.dependencies.invocations.recordOutcome({
+          invocationId: input.proof.invocationId,
+          status: "completed",
+          safeOutcomeCode: "replayed",
+          ...(prepared.invocation.resultReference ? { resultReference: prepared.invocation.resultReference } : {}),
+          now: this.now(),
+        });
         await this.audit({
           principal, invocationId: input.proof.invocationId, method: "tools/call", descriptorName: input.name,
           capabilityShape, eventStatus: "success", outcome: "replayed", reason: "operation_replay",

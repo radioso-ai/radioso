@@ -52,6 +52,7 @@ export const createHttpServer = ({ authService, auditLogger, config, operatorMcp
     principalRateLimit: operatorMcp.principalRateLimit,
     readiness: operatorMcp.readiness,
     resourceMetadataUrl: operatorMcp.resource.metadataUrl,
+    rolloutWorkspaceIds: operatorMcp.rolloutWorkspaceIds,
   }) : undefined;
 
   const writeUnhandledError = (req: IncomingMessage, res: ServerResponse, error: unknown) => {

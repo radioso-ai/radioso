@@ -13,6 +13,7 @@ describeIntegration("operator MCP proposal origin", () => {
   const resource = `https://mcp.example/${randomUUID()}/operator/mcp`;
   const accountId = randomUUID(); const workspaceId = randomUUID(); const userId = randomUUID(); const membershipId = randomUUID();
   const clientId = randomUUID(); const snapshotId = randomUUID(); const grantId = randomUUID(); const credentialId = randomUUID(); const invocationId = randomUUID();
+  let persistedProposalId: string | null = null;
 
   beforeAll(async () => {
     await database.query("INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Proposal', $2, 'hash')", [accountId, `proposal-${accountId}@example.com`]);
@@ -43,6 +44,7 @@ describeIntegration("operator MCP proposal origin", () => {
       targetType: "ingestion_settings", targetRef: { workspaceId }, payload: { summary: "Tune ingestion" },
       versionToken: "v1", evidence: null,
     });
+    persistedProposalId = proposal.id;
     expect(proposal).toMatchObject({ conversationId: null, operatorMcpInvocationId: invocationId, origin: { type: "operator_mcp_invocation", invocationId } });
     await expect(database.query("DELETE FROM operator_mcp_invocations WHERE id = $1", [invocationId])).rejects.toThrow();
     await database.query("UPDATE operator_mcp_grants SET status = 'revoked', version = version + 1, revoked_at = NOW() WHERE id = $1", [grantId]);
@@ -57,5 +59,13 @@ describeIntegration("operator MCP proposal origin", () => {
   it("rejects rows that name both or neither origin", async () => {
     const base = [randomUUID(), workspaceId, userId, "ingestion_settings", "{}", "{}", "v1"];
     await expect(database.query("INSERT INTO copilot_proposals (id, workspace_id, operator_user_id, target_type, target_ref, payload, version_token) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)", base)).rejects.toThrow();
+  });
+
+  it("expires a pending proposal and deletes MCP records in dependency order", async () => {
+    expect(persistedProposalId).not.toBeNull();
+    await database.query("UPDATE operator_mcp_invocations SET retained_until = NOW() - INTERVAL '1 day' WHERE id = $1", [invocationId]);
+    await expect(proposals.deleteExpiredOperatorMcpRecords({ now: new Date(), limit: 10 })).resolves.toBe(1);
+    await expect(database.query("SELECT id FROM operator_mcp_invocations WHERE id = $1", [invocationId])).resolves.toHaveLength(0);
+    await expect(database.query("SELECT id FROM copilot_proposals WHERE id = $1", [persistedProposalId])).resolves.toHaveLength(0);
   });
 });

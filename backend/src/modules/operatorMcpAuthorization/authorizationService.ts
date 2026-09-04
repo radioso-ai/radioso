@@ -29,6 +29,7 @@ interface AuthorizationConfig {
   accessTokenTtlSeconds: number;
   refreshIdleTtlDays: number;
   refreshAbsoluteTtlDays: number;
+  rolloutWorkspaceIds?: ReadonlySet<string>;
 }
 
 const codeChallengeFor = (verifier: string): string =>
@@ -203,6 +204,9 @@ export class OperatorMcpAuthorizationService {
     }
 
     const approvedToolScopes = [...(input.approvedToolScopes ?? [])];
+    if (input.workspaceId && this.config.rolloutWorkspaceIds !== undefined && !this.config.rolloutWorkspaceIds.has(input.workspaceId)) {
+      throw new OperatorMcpProtocolError("invalid_request", "invalid_request");
+    }
     if (!input.workspaceId || !input.membershipId || approvedToolScopes.length === 0
       || !isSubset(approvedToolScopes, transaction.requestedToolScopes)
       || (input.approvedOfflineAccess === true && !transaction.requestedOfflineAccess)) {

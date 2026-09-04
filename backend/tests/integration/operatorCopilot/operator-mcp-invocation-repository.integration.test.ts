@@ -119,6 +119,17 @@ describeIntegration("OperatorMcpInvocationRepository", () => {
     expect(attempts.filter((result) => result.status === "budget_exhausted")).toHaveLength(2);
   });
 
+  it("honors a deployment verification budget lower than the protocol maximum", async () => {
+    await clearInvocations();
+    const limited = new OperatorMcpInvocationRepository(database.kysely, { verificationBudgetPerMinute: 2 });
+    const attempts = await Promise.all(Array.from({ length: 3 }, (_, index) => limited.admit(baseInput({
+      id: randomUUID(), operationId: `limited-budget-${index}`, verificationCost: 1, proofNonceDigest: randomUUID().replaceAll("-", ""),
+    }))));
+
+    expect(attempts.filter((result) => result.status === "admitted")).toHaveLength(2);
+    expect(attempts.filter((result) => result.status === "budget_exhausted")).toHaveLength(1);
+  });
+
   it("refunds only an admitted pre-effect reservation and reconciles its outcome", async () => {
     await clearInvocations();
     const first = baseInput({ verificationCost: 2, operationId: "refund-before-effect" });

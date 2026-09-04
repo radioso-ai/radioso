@@ -26,6 +26,32 @@
   fake-AS/resource journey exercises only Radioso's proposed wire profile; it is
   not MCP SDK or real-client conformance and is not a substitute for this gate.
 
+## Recorded final validation
+
+Validated on 2026-09-04 after merging the current `origin/main` (including the
+workspace-setting proposal, realtime, and crawler changes):
+
+- Backend unit: 577 files and 5,545 tests passed.
+- Backend contract: 58 files and 412 tests passed.
+- Backend integration, using the dedicated disposable Operator MCP database:
+  156 files passed, 1 skipped; 944 tests passed, 7 skipped.
+- Backend build, architecture validation, schema snapshot check, and generated
+  Kysely type check passed.
+- Operator MCP contract: build plus 6 tests passed.
+- Standalone MCP: build and 90 tests passed; HTTP and Redis smokes passed and
+  preserved the existing `/mcp` `ask_agent` flow.
+- Frontend: 163 files and 1,364 tests passed; lint completed with one existing
+  unused-variable warning in `tests/e2e/copilot.spec.ts`; production build passed.
+  The production-server Operator MCP Playwright journey passed all 8 scenarios.
+- TypeScript SDK: OpenAPI sync, build, and 27 tests passed. Root API-contract
+  drift validation passed.
+- Docs portal lint and production build passed.
+- Terraform recursive formatting check and validation passed.
+
+The named Codex CLI, Claude Code, and ChatGPT fixtures remain deliberately
+unverified and unavailable. This validation does not claim real-client or MCP
+SDK conformance, and no act capability is admitted.
+
 ## Prerequisites
 
 - PostgreSQL and the normal Radioso backend/frontend stack.

@@ -506,6 +506,8 @@ describe("runtime configuration", () => {
     const stagingEnvVariables = await readFile(new URL("../../../infra/terraform/environments/staging/variables.tf", import.meta.url), "utf8");
     const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
     const liveEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live/variables.tf", import.meta.url), "utf8");
+    const liveEuEnv = await readFile(new URL("../../../infra/terraform/environments/live-eu/main.tf", import.meta.url), "utf8");
+    const liveEuEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live-eu/variables.tf", import.meta.url), "utf8");
 
     expect(computeTf).toContain('name  = "OBSERVABILITY_ENVIRONMENT"');
     expect(computeTf).toContain('value = var.environment');
@@ -528,9 +530,31 @@ describe("runtime configuration", () => {
     expect(computeTf.match(/name  = "RADIOSO_TRUSTED_PROXY_HOPS"/g)).toHaveLength(2);
     expect(computeTf.match(/value = "2"/g)?.length).toBeGreaterThanOrEqual(2);
     expect(databaseTf).toContain('resource "random_password" "radioso_mcp_signing_secret"');
-    expect(secretsTf).toContain('"radioso-mcp-signing-secret" = random_password.radioso_mcp_signing_secret.result');
+    expect(secretsTf).toMatch(/"radioso-mcp-signing-secret"\s+= random_password\.radioso_mcp_signing_secret\.result/u);
     expect(terraformVariables).not.toContain('variable "radioso_mcp_signing_secret"');
     expect(terraformWorkflow).not.toContain('RADIOSO_MCP_SIGNING_SECRET');
+    expect(terraformVariables).toContain('variable "operator_mcp_rollout_workspace_ids"');
+    expect(terraformVariables).toContain('variable "operator_mcp_verification_budget_per_minute"');
+    expect(computeTf.match(/name  = "OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS"/g)).toHaveLength(2);
+    expect(computeTf.match(/value = join\(",", var\.operator_mcp_rollout_workspace_ids\)/g)).toHaveLength(2);
+    expect(computeTf).toContain('name  = "OPERATOR_MCP_VERIFICATION_BUDGET_PER_MINUTE"');
+    expect(computeTf).toContain('value = tostring(var.operator_mcp_verification_budget_per_minute)');
+    for (const [name, main, variables] of [
+      ["staging", stagingEnv, stagingEnvVariables],
+      ["live", liveEnv, liveEnvVariables],
+      ["live-eu", liveEuEnv, liveEuEnvVariables],
+    ] as const) {
+      for (const setting of [
+        "operator_mcp_enabled",
+        "operator_mcp_public_origin",
+        "operator_mcp_credential_epoch",
+        "operator_mcp_rollout_workspace_ids",
+        "operator_mcp_verification_budget_per_minute",
+      ]) {
+        expect(variables, `${name} must expose ${setting}`).toContain(`variable "${setting}"`);
+        expect(main, `${name} must pass ${setting}`).toMatch(new RegExp(`${setting}\\s+= var\\.${setting}`));
+      }
+    }
     // The retention window is documented as an operator knob, and the sweep that reads it runs in
     // the worker — so a Terraform deployment that never passes it leaves the docs describing a
     // setting the deployment cannot honour.

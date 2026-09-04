@@ -94,7 +94,7 @@ describe("propose_document", () => {
     expect(createProposal).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "workspace-1",
       operatorUserId: "operator-1",
-      conversationId: "conversation-1",
+      origin: { type: "conversation", conversationId: "conversation-1" },
       targetType: "document",
       targetRef: { documentId: null },
       payload: expect.objectContaining({

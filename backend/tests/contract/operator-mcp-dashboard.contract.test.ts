@@ -20,6 +20,7 @@ const buildApp = () => {
       SESSION_COOKIE_NAME: "radioso_session",
       OPERATOR_MCP_ENABLED: true,
       OPERATOR_MCP_RESOURCE_URL: "https://mcp.example/operator/mcp",
+      OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS: workspaceId,
     },
     authService: { authenticateSession: vi.fn(async () => ({ userId: "user", accountId: "account", sessionId: "session" })) },
     accountAccessService: { requireActiveMembership: vi.fn(async () => undefined) },

@@ -31,6 +31,7 @@ export interface OperatorMcpRequestHandlerDependencies {
   resourceMetadataUrl?: string;
   readiness?: { isReady(): boolean };
   onOutcome?: (observation: OperatorMcpAuditObservation) => void | Promise<void>;
+  rolloutWorkspaceIds?: ReadonlySet<string>;
 }
 
 const MAX_BODY_BYTES = 256 * 1024;
@@ -100,9 +101,25 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
 
   const { id, method, params } = parsed.data;
   const parameterObject = params ?? {};
-  const descriptorName = method === "tools/call" && typeof parameterObject.name === "string"
-    ? parameterObject.name
-    : undefined;
+  let call: { name: string; arguments: Record<string, unknown>; operationId?: string } | null = null;
+  if (method === "tools/call") {
+    const callParams = objectParams(parameterObject);
+    const argumentsValue = callParams?.arguments === undefined ? {} : objectParams(callParams.arguments);
+    const operationId = callParams?.operationId;
+    if (
+      !callParams
+      || typeof callParams.name !== "string"
+      || callParams.name.length === 0
+      || callParams.name.length > 128
+      || !argumentsValue
+      || (operationId !== undefined && (typeof operationId !== "string" || operationId.length === 0 || operationId.length > 256))
+    ) {
+      reportOutcome(dependencies, { method, outcome: "error", reason: "invalid_request" });
+      return rpcError(id, -32602, "Invalid params");
+    }
+    call = { name: callParams.name, arguments: argumentsValue, ...(operationId === undefined ? {} : { operationId }) };
+  }
+  const descriptorName = call?.name;
   try {
     const admission = await dependencies.admit({
       accessToken: token,
@@ -114,6 +131,10 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     });
     if (!admission) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "invalid_token" });
+      return unauthorized(dependencies.resourceMetadataUrl);
+    }
+    if (dependencies.rolloutWorkspaceIds !== undefined && !dependencies.rolloutWorkspaceIds.has(admission.proof.workspaceId)) {
+      reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "workspace_not_in_rollout" });
       return unauthorized(dependencies.resourceMetadataUrl);
     }
     if (dependencies.principalRateLimit && !await dependencies.principalRateLimit.consume({ sourceDigest: principalDigest(admission.proof) })) {
@@ -134,25 +155,10 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
       return Response.json({ id, jsonrpc: "2.0", result });
     }
 
-    const callParams = objectParams(parameterObject);
-    if (!callParams || typeof callParams.name !== "string" || callParams.name.length === 0 || callParams.name.length > 128) {
-      reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "invalid_request" });
-      return rpcError(id, -32602, "Invalid params");
-    }
-    const args = callParams.arguments === undefined ? {} : objectParams(callParams.arguments);
-    if (!args) {
-      reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "invalid_request" });
-      return rpcError(id, -32602, "Invalid params");
-    }
-    const operationId = callParams.operationId;
-    if (operationId !== undefined && (typeof operationId !== "string" || operationId.length === 0 || operationId.length > 256)) {
-      reportOutcome(dependencies, { method, outcome: "error", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "invalid_request" });
-      return rpcError(id, -32602, "Invalid params");
-    }
     const result = await dependencies.call({
-      arguments: args,
-      name: callParams.name,
-      operationId,
+      arguments: call!.arguments,
+      name: call!.name,
+      operationId: call!.operationId,
       proof: admission.proof,
     });
     if (!responseIsBounded(result)) {

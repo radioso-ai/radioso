@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireApiAccessCsrf } from "../../app/http/middleware/requireApiAccessCsrf.js";
 import { requireSession } from "../../app/http/middleware/requireSession.js";
 import type { AppDependencies } from "../../app/server/types.js";
-import { OperatorMcpProtocolError, validateRedirectUri } from "./domain.js";
+import { OperatorMcpProtocolError, operatorMcpRolloutWorkspaceIds, validateRedirectUri } from "./domain.js";
 
 type Dependencies = Pick<AppDependencies,
   "env" | "authService" | "accountAccessService" | "workspaceService" | "userRepository" |
@@ -56,6 +56,7 @@ export const createOperatorMcpDiscoveryRoutes = (dependencies: Pick<Dependencies
 
 export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router => {
   const router = Router();
+  const rolloutWorkspaceIds = operatorMcpRolloutWorkspaceIds(dependencies.env.OPERATOR_MCP_ROLLOUT_WORKSPACE_IDS);
   const sessionOnly = requireSession(dependencies);
   const service = dependencies.operatorMcpAuthorizationService;
 
@@ -147,7 +148,7 @@ export const createOperatorMcpOauthRoutes = (dependencies: Dependencies): Router
       const accessible = (await Promise.all(workspaces.map(async (workspace) => ({
         workspace,
         role: await dependencies.accountAccessService.resolveWorkspaceRole({ accountId: locals.accountId, userId: locals.userId, workspaceId: workspace.id }),
-      })))).filter((item) => item.role !== null);
+      })))).filter((item) => item.role !== null && rolloutWorkspaceIds.has(item.workspace.id));
       res.status(200).json({
         transactionId: transaction.id,
         client: {

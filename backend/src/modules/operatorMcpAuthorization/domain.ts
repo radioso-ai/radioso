@@ -15,6 +15,9 @@ export const AUTHORIZATION_CODE_TTL_SECONDS = 5 * 60;
 export const REFRESH_IDLE_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const REFRESH_ABSOLUTE_TTL_SECONDS = 90 * 24 * 60 * 60;
 
+export const operatorMcpRolloutWorkspaceIds = (value: string | undefined): ReadonlySet<string> =>
+  new Set((value ?? "").split(",").map((entry) => entry.trim()).filter(Boolean));
+
 export class OperatorMcpProtocolError extends Error {
   constructor(
     readonly code:

@@ -154,6 +154,53 @@ export const attachCapabilitySubTrace = (
   return attached ? { ...spine, stages } : spine;
 };
 
+export interface SessionPreparationTimings {
+  totalMs: number;
+  /** Per-step wall clock, keyed by preparation step. Absent steps did not run. */
+  steps: Record<string, number>;
+}
+
+/**
+ * Give the spine's `gather` stage the duration of session preparation.
+ *
+ * Preparation runs before the engine opens the spine, so `gather` is emitted
+ * zero-width and every pre-planner database round trip is invisible in the trace —
+ * the wait shows up only as the gap between the request and the first status frame,
+ * which is indistinguishable from network. These metrics are the only place that
+ * gap is attributable. Counts and durations only; no query, message, or variable
+ * content. Returns a new spine; no-ops when nothing was measured.
+ */
+export const attachPreparationTimingsToGather = (
+  spine: ConversationTrace,
+  timings: SessionPreparationTimings | undefined,
+): ConversationTrace => {
+  if (!timings || Object.keys(timings.steps).length === 0) {
+    return spine;
+  }
+  const stepMetrics = Object.fromEntries(
+    Object.entries(timings.steps).map(([step, ms]) => [
+      `preparation${step.charAt(0).toUpperCase()}${step.slice(1)}Ms`,
+      ms,
+    ]),
+  );
+  let attached = false;
+  const stages = spine.stages.map((stage) => {
+    if (!attached && stage.kind === "gather") {
+      attached = true;
+      return {
+        ...stage,
+        metrics: {
+          ...(stage.metrics ?? {}),
+          preparationMs: timings.totalMs,
+          ...stepMetrics,
+        },
+      };
+    }
+    return stage;
+  });
+  return attached ? { ...spine, stages } : spine;
+};
+
 /**
  * Surface resolved host variables and the content-free page-read diagnostic on
  * the spine's `gather` stage. Raw `page_context` stays only in assistant message

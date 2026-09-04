@@ -158,7 +158,7 @@ const turnPlanOutputShapeBlock = (input: {
     "When a route is direct, rewrite is null. When a route is retrieval, rewrite is the object shown below.\n" +
     "When routineRankings is present, variables is an array of field/value pairs; use an empty array when the latest user message supplies no variables.\n" +
     "Shape:\n" +
-    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","rewrite":{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
 /** Canonical prompt renderer shared by execution and the eligibility budget. */
@@ -283,8 +283,6 @@ const rawTurnPlanSchema = z.object({
   route: z.enum(ROUTE_VALUES),
   isIdentityQuestion: z.boolean(),
   intentTopic: z.string().nullable(),
-  inScopeRequest: z.string().nullable(),
-  outsideScopeRequest: z.string().nullable(),
   rewrite: rewriteSchema.nullable(),
   responseLanguage: z.string().nullable(),
   routineRankings: z.array(z.object({
@@ -381,8 +379,6 @@ export const buildTurnPlanResponseFormat = (candidates: {
     route: { type: "string", enum: [...ROUTE_VALUES] },
     isIdentityQuestion: { type: "boolean" },
     intentTopic: nullableStringJsonSchema,
-    inScopeRequest: nullableStringJsonSchema,
-    outsideScopeRequest: nullableStringJsonSchema,
     rewrite: rewriteJsonSchema,
     responseLanguage: nullableStringJsonSchema,
   };
@@ -390,8 +386,6 @@ export const buildTurnPlanResponseFormat = (candidates: {
     "route",
     "isIdentityQuestion",
     "intentTopic",
-    "inScopeRequest",
-    "outsideScopeRequest",
     "rewrite",
     "responseLanguage",
   ];
@@ -519,8 +513,6 @@ export const parseTurnPlan = (
     route: parsed.route,
     isIdentityQuestion: parsed.isIdentityQuestion,
     intentTopic: parsed.intentTopic,
-    inScopeRequest: parsed.inScopeRequest,
-    outsideScopeRequest: parsed.outsideScopeRequest,
   });
   const rewriteProposal = routing.route === "retrieval" && parsed.rewrite
     ? parseStructuredRewrite(JSON.stringify(parsed.rewrite))

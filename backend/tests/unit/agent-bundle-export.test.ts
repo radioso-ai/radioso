@@ -180,6 +180,34 @@ describe("AgentBundleExportService", () => {
     expect(routine.definition.steps[0].toolRef).toBe("crm.create_lead");
   });
 
+  it("never carries the contact-request destination out of the workspace", async () => {
+    const agent = baseAgent();
+    agent.contactRequestsEnabled = true;
+    agent.contactRequestDelivery = {
+      recipientEmails: ["oncall@acme.example"],
+      webhook: { url: "https://hooks.acme.example/contact?token=abc123" },
+    };
+
+    const bundle = await new AgentBundleExportService({
+      agents: { load: async () => agent },
+      externalSkills: { load: async () => null },
+      routines: { listByAgent: async () => [] },
+      contextVariables: { listByAgent: async () => [] },
+      agentSkills: { listByAgent: async () => [] },
+      skillConfigPortability: {
+        portableFieldKeys: () => new Set<string>(),
+        settingsFieldKeys: () => new Set<string>(),
+      },
+    }).export("workspace-1", "agent-1");
+
+    expect(bundle.agent.contactRequestDelivery).toEqual({ __redacted: "secret" });
+    expect(bundle.agent.portability.contactRequestDelivery).toBe("secret");
+    const serialized = JSON.stringify(bundle);
+    expect(serialized).not.toContain("oncall@acme.example");
+    expect(serialized).not.toContain("hooks.acme.example");
+    expect(serialized).not.toContain("abc123");
+  });
+
   it("re-keys context-variable enablements to natural keys", async () => {
     const bundle = await service({
       contextVariables: [{

@@ -5189,7 +5189,7 @@ export interface components {
                 enabled: boolean;
             }[];
         };
-        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. */
+        /** @description The agent configuration projection (AgentConfig) at schemaVersion 4. Fields classified `ref` or `secret` in `portability` carry placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. `contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an imported agent cannot deliver contact requests to another workspace's people, and import reports `contact_delivery_unbound` when contact requests are on. */
         AgentBundleAgentConfig: {
             schemaVersion: number;
             /** @description Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders. */
@@ -5202,7 +5202,7 @@ export interface components {
             handoffOnRetrievalMiss: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
-            contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
+            contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
             /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
             logo: {
                 bucket: components["schemas"]["AgentConfigRefPlaceholder"];
@@ -5415,9 +5415,10 @@ export interface components {
          *     - asset_not_portable: binary stored outside the database (the logo); not part of the bundle.
          *     - skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.
          *     - directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.
+         *     - contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.
          * @enum {string}
          */
-        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound";
+        AgentBundleUnresolvedKind: "context_variable_missing" | "resolver_skill_missing" | "skill_target_unbound" | "skill_capability_unknown" | "routine_invalid" | "document_source_unresolved" | "surface_credential_unbound" | "mcp_connection_unbound" | "asset_not_portable" | "skill_config_not_portable" | "directive_binding_unbound" | "contact_delivery_unbound";
         AgentBundleUnresolvedReference: {
             kind: components["schemas"]["AgentBundleUnresolvedKind"];
             /** @description The bundle element the caller must fix, named the way they authored it. */
@@ -5449,7 +5450,7 @@ export interface components {
             handoffOnRetrievalMiss?: boolean;
             contactRequestsEnabled: boolean;
             webhookExportsEnabled: boolean;
-            contactRequestDelivery: components["schemas"]["AgentContactRequestDelivery"];
+            contactRequestDelivery: components["schemas"]["AgentConfigSecretPlaceholder"];
             /** @description Metadata only. The image lives in object storage and is not part of the bundle. */
             logo: {
                 bucket: components["schemas"]["AgentConfigRefPlaceholder"];

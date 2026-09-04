@@ -130,7 +130,9 @@ export type AgentBundleUnresolvedKind =
   /** A skill setting whose value the capability keeps inside its own workspace. */
   | "skill_config_not_portable"
   /** A directive bound to a skill that did not survive import; kept, but disabled. */
-  | "directive_binding_unbound";
+  | "directive_binding_unbound"
+  /** Contact requests are on but their destination stayed in the source workspace. */
+  | "contact_delivery_unbound";
 
 export interface AgentBundleUnresolvedReference {
   kind: AgentBundleUnresolvedKind;

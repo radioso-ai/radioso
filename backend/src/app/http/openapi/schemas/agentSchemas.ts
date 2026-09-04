@@ -811,7 +811,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       handoffOnRetrievalMiss: z.boolean(),
       contactRequestsEnabled: z.boolean(),
       webhookExportsEnabled: z.boolean(),
-      contactRequestDelivery: AgentContactRequestDeliverySchema,
+      // Bare reference, no inline `.openapi()`: wrapping a $ref emits
+      // `allOf: [$ref, { description }]`, which generates `Ref & unknown`. The
+      // explanation lives in this object's own description instead.
+      contactRequestDelivery: AgentConfigSecretPlaceholderSchema,
       logo: AgentBundleLogoSchema.nullable().openapi({
         description: "Metadata only. The image lives in object storage and is not part of the bundle.",
       }),
@@ -849,7 +852,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description:
         "The agent configuration projection (AgentConfig) at schemaVersion "
         + `${AGENT_CONFIG_SCHEMA_VERSION}. Fields classified \`ref\` or \`secret\` in \`portability\` carry `
-        + "placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id.",
+        + "placeholders rather than values, so an exported bundle never contains a credential or a workspace-scoped id. "
+        + "`contactRequestDelivery` is always redacted: its recipients and webhook stay in the source workspace so an "
+        + "imported agent cannot deliver contact requests to another workspace's people, and import reports "
+        + "`contact_delivery_unbound` when contact requests are on.",
     }),
   );
 
@@ -919,6 +925,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       "asset_not_portable",
       "skill_config_not_portable",
       "directive_binding_unbound",
+      "contact_delivery_unbound",
     ]).openapi({
       description: [
         "Why a bundle element could not be fully applied to the target workspace. Every element is reported",
@@ -935,6 +942,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         "- asset_not_portable: binary stored outside the database (the logo); not part of the bundle.",
         "- skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.",
         "- directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.",
+        "- contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.",
       ].join("\n"),
     }),
   );

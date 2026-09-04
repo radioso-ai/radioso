@@ -200,17 +200,15 @@ export class AgentBundleImportService {
         // single webhook skill could never be imported at all. The underlying message
         // travels with it so the operator sees the real reason even if it differs.
         const reason = error instanceof Error ? error.message : String(error);
-        unresolved.push(targetDidNotTravel
-          ? {
-            kind: "skill_target_unbound",
-            element: `skill:${skill.name}`,
-            detail: `"${skill.name}" needs a ${skill.target.kind ?? "connection"} in this workspace before it can be created: ${reason}`,
-          }
-          : {
-            kind: "skill_config_not_portable",
-            element: `skill:${skill.name}`,
-            detail: `"${skill.name}" could not be created without the ${skill.omittedConfigKeys?.join(", ")} its source workspace held — re-create it here: ${reason}`,
-          });
+        unresolved.push({
+          kind: "skill_target_unbound",
+          element: `skill:${skill.name}`,
+          detail: `"${skill.name}" needs a ${skill.target.kind ?? "connection"} in this workspace before it can be created: ${reason}`,
+        });
+        // A webhook or Slack skill can lose its destination *and* its authored
+        // payload config. Reporting only the target would have the operator rebind it
+        // and believe they were done.
+        reportOmittedConfig(skill, unresolved);
         continue;
       }
 
@@ -222,13 +220,7 @@ export class AgentBundleImportService {
         });
       }
 
-      if (skill.omittedConfigKeys?.length) {
-        unresolved.push({
-          kind: "skill_config_not_portable",
-          element: `skill:${skill.name}`,
-          detail: `The source agent set ${skill.omittedConfigKeys.join(", ")} on "${skill.name}". Those values stay in their own workspace — re-enter them here.`,
-        });
-      }
+      reportOmittedConfig(skill, unresolved);
     }
 
     return imported;
@@ -323,6 +315,26 @@ export class AgentBundleImportService {
     }
   }
 }
+
+/**
+ * Shared by both outcomes of a skill create. A skill that failed for a missing target
+ * and a skill that was created without its non-portable settings need the same thing
+ * said about the settings, and saying it in one place is what stops the two paths
+ * drifting into reporting different halves of the truth.
+ */
+const reportOmittedConfig = (
+  skill: AgentBundleSkill,
+  unresolved: AgentBundleUnresolvedReference[],
+): void => {
+  if (!skill.omittedConfigKeys?.length) {
+    return;
+  }
+  unresolved.push({
+    kind: "skill_config_not_portable",
+    element: `skill:${skill.name}`,
+    detail: `The source agent set ${skill.omittedConfigKeys.join(", ")} on "${skill.name}". Those values stay in their own workspace — re-enter them here.`,
+  });
+};
 
 /**
  * Agent-config versions this deployment can read, declared rather than derived.

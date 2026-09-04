@@ -66,7 +66,17 @@ export function AgentBundleImportDialog({
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
+      const imported = result !== null
       reset()
+      onOpenChange(next)
+      // Refreshed only once the operator has closed the report. A successful import
+      // moves the agents view out of its zero-agent branch, which remounts this
+      // dialog and wipes the very result it is displaying — so the refresh waits
+      // until there is nothing left to lose.
+      if (imported) {
+        onImported?.()
+      }
+      return
     }
     onOpenChange(next)
   }
@@ -115,9 +125,6 @@ export function AgentBundleImportDialog({
     }
 
     setResult(imported)
-    // Outside the try: refreshing the agent list is housekeeping, and a failure
-    // there must not be reported as an import that did not happen.
-    onImported?.()
   }
 
   const grouped = result ? groupUnresolvedByElement(result.unresolved) : []

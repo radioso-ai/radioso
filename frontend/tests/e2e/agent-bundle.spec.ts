@@ -148,6 +148,50 @@ test("an operator imports a bundle and is told what did not come across", async 
   expect(captured.imported).toHaveLength(1);
 });
 
+test("importing from the zero-agent state keeps the report on screen", async ({ page }) => {
+  const captured: { imported: unknown[] } = { imported: [] };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
+  await installBundleRoutes(page, captured);
+
+  // A workspace with no agents until the import lands. Gated on the import itself
+  // rather than a call count, because the view loads the list more than once before
+  // the operator touches anything. The refresh that follows a successful import moves
+  // this view out of the empty-state branch — which is what used to unmount the
+  // dialog holding the report.
+  await page.route("**/backend/api/v1/agents**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agents: captured.imported.length === 0 ? [] : [{ id: defaultAgentId, name: "Procurement Bot" }],
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents`);
+
+  await page.getByTestId("empty-state-import-bundle").click();
+  await page.getByTestId("agent-bundle-file-input").setInputFiles({
+    name: "procurement-bot.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(exportedBundle)),
+  });
+  await page.getByTestId("agent-bundle-import-button").click();
+
+  await expect(page.getByRole("heading", { name: "Agent imported" })).toBeVisible();
+  await expect(page.getByTestId("agent-bundle-unresolved-item").first()).toBeVisible();
+  await expect(page.getByTestId("agent-bundle-open-agent")).toBeVisible();
+  // Still there after the list refresh has had time to re-render the view.
+  await page.waitForTimeout(500);
+  await expect(page.getByRole("heading", { name: "Agent imported" })).toBeVisible();
+});
+
 test("a file that is not a bundle is refused before anything is created", async ({ page }) => {
   const captured: { imported: unknown[] } = { imported: [] };
 

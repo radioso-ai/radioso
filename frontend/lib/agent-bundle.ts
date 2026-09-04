@@ -21,6 +21,7 @@ export type AgentBundleUnresolvedKind =
   | 'asset_not_portable'
   | 'skill_config_not_portable'
   | 'directive_binding_unbound'
+  | 'contact_delivery_unbound'
 
 export interface AgentBundleUnresolvedReference {
   kind: AgentBundleUnresolvedKind

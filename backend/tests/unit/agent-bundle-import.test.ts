@@ -13,7 +13,9 @@ const agentConfig = (over: Record<string, unknown> = {}): AgentBundle["agent"] =
   portability: {},
   name: "Support Bot",
   customInstruction: "Be precise.",
-  contactRequestsEnabled: true,
+  // Off in the base fixture so tests that assert an empty report stay about what they
+  // test; the contact-delivery test turns it on explicitly.
+  contactRequestsEnabled: false,
   webhookExportsEnabled: false,
   contactRequestDelivery: { recipientEmails: [], webhook: null },
   logo: null,
@@ -272,6 +274,87 @@ describe("AgentBundleImportService", () => {
       kind: "skill_config_not_portable",
       element: "skill:notify.ops",
       detail: expect.stringContaining("delivery.recipientEmails"),
+    }));
+  });
+
+  it("reports the settings a skill lost as well as the target it lost", async () => {
+    // A webhook or Slack skill can lose its destination and its authored payload
+    // config at once. Naming only the target would have the operator rebind it and
+    // believe the skill was whole again.
+    const service = new AgentBundleImportService({
+      agents: { create: async () => ({ agentId: "new-agent" }), delete: async () => undefined },
+      directives: { create: async () => undefined },
+      skills: {
+        hasCapability: () => true,
+        create: async () => { throw new Error("target is required for this capability"); },
+      },
+      contextVariables: {
+        findVariableIdByName: async () => null,
+        findSkillIdByName: async () => null,
+        enable: async () => undefined,
+      },
+      routines: {
+        createDraft: async () => ({ routineId: "r1" }),
+        publish: async () => ({ published: true as const }),
+      },
+    });
+
+    const result = await service.import("workspace-1", bundle({
+      agentSkills: [{
+        name: "notify.ops",
+        capability: "webhook.call",
+        invocationMode: "routine_named",
+        enabled: true,
+        config: {},
+        omittedConfigKeys: ["delivery.recipientEmails", "delivery.webhook.url"],
+        target: { kind: "webhook_destination", id: { __ref: "agentSkillTarget" } },
+      }],
+    }));
+
+    expect(result.unresolved).toContainEqual(expect.objectContaining({
+      kind: "skill_target_unbound",
+      element: "skill:notify.ops",
+    }));
+    expect(result.unresolved).toContainEqual(expect.objectContaining({
+      kind: "skill_config_not_portable",
+      element: "skill:notify.ops",
+      detail: expect.stringContaining("delivery.recipientEmails"),
+    }));
+  });
+
+  it("clears the contact-request destination and tells the operator to set one", async () => {
+    const create = vi.fn(async (_workspaceId: string, _input: unknown) => ({ agentId: "new-agent" }));
+    const service = new AgentBundleImportService({
+      agents: { create, delete: async () => undefined },
+      directives: { create: async () => undefined },
+      skills: { hasCapability: () => true, create: async () => undefined },
+      contextVariables: {
+        findVariableIdByName: async () => null,
+        findSkillIdByName: async () => null,
+        enable: async () => undefined,
+      },
+      routines: {
+        createDraft: async () => ({ routineId: "r1" }),
+        publish: async () => ({ published: true as const }),
+      },
+    });
+
+    const result = await service.import("workspace-1", bundle({
+      agent: agentConfig({
+        contactRequestsEnabled: true,
+        contactRequestDelivery: { __redacted: "secret" },
+      }),
+    }));
+
+    const input = create.mock.calls[0]?.[1] as unknown as {
+      contactRequestDelivery: { recipientEmails: string[]; webhook: unknown }
+    };
+    // An imported agent must never deliver to the source workspace's people.
+    expect(input.contactRequestDelivery).toEqual({ recipientEmails: [], webhook: null });
+    expect(JSON.stringify(input)).not.toContain("__redacted");
+    expect(result.unresolved).toContainEqual(expect.objectContaining({
+      kind: "contact_delivery_unbound",
+      element: "contactRequestDelivery",
     }));
   });
 

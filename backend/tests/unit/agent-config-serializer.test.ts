@@ -249,7 +249,16 @@ describe("serializeAgentConfig", () => {
     expect(config.customInstruction).toBe("Answer with precise procurement guidance.");
     expect(config.contactRequestsEnabled).toBe(true);
     expect(config.webhookExportsEnabled).toBe(true);
-    expect(config.contactRequestDelivery).toEqual({
+    // Redacted in the portable projection: an imported agent that kept these would
+    // deliver contact requests to the source workspace's people, from elsewhere.
+    expect(config.contactRequestDelivery).toEqual({ __redacted: "secret" });
+    expect(config.portability.contactRequestDelivery).toBe("secret");
+    expect(JSON.stringify(config)).not.toContain("help@example.com");
+    expect(JSON.stringify(config)).not.toContain("hooks.example.com");
+
+    // The internal projection still carries the real value, so eval replay rebuilds
+    // the agent it captured rather than one with no contact destination.
+    expect(projectInternalAgentConfig(fullyConfiguredAgent()).contactRequestDelivery).toEqual({
       recipientEmails: ["help@example.com"],
       webhook: { url: "https://hooks.example.com/contact" },
     });

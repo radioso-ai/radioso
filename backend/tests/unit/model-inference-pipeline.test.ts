@@ -5,6 +5,7 @@ import { AppError } from "../../src/shared/domain/errors.js";
 import { LLM_DEFAULTS } from "../../src/shared/domain/behaviorConfig.js";
 import { AGENT_STEP_MAX_INPUT_TOKENS } from "../../src/shared/agent-runtime/index.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
@@ -326,6 +327,39 @@ describe("ModelInferencePipelineService", () => {
       reasoningTokens: 12,
       totalTokens: 140,
       usageQuality: "actual",
+    });
+  });
+
+  it("surfaces reasoning and cached input tokens on the model call trace", async () => {
+    const { recorder } = recordingUsageRecorder();
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-reasoning" },
+      async complete() {
+        return textResult("Answer", {
+          inputTokens: 100,
+          outputTokens: 40,
+          reasoningTokens: 12,
+          cachedInputTokens: 64,
+          totalTokens: 140,
+          quality: "actual",
+        });
+      },
+      stream: () => streamResult(["unused"]),
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+
+    // Without these on the trace, a slow turn cannot be told apart from a turn that
+    // spent its budget on hidden reasoning, or one whose prompt prefix went uncached.
+    const { calls } = await captureModelCallTrace(async () => {
+      await pipeline.complete({ operation: usageContext, prompt: "Private prompt" });
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 40,
+      reasoningTokens: 12,
+      cachedInputTokens: 64,
     });
   });
 

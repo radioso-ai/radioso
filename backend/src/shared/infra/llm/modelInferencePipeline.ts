@@ -266,7 +266,13 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     startedAtMs: number,
     completedAtMs: number,
     status: UsageEventStatus,
-    usage: { inputTokens: number; outputTokens: number; totalTokens: number },
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      reasoningTokens?: number;
+      cachedInputTokens?: number;
+    },
   ): void {
     recordModelCallTrace({
       operation: input.operation.operation,
@@ -279,6 +285,8 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       totalTokens: usage.totalTokens,
+      reasoningTokens: usage.reasoningTokens,
+      cachedInputTokens: usage.cachedInputTokens,
       status,
     });
   }
@@ -290,7 +298,13 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     status: UsageEventStatus;
     providerUsage?: ProviderUsage;
     error?: unknown;
-  }): Promise<{ inputTokens: number; outputTokens: number; totalTokens: number }> {
+  }): Promise<{
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    reasoningTokens?: number;
+    cachedInputTokens?: number;
+  }> {
     const inputBytes = Buffer.byteLength(`${input.request.systemPrompt ?? ""}\n${input.request.prompt}`, "utf8");
     const outputBytes = Buffer.byteLength(input.outputText, "utf8");
     const inputTokens = input.providerUsage?.inputTokens ?? estimateTokens(inputBytes);
@@ -323,7 +337,15 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     }).catch(() => {
       // Usage accounting is observational; model results remain authoritative.
     });
-    return { inputTokens, outputTokens, totalTokens };
+    // Passed through to the turn trace as well as the durable event: without them a
+    // slow call cannot be attributed to hidden reasoning or to an uncached prompt.
+    return {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      reasoningTokens: input.providerUsage?.reasoningTokens,
+      cachedInputTokens: input.providerUsage?.cachedInputTokens,
+    };
   }
 
   private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {

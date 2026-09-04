@@ -7,6 +7,7 @@ import {
   TURN_TRACE_ENVELOPE_VERSION,
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
+  attachPreparationTimingsToGather,
   buildPageReadTraceDiagnostic,
   buildTurnTraceEnvelope,
   setTurnTraceOpenTelemetryCorrelationReader,
@@ -28,6 +29,32 @@ const spine = (): ConversationTrace => ({
     { id: "dispatch:retrieval-answer", kind: "skill_dispatch", status: "applied" },
     { id: "compose", kind: "compose", status: "applied" },
   ],
+});
+
+describe("attachPreparationTimingsToGather", () => {
+  it("gives the gather stage a real duration and per-step metrics", () => {
+    // Session preparation runs before the engine opens the spine, so `gather` is
+    // zero-width and the work is invisible in the trace. These are the only numbers
+    // that show where the pre-planner wait goes.
+    const attached = attachPreparationTimingsToGather(spine(), {
+      totalMs: 268,
+      steps: { conversation: 41, agent: 33, history: 52, userMessage: 44 },
+    });
+    const gather = attached.stages.find((stage) => stage.kind === "gather");
+    expect(gather?.metrics).toMatchObject({
+      preparationMs: 268,
+      preparationConversationMs: 41,
+      preparationAgentMs: 33,
+      preparationHistoryMs: 52,
+      preparationUserMessageMs: 44,
+    });
+  });
+
+  it("leaves the spine untouched when nothing was measured", () => {
+    const original = spine();
+    expect(attachPreparationTimingsToGather(original, undefined)).toBe(original);
+    expect(attachPreparationTimingsToGather(original, { totalMs: 0, steps: {} })).toBe(original);
+  });
 });
 
 describe("attachContextVariablesToGather", () => {

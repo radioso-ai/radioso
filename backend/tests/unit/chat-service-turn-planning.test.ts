@@ -58,8 +58,6 @@ const planJson = (input: {
     route: input.route,
     isIdentityQuestion: false,
     intentTopic: null,
-    inScopeRequest: null,
-    outsideScopeRequest: null,
     rewrite: input.route === "retrieval"
       ? {
           rewrittenQuery: "planned rewritten query",

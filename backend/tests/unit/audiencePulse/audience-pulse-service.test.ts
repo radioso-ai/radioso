@@ -47,6 +47,7 @@ const censusResult = (): CensusRunResult => ({
   populationSize: 2,
   unclassifiedCount: 0,
   facetReadyQuestionCount: 2,
+  dissolvedTopicIds: [],
   topics: [{
     topicId: "topic-1",
     title: "Subscription changes",
@@ -54,8 +55,11 @@ const censusResult = (): CensusRunResult => ({
     memberIds: ["evidence-1", "evidence-2"],
     memberCount: 2,
     share: 1,
+    transition: { kind: "survived", parentTopicIds: ["topic-1"], viaCentroidFallback: false },
   }],
 });
+
+const censusResultWithDissolved = (dissolvedTopicIds: string[]) => Object.assign(censusResult(), { dissolvedTopicIds });
 
 const recommendationCopy = (themeIndex: number) => ({
   title: `Document topic ${themeIndex + 1}`,
@@ -68,6 +72,63 @@ const modelResponse = JSON.stringify({
   themes: [],
   recommendations: { "0": recommendationCopy(0) },
   caveats: [],
+});
+
+const priorNarrativeSnapshot = (input: {
+  summary?: string;
+  memberCount?: number;
+  recommendations?: Array<{
+    id: string;
+    themeId: string;
+    title: string;
+    rationale: string;
+    questions: string[];
+    evidenceIds: string[];
+  }>;
+} = {}): AudiencePulseSnapshotRecord => ({
+  workspaceId: WORKSPACE_ID,
+  revision: "revision-0",
+  period: { start: new Date("2026-06-01T00:00:00.000Z"), end: new Date("2026-07-01T00:00:00.000Z") },
+  generatedAt: new Date("2026-07-01T00:00:00.000Z"),
+  report: {
+    period: { start: "2026-06-01T00:00:00.000Z", end: "2026-07-01T00:00:00.000Z" },
+    generatedAt: "2026-07-01T00:00:00.000Z",
+    coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
+    weeklyVolume: [],
+    summary: input.summary ?? "Reused narrative summary.",
+    unclassifiedQuestionCount: 0,
+    themes: [{
+      id: "topic-1",
+      title: "Subscription changes",
+      description: "Repeated questions about changing a plan.",
+      evidenceIds: ["evidence-1", "evidence-2"],
+      memberCount: input.memberCount ?? 2,
+      previousMemberCount: null,
+      transition: { kind: "survived", parentTopicIds: ["topic-1"], viaCentroidFallback: false },
+      share: 1,
+      weeklyPulse: [],
+      grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
+    }],
+    contentGaps: [{ themeId: "topic-1", eligibleEvidenceCount: 2, distinctConversationCount: 2 }],
+    recommendations: input.recommendations ?? [{
+      id: "recommendation-1",
+      themeId: "topic-1",
+      title: "Reused recommendation",
+      rationale: "The recurring question merits durable guidance.",
+      questions: ["How do I change a plan?"],
+      evidenceIds: ["evidence-1", "evidence-2"],
+    }],
+    caveats: ["Visitors rarely mention which plan they are on."],
+  },
+  promptEvidenceRefs: [],
+});
+
+const snapshotStoreFor = (snapshot: AudiencePulseSnapshotRecord | null) => ({
+  async find() { return snapshot; },
+  async replace(input: Omit<AudiencePulseSnapshotRecord, "revision">) {
+    return { ...input, revision: "revision-1" };
+  },
+  async invalidate() { return true; },
 });
 
 const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}) => {
@@ -178,6 +239,128 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 };
 
 describe("AudiencePulseService", () => {
+  it("reuses a stable prior narrative without creating an inference or consuming its reservation", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: {
+        summary: "Reused narrative summary.",
+        recommendations: [{ title: "Reused recommendation" }],
+        // Caveats come from the same completion as the summary, and the prompt forbids
+        // them from restating coverage or counts, so they stay valid for exactly as long
+        // as the summary does.
+        caveats: ["Visitors rarely mention which plan they are on."],
+      },
+    });
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_completed",
+      metadata: { narrativeReused: true },
+    });
+  });
+
+  it("regenerates when the prior snapshot has no non-empty summary", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ summary: "  " })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({ kind: "completed", report: { summary: "Visitors ask about subscription changes." } });
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a current topic did not survive", async () => {
+    const changedCensus = censusResultWithDissolved([]);
+    changedCensus.topics[0]!.transition = { kind: "emerged", parentTopicIds: [], viaCentroidFallback: false };
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => changedCensus } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a topic dissolved in the census run", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot()),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved(["dissolved-topic"]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a survived topic exceeds the narrative reuse member-count drift", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ memberCount: 3 })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a survived topic has no prior report member count", async () => {
+    const snapshot = priorNarrativeSnapshot();
+    snapshot.report.themes = [];
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(snapshot),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
+  it("regenerates when a reused recommendation references evidence outside the current window", async () => {
+    const { service, calls } = createService({
+      snapshotStore: snapshotStoreFor(priorNarrativeSnapshot({ recommendations: [{
+        id: "recommendation-1",
+        themeId: "topic-1",
+        title: "Expired recommendation",
+        rationale: "Its source left the current analysis window.",
+        questions: ["How do I change a plan?"],
+        evidenceIds: ["expired-evidence"],
+      }] })),
+      censusServiceFactory: {
+        create: () => ({ run: async () => censusResultWithDissolved([]) } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result).toMatchObject({
+      kind: "completed",
+      report: { recommendations: [{ title: "Document topic 1" }] },
+    });
+    expect(calls).toMatchObject({ inference: 1, commit: 1, release: 0 });
+  });
+
   it("weights shown exemplars toward eligible questions from distinct conversations", () => {
     const evidenceById = new Map([
       ["evidence-1", { ...history().evidence[0]!, id: "evidence-1", reference: { messageId: "message-1", conversationId: "conversation-1" }, contentGapEligible: true }],

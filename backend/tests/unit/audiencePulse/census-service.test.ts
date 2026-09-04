@@ -570,10 +570,11 @@ describe("CensusService.run identity matching (T028+T029)", () => {
     const topicRepository = buildTopicRepository([survivor, doomed]);
     const service = new CensusService(buildDependencies({ eligibleIds, facets: clusterableFacets, topicRepository }));
 
-    await service.run({ workspaceId, windowStart, windowEnd });
+    const result = await service.run({ workspaceId, windowStart, windowEnd });
 
     const saved = topicRepository.saveRun.mock.calls[0]![0] as SaveTopicCensusRunInput;
     expect(saved.dissolvedTopicIds).toEqual([doomed.id]);
+    expect(result.dissolvedTopicIds).toEqual([doomed.id]);
     expect(saved.topics.some((topic) => topic.id === doomed.id)).toBe(false);
     expect(saved.transitions).toContainEqual({
       topicId: doomed.id,

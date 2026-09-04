@@ -106,6 +106,8 @@ export interface CensusRunResult {
    */
   facetReadyQuestionCount: number;
   topics: CensusRunTopicResult[];
+  /** Topic identities retired by this fully facet-ready run. */
+  dissolvedTopicIds: string[];
 }
 
 export interface CensusServiceDependencies {
@@ -454,6 +456,7 @@ export class CensusService {
       unclassifiedCount,
       facetReadyQuestionCount: clusterable.length,
       topics: reportTopics,
+      dissolvedTopicIds: fullyFacetReady ? [...dissolvedTopicIds] : [],
     };
   }
 

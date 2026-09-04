@@ -714,6 +714,11 @@ resource "google_cloud_run_v2_service" "mcp" {
     }
   }
 
+  depends_on = [
+    google_secret_manager_secret_version.secrets,
+    google_secret_manager_secret_iam_member.backend_access,
+  ]
+
   lifecycle {
     precondition {
       condition     = var.backend_public_invocation_enabled

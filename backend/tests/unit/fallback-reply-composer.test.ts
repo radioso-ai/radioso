@@ -37,21 +37,23 @@ const usageContext = {
 
 describe("scope-neutral interpretation prompt contract", () => {
   it("leaves support decisions to retrieval in staged and fused interpretation", () => {
-    const prompts = [
-      buildTurnInterpretationPrompt({ context: "", query: "sqrt(5)" }),
-      buildTurnPlanningPrompt({
+    const stagedPrompt = buildTurnInterpretationPrompt({ context: "", query: "sqrt(5)" });
+    const fusedPrompt = buildTurnPlanningPrompt({
         query: "sqrt(5)",
         history: [],
         routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
         directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
-      }),
-    ];
+    });
 
-    for (const prompt of prompts) {
+    // The staged path still carries the scope fields; the fused planner is no longer
+    // asked for them at all, so only the shared scope-neutrality rule holds for both.
+    expect(stagedPrompt).toContain("Always return null for inScopeRequest and outsideScopeRequest");
+    expect(fusedPrompt).not.toContain("inScopeRequest");
+
+    for (const prompt of [stagedPrompt, fusedPrompt]) {
       expect(prompt).not.toContain("Configured response instructions:");
       expect(prompt).toContain("Do not classify scope from the question, conversation, or assistant instructions");
       expect(prompt).toContain("Retrieval evidence decides whether the assistant has support");
-      expect(prompt).toContain("Always return null for inScopeRequest and outsideScopeRequest");
       expect(prompt).toContain("definition_lookup: identification or one discrete fact or attribute about a named entity");
       expect(prompt).toContain("policy_answer: a procedural, compliance, eligibility, or support-policy question");
       expect(prompt).toContain("Do not use policy_answer merely because the assistant has a behavioral directive about the topic");
@@ -62,14 +64,14 @@ describe("scope-neutral interpretation prompt contract", () => {
     }
 
     // Directive and decision-independence rules render only when candidates exist,
-    // which prompts[1] now supplies. The output-shape block remains as the
+    // which fusedPrompt now supplies. The output-shape block remains as the
     // schema-less fallback contract for OpenAI-compatible providers.
-    expect(prompts[1]).toContain("Return exactly one directiveClassifications entry for every candidate directive");
-    expect(prompts[1]).toContain("must not influence route, scope classification, rewrite fields, or responseLanguage");
-    expect(prompts[1]).toContain("Never copy candidate routine or directive text into retrieval queries");
-    expect(prompts[1]).toContain("Output Shape Rules");
-    expect(prompts[1]).toContain("Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason");
-    expect(prompts[1]).toContain("turnKind belongs only on the enclosing rewrite object");
+    expect(fusedPrompt).toContain("Return exactly one directiveClassifications entry for every candidate directive");
+    expect(fusedPrompt).toContain("must not influence route, scope classification, rewrite fields, or responseLanguage");
+    expect(fusedPrompt).toContain("Never copy candidate routine or directive text into retrieval queries");
+    expect(fusedPrompt).toContain("Output Shape Rules");
+    expect(fusedPrompt).toContain("Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason");
+    expect(fusedPrompt).toContain("turnKind belongs only on the enclosing rewrite object");
     expect(CHAT_BEHAVIOR.turnPlanning.reasoningEffort).toBe("low");
     expect(CHAT_BEHAVIOR.turnPlanning.timeoutMs).toBe(12_000);
   });

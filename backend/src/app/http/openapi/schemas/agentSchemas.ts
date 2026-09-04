@@ -955,19 +955,53 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  /**
+   * Fields the current agent-config version has that the oldest still-accepted one
+   * does not. Import reads every version in `SUPPORTED_AGENT_CONFIG_VERSIONS`
+   * (`modules/agentBundle/importService.ts`), so a request schema demanding the
+   * current field set would reject a bundle the backend imports happily — an SDK
+   * consumer would have to cast around its own published contract.
+   */
+  const AGENT_CONFIG_FIELDS_ADDED_SINCE_OLDEST_SUPPORTED = {
+    internalName: true,
+    handoffOnRetrievalMiss: true,
+  } as const;
+
+  const AgentBundleImportAgentConfigSchema = registry.register(
+    "AgentBundleImportAgentConfig",
+    AgentBundleAgentConfigSchema
+      .partial(AGENT_CONFIG_FIELDS_ADDED_SINCE_OLDEST_SUPPORTED)
+      .openapi({
+        description:
+          "An agent configuration on any version this deployment reads. Fields introduced after the oldest "
+          + "accepted version are optional; an older bundle that omits them imports with the behaviour that "
+          + "version had. Export always emits the current version, with every field present.",
+      }),
+  );
+
+  const AgentBundleImportSkillSchema = registry.register(
+    "AgentBundleImportSkill",
+    AgentBundleSkillSchema.partial({ config: true, omittedConfigKeys: true }).openapi({
+      description:
+        "A skill as accepted on import. `config` and `omittedConfigKeys` default to empty when absent, so a "
+        + "hand-written bundle need not restate them.",
+    }),
+  );
+
   const AgentBundleImportRequestSchema = registry.register(
     "AgentBundleImportRequest",
     z.object({
       bundleVersion: z.number().int(),
       portability: z.record(AgentConfigPortabilityValueSchema).optional(),
-      agent: AgentBundleAgentConfigSchema,
-      routines: z.array(AgentBundleRoutineSchema).default([]),
-      contextVariables: z.array(AgentBundleContextVariableSchema).default([]),
-      agentSkills: z.array(AgentBundleSkillSchema).default([]),
+      agent: AgentBundleImportAgentConfigSchema,
+      routines: z.array(AgentBundleRoutineSchema).optional(),
+      contextVariables: z.array(AgentBundleContextVariableSchema).optional(),
+      agentSkills: z.array(AgentBundleImportSkillSchema).optional(),
     }).openapi({
       description:
         "A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what "
-        + "this deployment supports; an unsupported value fails the whole import with 400 rather than importing partially.",
+        + "this deployment supports; an unsupported value fails the whole import with 400 rather than importing "
+        + "partially. Collections default to empty when omitted.",
     }),
   );
 

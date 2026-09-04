@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { agentBundleBodySchema } from "../../src/app/http/routes/agentBundleRoutes.js";
@@ -72,5 +74,48 @@ describe("agent bundle body schema", () => {
     expect(parsed.routines).toEqual([]);
     expect(parsed.contextVariables).toEqual([]);
     expect(parsed.agentSkills).toEqual([]);
+  });
+});
+
+/**
+ * The published request contract has to accept everything the import service does.
+ * These read the generated artifact rather than the builder, because the artifact is
+ * what the SDK is generated from and therefore what a consumer is actually held to.
+ */
+describe("published agent bundle import contract", () => {
+  const openApi = JSON.parse(
+    readFileSync(new URL("../../openapi.json", import.meta.url), "utf8"),
+  ) as { components: { schemas: Record<string, { required?: string[]; properties?: Record<string, unknown> }> } };
+
+  it("does not require agent config fields the accepted older version predates", () => {
+    const required = openApi.components.schemas.AgentBundleImportAgentConfig?.required ?? [];
+
+    // SUPPORTED_AGENT_CONFIG_VERSIONS accepts v3, which had neither field. Requiring
+    // them here would reject a bundle the backend imports, so an SDK consumer would
+    // have to cast around their own published contract.
+    expect(required).not.toContain("internalName");
+    expect(required).not.toContain("handoffOnRetrievalMiss");
+    // Everything a v3 bundle did carry stays required.
+    expect(required).toEqual(expect.arrayContaining(["schemaVersion", "name", "customInstruction"]));
+  });
+
+  it("does not require collections the route defaults", () => {
+    const required = openApi.components.schemas.AgentBundleImportRequest?.required ?? [];
+
+    expect(required).toEqual(expect.arrayContaining(["bundleVersion", "agent"]));
+    for (const defaulted of ["routines", "contextVariables", "agentSkills", "portability"]) {
+      expect(required).not.toContain(defaulted);
+    }
+  });
+
+  it("still describes the exported agent exhaustively", () => {
+    // The response side is always the current version, so nothing there is optional;
+    // this is the guard against the placeholder shape coming back.
+    const exported = openApi.components.schemas.AgentBundleAgentConfig;
+
+    expect(Object.keys(exported?.properties ?? {})).toEqual(
+      expect.arrayContaining(["name", "customInstruction", "authoredDirectives", "surfaceSettings", "skillSettings"]),
+    );
+    expect(exported?.required ?? []).toContain("handoffOnRetrievalMiss");
   });
 });

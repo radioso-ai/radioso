@@ -137,7 +137,7 @@ describe("AgentBundleImportService", () => {
 
     // v3 predates internalName and handoffOnRetrievalMiss. Accepting it is explicit,
     // not incidental: both default to the behaviour a v3 agent actually had.
-    const legacy = agentConfig({ schemaVersion: 3 }) as Record<string, unknown>;
+    const legacy = agentConfig({ schemaVersion: 3 }) as unknown as Record<string, unknown>;
     delete legacy.internalName;
     delete legacy.handoffOnRetrievalMiss;
 

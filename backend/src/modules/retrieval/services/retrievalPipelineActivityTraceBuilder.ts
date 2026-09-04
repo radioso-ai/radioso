@@ -55,8 +55,12 @@ export class RetrievalPipelineActivityTraceBuilder {
 
   buildActivityTrace(stages: ActivityTraceSourceStages): ActivityTrace {
     const traceCompletedAtMs = Date.now();
-    const lexicalDurationMs = Math.max(0, Math.round(stages.retrieval.durationMs * 0.35));
-    const semanticDurationMs = Math.max(0, stages.retrieval.durationMs - lexicalDurationMs);
+    // Candidate retrieval measures each branch around its own promises. Semantic and
+    // lexical work overlap, so their spans are reported as measured: the two can start
+    // at different times and can sum to more than the retrieval stage duration. An
+    // unmeasured branch reports a zero-length span at the stage start rather than a
+    // share of the stage — a derived split reads as real and misdirects diagnosis.
+    const retrieval = stages.prompt.result;
 
     return this.activityTraceAssembler.assemble({
       prompt: stages.prompt.result,
@@ -86,12 +90,12 @@ export class RetrievalPipelineActivityTraceBuilder {
             }
           : undefined,
         semanticRetrieval: {
-          startedAt: toIso(stages.retrieval.startedAt),
-          durationMs: semanticDurationMs,
+          startedAt: toIso(retrieval.semanticRetrievalStartedAtMs ?? stages.retrieval.startedAt),
+          durationMs: retrieval.semanticRetrievalDurationMs ?? 0,
         },
         lexicalRetrieval: {
-          startedAt: toIso(stages.retrieval.startedAt + semanticDurationMs),
-          durationMs: lexicalDurationMs,
+          startedAt: toIso(retrieval.lexicalRetrievalStartedAtMs ?? stages.retrieval.startedAt),
+          durationMs: retrieval.lexicalRetrievalDurationMs ?? 0,
         },
         candidatePreparation: {
           startedAt: toIso(stages.prepared.startedAt),

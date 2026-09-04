@@ -127,6 +127,8 @@ export const attachModelCallsToSpine = (
       inputTokens: call.inputTokens,
       outputTokens: call.outputTokens,
       totalTokens: call.totalTokens,
+      ...(call.reasoningTokens === undefined ? {} : { reasoningTokens: call.reasoningTokens }),
+      ...(call.cachedInputTokens === undefined ? {} : { cachedInputTokens: call.cachedInputTokens }),
       stageId: target?.id ?? PRE_ENGINE_MODEL_CALL_STAGE_ID,
     };
   });

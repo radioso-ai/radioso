@@ -242,9 +242,8 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
     <SettingsCard
       id="operator-mcp"
       icon={<KeyRound className="h-5 w-5 text-primary" />}
-      eyebrow="Delegated access"
       title="Radioso MCP for your favorite engine"
-      description="Connect Codex, Claude Code, ChatGPT, or another MCP client to Ray with explicit OAuth consent. This is separate from an authored agent's MCP channel."
+      description="Connect an MCP client to Ray with OAuth consent."
       headerEnd={<Badge variant={configured && setup?.availability === 'available' ? 'secondary' : 'outline'}>{setup ? availabilityLabel[setup.availability] : 'Checking'}</Badge>}
     >
       {loading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Checking deployment and grants…</div> : null}

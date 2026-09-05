@@ -202,6 +202,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "resendEmailVerification",
     "getAccountInvitation",
     "acceptAccountInvitation",
+    "acceptAccountInvitationAsCurrentUser",
+    "getCurrentSession",
   ], authOrRegistration),
   ...coverage([
     "getAgentContextVariableSigningKey",

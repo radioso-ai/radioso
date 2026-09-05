@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppDependencies } from "../../server/types.js";
 import { normalizeEmail } from "../../../modules/auth/domain/authPrimitives.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
+import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
 export const registerSchema = z.object({
@@ -48,7 +49,7 @@ export const emailVerificationResendSchema = z.object({
   email: z.string().email(),
 });
 
-type AuthRouteDependencies = Pick<
+type AuthRouteDependencies = SessionDependencies & Pick<
   AppDependencies,
   | "env"
   | "authService"
@@ -193,6 +194,20 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     }
   });
 
+  // Recovers the signed-in identity from the session cookie alone. Sign-in
+  // paths that redirect the browser — provider OAuth in particular — set the
+  // cookie and hand back no body, so this is how the app learns who arrived.
+  router.get("/session", requireSession(dependencies, { requireActiveMembership: false }), async (_req, res, next) => {
+    try {
+      const { userId, accountId } = res.locals as { userId: string; accountId: string };
+      const session = await dependencies.authService.describeSession({ userId, accountId });
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json(session);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/invitations/:invitationToken", async (req, res, next) => {
     try {
       const params = invitationTokenParamsSchema.parse(req.params);
@@ -214,6 +229,39 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
           invitationToken: params.invitationToken,
           email: req.body.email,
           password: req.body.password,
+        });
+        res.setHeader("Set-Cookie", result.sessionCookie);
+        res.status(200).json({
+          userId: result.userId,
+          accountId: result.accountId,
+          organizationName: result.organizationName,
+          workspaceId: result.workspaceId,
+          workspaceName: result.workspaceName,
+          workspacePublicRouteKey: result.workspacePublicRouteKey,
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  // A signed-in visitor proves who they are with the session cookie, so this
+  // path collects no password at all. Federated logins have no usable password
+  // hash, which makes this their only way to accept an invitation.
+  router.post(
+    "/invitations/:invitationToken/accept-as-current-user",
+    requireSession(dependencies, { requireActiveMembership: false }),
+    // Shares the accept limiter with the password path. A mismatched attempt
+    // writes an audit row against the *inviting* account, so a signed-in holder
+    // of somebody else's token could otherwise flood a third party's audit log.
+    invitationAcceptRateLimit,
+    async (req, res, next) => {
+      try {
+        const params = invitationTokenParamsSchema.parse(req.params);
+        const { userId } = res.locals as { userId: string };
+        const result = await dependencies.authService.acceptInvitationAsUser({
+          invitationToken: params.invitationToken,
+          userId,
         });
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({

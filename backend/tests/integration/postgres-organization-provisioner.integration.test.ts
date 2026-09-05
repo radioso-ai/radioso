@@ -4,6 +4,7 @@ import { afterAll, expect, it } from "vitest";
 
 import { AccountMembershipRepository } from "../../src/db/repositories/accountMembershipRepository.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { UserFederatedIdentityRepository } from "../../src/db/repositories/userFederatedIdentityRepository.js";
 import { UserRepository } from "../../src/db/repositories/userRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { AccountAccessService, AccountInvitationService } from "../../src/modules/account/public.js";
@@ -160,6 +161,7 @@ describeIntegration("PostgresOrganizationProvisioner", () => {
       accountRepository,
       userRepository,
       sessionRepository: new InMemorySessionRepository(),
+      federatedIdentityRepository: new UserFederatedIdentityRepository(database.kysely),
       workspaceService,
       accountAccessService,
       accountInvitationService: new AccountInvitationService(

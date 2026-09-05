@@ -200,7 +200,13 @@ export class OperatorMcpAuthorizationService {
       });
       if (!decided) throw new OperatorMcpProtocolError("invalid_request", "invalid_request");
       await this.recordDecision({ transaction, decision: "denied", accountId: input.accountId, workspaceId: null, userId: input.userId });
-      return { redirectUrl: oauthRedirect(transaction.redirectUri, { error: "access_denied", state: transaction.state }) };
+      return {
+        redirectUrl: oauthRedirect(transaction.redirectUri, {
+          error: "access_denied",
+          state: transaction.state,
+          iss: this.config.issuer,
+        }),
+      };
     }
 
     const approvedToolScopes = [...(input.approvedToolScopes ?? [])];
@@ -228,7 +234,13 @@ export class OperatorMcpAuthorizationService {
     });
     if (!decided) throw new OperatorMcpProtocolError("invalid_request", "invalid_request");
     await this.recordDecision({ transaction, decision: "approved", accountId: input.accountId, workspaceId: input.workspaceId, userId: input.userId });
-    return { redirectUrl: oauthRedirect(transaction.redirectUri, { code, state: transaction.state }) };
+    return {
+      redirectUrl: oauthRedirect(transaction.redirectUri, {
+        code,
+        state: transaction.state,
+        iss: this.config.issuer,
+      }),
+    };
   }
 
   async exchangeAuthorizationCode(input: {

@@ -59,4 +59,13 @@ describe("operator MCP internal service contract", () => {
       .expect(403)
       .expect("x-radioso-required-scope", "operator:probe");
   });
+
+  it("reports bounded-result failures as runtime errors rather than invalid credentials", async () => {
+    const { app, service } = harness();
+    service.admit.mockRejectedValueOnce(new OperatorMcpApplicationError("result_too_large") as never);
+
+    const response = await request(app).post(path).set(signedHeaders(body)).send(body).expect(500);
+
+    expect(response.body).toEqual({ code: "result_too_large", message: "result_too_large" });
+  });
 });

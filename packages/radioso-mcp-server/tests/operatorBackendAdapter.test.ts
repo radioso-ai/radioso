@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { createOperatorBackendAdapter } from "../src/operator/backendAdapter.js";
-import { createOperatorMcpProof, digestOperatorMcpCall, sha256Digest } from "@radioso/operator-mcp-contract";
+import { createOperatorBackendAdapter, operatorBackendRequestTimeoutMs } from "../src/operator/backendAdapter.js";
+import { createOperatorMcpProof, digestOperatorMcpCall, OPERATOR_MCP_EXECUTION_TIMEOUT_MS, sha256Digest } from "@radioso/operator-mcp-contract";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const proof = createOperatorMcpProof({
@@ -13,6 +13,11 @@ const proof = createOperatorMcpProof({
 });
 
 describe("operator backend adapter", () => {
+  it("keeps the edge deadline beyond the backend execution ceiling", () => {
+    expect(operatorBackendRequestTimeoutMs(30_000)).toBeGreaterThan(OPERATOR_MCP_EXECUTION_TIMEOUT_MS);
+    expect(operatorBackendRequestTimeoutMs(90_000)).toBe(90_000);
+  });
+
   it("signs internal calls with body binding and never leaks raw credential/error bodies", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ proof }), { status: 200 }));
     const adapter = createOperatorBackendAdapter({ baseUrl: "https://app.example/", fetchImpl, internalSecret: "adapter-secret-key-12345678901234567890", requestTimeoutMs: 1000 });
@@ -46,6 +51,25 @@ describe("operator backend adapter", () => {
       arguments: {},
       bodyDigest: sha256Digest("{}"),
     })).rejects.toMatchObject({ code: "operation_required", status: 400 });
+  });
+
+  it("preserves an unknown tool as a safe client error", async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({
+      code: "unknown_tool",
+      message: "unknown_tool",
+    }), { status: 400 }));
+
+    await expect(createOperatorBackendAdapter({
+      baseUrl: "https://app.example",
+      fetchImpl,
+      internalSecret: "adapter-secret-key-12345678901234567890",
+      requestTimeoutMs: 1_000,
+    }).invoke({
+      proof,
+      name: "removed_tool",
+      arguments: {},
+      bodyDigest: sha256Digest("{}"),
+    })).rejects.toMatchObject({ code: "unknown_tool", status: 400 });
   });
 
   it("maps backend budget exhaustion to a throttling error", async () => {

@@ -6,6 +6,7 @@ import {
   OperatorCatalogResponseSchema,
   OperatorInvocationRequestSchema,
   OperatorInvocationResponseSchema,
+  OPERATOR_MCP_EXECUTION_TIMEOUT_MS,
   OPERATOR_SERVICE_AUTH_HEADERS,
   createOperatorMcpRequestSignature,
   sha256Digest,
@@ -16,6 +17,11 @@ import {
   type OperatorInvocationResponse,
   type OperatorMcpProof,
 } from "@radioso/operator-mcp-contract";
+
+const OPERATOR_BACKEND_TRANSPORT_OVERHEAD_MS = 5_000;
+
+export const operatorBackendRequestTimeoutMs = (configuredTimeoutMs: number): number =>
+  Math.max(configuredTimeoutMs, OPERATOR_MCP_EXECUTION_TIMEOUT_MS + OPERATOR_BACKEND_TRANSPORT_OVERHEAD_MS);
 
 export class OperatorBackendAdapterError extends Error {
   constructor(
@@ -36,6 +42,7 @@ export type OperatorBackendAdapterErrorCode =
   | "invalid_response"
   | "request_failed"
   | "invalid_arguments"
+  | "unknown_tool"
   | "operation_required"
   | "operation_conflict"
   | "budget_exhausted"
@@ -66,6 +73,7 @@ const isAbort = (error: unknown): boolean => error instanceof Error && error.nam
 
 const SAFE_BACKEND_ERROR_CODES = new Set<OperatorBackendAdapterErrorCode>([
   "invalid_arguments",
+  "unknown_tool",
   "operation_required",
   "operation_conflict",
   "budget_exhausted",

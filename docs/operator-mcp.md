@@ -1,7 +1,7 @@
 ---
 title: "Operator MCP OAuth Access"
 description: "Connect an OAuth-capable MCP client to Ray's governed workspace tools and manage its access."
-last_updated: 2026-09-05
+last_updated: 2026-09-06
 ---
 
 # Operator MCP OAuth Access
@@ -32,7 +32,7 @@ The `operator:act` scope is part of the authorization vocabulary, but this rollo
 
 ## OAuth profile
 
-Operator MCP uses an authorization-code flow with S256 PKCE, an exact RFC 8707 resource value, immutable client metadata snapshots, and public clients. Access credentials last at most 15 minutes. Refresh access is shown separately in consent and can only narrow the approved tool scopes. The resource supports Radioso's stateless `2026-07-28` profile and a standard `2025-06-18` initialize/list/call compatibility path; both use the same authorization, catalog, rate-limit, proof, and audit boundaries.
+Operator MCP uses an authorization-code flow with S256 PKCE, an exact RFC 8707 resource value, RFC 9207 issuer binding on authorization responses, immutable client metadata snapshots, and public clients. Access credentials last at most 15 minutes. Refresh access is shown separately in consent and can only narrow the approved tool scopes. The resource supports Radioso's stateless `2026-07-28` profile and a standard `2025-06-18` initialize/list/call compatibility path; both use the same authorization, catalog, rate-limit, proof, and audit boundaries.
 
 The standalone protected resource is:
 

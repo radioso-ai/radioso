@@ -126,6 +126,7 @@ const shapeForScope = (scope: string | undefined): OperatorMcpShape | undefined 
 const isBackendInvalidParams = (error: OperatorBackendAdapterError): boolean =>
   error.status === 400 && (
     error.code === "invalid_arguments"
+    || error.code === "unknown_tool"
     || error.code === "operation_required"
     || error.code === "operation_conflict"
   );

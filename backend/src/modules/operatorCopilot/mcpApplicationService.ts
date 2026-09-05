@@ -2,6 +2,7 @@ import {
   digestOperatorMcpCall,
   digestOperatorMcpInput,
   createOperatorMcpProof,
+  OPERATOR_MCP_EXECUTION_TIMEOUT_MS,
   sha256Digest,
   verifyOperatorMcpProof,
   type OperatorAdmissionRequest,
@@ -432,7 +433,7 @@ export class OperatorMcpApplicationService {
         arguments: parsed.data,
         context: contextFor(principal, input.proof.invocationId, this.currentAuthorizationFor(principal)),
         scopes: new Set(principal.currentToolScopes),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(OPERATOR_MCP_EXECUTION_TIMEOUT_MS),
       });
       const serialized = JSON.stringify(output);
       if (Buffer.byteLength(serialized, "utf8") > MAX_RESULT_BYTES) throw new OperatorMcpApplicationError("result_too_large");

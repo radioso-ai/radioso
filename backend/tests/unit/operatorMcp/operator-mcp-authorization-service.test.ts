@@ -79,6 +79,7 @@ describe("OperatorMcpAuthorizationService", () => {
     });
     expect(result.redirectUrl).toContain("code=");
     expect(result.redirectUrl).toContain(`state=${transaction.state}`);
+    expect(new URL(result.redirectUrl).searchParams.get("iss")).toBe(config.issuer);
     expect(repository.decideTransaction).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: id("5"), approvedToolScopes: ["operator:read"], approvedOfflineAccess: false, status: "approved",
       authorizationCodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
@@ -98,6 +99,25 @@ describe("OperatorMcpAuthorizationService", () => {
       },
     });
     expect(JSON.stringify(audit.record.mock.calls)).not.toContain("operator:read");
+  });
+
+  it("includes issuer binding when the operator denies authorization", async () => {
+    const repository = flowRepository();
+    const service = new OperatorMcpAuthorizationService(repository, config);
+
+    const result = await service.decide({
+      transactionId: transaction.id,
+      decision: "deny",
+      sessionId: id("5"),
+      accountId: id("6"),
+      userId: id("7"),
+      now,
+    });
+
+    const redirect = new URL(result.redirectUrl);
+    expect(redirect.searchParams.get("error")).toBe("access_denied");
+    expect(redirect.searchParams.get("state")).toBe(transaction.state);
+    expect(redirect.searchParams.get("iss")).toBe(config.issuer);
   });
 
   it("refuses consent for a workspace outside the deployment rollout", async () => {

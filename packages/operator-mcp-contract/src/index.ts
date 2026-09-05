@@ -2,6 +2,8 @@ import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto
 import { z } from "zod";
 
 export const OPERATOR_MCP_PROTOCOL_VERSION = "2026-07-28" as const;
+/** Backend tool execution ceiling; edge transports must allow additional response overhead. */
+export const OPERATOR_MCP_EXECUTION_TIMEOUT_MS = 60_000;
 export const OPERATOR_MCP_RESOURCE_PATH = "/operator/mcp" as const;
 export const OPERATOR_MCP_PROTECTED_RESOURCE_METADATA_PATH =
   "/.well-known/oauth-protected-resource/operator/mcp" as const;

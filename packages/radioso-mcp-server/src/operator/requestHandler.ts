@@ -8,6 +8,7 @@ import {
 import { OperatorBackendAdapterError } from "./backendAdapter.js";
 import { createOperatorInvocationId, sha256Digest } from "@radioso/operator-mcp-contract";
 import type { OperatorMcpAuditObservation, OperatorMcpShape } from "./observability.js";
+import { withLegacyOperatorMcpCompatibility } from "./legacyCompatibility.js";
 
 export interface OperatorMcpAdmission {
   proof: OperatorMcpProof;
@@ -73,9 +74,14 @@ const bearerToken = (request: Request): string | null => {
   return token.length <= 2048 && !/[\u0000-\u001f\u007f-\u009f]/u.test(token) ? token : null;
 };
 
-const unauthorized = (metadataUrl?: string): Response => {
+const unauthorized = (metadataUrl?: string, invalidToken = false): Response => {
   const headers = new Headers({ "content-type": "application/json" });
-  if (metadataUrl) headers.set("www-authenticate", `Bearer resource_metadata="${metadataUrl.replace(/[\\"]/gu, "\\$&")}"`);
+  if (metadataUrl) {
+    headers.set(
+      "www-authenticate",
+      `Bearer resource_metadata="${metadataUrl.replace(/[\\"]/gu, "\\$&")}"${invalidToken ? ', error="invalid_token"' : ""}`,
+    );
+  }
   return new Response(JSON.stringify({ error: "invalid_token" }), { headers, status: 401 });
 };
 
@@ -138,7 +144,7 @@ const responseIsBounded = (value: unknown): boolean => {
   try { return new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_RESPONSE_BYTES; } catch { return false; }
 };
 
-export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestHandlerDependencies) => async (request: Request): Promise<Response> => {
+const createModernOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestHandlerDependencies) => async (request: Request): Promise<Response> => {
   if (dependencies.readiness && !dependencies.readiness.isReady()) return rpcError(null, -32002, "Operator MCP runtime is unavailable.");
   const token = bearerToken(request);
   if (!token) return unauthorized(dependencies.resourceMetadataUrl);
@@ -236,11 +242,11 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     });
     if (!admission) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "invalid_token" });
-      return unauthorized(dependencies.resourceMetadataUrl);
+      return unauthorized(dependencies.resourceMetadataUrl, true);
     }
     if (dependencies.rolloutWorkspaceIds !== undefined && !dependencies.rolloutWorkspaceIds.has(admission.proof.workspaceId)) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "workspace_not_in_rollout" });
-      return unauthorized(dependencies.resourceMetadataUrl);
+      return unauthorized(dependencies.resourceMetadataUrl, true);
     }
     if (dependencies.principalRateLimit && !await dependencies.principalRateLimit.consume({ sourceDigest: principalDigest(admission.proof) })) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, shape: shapeForScope(admission.requiredScope), reason: "rate_limit_exceeded" });
@@ -289,7 +295,7 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     // customer content from a misconfigured backend.
     if (error instanceof OperatorBackendAdapterError && error.status === 401) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, reason: "invalid_token" });
-      return unauthorized(dependencies.resourceMetadataUrl);
+      return unauthorized(dependencies.resourceMetadataUrl, true);
     }
     if (error instanceof OperatorBackendAdapterError && error.status === 403) {
       reportOutcome(dependencies, { method, outcome: "denied", descriptorName, shape: shapeForScope(error.requiredScope), reason: "insufficient_scope" });
@@ -307,3 +313,6 @@ export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequest
     return rpcError(id, -32002, "Operator MCP runtime is unavailable.");
   }
 };
+
+export const createOperatorMcpRequestHandler = (dependencies: OperatorMcpRequestHandlerDependencies) =>
+  withLegacyOperatorMcpCompatibility(createModernOperatorMcpRequestHandler(dependencies));

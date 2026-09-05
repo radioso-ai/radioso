@@ -48,10 +48,11 @@ and never-list boundaries remain authoritative.
   explicit interactive dashboard actions for this feature. A future remote
   application flow requires a separately approved, server-verifiable human
   confirmation design; generic host-side tool approval is not sufficient.
-- The operator resource targets MCP `2026-07-28`, including its stateless request
-  model and authorization requirements. It does not add the new protocol to the
-  compatibility-protected single-agent resource. Supporting an older MCP
-  transport revision is outside this feature.
+- The operator resource targets a primary MCP `2026-07-28` stateless request
+  model and authorization requirements. A narrow `2025-06-18` compatibility
+  adapter may translate standard initialize/list/call traffic into that same
+  handler without duplicating authorization or tool policy. It does not add the
+  new protocol to the compatibility-protected single-agent resource.
 - The public operator resource is served by the standalone MCP service at a
   distinct path. Radioso's application origin owns interactive authorization,
   consent, token lifecycle, and current-grant validation. Raw operator access
@@ -118,9 +119,10 @@ The operator resource has one initial topology and protocol profile:
 - Backend capability entry points used by the standalone service are not public
   alternate operator APIs: they reject direct callers without the expected
   service identity and operator invocation proof.
-- Operator requests use the MCP `2026-07-28` stateless, self-describing model,
-  including method/name routing metadata and grant-private catalog cache hints.
-  No operator MCP session or initialization handshake is introduced.
+- Primary operator requests use the MCP `2026-07-28` stateless,
+  self-describing model, including method/name routing metadata and
+  grant-private catalog cache hints. The standard compatibility path may
+  perform an initialization handshake but introduces no operator MCP session.
 - Missing or invalid credentials receive protocol-conformant `401` responses;
   a valid credential lacking the required scope receives a conformant `403`
   insufficient-scope response. Both advertise only safe metadata and never leak
@@ -1091,8 +1093,9 @@ to pass the stateful-operation release gate from every launch client.
   join through the same governed adapter.
 - Supported MCP clients can open or direct the user to a system browser for
   authorization.
-- The operator resource targets MCP `2026-07-28` only. The existing agent MCP
-  resource retains its current protocol compatibility and implementation.
+- The operator resource targets MCP `2026-07-28` with a narrow standard
+  `2025-06-18` compatibility adapter. The existing agent MCP resource retains
+  its current protocol compatibility and implementation.
 - The operator MCP surface is served over public HTTPS outside local development.
 - The existing outbound integration OAuth lifecycle may offer low-level
   implementation lessons, but its grants, subjects, storage model, and module

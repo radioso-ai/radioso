@@ -91,6 +91,7 @@ export const enrichCopilotToolCatalog = (
   deps: { readonly resolveWorkspaceKey: (workspaceId: string) => Promise<string> },
 ): ReadonlyArray<CopilotToolDescriptor> => descriptors.map((descriptor) => ({
   ...descriptor,
+  outputSchema: linkedOutputSchema,
   createTool: (context: CopilotToolInvocationContext) => {
     const tool = descriptor.createTool(context);
     return {

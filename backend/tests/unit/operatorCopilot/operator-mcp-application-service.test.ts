@@ -4,6 +4,7 @@ import { digestOperatorMcpCall, sha256Digest } from "@radioso/operator-mcp-contr
 
 import { OperatorMcpApplicationService } from "../../../src/modules/operatorCopilot/mcpApplicationService.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
+import { OperatorMcpAccessError } from "../../../src/modules/operatorMcpAuthorization/public.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
 
 const uuid = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
@@ -53,6 +54,22 @@ const build = () => {
 };
 
 describe("OperatorMcpApplicationService", () => {
+  it("maps an expired access credential to an unauthorized admission", async () => {
+    const { service, credentialValidation, invocations } = build();
+    credentialValidation.validate.mockRejectedValueOnce(new OperatorMcpAccessError("invalid_token"));
+
+    await expect(service.admit({
+      accessToken: "expired-access",
+      invocationId: uuid("12"),
+      method: "tools/list",
+      resource: principal.resource,
+      timestamp: "1788480000",
+      nonce: "edge-nonce",
+      bodyDigest: sha256Digest("request"),
+    })).rejects.toMatchObject({ code: "invalid_admission" });
+    expect(invocations.admit).not.toHaveBeenCalled();
+  });
+
   it("mints a credential-bound, body-bound, short-lived admission proof", async () => {
     const { service, invocations } = build();
     const bodyDigest = sha256Digest("request");

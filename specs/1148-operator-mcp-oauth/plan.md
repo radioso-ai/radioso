@@ -23,7 +23,7 @@ general availability remains gated.
 **Target Platform**: Self-hosted Linux services plus modern browser dashboard and remote MCP hosts  
 **Project Type**: pnpm web application monorepo with standalone MCP service  
 **Performance Goals**: p95 under one second for metadata, catalog, and authorization decisions excluding human/tool execution; no distributed oversubscription of six verification units per grant per rolling minute  
-**Constraints**: MCP `2026-07-28` operator resource only; exact RFC 8707 audience; S256; 15-minute maximum access token; immediate next-request revocation across replicas; bounded SSRF-safe metadata; no raw credentials or customer content in observability; existing agent MCP unchanged  
+**Constraints**: Primary MCP `2026-07-28` operator resource with a narrow standard `2025-06-18` compatibility adapter; exact RFC 8707 audience; S256; 15-minute maximum access token; immediate next-request revocation across replicas; bounded SSRF-safe metadata; no raw credentials or customer content in observability; existing agent MCP unchanged
 **Scale/Scope**: One new backend domain/module, one narrow cross-process contract package, one migration family, three internal capability routes, OAuth and lifecycle routes, one standalone operator route, one dashboard card and consent page, initial three-tool limited catalog, three named client setup families plus generic setup
 
 ## Constitution Check
@@ -183,7 +183,8 @@ adapter, a settings card, and a dedicated consent surface.
 ### Phase 1 — Foundation and contracts
 
 Add the shared DTO/proof contract and a minimal isolated operator transport that
-passes the standard MCP `2026-07-28` stateless/no-initialize wire profile.
+passes the MCP `2026-07-28` stateless/no-initialize wire profile, with any
+standard-client compatibility translated into that same handler.
 This phase does not claim MCP SDK or real-client conformance: the operator
 dispatcher is deliberately isolated from the compatibility-protected agent SDK
 runtime. Freeze the available Codex CLI 0.149.0 and Claude Code 2.1.149 build

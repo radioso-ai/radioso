@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { digestOperatorMcpCall } from "@radioso/operator-mcp-contract";
 import { createOperatorMcpRequestHandler, type OperatorMcpRequestHandlerDependencies } from "../src/operator/requestHandler.js";
 import { OperatorBackendAdapterError } from "../src/operator/backendAdapter.js";
@@ -57,7 +57,110 @@ const operatorRequest = (
   });
 };
 
+const standardRequest = (
+  body: { id?: string | number; method: string; params?: Record<string, unknown> },
+  protocolVersion?: string,
+): Request => new Request("https://mcp.example/operator/mcp", {
+  body: JSON.stringify({ ...body, jsonrpc: "2.0" }),
+  headers: {
+    authorization: "Bearer opaque-access-token",
+    "content-type": "application/json",
+    ...(protocolVersion ? { "mcp-protocol-version": protocolVersion } : {}),
+  },
+  method: "POST",
+});
+
 describe("operator MCP stateless request handler", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dependencies.admit.mockResolvedValue({ proof });
+    dependencies.list.mockResolvedValue({ tools: [] });
+    dependencies.call.mockResolvedValue({ content: [] });
+  });
+
+  it("serves the standard 2025 initialization, notification, and tool-list lifecycle", async () => {
+    const handler = createOperatorMcpRequestHandler(dependencies);
+    const initialize = await handler(standardRequest({
+      id: 0,
+      method: "initialize",
+      params: {
+        capabilities: {},
+        clientInfo: { name: "codex-mcp-client", version: "0.149.0" },
+        protocolVersion: "2025-06-18",
+      },
+    }));
+
+    expect(initialize.status).toBe(200);
+    await expect(initialize.json()).resolves.toMatchObject({
+      id: 0,
+      result: {
+        capabilities: { tools: {} },
+        protocolVersion: "2025-06-18",
+        serverInfo: { name: "radioso-operator-mcp" },
+      },
+    });
+    expect(dependencies.admit).toHaveBeenLastCalledWith(expect.objectContaining({ method: "ping" }));
+
+    const initialized = await handler(standardRequest(
+      { method: "notifications/initialized" },
+      "2025-06-18",
+    ));
+    expect(initialized.status).toBe(202);
+
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/list" } });
+    dependencies.list.mockResolvedValue({
+      tools: [{
+        description: "Read settings",
+        inputSchema: { type: "object" },
+        name: "workspace_settings",
+        outputSchema: { type: "object" },
+        requiredScope: "operator:read",
+        shape: "read",
+      }],
+    });
+    const list = await handler(standardRequest(
+      { id: 1, method: "tools/list", params: {} },
+      "2025-06-18",
+    ));
+
+    expect(list.status).toBe(200);
+    await expect(list.json()).resolves.toEqual({
+      id: 1,
+      jsonrpc: "2.0",
+      result: {
+        tools: [{
+          description: "Read settings",
+          inputSchema: { type: "object" },
+          name: "workspace_settings",
+          outputSchema: { type: "object" },
+        }],
+      },
+    });
+    expect(dependencies.admit).toHaveBeenLastCalledWith(expect.objectContaining({ method: "tools/list" }));
+
+    dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/call" } });
+    dependencies.call.mockResolvedValue({
+      content: [],
+      safeOutcomeCode: "completed",
+      structuredContent: { dashboardUrl: "/w/acme/settings" },
+    });
+    const call = await handler(standardRequest(
+      { id: 2, method: "tools/call", params: { arguments: {}, name: "workspace_settings" } },
+      "2025-06-18",
+    ));
+
+    expect(call.status).toBe(200);
+    await expect(call.json()).resolves.toEqual({
+      id: 2,
+      jsonrpc: "2.0",
+      result: { content: [], structuredContent: { dashboardUrl: "/w/acme/settings" } },
+    });
+    expect(dependencies.call).toHaveBeenLastCalledWith(expect.objectContaining({
+      arguments: {},
+      name: "workspace_settings",
+    }));
+  });
+
   it("dispatches a self-describing 2026-07-28 ping without initialization or session state", async () => {
     const handler = createOperatorMcpRequestHandler(dependencies);
     const response = await handler(operatorRequest({ id: "1", jsonrpc: "2.0", method: "ping" }));
@@ -223,6 +326,7 @@ describe("operator MCP stateless request handler", () => {
     const handler = createOperatorMcpRequestHandler({
       ...dependencies,
       list,
+      resourceMetadataUrl: "https://mcp.example/.well-known/oauth-protected-resource/operator/mcp",
       rolloutWorkspaceIds: new Set(["00000000-0000-4000-8000-000000000099"]),
     });
     dependencies.admit.mockResolvedValue({ proof: { ...proof, method: "tools/list" } });
@@ -230,6 +334,7 @@ describe("operator MCP stateless request handler", () => {
     const response = await handler(operatorRequest({ id: "rollout", jsonrpc: "2.0", method: "tools/list" }));
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain('error="invalid_token"');
     expect(list).not.toHaveBeenCalled();
   });
 

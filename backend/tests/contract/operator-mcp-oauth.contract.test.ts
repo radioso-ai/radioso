@@ -45,12 +45,13 @@ const createHarness = (envOverrides: Partial<typeof env> = {}) => {
 };
 
 describe("operator MCP OAuth HTTP contract", () => {
-  it("advertises authorization code, refresh, S256, and no unimplemented DCR endpoint", async () => {
+  it("advertises authorization code, refresh, S256, CIMD, and no unimplemented DCR endpoint", async () => {
     const { app } = createHarness();
     const response = await request(app).get("/.well-known/oauth-authorization-server").expect(200);
     expect(response.body).toMatchObject({
       issuer: "https://app.example", grant_types_supported: ["authorization_code", "refresh_token"],
       code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"],
+      client_id_metadata_document_supported: true,
     });
     expect(response.body).not.toHaveProperty("registration_endpoint");
   });

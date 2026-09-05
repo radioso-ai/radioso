@@ -177,14 +177,17 @@ test("Operator MCP setup is unavailable when the deployment has no canonical res
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   await installApiAccessMock(page);
-  await installOperatorRoutes(page, { setup: setupResponse("disabled"), grants: [] });
+  await installOperatorRoutes(page, {
+    setup: { ...setupResponse("disabled"), message: "Operator MCP access is disabled." },
+    grants: [],
+  });
   await stubRuntimeConfig(page, "");
   await openApiAccess(page);
 
   const card = page.locator("#operator-mcp");
-  await expect(card.getByText("Operator MCP is not ready for this deployment.")).toBeVisible();
+  await expect(card.getByText("Operator MCP access is disabled.", { exact: true })).toBeVisible();
+  await expect(card.getByText("Operator MCP is not ready for this deployment.", { exact: true })).toHaveCount(0);
   await expect(card.getByRole("combobox", { name: "Choose MCP client" })).toHaveCount(0);
-  await expect(card.getByText(/Configure the Operator MCP resource/i)).toBeVisible();
 });
 
 const consentTransaction = (overrides: Record<string, unknown> = {}) => ({

@@ -36,8 +36,8 @@ Two layers (see `src/modules/eval/suite/`):
 cd backend
 # Point at a disposable agent to seed + run against; a document worker must be running.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
-pnpm run evals:update-baseline # FIRST: record current behaviour into baseline.json
-pnpm run evals                 # thereafter: run + gate against the baseline
+pnpm run evals:update-baseline # FIRST: record current behaviour into baseline.json (5 samples)
+pnpm run evals                 # thereafter: run + gate against the baseline (5 samples)
 pnpm run evals -- --tag routine # only cases carrying a tag (repeatable)
 ```
 
@@ -45,7 +45,10 @@ pnpm run evals -- --tag routine # only cases carrying a tag (repeatable)
 case is missing, rather than treating it as an informational addition, so add a case and
 record its observed outcome together. A case that was already failing does not fail merely
 because it remains failing, but sampled baselines also retain the observed pass rate: a
-case recorded at 4/5 and later falling to 0/5 is reported as a rate regression.
+case recorded at 4/5 and later falling to 0/5 is reported as a rate regression. A run that
+samples less deeply than its baseline also fails, because it cannot make a reliable comparison.
+The current `--pass-threshold` must equal the recorded threshold; changing it requires a full
+baseline re-recording rather than comparing statuses reduced under different rules.
 
 **Because an empty baseline can't gate, the runner fails loudly in run mode until you
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
@@ -60,10 +63,10 @@ complaint that routes to retrieval one time and answers directly the next). A si
 baseline therefore produces false regressions. Sampling fixes this:
 
 ```bash
-pnpm run evals -- --samples 5                 # run each case 5×, reduce to a stable status
+pnpm run evals                                 # run each case 5×, reduce to a stable status
 pnpm run evals:ci                              # same, as a named script
 pnpm run evals -- --samples 5 --pass-threshold 0.8  # tolerate one flaky sample in five
-pnpm run evals:update-baseline -- --samples 5  # record a gate-worthy baseline
+pnpm run evals:update-baseline                 # record a gate-worthy five-sample baseline
 ```
 
 Each case runs K times; its reduced status is `pass` only when the per-sample pass rate
@@ -72,7 +75,9 @@ status alongside the measured pass rate, sample count, and threshold. Because a 
 can't clear the threshold, it's recorded as `fail` in the baseline and never gates until
 it's genuinely stable — so a `pass` baseline entry is one that reliably passes, and a real
 regression is unambiguous. The report marks cases whose samples disagreed as **flaky**.
-Record the baseline and run CI with the same `--samples`/`--pass-threshold`.
+Record the baseline and run CI with the same `--samples`/`--pass-threshold`. A tag-filtered
+`--update-baseline` updates only the selected entries and preserves all other committed entries;
+it cannot change the recorded threshold because the unselected entries were not re-observed.
 
 ## Adding a case
 

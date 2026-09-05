@@ -25,6 +25,7 @@ export {
   diffAgainstBaseline,
   hasBaselineGateFailures,
   isBaselineInitialized,
+  mergeBaselineFile,
   type BaselineCaseEntry,
   type BaselineCaseRecord,
   type BaselineDiff,

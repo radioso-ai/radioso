@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { compileRoutineDefinition } from "../../../src/modules/routines/compiler.js";
@@ -9,6 +11,7 @@ import {
   formatReport,
   hasBaselineGateFailures,
   isBaselineInitialized,
+  mergeBaselineFile,
   parseConversationQualityCases,
   reduceSamples,
   runConversationQualitySuite,
@@ -256,6 +259,7 @@ describe("baseline diff", () => {
     expect(diff.underSampled).toEqual([
       { caseId: "a", name: "A", from: "pass", to: "fail", samples: 1, baselineSamples: 3 },
     ]);
+    expect(hasBaselineGateFailures(diff)).toBe(true);
   });
 
   it("does not report a rate drop from a run that sampled less deeply either", () => {
@@ -303,6 +307,42 @@ describe("baseline diff", () => {
     expect(file.cases.a).toEqual({ status: "fail", passRate: 0.8, samples: 5 });
   });
 
+  it("fails gating when the current pass threshold differs from the recorded threshold", () => {
+    const diff = diffAgainstBaseline(
+      [{ caseId: "a", name: "A", status: "pass", passRate: 1, samples: 5 }],
+      { passThreshold: 0.8, cases: { a: { status: "pass", passRate: 1, samples: 5 } } },
+      { passThreshold: 1 },
+    );
+
+    expect(diff.thresholdMismatch).toEqual({ baseline: 0.8, current: 1 });
+    expect(hasBaselineGateFailures(diff)).toBe(true);
+  });
+
+  it("merges a filtered baseline update without removing unselected entries", () => {
+    const merged = mergeBaselineFile(
+      {
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        passThreshold: 1,
+        cases: {
+          page: { status: "fail", passRate: 0, samples: 5 },
+          routine: { status: "pass", passRate: 1, samples: 5 },
+        },
+      },
+      [{ caseId: "page", name: "Page", status: "pass", passRate: 1, samples: 5 }],
+      "2026-01-02T00:00:00.000Z",
+      1,
+    );
+
+    expect(merged).toEqual({
+      generatedAt: "2026-01-02T00:00:00.000Z",
+      passThreshold: 1,
+      cases: {
+        page: { status: "pass", passRate: 1, samples: 5 },
+        routine: { status: "pass", passRate: 1, samples: 5 },
+      },
+    });
+  });
+
   it("treats a material sampled pass-rate drop as a gate failure", () => {
     const diff = diffAgainstBaseline(
       [{ caseId: "flaky", name: "Flaky", status: "fail", passRate: 0, samples: 5 }],
@@ -311,6 +351,17 @@ describe("baseline diff", () => {
 
     expect(diff.rateRegressions).toEqual([{ caseId: "flaky", name: "Flaky", from: 0.8, to: 0 }]);
     expect(hasBaselineGateFailures(diff)).toBe(true);
+  });
+});
+
+describe("eval command defaults", () => {
+  it("uses the same five-sample depth for normal and baseline-recording commands", () => {
+    const packageJson = JSON.parse(
+      readFileSync(new URL("../../../package.json", import.meta.url), "utf8"),
+    ) as { scripts: Record<string, string> };
+
+    expect(packageJson.scripts.evals).toContain("--samples 5");
+    expect(packageJson.scripts["evals:update-baseline"]).toContain("--samples 5");
   });
 });
 
@@ -451,6 +502,22 @@ describe("report", () => {
     const text = formatReport(reports, diff, summarizeRun(outcomes));
     expect(text).toContain("MISSING BASELINE ENTRIES (1) — these fail the run:");
     expect(text).toContain("RATE REGRESSIONS (1) — these fail the run:");
+  });
+
+  it("reports under-sampled observations and threshold mismatches as gate failures", () => {
+    const reports: CaseReport[] = [
+      { caseId: "a", name: "A", status: "fail", reason: "nope", verdicts: [], samples: 1, passRate: 0 },
+    ];
+    const outcomes = reports.map(({ caseId, name, status, passRate, samples }) => ({ caseId, name, status, passRate, samples }));
+    const diff = diffAgainstBaseline(
+      outcomes,
+      { passThreshold: 0.8, cases: { a: { status: "pass", passRate: 1, samples: 5 } } },
+      { passThreshold: 1 },
+    );
+
+    const text = formatReport(reports, diff, summarizeRun(outcomes));
+    expect(text).toContain("UNDER-SAMPLED REGRESSIONS (1) — these fail the run:");
+    expect(text).toContain("BASELINE THRESHOLD MISMATCH — these fail the run:");
   });
 });
 

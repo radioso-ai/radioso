@@ -72,6 +72,13 @@ export const formatReport = (
   );
   lines.push("");
 
+  if (diff.thresholdMismatch) {
+    lines.push("BASELINE THRESHOLD MISMATCH — these fail the run:");
+    lines.push(
+      `  ✗ baseline ${(diff.thresholdMismatch.baseline * 100).toFixed(0)}% → current ${(diff.thresholdMismatch.current * 100).toFixed(0)}%`,
+    );
+    lines.push("");
+  }
   if (diff.regressions.length > 0) {
     lines.push(`REGRESSIONS (${diff.regressions.length}) — these fail the run:`);
     for (const regression of diff.regressions) {
@@ -84,6 +91,15 @@ export const formatReport = (
     for (const regression of diff.rateRegressions) {
       lines.push(
         `  ✗ ${regression.caseId} "${regression.name}": ${(regression.from * 100).toFixed(0)}% → ${(regression.to * 100).toFixed(0)}% pass rate`,
+      );
+    }
+    lines.push("");
+  }
+  if (diff.underSampled.length > 0) {
+    lines.push(`UNDER-SAMPLED REGRESSIONS (${diff.underSampled.length}) — these fail the run:`);
+    for (const regression of diff.underSampled) {
+      lines.push(
+        `  ✗ ${regression.caseId} "${regression.name}": ${regression.from} → ${regression.to} (${regression.samples}/${regression.baselineSamples} samples)`,
       );
     }
     lines.push("");

@@ -34,11 +34,11 @@ import { runMigrations } from "../src/db/runMigrations.js";
 import { createLogger } from "../src/shared/observability/logger.js";
 import { projectInternalAgentConfig } from "../src/modules/agents/public.js";
 import {
-  buildBaselineFile,
   diffAgainstBaseline,
   formatReport,
   hasBaselineGateFailures,
   isBaselineInitialized,
+  mergeBaselineFile,
   parseConversationQualityCases,
   runConversationQualitySuiteSampled,
   summarizeRun,
@@ -346,14 +346,23 @@ const main = async (): Promise<void> => {
 
     const summary = summarizeRun(outcomes);
     const baseline = loadBaseline();
-    const diff = diffAgainstBaseline(outcomes, baseline);
+    const diff = diffAgainstBaseline(outcomes, baseline, { passThreshold: flags.passThreshold });
     console.log(`\n${formatReport(reports, diff, summary)}\n`);
 
     if (flags.updateBaseline) {
+      if (
+        flags.tags.length > 0 &&
+        baseline.passThreshold !== undefined &&
+        baseline.passThreshold !== flags.passThreshold
+      ) {
+        throw new Error(
+          "A filtered baseline update cannot change the pass threshold; re-record the full suite at the new threshold.",
+        );
+      }
       const generatedAt = new Date().toISOString();
       writeFileSync(
         BASELINE_PATH,
-        `${JSON.stringify(buildBaselineFile(outcomes, generatedAt, flags.passThreshold), null, 2)}\n`,
+        `${JSON.stringify(mergeBaselineFile(baseline, outcomes, generatedAt, flags.passThreshold), null, 2)}\n`,
       );
       console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
       return;
@@ -371,7 +380,7 @@ const main = async (): Promise<void> => {
 
     if (hasBaselineGateFailures(diff)) {
       console.error(
-        `${diff.regressions.length + diff.rateRegressions.length + diff.newCases.length} case(s) failed baseline gating.`,
+        `${diff.regressions.length + diff.rateRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
       );
       process.exitCode = 1;
     }

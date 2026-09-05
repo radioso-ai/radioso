@@ -1,10 +1,11 @@
-import { badRequest } from "../../shared/domain/errors.js";
+import { AppError, badRequest } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import { AGENT_CONFIG_SCHEMA_VERSION } from "../agents/public.js";
 import {
   AGENT_BUNDLE_SCHEMA_VERSION,
   type AgentBundle,
   type AgentBundleImportResult,
+  type AgentBundleImportFailureCode,
   type AgentBundleSkill,
   type AgentBundleUnresolvedReference,
 } from "./domain.js";
@@ -15,6 +16,7 @@ import type {
   AgentBundleDirectiveWriterPort,
   AgentBundleRoutineWriterPort,
   AgentBundleSkillWriterPort,
+  AgentBundleImportRepositoryPort,
 } from "./ports.js";
 
 export interface AgentBundleImportServiceOptions {
@@ -24,6 +26,14 @@ export interface AgentBundleImportServiceOptions {
   skills: AgentBundleSkillWriterPort;
   contextVariables: AgentBundleContextVariableWriterPort;
   routines: AgentBundleRoutineWriterPort;
+  imports?: AgentBundleImportRepositoryPort;
+}
+
+export interface AgentBundleImportInput {
+  workspaceId: string;
+  actorAccountId: string | null;
+  idempotencyKey?: string | null;
+  bundle: AgentBundle;
 }
 
 /**
@@ -41,15 +51,53 @@ export interface AgentBundleImportServiceOptions {
 export class AgentBundleImportService {
   constructor(private readonly options: AgentBundleImportServiceOptions) {}
 
-  async import(workspaceId: string, bundle: AgentBundle): Promise<AgentBundleImportResult> {
+  async get(workspaceId: string, importId: string) {
+    return this.options.imports?.findById(workspaceId, importId) ?? null;
+  }
+
+  async import(input: AgentBundleImportInput): Promise<AgentBundleImportResult>;
+  async import(workspaceId: string, bundle: AgentBundle): Promise<AgentBundleImportResult>;
+  async import(
+    inputOrWorkspaceId: AgentBundleImportInput | string,
+    legacyBundle?: AgentBundle,
+  ): Promise<AgentBundleImportResult> {
+    const input = typeof inputOrWorkspaceId === "string"
+      ? { workspaceId: inputOrWorkspaceId, actorAccountId: null, idempotencyKey: null, bundle: legacyBundle! }
+      : inputOrWorkspaceId;
+    const { workspaceId, bundle } = input;
     assertSupportedVersions(bundle);
 
-    const projection = projectAgentConfigForImport(bundle.agent);
-    const unresolved: AgentBundleUnresolvedReference[] = [...projection.unresolved];
+    const job = this.options.imports
+      ? await this.options.imports.createOrGet({
+        workspaceId,
+        actorAccountId: input.actorAccountId,
+        idempotencyKey: input.idempotencyKey ?? null,
+      })
+      : null;
+    if (job?.status === "existing") {
+      if (job.job.state === "applied" && job.job.agentId) {
+        const result = { importId: job.job.id, agentId: job.job.agentId, unresolved: job.job.unresolved };
+        Object.defineProperty(result, "replayed", { value: true, enumerable: false });
+        return result;
+      }
+      throw new AppError(
+        409,
+        "agent_bundle_import_in_progress",
+        "An import with this idempotency key is still in progress",
+        { importId: job.job.id },
+      );
+    }
+    const importId = job?.job.id;
+    if (importId) await this.options.imports?.markApplying(importId);
 
-    const { agentId } = await this.options.agents.create(workspaceId, projection.input);
+    let agentId: string | null = null;
 
     try {
+      const projection = projectAgentConfigForImport(bundle.agent);
+      const unresolved: AgentBundleUnresolvedReference[] = [...projection.unresolved];
+      const created = await this.options.agents.create(workspaceId, projection.input);
+      agentId = created.agentId;
+      if (importId) await this.options.imports?.setCreatedAgent(importId, agentId);
       // Skills first: a directive's `binding.skillName` and a routine's `toolRef`
       // are both validated against the agent's skills, and an enablement's resolver
       // is one. Everything that names a skill has to come after the skills exist.
@@ -73,36 +121,46 @@ export class AgentBundleImportService {
         unresolved,
       );
       await this.importRoutines(workspaceId, agentId, bundle.routines ?? [], unresolved);
+
+      const result: AgentBundleImportResult = { agentId, unresolved, ...(importId ? { importId } : {}) };
+      if (importId) await this.options.imports?.markApplied(importId, result);
+
+      // Counts only: a bundle holds the agent's instruction and every directive's
+      // text, none of which belongs in a log line.
+      this.options.logger?.info({
+        workspaceId,
+        importId,
+        agentId,
+        routineCount: bundle.routines?.length ?? 0,
+        skillCount: bundle.agentSkills?.length ?? 0,
+        unresolvedCount: unresolved.length,
+      }, "agent bundle imported");
+
+      return result;
     } catch (error) {
-      // Compensation, not a transaction. A crash between the create and this
-      // delete leaves a partial agent; that is the documented cost of not
-      // threading one transaction through four modules' services.
-      try {
-        await this.options.agents.delete(workspaceId, agentId);
-      } catch (compensationError) {
-        // The worse of the two failures: the operator now has a half-built agent
-        // in their workspace and no reason for it. Name the row so support can
-        // find it, because nothing else will point at it.
-        this.options.logger?.error({
-          workspaceId,
-          orphanedAgentId: agentId,
-          reason: compensationError instanceof Error ? compensationError.message : String(compensationError),
-        }, "agent bundle import failed and its partially created agent could not be removed");
+      const failureCode = classifyFailure(error);
+      if (importId) {
+        await this.options.imports?.markFailed(importId, failureCode, { terminal: agentId === null });
       }
+      if (agentId) {
+        // Compensation, not a transaction. A crash between the create and this
+        // delete leaves a partial agent; the durable applying job is deliberately
+        // left for the sweep if this delete fails.
+        try {
+          await this.options.agents.delete(workspaceId, agentId);
+          if (importId) await this.options.imports?.markCompensated(importId);
+        } catch {
+          this.options.logger?.error({
+            workspaceId,
+            importId,
+            orphanedAgentId: agentId,
+            failureCode,
+          }, "agent bundle import compensation left an orphan for cleanup");
+        }
+      }
+      attachImportId(error, importId);
       throw error;
     }
-
-    // Counts only: a bundle holds the agent's instruction and every directive's
-    // text, none of which belongs in a log line.
-    this.options.logger?.info({
-      workspaceId,
-      agentId,
-      routineCount: bundle.routines?.length ?? 0,
-      skillCount: bundle.agentSkills?.length ?? 0,
-      unresolvedCount: unresolved.length,
-    }, "agent bundle imported");
-
-    return { agentId, unresolved };
   }
 
   /**
@@ -334,6 +392,14 @@ const reportOmittedConfig = (
     element: `skill:${skill.name}`,
     detail: `The source agent set ${skill.omittedConfigKeys.join(", ")} on "${skill.name}". Those values stay in their own workspace — re-enter them here.`,
   });
+};
+
+const classifyFailure = (error: unknown): AgentBundleImportFailureCode =>
+  error instanceof AppError && error.code === "bad_request" ? "invalid_bundle" : "apply_failed";
+
+const attachImportId = (error: unknown, importId: string | undefined): void => {
+  if (!importId || typeof error !== "object" || error === null) return;
+  Object.assign(error, { importId });
 };
 
 /**

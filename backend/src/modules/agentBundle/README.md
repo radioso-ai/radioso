@@ -121,8 +121,21 @@ projects them with credentials placeheld) but are not re-created on import: a
 connection needs its credential re-entered or its OAuth flow re-run before it can
 serve. Each one is reported in `unresolved` so the operator knows what to rebuild.
 
-Import always creates a new agent. Importing into an existing agent is a merge and
-needs a collision policy that has not been decided.
+Each import has a durable job record. The request response carries its `importId`,
+and `GET /api/v1/agents/bundle/imports/{importId}` exposes the state after the
+request has ended. Import still always creates a new agent; importing into an
+existing agent is a merge and needs a collision policy that has not been decided.
+
+An optional request-body `idempotencyKey` scopes retry protection to one workspace.
+An applied key replays the saved result; a queued or applying key returns a conflict;
+and a failed or compensated key may create a new job. The partial unique index on
+active jobs is the concurrency boundary, not a process-local lock.
+
+The worker compensates an `applying` job whose lease age exceeds
+`AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS` (15 minutes by default). The job retains the
+created agent id after deletion for support correlation, records a system audit event,
+and increments the compensation counter. This is deliberately a compensating flow,
+not one transaction threaded through the four owning modules.
 
 ## Operator surface
 

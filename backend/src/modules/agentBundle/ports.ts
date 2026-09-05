@@ -3,7 +3,12 @@ import type { AgentSkillInvocationMode } from "../agentSkills/public.js";
 import type { ContextVariableSource } from "../context-variables/public.js";
 import type { ContextVariableSurfacing } from "../context-variables/public.js";
 import type { RoutineDefinition, RoutineDefinitionDraftInput } from "../routines/public.js";
-import type { AgentBundleSkill } from "./domain.js";
+import type {
+  AgentBundleImportFailureCode,
+  AgentBundleImportRecord,
+  AgentBundleImportResult,
+  AgentBundleSkill,
+} from "./domain.js";
 
 /**
  * Narrow ports, one per collection the bundle composes. The module depends on
@@ -135,4 +140,27 @@ export interface AgentBundleRoutineWriterPort {
     agentId: string,
     routineId: string,
   ): Promise<AgentBundleRoutinePublishOutcome>;
+}
+
+export interface AgentBundleImportRepositoryPort {
+  createOrGet(input: {
+    workspaceId: string;
+    actorAccountId: string | null;
+    idempotencyKey: string | null;
+  }): Promise<
+    | { status: "created"; job: AgentBundleImportRecord }
+    | { status: "existing"; job: AgentBundleImportRecord }
+  >;
+  findById(workspaceId: string, importId: string): Promise<AgentBundleImportRecord | null>;
+  markApplying(importId: string): Promise<void>;
+  setCreatedAgent(importId: string, agentId: string): Promise<void>;
+  markApplied(importId: string, result: AgentBundleImportResult): Promise<void>;
+  markFailed(importId: string, failureCode: AgentBundleImportFailureCode, options: { terminal: boolean }): Promise<void>;
+  claimStaleApplying(input: {
+    ageSeconds: number;
+    leaseSeconds: number;
+    leaseToken: string;
+    limit: number;
+  }): Promise<AgentBundleImportRecord[]>;
+  markCompensated(importId: string, leaseToken?: string): Promise<void>;
 }

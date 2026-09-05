@@ -39,6 +39,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   // Enforce the copilot conversation retention window. Started last and stopped first: it owns no
   // queue, so a shutdown that skips a sweep loses nothing but a few hours of lateness.
   dependencies.copilotRetentionWorker.start();
+  dependencies.agentBundleImportCleanupWorker.start();
 
   let shuttingDown = false;
 
@@ -53,6 +54,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
       try {
         await dependencies.copilotRetentionWorker.stop();
+        await dependencies.agentBundleImportCleanupWorker.stop();
         await dependencies.actionDispatchWorker.stop();
         await dependencies.facetExtractionWorker?.stop();
         await dependencies.documentJobConsumer?.stop();

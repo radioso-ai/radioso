@@ -322,10 +322,11 @@ curl -sS -X POST https://api.radioso.ai/api/v1/agents/bundle \
   -d @support-agent-bundle.json
 ```
 
-A successful import returns `201` with a new `agentId` and an `unresolved` array. Read it before treating the agent as ready:
+A successful import returns `201` with an `importId`, a new `agentId`, and an `unresolved` array. Read it before treating the agent as ready:
 
 ```json
 {
+  "importId": "a6e21c3e-2f6a-4d1a-9e3c-8f1a2c9a11de",
   "agentId": "b6e21c3e-2f6a-4d1a-9e3c-8f1a2c9a11de",
   "unresolved": [
     {
@@ -341,6 +342,17 @@ A successful import returns `201` with a new `agentId` and an `unresolved` array
   ]
 }
 ```
+
+For an automated retry, add an `idempotencyKey` to the posted bundle. The key is scoped to the destination workspace. Repeating a completed key returns `200` with that same `importId`, `agentId`, and unresolved report; a key that is still applying returns `409` with `agent_bundle_import_in_progress`. A failed or compensated attempt does not hold the key, so you can retry it as a fresh import.
+
+Use the import id when an operator needs to inspect an attempt after the request:
+
+```bash
+curl -sS https://api.radioso.ai/api/v1/agents/bundle/imports/a6e21c3e-2f6a-4d1a-9e3c-8f1a2c9a11de \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN"
+```
+
+The job state moves from `queued` to `applying`, then to `applied`, `failed`, or `compensated`. `compensated` means the worker removed an agent left behind by an interrupted import; the response keeps the original agent id so support can correlate the cleanup. Set `AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS` to control how old an applying job must be before that worker sweep runs. The default is 15 minutes.
 
 Each `kind` names one thing to go fix, and where:
 
@@ -395,6 +407,7 @@ DELETE /api/v1/agents/{agentId}/assistant-logo
 POST   /api/v1/agents/{agentId}/default
 GET    /api/v1/agents/{agentId}/bundle
 POST   /api/v1/agents/bundle
+GET    /api/v1/agents/bundle/imports/{importId}
 GET    /api/v1/agents/{agentId}/skill-capabilities
 GET    /api/v1/agents/{agentId}/directives
 POST   /api/v1/agents/{agentId}/directives
@@ -427,6 +440,7 @@ GET    /api/v1/skills/{skillName}
 - `404` means the agent or skill name does not exist in the current workspace context.
 - A skill can be listed even when the work is executed through another route. Use `contractReferences` to find the stable execution path.
 - `400` on a bundle import usually means an unsupported `bundleVersion` or `agent.schemaVersion` — re-export the agent from a deployment this one reads.
+- `409` with `agent_bundle_import_in_progress` means another request with the same idempotency key is still applying. Query its `importId` or retry after it reaches a terminal state.
 
 ## Read next
 

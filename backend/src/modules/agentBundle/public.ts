@@ -4,6 +4,9 @@ export {
   type AgentBundle,
   type AgentBundleContextVariable,
   type AgentBundleImportResult,
+  type AgentBundleImportRecord,
+  type AgentBundleImportState,
+  type AgentBundleImportFailureCode,
   type AgentBundleRoutine,
   type AgentBundleSkill,
   type AgentBundleUnresolvedKind,
@@ -17,6 +20,11 @@ export {
   AgentBundleImportService,
   type AgentBundleImportServiceOptions,
 } from "./importService.js";
+export {
+  AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS_DEFAULT,
+  AgentBundleImportCleanupWorker,
+  type AgentBundleImportCleanupWorkerOptions,
+} from "./importCleanupWorker.js";
 export {
   projectAgentConfigForImport,
   type AgentConfigImportProjection,
@@ -36,4 +44,5 @@ export type {
   AgentBundleRoutineWriterPort,
   AgentBundleSkillConfigPortabilityPort,
   AgentBundleSkillWriterPort,
+  AgentBundleImportRepositoryPort,
 } from "./ports.js";

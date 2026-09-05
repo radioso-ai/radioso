@@ -1,17 +1,21 @@
 import {
   AgentBundleExportService,
+  AgentBundleImportCleanupWorker,
   AgentBundleImportService,
   type AgentBundleAgentSkillRecord,
   type AgentBundleContextVariableRecord,
 } from "../../modules/agentBundle/public.js";
 import { projectInternalAgentExternalSkills } from "../../modules/agents/public.js";
-import type { ConversationAgent } from "../../modules/agents/public.js";
+import type { AgentInput, ConversationAgent } from "../../modules/agents/public.js";
 import type { AgentService, AuthoredDirectiveService } from "../../modules/agents/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
 import type { ContextVariableService } from "../../modules/context-variables/public.js";
 import type { RoutineDefinitionService } from "../../modules/routines/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import type { AgentBundleImportRepositoryPort } from "../../modules/agentBundle/public.js";
+import type { AuditService } from "../../modules/audit/contracts/index.js";
 
 /**
  * Adapts the concrete services to the agentBundle module's narrow ports.
@@ -25,6 +29,10 @@ type ExternalSkillSources = Parameters<typeof projectInternalAgentExternalSkills
 
 export interface AgentBundleCompositionDependencies {
   logger?: AppLogger;
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
+  auditService: AuditService;
+  imports: AgentBundleImportRepositoryPort;
+  importOrphanAgeMs: number;
   agentService: AgentService;
   authoredDirectiveService: AuthoredDirectiveService;
   agentSkillsService: AgentSkillsService;
@@ -118,21 +126,22 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
     },
   });
 
+  const agentWriter = {
+    create: async (workspaceId: string, input: AgentInput) => {
+      const agent = await deps.agentService.create(workspaceId, input);
+      return { agentId: agent.id };
+    },
+    delete: async (workspaceId: string, agentId: string) => {
+      // Compensation, not an operator action: this agent was created moments ago by
+      // the import that is now unwinding, so the last-agent rule does not apply.
+      await deps.agentService.delete(workspaceId, agentId, { allowLastAgent: true });
+    },
+  };
+
   const importService = new AgentBundleImportService({
     logger: deps.logger,
-    agents: {
-      create: async (workspaceId, input) => {
-        const agent = await deps.agentService.create(workspaceId, input);
-        return { agentId: agent.id };
-      },
-      delete: async (workspaceId, agentId) => {
-        // Compensation, not an operator action: this agent was created moments ago by
-        // the import that is now unwinding, so the last-agent rule does not apply. A
-        // workspace can start with none, and the dashboard offers import from that
-        // empty state, so this is the common case rather than an edge one.
-        await deps.agentService.delete(workspaceId, agentId, { allowLastAgent: true });
-      },
-    },
+    imports: deps.imports,
+    agents: agentWriter,
     directives: {
       create: async (workspaceId, agentId, directive) => {
         await deps.authoredDirectiveService.create(workspaceId, agentId, directive as never);
@@ -169,7 +178,7 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
     },
     routines: {
       createDraft: async (workspaceId, agentId, definition) => {
-        const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition);
+        const saved = await deps.routineDefinitionService.createDraft(workspaceId, agentId, definition as never);
         return { routineId: saved.routine.id };
       },
       publish: async (workspaceId, agentId, routineId) => {
@@ -186,5 +195,14 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
     },
   });
 
-  return { exportService, importService };
+  const cleanupWorker = new AgentBundleImportCleanupWorker({
+    imports: deps.imports,
+    agents: agentWriter,
+    audit: deps.auditService,
+    logger: deps.logger ?? { info: () => undefined, error: () => undefined },
+    metrics: deps.metrics,
+    orphanAgeMs: deps.importOrphanAgeMs,
+  });
+
+  return { exportService, importService, cleanupWorker };
 };

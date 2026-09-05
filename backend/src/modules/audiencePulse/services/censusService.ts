@@ -110,6 +110,8 @@ export interface CensusRunResult {
   topics: CensusRunTopicResult[];
   /** Topic identities retired by this fully facet-ready run. */
   dissolvedTopicIds: string[];
+  /** Retired topics with the labels needed by report consumers; no current membership is implied. */
+  dissolvedTopics: Array<{ id: string; title: string }>;
 }
 
 export interface CensusServiceDependencies {
@@ -456,6 +458,11 @@ export class CensusService {
     }).catch(() => undefined);
 
     reportTopics.sort((a, b) => b.memberCount - a.memberCount || a.topicId.localeCompare(b.topicId));
+    const dissolvedTopics = fullyFacetReady
+      ? [...dissolvedTopicIds]
+        .sort((left, right) => left.localeCompare(right))
+        .map((id) => ({ id, title: priorTopicsById.get(id)!.title }))
+      : [];
 
     return {
       runId,
@@ -465,6 +472,7 @@ export class CensusService {
       fullyFacetReady,
       topics: reportTopics,
       dissolvedTopicIds: fullyFacetReady ? [...dissolvedTopicIds] : [],
+      dissolvedTopics,
     };
   }
 

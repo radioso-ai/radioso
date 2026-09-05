@@ -12,7 +12,7 @@ import type {
   AudiencePulsePromptEvidenceReference,
 } from "./contracts/history.js";
 
-export type { AudiencePulseEvidence } from "./domain/report.js";
+export type { AudiencePulseDissolvedTopic, AudiencePulseEvidence } from "./domain/report.js";
 export {
   AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS,
   type AudiencePulseHistorySnapshot,
@@ -26,6 +26,7 @@ export {
   type CreateTopicCensusRunInput,
   type SaveTopicCensusRunInput,
   type TopicCensusRunDetail,
+  type TopicCensusRunDissolvedTopic,
   type TopicCensusRunTopicSummary,
   type TopicMembershipInput,
   type TopicRepositoryPort,
@@ -118,6 +119,7 @@ export const audiencePulseReportResponseSchema = z.object({
   generatedAt: dateTime,
   narrativeGeneratedAt: dateTime,
   narrativeReuseCount: z.number().int().min(0),
+  narrativeReuseMaxDrift: z.number().min(0).max(1),
   coverage: z.object({
     populationSize: z.number().int().min(0),
     sampleSize: z.number().int().min(0),
@@ -134,6 +136,7 @@ export const audiencePulseReportResponseSchema = z.object({
   // that state apart from a computed window that simply found no recurring pattern.
   summary: z.string().optional(),
   unclassifiedQuestionCount: z.number().int().min(0),
+  dissolvedTopics: z.array(z.object({ id: z.string(), title: z.string() })),
   themes: z.array(z.object({
     id: z.string(),
     title: z.string(),

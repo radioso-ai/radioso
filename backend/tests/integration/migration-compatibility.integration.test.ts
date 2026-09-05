@@ -8,6 +8,7 @@ import { applyTestMigration, runTestMigrationsBefore } from "../support/database
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 const fieldGuardMigration = "107_routine_field_guards.sql";
 const topicCensusRepairMigration = "156_repair_topic_census_workspace_scope.sql";
+const topicTransitionUniquenessMigration = "166_topic_transitions_run_topic_unique.sql";
 
 const canCreateIsolatedDatabase = async (databaseUrl?: string): Promise<boolean> => {
   if (!databaseUrl) return false;
@@ -216,5 +217,77 @@ describeIfDatabase("topic census workspace-scope repair migration", () => {
       "topic_transitions_workspace_id_run_id_fkey",
       "topic_transitions_workspace_id_topic_id_fkey",
     ]));
+  });
+});
+
+describeIfDatabase("topic transition uniqueness migration", () => {
+  const isolatedName = `mig166_topic_transition_${randomUUID().replace(/-/g, "")}`;
+  let admin: Database;
+  let database: Database;
+
+  beforeAll(async () => {
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${isolatedName}"`);
+    database = new Database(isolatedDatabaseUrl(integrationDatabaseUrl!, isolatedName));
+    await runTestMigrationsBefore(database, topicTransitionUniquenessMigration);
+  });
+
+  afterAll(async () => {
+    await database?.close().catch(() => undefined);
+    if (admin) {
+      await admin.execute(`DROP DATABASE IF EXISTS "${isolatedName}"`);
+      await admin.close().catch(() => undefined);
+    }
+  });
+
+  it("keeps the earliest transition per run/topic before creating the unique index", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const runId = randomUUID();
+    const topicId = randomUUID();
+    const earliestId = randomUUID();
+    const laterId = randomUUID();
+    await database.execute(
+      "INSERT INTO accounts(id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
+      [accountId, `mig166-${accountId}@example.com`],
+    );
+    await database.execute(
+      "INSERT INTO workspaces(id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",
+      [workspaceId, accountId, `rk-${workspaceId}`],
+    );
+    await database.execute(
+      `INSERT INTO topic_census_runs(
+         id, workspace_id, window_start, window_end, question_count, seed, params_json
+       ) VALUES ($1, $2, now() - interval '1 day', now(), 1, 'seed', '{}'::jsonb)`,
+      [runId, workspaceId],
+    );
+    await database.execute(
+      `INSERT INTO topics(
+         id, workspace_id, centroid, dimensions, radius, title, description,
+         created_run_id, last_seen_run_id
+       ) VALUES ($1, $2, '[1,0,0]'::vector, 3, 0.1, 'Topic', 'Description', $3, $3)`,
+      [topicId, workspaceId, runId],
+    );
+    await database.execute(
+      `INSERT INTO topic_transitions(
+         id, workspace_id, run_id, topic_id, kind, created_at
+       ) VALUES
+         ($1, $2, $3, $4, 'emerged', '2026-07-01T00:00:00.000Z'::timestamptz),
+         ($5, $2, $3, $4, 'survived', '2026-07-01T00:00:01.000Z'::timestamptz)`,
+      [earliestId, workspaceId, runId, topicId, laterId],
+    );
+
+    await expect(applyTestMigration(database, topicTransitionUniquenessMigration)).resolves.not.toThrow();
+
+    const transitions = await database.query<{ id: string; kind: string }>(
+      "SELECT id, kind FROM topic_transitions WHERE run_id = $1 AND topic_id = $2",
+      [runId, topicId],
+    );
+    expect(transitions).toEqual([{ id: earliestId, kind: "emerged" }]);
+    await expect(database.execute(
+      `INSERT INTO topic_transitions(workspace_id, run_id, topic_id, kind)
+       VALUES ($1, $2, $3, 'survived')`,
+      [workspaceId, runId, topicId],
+    )).rejects.toMatchObject({ code: "23505" });
   });
 });

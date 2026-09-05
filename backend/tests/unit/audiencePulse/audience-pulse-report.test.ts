@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyAudiencePulseNarrative,
+  buildAudiencePulseCensusReport,
   buildAudiencePulseComputingReport,
   buildAudiencePulseReport,
   contentGapEligible,
@@ -97,6 +99,8 @@ describe("Audience Pulse report domain", () => {
       generatedAt: baseInput.generatedAt.toISOString(),
       narrativeGeneratedAt: baseInput.generatedAt.toISOString(),
       narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: 0.2,
+      dissolvedTopics: [],
     });
     expect(report.themes[0]!.evidenceIds).toHaveLength(12);
   });
@@ -574,6 +578,46 @@ describe("Audience Pulse report domain", () => {
 
     expect(report.themes[0]?.evidenceIds).toEqual(population.map((item) => item.id).reverse().slice(0, 12));
   });
+
+  it("applies model narrative to one precomputed census report with current gap evidence", () => {
+    const population = buildPopulation(4, (index) => ({ contentGapEligible: index < 2 }));
+    const census = buildAudiencePulseCensusReport({
+      ...baseInput,
+      coverage: { populationSize: 4, sampleSize: 4, sampled: false, facetReadyQuestionCount: 4 },
+      population,
+      topics: [{
+        id: "topic-1",
+        title: "Topic",
+        description: "Description",
+        evidenceIds: population.map((item) => item.id),
+      }],
+      dissolvedTopics: [{ id: "dissolved-topic", title: "Former topic" }],
+    });
+
+    const report = applyAudiencePulseNarrative({
+      census,
+      generatedAt: baseInput.generatedAt,
+      model: {
+        summary: "Current narrative",
+        themes: [],
+        recommendations: [{
+          themeIndex: 0,
+          title: "Document the topic",
+          rationale: "Two current conversations lack support.",
+          questions: ["How does this work?"],
+        }],
+        caveats: [],
+      },
+    });
+
+    expect(report).toMatchObject({
+      summary: "Current narrative",
+      dissolvedTopics: [{ id: "dissolved-topic", title: "Former topic" }],
+      recommendations: [{ themeId: "topic-1", evidenceIds: ["evidence-1", "evidence-2"] }],
+    });
+    expect(report.themes).toBe(census.report.themes);
+    expect(report.contentGaps).toBe(census.report.contentGaps);
+  });
 });
 
 describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
@@ -596,6 +640,8 @@ describe("buildAudiencePulseComputingReport (spec 956 follow-up)", () => {
       generatedAt: "2026-08-01T00:00:00.000Z",
       narrativeGeneratedAt: "2026-08-01T00:00:00.000Z",
       narrativeReuseCount: 0,
+      narrativeReuseMaxDrift: 0.2,
+      dissolvedTopics: [],
     });
     expect(report.themes).toEqual([]);
     expect(report.contentGaps).toEqual([]);

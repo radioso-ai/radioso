@@ -11638,6 +11638,16 @@ components:
         - themeId
         - eligibleEvidenceCount
         - distinctConversationCount
+    AudiencePulseDissolvedTopic:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+      required:
+        - id
+        - title
     AudiencePulseRecommendation:
       type: object
       properties:
@@ -11701,6 +11711,10 @@ components:
         narrativeReuseCount:
           type: integer
           minimum: 0
+        narrativeReuseMaxDrift:
+          type: number
+          minimum: 0
+          maximum: 1
         coverage:
           $ref: "#/components/schemas/AudiencePulseCoverage"
         weeklyVolume:
@@ -11712,6 +11726,10 @@ components:
         unclassifiedQuestionCount:
           type: integer
           minimum: 0
+        dissolvedTopics:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudiencePulseDissolvedTopic"
         themes:
           type: array
           items:
@@ -11733,9 +11751,11 @@ components:
         - generatedAt
         - narrativeGeneratedAt
         - narrativeReuseCount
+        - narrativeReuseMaxDrift
         - coverage
         - weeklyVolume
         - unclassifiedQuestionCount
+        - dissolvedTopics
         - themes
         - contentGaps
         - recommendations

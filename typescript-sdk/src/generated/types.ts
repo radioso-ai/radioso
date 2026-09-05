@@ -7611,6 +7611,10 @@ export interface components {
             eligibleEvidenceCount: number;
             distinctConversationCount: number;
         };
+        AudiencePulseDissolvedTopic: {
+            id: string;
+            title: string;
+        };
         AudiencePulseRecommendation: {
             id: string;
             themeId: string;
@@ -7635,10 +7639,12 @@ export interface components {
             /** Format: date-time */
             narrativeGeneratedAt: string;
             narrativeReuseCount: number;
+            narrativeReuseMaxDrift: number;
             coverage: components["schemas"]["AudiencePulseCoverage"];
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
             summary?: string;
             unclassifiedQuestionCount: number;
+            dissolvedTopics: components["schemas"]["AudiencePulseDissolvedTopic"][];
             themes: components["schemas"]["AudiencePulseTheme"][];
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];
             recommendations: components["schemas"]["AudiencePulseRecommendation"][];

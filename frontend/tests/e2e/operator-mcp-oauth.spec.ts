@@ -167,17 +167,17 @@ const openApiAccess = async (page: Page) => {
   await expect(page.locator("#operator-mcp")).toBeVisible();
 };
 
-test("Operator MCP setup uses compact client tabs with one copyable instruction", async ({ page }) => {
+test("Operator MCP setup keeps client connection state out of the main path", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   await installApiAccessMock(page);
-  await installOperatorRoutes(page, { grants: [] });
+  await installOperatorRoutes(page, { grants: [grant()] });
   await stubRuntimeConfig(page);
   await openApiAccess(page);
 
   const card = page.locator("#operator-mcp");
   await expect(card.getByRole("heading", { name: "Connect an MCP client" })).toBeVisible();
-  await expect(card.getByText("Available", { exact: true })).toBeVisible();
+  await expect(card.getByText("Available", { exact: true })).toHaveCount(0);
   await expect(card.getByRole("tablist", { name: "MCP client" })).toBeVisible();
   await expect(card.getByRole("tab", { name: "Codex", selected: true })).toBeVisible();
   await expect(card.getByRole("tabpanel")).toContainText(`codex mcp add radioso --url ${resource}`);
@@ -188,8 +188,10 @@ test("Operator MCP setup uses compact client tabs with one copyable instruction"
   await page.getByRole("tab", { name: "Other" }).click();
   await expect(card.getByRole("tabpanel")).toContainText('"transport": "http"');
   await expect(card.getByRole("combobox", { name: "Choose MCP client" })).toHaveCount(0);
-  await expect(card.getByText("No operator MCP grants yet.")).toBeVisible();
-  await expect(card.getByText("Not verified", { exact: true })).toBeVisible();
+  await expect(card.getByText("Authorized clients", { exact: true })).toBeVisible();
+  await expect(card.getByText("active", { exact: true })).toHaveCount(0);
+  await expect(card.getByText("Not verified", { exact: true })).toHaveCount(0);
+  await expect(card.getByText("operator:read", { exact: true })).toHaveCount(0);
 });
 
 test("Operator MCP setup is unavailable when the deployment has no canonical resource", async ({ page }) => {
@@ -242,7 +244,7 @@ const installConsentRoutes = async (page: Page, transaction: Record<string, unkn
   });
 };
 
-test("consent identifies the real client, warns about loopback/external data, and submits narrowed scopes", async ({ page }) => {
+test("consent uses clear capability names and one explicit deny action", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   const decisions: unknown[] = [];
@@ -255,37 +257,30 @@ test("consent identifies the real client, warns about loopback/external data, an
   expect(response?.headers()["cache-control"]).toContain("no-store");
 
   await expect(page.getByText("Authorize Radioso MCP", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "https://codex.example" })).toHaveAttribute("href", "https://codex.example")
   await expect(page.getByText("Codex CLI · 0.149.0")).toBeVisible();
   await expect(page.getByText("127.0.0.1:3210", { exact: true })).toBeVisible();
-  await expect(page.getByText(/may receive workspace data/i)).toBeVisible();
-  await expect(page.getByText(/loopback or private-scheme redirect/i)).toBeVisible();
+  await expect(page.getByText(/permissions you select/i)).toBeVisible();
+  await expect(page.getByText(/returns approval to this app on your computer/i)).toBeVisible();
   await expect(page.getByLabel("Workspace", { exact: true })).toHaveValue(workspaceId);
-  await page.getByLabel("Run bounded diagnostics and retrieval probes").uncheck();
-  await expect(page.getByLabel("Keep access for future sessions")).not.toBeChecked();
+  await expect(page.getByText("operator:read", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Cancel" })).toHaveCount(0);
+  await page.getByLabel("Run document searches").uncheck();
+  await expect(page.getByLabel("Stay signed in")).not.toBeChecked();
   await page.getByRole("button", { name: "Approve access" }).click();
   await expect.poll(() => decisions).toHaveLength(1);
   expect(decisions[0]).toEqual({ decision: "approve", workspaceId, approvedToolScopes: ["operator:read", "operator:propose"], offlineAccess: false });
 });
 
-test("consent supports deny and safe no-access, expired, decided, and account-swap states", async ({ page }) => {
+test("consent supports a clear denial and safe no-access, expired, decided, and account-swap states", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { platformSettings: basePlatformSettings() });
   const decisions: unknown[] = [];
   await installConsentRoutes(page, consentTransaction(), decisions);
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Don't allow" }).click();
   await expect.poll(() => decisions).toHaveLength(1);
   expect(decisions[0]).toEqual({ decision: "deny", offlineAccess: false });
   await expect(page).toHaveURL("about:blank");
-  decisions.length = 0;
-
-  await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
-  await page.getByRole("button", { name: "Deny" }).click();
-  await expect.poll(() => decisions).toHaveLength(1);
-  expect(decisions[0]).toEqual({ decision: "deny", offlineAccess: false });
-  await expect(page).toHaveURL("about:blank");
-
   await installConsentRoutes(page, consentTransaction({ workspaces: [] }), decisions);
   await page.goto(`/oauth/operator-mcp/consent?transaction=${transactionId}`);
   await expect(page.getByText("No workspace access", { exact: true })).toBeVisible();
@@ -356,6 +351,9 @@ test("grant inventory exposes safe detail and requires explicit confirmation bef
   await card.getByRole("button", { name: "Inspect" }).click();
   await expect(card.getByText("Safe grant metadata only")).toBeVisible();
   await expect(card.getByText("https://codex.example/client-metadata.json")).toBeVisible();
+  await card.getByRole("button", { name: "Hide details" }).click();
+  await expect(card.getByText("Safe grant metadata only")).toHaveCount(0);
+  await card.getByRole("button", { name: "Inspect" }).click();
   await card.getByRole("button", { name: "Revoke grant" }).click();
   const confirm = page.getByRole("alertdialog", { name: "Revoke grant?" });
   await expect(confirm.getByText(/stop working immediately/i)).toBeVisible();

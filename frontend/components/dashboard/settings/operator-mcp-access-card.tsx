@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { KeyRound, ShieldCheck, X } from 'lucide-react'
+import { KeyRound, ShieldCheck } from 'lucide-react'
 
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -49,13 +49,6 @@ export const selectOperatorMcpArtifactId = (
   return artifacts.find((artifact) => artifact.status !== 'unavailable')?.id ?? artifacts[0]?.id ?? null
 }
 
-const availabilityLabel: Record<OperatorMcpSetupResponse['availability'], string> = {
-  available: 'Available',
-  disabled: 'Disabled',
-  misconfigured: 'Misconfigured',
-  unavailable: 'Unavailable',
-}
-
 const statusVariant = (status: OperatorMcpGrantSummary['status']) =>
   status === 'active' ? 'secondary' as const : 'outline' as const
 
@@ -67,10 +60,7 @@ function ArtifactSetup({ artifact, resource }: { artifact: OperatorMcpClientSetu
 
   return (
     <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{artifact.description}</p>
-        <Badge variant={artifact.status === 'verified' ? 'secondary' : 'outline'}>{artifact.status === 'verified' ? 'Verified' : 'Not verified'}</Badge>
-      </div>
+      <p className="text-sm text-muted-foreground">{artifact.description}</p>
       <CopyValueField label={label} value={value} ariaLabel={`Copy ${artifact.displayName} setup`} className="w-full font-mono text-xs" wrap={Boolean(artifact.configuration)} />
     </div>
   )
@@ -84,6 +74,11 @@ function GrantInventory({ workspaceId, grants, onRefresh }: { workspaceId: strin
   const [error, setError] = useState<string | null>(null)
 
   const openDetail = async (grant: OperatorMcpGrantSummary) => {
+    if (selected?.id === grant.id) {
+      setSelected(null)
+      setDetail(null)
+      return
+    }
     setSelected(grant)
     setError(null)
     try {
@@ -123,11 +118,10 @@ function GrantInventory({ workspaceId, grants, onRefresh }: { workspaceId: strin
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-foreground">{grant.clientName}</p>
                 <p className="text-xs text-muted-foreground">{grant.userName ?? 'Current user'} · Created {formatDate(grant.createdAt)} · Last used {formatDate(grant.lastUsedAt)}</p>
-                <div className="mt-1 flex flex-wrap gap-1">{grant.scopes.map((scope) => <Badge key={scope} variant="outline" className="text-[10px]">{scope}</Badge>)}</div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={statusVariant(grant.status)}>{grant.status}</Badge>
-                <Button type="button" size="sm" variant="ghost" onClick={() => void openDetail(grant)}>Inspect</Button>
+                {grant.status !== 'active' ? <Badge variant={statusVariant(grant.status)}>{grant.status}</Badge> : null}
+                <Button type="button" size="sm" variant="ghost" onClick={() => void openDetail(grant)}>{selected?.id === grant.id ? 'Hide details' : 'Inspect'}</Button>
               </div>
             </div>
           ))}
@@ -135,12 +129,11 @@ function GrantInventory({ workspaceId, grants, onRefresh }: { workspaceId: strin
       )}
       {selected ? (
         <Card>
-          <CardHeader className="flex-row items-start justify-between space-y-0">
+          <CardHeader>
             <div>
               <CardTitle className="text-base">{selected.clientName}</CardTitle>
               <p className="text-sm text-muted-foreground">Safe grant metadata only — credentials are never shown.</p>
             </div>
-            <Button type="button" size="icon" variant="ghost" aria-label="Close grant details" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {detail ? (
@@ -201,8 +194,7 @@ export function OperatorMcpAccessCard({ workspaceId }: { workspaceId: string }) 
       id="operator-mcp"
       icon={<KeyRound className="h-5 w-5 text-primary" />}
       title="Connect an MCP client"
-      description="Choose your client, paste the setup, and sign in."
-      headerEnd={<Badge variant={configured && setup?.availability === 'available' ? 'secondary' : 'outline'}>{setup ? availabilityLabel[setup.availability] : 'Checking'}</Badge>}
+      description="Paste a setup command, then sign in."
     >
       {loading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner className="h-4 w-4" /> Checking deployment and grants…</div> : null}
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

@@ -47,12 +47,12 @@ const transaction = (redirectUri: string): OperatorMcpTransactionResponse => ({
 })
 
 describe('operator MCP consent warnings', () => {
-  it('always warns about external client data access', () => {
-    expect(consentWarnings(transaction('https://client.example/callback'))[0]).toContain('may receive workspace data')
+  it('explains that the client receives only the permissions selected on the page', () => {
+    expect(consentWarnings(transaction('https://client.example/callback'))[0]).toContain('permissions you select')
   })
 
   it('adds a warning for loopback redirects', () => {
-    expect(consentWarnings(transaction('http://127.0.0.1:3210/callback'))).toHaveLength(2)
+    expect(consentWarnings(transaction('http://127.0.0.1:3210/callback'))[1]).toContain('returns approval to')
   })
 
   it('does not classify an ordinary HTTPS redirect as loopback', () => {

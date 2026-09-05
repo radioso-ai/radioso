@@ -573,7 +573,7 @@ export interface AgentDirectiveUpdateOptions {
 }
 
 export interface AgentRepositoryPort {
-  create(workspaceId: string, input: AgentInput): Promise<AgentRecord>;
+  create(workspaceId: string, input: AgentInput, options?: { agentId?: string }): Promise<AgentRecord>;
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null>;
   findDefaultByWorkspaceId(workspaceId: string): Promise<AgentRecord | null>;
   findByAnonymousChatToken(token: string): Promise<AgentRecord | null>;
@@ -597,13 +597,13 @@ export class AgentRepository implements AgentRepositoryPort {
     private readonly skillSettings?: AgentSkillSettingsRegistry,
   ) {}
 
-  async create(workspaceId: string, input: AgentInput): Promise<AgentRecord> {
+  async create(workspaceId: string, input: AgentInput, options: { agentId?: string } = {}): Promise<AgentRecord> {
     const normalized = validateAgentInput(input, {
       extensions: this.surfaceExtensions,
       skillSettings: this.skillSettings,
     });
     return this.db.transaction().execute(async (trx) => {
-      const agentId = randomUUID();
+      const agentId = options.agentId ?? randomUUID();
       const result = await sql<AgentRow>`
         INSERT INTO agents (
           id,

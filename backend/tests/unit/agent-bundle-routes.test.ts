@@ -11,6 +11,35 @@ const setup = async () => {
 };
 
 describe("agent bundle routes", () => {
+  it("replays an applied idempotency key instead of creating another agent", async () => {
+    const { app, repositories, session } = await setup();
+    const created = await request(app)
+      .post("/api/v1/agents")
+      .set(adminSessionHeaders(session))
+      .send({ name: "Bundle source", customInstruction: "Be precise." })
+      .expect(201);
+    const exported = await request(app)
+      .get(`/api/v1/agents/${created.body.id}/bundle`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+
+    const first = await request(app)
+      .post("/api/v1/agents/bundle")
+      .set(adminSessionHeaders(session))
+      .send({ ...exported.body, idempotencyKey: "repeat-import" })
+      .expect(201);
+    const replay = await request(app)
+      .post("/api/v1/agents/bundle")
+      .set(adminSessionHeaders(session))
+      .send({ ...exported.body, idempotencyKey: "repeat-import" })
+      .expect(200);
+
+    expect(replay.body).toEqual({ ...first.body, replayed: true });
+    expect(repositories.auditEventRepository.items.filter((event) =>
+      event.eventType === "agent.bundle.imported" && event.eventStatus === "success",
+    )).toHaveLength(1);
+  });
+
   it("exports an agent and imports it back as a behaviourally equivalent agent", async () => {
     const { app, session } = await setup();
 
@@ -58,6 +87,19 @@ describe("agent bundle routes", () => {
 
     expect(imported.body.agentId).toBeTruthy();
     expect(imported.body.agentId).not.toBe(agentId);
+    expect(imported.body.importId).toEqual(expect.any(String));
+
+    await request(app)
+      .get(`/api/v1/agents/bundle/imports/${imported.body.importId}`)
+      .set(adminSessionHeaders(session))
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          id: imported.body.importId,
+          state: "applied",
+          agentId: imported.body.agentId,
+        });
+      });
 
     const reExported = await request(app)
       .get(`/api/v1/agents/${imported.body.agentId}/bundle`)

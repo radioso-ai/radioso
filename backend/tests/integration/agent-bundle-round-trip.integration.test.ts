@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
+import { AgentBundleImportRepository } from "../../src/db/repositories/agentBundleImportRepository.js";
 import { AgentSkillRepository } from "../../src/modules/agentSkills/public.js";
 import { ContextVariableRepository } from "../../src/db/repositories/contextVariableRepository.js";
 import { RoutineDefinitionRepository } from "../../src/db/repositories/routineDefinitionRepository.js";
@@ -198,7 +199,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       expect(portable).not.toContain(id);
     }
 
-    const imported = await services.importService.import(workspace.id, bundle);
+    const imported = await services.importService.import({ workspaceId: workspace.id, actorAccountId: null, bundle });
 
     expect(imported.agentId).not.toBe(source.id);
     expect(imported.unresolved).toEqual([]);
@@ -251,7 +252,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       agentSkills: [],
     } as never;
 
-    await expect(services.importService.import(workspace.id, bundle)).rejects.toThrow();
+    await expect(services.importService.import({ workspaceId: workspace.id, actorAccountId: null, bundle })).rejects.toThrow();
 
     // Nothing left behind, and no dangling workspace default pointing at it.
     expect(await agentRepository.listByWorkspaceId(workspace.id)).toHaveLength(0);
@@ -285,7 +286,7 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
     const services = buildServices();
     const bundle = await services.exportService.export(sourceWorkspace.id, source.id);
 
-    const imported = await services.importService.import(targetWorkspace.id, bundle);
+    const imported = await services.importService.import({ workspaceId: targetWorkspace.id, actorAccountId: null, bundle });
 
     expect(imported.agentId).toEqual(expect.any(String));
     expect(imported.unresolved).toContainEqual(expect.objectContaining({
@@ -340,6 +341,9 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       routineDefinitionService,
       capabilityRegistry,
       agentRepository,
+      auditService: { record: async () => undefined } as never,
+      imports: new AgentBundleImportRepository(database.kysely),
+      importOrphanAgeMs: 15 * 60 * 1_000,
       mcpConnectionRepository: { listByAgent: async () => [] },
       externalSkillDefinitionRepository: { listByAgent: async () => [] },
     });

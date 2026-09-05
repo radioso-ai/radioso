@@ -68,6 +68,21 @@ accepted only while every field it lacks defaults to the behaviour that version 
 
 ## Import rules worth keeping
 
+## Durable import jobs and cleanup
+
+Each import creates a durable job before it creates an agent. An idempotency key has
+one active job per workspace; an applied job replays its same result, while failed
+and compensated jobs permit a new attempt. The service reserves and records the
+agent ID before calling the agents module so a crash after creation remains
+recoverable without sharing a transaction across module boundaries.
+
+The cleanup worker leases stale `queued` or `applying` jobs. Its lease fences
+`markApplied`, `markFailed`, and compensation transitions: once cleanup owns a job,
+the request cannot report success. The default orphan age is 15 minutes through
+`AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS`; imports normally take seconds, so an import
+that runs longer receives a retryable conflict and cleanup removes its reserved
+agent. Cloud Run task deployments invoke the same sweep on a schedule.
+
 - **Never re-route.** `contactRequestDelivery` is redacted on export and cleared on
   import. The data exposure matters, but the sharper reason is behavioural: an agent
   that kept it would deliver contact requests to the *source* workspace's people from
@@ -121,8 +136,21 @@ projects them with credentials placeheld) but are not re-created on import: a
 connection needs its credential re-entered or its OAuth flow re-run before it can
 serve. Each one is reported in `unresolved` so the operator knows what to rebuild.
 
-Import always creates a new agent. Importing into an existing agent is a merge and
-needs a collision policy that has not been decided.
+Each import has a durable job record. The request response carries its `importId`,
+and `GET /api/v1/agents/bundle/imports/{importId}` exposes the state after the
+request has ended. Import still always creates a new agent; importing into an
+existing agent is a merge and needs a collision policy that has not been decided.
+
+An optional request-body `idempotencyKey` scopes retry protection to one workspace.
+An applied key replays the saved result; a queued or applying key returns a conflict;
+and a failed or compensated key may create a new job. The partial unique index on
+active jobs is the concurrency boundary, not a process-local lock.
+
+The worker compensates an `applying` job whose lease age exceeds
+`AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS` (15 minutes by default). The job retains the
+created agent id after deletion for support correlation, records a system audit event,
+and increments the compensation counter. This is deliberately a compensating flow,
+not one transaction threaded through the four owning modules.
 
 ## Operator surface
 

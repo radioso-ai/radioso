@@ -494,9 +494,11 @@ Public surfaces and key files:
 - `backend/src/modules/agentBundle/domain.ts` (bundle shape, `unresolved` kinds)
 - `backend/src/modules/agentBundle/exportService.ts`
 - `backend/src/modules/agentBundle/importService.ts`
+- `backend/src/modules/agentBundle/importCleanupWorker.ts` (stale applying-job compensation)
 - `backend/src/modules/agentBundle/importProjection.ts` (placeholder handling)
 - `backend/src/app/composition/agentBundleComposition.ts` (port adapting)
 - `backend/src/app/http/routes/agentBundleRoutes.ts`
+- `backend/src/db/repositories/agentBundleImportRepository.ts` (durable import lifecycle and idempotency)
 - `backend/src/modules/skills/capabilityRegistry.ts` (`portable` settings flag)
 - `frontend/lib/agent-bundle.ts` (file reading, filename, unresolved grouping)
 - `frontend/lib/api-agent-bundle.ts`
@@ -506,6 +508,8 @@ Public surfaces and key files:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-bundle-export.test.ts tests/unit/agent-bundle-import.test.ts tests/unit/agent-bundle-routes.test.ts tests/unit/skill-capability-portability.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/agent-bundle-import-jobs.test.ts tests/unit/agent-bundle-import-cleanup-worker.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/agent-bundle-import-jobs.integration.test.ts --no-file-parallelism`
 - `cd frontend && pnpm exec vitest run tests/unit/agent-bundle.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/agent-bundle.spec.ts`
 

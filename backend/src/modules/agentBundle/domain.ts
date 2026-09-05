@@ -143,5 +143,28 @@ export interface AgentBundleUnresolvedReference {
 
 export interface AgentBundleImportResult {
   agentId: string;
+  importId: string;
+  /** True only when this response reuses an already-applied idempotent import. */
+  replayed: boolean;
   unresolved: AgentBundleUnresolvedReference[];
+}
+
+export type AgentBundleImportState = "queued" | "applying" | "applied" | "failed" | "compensated";
+
+export type AgentBundleImportFailureCode = "invalid_bundle" | "apply_failed";
+
+/** A durable import attempt, retained so callers can inspect asynchronous recovery. */
+export interface AgentBundleImportRecord {
+  id: string;
+  workspaceId: string;
+  actorAccountId: string | null;
+  idempotencyKey: string | null;
+  state: AgentBundleImportState;
+  agentId: string | null;
+  unresolved: AgentBundleUnresolvedReference[];
+  failureCode: AgentBundleImportFailureCode | null;
+  createdAt: Date;
+  updatedAt: Date;
+  appliedAt: Date | null;
+  compensatedAt: Date | null;
 }

@@ -767,6 +767,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = tostring(var.copilot_conversation_retention_days)
       }
       env {
+        name  = "AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS"
+        value = tostring(var.agent_bundle_import_orphan_age_ms)
+      }
+      env {
         name  = "PRODUCT_ANALYTICS_SINKS"
         value = var.product_analytics_sinks
       }

@@ -776,6 +776,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
 
   const agentBundleServices = createAgentBundleServices({
     logger,
+    metrics: infrastructure.metricsRegistry,
+    auditService: infrastructure.auditService,
+    imports: repositories.agentBundleImportRepository,
+    importOrphanAgeMs: env.AGENT_BUNDLE_IMPORT_ORPHAN_AGE_MS,
     agentService,
     authoredDirectiveService,
     agentSkillsService,
@@ -890,6 +894,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     authoredDirectiveService,
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
+    agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
     routineDefinitionService,
     routineDraftAssistService,
     directiveAuthorService,

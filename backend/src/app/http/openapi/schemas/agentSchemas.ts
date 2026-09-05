@@ -1012,6 +1012,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       routines: z.array(AgentBundleRoutineSchema).optional(),
       contextVariables: z.array(AgentBundleContextVariableSchema).optional(),
       agentSkills: z.array(AgentBundleImportSkillSchema).optional(),
+      idempotencyKey: z.string().min(1).max(200).optional().openapi({
+        description: "Caller-supplied key that replays a completed import in this workspace instead of creating another agent. A key whose import is still applying returns 409.",
+      }),
     }).openapi({
       description:
         "A previously exported agent bundle. `bundleVersion` and `agent.schemaVersion` are checked against what "
@@ -1023,8 +1026,30 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
   const AgentBundleImportResponseSchema = registry.register(
     "AgentBundleImportResponse",
     z.object({
+      importId: z.string().uuid(),
       agentId: z.string().uuid(),
+      replayed: z.boolean().openapi({ description: "True when this is the completed result of a prior request with the same idempotencyKey." }),
       unresolved: z.array(AgentBundleUnresolvedReferenceSchema),
+    }),
+  );
+
+  const AgentBundleImportParamsSchema = registry.register(
+    "AgentBundleImportParams",
+    z.object({ importId: z.string().uuid() }),
+  );
+
+  const AgentBundleImportStatusSchema = registry.register(
+    "AgentBundleImportStatus",
+    z.object({
+      id: z.string().uuid(),
+      state: z.enum(["queued", "applying", "applied", "failed", "compensated"]),
+      agentId: z.string().uuid().nullable(),
+      unresolved: z.array(AgentBundleUnresolvedReferenceSchema),
+      failureCode: z.enum(["invalid_bundle", "apply_failed"]).nullable(),
+      createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
+      appliedAt: z.string().datetime().nullable(),
+      compensatedAt: z.string().datetime().nullable(),
     }),
   );
 
@@ -1090,5 +1115,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     AgentBundleSchema,
     AgentBundleImportRequestSchema,
     AgentBundleImportResponseSchema,
+    AgentBundleImportParamsSchema,
+    AgentBundleImportStatusSchema,
   });
 };

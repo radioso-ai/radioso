@@ -1030,6 +1030,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/bundle/imports/{importId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an agent bundle import job
+         * @description Returns the durable state of an import attempt, including any compensated orphan cleanup.
+         */
+        get: operations["getAgentBundleImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -5593,11 +5613,40 @@ export interface components {
             routines?: components["schemas"]["AgentBundleRoutine"][];
             contextVariables?: components["schemas"]["AgentBundleContextVariable"][];
             agentSkills?: components["schemas"]["AgentBundleImportSkill"][];
+            /** @description Caller-supplied key that replays a completed import in this workspace instead of creating another agent. A key whose import is still applying returns 409. */
+            idempotencyKey?: string;
         };
         AgentBundleImportResponse: {
             /** Format: uuid */
+            importId: string;
+            /** Format: uuid */
             agentId: string;
+            /** @description True when this is the completed result of a prior request with the same idempotencyKey. */
+            replayed: boolean;
             unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+        };
+        AgentBundleImportParams: {
+            /** Format: uuid */
+            importId: string;
+        };
+        AgentBundleImportStatus: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            state: "queued" | "applying" | "applied" | "failed" | "compensated";
+            /** Format: uuid */
+            agentId: string | null;
+            unresolved: components["schemas"]["AgentBundleUnresolvedReference"][];
+            /** @enum {string|null} */
+            failureCode: "invalid_bundle" | "apply_failed" | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            appliedAt: string | null;
+            /** Format: date-time */
+            compensatedAt: string | null;
         };
         DocumentCreateRequest: {
             title: string;
@@ -12303,6 +12352,46 @@ export interface operations {
             };
         };
     };
+    getAgentBundleImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                importId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Import job returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportStatus"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Import job not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgents: {
         parameters: {
             query?: never;
@@ -13836,6 +13925,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Existing completed import replayed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentBundleImportResponse"];
+                };
+            };
             /** @description Agent created from bundle */
             201: {
                 headers: {
@@ -13856,6 +13954,15 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description An import with this idempotency key is still applying */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

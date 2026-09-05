@@ -79,7 +79,7 @@ import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from 
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
 import type { SkillAuthoringCatalog, SkillCatalogService } from "../../modules/skills/public.js";
 import type { AgentSkillsService } from "../../modules/agentSkills/public.js";
-import type { AgentBundleExportService, AgentBundleImportService } from "../../modules/agentBundle/public.js";
+import type { AgentBundleExportService, AgentBundleImportCleanupWorker, AgentBundleImportService } from "../../modules/agentBundle/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import type { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
@@ -243,6 +243,7 @@ export interface AppDependencies {
   agentService: AgentService;
   agentBundleExportService: AgentBundleExportService;
   agentBundleImportService: AgentBundleImportService;
+  agentBundleImportCleanupWorker: AgentBundleImportCleanupWorker;
   authoredDirectiveService: AuthoredDirectiveService;
   routineDefinitionService: RoutineDefinitionService;
   routineDraftAssistService: RoutineDraftAssistService;

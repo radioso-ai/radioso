@@ -4,6 +4,7 @@ import {
   AuthoredDirectiveService,
   DirectiveAuthorService,
   AgentService,
+  agentInputFieldSchemas,
   mergeAgentSurfaceSettings,
   validateAgentInput,
   type AgentInput,
@@ -118,61 +119,6 @@ const diagnosticSummary = (diagnostics: ReadonlyArray<RoutineValidationDiagnosti
   diagnostics.map((diagnostic) => diagnostic.message).join(" ");
 const withRationale = (summary: string, rationale?: string): string => rationale ? `${summary} ${rationale}` : summary;
 const settingPayloadSchema = z.object({ value: z.unknown(), rationale: z.string().min(1).max(1_000).optional() }).strict();
-// `propose_agent_setting` addresses one setting at a time. Keep its value
-// boundary field-typed so normalizers cannot silently turn a malformed proposal
-// into a different effective setting (for example, a string instead of a boolean).
-const agentSettingValueSchemas = {
-  name: z.string(),
-  internalName: z.string(),
-  customInstruction: z.string(),
-  suggestedQuestionsEnabled: z.boolean(),
-  assistantLinkUtmEnabled: z.boolean(),
-  citationDisplayEnabled: z.boolean(),
-  contactRequestsEnabled: z.boolean(),
-  webhookExportsEnabled: z.boolean(),
-  handoffOnRetrievalMiss: z.boolean(),
-  contactRequestDelivery: z.object({
-    recipientEmails: z.array(z.string()).optional(),
-    webhook: z.union([z.null(), z.object({ url: z.string() })]).optional(),
-  }),
-  retrievalEnabled: z.boolean(),
-  logo: z.union([
-    z.null(),
-    z.object({
-      bucket: z.string(),
-      objectPath: z.string(),
-      generation: z.string().nullable().optional(),
-      mimeType: z.string(),
-      filename: z.string(),
-      sizeBytes: z.number(),
-    }),
-  ]),
-  theme: z.object({
-    brand: z.string().optional(),
-    brandText: z.string().optional(),
-    surface: z.string().optional(),
-    text: z.string().optional(),
-  }),
-  branding: z.object({
-    hidePoweredBy: z.boolean().optional(),
-    privacyPolicyUrl: z.string().nullable().optional(),
-  }),
-  greetingInstruction: z.string(),
-  assistantDefaultLocale: z.string().nullable(),
-  proactiveGreetingEnabled: z.boolean(),
-  sourceScope: z.union([
-    z.object({ mode: z.literal("all") }),
-    z.object({ mode: z.literal("selected"), sourceIds: z.array(z.string()) }),
-  ]),
-  skillSettings: z.record(z.unknown()),
-  chatModelOverride: z.union([
-    z.null(),
-    z.object({
-      provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
-      model: z.string(),
-    }),
-  ]),
-} satisfies Partial<Record<keyof AgentInput, z.ZodType<unknown>>>;
 const skillTargetRefSchema = z.object({ agentId: z.string().uuid(), skillId: z.string().uuid().nullable() }).strict();
 const skillTargetSchema = z.object({ kind: z.string().trim().min(1), id: z.string().uuid().nullable() }).strict();
 const skillConfigPayloadSchema = z.object({
@@ -1022,7 +968,7 @@ const routinePayload = (value: unknown) => {
 };
 
 const settingPatch = (settingKey: string, value: unknown): AgentInput => {
-  const schema = agentSettingValueSchemas[settingKey as keyof typeof agentSettingValueSchemas];
+  const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
   if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
   const parsed = schema.safeParse(value);
   if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);

@@ -33,6 +33,12 @@ export {
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
 export {
+  agentInputChatModelOverrideSchema,
+  agentInputFieldSchemas,
+  agentInputLlmProviderNames,
+  agentInputThemeSchema,
+} from "./agentInputSchema.js";
+export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
   readNotifyContactDelivery,

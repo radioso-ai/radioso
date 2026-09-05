@@ -154,7 +154,7 @@ export class SlackPlugin implements ConnectorPlugin {
           },
           responseUrlClient: new FetchSlackResponseUrlClient({
             assertPublicUrl: extendedContext.assertPublicUrl,
-            fetchImpl: (input, init) => context.publicHttp.fetch(input as string | URL, init),
+            fetchImpl: (input, init) => context.publicHttp.fetch(input, init),
           }),
           audit: extendedContext.auditService,
           metrics: extendedContext.metricsRegistry ?? undefined,

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { stringifyUnknown } from "../../../shared/text/stringifyUnknown.js";
 import { isDynamicDateToken, normalizeDateRuleValue } from "./dynamicDateToken.js";
 
 export const metadataRuleOperators = [
@@ -295,7 +296,7 @@ export const normalizeMetadataRules = (value: unknown): RetrievalMetadataRule[] 
       field: typeof candidate.field === "string" ? candidate.field : "",
       valueType: candidate.valueType as MetadataValueType | undefined,
       operator: candidate.operator as MetadataRuleOperator | undefined,
-      value: typeof candidate.value === "string" ? candidate.value : String(candidate.value ?? ""),
+      value: typeof candidate.value === "string" ? candidate.value : stringifyUnknown(candidate.value),
     });
 
     const conditions =

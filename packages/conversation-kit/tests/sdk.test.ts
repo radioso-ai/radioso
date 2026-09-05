@@ -17,7 +17,7 @@ describe("conversation kit SDK facade", () => {
       name: "Hello World",
       instructions: ["Greet developers clearly."],
     });
-    client.addDirective(agent.id, {
+    await client.addDirective(agent.id, {
       name: "concise",
       condition: { kind: "always" },
       action: "Keep the answer concise.",
@@ -47,7 +47,7 @@ describe("conversation kit SDK facade", () => {
     const agent = client.createAgent({ name: "Editable Agent" });
     const session = client.createSession({ agentId: agent.id });
 
-    client.createDirective(agent.id, {
+    await client.createDirective(agent.id, {
       name: "restart",
       condition: { kind: "always" },
       action: "Mention restart survival.",

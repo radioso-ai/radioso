@@ -77,7 +77,7 @@ export const parseInlineAssertionGroups = (
   let invalidSourceCount = Math.max(0, assertionStarts - tokens.length);
 
   for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index]!;
+    const token = tokens[index];
     if (token.value === "?") {
       groups.push([]);
       continue;
@@ -86,7 +86,7 @@ export const parseInlineAssertionGroups = (
     const rawSources: unknown[] = [token.value];
     let end = token.end;
     while (index + 1 < tokens.length) {
-      const next = tokens[index + 1]!;
+      const next = tokens[index + 1];
       if (!/^[ \t]*$/.test(body.slice(end, next.start)) || next.value === "?") {
         break;
       }

@@ -6,6 +6,7 @@ import type {
   OrganizationCreationGuard,
   OrganizationCreationReservation,
 } from "../../src/shared/domain/organizationCreationGuard.js";
+import { forbidden, tooManyRequests } from "../../src/shared/domain/errors.js";
 
 class BlockingOrganizationCreationGuard implements OrganizationCreationGuard {
   async reserve(input: { intent: "signup" } | { intent: "additional"; userId: string }): Promise<OrganizationCreationReservation> {
@@ -15,17 +16,15 @@ class BlockingOrganizationCreationGuard implements OrganizationCreationGuard {
         async release() {},
       };
     }
-    throw {
-      statusCode: 429,
-      code: "rate_limit_exceeded",
-      message: "Organization creation limit reached. You can create up to 1 organization per month. Try again after 2026-07-01T00:00:00.000Z.",
-      details: {
+    throw tooManyRequests(
+      "Organization creation limit reached. You can create up to 1 organization per month. Try again after 2026-07-01T00:00:00.000Z.",
+      {
         limit: 1,
         used: 1,
         periodStart: "2026-06-01",
         resetAt: "2026-07-01T00:00:00.000Z",
       },
-    };
+    );
   }
 
   async isSignupAvailable(): Promise<boolean> {
@@ -36,11 +35,7 @@ class BlockingOrganizationCreationGuard implements OrganizationCreationGuard {
 class ClosedRegistrationGuard implements OrganizationCreationGuard {
   async reserve(input: { intent: "signup" } | { intent: "additional"; userId: string }): Promise<OrganizationCreationReservation> {
     if (input.intent === "signup") {
-      throw {
-        statusCode: 403,
-        code: "forbidden",
-        message: "Registration is closed. Ask an organization owner for an invitation.",
-      };
+      throw forbidden("Registration is closed. Ask an organization owner for an invitation.");
     }
     return { async commit() {}, async release() {} };
   }

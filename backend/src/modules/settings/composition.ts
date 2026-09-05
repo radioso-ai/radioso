@@ -5,24 +5,9 @@ export { AgentConverseSessionService } from "./services/agentConverseSessionServ
 export { embeddingModelIds } from "./domain/ingestionSettings.js";
 export { PlatformSettingsService } from "./services/platformSettingsService.js";
 export { DefaultWebsiteEmbedIntegrationProvider } from "./domain/websiteEmbedIntegration.js";
-export {
-  WorkspaceLlmCapabilitySettingsService,
-  type WorkspaceLlmCapabilityActor,
-} from "./services/workspaceLlmCapabilitySettingsService.js";
-export {
-  workspaceLlmCapabilities,
-  type WorkspaceLlmCapability,
-  type WorkspaceLlmCapabilityPreference,
-  type WorkspaceLlmCapabilityPreferenceInput,
-} from "./contracts/llmCapability.js";
+export { WorkspaceLlmCapabilitySettingsService } from "./services/workspaceLlmCapabilitySettingsService.js";
 export type {
-  DeclaredMetadataFieldSourcePort,
-  EmbeddingModelTransitionFailureReason,
   EmbeddingModelTransitionPort,
-  EmbeddingModelTransitionReadiness,
   EmbeddingModelTransitionState,
-  EmbeddingModelTransitionStatus,
-  IngestionSettingsRepositoryPort,
-  RetrievalMetadataFieldSourcePort,
   WorkspaceLlmCapabilityPreferencesRepositoryPort,
 } from "./contracts/services.js";

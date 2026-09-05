@@ -140,7 +140,7 @@ describe("REST agent channel chat", () => {
       env: {
         ...createDependencies().env,
         RADIOSO_TRUSTED_PROXY_HOPS: 2,
-      } as AppDependencies["env"],
+      },
     });
 
     await request(createApp(dependencies))

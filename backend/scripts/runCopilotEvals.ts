@@ -91,7 +91,7 @@ const parseFlags = (argv: string[]): Flags => {
     keepWorkspace: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index]!;
+    const arg = argv[index];
     if (arg === "--update-baseline") flags.updateBaseline = true;
     else if (arg === "--samples") flags.samples = Math.max(1, parseNumber(argv[++index], 1));
     // Clamped, not coerced: `|| 1` turned an explicit `--pass-threshold 0` into unanimous, which is

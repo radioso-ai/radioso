@@ -7,6 +7,7 @@ import {
 } from "../../shared/domain/websiteEmbed.js";
 import { isKnownModelForProvider } from "../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../shared/infra/llm/providerTypes.js";
+import { stringifyUnknown } from "../../shared/text/stringifyUnknown.js";
 import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
 import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
 import type { AuthoredDirective } from "./authoredDirectives.js";
@@ -23,7 +24,7 @@ export interface AgentChatModelOverride {
   model: string;
 }
 
-export interface ValidateAgentInputOptions {
+interface ValidateAgentInputOptions {
   /**
    * When provided, entries in `surfaceSettings.extensions` are validated by
    * the matching extension's `normalize()` method. Unknown keys pass through
@@ -95,7 +96,7 @@ export const hasConfiguredContactDestination = (
 ): boolean => delivery.recipientEmails.length > 0 || delivery.webhook !== null;
 
 /** Minimal view of a `contact_human` notify skill needed to resolve its delivery. */
-export interface ContactNotifySkillView {
+interface ContactNotifySkillView {
   kind: string;
   enabled?: boolean;
   config?: Record<string, unknown>;
@@ -177,18 +178,17 @@ export interface AgentGreetingSettings {
   proactiveGreetingEnabled: boolean;
 }
 
-export interface AgentSurfaceSettings {
+interface AgentSurfaceSettings {
   enabled: boolean;
 }
 
-export interface PublicAgentSurfaceSettings extends AgentSurfaceSettings {
+interface PublicAgentSurfaceSettings extends AgentSurfaceSettings {
   token: string | null;
 }
 
-export interface AuthenticatedChatSurfaceSettings extends AgentSurfaceSettings {}
+export type AuthenticatedChatSurfaceSettings = AgentSurfaceSettings;
 
-export interface AnonymousChatSurfaceSettings extends PublicAgentSurfaceSettings {
-}
+export type AnonymousChatSurfaceSettings = PublicAgentSurfaceSettings;
 
 export type AgentEmbedTheme = WebsiteEmbedThemeSettings;
 
@@ -225,7 +225,7 @@ export interface ConversationAgentSurfaceSettings {
   extensions: Record<string, unknown>;
 }
 
-export interface Agent {
+interface Agent {
   id: string;
   workspaceId: string;
   name: string;
@@ -698,7 +698,7 @@ const normalizeChatModelOverride = (value: unknown): AgentChatModelOverride | nu
     throw badRequest("chatModelOverride.provider and chatModelOverride.model must be set together");
   }
   if (typeof provider !== "string" || !AGENT_PROVIDER_NAMES.includes(provider as LlmProviderName)) {
-    throw badRequest(`Unknown chat provider: ${String(provider)}`);
+    throw badRequest(`Unknown chat provider: ${stringifyUnknown(provider)}`);
   }
   if (typeof model !== "string" || model.trim().length === 0) {
     throw badRequest("chatModelOverride.model must not be empty");
@@ -747,7 +747,7 @@ export const normalizeWebsiteEmbedSurfaceSettings = (
     enabled,
     token: typeof record.token === "string" ? record.token : null,
     allowedOrigins,
-    launcherLabel: normalizeText((record.launcherLabel as string | undefined) ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
+    launcherLabel: normalizeText((record.launcherLabel) ?? "Chat with us", "websiteEmbedLauncherLabel", 80),
     launcherPosition: normalizeSurfacePosition(record.launcherPosition),
     theme: normalizeEmbedTheme(record.theme ?? options.themeFallback),
     copy: normalizeEmbedCopy(record.copy),

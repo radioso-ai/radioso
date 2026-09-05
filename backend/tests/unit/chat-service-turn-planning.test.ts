@@ -126,7 +126,7 @@ const plannerFactory = (input: {
   const inference = new ModelInferencePipelineService(
     {
       metadata: { capability: "chat", provider: "openai", model: "gpt-planner" },
-      complete: complete as never,
+      complete: complete,
       stream: vi.fn(),
     },
     input.recorder,
@@ -703,7 +703,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
-      forTurn: async () => ({
+      forTurn: async () => (({
         routines: [routine],
         activator: { activate: async () => null },
         runner: {
@@ -715,9 +715,7 @@ describe("chat service fused turn planning", () => {
             };
           },
         },
-      } as unknown as NonNullable<Awaited<ReturnType<
-        NonNullable<ChatServiceOptions["routineProvider"]>["forTurn"]
-      >>>),
+      })),
     };
     const service = buildService({
       pipeline: directPipeline("inspect this checkout"),
@@ -784,7 +782,7 @@ describe("chat service fused turn planning", () => {
       clear: async () => {},
     };
     const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
-      forTurn: async () => ({
+      forTurn: async () => (({
         routines: [routine],
         activator: { activate: async () => null },
         runner: {
@@ -795,9 +793,7 @@ describe("chat service fused turn planning", () => {
             yielded: true,
           }),
         },
-      } as unknown as NonNullable<Awaited<ReturnType<
-        NonNullable<ChatServiceOptions["routineProvider"]>["forTurn"]
-      >>>),
+      })),
     };
     const complete = vi.fn(async (request: unknown) => {
       void request;
@@ -1164,7 +1160,7 @@ describe("chat service fused turn planning", () => {
           registry,
           fallback: registry.activator(rankedActivationGateway),
         }),
-        runner: { resume: resume as never },
+        runner: { resume: resume },
       }),
     };
     const service = buildService({

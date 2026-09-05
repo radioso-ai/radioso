@@ -12,10 +12,10 @@ const {
   buildOssTailwindSources,
   disableEnterpriseFrontendRoutes,
   enableEnterpriseFrontendRoutes,
-} = await import(moduleUrl.href) as any;
+} = await import(moduleUrl.href);
 const {
   validateFeatureManifests,
-} = await import(manifestModuleUrl.href) as any;
+} = await import(manifestModuleUrl.href);
 
 let tempRoot: string | null = null;
 
@@ -247,7 +247,7 @@ describe("Enterprise frontend route sync", () => {
     const {
       collectFrontendRouteContributions,
       loadEnterpriseFeatureManifests,
-    } = await import(manifestModuleUrl.href) as any;
+    } = await import(manifestModuleUrl.href);
     const frontendRouteContributions = collectFrontendRouteContributions(await loadEnterpriseFeatureManifests());
 
     expect(frontendRouteContributions.map((route: { relativePath: string }) => route.relativePath))

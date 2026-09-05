@@ -72,8 +72,8 @@ describe("RoutineRegistry ranked activation", () => {
     const result = await new RoutineRegistry(registrations, { policy }).activator(gw).activate({ turn });
 
     expect(gw.complete).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toContain("routine_0");
-    expect(vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt).toContain("routine_9");
+    expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toContain("routine_0");
+    expect(vi.mocked(gw.complete).mock.calls[0][0].systemPrompt).toContain("routine_9");
     expect(result).toMatchObject({
       kind: "activate",
       routineId: "routine_7",
@@ -117,7 +117,7 @@ describe("RoutineRegistry ranked activation", () => {
       turn,
     });
     expect(gw.complete).toHaveBeenCalledTimes(1);
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("routine_4");
     expect(prompt).toContain("routine_2");
     expect(prompt).not.toContain("routine_0");
@@ -251,7 +251,7 @@ describe("RoutineRegistry ranked activation", () => {
     ], { policy }).activator(gw).activate({ turn });
 
     expect(gw.complete).toHaveBeenCalledTimes(1);
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("enabled");
     expect(prompt).not.toContain("disabled");
     expect(prompt).not.toContain("Disabled routine must not be ranked");
@@ -277,7 +277,7 @@ describe("RoutineRegistry ranked activation", () => {
     });
 
     expect(gw.complete).toHaveBeenCalledTimes(1);
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("available");
     expect(prompt).not.toContain("completed");
     expect(prompt).not.toContain("Completed routine must not be ranked");
@@ -300,7 +300,7 @@ describe("RoutineRegistry ranked activation", () => {
     });
 
     expect(gw.complete).toHaveBeenCalledTimes(1);
-    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    const prompt = vi.mocked(gw.complete).mock.calls[0][0].systemPrompt;
     expect(prompt).toContain("repeatable");
     expect(result).toMatchObject({ kind: "activate", routineId: "repeatable" });
   });

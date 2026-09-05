@@ -72,9 +72,9 @@ afterEach(() => {
 
 describe('Needs Attention query state', () => {
   it('uses the four exact variants and shares attention cache between view and rail', async () => {
-    vi.mocked(hitlApi.listPendingDecisions).mockResolvedValue({ decisions: [] } as never)
+    vi.mocked(hitlApi.listPendingDecisions).mockResolvedValue({ decisions: [] })
     vi.mocked(chatApi.listChatHistory).mockResolvedValue({ conversations: [], total: 0 } as never)
-    vi.mocked(qualityApi.listTurns).mockResolvedValue(page as never)
+    vi.mocked(qualityApi.listTurns).mockResolvedValue(page)
     let client!: QueryClient
     await renderProbe((_value, nextClient) => { client = nextClient })
     await vi.waitFor(() => {

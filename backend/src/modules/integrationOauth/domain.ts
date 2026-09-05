@@ -33,7 +33,6 @@ export const oauthConfigInputSchema = z
   })
   .strict();
 
-export type OauthConfigInput = z.infer<typeof oauthConfigInputSchema>;
 
 export const oauthCompleteInputSchema = z
   .object({
@@ -42,7 +41,6 @@ export const oauthCompleteInputSchema = z
   })
   .strict();
 
-export type OauthCompleteInput = z.infer<typeof oauthCompleteInputSchema>;
 
 export interface StoredOauthClientConfig {
   authorizationEndpoint: string;

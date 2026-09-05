@@ -52,7 +52,7 @@ export interface UsageTrendsServicePort {
 }
 
 export type UsageEventKind = "model" | "embedding" | "unknown";
-export type ReasoningCoverage = "complete" | "partial" | "unavailable";
+type ReasoningCoverage = "complete" | "partial" | "unavailable";
 
 export interface UsageDetailsInput {
   accountId: string;

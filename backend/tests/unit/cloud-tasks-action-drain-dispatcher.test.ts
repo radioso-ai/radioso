@@ -41,7 +41,7 @@ describe("CloudTasksActionDrainDispatcher", () => {
 
     expect(client.queuePath).toHaveBeenCalledWith("radioso-prod", "us-central1", "radioso-conversation-actions");
     expect(client.createTask).toHaveBeenCalledTimes(1);
-    const [request] = client.createTask.mock.calls[0]!;
+    const [request] = client.createTask.mock.calls[0];
     expect(request.parent).toBe("projects/radioso-prod/locations/us-central1/queues/radioso-conversation-actions");
     expect(request.task.httpRequest.httpMethod).toBe("POST");
     // Trailing slash on the configured service URL is normalized away.

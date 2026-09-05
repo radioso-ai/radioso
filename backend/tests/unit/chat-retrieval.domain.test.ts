@@ -6,14 +6,11 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ContextSelectionStageService } from "../../src/modules/retrieval/services/contextSelectionStage.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
-import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
-import { QueryInterpretationStageService } from "../../src/modules/retrieval/services/queryInterpretationStage.js";
 import { OpenAIQueryRewriteGateway, QueryRewriteService, type QueryRewriteGatewayResult } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services/retrievalShapeResolver.js";
-import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
@@ -547,7 +544,7 @@ describe("chat retrieval domain", () => {
       },
     });
 
-    const result = await service.rewrite({
+    await service.rewrite({
       query: "print(5)",
       enabled: true,
       contextWindow: {
@@ -574,7 +571,7 @@ describe("chat retrieval domain", () => {
       },
     });
 
-    const result = await service.rewrite({
+    await service.rewrite({
       query: "what is kriya?",
       enabled: false,
       contextWindow: {
@@ -827,7 +824,7 @@ describe("chat retrieval domain", () => {
             };
           },
         },
-      } as never,
+      },
       "gpt-5.2",
     );
 
@@ -919,7 +916,7 @@ describe("chat retrieval domain", () => {
             };
           },
         },
-      } as never,
+      },
       "gpt-test",
     );
 
@@ -987,7 +984,7 @@ describe("chat retrieval domain", () => {
             },
           },
         },
-      } as never,
+      },
       "gpt-5-mini",
     );
 

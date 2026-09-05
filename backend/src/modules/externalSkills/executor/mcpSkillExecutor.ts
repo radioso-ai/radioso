@@ -141,7 +141,7 @@ export class McpSkillExecutor implements SkillExecutorPort {
         context: invocation.context,
         emit: invocation.emit,
         signal: invocation.signal,
-      })) as SkillDispatchResult;
+      }));
     } finally {
       await closable(service).close?.().catch(() => undefined);
     }

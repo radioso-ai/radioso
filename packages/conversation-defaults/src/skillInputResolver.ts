@@ -64,7 +64,7 @@ const boundedHistory = (history: ConversationMessage[], messageLimit: number, ch
   let remaining = Math.max(0, characterLimit);
   const reversed: ConversationMessage[] = [];
   for (let index = limited.length - 1; index >= 0 && remaining > 0; index -= 1) {
-    const message = limited[index]!;
+    const message = limited[index];
     const content = message.content.slice(-remaining);
     if (content) {
       reversed.push({ ...message, content });
@@ -239,7 +239,7 @@ export const createConversationSkillInputResolver = (
       if (unresolvedRequired.length > 0) {
         const statusFor = (field: SkillInputField): "absent" | "rejected" => {
           for (let index = outcomes.length - 1; index >= 0; index -= 1) {
-            const outcome = outcomes[index]!;
+            const outcome = outcomes[index];
             if (outcome.name === field.name) {
               return outcome.status === "rejected" ? "rejected" : "absent";
             }

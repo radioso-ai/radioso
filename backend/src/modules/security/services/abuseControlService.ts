@@ -42,7 +42,7 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
       const batch = await this.repository.consumeBatch(inputs);
       this.throwIfRejected(batch, inputs);
       void this.repository.deleteExpired(now).catch(() => undefined);
-      return batch.entries.map((entry, index) => this.presentConsumption(entry, inputs[index]!.now));
+      return batch.entries.map((entry, index) => this.presentConsumption(entry, inputs[index].now));
     } catch (error) {
       if (error instanceof AppError) {
         throw error;

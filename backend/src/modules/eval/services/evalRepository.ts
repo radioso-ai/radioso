@@ -129,6 +129,7 @@ const isConstraintViolation = (error: unknown, constraintName: string): boolean 
 // where bare `id` / `workspace_id` / `created_at` / `updated_at` are ambiguous.
 // Kysely aliases `eval_cases.id` back to the `id` key, so mapCase still applies.
 const qualifiedCaseColumns = caseColumns.map(
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- keeps the template-literal type; without it the map yields string and Kysely loses the column union.
   (col) => `eval_cases.${col}` as `eval_cases.${(typeof caseColumns)[number]}`,
 );
 
@@ -232,22 +233,22 @@ export class EvalRepository implements EvalRepositoryPort {
         id: row.id,
         status: row.status as EvalRunStatus,
         mode: row.mode as EvalRunMode,
-        startedAt: isoDate(row.started_at as Date | string),
-        completedAt: row.completed_at ? isoDate(row.completed_at as Date | string) : null,
+        startedAt: isoDate(row.started_at),
+        completedAt: row.completed_at ? isoDate(row.completed_at) : null,
         modelId: asObject<EvalRunResolvedConfig>(row.resolved_config, {}).modelId ?? null,
-        outcomeReason: (row.outcome_reason as string | null) ?? null,
+        outcomeReason: (row.outcome_reason) ?? null,
       });
     }
 
     return caseRows.map((row) => {
-      const sourceAgentId = (row.source_agent_id as string | null) ?? null;
-      const liveName = (row.live_agent_name as string | null) ?? null;
-      const liveInternalName = (row.live_agent_internal_name as string | null) ?? null;
+      const sourceAgentId = (row.source_agent_id) ?? null;
+      const liveName = (row.live_agent_name) ?? null;
+      const liveInternalName = (row.live_agent_internal_name) ?? null;
       // Live name when the agent still exists; otherwise the name frozen on the
       // snapshot (full config first, then the legacy thin AgentSnapshot).
       const frozenName =
-        (row.frozen_config_agent_name as string | null) ??
-        (row.frozen_agent_name as string | null) ??
+        (row.frozen_config_agent_name) ??
+        (row.frozen_agent_name) ??
         null;
       return {
         ...mapCase(row as CaseRow),

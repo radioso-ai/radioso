@@ -170,7 +170,7 @@ describe("copilot audit attribution", () => {
     const dismissed = await makeProposal();
     const service = new OperatorCopilotService({
       repository,
-      capabilityRunner: { runStreaming: emptyStream as never },
+      capabilityRunner: { runStreaming: emptyStream },
       usageLimitPolicy: usageLimitPolicy(),
       auditService: { record: auditRecord },
       prompt: "system",
@@ -253,7 +253,7 @@ describe("copilot audit attribution", () => {
     });
     const service = new OperatorCopilotService({
       repository,
-      capabilityRunner: { runStreaming: emptyStream as never },
+      capabilityRunner: { runStreaming: emptyStream },
       usageLimitPolicy: usageLimitPolicy(),
       auditService: { record: auditRecord },
       prompt: "system",
@@ -459,7 +459,7 @@ describe("copilot per-turn probe budget", () => {
       },
     };
     const { service } = buildService({
-      tools: [methodBacked as never],
+      tools: [methodBacked],
       probeBudgetPerTurn: 4,
       runStreaming: streamInvoking("replay_eval_case", 3),
     });

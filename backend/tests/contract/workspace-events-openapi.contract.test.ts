@@ -84,9 +84,9 @@ describe("workspace events OpenAPI contract", () => {
     ]);
 
     expect(generatedClient).not.toContain("streamWorkspaceEvents");
-    const generatedOperation = generatedTypes.match(/streamWorkspaceEvents: \{[\s\S]*?^    \};/m)?.[0];
+    const generatedOperation = generatedTypes.match(/streamWorkspaceEvents: \{[\s\S]*?^ {4}\};/m)?.[0];
     expect(generatedOperation).toContain('"X-Workspace-Id": string;');
-    const generatedInvalidateData = generatedTypes.match(/WorkspaceEventInvalidateData: \{[\s\S]*?^        \};/m)?.[0];
+    const generatedInvalidateData = generatedTypes.match(/WorkspaceEventInvalidateData: \{[\s\S]*?^ {8}\};/m)?.[0];
     expect(generatedInvalidateData).toContain("changeKinds: string[];");
     expect(generatedInvalidateData).not.toContain("WorkspaceInvalidationKind");
     expect(mcpServer).toContain("const toolDefinitions = converseToolDefinitions;");

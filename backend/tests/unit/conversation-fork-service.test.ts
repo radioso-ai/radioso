@@ -47,7 +47,7 @@ describe("ConversationForkService", () => {
   let findByIdAndWorkspaceId: ReturnType<typeof vi.fn>;
   let createConversation: ReturnType<typeof vi.fn>;
   let listByConversationId: ReturnType<typeof vi.fn>;
-  let createMessage: ReturnType<typeof vi.fn>;
+  let createMessage: ReturnType<typeof vi.fn<ForkMessageRepositoryPort["create"]>>;
   let loadActiveRoutineState: ReturnType<typeof vi.fn>;
   let saveRoutineState: ReturnType<typeof vi.fn>;
   let service: ConversationForkService;
@@ -257,8 +257,8 @@ describe("ConversationForkService", () => {
 
     await service.forkForTest(workspaceId, sourceConversationId);
 
-    expect(createMessage.mock.calls[0]![0].metadata).toBeUndefined();
-    expect(createMessage.mock.calls[1]![0].metadata).toEqual({
+    expect(createMessage.mock.calls[0][0].metadata).toBeUndefined();
+    expect(createMessage.mock.calls[1][0].metadata).toEqual({
       conversationSummary: "The turn saw this pre-answer summary.",
     });
   });

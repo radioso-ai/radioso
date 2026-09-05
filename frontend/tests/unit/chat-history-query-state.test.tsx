@@ -66,7 +66,7 @@ describe('history list query', () => {
   }
 
   it('uses the policy gate and derives the 45–60 second interval', async () => {
-    vi.mocked(chatApi.listHistory).mockResolvedValue(response as never)
+    vi.mocked(chatApi.listHistory).mockResolvedValue(response)
     const states: unknown[] = []
     const { root, container } = await renderProbe({ workspaceId: 'workspace-1', variant: 'all', page: 1 }, (state, client) => {
       const query = client.getQueryCache().find({ queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50] })
@@ -94,8 +94,8 @@ describe('history list query', () => {
   it('aborts the old hook query on filter switch and excludes its late result from both slices', async () => {
     let resolveAll!: (value: typeof response) => void
     const allResponse = new Promise<typeof response>((resolve) => { resolveAll = resolve })
-    vi.mocked(chatApi.listHistory).mockReturnValueOnce(allResponse as never)
-    vi.mocked(chatApi.listChatHistory).mockResolvedValueOnce(response as never)
+    vi.mocked(chatApi.listHistory).mockReturnValueOnce(allResponse)
+    vi.mocked(chatApi.listChatHistory).mockResolvedValueOnce(response)
     let client!: QueryClient
     const { root, container, render } = await renderProbe({ workspaceId: 'workspace-1', variant: 'all', page: 1 }, (_state, nextClient) => { client = nextClient })
     await vi.waitFor(() => expect(chatApi.listHistory).toHaveBeenCalled())
@@ -117,7 +117,7 @@ describe('history list query', () => {
   ])('aborts the old signal and keeps the old %s key free of late data', async (_kind, nextValue) => {
     let resolveOld!: (value: typeof response) => void
     const oldResponse = new Promise<typeof response>((resolve) => { resolveOld = resolve })
-    vi.mocked(chatApi.listHistory).mockReturnValueOnce(oldResponse as never).mockResolvedValueOnce(response as never)
+    vi.mocked(chatApi.listHistory).mockReturnValueOnce(oldResponse).mockResolvedValueOnce(response)
     let oldClient!: QueryClient
     let currentClient!: QueryClient
     const seenKeys: (readonly unknown[])[] = []
@@ -151,7 +151,7 @@ describe('history list query', () => {
     const cachedResponse = { ...response, items: [{ id: 'distinctive-cached-row' }] }
     const backgroundFailure = Object.assign(new Error('background failure'), { status: 403 })
     vi.mocked(chatApi.listHistory).mockResolvedValueOnce(cachedResponse as never).mockRejectedValueOnce(backgroundFailure)
-    vi.mocked(chatApi.listChatHistory).mockResolvedValueOnce(response as never)
+    vi.mocked(chatApi.listChatHistory).mockResolvedValueOnce(response)
     let client!: QueryClient
     const states: unknown[] = []
     const { root, container, render } = await renderProbe({ workspaceId: 'workspace-1', variant: 'all', page: 1 }, (state, nextClient) => {
@@ -184,7 +184,7 @@ describe('history list query', () => {
       ['contact', 'listContactHistory'],
       ['search', 'listSearchHistory'],
     ] as const) {
-      vi.mocked(chatApi[method]).mockResolvedValue(response as never)
+      vi.mocked(chatApi[method]).mockResolvedValue(response)
       await fetchHistory({ queryKey: ['workspace', 'workspace-1', 'history', 'list', variant, 1, 50], signal } as never)
     }
     expect(detail).not.toHaveBeenCalled()
@@ -204,7 +204,7 @@ describe('history list query', () => {
     ['search', 'listSearchHistory'],
   ] as const)('selects the %s endpoint with exact paging and Query signal', async (variant, method) => {
     const signal = new AbortController().signal
-    vi.mocked(chatApi[method]).mockResolvedValue(response as never)
+    vi.mocked(chatApi[method]).mockResolvedValue(response)
     await fetchHistory({
       queryKey: ['workspace', 'workspace-1', 'history', 'list', variant, 3, 50],
       signal,
@@ -214,7 +214,7 @@ describe('history list query', () => {
 
   it('forwards the searchParams key tail to listHistory only for the all variant', async () => {
     const signal = new AbortController().signal
-    vi.mocked(chatApi.listHistory).mockResolvedValue(response as never)
+    vi.mocked(chatApi.listHistory).mockResolvedValue(response)
     await fetchHistory({
       queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, 'refund', 'completed', 'agent-1', 'https://example.com'],
       signal,
@@ -231,7 +231,7 @@ describe('history list query', () => {
 
   it('omits absent searchParams key slots (null) rather than forwarding null values', async () => {
     const signal = new AbortController().signal
-    vi.mocked(chatApi.listHistory).mockResolvedValue(response as never)
+    vi.mocked(chatApi.listHistory).mockResolvedValue(response)
     await fetchHistory({
       queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50, null, null, 'agent-1', null],
       signal,
@@ -301,8 +301,8 @@ describe('history list query', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const first = Promise.withResolvers<typeof response>()
     const second = Promise.withResolvers<typeof response>()
-    vi.mocked(chatApi.listHistory).mockReturnValueOnce(first.promise as never)
-    vi.mocked(chatApi.listChatHistory).mockReturnValueOnce(second.promise as never)
+    vi.mocked(chatApi.listHistory).mockReturnValueOnce(first.promise)
+    vi.mocked(chatApi.listChatHistory).mockReturnValueOnce(second.promise)
     const observer = new QueryObserver(client, {
       queryKey: ['workspace', 'workspace-1', 'history', 'list', 'all', 1, 50],
       queryFn: fetchHistory,

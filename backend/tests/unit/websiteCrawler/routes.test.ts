@@ -84,7 +84,7 @@ const createApp = (dependencies: Partial<Record<keyof RouteDependencies, unknown
     workspaceSessionService: {
       async resolve({ accountId, workspaceId }) {
         if (!workspaceId) {
-          throw { statusCode: 400, code: "bad_request", message: "Workspace is required" };
+          throw Object.assign(new Error("Workspace is required"), { statusCode: 400, code: "bad_request" });
         }
         if (workspaceId === "workspace-2") {
           return { accountId, workspaceId };

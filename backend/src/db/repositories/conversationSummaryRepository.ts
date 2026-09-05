@@ -46,7 +46,7 @@ export class ConversationSummaryRepository implements ConversationSummaryStore {
       .where("session_id", "=", input.sessionId)
       .where("expires_at", ">", currentTimestamp())
       .executeTakeFirst();
-    return row ? mapRow(row as ConversationSummaryRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async save(input: { sessionId: string; summary: ConversationSummaryRecord }): Promise<void> {

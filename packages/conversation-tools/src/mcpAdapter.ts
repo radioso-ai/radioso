@@ -103,7 +103,7 @@ export class HttpMcpJsonRpcTransport implements McpJsonRpcTransport {
   private readonly fetchImpl: ToolFetch;
 
   constructor(private readonly options: HttpMcpTransportOptions) {
-    this.fetchImpl = options.fetch ?? (globalThis.fetch as unknown as ToolFetch);
+    this.fetchImpl = options.fetch ?? (globalThis.fetch);
   }
 
   async request<Result>(method: string, params: Record<string, unknown> = {}): Promise<Result> {

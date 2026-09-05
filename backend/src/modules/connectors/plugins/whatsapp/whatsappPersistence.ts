@@ -160,7 +160,7 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       .where("wa_id", "=", waId)
       .executeTakeFirst();
 
-    return row ? mapContact(row as WhatsAppContactRow) : null;
+    return row ? mapContact(row) : null;
   }
 
   async upsertContact(input: {
@@ -190,7 +190,7 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
       .returning(contactColumns)
       .executeTakeFirstOrThrow();
 
-    return mapContact(row as WhatsAppContactRow);
+    return mapContact(row);
   }
 
   async findMessageLogByWamid(wamid: string): Promise<WhatsAppMessageLogRecord | null> {

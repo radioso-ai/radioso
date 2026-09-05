@@ -63,7 +63,7 @@ const combine = (verdicts: SuiteAssertionVerdict[]): SuiteScore => {
   }
   return {
     status: "pass",
-    reason: verdicts.length === 1 ? verdicts[0]!.reason : `All ${verdicts.length} assertions passed.`,
+    reason: verdicts.length === 1 ? verdicts[0].reason : `All ${verdicts.length} assertions passed.`,
     verdicts,
   };
 };
@@ -91,7 +91,7 @@ export const scoreObservedOutput = async (
 
   const verdicts: SuiteAssertionVerdict[] = [];
   for (let index = 0; index < assertions.length; index += 1) {
-    const assertion = assertions[index]!;
+    const assertion = assertions[index];
     if (isTraceAssertion(assertion)) {
       verdicts.push(evaluateTraceAssertion(assertion, output));
       continue;

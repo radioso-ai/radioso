@@ -37,7 +37,7 @@ export interface FacetExtractionWorkerOptions {
 const retryDelayMs = (attemptCount: number): number =>
   FACET_EXTRACTION_RETRY_DELAYS_MS[
     Math.min(Math.max(attemptCount - 1, 0), FACET_EXTRACTION_RETRY_DELAYS_MS.length - 1)
-  ]!;
+  ];
 
 /**
  * Drains the facet extraction queue on a poll loop in the worker process.

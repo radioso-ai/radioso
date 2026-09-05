@@ -5,10 +5,10 @@ import type { ChatOwnershipAck, ChatRoute, ChatSuggestion } from "../types/chatR
 import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 import type { ConversationTurnStage } from "./interruption.js";
 
-export type SkillStreamPhase = "active" | "completed" | "failed";
+type SkillStreamPhase = "active" | "completed" | "failed";
 export type ChatStatusStage = "interpreting" | "searching" | "composing";
 
-export interface SkillStreamReceipt {
+interface SkillStreamReceipt {
   fields: Array<{
     name: string;
     displayName: string;

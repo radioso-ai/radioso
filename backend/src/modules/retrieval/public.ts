@@ -15,69 +15,30 @@ import type { RetrievalSourceScope } from "./domain/retrievalSourceFilter.js";
 export {
   chunkingStrategyIds,
   normalizeMarkdown,
-  type ChunkingRequest,
   type ChunkingStrategy,
   type ChunkingStrategyId,
-  type ChunkOutput,
 } from "./domain/chunking/chunkingStrategy.js";
+export type { TextChunkingProviderPort } from "./domain/chunking/chunkingProvider.js";
 export type {
-  TextChunkingMethod,
-  TextChunkingProviderChunk,
-  TextChunkingProviderPort,
-  TextChunkingProviderRequest,
-} from "./domain/chunking/chunkingProvider.js";
-export type {
-  ConversationContextWindow,
-  ContinuityDecision,
   FinalPromptContext,
-  LexicalQueryPlan,
-  LexicalSearchOption,
-  RerankedCandidate,
-  RerankStatus,
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
-  RetrievalExecutionMetadata,
-  RetrievalExecutionPath,
   RetrievalExecutionSurface,
-  RetrievalSource,
-  RetrievalSubquery,
   ActivityTrace,
-  ActivityLink,
   ActivityStage,
-  ActivityStageStatus,
   ActivitySummary,
   RetrievedCandidate,
   RewriteContinuityState,
-  RewriteStatus,
-  RewriteTurnKind,
-  RewrittenRetrievalQuery,
   StructuredRewriteResult,
   TriggerAnalysisResult,
-  TriggerAnalysisStatus,
-  TriggerBackoffDecision,
-  TriggerRuleDecision,
 } from "./domain/retrievalPipelineTypes.js";
 export type {
-  RetrievalSourceFilter,
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
 export * from "./copilotPrimitiveRegistry.js";
 export { resolveAgentRetrievalScope } from "./domain/agentRetrievalScope.js";
-export type {
-  AgentRetrievalInputs,
-  AgentRetrievalScope,
-  AgentRetrievalScopePort,
-  AgentRetrievalScopeSource,
-} from "./domain/agentRetrievalScope.js";
-export type {
-  VectorChunkFilter,
-  VectorMetadataFilter,
-  VectorMetadataFilterValue,
-} from "./domain/vectorFilter.js";
-export {
-  mergeVectorMetadataFilters,
-  normalizeVectorMetadataFilter,
-} from "./domain/vectorFilter.js";
+export type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";
+export { normalizeVectorMetadataFilter } from "./domain/vectorFilter.js";
 export {
   normalizeRetrievalSkillSettingsOverride,
   parseRetrieveSkillConfig,
@@ -85,86 +46,34 @@ export {
   retrieveSkillConfigSchema,
   retrieveSkillConfigToSettingsOverride,
   type RetrieveSkillConfig,
-  type EffectiveRetrievalSkillSettings,
-  type RetrievalSkillSettingsOverride,
 } from "./domain/retrievalSkillSettings.js";
 // Exported early (before the service re-exports below that value-import skills/public.js): the
 // skills capability registry reads RETRIEVAL_ANSWER_ADAPTER at module-load via capabilities/retrieve,
 // so it must be initialized before any cyclic service export to avoid a TDZ on that const.
 export {
   RETRIEVAL_ANSWER_ADAPTER,
-  RETRIEVAL_CONTEXT_SKILL_NAME,
   RetrievalAnswerSkillExecutor,
   readRetrievalResult,
 } from "./services/retrievalAnswerSkillExecutor.js";
-export {
-  REWRITE_STATUS,
-  REWRITE_TURN_KIND,
-} from "./domain/retrievalPipelineTypes.js";
-export type {
-  RetrievalAnswerRequest,
-  RetrievalAnswerResult,
-  RetrievalAnswerSuccess,
-  RetrievalConversationContext,
-  RetrievalSearchRequest,
-  RetrievalSearchResult,
-} from "./domain/retrievalCapabilityTypes.js";
-export type { LexicalSearchPort } from "./infra/lexicalSearch.js";
 export type { ChunkCandidateHydratorPort } from "./infra/chunkCandidateHydrator.js";
 export type {
-  EmbeddingSpaceRef,
   VectorAdapter,
-  VectorBackendStatus,
-  VectorCandidate,
-  VectorCandidateSearchInput,
   VectorCandidateSearchPort,
-  VectorDistanceMetric,
-  VectorDimensionRange,
-  VectorFilterOperation,
-  VectorIndexAdministrationPort,
-  VectorIndexCapabilities,
-  VectorIndexCapabilityPort,
-  VectorIndexConsistency,
-  VectorIndexFilter as PortableVectorIndexFilter,
-  VectorIndexHealth as VectorAdapterHealth,
-  VectorIndexMutation,
-  VectorIndexMutationResult,
-  VectorIndexPayload,
-  VectorIndexRecord,
-  VectorIndexVersion,
-  VectorIndexWriteResult,
-  VectorIndexWriterPort,
-  VectorSearchMode,
-  VectorSpaceReadiness,
-} from "./domain/vectorAdapter.js";
-export {
-  compareVectorIndexVersions,
-  cosineSimilarity,
-  matchesVectorIndexFilter,
-  supportsEmbeddingSpace,
-  vectorDistanceMetrics,
-  vectorFilterOperations,
-  vectorSearchModes,
 } from "./domain/vectorAdapter.js";
 export type {
   RetrievedChunk,
-  VectorSearchInput,
   VectorSearchPort,
 } from "./domain/vectorSearch.js";
-export { collectMetadataRuleFieldKeys } from "./domain/metadataRuleFieldReferences.js";
 export {
   MetadataRuleFieldReferenceService,
   type MetadataRuleFieldReferencePort,
-  type WorkspaceSkillConfigSource,
 } from "./services/metadataRuleFieldReferenceService.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export { SharedAnswerInstructionBuilder } from "./services/sharedAnswerInstructionBuilder.js";
-export type { PromptBuildResult } from "./services/promptBuilder.js";
 export type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 export type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 export type {
   QueryRewriteGateway,
-  QueryRewriteGatewayFallbackResult,
   QueryRewriteGatewayResult,
   TriggerAnalysisGateway,
   TriggerAnalysisGatewayInput,
@@ -173,28 +82,15 @@ export type { QueryRewriteGatewayInput } from "./services/queryRewriteGateways.j
 export {
   ModelQueryRewriteGateway,
   ModelTriggerAnalysisGateway,
-  OpenAIQueryRewriteGateway,
 } from "./services/queryRewriteService.js";
 export { parseStructuredRewrite } from "./services/queryRewriteParser.js";
 export type { RerankGateway, RerankGatewayInput } from "./services/rerankService.js";
-export type {
-  QueryRewritePort,
-  QueryRewritePortRequest,
-  QueryRewritePortResult,
-} from "./domain/queryRewritePort.js";
-export { GatewayQueryRewritePortAdapter } from "./services/gatewayQueryRewritePortAdapter.js";
 export {
   ModelRerankGateway,
   OpenAISemanticRerankGateway,
 } from "./services/rerankService.js";
-export {
-  ActivitySummaryPresenter,
-  type ActivitySummaryPresenterOptions,
-} from "./services/activitySummaryPresenter.js";
-export {
-  ActivityTracePresenter,
-  type AnswerOutcomeInput,
-} from "./services/activityTracePresenter.js";
+export { ActivitySummaryPresenter } from "./services/activitySummaryPresenter.js";
+export { ActivityTracePresenter } from "./services/activityTracePresenter.js";
 export {
   renderMetadataSearchText,
   renderSearchText,
@@ -208,8 +104,6 @@ export {
   evaluateRetrievalSenseClarification,
   phraseRetrievalSenseAsk,
   presentableSenseCandidates,
-  type PhrasedSenseClarification,
-  type RetrievalSenseClarificationEffect,
   type RetrievalSenseDetectorPort,
 } from "./services/retrievalSenseClarification.js";
 
@@ -277,7 +171,7 @@ export interface RetrievalPipelineService {
 // `RetrievalPipelineService` describes here; re-exported so consumers wiring the
 // retrieval.answer executor have one import for the controller type.
 export type { RetrievalPipelinePort } from "./services/retrievalPipelineService.js";
-export type { AgenticRetrievalToolFactory, AgenticRetrievalToolFactoryContext } from "./services/agenticRetrievalRunner.js";
+export type { AgenticRetrievalToolFactory } from "./services/agenticRetrievalRunner.js";
 export {
   RetrieveRoutineSkillResolver,
   type RetrieveRoutineSkillRecord,

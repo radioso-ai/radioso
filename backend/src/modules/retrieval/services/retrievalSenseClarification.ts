@@ -299,7 +299,7 @@ export const phraseRetrievalSenseAsk = async (input: {
       return { kind: "ask", answer, presented, stage: input.askStage };
     }
   }
-  const top = input.candidates[0]!;
+  const top = input.candidates[0];
   const documentScope = documentScopeFromClarificationCandidate(top);
   return {
     kind: "fallback",

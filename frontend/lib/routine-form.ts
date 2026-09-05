@@ -261,7 +261,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
     forms.push({
       fromStep: transition.fromStep,
       toRef: transition.toRef,
-      guardKind: normalizeGuardKind(transition.guardKind as LegacyRoutineGuardKind),
+      guardKind: normalizeGuardKind(transition.guardKind),
       guardText: transition.guardText ?? '',
       outcomeStatus: transition.outcomeStatus ?? '',
       counterLimit: transition.counterLimit ? String(transition.counterLimit) : '',
@@ -290,7 +290,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       mutable: slot.mutable ?? false,
     })),
     steps: [...routine.steps].sort((left, right) => left.ordinal - right.ordinal).map((step) => {
-      const kind = normalizeStepKind(step.kind as LegacyRoutineStepKind)
+      const kind = normalizeStepKind(step.kind)
       const base = {
         stableStepId: step.stableStepId,
         kind,

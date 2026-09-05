@@ -19,12 +19,17 @@ export type {
   ServiceAccountRecord,
 } from "../../modules/machineAccess/ports.js";
 
+// Postgres timestamp columns come back as `Date` (or `string`, depending on driver config); a
+// bare unknown never reaches this branch for nullable timestamp fields in practice.
+const toNullableDate = (value: unknown): Date | null =>
+  value instanceof Date || typeof value === "string" ? new Date(String(value)) : null;
+
 const mapAccount = (row: Record<string, unknown>): ServiceAccountRecord => ({
   id: String(row.id), workspaceId: String(row.workspace_id), accountId: String(row.account_id), displayName: String(row.display_name),
   role: row.role as MachineAccessRole, status: row.status as ServiceAccountStatus, createdByUserId: String(row.created_by_user_id),
   createdAt: new Date(String(row.created_at)), updatedAt: new Date(String(row.updated_at)),
-  disabledAt: row.disabled_at ? new Date(String(row.disabled_at)) : null, archivedAt: row.archived_at ? new Date(String(row.archived_at)) : null,
-  lastUsedAt: row.last_used_at ? new Date(String(row.last_used_at)) : null,
+  disabledAt: toNullableDate(row.disabled_at), archivedAt: toNullableDate(row.archived_at),
+  lastUsedAt: toNullableDate(row.last_used_at),
   revision: Number(row.revision),
   activeCredentialCount: row.active_credential_count === undefined ? undefined : Number(row.active_credential_count),
 });
@@ -35,7 +40,7 @@ const mapCredential = (row: Record<string, unknown>): ApiCredentialRecord => ({
   serviceAccountId: row.service_account_id as string | null, createdByUserId: String(row.created_by_user_id),
   createdAt: new Date(String(row.created_at)), updatedAt: new Date(String(row.updated_at)),
   expiresAt: new Date(String(row.expires_at)),
-  lastUsedAt: row.last_used_at ? new Date(String(row.last_used_at)) : null, revokedAt: row.revoked_at ? new Date(String(row.revoked_at)) : null,
+  lastUsedAt: toNullableDate(row.last_used_at), revokedAt: toNullableDate(row.revoked_at),
   revokedByUserId: row.revoked_by_user_id as string | null, revocationReason: row.revocation_reason as string | null,
   rotatedFromCredentialId: row.rotated_from_credential_id as string | null, revision: Number(row.revision),
 });
@@ -156,7 +161,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         owner_user_id: input.ownerUserId, access_tenure_membership_id: input.accessTenureMembershipId,
         created_by_user_id: input.createdByUserId, expires_at: input.expiresAt,
       }).returningAll().executeTakeFirstOrThrow();
-      const credential = mapCredential(row as Record<string, unknown>);
+      const credential = mapCredential(row);
       await this.insertAuditEvents(trx, input.auditEvents?.({ credential }) ?? []);
       return { credential, secret: issued.secret };
     });
@@ -164,17 +169,17 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
 
   async findCredentialByHash(tokenHash: string): Promise<ApiCredentialRecord | null> {
     const row = await this.db.selectFrom("api_credentials").selectAll().where("token_hash", "=", tokenHash).executeTakeFirst();
-    return row ? mapCredential(row as Record<string, unknown>) : null;
+    return row ? mapCredential(row) : null;
   }
 
   async findCredential(id: string): Promise<ApiCredentialRecord | null> {
     const row = await this.db.selectFrom("api_credentials").selectAll().where("id", "=", id).executeTakeFirst();
-    return row ? mapCredential(row as Record<string, unknown>) : null;
+    return row ? mapCredential(row) : null;
   }
 
   async findServiceAccount(id: string): Promise<ServiceAccountRecord | null> {
     const row = await this.db.selectFrom("workspace_service_accounts").selectAll().where("id", "=", id).executeTakeFirst();
-    return row ? mapAccount(row as Record<string, unknown>) : null;
+    return row ? mapAccount(row) : null;
   }
 
   async listServiceAccounts(input: { workspaceId: string; limit: number; page?: number }): Promise<ServiceAccountRecord[]> {
@@ -263,7 +268,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
       const result = {
         status: "updated" as const,
         account: {
-          ...mapAccount(row as Record<string, unknown>),
+          ...mapAccount(row),
           activeCredentialCount: typeof activeCredentialCount === "number"
             ? activeCredentialCount
             : Number(activeCredentialCount.count),
@@ -307,8 +312,8 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         created_by_user_id: input.createdByUserId, expires_at: input.expiresAt,
       }).returningAll().executeTakeFirstOrThrow();
       const result = {
-        account: { ...mapAccount(accountRow as Record<string, unknown>), activeCredentialCount: 1 },
-        credential: mapCredential(credentialRow as Record<string, unknown>),
+        account: { ...mapAccount(accountRow), activeCredentialCount: 1 },
+        credential: mapCredential(credentialRow),
         secret: issued.secret,
       };
       await this.insertAuditEvents(trx, input.auditEvents?.(result) ?? []);
@@ -362,7 +367,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         token_prefix: issued.tokenPrefix, token_hash: issued.tokenHash, service_account_id: input.serviceAccountId,
         created_by_user_id: input.createdByUserId, expires_at: input.expiresAt,
       }).returningAll().executeTakeFirstOrThrow();
-      const credential = mapCredential(row as Record<string, unknown>);
+      const credential = mapCredential(row);
       await this.insertAuditEvents(trx, input.auditEvents?.({ credential }) ?? []);
       return { status: "created" as const, credential, secret: issued.secret };
     });
@@ -418,7 +423,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
       if (input.expectedRevision !== undefined) query = query.where("revision", "=", input.expectedRevision);
       const row = await query.returningAll().executeTakeFirst();
       if (!row) return null;
-      const credential = mapCredential(row as Record<string, unknown>);
+      const credential = mapCredential(row);
       await this.insertAuditEvents(trx, input.auditEvents?.(credential) ?? []);
       return credential;
     });
@@ -484,7 +489,7 @@ export class MachineAccessRepository implements MachineAccessPersistencePort {
         service_account_id: previous.service_account_id, created_by_user_id: input.createdByUserId,
         expires_at: previous.expires_at, rotated_from_credential_id: previous.id,
       }).returningAll().executeTakeFirstOrThrow();
-      const replacement = mapCredential(row as Record<string, unknown>);
+      const replacement = mapCredential(row);
       await this.insertAuditEvents(trx, input.auditEvents?.(replacement) ?? []);
       return replacement;
     });

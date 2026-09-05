@@ -250,5 +250,5 @@ export const buildAnySignalPredicate = (
   const clauses = predicates.map((predicate) => buildSignalPredicate(predicate, params));
   // A single signal emits exactly the predicate it always did — no wrapper, so the
   // one-signal query is byte-identical to the pre-list behaviour.
-  return clauses.length === 1 ? clauses[0]! : `(${clauses.join("\n           OR ")})`;
+  return clauses.length === 1 ? clauses[0] : `(${clauses.join("\n           OR ")})`;
 };

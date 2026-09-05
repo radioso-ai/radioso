@@ -31,7 +31,7 @@ export interface PendingDecisionRecord {
   deciderScope: Record<string, unknown>;
   contentHash: string;
   status: PendingDecisionStatus;
-  decision: unknown | null;
+  decision: unknown;
   decidedBy: string | null;
   decidedAt: Date | null;
   deadline: Date | null;
@@ -80,7 +80,7 @@ interface PendingDecisionRow {
   decider_scope: unknown;
   content_hash: string;
   status: string;
-  decision: unknown | null;
+  decision: unknown;
   decided_by: string | null;
   decided_at: Date | null;
   deadline: Date | null;

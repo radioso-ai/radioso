@@ -164,8 +164,8 @@ describe('document sources query state', () => {
 
   it('uses exact workspace keys, stays hidden when disabled, and upgrades only active crawl state to 5s', async () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-    const list = vi.spyOn(documentsApi, 'listSources').mockResolvedValue({ sources: [] } as never)
-    const crawls = vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] } as never)
+    const list = vi.spyOn(documentsApi, 'listSources').mockResolvedValue({ sources: [] })
+    const crawls = vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] })
     const root = await renderProbe(client, {
       enabled: false, floorMs: 45_000, workspaceId: 'workspace-a', overlay: emptySourceCrawlOverlay(),
     })
@@ -199,7 +199,7 @@ describe('document sources query state', () => {
     const list = vi.spyOn(documentsApi, 'listSources')
       .mockResolvedValueOnce({ sources: [{ id: 'a', name: 'cached' }] } as never)
       .mockRejectedValueOnce(new Error('temporary failure'))
-    vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] } as never)
+    vi.spyOn(documentsApi, 'listCrawlJobs').mockResolvedValue({ jobs: [] })
     const root = await renderProbe(client, {
       enabled: true, floorMs: 45_000, workspaceId: 'workspace-a', overlay: emptySourceCrawlOverlay(),
     })

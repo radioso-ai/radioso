@@ -239,7 +239,7 @@ describe("provider-backed chunking", () => {
     });
 
     expect(embedForClustering).toHaveBeenCalled();
-    const request = embedForClustering.mock.calls[0]![0] as Record<string, unknown>;
+    const request = embedForClustering.mock.calls[0][0] as Record<string, unknown>;
     expect(request).toEqual(expect.objectContaining({
       workspaceId: "workspace-1",
       texts: expect.any(Array),

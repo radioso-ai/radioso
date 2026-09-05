@@ -36,7 +36,7 @@ describe("VectorIndexReconciler", () => {
       });
       expect(
         markCompletedAndAdvanceCheckpoint.mock.invocationCallOrder[0],
-      ).toBeLessThan(onCheckpointAdvanced.mock.invocationCallOrder[0]!);
+      ).toBeLessThan(onCheckpointAdvanced.mock.invocationCallOrder[0]);
     },
   );
 

@@ -219,7 +219,7 @@ describe("ModelChatGateway", () => {
     const { recorder, events } = recordingUsageRecorder();
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({
       metadata: { capability: "chat", provider: "openai", model: "gpt-test" },
-      async complete(input) {
+      async complete(_input) {
         return textResult("Answer", {
           inputTokens: 12,
           outputTokens: 3,
@@ -266,7 +266,7 @@ describe("ModelChatGateway", () => {
       usageQuality: "actual",
       providerRequestId: "req-1",
     });
-    expect(events[0]!.idempotencyKey).toContain("non_retrieval");
+    expect(events[0].idempotencyKey).toContain("non_retrieval");
   });
 
   it("records blank non-streaming assistant answers as failed usage", async () => {
@@ -402,6 +402,6 @@ describe("ModelChatGateway", () => {
       totalTokens: 10,
       usageQuality: "actual",
     });
-    expect(events[0]!.idempotencyKey).toContain("request-1");
+    expect(events[0].idempotencyKey).toContain("request-1");
   });
 });

@@ -40,7 +40,7 @@ const createRepository = (record: PendingDecisionRecord) => ({
   listPending: vi.fn(async () => [record]),
   loadByHandle: vi.fn(async (handle: string) => handle === record.handle ? record : null),
   resolveInTransaction: vi.fn(async (_input, callback) => {
-    const resume = await callback(record, {} as never);
+    const resume = await callback(record, {});
     return resume;
   }),
 }) as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
@@ -132,7 +132,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
     });
 
     expect(vi.mocked(repository.resolveInTransaction).mock.invocationCallOrder[0]).toBeLessThan(
-      publishMessageCreated.mock.invocationCallOrder[0]!,
+      publishMessageCreated.mock.invocationCallOrder[0],
     );
     expect(publishMessageCreated).toHaveBeenCalledWith({
       workspaceId: pending.workspaceId,
@@ -218,7 +218,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       ["conversation.turn_committed", "hitl.decision_resolved"],
     );
     expect(publisher.enqueue.mock.invocationCallOrder[0]).toBeLessThan(
-      publishMessageCreated.mock.invocationCallOrder[0]!,
+      publishMessageCreated.mock.invocationCallOrder[0],
     );
   });
 

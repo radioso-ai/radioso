@@ -118,7 +118,7 @@ export function TiersPage() {
           {tiers.length === 0 ? <EmptyState title="No tiers" detail="Create a tier to make it assignable." /> : null}
         </section>
         {canWrite ? (
-          <form onSubmit={submit} className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+          <form onSubmit={(event) => { void submit(event); }} className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
             <h2 className="text-base font-medium tracking-normal">{editingKey ? "Edit tier" : "Create tier"}</h2>
             <div className="mt-4 space-y-4">
               <label className="block text-sm font-medium text-zinc-200">

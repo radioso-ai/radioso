@@ -35,7 +35,7 @@ const knownCapabilityNames = new Set<string>(
 export const registeredCapabilityNames: ReadonlySet<string> = knownCapabilityNames;
 
 export interface CapabilityCheckInput {
-  capability: CapabilityName | string;
+  capability: CapabilityName | (string & {});
   workspaceId?: string;
   accountId?: string;
   subjectId?: string;
@@ -66,7 +66,7 @@ export class DefaultAllowCapabilityPolicy implements CapabilityPolicy {
 export class StrictCapabilityPolicy implements CapabilityPolicy {
   private readonly deniedCapabilities: Set<string>;
 
-  constructor(options: { deniedCapabilities: Array<CapabilityName | string> }) {
+  constructor(options: { deniedCapabilities: Array<CapabilityName | (string & {})> }) {
     this.deniedCapabilities = new Set(options.deniedCapabilities);
   }
 

@@ -174,8 +174,8 @@ export const cosineSimilarity = (left: readonly number[], right: readonly number
   let rightSquaredNorm = 0;
 
   for (let index = 0; index < left.length; index += 1) {
-    const leftValue = left[index]!;
-    const rightValue = right[index]!;
+    const leftValue = left[index];
+    const rightValue = right[index];
     if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue)) {
       throw new Error("non_finite_vector");
     }

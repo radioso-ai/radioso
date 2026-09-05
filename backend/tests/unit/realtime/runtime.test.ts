@@ -108,7 +108,7 @@ interface CommandClientHealthPort {
   emitHealth(health: Health): void;
 }
 
-interface AuthDatabase extends DatabaseHealthPort {}
+type AuthDatabase = DatabaseHealthPort;
 
 interface Subscriber {
   start(signal?: AbortSignal): Promise<void>;
@@ -772,26 +772,26 @@ describe("realtime runtime RED contract", () => {
     expect(fixture.admissionClient.close).toHaveBeenCalledOnce();
     expect(fixture.admissionController.close).toHaveBeenCalledOnce();
     expect(fixture.authDatabase.close).toHaveBeenCalledOnce();
-    expect(fixture.server.close.mock.invocationCallOrder[0]!)
-      .toBeLessThan(fixture.presenters.closeAll.mock.invocationCallOrder[0]!);
-    expect(fixture.gateway.shutdown.mock.invocationCallOrder[0]!)
-      .toBeLessThan(fixture.subscriber.close.mock.invocationCallOrder[0]!);
-    expect(fixture.presenters.closeAll.mock.invocationCallOrder[0]!)
-      .toBeLessThan(fixture.admissionController.close.mock.invocationCallOrder[0]!);
-    expect(fixture.admissionController.close.mock.invocationCallOrder[0]!)
-      .toBeLessThan(fixture.admissionClient.close.mock.invocationCallOrder[0]!);
-    expect(fixture.admissionController.close.mock.invocationCallOrder[0]!)
-      .toBeLessThan(fixture.authDatabase.close.mock.invocationCallOrder[0]!);
+    expect(fixture.server.close.mock.invocationCallOrder[0])
+      .toBeLessThan(fixture.presenters.closeAll.mock.invocationCallOrder[0]);
+    expect(fixture.gateway.shutdown.mock.invocationCallOrder[0])
+      .toBeLessThan(fixture.subscriber.close.mock.invocationCallOrder[0]);
+    expect(fixture.presenters.closeAll.mock.invocationCallOrder[0])
+      .toBeLessThan(fixture.admissionController.close.mock.invocationCallOrder[0]);
+    expect(fixture.admissionController.close.mock.invocationCallOrder[0])
+      .toBeLessThan(fixture.admissionClient.close.mock.invocationCallOrder[0]);
+    expect(fixture.admissionController.close.mock.invocationCallOrder[0])
+      .toBeLessThan(fixture.authDatabase.close.mock.invocationCallOrder[0]);
     expect(Object.values(fixture.listenerCounts).map((count) => count())).toEqual([0, 0, 0, 0]);
     expect(fixture.telemetry.error).not.toHaveBeenCalled();
     expect(fixture.telemetry.shutdown).toHaveBeenCalledOnce();
     expect(fixture.telemetry.tracing).toHaveBeenCalledOnce();
-    expect(fixture.telemetry.shutdown.mock.invocationCallOrder[0]!)
-      .toBeGreaterThan(fixture.authDatabase.close.mock.invocationCallOrder[0]!);
-    expect(fixture.telemetry.tracing.mock.invocationCallOrder[0]!)
-      .toBeGreaterThan(fixture.authDatabase.close.mock.invocationCallOrder[0]!);
-    expect(fixture.telemetry.shutdown.mock.invocationCallOrder[0]!)
-      .toBeGreaterThan(fixture.telemetry.tracing.mock.invocationCallOrder[0]!);
+    expect(fixture.telemetry.shutdown.mock.invocationCallOrder[0])
+      .toBeGreaterThan(fixture.authDatabase.close.mock.invocationCallOrder[0]);
+    expect(fixture.telemetry.tracing.mock.invocationCallOrder[0])
+      .toBeGreaterThan(fixture.authDatabase.close.mock.invocationCallOrder[0]);
+    expect(fixture.telemetry.shutdown.mock.invocationCallOrder[0])
+      .toBeGreaterThan(fixture.telemetry.tracing.mock.invocationCallOrder[0]);
     expect(fixture.telemetry.healthTransition.mock.calls.map(([state]) => state)).toEqual([
       "starting", "ready", "draining", "stopped",
     ]);

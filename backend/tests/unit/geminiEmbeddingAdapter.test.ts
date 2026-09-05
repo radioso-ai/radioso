@@ -11,7 +11,7 @@ describe("Gemini embedding descriptor mapping", () => {
   ] as const)("maps %s purpose and explicit dimensions", async (purpose, taskType) => {
     let body: Record<string, unknown> | undefined;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
-      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      body = JSON.parse(init?.body as string) as Record<string, unknown>;
       return Response.json({ embedding: { values: [1, 0] } });
     });
 

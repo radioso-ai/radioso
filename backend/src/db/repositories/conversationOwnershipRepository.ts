@@ -86,7 +86,7 @@ const mapRecord = (row: ConversationOwnershipRow): ConversationOwnershipRecord =
   state: row.state as ConversationOwnershipState,
   ownerAccountId: row.owner_account_id,
   ownerDisplayName: row.owner_display_name,
-  reason: row.reason as ConversationOwnershipReason | null,
+  reason: row.reason,
   version: row.version,
   takenOverAt: row.taken_over_at,
   createdAt: row.created_at,

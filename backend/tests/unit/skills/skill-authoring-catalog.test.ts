@@ -98,6 +98,7 @@ describe("SkillAuthoringCatalogService", () => {
             },
             {
               skillName: "disabled_tool",
+              // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- widens the empty literal so the sibling entries in this array still match.
               exposedParams: {} as Record<string, { description?: string }>,
               declaredOutcomes: null,
               outcomeMap: null,

@@ -40,7 +40,7 @@ export const createEvalCopilotTools = (deps: EvalCopilotToolDependencies): Reado
         .sort(newestEvalResultFirst)
         .slice(0, limit ?? 20)
         .map(asRecord);
-      return boundPayload({ cases }) as { cases: Record<string, unknown>[] };
+      return boundPayload({ cases });
     } }),
     describeEntity: (input, context) => {
       const parsed = input as { agentId?: string; agentName?: string };
@@ -252,7 +252,7 @@ export const createEvalVerificationCopilotTools = (
       },
     }),
     describeOutputEntity: (output) => entity("eval", output.evalCase.id),
-  } satisfies CopilotToolDescriptor<CaptureInput, CaptureOutput> as CopilotToolDescriptor,
+  } satisfies CopilotToolDescriptor<CaptureInput, CaptureOutput>,
   {
     name: "run_eval_suite",
     // An act, not a probe: a run persists a row per case and moves each case's status, which is the
@@ -297,7 +297,7 @@ export const createEvalVerificationCopilotTools = (
         });
       },
     }),
-  } satisfies CopilotToolDescriptor<SuiteRunInput, SuiteRunOutput> as CopilotToolDescriptor,
+  } satisfies CopilotToolDescriptor<SuiteRunInput, SuiteRunOutput>,
   {
     name: "replay_eval_case",
     // A probe, not an act: the run is stored detached, so the case's verdict, its last-run
@@ -348,13 +348,13 @@ export const createEvalVerificationCopilotTools = (
       },
     }),
     describeOutputEntity: (output) => entity("eval", output.caseId),
-  } satisfies CopilotToolDescriptor<ReplayInput, ReplayOutput> as CopilotToolDescriptor,
+  } satisfies CopilotToolDescriptor<ReplayInput, ReplayOutput>,
 ];
 
 /** Grounding diagnostics are unbounded by contract; a replay carries them only as evidence. */
 const boundedDiagnostics = (diagnostics: unknown): Record<string, unknown> | null => {
   if (!diagnostics || typeof diagnostics !== "object" || Array.isArray(diagnostics)) return null;
-  return boundPayload(diagnostics as Record<string, unknown>) as Record<string, unknown>;
+  return boundPayload(diagnostics as Record<string, unknown>);
 };
 
 const projectSuiteCase = (result: CopilotEvalSuiteCaseResult): SuiteRunOutput["results"][number] => ({

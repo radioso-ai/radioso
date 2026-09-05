@@ -52,12 +52,12 @@ describe("ContactSendActionHandler", () => {
     });
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.to).toBe("owner@business.example");
-    expect(sent[0]!.replyTo).toBe("alex@example.com");
-    expect(sent[0]!.idempotencyKey).toBe("routine-action:conv_1:contact.send:hash:email:owner%40business.example");
-    expect(sent[0]!.text).toContain("Alex");
-    expect(sent[0]!.text).toContain("alex@example.com");
-    expect(sent[0]!.text).toContain("Please call me about pricing.");
+    expect(sent[0].to).toBe("owner@business.example");
+    expect(sent[0].replyTo).toBe("alex@example.com");
+    expect(sent[0].idempotencyKey).toBe("routine-action:conv_1:contact.send:hash:email:owner%40business.example");
+    expect(sent[0].text).toContain("Alex");
+    expect(sent[0].text).toContain("alex@example.com");
+    expect(sent[0].text).toContain("Please call me about pricing.");
   });
 
   it("fans out email delivery to every resolved recipient with per-address idempotency", async () => {
@@ -100,9 +100,9 @@ describe("ContactSendActionHandler", () => {
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.url).toBe("https://hooks.example.com/contact");
-    expect(requests[0]!.headers["Idempotency-Key"]).toBe("routine-action:conv_1:contact.send:hash:webhook");
-    expect(JSON.parse(requests[0]!.rawBody)).toEqual({
+    expect(requests[0].url).toBe("https://hooks.example.com/contact");
+    expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:contact.send:hash:webhook");
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
       name: "Alex",
       email: "alex@example.com",
       message: "Please call me about pricing.",
@@ -111,8 +111,8 @@ describe("ContactSendActionHandler", () => {
       requestId: "request_1",
     });
     // Signing was dropped: no signature/timestamp headers are sent.
-    expect(requests[0]!.headers["X-Radioso-Signature"]).toBeUndefined();
-    expect(requests[0]!.headers["X-Radioso-Timestamp"]).toBeUndefined();
+    expect(requests[0].headers["X-Radioso-Signature"]).toBeUndefined();
+    expect(requests[0].headers["X-Radioso-Timestamp"]).toBeUndefined();
   });
 
   it("delivers email and webhook together when both are configured", async () => {
@@ -163,7 +163,7 @@ describe("ContactSendActionHandler", () => {
     await handler.handle({ payload: {}, context });
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.replyTo).toBeNull();
+    expect(sent[0].replyTo).toBeNull();
   });
 });
 
@@ -190,7 +190,7 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
     });
 
     expect(report).toHaveBeenCalledOnce();
-    const [reportInput] = report.mock.calls[0]!;
+    const [reportInput] = report.mock.calls[0];
     expect(reportInput.errorType).toBe("action.contact_send.delivery_failed");
     expect(reportInput.severity).toBe("error");
     expect(reportInput.metadata).toMatchObject({
@@ -200,7 +200,7 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
     });
 
     expect(warn).toHaveBeenCalledOnce();
-    const [warnPayload] = warn.mock.calls[0]!;
+    const [warnPayload] = warn.mock.calls[0];
 
     // No visitor content (email/name/message) anywhere in either call.
     const serialized = JSON.stringify([reportInput, warnPayload]);
@@ -235,7 +235,7 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
     });
 
     expect(report).toHaveBeenCalledOnce();
-    const [reportInput] = report.mock.calls[0]!;
+    const [reportInput] = report.mock.calls[0];
 
     // Neither a forwarded `error` object nor the `message`/`errorClass` fields may
     // carry the raw text — `new Error(rawProviderError)` would leak it via

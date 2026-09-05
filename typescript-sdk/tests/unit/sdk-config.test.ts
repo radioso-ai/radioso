@@ -13,7 +13,7 @@ describe("sdk config", () => {
 
     const client = createRadiosoClient({
       apiToken: "token-123",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     await client.settings.getGeneral();
@@ -53,7 +53,7 @@ describe("sdk config", () => {
     const client = createRadiosoClient({
       baseUrl: "https://api.example.com///",
       apiToken: "token-123",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     await client.settings.getGeneral();
@@ -88,7 +88,7 @@ describe("sdk config", () => {
     const client = createRadiosoClient({
       baseUrl: "https://api.example.com/backend/",
       apiToken: "token-123",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     await client.settings.getGeneral();
@@ -110,7 +110,7 @@ describe("sdk config", () => {
     const client = createRadiosoClient({
       baseUrl: "https://api.example.com///",
       apiToken: "token-123",
-      fetch: fetchMock as typeof fetch,
+      fetch: fetchMock,
     });
 
     for await (const _event of client.chat.stream({ message: "hello" })) {
@@ -137,7 +137,7 @@ describe("sdk config", () => {
 
     await expect(async () => client.chat.create({
       message: "hello",
-      stream: true as true,
+      stream: true as const,
     } as never)).rejects.toThrow("Use chat.stream()");
   });
 });

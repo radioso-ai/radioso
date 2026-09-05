@@ -222,6 +222,7 @@ export const agentSkillPorts = () => {
       name: "notify_ops",
       capability: "notify",
       target: { kind: "webhook_destination", id: "target-1" },
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- widens this mock config so other tests can resolve a differently shaped one.
       config: {
         boundPayload: { customerEmail: "person@example.com" },
         delivery: {

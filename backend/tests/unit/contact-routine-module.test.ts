@@ -66,7 +66,7 @@ describe("contact routine application module", () => {
   });
 
   it("advertises the contact action only when the agent enabled it and has a destination", async () => {
-    const registration = applyModule().publicChatActionAdvertiserRegistrations[0]!;
+    const registration = applyModule().publicChatActionAdvertiserRegistrations[0];
     const build = (enabled: boolean, delivery = withDestination) =>
       typeof registration === "function"
         ? registration({ agentService: agentServiceWith(enabled, delivery) } as never)
@@ -82,7 +82,7 @@ describe("contact routine application module", () => {
   });
 
   it("keeps contact activation behind the agent flag plus a destination, and claims intent-click metadata deterministically", () => {
-    const registration = applyModule().routineRegistrations[0]!;
+    const registration = applyModule().routineRegistrations[0];
     const baseTurn = {
       agent: { id: "agent_1", metadata: { contactRequestsEnabled: true, hasContactDestination: true } },
       sessionId: "conv_1",

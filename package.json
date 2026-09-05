@@ -9,7 +9,12 @@
     "check:api-contracts": "pnpm --dir backend run generate:openapi && node scripts/check-api-contracts.mjs",
     "generate:prompts": "node scripts/generate-default-prompts.mjs",
     "check:prompts": "node scripts/generate-default-prompts.mjs --check",
-    "ci:local": "bash scripts/local-ci-checks.sh"
+    "ci:local": "bash scripts/local-ci-checks.sh",
+    "lint": "NODE_OPTIONS=--max-old-space-size=8192 eslint .",
+    "lint:fix": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --fix",
+    "lint:dead-code": "NODE_OPTIONS=--max-old-space-size=8192 knip",
+    "lint:dead-code:ci": "node scripts/knip-ratchet.mjs",
+    "lint:dead-code:baseline": "node scripts/knip-ratchet.mjs --update"
   },
   "pnpm": {
     "overrides": {
@@ -30,5 +35,15 @@
       "uuid@<11.1.1": "11.1.1",
       "vite": "7.3.5"
     }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.2.6",
+    "eslint-plugin-unused-imports": "^4.2.0",
+    "globals": "^16.4.0",
+    "knip": "^5.66.4",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.46.4"
   }
 }

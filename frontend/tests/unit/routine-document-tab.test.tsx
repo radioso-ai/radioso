@@ -19,7 +19,7 @@ const newRoutineDraft: RoutineDefinitionDraft = {
 
 const branchRoutineDraft: RoutineDefinitionDraft = {
   ...newRoutineDraft,
-  steps: [{ ...newRoutineDraft.steps[0]!, instruction: 'Ask the customer how we can help.' }],
+  steps: [{ ...newRoutineDraft.steps[0], instruction: 'Ask the customer how we can help.' }],
 }
 
 function FeedbackHarness({ onDraftChange }: { onDraftChange: (draft: RoutineDefinitionDraft) => void }) {
@@ -169,7 +169,7 @@ describe('RoutineDocumentTab', () => {
   it('anchors validation diagnostics to their step with operator copy, quiet while editing', () => {
     const draft = {
       ...newRoutineDraft,
-      steps: [{ ...newRoutineDraft.steps[0]!, instruction: 'Ask something.' }],
+      steps: [{ ...newRoutineDraft.steps[0], instruction: 'Ask something.' }],
       transitions: [{
         fromStep: 'step_1', toRef: 'end_1', guardKind: 'field' as const, guardText: null, outcomeStatus: null,
         counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0,

@@ -70,7 +70,7 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
       })
       .returning(destinationColumns)
       .executeTakeFirstOrThrow();
-    return mapRow(row as WebhookDestinationRow);
+    return mapRow(row);
   }
 
   async listByWorkspace(workspaceId: string): Promise<WebhookDestinationRecord[]> {
@@ -82,7 +82,7 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
       .execute();
-    return rows.map((row) => mapRow(row as WebhookDestinationRow));
+    return rows.map((row) => mapRow(row));
   }
 
   async findByIdAndWorkspace(id: string, workspaceId: string): Promise<WebhookDestinationRecord | null> {
@@ -95,7 +95,7 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
       .where("id", "=", id)
       .where("workspace_id", "=", workspaceId)
       .executeTakeFirst();
-    return row ? mapRow(row as WebhookDestinationRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async update(
@@ -113,7 +113,7 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
       .where("workspace_id", "=", workspaceId)
       .returning(destinationColumns)
       .executeTakeFirst();
-    return row ? mapRow(row as WebhookDestinationRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async updateSecret(
@@ -135,7 +135,7 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
       .where("workspace_id", "=", workspaceId)
       .returning(destinationColumns)
       .executeTakeFirst();
-    return row ? mapRow(row as WebhookDestinationRow) : null;
+    return row ? mapRow(row) : null;
   }
 
   async recordDeliveryOutcome(

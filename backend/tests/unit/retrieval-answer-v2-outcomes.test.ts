@@ -569,7 +569,7 @@ describe("retrieval answer envelope v2", () => {
         try {
           yield "PRIVATE UNSUPPORTED PREFIX";
           await new Promise<void>((_resolve, reject) => {
-            input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+            input.signal?.addEventListener("abort", () => reject(input.signal?.reason as Error), { once: true });
           });
         } finally {
           providerAbortObserved = input.signal?.aborted ?? false;

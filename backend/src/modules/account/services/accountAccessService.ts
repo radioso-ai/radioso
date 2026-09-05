@@ -236,7 +236,7 @@ export class AccountAccessService {
     actorUserId: string;
     membershipId: string;
   }): Promise<void> {
-    const actorMembership = await this.requireActiveMembership(input.accountId, input.actorUserId);
+    await this.requireActiveMembership(input.accountId, input.actorUserId);
     const targetMembership = await this.requireMembershipById(input.membershipId);
 
     if (targetMembership.accountId !== input.accountId) {

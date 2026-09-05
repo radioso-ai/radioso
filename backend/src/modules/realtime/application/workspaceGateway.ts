@@ -12,6 +12,7 @@ import {
   type MonotonicClock,
   WorkspaceReleaseDeadlineScheduler,
 } from "./workspaceReleaseDeadlineScheduler.js";
+import { asError } from "../../../shared/errors/asError.js";
 
 export type WorkspaceGatewayCloseReason = "superseded" | "shutdown" | "transport_lost";
 
@@ -228,7 +229,7 @@ export class WorkspaceGateway {
 
   private async reconcile(interest: Interest): Promise<void> {
     if (this.interests.get(interest.workspaceId) !== interest) {
-      if (interest.failure) throw interest.failure;
+      if (interest.failure) throw asError(interest.failure);
       return;
     }
 
@@ -287,7 +288,7 @@ export class WorkspaceGateway {
     const attachment = interest.sessions.get(connectionId);
     if (!attachment || attachment.token !== token) return Promise.reject(new Error("Workspace gateway attachment was superseded"));
     if (this.shuttingDown) return Promise.reject(new Error("Workspace gateway shutdown"));
-    if (interest.failure) return Promise.reject(interest.failure);
+    if (interest.failure) return Promise.reject(asError(interest.failure));
     if (interest.subscribed && !this.continuityLost && interest.state === "active") {
       attachment.ready = true;
       return Promise.resolve(interest.generation);

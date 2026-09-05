@@ -21,6 +21,7 @@ import {
   type WebsiteCrawlPolicy,
 } from "./policy.js";
 import { isUsageLimitExceededError } from "../../shared/domain/usageLimitPolicy.js";
+import { usageLimitExceeded } from "../../shared/domain/errors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
 // Pages exceeding this character count are skipped during ingestion to avoid
@@ -526,7 +527,11 @@ export class WebsiteCrawlerService {
           status: "failure",
         });
       }
-      throw usageLimitError;
+      // Not expected to be reachable: isUsageLimitExceededError only sets usageLimitError from a
+      // caught value, which is always a real AppError-like Error in practice. Fall back to an
+      // equivalent structured error so downstream duck-typing (errorHandler.ts) still sees the
+      // usage_limit_exceeded code and 429 status if that ever changes.
+      throw usageLimitError instanceof Error ? usageLimitError : usageLimitExceeded("Usage limit exceeded", usageLimitError);
     }
 
     await flushCheckpointPersistence();

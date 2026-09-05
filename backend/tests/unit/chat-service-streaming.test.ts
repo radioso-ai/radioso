@@ -319,7 +319,7 @@ const asChatActivityPipeline = (pipeline: Record<string, unknown>) => {
       };
     },
     async runInterpreted(interpretation: { request: unknown }) {
-      return (pipeline.run as (input: unknown) => unknown | Promise<unknown>)(interpretation.request);
+      return (pipeline.run as (input: unknown) => unknown)(interpretation.request);
     },
     async runWithoutRetrieval() {
       throw new Error("runWithoutRetrieval should not be used for retrieval turns");
@@ -702,12 +702,11 @@ describe("chat service streaming", () => {
   it("keeps authenticated streaming quota failures on the untouched JSON error path", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
-    const quotaError = {
+    const quotaError = Object.assign(new Error("Usage limit exceeded"), {
       statusCode: 429,
       code: "usage_limit_exceeded",
-      message: "Usage limit exceeded",
       details: { resource: "monthly_answers", resetAt: "2026-08-01T00:00:00.000Z" },
-    };
+    });
     const { usageLimitPolicy: baseUsageLimitPolicy } = createUsageLimitPolicy();
     const usageLimitPolicy: NonNullable<ChatServiceOptions["usageLimitPolicy"]> = {
       ...baseUsageLimitPolicy,
@@ -800,11 +799,10 @@ describe("chat service streaming", () => {
       sourceChannel,
       chatSessionId,
     );
-    const readError = {
+    const readError = Object.assign(new Error(`${reader} unavailable`), {
       statusCode: 503,
       code: "preflight_read_failed",
-      message: `${reader} unavailable`,
-    };
+    });
     const chatGateway: ChatGateway = {
       async answer() { return "unused"; },
       async *streamAnswer() { yield "unused"; },
@@ -906,7 +904,13 @@ describe("chat service streaming", () => {
           try {
             yield "PRIVATE DOCUMENT DRAFT ".repeat(300);
           } finally {
+            // Intentional: streamWithUsage reads the generator's return value as the
+            // final usage payload (see providerStreaming.ts). The abort signal is only
+            // observable once the caller closes this generator via `.return()`, which
+            // only runs code placed in `finally` -- mirrors real provider adapters' close
+            // semantics, so the finally-return isn't the accidental-swallow the rule guards.
             candidateAbortObserved = input.signal?.aborted ?? false;
+            // eslint-disable-next-line no-unsafe-finally -- see comment above
             return { inputTokens: 20, outputTokens: 9, totalTokens: 29, quality: "actual" as const };
           }
         });
@@ -2201,7 +2205,7 @@ describe("chat service streaming", () => {
     });
 
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     const turnTrace = persisted.auditEvent.metadata?.turnTrace as {
       summary?: { totalLlmCalls?: number; droppedCallCount?: number };
       spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
@@ -2559,8 +2563,8 @@ describe("chat service streaming", () => {
       createConversationEngine(),
       { routineStore, routineProvider },
     );
-    const events = service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true })
-      [Symbol.asyncIterator]();
+    const stream = service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true });
+    const events = stream[Symbol.asyncIterator]();
 
     await expect(events.next()).resolves.toMatchObject({ value: { type: "status", stage: "interpreting" } });
     await expect(events.next()).resolves.toMatchObject({ value: { type: "conversation" } });
@@ -2707,7 +2711,7 @@ describe("chat service streaming", () => {
 
     expect(response.answer).toBe("A person will help you from here.");
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.content).toBe("A person will help you from here.");
     expect(persisted.ownershipHandoff).toEqual({
       reason: "routine_handoff",
@@ -2787,7 +2791,7 @@ describe("chat service streaming", () => {
     const response = await service.answer({ workspaceId: "workspace-1", query: "finish", stream: false });
 
     expect(response.answer).toBe("All set.");
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.ownershipHandoff).toBeNull();
     expect(persisted.ownershipAuditEvent).toBeNull();
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
@@ -2810,7 +2814,7 @@ describe("chat service streaming", () => {
     const response = await service.answer({ workspaceId: "workspace-1", query: "missing topic", stream: false });
 
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
     expect(persisted.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
     expect(persisted.actions).toContainEqual({
@@ -2841,7 +2845,7 @@ describe("chat service streaming", () => {
 
     await service.answer({ workspaceId: "workspace-1", query: "what is the capital of Mars", stream: false });
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome);
     expect(persisted.ownershipHandoff).toBeNull();
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
@@ -2871,7 +2875,7 @@ describe("chat service streaming", () => {
 
     await service.answer({ workspaceId: "workspace-1", query: "missing topic", stream: false });
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage).toMatchObject({
       skillName: "retrieval.answer",
       skillOutcome: "unavailable",
@@ -2900,7 +2904,7 @@ describe("chat service streaming", () => {
 
     await service.answer({ workspaceId: "workspace-1", query: "What is your name?", stream: false });
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage).toMatchObject({
       skillName: "direct.answer",
       skillOutcome: "direct",
@@ -2926,7 +2930,7 @@ describe("chat service streaming", () => {
 
     await service.answer({ workspaceId: "workspace-1", query: "missing topic", stream: false });
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
     expect(persisted.ownershipHandoff).toBeNull();
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
@@ -2948,7 +2952,7 @@ describe("chat service streaming", () => {
 
     await service.answer({ workspaceId: "workspace-1", query: "known topic", stream: false });
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome);
     expect(persisted.ownershipHandoff).toBeNull();
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
@@ -2976,7 +2980,7 @@ describe("chat service streaming", () => {
     const done = events.find((event) => event.type === "done");
     expect(done?.type).toBe("done");
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
     expect(persisted.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
     expect(persisted.actions).toContainEqual({
@@ -3008,7 +3012,7 @@ describe("chat service streaming", () => {
       // drain
     }
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
     expect(persisted.ownershipHandoff).toBeNull();
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
@@ -3032,7 +3036,7 @@ describe("chat service streaming", () => {
       // drain
     }
 
-    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
     expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED.outcome);
     expect(persisted.ownershipHandoff).toBeNull();
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
@@ -3445,7 +3449,7 @@ describe("chat service streaming", () => {
       if (event.type === "chunk") {
         expect(event.text).not.toContain("[[");
         const [conversationId] = conversationRepository.items.keys();
-        const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+        const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
         expect(persisted.map((message) => message.role)).toEqual(["user"]);
       }
     }
@@ -3526,7 +3530,7 @@ describe("chat service streaming", () => {
     });
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
       { role: "assistant", content: "full answer" },
@@ -4152,7 +4156,7 @@ describe("chat service streaming", () => {
     await expect(iterator.next()).rejects.toBeInstanceOf(BlankChatAnswerError);
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
     ]);
@@ -4234,7 +4238,7 @@ describe("chat service streaming", () => {
     ).rejects.toBeInstanceOf(BlankChatAnswerError);
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
     ]);
@@ -4912,7 +4916,7 @@ describe("chat service streaming", () => {
     }));
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
       content: "full answer  marker",
@@ -5039,7 +5043,7 @@ describe("chat service streaming", () => {
     }));
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
       content: "full answer",
@@ -5104,7 +5108,7 @@ describe("chat service streaming", () => {
     })).rejects.toThrow("touch failed");
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
       {
@@ -5147,7 +5151,7 @@ describe("chat service streaming", () => {
 
     const [conversationId] = conversationRepository.items.keys();
     expect(conversationId).toEqual(expect.any(String));
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
       { role: "user", content: "What does this page do?" },
     ]);
@@ -5230,7 +5234,7 @@ describe("chat service streaming", () => {
     );
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 
@@ -5376,7 +5380,7 @@ describe("chat service streaming", () => {
 
     expect(response.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }]);
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.at(-1)).toMatchObject({
       skillName: "retrieval.answer",
       skillOutcome: "grounded_degraded",
@@ -5451,7 +5455,7 @@ describe("chat service streaming", () => {
     });
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(response.answer).toBe(focusedDecline);
     expect(response.skillOutcome).toBe("no_context");
     expect(declineAttemptKeys).toEqual(["unsupported_answer"]);
@@ -5712,7 +5716,7 @@ describe("chat service streaming", () => {
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
-    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
     expect(persisted.at(-1)?.content).toBe(response.answer);
   });
 

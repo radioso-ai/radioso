@@ -62,7 +62,7 @@ export interface AgentTurnProbeRunnerPort {
 }
 
 export interface AgentTurnProbeAgentReader {
-  findAgentForProbe(agentId: string, workspaceId: string): Promise<unknown | null>;
+  findAgentForProbe(agentId: string, workspaceId: string): Promise<unknown>;
 }
 
 export interface AgentTurnProbeServiceDependencies extends CopilotExpensiveOperationGuardDependencies {

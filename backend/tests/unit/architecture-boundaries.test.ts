@@ -8,7 +8,7 @@ const moduleUrl = new URL("../../../scripts/validate-architecture-boundaries.mjs
 const {
   validateImportRecords,
   validateRepositoryBoundaries,
-} = await import(moduleUrl.href) as any;
+} = await import(moduleUrl.href);
 const require = createRequire(import.meta.url);
 const dependencyCruiserConfig = require("../../dependency-cruiser.config.cjs") as {
   forbidden: Array<{

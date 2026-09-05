@@ -246,6 +246,10 @@ describe('dedicated workspace-events frontend proxy', () => {
     vi.stubEnv('REALTIME_INTERNAL_URL', 'https://realtime.internal.example')
     const fetchMock = vi.fn((_url: string, init?: RequestInit) =>
       new Promise<Response>((_resolve, reject) => {
+        // Mirrors the real fetch()/AbortSignal contract: the promise rejects with
+        // `signal.reason` verbatim, whatever the caller passed to `abort()` -- not
+        // necessarily an Error. The assertion below checks identity with `reason`.
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- see above
         init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
       }),
     )

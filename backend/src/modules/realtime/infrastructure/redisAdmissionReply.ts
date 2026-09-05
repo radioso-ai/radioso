@@ -50,7 +50,7 @@ const objectReply = (name: AdmissionOperation, value: Record<string, unknown>): 
       ok: false,
       reason: value.reason,
       retryAfterMs: value.retryAfterMs,
-      hasMore: value.hasMore as boolean | undefined,
+      hasMore: value.hasMore,
     };
   }
 
@@ -66,10 +66,10 @@ const objectReply = (name: AdmissionOperation, value: Record<string, unknown>): 
     ok: true,
     reason: value.reason,
     serverTimeMs: value.serverTimeMs,
-    expiresAtMs: value.expiresAtMs as number | undefined,
-    processedCount: value.processedCount as number | undefined,
-    hasMore: value.hasMore as boolean | undefined,
-    leaseId: value.leaseId as string | undefined,
+    expiresAtMs: value.expiresAtMs,
+    processedCount: value.processedCount,
+    hasMore: value.hasMore,
+    leaseId: value.leaseId,
   };
 };
 

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignore": [
+    "**/.next/**",
+    "**/public/**",
+    "typescript-sdk/src/generated/**",
+    "frontend/app/{api/embed,embed,embed-test,radioso-embed.js,operator}/**"
+  ],
+  "ignoreBinaries": [
+    "depcruise",
+    "docker",
+    "docker-compose",
+    "psql",
+    "pg_dump"
+  ],
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.mjs",
+        "tests/**/*.test.mjs",
+        "tests/embed-site/site.js"
+      ],
+      "project": [
+        "scripts/**/*.{mjs,js}",
+        "tests/**/*.{ts,mjs,js}"
+      ]
+    },
+    "backend": {
+      "entry": [
+        "src/httpServer.ts",
+        "src/realtime.ts",
+        "src/realtimeServer.ts",
+        "src/documentWorker.ts",
+        "src/documentWorkerServer.ts",
+        "src/crawlerWorker.ts",
+        "src/crawlerWorkerServer.ts",
+        "scripts/**/*.{ts,mjs}",
+        "tests/**/*.test.ts",
+        "tests/support/**/*.ts",
+        "tests/fixtures/**/*.ts",
+        "tests/contract/kysely-typecheck.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "scripts/**/*.{ts,mjs}",
+        "tests/**/*.ts"
+      ]
+    },
+    "frontend": {
+      "entry": [
+        "tests/**/*.{test,spec}.{ts,tsx}",
+        "e2e/**/*.{test,spec}.ts",
+        "lib/radioso-embed-launcher.js"
+      ]
+    },
+    "docs-portal": {
+      "entry": [
+        "mdx-components.tsx",
+        "content/**/_meta.{js,ts,tsx}",
+        "scripts/**/*.mjs"
+      ]
+    },
+    "typescript-sdk": {
+      "entry": [
+        "src/index.ts",
+        "tests/**/*.test.ts",
+        "scripts/**/*.{ts,mjs}"
+      ]
+    },
+    "packages/*": {
+      "entry": [
+        "src/index.ts",
+        "tests/**/*.test.ts",
+        "scripts/**/*.{ts,mjs}",
+        "src/cli/http.ts"
+      ]
+    },
+    "ee/packages/*": {
+      "entry": [
+        "feature-manifest.mjs",
+        "src/**/*.test.ts",
+        "src/**/__tests__/**/*.ts",
+        "*.ts",
+        "src/featureManifest.ts"
+      ]
+    }
+  }
+}

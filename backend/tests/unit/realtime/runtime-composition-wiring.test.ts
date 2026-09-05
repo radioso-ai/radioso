@@ -127,10 +127,10 @@ describe("realtime runtime composition wiring", () => {
     composition.dependencies.admissionControllerFactory({ localProcessCap: 900 });
     composition.dependencies.gatewayFactory({ maxConnections: 900, transportLossGraceMs: 20_000 });
 
-    const subscriberTelemetry = captures.subscriberInputs[0]!.telemetry as Record<string, unknown>;
-    const admissionClientTelemetry = captures.admissionClientInputs[0]!.telemetry as Record<string, unknown>;
-    const admissionTelemetry = captures.admissionControllerInputs[0]!.telemetry as Record<string, unknown>;
-    const gatewayTelemetry = captures.gatewayInputs[0]!.telemetry as Record<string, unknown>;
+    const subscriberTelemetry = captures.subscriberInputs[0].telemetry as Record<string, unknown>;
+    const admissionClientTelemetry = captures.admissionClientInputs[0].telemetry as Record<string, unknown>;
+    const admissionTelemetry = captures.admissionControllerInputs[0].telemetry as Record<string, unknown>;
+    const gatewayTelemetry = captures.gatewayInputs[0].telemetry as Record<string, unknown>;
     const routeTelemetry = captures.routeDeps!.telemetry as Record<string, unknown>;
     const streamTelemetry = captures.routeDeps!.streamTelemetry as Record<string, unknown>;
 

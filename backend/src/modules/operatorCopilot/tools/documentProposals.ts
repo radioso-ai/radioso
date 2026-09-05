@@ -129,7 +129,7 @@ const documentProposalDescriptor = <TInput>(
       },
     }),
     describeEntity: (input) => entity("document", spec.targetDocumentId(input as TInput)),
-  } as CopilotToolDescriptor;
+  };
 };
 
 export const createDocumentProposalCopilotTools = (

@@ -75,11 +75,11 @@ describe("WebhookSendActionHandler", () => {
 
     expect(destinations.resolve).toHaveBeenCalledWith(destinationId, { workspaceId: "ws_1" });
     expect(requests).toHaveLength(1);
-    expect(requests[0]!.url).toBe("https://hooks.example.com/routine");
-    expect(requests[0]!.headers["Idempotency-Key"]).toBe("routine-action:conv_1:webhook.send:hash");
-    expect(requests[0]!.headers["X-Radioso-Timestamp"]).toEqual(expect.any(String));
-    expect(requests[0]!.headers["X-Radioso-Signature"]).toMatch(/^sha256=[a-f0-9]{64}$/);
-    expect(JSON.parse(requests[0]!.rawBody)).toEqual({
+    expect(requests[0].url).toBe("https://hooks.example.com/routine");
+    expect(requests[0].headers["Idempotency-Key"]).toBe("routine-action:conv_1:webhook.send:hash");
+    expect(requests[0].headers["X-Radioso-Timestamp"]).toEqual(expect.any(String));
+    expect(requests[0].headers["X-Radioso-Signature"]).toMatch(/^sha256=[a-f0-9]{64}$/);
+    expect(JSON.parse(requests[0].rawBody)).toEqual({
       type: "routine.completion",
       workspaceId: "ws_1",
       conversationId: "conv_1",

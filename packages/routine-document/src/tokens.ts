@@ -370,12 +370,12 @@ const splitList = (raw: string): string[] =>
 const parseExport = (value: string): RoutineCompletionExport | null => {
   const match = /^([A-Za-z_,\s]+)\s*->\s*(\S+)$/.exec(value.trim())
   if (!match) return null
-  const triggerKinds = splitList(match[1]!)
+  const triggerKinds = splitList(match[1])
   if (triggerKinds.length === 0 || triggerKinds.some((kind) => !EXPORT_TRIGGER_KINDS.has(kind))) return null
   return {
     enabled: true,
     triggerKinds: triggerKinds as RoutineCompletionExport['triggerKinds'],
-    destinationRef: match[2]!,
+    destinationRef: match[2],
   }
 }
 
@@ -385,7 +385,7 @@ const parseTerminalFrontmatter = (value: string): { id: string; instruction?: st
   const match = TERMINAL_FRONTMATTER.exec(value.trim())
   if (!match) return null
   return {
-    id: match[1]!,
+    id: match[1],
     ...(match[2] != null ? { instruction: unescapeQuoted(match[2]) } : {}),
   }
 }
@@ -420,7 +420,7 @@ const parseConditionBody = (body: string): Extract<ProseSegment, { kind: 'chip' 
   }
   if (opNeedsUnit(op)) {
     const parts = tail.split(/\s+/)
-    const unit = parts.length > 1 && (GUARD_UNITS as readonly string[]).includes(parts[parts.length - 1]!)
+    const unit = parts.length > 1 && (GUARD_UNITS as readonly string[]).includes(parts[parts.length - 1])
       ? (parts.pop() as RoutineFieldGuardUnit)
       : null
     if (!unit) return null
@@ -448,7 +448,7 @@ const parseGateOptions = (body: string): ApprovalDocOption[] => {
   for (const match of body.matchAll(GATE_OPTION)) {
     const target = parseTarget(match[4])
     options.push({
-      id: match[1]!,
+      id: match[1],
       label: unescapeQuoted(match[2] ?? ''),
       ...(match[3] ? { description: unescapeQuoted(match[3]) } : {}),
       ...(target ? { target } : {}),
@@ -559,7 +559,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
       const named = new RegExp(`^-> end:(${stableIdentifierSource})(?:\\s*\\("((?:[^"\\\\]|\\\\.)*)"\\))?${TARGET_END_DELIMITER}`, 'u').exec(rest)
       if (named) {
         flushBeforeTarget()
-        segments.push({ kind: 'chip', chipKind: 'end', refId: named[1]!, label: named[1]!, value: named[2] != null ? unescapeQuoted(named[2]) : null })
+        segments.push({ kind: 'chip', chipKind: 'end', refId: named[1], label: named[1], value: named[2] != null ? unescapeQuoted(named[2]) : null })
         index += named[0].length
         continue
       }
@@ -572,7 +572,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     const stepMatch = new RegExp(`^-> step:(${stableIdentifierSource})(?:\\s*\\(max (\\d+)\\))?${TARGET_ID_DELIMITER}`, 'u').exec(rest)
     if (stepMatch) {
       flushBeforeTarget()
-      segments.push({ kind: 'chip', chipKind: 'step', refId: stepMatch[1]!, label: stepMatch[1]!, counterLimit: stepMatch[2] ? Number(stepMatch[2]) : null })
+      segments.push({ kind: 'chip', chipKind: 'step', refId: stepMatch[1], label: stepMatch[1], counterLimit: stepMatch[2] ? Number(stepMatch[2]) : null })
       index += stepMatch[0].length
       continue
     }
@@ -724,8 +724,8 @@ export const parseProseDoc = (
   let bodyStart = 0
   if (lines[0]?.trim() === FENCE) {
     let cursor = 1
-    while (cursor < lines.length && lines[cursor]!.trim() !== FENCE) {
-      const line = lines[cursor]!
+    while (cursor < lines.length && lines[cursor].trim() !== FENCE) {
+      const line = lines[cursor]
       const sep = line.indexOf(':')
       if (sep !== -1) {
         const key = line.slice(0, sep).trim()
@@ -803,7 +803,7 @@ export const parseProseDoc = (
   }
   // A trailing blank line from the join shouldn't add an empty paragraph.
   while (paragraphs.length > 1) {
-    const last = paragraphs[paragraphs.length - 1]!
+    const last = paragraphs[paragraphs.length - 1]
     if (last.headingLevel || last.segments.some((segment) => segment.kind !== 'text' || segment.text !== '')) break
     paragraphs.pop()
   }
@@ -1034,7 +1034,7 @@ const readSkillSuffixDiagnostics = (line: string, lineNumber: number): ParseDiag
     if (close === -1) continue
     const suffix = line.slice(suffixStart + 1, suffixStart + close)
     if (!parseSkillSuffix(suffix)) {
-      diagnostics.push(invalidSkillBindingSuffixDiagnostic(match[2]!, suffix, lineNumber))
+      diagnostics.push(invalidSkillBindingSuffixDiagnostic(match[2], suffix, lineNumber))
     }
   }
   return diagnostics
@@ -1043,7 +1043,7 @@ const readSkillSuffixDiagnostics = (line: string, lineNumber: number): ParseDiag
 const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDiagnostic[] => {
   const diagnostics: ParseDiagnostic[] = []
   for (let lineIndex = bodyStart; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex]!
+    const line = lines[lineIndex]
     diagnostics.push(...readTargetDiagnostics(line, lineIndex + 1))
     diagnostics.push(...readSkillSuffixDiagnostics(line, lineIndex + 1))
     const counterBranch = new RegExp(`->\\s*step:(${stableIdentifierSource})\\s*\\(max\\s+\\d+\\)`, 'u').exec(line)
@@ -1061,7 +1061,7 @@ const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDi
         if (!diagnostic && bracketTokenFamily(token.slice(1, -1)) !== 'action') hasGuard = true
         prefixCursor = open + close + 1
       }
-      if (hasGuard) diagnostics.push(conflictingGuardAndCounterDiagnostic(counterBranch[1]!, /\(max\s+(\d+)\)/.exec(counterBranch[0])?.[1] ?? 'N', lineIndex + 1))
+      if (hasGuard) diagnostics.push(conflictingGuardAndCounterDiagnostic(counterBranch[1], /\(max\s+(\d+)\)/.exec(counterBranch[0])?.[1] ?? 'N', lineIndex + 1))
     }
     let cursor = 0
     while (cursor < line.length) {
@@ -1083,6 +1083,10 @@ const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDi
   return diagnostics
 }
 
+// Frontmatter/body diagnostics for the routine Document tab's validation surface; not yet
+// wired into a caller (parseProseDoc doesn't call it), so it's unused today. Left in place
+// rather than deleted since it's deliberate feature groundwork, not stray dead code.
+// eslint-disable-next-line unused-imports/no-unused-vars -- see comment above
 const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart: number; diagnostics: ParseDiagnostic[] } => {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   if (lines[0]?.trim() !== FENCE) return { version: GRAMMAR_VERSION, bodyStart: 0, diagnostics: [] }
@@ -1090,8 +1094,8 @@ const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart:
   let version = GRAMMAR_VERSION
   const diagnostics: ParseDiagnostic[] = []
   let cursor = 1
-  while (cursor < lines.length && lines[cursor]!.trim() !== FENCE) {
-    const line = lines[cursor]!
+  while (cursor < lines.length && lines[cursor].trim() !== FENCE) {
+    const line = lines[cursor]
     const sep = line.indexOf(':')
     if (sep !== -1) {
       const key = line.slice(0, sep).trim()

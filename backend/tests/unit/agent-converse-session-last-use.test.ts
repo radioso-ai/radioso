@@ -91,12 +91,12 @@ describe("AgentConverseSessionService last-use boundary", () => {
       publicChatSessionSecret: "0123456789abcdef0123456789abcdef",
     });
 
-    expect(() => service.recordSuccessfulUse({ grantId: grant.id } as never)).not.toThrow();
+    expect(() => service.recordSuccessfulUse({ grantId: grant.id })).not.toThrow();
     await new Promise((resolve) => setImmediate(resolve));
 
     accessGrantService.touchGrant.mockImplementationOnce(() => {
       throw new Error("sync persistence failed");
     });
-    expect(() => service.recordSuccessfulUse({ grantId: grant.id } as never)).not.toThrow();
+    expect(() => service.recordSuccessfulUse({ grantId: grant.id })).not.toThrow();
   });
 });

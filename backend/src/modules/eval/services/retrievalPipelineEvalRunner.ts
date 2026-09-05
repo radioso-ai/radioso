@@ -26,6 +26,7 @@ import type {
 } from "../../settings/contracts/retrieval.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { LlmCapabilityConfig } from "../../../shared/infra/llm/providerTypes.js";
+import { asError } from "../../../shared/errors/asError.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { EvalRunModelOverride } from "../domain/types.js";
 import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js";
@@ -214,7 +215,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     }
 
     if (callError) {
-      throw callError;
+      throw asError(callError);
     }
 
     const envelope = parseGroundedAnswerEnvelope(generated);

@@ -10,6 +10,7 @@ import type {
   PublicationPublisherKind
 } from "../persistence/types.js";
 import type { DocumentPublisher } from "../types.js";
+import { describeError } from "./errorFormatting.js";
 import { buildDocumentPublicationEnvelope } from "./pageProcessing.js";
 
 export type PagePublicationState = {
@@ -120,8 +121,7 @@ export const retryPendingPublicationAttempts = async (params: {
       }
       result.delivered += 1;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message || error.name : String(error ?? "Unknown error");
+      const message = describeError(error);
       await params.publicationAttempts.create({
         pageRecordId: state.page.id,
         externalId: state.latestAttempt.externalId,

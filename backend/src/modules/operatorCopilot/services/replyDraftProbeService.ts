@@ -67,7 +67,7 @@ export class ReplyDraftProbeService implements CopilotReplyDraftPort {
         // Past the reservation the turn has been dispatched, so a later failure asks "did the
         // provider already run", not "did the call succeed". Releasing here would hand back budget
         // a real generation consumed; a refusal before the reservation has nothing to commit.
-        await (reservation as UsageLimitReservation | null)?.commit();
+        await (reservation)?.commit();
       }
     });
   }

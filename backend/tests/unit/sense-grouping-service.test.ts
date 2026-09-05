@@ -428,7 +428,7 @@ describe("SenseGroupingService", () => {
 
     expect(candidates).toHaveLength(2);
     const [top, runnerUp] = [...candidates].sort((left, right) => right.confidence - left.confidence);
-    expect(top!.confidence - runnerUp!.confidence).toBeLessThan(0.15);
+    expect(top.confidence - runnerUp.confidence).toBeLessThan(0.15);
     expect(decideClarification(candidates, { floor: 0, margin: 0.15, maxOptions: 4 })).toMatchObject({
       kind: "ask",
       candidates: expect.arrayContaining([
@@ -1135,7 +1135,7 @@ describe("phraseRetrievalSenseAsk", () => {
   it("falls back when fewer than two options survive the presentable guard", async () => {
     const result = await phraseRetrievalSenseAsk({
       candidates: [
-        presentable[0]!,
+        presentable[0],
         { id: "doc-id", label: "doc-id", confidence: 0.5, payload: { documentIds: ["doc-id"] } },
       ],
       askStage,

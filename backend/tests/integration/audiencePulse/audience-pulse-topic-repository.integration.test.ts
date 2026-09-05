@@ -9,7 +9,7 @@ import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 describeIntegration("TopicRepository (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const repository = new TopicRepository(database.kysely);
   const accountId = randomUUID();
 
@@ -152,11 +152,11 @@ describeIntegration("TopicRepository (Postgres)", () => {
     const active = await repository.listActiveTopics(workspaceId);
 
     expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(survivingId);
-    expect(active[0]!.title).toBe("Billing questions");
-    expect(active[0]!.centroid).toHaveLength(3);
-    active[0]!.centroid.forEach((value, index) => {
-      expect(Math.abs(value - [0.1, 0.2, 0.3][index]!)).toBeLessThan(1e-4);
+    expect(active[0].id).toBe(survivingId);
+    expect(active[0].title).toBe("Billing questions");
+    expect(active[0].centroid).toHaveLength(3);
+    active[0].centroid.forEach((value, index) => {
+      expect(Math.abs(value - [0.1, 0.2, 0.3][index])).toBeLessThan(1e-4);
     });
   });
 
@@ -202,8 +202,8 @@ describeIntegration("TopicRepository (Postgres)", () => {
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active).toHaveLength(1);
-    expect(active[0]!.id).toBe(topicId);
-    expect(active[0]!.lastSeenRunId).toBe(secondRunId);
+    expect(active[0].id).toBe(topicId);
+    expect(active[0].lastSeenRunId).toBe(secondRunId);
   });
 
   it("saveTopics updates a surviving topic and keeps its title/description when not supplied", async () => {
@@ -234,12 +234,12 @@ describeIntegration("TopicRepository (Postgres)", () => {
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active).toHaveLength(1);
-    expect(active[0]!.title).toBe("Refund policy");
-    expect(active[0]!.description).toBe("Questions about refunds");
-    expect(active[0]!.lastSeenRunId).toBe(secondRunId);
-    expect(active[0]!.createdRunId).toBe(firstRunId);
-    active[0]!.centroid.forEach((value, index) => {
-      expect(Math.abs(value - [0.2, 0.2, 0.2][index]!)).toBeLessThan(1e-4);
+    expect(active[0].title).toBe("Refund policy");
+    expect(active[0].description).toBe("Questions about refunds");
+    expect(active[0].lastSeenRunId).toBe(secondRunId);
+    expect(active[0].createdRunId).toBe(firstRunId);
+    active[0].centroid.forEach((value, index) => {
+      expect(Math.abs(value - [0.2, 0.2, 0.2][index])).toBeLessThan(1e-4);
     });
   });
 
@@ -271,8 +271,8 @@ describeIntegration("TopicRepository (Postgres)", () => {
     ]);
 
     const active = await repository.listActiveTopics(workspaceId);
-    expect(active[0]!.title).toBe("New title");
-    expect(active[0]!.description).toBe("New description");
+    expect(active[0].title).toBe("New title");
+    expect(active[0].description).toBe("New description");
   });
 
   it("saves a full run (topics + memberships + transitions) in one transaction and reads it back via loadRun", async () => {
@@ -303,11 +303,11 @@ describeIntegration("TopicRepository (Postgres)", () => {
         },
       ]);
       await trxRepository.saveMemberships(runId, [
-        { topicId: topicAId, messageId: messageIds[0]!, distance: 0.01 },
-        { topicId: topicAId, messageId: messageIds[1]!, distance: 0.02 },
-        { topicId: topicAId, messageId: messageIds[2]!, distance: 0.03 },
-        { topicId: topicBId, messageId: messageIds[3]!, distance: 0.04 },
-        { topicId: topicBId, messageId: messageIds[4]!, distance: 0.05 },
+        { topicId: topicAId, messageId: messageIds[0], distance: 0.01 },
+        { topicId: topicAId, messageId: messageIds[1], distance: 0.02 },
+        { topicId: topicAId, messageId: messageIds[2], distance: 0.03 },
+        { topicId: topicBId, messageId: messageIds[3], distance: 0.04 },
+        { topicId: topicBId, messageId: messageIds[4], distance: 0.05 },
       ]);
       await trxRepository.saveTransitions(runId, [
         { topicId: topicAId, kind: "emerged", parentTopicIds: [] },
@@ -412,7 +412,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
       "SELECT count(*)::text AS count FROM topic_memberships WHERE run_id = $1",
       [runId],
     );
-    expect(rows[0]!.count).toBe("1200");
+    expect(rows[0].count).toBe("1200");
   });
 
   it("saveRun persists the run, its topics, and its memberships atomically", async () => {
@@ -450,9 +450,9 @@ describeIntegration("TopicRepository (Postgres)", () => {
         },
       ],
       memberships: [
-        { topicId: topicAId, messageId: messageIds[0]!, distance: 0.01 },
-        { topicId: topicAId, messageId: messageIds[1]!, distance: 0.02 },
-        { topicId: topicBId, messageId: messageIds[2]!, distance: 0.03 },
+        { topicId: topicAId, messageId: messageIds[0], distance: 0.01 },
+        { topicId: topicAId, messageId: messageIds[1], distance: 0.02 },
+        { topicId: topicBId, messageId: messageIds[2], distance: 0.03 },
       ],
     });
 
@@ -503,7 +503,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
           description: "Emerged this run",
         },
       ],
-      memberships: [{ topicId: newTopicId, messageId: messageId!, distance: 0.01 }],
+      memberships: [{ topicId: newTopicId, messageId: messageId, distance: 0.01 }],
       transitions: [
         { topicId: newTopicId, kind: "emerged", parentTopicIds: [], viaCentroidFallback: false },
         { topicId: oldTopicId, kind: "dissolved", parentTopicIds: [], viaCentroidFallback: false },
@@ -524,7 +524,7 @@ describeIntegration("TopicRepository (Postgres)", () => {
       "SELECT dissolved_at FROM topics WHERE id = $1",
       [oldTopicId],
     );
-    expect(oldTopicRow[0]!.dissolved_at).not.toBeNull();
+    expect(oldTopicRow[0].dissolved_at).not.toBeNull();
 
     const active = await repository.listActiveTopics(workspaceId);
     expect(active.map((topic) => topic.id)).toEqual([newTopicId]);
@@ -585,6 +585,6 @@ describeIntegration("TopicRepository (Postgres)", () => {
       "SELECT dissolved_at FROM topics WHERE id = $1",
       [topicId],
     );
-    expect(rows[0]!.dissolved_at).not.toBeNull();
+    expect(rows[0].dissolved_at).not.toBeNull();
   });
 });

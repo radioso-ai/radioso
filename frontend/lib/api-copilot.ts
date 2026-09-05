@@ -99,7 +99,7 @@ export interface CopilotProposalSummary {
 }
 
 export interface CopilotProposalPreview {
-  current: unknown | null
+  current: unknown
   proposed: unknown
 }
 

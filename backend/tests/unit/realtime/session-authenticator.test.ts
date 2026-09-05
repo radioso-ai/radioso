@@ -50,7 +50,7 @@ describe("realtime session authenticator", () => {
   });
 
   it("uses its injected clock for exact expiry and zero-time throttling", async () => {
-    let now = 0;
+    const now = 0;
     const touchLastSeen = vi.fn().mockResolvedValue(undefined);
     const authenticator = new RealtimeSessionAuthenticator({ store: { lookup: async () => ({ ...session, sessionExpiresAt: new Date(0) }), touchLastSeen }, now: () => now });
     await expect(authenticator.authenticate({ sessionToken: "expired", requestedWorkspaceId: workspaceId, signal: new AbortController().signal })).rejects.toThrow(/not authorized/i);

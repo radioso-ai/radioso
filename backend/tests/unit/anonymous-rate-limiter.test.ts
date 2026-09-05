@@ -122,7 +122,6 @@ describe("anonymousRateLimiter", () => {
 
   it("uses cookie-backed browser ids independently behind the same request source", async () => {
     const rateLimiter = middleware();
-    const limit = createTestDependencies().dependencies.env.PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS;
 
     const { req: firstReq, res: firstRes, next: firstNext } = createMockReqRes({
       workspaceId: "workspace-1",

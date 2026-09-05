@@ -35,7 +35,7 @@ export const createApiAccessRoutes = (dependencies: Dependencies): Router => {
       const locals = res.locals as { accountId: string; userId: string; workspaceId: string };
       requireRouteWorkspace(workspaceId, locals.workspaceId);
       const credentials = query.view === "workspace"
-        ? await dependencies.personalCredentialService.listWorkspace({ accountId: locals.accountId as string, workspaceId, actorUserId: locals.userId, page: query.page, limit: query.limit })
+        ? await dependencies.personalCredentialService.listWorkspace({ accountId: locals.accountId, workspaceId, actorUserId: locals.userId, page: query.page, limit: query.limit })
         : await dependencies.personalCredentialService.listOwn({ accountId: locals.accountId, workspaceId, userId: locals.userId, page: query.page, limit: query.limit });
       res.status(200).json({ items: credentials.items.map(presentApiCredential), page: query.page, limit: query.limit, total: credentials.total });
     } catch (error) { next(error); }

@@ -21,7 +21,7 @@ const GROUP_A_VECTORS = [[1, 0, 0], [0.98, 0.02, 0], [0.97, 0, 0.03], [0.99, 0.0
 const GROUP_B_VECTORS = [[0, 1, 0], [0.02, 0.98, 0], [0, 0.97, 0.03], [0.01, 0.99, 0.01]];
 
 describeIntegration("CensusService (Postgres)", () => {
-  const database = new Database(integrationDatabaseUrl as string);
+  const database = new Database(integrationDatabaseUrl);
   const historySource = new PostgresAudiencePulseHistorySource(database.kysely);
   const facetSource = new MessageFacetRepository(database.kysely);
   const topicRepository = new TopicRepository(database.kysely);
@@ -201,7 +201,7 @@ describeIntegration("CensusService (Postgres)", () => {
       "SELECT seed FROM topic_census_runs WHERE id = $1",
       [secondRun.runId],
     );
-    expect(firstRunRow[0]!.seed).toBe(secondRunRow[0]!.seed);
+    expect(firstRunRow[0].seed).toBe(secondRunRow[0].seed);
   });
 
   it("carries topic identity across runs: unchanged topics survive with identifier and label intact, a topic with its questions removed is recorded dissolved", async () => {
@@ -227,8 +227,8 @@ describeIntegration("CensusService (Postgres)", () => {
       [firstRun.runId],
     );
     const topicIdByMessageId = new Map(firstMembershipRows.map((row) => [row.message_id, row.topic_id]));
-    const groupATopicId = topicIdByMessageId.get(groupAIds[0]!)!;
-    const groupBTopicId = topicIdByMessageId.get(groupBIds[0]!)!;
+    const groupATopicId = topicIdByMessageId.get(groupAIds[0])!;
+    const groupBTopicId = topicIdByMessageId.get(groupBIds[0])!;
     expect(groupATopicId).not.toBe(groupBTopicId);
     const groupAResult = firstRun.topics.find((topic) => topic.topicId === groupATopicId)!;
     const groupBResult = firstRun.topics.find((topic) => topic.topicId === groupBTopicId)!;
@@ -289,9 +289,9 @@ describeIntegration("CensusService (Postgres)", () => {
       "SELECT dissolved_at, title FROM topics WHERE id = $1",
       [groupBResult.topicId],
     );
-    expect(groupBTopicRow[0]!.dissolved_at).not.toBeNull();
+    expect(groupBTopicRow[0].dissolved_at).not.toBeNull();
     // Retained, not deleted -- so a topic that returns is recognizable.
-    expect(groupBTopicRow[0]!.title).toBe(groupBResult.title);
+    expect(groupBTopicRow[0].title).toBe(groupBResult.title);
 
     const activeAfterThirdRun = await topicRepository.listActiveTopics(workspaceId);
     expect(activeAfterThirdRun.map((topic) => topic.id)).toEqual([groupAResult.topicId]);

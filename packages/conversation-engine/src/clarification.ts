@@ -33,7 +33,7 @@ const candidatePriority = (
   priorities: Record<string, number> = {},
 ): number =>
   typeof priorities[candidate.id] === "number" && Number.isFinite(priorities[candidate.id])
-    ? priorities[candidate.id]!
+    ? priorities[candidate.id]
     : 0;
 
 export const orderClarificationCandidates = (
@@ -148,7 +148,7 @@ export const decideClarification = (
     return { kind: "none" };
   }
 
-  const top = eligible[0]!;
+  const top = eligible[0];
   const runnerUp = eligible[1];
   if (context.suppressAsk) {
     return { kind: "auto_pick", candidate: top, reason: "suppressed" };
@@ -175,7 +175,7 @@ export const decideClarification = (
     (candidate) => candidatePriority(candidate, context.priorities) === highestPriority,
   );
   if (priorityHolders.length === 1) {
-    return { kind: "auto_pick", candidate: priorityHolders[0]!, reason: "priority" };
+    return { kind: "auto_pick", candidate: priorityHolders[0], reason: "priority" };
   }
 
   if (runnerUp && top.confidence - runnerUp.confidence >= askMargin) {

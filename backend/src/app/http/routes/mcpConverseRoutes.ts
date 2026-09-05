@@ -44,7 +44,7 @@ export const createMcpConverseRoutes = (
   services: McpConverseRouteServices,
 ): Router => {
   const router = Router();
-  const { audit, sessionService, converseService } = services;
+  const { sessionService, converseService } = services;
   const rateLimitMcpAsk = agentChannelChatRateLimiters(dependencies, "mcp");
   const rateLimitMcpSource = createMcpConverseSourceRateLimiter(dependencies);
   const rateLimitMcpToken = createMcpConverseTokenRateLimiter(dependencies);

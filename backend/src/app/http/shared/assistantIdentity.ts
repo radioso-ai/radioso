@@ -3,6 +3,7 @@ import multer from "multer";
 import { z } from "zod";
 
 import { badRequest } from "../../../shared/domain/errors.js";
+import { asError } from "../../../shared/errors/asError.js";
 
 export const assistantThemeSchema = z.object({
   brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -33,7 +34,7 @@ export const createAssistantLogoUploadHandler = () => {
           reject(badRequest("Uploaded assistant logo exceeds maximum size"));
           return;
         }
-        reject(error);
+        reject(asError(error));
       });
     });
 };

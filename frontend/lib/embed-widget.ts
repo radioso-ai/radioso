@@ -293,7 +293,7 @@ export const normalizeWebsiteEmbedPageContextMode = (value: string | null | unde
 }
 
 export const sanitizeWebsiteEmbedCopyOverrides = (input: unknown): WebsiteEmbedCopyOverrides =>
-  sanitizeStringOverrides<keyof WebsiteEmbedCopy>(input, COPY_OVERRIDE_KEYS, 280) as WebsiteEmbedCopyOverrides
+  sanitizeStringOverrides<keyof WebsiteEmbedCopy>(input, COPY_OVERRIDE_KEYS, 280)
 
 /**
  * Select the persisted wording pack for a public surface. This mirrors the
@@ -332,7 +332,7 @@ export const resolveWebsiteEmbedCopyPack = (
 }
 
 export const sanitizeWebsiteEmbedThemeOverrides = (input: unknown): WebsiteEmbedThemeOverrides =>
-  sanitizeStringOverrides<keyof WebsiteEmbedTheme>(input, THEME_OVERRIDE_KEYS, 160) as WebsiteEmbedThemeOverrides
+  sanitizeStringOverrides<keyof WebsiteEmbedTheme>(input, THEME_OVERRIDE_KEYS, 160)
 
 export const parseWebsiteEmbedJsonOverrides = (value: string | null | undefined) => {
   if (!value) {

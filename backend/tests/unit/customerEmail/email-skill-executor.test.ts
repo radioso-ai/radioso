@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { EmailSkillExecutor } from "../../../src/modules/customerEmail/executor/emailSkillExecutor.js";
-import type { CustomerEmailSkillOutcome } from "../../../src/modules/customerEmail/domain.js";
 import type { CustomerEmailDeliveryResult } from "../../../src/modules/customerEmail/services/customerEmailDeliveryService.js";
 import type { EmailSkillDefinitionRecord } from "../../../src/db/repositories/emailSkillDefinitionRepository.js";
 

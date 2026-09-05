@@ -75,7 +75,6 @@ import type {
   EvalSuiteSummary,
   WorkbenchReplayRunResponse,
 } from '@/lib/api-eval'
-import type { DocumentSummary } from '@/lib/api-types'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
   type DiagnosticPresentation,
@@ -999,7 +998,7 @@ function EvalDetail({ accountId, routeState, caseId }: EvalDetailProps) {
         const response = await documentsApi.listDocuments({ limit: 100 })
         if (cancelled) return
         const next = new Map<string, string>()
-        for (const d of (response.documents ?? []) as DocumentSummary[]) {
+        for (const d of (response.documents ?? [])) {
           if (d.id && d.title) next.set(d.id, d.title)
         }
         setDocTitlesById(next)

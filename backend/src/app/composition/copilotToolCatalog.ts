@@ -24,10 +24,6 @@ import {
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
 import type {
-  CopilotAgentSettingProposalAdapter,
-  CopilotAgentSkillProposalAdapter,
-  CopilotContextVariableProposalAdapter,
-  CopilotDirectiveProposalAdapter,
   CopilotEvalCaseCapturePort,
   CopilotEvalCaseReplayPort,
   ProposalEvidenceDependencies,

@@ -4,7 +4,6 @@ import { projectRoutineToPortableDocument, routineFieldPatchSchema, type Routine
 import type {
   CopilotRoutineProposalDraft,
   CopilotEntityDescription,
-  CopilotProposal,
   CopilotRoutineProposalAdapter,
   CopilotToolDescriptor,
 } from "../contracts.js";
@@ -115,11 +114,12 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
     }),
     describeEntity: (input, context) => {
       const parsed = input as z.infer<typeof routineDefinitionInputSchema>;
+      const agentId = parsed.agentId ?? context?.pageContext.agentId;
       return parsed.agentName || parsed.routineTitle
         ? describeNamedRoutine(parsed, context, deps, liveFirst)
         : parsed.routineId
-          ? { type: "routine", id: parsed.routineId, ...(parsed.agentId ?? context?.pageContext.agentId ? { agentId: parsed.agentId ?? context?.pageContext.agentId! } : {}) }
-          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+          ? { type: "routine", id: parsed.routineId, ...(agentId ? { agentId } : {}) }
+          : entity("agent", agentId);
     },
   },
   {
@@ -308,7 +308,7 @@ const describeNamedRoutine = async (
       ? { kind: "not_found" }
       : { kind: "ambiguous", candidates: routines.map((routine) => ({ type: "routine", ...routine })) };
   }
-  const routine = routines[0]!;
+  const routine = routines[0];
   return {
     kind: "resolved",
     entity: { type: "routine", ...routine },

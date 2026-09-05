@@ -346,7 +346,7 @@ describe("AgentBundleImportService", () => {
       }),
     }));
 
-    const input = create.mock.calls[0]?.[1] as unknown as {
+    const input = create.mock.calls[0]?.[1] as {
       contactRequestDelivery: { recipientEmails: string[]; webhook: unknown }
     };
     // An imported agent must never deliver to the source workspace's people.
@@ -614,7 +614,7 @@ describe("AgentBundleImportService", () => {
       }),
     }));
 
-    const input = create.mock.calls[0]?.[1] as unknown as { sourceScope: unknown };
+    const input = create.mock.calls[0]?.[1] as { sourceScope: unknown };
     expect(input.sourceScope).toEqual({ mode: "selected", sourceIds: [] });
     expect(JSON.stringify(input)).not.toContain("__ref");
     expect(result.unresolved).toContainEqual(expect.objectContaining({
@@ -647,7 +647,7 @@ describe("AgentBundleImportService", () => {
           ],
         },
       },
-    }) as never) as unknown as { input: { surfaceSettings: { extensions: { kiosk: Array<Record<string, unknown>> } } } };
+    })) as unknown as { input: { surfaceSettings: { extensions: { kiosk: Array<Record<string, unknown>> } } } };
 
     expect(input.surfaceSettings.extensions.kiosk).toEqual([
       { label: "Lobby" },
@@ -693,7 +693,7 @@ describe("AgentBundleImportService", () => {
       }),
     }));
 
-    const input = create.mock.calls[0]?.[1] as unknown as {
+    const input = create.mock.calls[0]?.[1] as {
       surfaceSettings: {
         anonymousChat: { enabled: boolean };
         websiteEmbed: { enabled: boolean; allowedOrigins: unknown[]; launcherLabel: string };

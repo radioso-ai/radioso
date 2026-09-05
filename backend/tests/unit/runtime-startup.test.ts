@@ -159,6 +159,10 @@ const createDependencies = () =>
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
+    agentBundleImportCleanupWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
+    },
     actionDispatchWorker: {
       start: vi.fn(),
       stop: vi.fn().mockResolvedValue(undefined),
@@ -536,6 +540,9 @@ describe("runtime startup", () => {
       },
       copilotRetentionWorker: {
         route: "POST /internal/tasks/copilot-retention/sweep",
+      },
+      agentBundleImportCleanupWorker: {
+        route: "POST /internal/tasks/agent-bundle-imports/sweep",
       },
     };
 

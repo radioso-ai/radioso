@@ -1028,6 +1028,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       importId: z.string().uuid(),
       agentId: z.string().uuid(),
+      replayed: z.boolean().openapi({ description: "True when this is the completed result of a prior request with the same idempotencyKey." }),
       unresolved: z.array(AgentBundleUnresolvedReferenceSchema),
     }),
   );

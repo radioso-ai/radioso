@@ -76,4 +76,19 @@ describeIfDatabase("agent bundle import jobs (Postgres)", () => {
     expect(await agents.findByIdAndWorkspaceId(orphan.id, workspace.id)).toBeNull();
     expect(await imports.findById(workspace.id, job.job.id)).toMatchObject({ state: "compensated", agentId: orphan.id });
   });
+
+  it("reclaims stale active jobs without an agent so their idempotency keys do not remain blocked", async () => {
+    const { account, workspace } = await seedWorkspace();
+    const input = { workspaceId: workspace.id, actorAccountId: account.id, idempotencyKey: `key-${randomUUID()}` };
+    const job = await imports.createOrGet(input);
+    await imports.markApplying(job.job.id);
+    await database.query("UPDATE agent_bundle_imports SET updated_at = now() - interval '20 minutes' WHERE id = $1", [job.job.id]);
+
+    const leaseToken = randomUUID();
+    const [claimed] = await imports.claimStaleApplying({ ageSeconds: 15 * 60, leaseSeconds: 60, leaseToken, limit: 1 });
+
+    expect(claimed).toMatchObject({ id: job.job.id, agentId: null });
+    await expect(imports.markFailed(claimed!.id, "apply_failed", { terminal: true, leaseToken })).resolves.toBe(true);
+    await expect(imports.createOrGet(input)).resolves.toMatchObject({ status: "created" });
+  });
 });

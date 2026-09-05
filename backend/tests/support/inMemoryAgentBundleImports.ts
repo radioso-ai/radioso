@@ -11,7 +11,7 @@ export class InMemoryAgentBundleImportRepository implements AgentBundleImportRep
   private readonly records = new Map<string, AgentBundleImportRecord>();
 
   async createOrGet(input: { workspaceId: string; actorAccountId: string | null; idempotencyKey: string | null }) {
-    const existing = [...this.records.values()].find((record) =>
+    const existing = input.idempotencyKey === null ? undefined : [...this.records.values()].find((record) =>
       record.workspaceId === input.workspaceId
       && record.idempotencyKey === input.idempotencyKey
       && ["queued", "applying", "applied"].includes(record.state));
@@ -31,20 +31,22 @@ export class InMemoryAgentBundleImportRepository implements AgentBundleImportRep
     return job?.workspaceId === workspaceId ? job : null;
   }
 
-  async markApplying(importId: string): Promise<void> { this.update(importId, { state: "applying" }); }
-  async setCreatedAgent(importId: string, agentId: string): Promise<void> { this.update(importId, { agentId }); }
-  async markApplied(importId: string, result: AgentBundleImportResult): Promise<void> {
+  async markApplying(importId: string): Promise<boolean> { return this.update(importId, { state: "applying" }); }
+  async setCreatedAgent(importId: string, agentId: string): Promise<boolean> { return this.update(importId, { agentId }); }
+  async markApplied(importId: string, result: AgentBundleImportResult): Promise<boolean> {
     this.update(importId, { state: "applied", unresolved: result.unresolved, appliedAt: new Date(), failureCode: null });
+    return true;
   }
-  async markFailed(importId: string, failureCode: AgentBundleImportFailureCode, options: { terminal: boolean }): Promise<void> {
-    this.update(importId, { state: options.terminal ? "failed" : "applying", failureCode });
+  async markFailed(importId: string, failureCode: AgentBundleImportFailureCode, options: { terminal: boolean }): Promise<boolean> {
+    return this.update(importId, { state: options.terminal ? "failed" : "applying", failureCode });
   }
   async claimStaleApplying(): Promise<AgentBundleImportRecord[]> { return []; }
-  async markCompensated(importId: string): Promise<void> { this.update(importId, { state: "compensated", compensatedAt: new Date() }); }
+  async markCompensated(importId: string): Promise<boolean> { return this.update(importId, { state: "compensated", compensatedAt: new Date() }); }
 
-  private update(importId: string, changes: Partial<AgentBundleImportRecord>): void {
+  private update(importId: string, changes: Partial<AgentBundleImportRecord>): boolean {
     const current = this.records.get(importId);
-    if (!current) return;
+    if (!current) return false;
     this.records.set(importId, { ...current, ...changes, updatedAt: new Date() });
+    return true;
   }
 }

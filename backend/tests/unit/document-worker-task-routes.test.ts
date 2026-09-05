@@ -13,6 +13,7 @@ const buildApp = (input: {
   facetExtractionWorker?: { runOnce: ReturnType<typeof vi.fn>; drainWorkspace: ReturnType<typeof vi.fn> };
   facetExtractionWorkspaceDrain?: { requestWorkspaceDrain: ReturnType<typeof vi.fn> };
   copilotRetentionWorker?: { sweep: ReturnType<typeof vi.fn> };
+  agentBundleImportCleanupWorker?: { sweep: ReturnType<typeof vi.fn> };
 }) => {
   const app = express();
   app.use(express.json());
@@ -21,6 +22,7 @@ const buildApp = (input: {
     facetExtractionWorker: input.facetExtractionWorker as never,
     facetExtractionWorkspaceDrain: input.facetExtractionWorkspaceDrain as never,
     copilotRetentionWorker: input.copilotRetentionWorker as never,
+    agentBundleImportCleanupWorker: input.agentBundleImportCleanupWorker as never,
   }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(500).json({ error: "internal" });
@@ -130,6 +132,27 @@ describe("createDocumentWorkerTaskRoutes", () => {
         analysisEnd: new Date("2026-08-01T00:00:00.000Z"),
       });
     });
+  });
+});
+
+describe("POST /internal/tasks/agent-bundle-imports/sweep", () => {
+  it("runs the durable import cleanup sweep and asks Scheduler to retry an outage", async () => {
+    const sweep = vi.fn().mockResolvedValue({ status: "swept", compensated: 2, failed: 0 });
+    const app = buildApp({ agentBundleImportCleanupWorker: { sweep } });
+
+    const response = await request(app).post("/internal/tasks/agent-bundle-imports/sweep").send({});
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ status: "swept", compensated: 2, failed: 0 });
+    expect(sweep).toHaveBeenCalledOnce();
+  });
+
+  it("returns a retryable response when cleanup cannot claim work", async () => {
+    const app = buildApp({ agentBundleImportCleanupWorker: { sweep: vi.fn().mockResolvedValue({ status: "failed", compensated: 0, failed: 0 }) } });
+
+    const response = await request(app).post("/internal/tasks/agent-bundle-imports/sweep").send({});
+
+    expect(response.status).toBeGreaterThanOrEqual(500);
   });
 });
 

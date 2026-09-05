@@ -127,8 +127,8 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
   });
 
   const agentWriter = {
-    create: async (workspaceId: string, input: AgentInput) => {
-      const agent = await deps.agentService.create(workspaceId, input);
+    create: async (workspaceId: string, input: AgentInput, agentId?: string) => {
+      const agent = await deps.agentService.create(workspaceId, input, { agentId });
       return { agentId: agent.id };
     },
     delete: async (workspaceId: string, agentId: string) => {

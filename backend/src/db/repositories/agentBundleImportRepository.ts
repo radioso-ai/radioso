@@ -14,29 +14,34 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
       return { status: "created" as const, job: mapAgentBundleImport(row as unknown as AgentBundleImportRow) };
     }
 
-    const inserted = await this.db
-      .insertInto("agent_bundle_imports")
-      .values({
-        workspace_id: input.workspaceId,
-        actor_account_id: input.actorAccountId,
-        idempotency_key: input.idempotencyKey,
-      })
-      .onConflict((conflict) => conflict.columns(["workspace_id", "idempotency_key"])
-        .where("idempotency_key", "is not", null)
-        .where("state", "in", activeStates)
-        .doNothing())
-      .returning(agentBundleImportColumns)
-      .executeTakeFirst();
-    if (inserted) return { status: "created" as const, job: mapAgentBundleImport(inserted as AgentBundleImportRow) };
+    // A conflicting row can become terminal after `DO NOTHING` and before the
+    // lookup. In that case it no longer participates in the partial unique index,
+    // so retry the insert rather than turning a valid retry into a 500.
+    for (;;) {
+      const inserted = await this.db
+        .insertInto("agent_bundle_imports")
+        .values({
+          workspace_id: input.workspaceId,
+          actor_account_id: input.actorAccountId,
+          idempotency_key: input.idempotencyKey,
+        })
+        .onConflict((conflict) => conflict.columns(["workspace_id", "idempotency_key"])
+          .where("idempotency_key", "is not", null)
+          .where("state", "in", activeStates)
+          .doNothing())
+        .returning(agentBundleImportColumns)
+        .executeTakeFirst();
+      if (inserted) return { status: "created" as const, job: mapAgentBundleImport(inserted as AgentBundleImportRow) };
 
-    const existing = await this.db
-      .selectFrom("agent_bundle_imports")
-      .select(agentBundleImportColumns)
-      .where("workspace_id", "=", input.workspaceId)
-      .where("idempotency_key", "=", input.idempotencyKey)
-      .where("state", "in", activeStates)
-      .executeTakeFirstOrThrow();
-    return { status: "existing" as const, job: mapAgentBundleImport(existing as AgentBundleImportRow) };
+      const existing = await this.db
+        .selectFrom("agent_bundle_imports")
+        .select(agentBundleImportColumns)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("idempotency_key", "=", input.idempotencyKey)
+        .where("state", "in", activeStates)
+        .executeTakeFirst();
+      if (existing) return { status: "existing" as const, job: mapAgentBundleImport(existing as AgentBundleImportRow) };
+    }
   }
 
   async findById(workspaceId: string, importId: string) {
@@ -49,24 +54,27 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
     return row ? mapAgentBundleImport(row as AgentBundleImportRow) : null;
   }
 
-  async markApplying(importId: string): Promise<void> {
-    await this.db.updateTable("agent_bundle_imports")
+  async markApplying(importId: string): Promise<boolean> {
+    const result = await this.db.updateTable("agent_bundle_imports")
       .set({ state: "applying", updated_at: currentTimestamp() })
       .where("id", "=", importId)
       .where("state", "=", "queued")
-      .execute();
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
   }
 
-  async setCreatedAgent(importId: string, agentId: string): Promise<void> {
-    await this.db.updateTable("agent_bundle_imports")
+  async setCreatedAgent(importId: string, agentId: string): Promise<boolean> {
+    const result = await this.db.updateTable("agent_bundle_imports")
       .set({ agent_id: agentId, updated_at: currentTimestamp() })
       .where("id", "=", importId)
       .where("state", "=", "applying")
-      .execute();
+      .where("cleanup_lease_token", "is", null)
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
   }
 
-  async markApplied(importId: string, result: { unresolved: unknown[] }): Promise<void> {
-    await this.db.updateTable("agent_bundle_imports")
+  async markApplied(importId: string, result: { unresolved: unknown[] }): Promise<boolean> {
+    const update = await this.db.updateTable("agent_bundle_imports")
       .set({
         state: "applied",
         unresolved: toJsonb(result.unresolved),
@@ -78,18 +86,27 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
       })
       .where("id", "=", importId)
       .where("state", "=", "applying")
-      .execute();
+      // Claiming a cleanup lease fences the original request. The sweep owns the
+      // compensating delete from that point, so this request must not resurrect it.
+      .where("cleanup_lease_token", "is", null)
+      .executeTakeFirst();
+    return update.numUpdatedRows > 0n;
   }
 
-  async markFailed(importId: string, failureCode: "invalid_bundle" | "apply_failed", options: { terminal: boolean }): Promise<void> {
-    await this.db.updateTable("agent_bundle_imports")
+  async markFailed(importId: string, failureCode: "invalid_bundle" | "apply_failed", options: { terminal: boolean; leaseToken?: string }): Promise<boolean> {
+    let query = this.db.updateTable("agent_bundle_imports")
       .set({
-        state: options.terminal ? "failed" : "applying",
+        ...(options.terminal ? { state: "failed" as const } : {}),
         failure_code: failureCode,
         updated_at: currentTimestamp(),
       })
       .where("id", "=", importId)
-      .execute();
+      .where("state", "in", ["queued", "applying"]);
+    query = options.leaseToken
+      ? query.where("cleanup_lease_token", "=", options.leaseToken)
+      : query.where("cleanup_lease_token", "is", null);
+    const update = await query.executeTakeFirst();
+    return update.numUpdatedRows > 0n;
   }
 
   async claimStaleApplying(input: { ageSeconds: number; leaseSeconds: number; leaseToken: string; limit: number }) {
@@ -102,8 +119,7 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
       .where("id", "in", (expressionBuilder) => expressionBuilder
         .selectFrom("agent_bundle_imports")
         .select("id")
-        .where("state", "=", "applying")
-        .where("agent_id", "is not", null)
+        .where("state", "in", ["queued", "applying"])
         .where("updated_at", "<", nowMinusSeconds(input.ageSeconds))
         .where((builder) => builder.or([
           builder("cleanup_lease_expires_at", "is", null),
@@ -118,7 +134,7 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
     return rows.map((row) => mapAgentBundleImport(row as AgentBundleImportRow));
   }
 
-  async markCompensated(importId: string, leaseToken?: string): Promise<void> {
+  async markCompensated(importId: string, leaseToken?: string): Promise<boolean> {
     let query = this.db.updateTable("agent_bundle_imports")
       .set({
         state: "compensated",
@@ -129,8 +145,11 @@ export class AgentBundleImportRepository implements AgentBundleImportRepositoryP
       })
       .where("id", "=", importId)
       .where("state", "=", "applying");
-    if (leaseToken) query = query.where("cleanup_lease_token", "=", leaseToken);
-    await query.execute();
+    query = leaseToken
+      ? query.where("cleanup_lease_token", "=", leaseToken)
+      : query.where("cleanup_lease_token", "is", null);
+    const update = await query.executeTakeFirst();
+    return update.numUpdatedRows > 0n;
   }
 
   private async insert(input: { workspaceId: string; actorAccountId: string | null; idempotencyKey: string | null }) {

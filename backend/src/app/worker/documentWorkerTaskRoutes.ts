@@ -29,7 +29,7 @@ const FACET_TASK_DRAIN_MAX_JOBS = 100;
 
 type DocumentWorkerTaskRouteDependencies = Pick<
   AppDependencies,
-  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker"
+  "documentProcessingWorker" | "facetExtractionWorker" | "facetExtractionWorkspaceDrain" | "copilotRetentionWorker" | "agentBundleImportCleanupWorker"
 >;
 
 // Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
@@ -148,6 +148,19 @@ export const createDocumentWorkerTaskRoutes = (
       }
       // Switched off or already in flight are both ordinary, and neither is worth a retry.
       res.status(200).json({ deleted: result.status === "swept" ? result.deleted : 0, status: result.status });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/internal/tasks/agent-bundle-imports/sweep", async (_req, res, next) => {
+    try {
+      const result = await dependencies.agentBundleImportCleanupWorker.sweep();
+      if (result.status === "failed") {
+        next(serviceUnavailable("Agent bundle import cleanup sweep failed"));
+        return;
+      }
+      res.status(200).json(result);
     } catch (error) {
       next(error);
     }

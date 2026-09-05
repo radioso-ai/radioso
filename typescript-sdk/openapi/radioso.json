@@ -9137,6 +9137,10 @@
             "type": "string",
             "format": "uuid"
           },
+          "replayed": {
+            "type": "boolean",
+            "description": "True when this is the completed result of a prior request with the same idempotencyKey."
+          },
           "unresolved": {
             "type": "array",
             "items": {
@@ -9147,6 +9151,7 @@
         "required": [
           "importId",
           "agentId",
+          "replayed",
           "unresolved"
         ]
       },

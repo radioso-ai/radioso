@@ -156,27 +156,29 @@ export const createAgentBundleRoutes = (dependencies: AppDependencies): Router =
             metadata: {
               importId: getImportId(error),
               bundleVersion: bundle.bundleVersion,
-              failureCode: error instanceof Error && "code" in error ? String(error.code) : "apply_failed",
+              failureCode: getImportFailureCode(error),
             },
           });
           throw error;
         }
 
-        await dependencies.auditService.record({
-          accountId: accountId ?? null,
-          workspaceId,
-          eventType: "agent.bundle.imported",
-          eventStatus: "success",
-          metadata: {
-            importId: result.importId,
-            agentId: result.agentId,
-            bundleVersion: bundle.bundleVersion,
-            unresolvedCount: result.unresolved.length,
-            unresolvedKinds: [...new Set(result.unresolved.map((entry) => entry.kind))],
-          },
-        });
+        if (!result.replayed) {
+          await dependencies.auditService.record({
+            accountId: accountId ?? null,
+            workspaceId,
+            eventType: "agent.bundle.imported",
+            eventStatus: "success",
+            metadata: {
+              importId: result.importId,
+              agentId: result.agentId,
+              bundleVersion: bundle.bundleVersion,
+              unresolvedCount: result.unresolved.length,
+              unresolvedKinds: [...new Set(result.unresolved.map((entry) => entry.kind))],
+            },
+          });
+        }
 
-        res.status((result as AgentBundleImportResultWithReplay).replayed ? 200 : 201).json(result);
+        res.status(result.replayed ? 200 : 201).json(result);
       } catch (error) {
         next(error);
       }
@@ -191,6 +193,7 @@ const getImportId = (error: unknown): string | null =>
     ? error.importId
     : null;
 
-type AgentBundleImportResultWithReplay = {
-  replayed?: boolean;
-};
+const getImportFailureCode = (error: unknown): string =>
+  typeof error === "object" && error !== null && "failureCode" in error && typeof error.failureCode === "string"
+    ? error.failureCode
+    : "apply_failed";

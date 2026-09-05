@@ -178,6 +178,7 @@ const makeService = (input: {
   retrievalSubqueries?: RetrievalPipelineResult["diagnostics"]["retrievalSubqueries"];
   suggestedQuestionsEnabled?: boolean;
   turnInterpreter?: ChatServiceOptions["turnInterpreter"];
+  recordClarificationDecision?: ChatServiceOptions["recordClarificationDecision"];
 }) => {
   const gateway = input.chatGateway ?? chatGateway();
   return new ChatService({
@@ -212,6 +213,7 @@ const makeService = (input: {
     retrievalSenseDetector: input.detector as never,
     directiveSteering: input.directiveRuntime,
     turnInterpreter: input.turnInterpreter,
+    recordClarificationDecision: input.recordClarificationDecision,
     retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 },
     routineStore: input.routineStore,
     routineProvider: input.routineStore
@@ -267,6 +269,58 @@ const captureDirectiveRuntime = (inputs: DirectiveSteerInput[]): RouteScopedDire
 });
 
 describe("retrieval sense clarification", () => {
+  it("keeps retrieval-sense scoping on an admitted page capture while suppressing its question", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const decisions: Array<{ surface: string; decision: string; reason?: string }> = [];
+    let saved: PendingClarification | null = null;
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.59, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      detector,
+      recordClarificationDecision: (decision) => decisions.push(decision),
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+      turnInterpreter: {
+        interpretChatTurn: vi.fn(async () => ({
+          route: "retrieval" as const,
+          framing: { isIdentityQuestion: false },
+          pageRead: { required: true as const, operation: "lookup" as const, resolvedRequest: "Compare this page" },
+        })),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Compare this page with the policy",
+      stream: false,
+      pageContext: { content: "The current page says the deadline is January 22." },
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(detector.detect).toHaveBeenCalledOnce();
+    expect(saved).toBeNull();
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha"))).toHaveLength(2);
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "suppressed",
+          reason: "page_capture",
+        }),
+      }),
+    ]));
+    expect(decisions).toEqual([{ surface: "retrieval_sense", decision: "suppressed", reason: "page_capture" }]);
+  });
+
   it("answers over planned retrieval branches without turning them into visitor-facing choices", async () => {
     let saved: PendingClarification | null = null;
     const capturedRequests: RetrievalPipelineRequest[] = [];
